@@ -16,12 +16,13 @@ real distance, and the page states which of the two questions it answered rather
 customer to guess.
 
 #### Added
-- **A third search tier** on `GET /api/v1/public/shops?q=`, reached **only** when full-text search
-  and the `LIKE` fallback have both returned an empty page — so every query that works today takes
-  an untouched path. The term is offered to a new search-only geocoder entry point; a GB outward
-  code or full unit resolves through `postcode_centroid` and reuses 33-06's distance query at the
-  platform radius. The district lookup is a half-open range plus a unit-length guard, so it is an
-  **Index Scan** over 1,748,230 rows and not the Parallel Seq Scan a `LIKE` prefix plans to.
+- **A postcode is read as a PLACE, before any text match is attempted.** `q` is offered to a new
+  search-only geocoder entry point first; a GB outward code or full unit resolves through
+  `postcode_centroid` and reuses 33-06's distance query at the platform radius. Anything that is
+  not a postcode, and any postcode the dataset does not know, falls straight through to the
+  existing full-text search and `LIKE` fallback, unchanged. The district lookup is a half-open
+  range plus a unit-length guard, so it is an **Index Scan** over 1,748,230 rows and not the
+  Parallel Seq Scan a `LIKE` prefix plans to.
 - **`X-Search-Interpretation`** — the server's own statement about how `q` was read
   (`text`, or `proximity; postcode=SE22; precision=district; radiusKm=5.0`), emitted on `?q=`
   responses only, declared in the OpenAPI snapshot, and added to `cors.exposed-headers` without
@@ -40,12 +41,24 @@ customer to guess.
 - The header being on the wire is not the same as a browser being able to read it — #412 is the
   recorded scar. Proved with an in-page `fetch`, and proved `null` with the allowlist wrong while
   `curl` still showed it.
-- **A full postcode that matches a shop's own address is still answered as a text match**
-  (`?q=SE15 5BS` returns the kitchen at that address, not every kitchen nearby), because the
-  postcode tier runs third. Disclosed by the header rather than hidden; flipping it is a
-  one-statement change and every test still applies.
 - Zero new dependencies; no migration; `postcode_centroid` is public reference data with no
   tenant column, exempt from RLS by written addition.
+
+#### Changed
+- **A full postcode is a locality question, not a string match.** The ordering shipped in the API
+  half with the postcode attempt *last*, so `?q=SE15 5BS` returned only the one kitchen whose
+  address carries that string. Reversed at the owner walkthrough on 2026-08-09
+  (*"Interpretation-first"*): it now returns **every** kitchen within the radius, nearest first —
+  measured live, `mama-ades-kitchen` at 0.0 km followed by two neighbours.
+  The old ordering's real defect was that a customer could not tell the two readings apart from
+  the input, only from the header: `SE22` was a locality question because nothing matched the
+  string, while `SE15 5BS` was a text question because something did.
+- Consequently a **bare outward code with a text match also flips**: `?q=SE15` was 2 shops by text
+  and is now 3 by proximity. This is one of 33-07's live-measured "healthy" behaviours and it has
+  deliberately moved.
+- **The accepted cost:** a shop literally named "SE22 Kitchen" no longer wins a search for `SE22`
+  unless it also sits inside the radius. That is the case that separates the two orderings, and it
+  is covered by a permanent Testcontainers arm with a far-away namesake fixture.
 
 ### The rejected client coordinate is logged at integer degrees, never the raw pair (#621) — 2026-08-09
 
