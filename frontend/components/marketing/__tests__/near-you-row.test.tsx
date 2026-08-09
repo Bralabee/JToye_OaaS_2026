@@ -166,9 +166,10 @@ describe("NearYouRow — no coordinate held", () => {
     render(<NearYouRow serverShops={SERVER_SHOPS} />)
     expect(headingsSayingNearYou().map((h) => h.textContent)).toEqual([])
     expect(screen.getByRole("heading", { name: /kitchens on j'toye/i })).toBeTruthy()
-    // No distance can be shown when none was computed. `/\d+(\.\d)? km/` would
-    // also match a "5 km" in the empty-state copy, hence the scoped query.
-    expect(screen.queryByText(/km$/)).toBeNull()
+    // No distance can be shown when none was computed. The positive control for
+    // this matcher is the granted case below, which finds "0.2 miles" with the
+    // same query — without that pair, a typo here would read as a clean row.
+    expect(screen.queryByText(/\d+(\.\d)? miles/)).toBeNull()
   })
 
   it("does not ask for permission until the visitor clicks — no mount-effect prompt", async () => {
@@ -210,10 +211,18 @@ describe("NearYouRow — a granted coordinate", () => {
     await waitFor(() => expect(headingsSayingNearYou().length).toBe(1))
     // The order is the SERVER's, and it is not the order the server list was in.
     expect(cardSlugs()).toEqual(["mama-ades-kitchen", "brixton-village-grill"])
-    // The distance displayed is the one the ordering used, rounded for display
-    // only — never recomputed in the browser.
-    expect(screen.getByText(/^0\.3 km/)).toBeTruthy()
-    expect(screen.getByText(/^3\.0 km/)).toBeTruthy()
+    // The distance displayed is a MILES conversion of the very number the
+    // ordering used — never recomputed in the browser, and never relabelled.
+    //
+    // Written as literals rather than as `formatMiles(0.27…)`, deliberately: the
+    // derived form would pass for any conversion factor including 1, which is
+    // precisely the defect (kilometres reaching the customer wearing a miles
+    // label) these two lines exist to catch. 0.2708 km is 0.17 miles and
+    // 3.0104 km is 1.87 — neither is close to its kilometre figure, so a dropped
+    // conversion cannot slip through as a rounding difference.
+    expect(screen.getByText(/^0\.2 miles/)).toBeTruthy()
+    expect(screen.getByText(/^1\.9 miles/)).toBeTruthy()
+    expect(screen.queryByText(/\bkm\b/)).toBeNull()
   })
 
   it("asks for exactly one page, with the radius the heading quotes, once per grant", async () => {
@@ -226,6 +235,12 @@ describe("NearYouRow — a granted coordinate", () => {
 
     expect(String(mockFetch.mock.calls[0][0])).toContain("/public/shops?")
     const params = requestedParams()
+    // THE WIRE STAYS METRIC. Miles are a rendering decision; 33-06's contract
+    // takes `radiusKm` and returns `distanceKm`, and the committed OpenAPI
+    // snapshot pins both. This line is what stops a future "make it all miles"
+    // tidy-up from silently sending 5 MILES to a parameter named in kilometres —
+    // which the server would accept, being a valid radius, and quietly widen the
+    // search by 61% while the copy still said 3.1 miles.
     expect(params.get("radiusKm")).toBe(String(NEAR_YOU_RADIUS_KM))
     expect(params.get("size")).toBe("8")
     // Coordinate precision is reduced before it leaves the browser: 4 dp is
@@ -242,11 +257,12 @@ describe("NearYouRow — a granted coordinate", () => {
     render(<NearYouRow serverShops={SERVER_SHOPS} />)
     await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
 
+    // The radius the customer is told about, in miles, and asserted as a LITERAL
+    // — 5 km is 3.1 miles. Deriving it from NEAR_YOU_RADIUS_KM here would make
+    // the assertion agree with whatever the copy happened to say.
     await waitFor(() =>
       expect(
-        screen.getByRole("heading", {
-          name: new RegExp(`no kitchens within ${NEAR_YOU_RADIUS_KM} km`, "i"),
-        })
+        screen.getByRole("heading", { name: /no kitchens within 3\.1 miles/i })
       ).toBeTruthy()
     )
     // Not "near you" over a list of shops that are not.
@@ -311,9 +327,9 @@ describe("NearYouRow — the exclusion disclosure (issue 460 / plan-checker B8)"
 
     const disclosure = await screen.findByText(/no location data/i)
     expect(disclosure.textContent).toMatch(/^1 kitchen has no location data/)
-    expect(disclosure.textContent).toMatch(
-      new RegExp(`1 more is further than ${NEAR_YOU_RADIUS_KM} km`)
-    )
+    // Miles here too, and as a literal for the same reason as the heading above.
+    expect(disclosure.textContent).toMatch(/1 more is further than 3\.1 miles away/)
+    expect(disclosure.textContent).not.toMatch(/\bkm\b/)
   })
 })
 

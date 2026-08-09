@@ -81,10 +81,17 @@ async function cardSlugs(page: Page): Promise<string[]> {
  * Distances shown in the row, read out of its rendered text rather than through a
  * locator. `getByText` would match the pill AND its ancestors; a regex over the
  * row's own text is unambiguous and counts every card at once.
+ *
+ * MILES, and the unit is load-bearing in this matcher rather than incidental: the
+ * API returns kilometres and the card converts, so a regression that dropped the
+ * conversion would print "3.0 km" and this returns an EMPTY array — which reds
+ * the granted arm's length assertion below. Falsified at the string level, since
+ * proving it end to end would need a deliberately broken image:
+ *   "0.2 miles away"  -> 1 match      "3.0 km away"  -> 0 matches
  */
 async function distancesShown(page: Page): Promise<string[]> {
   const text = await row(page).innerText()
-  return text.match(/\d+(\.\d)? km/g) ?? []
+  return text.match(/\d+(\.\d)? miles/g) ?? []
 }
 
 async function openLanding(page: Page) {
@@ -238,7 +245,14 @@ test.describe("landing row — device location", () => {
 
     // The honest third state. Showing London shops under a "near you" heading to
     // somebody in Manchester is the same class of untruth issue 544 exists to stop.
-    await expect(page.getByRole("heading", { name: /no kitchens within \d+ km/i })).toHaveCount(1)
+    //
+    // The radius is quoted to the customer in MILES — 3.1, being the 5 km the
+    // island actually sent. Asserted as the literal rather than as `\d+ miles`:
+    // a loose digit class would accept "5 miles", i.e. the kilometre figure with
+    // the unit swapped, which is the one wrong answer that looks most right.
+    await expect(
+      page.getByRole("heading", { name: /no kitchens within 3\.1 miles/i })
+    ).toHaveCount(1)
     await expect(nearYouHeading(page)).toHaveCount(0)
     // ...and the visitor is not punished for being far away.
     expect(await cardSlugs(page)).toEqual(unlocated)

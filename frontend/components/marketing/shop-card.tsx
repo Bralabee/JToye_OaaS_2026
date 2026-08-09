@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { SafeImage } from "@/components/ui/safe-image"
+import { formatMiles } from "@/lib/distance"
 import type { PublicShop } from "@/types/storefront"
 
 /**
@@ -41,18 +42,19 @@ function pounds(pennies: number): string {
 }
 
 /**
- * Distance, as the database computed it (33-06 `distanceKm`) — never recomputed
- * here, so the figure on the card is always the figure the ordering used.
+ * Distance is printed in MILES, converted from the `distanceKm` the database
+ * computed (33-06) by `lib/distance` and never recomputed here — so the figure on
+ * the card remains a unit conversion of the exact number the ordering used, not a
+ * second opinion about it.
  *
- * One decimal below 10 km, whole kilometres above. Deliberately NOT metres:
- * coordinates are POSTCODE CENTROIDS accurate to about 100 m (33-02's D-1
- * trade-off), so "270 m" would advertise a precision the data does not have —
- * the same class of invented certainty the invented ratings this card removed
- * were. "0.3 km" is honest at that resolution.
+ * Miles because the customer is in the UK, where road distance is signed in
+ * miles and every delivery app they already use prints them. Required at 33-07's
+ * human-verification gate; the wire format is untouched and still metric. The
+ * rounding rule and its ~100 m postcode-centroid justification live with the
+ * conversion in `lib/distance.ts`.
+ *
+ * @see lib/distance.ts
  */
-export function formatDistanceKm(km: number): string {
-  return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`
-}
 
 /**
  * `tags` arrives as a single free-text field, not an array. Split, trim and cap
@@ -102,10 +104,16 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
             after a permission grant; a distance rendered in the flow would add
             a line to every card and push everything below the row down. Out of
             flow, the located and unlocated cards are byte-identical in height,
-            so the upgrade cannot shift the page at all. */}
+            so the upgrade cannot shift the page at all. Switching the unit to
+            miles changed the STRING only — the element, its positioning and its
+            reserved space are untouched, so the post-grant vertical-shift budget
+            in e2e/landing-webperf.spec.ts still holds for the same reason. */}
         {shop.distanceKm != null && (
           <span className="absolute right-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold text-oxblood shadow-sm ring-1 ring-cream-100">
-            {formatDistanceKm(shop.distanceKm)}
+            {formatMiles(shop.distanceKm)}
+            {/* Spelled out rather than abbreviated: a screen reader pronounces a
+                two-letter unit as a word, and "point two my away" is not a
+                distance. The pill has room for it at 375px. */}
             <span className="sr-only"> away</span>
           </span>
         )}
