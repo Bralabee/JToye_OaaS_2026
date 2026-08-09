@@ -55,4 +55,93 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
            countQuery = "SELECT COUNT(*) FROM shops WHERE published = true AND search_vector @@ plainto_tsquery('english', :q)",
            nativeQuery = true)
     Page<Shop> fullTextSearchPublished(@Param("q") String query, Pageable pageable);
+
+    // ==========================================================================================
+    // Distance-ordered public discovery (33-06 / #460 link 5)
+    // ==========================================================================================
+    //
+    // WHY asin AND NOT acos. The spherical law of cosines —
+    // acos(sin*sin + cos*cos*cos(dLon)) — is the form usually reached for and it has a real
+    // failure mode: for two nearly identical points, floating-point rounding pushes acos's
+    // argument to 1.0000000000000002 and PostgreSQL raises "ERROR: input is out of range".
+    // The input that triggers it is a customer standing on the shop's own postcode centroid,
+    // which any anonymous caller can send — i.e. an unauthenticated 500. The asin haversine
+    // below is well-conditioned for small separations and returns 0 for coincident points.
+    // If acos is ever reintroduced it MUST be wrapped LEAST(1.0, GREATEST(-1.0, ...)).
+    //
+    // WHY THE BOUNDING BOX. Measured on the live database: sin, cos, acos and radians are all
+    // proleakproof = f, while float8lt/le/ge/gt/eq are proleakproof = t. Under a row-security
+    // barrier PostgreSQL will not push a non-leakproof user qual beneath the policy, so a
+    // haversine expression can never be an index qual — the same mechanism V44 documents for
+    // ts_match_vq. The float8 comparisons CAN sit below the barrier and use the partial
+    // shops(latitude, longitude) btree from V61. The box is computed in Java by
+    // GeoBounds.boxAround and passed as four more NAMED parameters; it is deliberately larger
+    // than the circle (a box slightly too small silently drops shops that really are inside the
+    // radius, and that failure has no symptom beyond "the nearest kitchen never appears").
+    //
+    // WHY THE RADIUS PREDICATE IS ALSO HERE. A box contains its circle, so a shop at the corner
+    // of the box is r*sqrt(2) away and must still be excluded. The exact test therefore runs on
+    // the survivors of the prefilter, in a derived table so the expression is written ONCE —
+    // repeating it in the WHERE clause would let the ordering formula and the filtering formula
+    // drift apart.
+    //
+    // WHY published = true IS IN THE COUNT QUERY TOO. A count that omits it leaks the existence
+    // of unpublished shops through totalElements while the page content stays correct
+    // (T-33-06-03). That is invisible to any assertion that only inspects content, so
+    // PublicStorefrontDistanceIntegrationTest asserts the total separately.
+    //
+    // 6371.0088 is the IUGG mean Earth radius and is the SAME constant as
+    // GeoBounds.EARTH_RADIUS_KM, so the prefilter and the exact test agree about what "5 km"
+    // means. The secondary ORDER BY on id makes paging deterministic when two shops are
+    // equidistant; without it, page 2 can repeat or skip a row.
+    //
+    // Every value is a NAMED JPA parameter. Nothing is concatenated into this SQL, and no
+    // client-supplied Sort is threaded into it — the endpoint fixes its own ordering (T-33-06-01,
+    // T-33-06-02).
+    @Query(value = """
+            SELECT d.id AS id, d.slug AS slug, d.distance_km AS distance_km
+              FROM (
+                SELECT s.id AS id,
+                       s.slug AS slug,
+                       2 * 6371.0088 * asin(sqrt(
+                           power(sin(radians(s.latitude - :lat) / 2), 2)
+                         + cos(radians(:lat)) * cos(radians(s.latitude))
+                         * power(sin(radians(s.longitude - :lon) / 2), 2)
+                       )) AS distance_km
+                  FROM shops s
+                 WHERE s.published = true
+                   AND s.latitude IS NOT NULL
+                   AND s.longitude IS NOT NULL
+                   AND s.latitude  BETWEEN :latMin AND :latMax
+                   AND s.longitude BETWEEN :lonMin AND :lonMax
+              ) d
+             WHERE d.distance_km <= :radiusKm
+             ORDER BY d.distance_km ASC, d.id ASC
+            """,
+           countQuery = """
+            SELECT COUNT(*)
+              FROM (
+                SELECT 2 * 6371.0088 * asin(sqrt(
+                           power(sin(radians(s.latitude - :lat) / 2), 2)
+                         + cos(radians(:lat)) * cos(radians(s.latitude))
+                         * power(sin(radians(s.longitude - :lon) / 2), 2)
+                       )) AS distance_km
+                  FROM shops s
+                 WHERE s.published = true
+                   AND s.latitude IS NOT NULL
+                   AND s.longitude IS NOT NULL
+                   AND s.latitude  BETWEEN :latMin AND :latMax
+                   AND s.longitude BETWEEN :lonMin AND :lonMax
+              ) d
+             WHERE d.distance_km <= :radiusKm
+            """,
+           nativeQuery = true)
+    Page<ShopWithDistance> findPublishedNear(@Param("lat") double latitude,
+                                            @Param("lon") double longitude,
+                                            @Param("latMin") double minLatitude,
+                                            @Param("latMax") double maxLatitude,
+                                            @Param("lonMin") double minLongitude,
+                                            @Param("lonMax") double maxLongitude,
+                                            @Param("radiusKm") double radiusKm,
+                                            Pageable pageable);
 }

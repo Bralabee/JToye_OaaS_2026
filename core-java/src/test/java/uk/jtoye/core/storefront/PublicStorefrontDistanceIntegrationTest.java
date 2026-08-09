@@ -209,9 +209,9 @@ class PublicStorefrontDistanceIntegrationTest {
         // tenant filter were added to this path the list would collapse to one tenant's shops and
         // the ordering assertion above would fail for a reason that looks like a distance bug.
         List<UUID> tenantIds = jdbc.queryForList(
-                "SELECT tenant_id FROM shops WHERE slug IN (?, ?, ?)", UUID.class, NEAR, MID, FAR);
+                "SELECT DISTINCT tenant_id FROM shops WHERE slug IN (?, ?, ?)", UUID.class, NEAR, MID, FAR);
         assertThat(tenantIds).as("the three ordered shops must not all belong to one tenant")
-                .containsOnlyOnce(tenantA, tenantB);
+                .containsExactlyInAnyOrder(tenantA, tenantB);
     }
 
     @Test
