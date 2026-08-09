@@ -159,6 +159,12 @@ export const LANDING_BUNDLE_CEILING_BYTES =
  *     prev  x=136  y=443.234375  height=216
  *     cur   x= 16  y=443.234375  height=216
  *
+ * (The card's text is quoted exactly as the probe read it. The distance pill was
+ * relabelled from kilometres to MILES later the same day, at 33-07's human gate,
+ * so that card now reads "0.2 miles away" — a string change inside an absolutely
+ * positioned element, which is why the measurement above still describes the
+ * current build. The record is left as measured rather than retro-fitted.)
+ *
  * A card moving 120 px HORIZONTALLY with its y and its height unchanged to the
  * fractional pixel. That is the reorder — the entire point of the feature, asked
  * for by the visitor a moment earlier. A budget that reds on it would be a budget

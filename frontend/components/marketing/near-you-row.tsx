@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Loader2, LocateFixed } from "lucide-react"
 import { DishScroller } from "@/components/marketing/dish-scroller"
 import { ShopCard } from "@/components/marketing/shop-card"
+import { formatMiles } from "@/lib/distance"
 import type { PageResponse } from "@/types/api"
 import type { PublicShop } from "@/types/storefront"
 
@@ -30,7 +31,7 @@ import type { PublicShop } from "@/types/storefront"
  *
  *   no coordinate (initial, AND after a denial)  "Kitchens on J'Toye"
  *   coordinate held, shops inside the radius     "Kitchens near you"
- *   coordinate held, nothing inside the radius   "No kitchens within N km —
+ *   coordinate held, nothing inside the radius   "No kitchens within N miles —
  *                                                 here is everything on J'Toye"
  *
  * The third state is not optional. Showing the full list under a "near you"
@@ -78,15 +79,27 @@ import type { PublicShop } from "@/types/storefront"
  */
 
 /**
- * The radius asked for, in kilometres, and the number the heading quotes.
+ * The radius asked for, in kilometres — the unit the API takes.
  *
  * Declared here and SENT on the request rather than letting the server apply its
- * own default, because the empty-state heading names it: a UI that says "nothing
- * within 5 km" while the query used some other radius is telling the visitor
- * something untrue about their own result set. 33-06's ceiling is 50 km and a
- * request past it is refused rather than clamped, so this must stay under it.
+ * own default, because the empty-state heading names it: a UI that quotes one
+ * radius while the query used another is telling the visitor something untrue
+ * about their own result set. 33-06's ceiling is 50 km and a request past it is
+ * refused rather than clamped, so this must stay under it.
  */
 export const NEAR_YOU_RADIUS_KM = 5
+
+/**
+ * The SAME radius as the customer reads it, in miles — derived, never a second
+ * literal, so the number in the copy cannot drift from the number in the query.
+ *
+ * It renders as "3.1 miles" rather than a tidier "3 miles" on purpose. 3 miles
+ * is 4.83 km, which is not the radius that was applied, and a rounder number is
+ * not worth telling a visitor their result set was filtered by something it was
+ * not. If a whole number is ever wanted here, change the RADIUS to one that
+ * converts cleanly and send that — do not round the label.
+ */
+const NEAR_YOU_RADIUS_TEXT = formatMiles(NEAR_YOU_RADIUS_KM)
 
 /** How many shops the located query asks for — matched to `page.tsx`'s server call. */
 const PAGE_SIZE = 8
@@ -177,7 +190,7 @@ export function NearYouRow({ serverShops }: { serverShops: PublicShop[] }) {
   const heading = located
     ? "Kitchens near you"
     : phase === "empty"
-      ? `No kitchens within ${NEAR_YOU_RADIUS_KM} km — here is everything on J'Toye`
+      ? `No kitchens within ${NEAR_YOU_RADIUS_TEXT} — here is everything on J'Toye`
       : "Kitchens on J'Toye"
 
   const unranked = located ? withoutCoordinates(serverShops) : []
@@ -276,7 +289,7 @@ export function NearYouRow({ serverShops }: { serverShops: PublicShop[] }) {
                   ? "1 kitchen has no location data yet, so it is not ranked here"
                   : `${unranked.length} kitchens have no location data yet, so they are not ranked here`}
                 {beyondRadius > 0 &&
-                  `, and ${beyondRadius} more ${beyondRadius === 1 ? "is" : "are"} further than ${NEAR_YOU_RADIUS_KM} km away`}
+                  `, and ${beyondRadius} more ${beyondRadius === 1 ? "is" : "are"} further than ${NEAR_YOU_RADIUS_TEXT} away`}
                 .{" "}
                 <Link href="/shop" className="font-semibold text-amber-700 underline hover:text-amber-800">
                   See every kitchen
@@ -287,7 +300,7 @@ export function NearYouRow({ serverShops }: { serverShops: PublicShop[] }) {
             {located && unranked.length === 0 && beyondRadius > 0 && (
               <>
                 {beyondRadius} more {beyondRadius === 1 ? "kitchen is" : "kitchens are"} further than{" "}
-                {NEAR_YOU_RADIUS_KM} km away.{" "}
+                {NEAR_YOU_RADIUS_TEXT} away.{" "}
                 <Link href="/shop" className="font-semibold text-amber-700 underline hover:text-amber-800">
                   See every kitchen
                 </Link>
