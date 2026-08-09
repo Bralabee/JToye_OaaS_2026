@@ -1,12 +1,14 @@
 ---
 phase: 33-the-consumer-product
 verified: 2026-08-09T10:12:06Z
-status: gaps_found
-score: 3/6 roadmap success criteria verified (CUST-01 x2, CUST-03 x1); 3 failed (CUST-02 x2, CUST-04 x1)
-overrides_applied: 0
+status: passed
+score: 3/6 roadmap success criteria verified (CUST-01 x2, CUST-03 x1); 3 deferred by owner override (CUST-02 x2, CUST-04 x1)
+overrides_applied: 3
+override_authority: "Owner (Sanmi), 2026-08-09, in-session response to this report: 'accept the deferrals'"
 gaps:
   - truth: "Onboarding has no two-actor dead-end — MANUAL_REVIEW appears on a surface a human can act from, OR a recorded decision names who adjudicates it (roadmap SC-3 / CUST-02)"
-    status: failed
+    status: deferred
+    override: "Accepted as intentionally deferred by the owner, 2026-08-09 (extends D-2). The unresolved substance — naming a MANUAL_REVIEW adjudicator — is routed to the next phase's decision queue, not silently dropped."
     reason: "D-2 (CONTEXT.md, dated 2026-08-08, owner-approved before execution) explains why no code was shipped for #453 — it rejects tenant GROUP_ADMIN self-review and a new cross-tenant operator identity — but it does not name who adjudicates a stalled MANUAL_REVIEW onboarding. The roadmap's own SC-3 requires one of two limbs; neither is met. This is not a SUMMARY overclaim — REQUIREMENTS.md and 33-07-SUMMARY.md both state it plainly and the phase's own ROADMAP scope note calls it 'one gap escalated rather than silently absorbed.'"
     artifacts:
       - path: ".planning/phases/33-the-consumer-product/CONTEXT.md"
@@ -14,7 +16,8 @@ gaps:
     missing:
       - "A named adjudicator (person, role, or process) for MANUAL_REVIEW onboarding stalls, or an actionable surface a human can act from"
   - truth: "A signed-in customer sees only what applies to them: tracking moves into the profile and auto-populates, second-shop onboarding and staff invite exist (roadmap SC-4, rewritten form / CUST-02)"
-    status: failed
+    status: deferred
+    override: "Accepted as intentionally deferred by the owner, 2026-08-09 (per D-3). /profile + #458 dispatch half + #452 second-shop/staff-invite remain open backlog items for a future phase."
     reason: "The nav-gating half (For operators / Track order gated behind session state) shipped before this phase (b9f80f81, 96d8432f) and is confirmed live in frontend/components/public/public-header.tsx — that part is not a gap. But no /profile route exists anywhere under frontend/app, so order tracking has not moved into a customer profile, and #452's second-shop onboarding / staff-invite paths were not built. Both are out of scope per D-3, and REQUIREMENTS.md records CUST-02 as 'not closed' rather than claiming this shipped."
     artifacts:
       - path: "frontend/app"
@@ -23,7 +26,8 @@ gaps:
       - "A /profile route with auto-populated order tracking (#458 dispatch half)"
       - "Second-shop onboarding path and staff-invite flow (#452)"
   - truth: "The customer-facing surface has been reviewed against what it actually renders: a look-and-feel pass on web and mobile, Keycloak stops shipping the stock theme on both realms, and the staff screen gains bulk-revoke of JIT-provisioned rows (roadmap SC-6 / CUST-04)"
-    status: failed
+    status: deferred
+    override: "Accepted as intentionally deferred by the owner, 2026-08-09 (per D-3). Recorded as never-measured, not clean — the look-and-feel pass, Keycloak themes, and staff bulk-revoke carry to a future phase."
     reason: "Confirmed by an empty file-diff: no theme file and no staff bulk-revoke file was touched anywhere across the phase's full commit range (main..phase/33-the-consumer-product). This was never measured, per D-3 scope and the roadmap's own decay-audit correction ('SC-6 was NOT measured'). REQUIREMENTS.md correctly records CUST-04 as 'Unknown, not clean' rather than implying it is fine — the distinction the requirement itself insists on."
     artifacts:
       - path: "infra/keycloak"
@@ -42,8 +46,18 @@ gaps:
 are buying, sign up safely, and be shown something true.
 **Requirements:** CUST-01, CUST-02, CUST-03, CUST-04
 **Verified:** 2026-08-09T10:12:06Z
-**Status:** gaps_found
+**Status:** passed (3 gaps deferred by owner override)
 **Re-verification:** No — initial verification
+
+## Owner overrides (2026-08-09)
+
+The owner reviewed this report in-session and accepted all three CUST-02/CUST-04 gaps as
+**intentionally deferred**, extending the dated D-2/D-3 scope decisions (CONTEXT.md, 2026-08-08)
+that produced them. Nothing is reclassified as done: REQUIREMENTS.md continues to record CUST-02
+as open and CUST-04 as never-measured. The single substantive loose end — **who adjudicates a
+MANUAL_REVIEW onboarding stall** — is explicitly carried forward as a decision item for the next
+phase, alongside the deferred /profile route (#458), second-shop/staff-invite (#452), Keycloak
+themes, and staff bulk-revoke.
 
 ## Summary judgement
 
