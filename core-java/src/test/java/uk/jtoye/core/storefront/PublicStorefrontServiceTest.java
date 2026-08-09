@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.finance.VatRate;
@@ -982,6 +983,187 @@ class PublicStorefrontServiceTest {
             verify(shopRepository, never()).findPublishedNear(
                     anyDouble(), anyDouble(), anyDouble(), anyDouble(),
                     anyDouble(), anyDouble(), anyDouble(), any());
+        }
+    }
+
+    /**
+     * WR-03 — a misconfigured platform radius must be a LOUD failure, never a page that states the
+     * opposite of what the server did.
+     *
+     * <p>The defect these arms close, restated so they cannot be weakened without noticing: the
+     * {@code ?lat=&lon=} path validated its radius even when it was the platform default, and the
+     * postcode tier did not. With {@code GEO_DEFAULT_RADIUS_KM=0} the two disagreed about the same
+     * value — {@code ?lat=51.47&lon=-0.07} was a typed 400, while {@code ?q=SE22} was
+     * <strong>HTTP 200 with an empty page</strong> carrying
+     * {@code proximity; postcode=SE22; precision=district; radiusKm=0.0}. The storefront's parser
+     * correctly rejects {@code radiusKm <= 0} and degrades to {@code text}, so the customer was
+     * shown {@code No kitchens match "SE22"} over results that HAD been proximity-filtered and
+     * from which text-matching kitchens had been excluded. One environment variable, no error, no
+     * log, and the exact "row lying about itself" class 33-09 exists to close.
+     */
+    @Nested
+    @DisplayName("WR-03: the platform radius is validated, so a bad one cannot produce a page that lies")
+    class PlatformRadiusValidation {
+
+        /** A service built with an arbitrary geo configuration; everything else is the shared mocks. */
+        private PublicStorefrontService serviceWithRadii(double defaultRadiusKm, double maxRadiusKm) {
+            return new PublicStorefrontService(shopRepository, productRepository, orderRepository,
+                    eventPublisher, entityManager, paymentService, promotionRepository,
+                    announcementRepository, postcodeGeocoder, defaultRadiusKm, maxRadiusKm);
+        }
+
+        @Test
+        @DisplayName("CONTROL: the SHIPPED configuration (5 km / 50 km) constructs — the guard can pass")
+        void theShippedConfigurationConstructsCleanly() {
+            // Non-vacuity. Every arm below asserts a throw; without this one they would all still
+            // pass if the guard rejected everything, including the values application.yml ships.
+            assertNotNull(serviceWithRadii(5.0, 50.0));
+        }
+
+        @Test
+        @DisplayName("FAIL DIRECTION: GEO_DEFAULT_RADIUS_KM=0 refuses to start — never a 200 carrying radiusKm=0.0")
+        void aZeroPlatformRadiusRefusesToStart() {
+            // THE row from the finding's table. Before the fix this value constructed happily and
+            // was discovered by a customer; now it is a BeanCreationException at boot, which is
+            // strictly louder than the 500 the query-input layer would raise.
+            MisconfiguredPlatformRadiusException ex = assertThrows(
+                    MisconfiguredPlatformRadiusException.class, () -> serviceWithRadii(0.0, 50.0));
+
+            assertTrue(ex.getMessage().contains("jtoye.geo.default-radius-km"),
+                    "the message must name the config key an operator has to change: " + ex.getMessage());
+        }
+
+        @Test
+        @DisplayName("FAIL DIRECTION: a negative platform radius refuses to start")
+        void aNegativePlatformRadiusRefusesToStart() {
+            // Previously reached GeoBounds.boxAround, which threw IllegalArgumentException — a 400
+            // blaming the caller for an operator's environment variable.
+            assertThrows(MisconfiguredPlatformRadiusException.class, () -> serviceWithRadii(-1.0, 50.0));
+        }
+
+        @Test
+        @DisplayName("FAIL DIRECTION: a non-finite platform radius refuses to start")
+        void aNonFinitePlatformRadiusRefusesToStart() {
+            // NaN passes every range comparison (IEEE-754 comparisons with NaN are all false), so
+            // a bare `<= 0 || > max` pair would let it through to the query.
+            assertThrows(MisconfiguredPlatformRadiusException.class,
+                    () -> serviceWithRadii(Double.NaN, 50.0));
+            assertThrows(MisconfiguredPlatformRadiusException.class,
+                    () -> serviceWithRadii(Double.POSITIVE_INFINITY, 50.0));
+        }
+
+        @Test
+        @DisplayName("FAIL DIRECTION: a default above the ceiling refuses to start — the 500 km row")
+        void aPlatformRadiusAboveTheCeilingRefusesToStart() {
+            // The finding's third row: ?lat=&lon= refused 500 km with a typed 400 naming the
+            // ceiling, while ?q=SE22 quietly returned 500 km of results.
+            MisconfiguredPlatformRadiusException ex = assertThrows(
+                    MisconfiguredPlatformRadiusException.class, () -> serviceWithRadii(500.0, 50.0));
+
+            assertTrue(ex.getMessage().contains("jtoye.geo.max-radius-km"),
+                    "the message must name the ceiling it exceeded: " + ex.getMessage());
+        }
+
+        @Test
+        @DisplayName("FAIL DIRECTION: a non-finite CEILING refuses to start, or the ceiling stops existing")
+        void aNonFiniteCeilingRefusesToStart() {
+            // GEO_MAX_RADIUS_KM is as operator-settable as the default. With a NaN ceiling every
+            // `radiusKm > maxRadiusKm` is false, so the ceiling silently stops applying rather
+            // than failing — the worst shape of all, because nothing reports it.
+            assertThrows(MisconfiguredPlatformRadiusException.class,
+                    () -> serviceWithRadii(5.0, Double.NaN));
+            assertThrows(MisconfiguredPlatformRadiusException.class,
+                    () -> serviceWithRadii(5.0, 0.0));
+        }
+
+        @Test
+        @DisplayName("a misconfigured radius is NOT an IllegalArgumentException — it must not render as a 400")
+        void theFailureIsNotRenderedAsTheCallersFault() {
+            // The type is the contract. GlobalExceptionHandler maps IllegalArgumentException to a
+            // 400 carrying ex.getMessage(), which would blame an anonymous customer for an
+            // operator's env var AND echo internal config-key names back to them. This type maps
+            // to 500 with a generic detail instead — the precedent MissingTenantContextException
+            // set for exactly this mistake.
+            Throwable ex = assertThrows(MisconfiguredPlatformRadiusException.class,
+                    () -> serviceWithRadii(0.0, 50.0));
+
+            assertFalse(ex instanceof IllegalArgumentException,
+                    "must not inherit the 400 handler that blames the caller");
+            assertTrue(ex instanceof IllegalStateException,
+                    "kept as an IllegalStateException so existing catch sites still work");
+        }
+
+        @Test
+        @DisplayName("THE FINDING ITSELF: the lat/lon path and the platform path now agree about every radius")
+        void theTwoRadiusPathsAgreeAboutEveryValue() {
+            // WR-03 is not "a value was unvalidated", it is "the two paths DISAGREED about the
+            // same bad value". So this asserts agreement directly, across the whole table and
+            // both directions: for every radius, the caller-supplied path accepts it if and only
+            // if the platform path does. A future tightening of either side alone fails here.
+            lenient().when(shopRepository.findPublishedNear(anyDouble(), anyDouble(), anyDouble(),
+                            anyDouble(), anyDouble(), anyDouble(), anyDouble(), any()))
+                    .thenReturn(new PageImpl<>(List.of()));
+
+            PublicStorefrontService svc = serviceWithRadii(5.0, 50.0);
+
+            for (double candidate : new double[]{
+                    0.0, -1.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY,
+                    0.0001, 1.0, 5.0, 50.0, 50.0001, 500.0, 100000.0}) {
+
+                boolean callerPathRejects = false;
+                try {
+                    svc.listPublishedShopsNear(51.47, -0.07, candidate, PageRequest.of(0, 20));
+                } catch (RuntimeException e) {
+                    callerPathRejects = true;
+                }
+
+                boolean platformPathRejects = false;
+                try {
+                    PublicStorefrontService.requireUsableRadius(candidate, 50.0);
+                } catch (MisconfiguredPlatformRadiusException e) {
+                    platformPathRejects = true;
+                }
+
+                assertEquals(callerPathRejects, platformPathRejects,
+                        "the two paths must agree about radius " + candidate
+                                + " — a divergence here IS the WR-03 defect");
+            }
+        }
+
+        @Test
+        @DisplayName("CONTROL: the agreement arm is decisive — it rejects some values and accepts others")
+        void theAgreementArmIsNotVacuous() {
+            // Without this, theTwoRadiusPathsAgreeAboutEveryValue would still pass if BOTH paths
+            // accepted everything (the pre-fix postcode tier's behaviour, applied to both).
+            assertThrows(MisconfiguredPlatformRadiusException.class,
+                    () -> PublicStorefrontService.requireUsableRadius(0.0, 50.0));
+            assertDoesNotThrow(() -> PublicStorefrontService.requireUsableRadius(5.0, 50.0));
+        }
+
+        @Test
+        @DisplayName("a proximity answer never carries a radius the parser would reject as not-a-proximity")
+        void theEmittedInterpretationCarriesAUsableRadius() {
+            // The last link in the chain the finding traced: whatever radius reaches the header
+            // must be one frontend/lib/search-interpretation.ts accepts, or the page silently
+            // states "No kitchens match" over proximity-filtered results.
+            UUID shopId = publishedShop.getId();
+            when(postcodeGeocoder.locateSearchTerm("SE22")).thenReturn(Optional.of(
+                    new PostcodeGeocoder.LocatedPostcode(
+                            new PostcodeGeocoder.Coordinate(51.454445, -0.072403),
+                            "SE22", PostcodeGeocoder.Precision.DISTRICT)));
+            when(shopRepository.findPublishedNear(anyDouble(), anyDouble(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(), anyDouble(), any()))
+                    .thenReturn(new PageImpl<>(List.of(projection(shopId, "test-shop-abc12345", 1.5))));
+            when(shopRepository.findAllById(List.of(shopId))).thenReturn(List.of(publishedShop));
+
+            PublicStorefrontService.SearchOutcome outcome =
+                    serviceWithRadii(5.0, 50.0).searchPublishedShops("SE22", PageRequest.of(0, 20));
+
+            assertEquals(SearchInterpretation.Kind.PROXIMITY, outcome.interpretation().kind());
+            assertTrue(outcome.interpretation().radiusKm() > 0.0,
+                    "radiusKm <= 0 is exactly what the storefront parser degrades to text on");
+            assertTrue(outcome.interpretation().headerValue().startsWith("proximity; "),
+                    "a proximity page must state proximity: " + outcome.interpretation().headerValue());
         }
     }
 

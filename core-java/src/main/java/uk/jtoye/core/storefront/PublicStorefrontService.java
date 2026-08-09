@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.geo.GeoBounds;
@@ -101,6 +102,12 @@ public class PublicStorefrontService {
      * missing key invisible — the recorded failure mode where eight outbox tunables were bound by
      * {@code @Value} defaults, appeared in no yml, and could only be changed by rebuilding the
      * image. If the key goes missing the context must fail to start, loudly.
+     *
+     * <p><strong>And a PRESENT key can be as wrong as a missing one (WR-03).</strong> These are
+     * {@code ${GEO_DEFAULT_RADIUS_KM:5}} / {@code ${GEO_MAX_RADIUS_KM:50}} — operator-tunable
+     * environment variables — so the constructor validates the pair on the same principle: an
+     * unusable radius fails the context, it does not wait for a customer to find it. See
+     * {@link #requireUsableRadius}.
      */
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
@@ -122,8 +129,48 @@ public class PublicStorefrontService {
         this.promotionRepository = promotionRepository;
         this.announcementRepository = announcementRepository;
         this.postcodeGeocoder = postcodeGeocoder;
+        // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
+        // BeanCreationException at boot, rather than only where it becomes a query input. The
+        // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
+        // genuine proximity-filtered page carrying `radiusKm=0.0`, which the storefront's parser
+        // then correctly rejected and rendered as `No kitchens match "SE22"` — a page stating the
+        // opposite of what the server did, from one environment variable.
+        requireUsableRadius(defaultRadiusKm, maxRadiusKm);
         this.defaultRadiusKm = defaultRadiusKm;
         this.maxRadiusKm = maxRadiusKm;
+    }
+
+    /**
+     * The single definition of "a radius this platform can answer with", applied at BOTH the point
+     * it is configured and the point it reaches the query (WR-03).
+     *
+     * <p>{@code maxRadiusKm} is checked too, and not as decoration: it is
+     * {@code ${GEO_MAX_RADIUS_KM:50}}, so it is as operator-settable as the default. A
+     * {@code NaN} ceiling would make {@code radiusKm > maxRadiusKm} false for every input —
+     * IEEE-754 comparisons against NaN are always false — and the ceiling would silently stop
+     * existing rather than fail.
+     *
+     * <p>Package-private and static so the fail direction can be driven directly. A guard that has
+     * only ever been observed passing is not evidence.
+     *
+     * @throws MisconfiguredPlatformRadiusException if the radius is not finite, not positive, or
+     *         above a usable ceiling. Never {@code IllegalArgumentException}: this is the
+     *         operator's fault, and the generic handler renders that as a 400 blaming the caller.
+     */
+    static void requireUsableRadius(double radiusKm, double maxRadiusKm) {
+        if (!Double.isFinite(maxRadiusKm) || maxRadiusKm <= 0.0) {
+            throw new MisconfiguredPlatformRadiusException(
+                    "jtoye.geo.max-radius-km must be a finite number greater than 0, was: " + maxRadiusKm);
+        }
+        if (!Double.isFinite(radiusKm) || radiusKm <= 0.0) {
+            throw new MisconfiguredPlatformRadiusException(
+                    "jtoye.geo.default-radius-km must be a finite number greater than 0, was: " + radiusKm);
+        }
+        if (radiusKm > maxRadiusKm) {
+            throw new MisconfiguredPlatformRadiusException(
+                    "jtoye.geo.default-radius-km (" + radiusKm + ") must not exceed "
+                            + "jtoye.geo.max-radius-km (" + maxRadiusKm + ")");
+        }
     }
 
     /**
@@ -258,14 +305,25 @@ public class PublicStorefrontService {
             throw new IllegalArgumentException("'lon' must be a number between -180 and 180");
         }
 
-        double radius = radiusKm != null ? radiusKm : defaultRadiusKm;
-        if (!Double.isFinite(radius) || radius <= 0.0) {
-            throw new IllegalArgumentException("'radiusKm' must be a number greater than 0");
-        }
-        if (radius > maxRadiusKm) {
-            // Named ceiling, no clamp. The caller must learn that their request was refused.
-            throw new IllegalArgumentException(
-                    "'radiusKm' must not exceed " + maxRadiusKm);
+        // WR-03: the two branches raise DIFFERENT exception types, and that is the point. A radius
+        // the caller sent is the caller's to fix (IllegalArgumentException -> typed 400). A radius
+        // they did NOT send is the operator's (MisconfiguredPlatformRadiusException -> 500 + ERROR
+        // log, raised in nearestPublished and already refused at startup). The old single branch
+        // validated both with the caller-facing message, so a bad GEO_DEFAULT_RADIUS_KM told an
+        // anonymous customer that the 'radiusKm' they never supplied was invalid.
+        double radius;
+        if (radiusKm != null) {
+            if (!Double.isFinite(radiusKm) || radiusKm <= 0.0) {
+                throw new IllegalArgumentException("'radiusKm' must be a number greater than 0");
+            }
+            if (radiusKm > maxRadiusKm) {
+                // Named ceiling, no clamp. The caller must learn that their request was refused.
+                throw new IllegalArgumentException(
+                        "'radiusKm' must not exceed " + maxRadiusKm);
+            }
+            radius = radiusKm;
+        } else {
+            radius = defaultRadiusKm;
         }
 
         log.debug("Listing published shops by distance, radiusKm={}, page {} — coordinates deliberately not logged",
@@ -286,11 +344,25 @@ public class PublicStorefrontService {
      * uses. A second shop-mapping path would be the one quietly missing opening hours, and no
      * assertion on either path alone would see it (33-06's recorded reason).
      *
-     * <p>Callers own validation. Everything reaching here is already range-checked, and the
-     * radius is a platform value rather than a caller's.
+     * <p>Callers own COORDINATE validation. The RADIUS is validated here as well as by them, and
+     * WR-03 is why that changed. This method previously trusted its radius on the reasoning that
+     * "the radius is a platform value rather than a caller's" — but a platform value is
+     * {@code ${GEO_DEFAULT_RADIUS_KM:5}}, an environment variable, and is exactly as capable of
+     * being wrong as a caller's. The two entry points then disagreed about the same bad value:
+     * {@code ?lat=&lon=} refused {@code 0} with a typed 400 while {@code ?q=SE22} answered
+     * {@code HTTP 200} with an empty page and {@code radiusKm=0.0} in the interpretation header,
+     * which the storefront reads as "not a proximity answer" and renders as
+     * {@code No kitchens match "SE22"} — over results that WERE proximity-filtered.
      */
     private Page<PublicShopDto> nearestPublished(double latitude, double longitude,
                                                  double radiusKm, Pageable pageable) {
+        // WR-03 LAYER 2 — QUERY INPUT. Unreachable in a booted context, because the constructor
+        // refuses the same values at startup, and kept anyway: it is what makes the invariant
+        // local to the query that depends on it, so a future caller reaching here by another
+        // route cannot reintroduce the silent empty page. Loud (500 + ERROR log) rather than a
+        // clamp — a clamp would hand back a page whose header states a radius nothing applied.
+        requireUsableRadius(radiusKm, maxRadiusKm);
+
         // The box is computed HERE and passed as four more named parameters, which is what keeps
         // the prefilter leakproof and index-eligible under the RLS barrier — see the comment on
         // ShopRepository.findPublishedNear.

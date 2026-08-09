@@ -26,6 +26,7 @@ import uk.jtoye.core.exception.IncompleteLabelDataException;
 import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.LastGroupAdminException;
+import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
@@ -89,6 +90,22 @@ public class GlobalExceptionHandler {
                 HttpStatus.INTERNAL_SERVER_ERROR, "Tenant context is not established");
         problem.setTitle("Missing Tenant Context");
         problem.setType(URI.create("https://jtoye.uk/errors/missing-tenant-context"));
+        return problem;
+    }
+
+    /**
+     * WR-03: a platform radius that is not a usable query input is an OPERATOR configuration
+     * fault, so it maps to 500 — not the generic {@code IllegalStateException} 400 below, which
+     * would blame an anonymous customer for an environment variable and echo internal config-key
+     * names into their client logs. Detail stays generic; the specifics go to the ERROR log.
+     */
+    @ExceptionHandler(MisconfiguredPlatformRadiusException.class)
+    public ProblemDetail handleMisconfiguredPlatformRadius(MisconfiguredPlatformRadiusException ex) {
+        log.error("Platform distance-search radius is misconfigured: {}", ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR, "Distance search is not available");
+        problem.setTitle("Misconfigured Platform Radius");
+        problem.setType(URI.create("https://jtoye.uk/errors/misconfigured-platform-radius"));
         return problem;
     }
 
