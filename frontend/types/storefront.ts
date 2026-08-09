@@ -11,8 +11,16 @@ export interface PublicShop {
   longitude: number | null
   openingHours: Record<string, string> | null
   deliveryInfo: string | null
-  minimumOrderPennies: number
-  deliveryFeePennies: number
+  /**
+   * Both nullable ON THE WIRE (review WR-04): they are nullable Longs on
+   * PublicShopDto, and CreateShopRequest carries no delivery-fee field at all,
+   * so an API-created shop genuinely serialises `deliveryFeePennies: null`.
+   * Declaring them `number` here hid that from the compiler and let
+   * `null / 100 === 0` render "£0.00 delivery" for a fee nobody has set.
+   * null means UNKNOWN and renders nothing; only a wire `0` means free.
+   */
+  minimumOrderPennies: number | null
+  deliveryFeePennies: number | null
   freeDeliveryThresholdPennies: number | null
   tags: string | null
   // Whether checkout takes an online card payment (QA-council FIX-6 / M3).

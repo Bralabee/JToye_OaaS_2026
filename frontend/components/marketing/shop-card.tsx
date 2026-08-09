@@ -126,9 +126,23 @@ export function ShopCard({ shop }: { shop: PublicShop }) {
           <div className="mt-0.5 truncate text-xs text-slate-600">{tags.join(" · ")}</div>
         )}
 
+        {/* Review WR-04: both figures are nullable ON THE WIRE (nullable Longs,
+            and CreateShopRequest has no delivery-fee field, so an API-created
+            shop sends null). null means UNKNOWN, and an unknown fee renders
+            NOTHING — not "£0.00 delivery" (null / 100 coerces to 0) and not
+            "Free delivery" (a claim that needs a wire 0, not a null). A zero
+            minimum is a KNOWN "no minimum" and also renders nothing, matching
+            the discovery listing. The separator belongs to the pair, so it
+            only prints when the fee line before it exists. */}
         <div className="mt-2 text-sm font-semibold text-oxblood">
-          {shop.deliveryFeePennies === 0 ? "Free delivery" : `${pounds(shop.deliveryFeePennies)} delivery`}
-          <span className="font-normal text-slate-600"> · min {pounds(shop.minimumOrderPennies)}</span>
+          {shop.deliveryFeePennies != null && (
+            <>{shop.deliveryFeePennies === 0 ? "Free delivery" : `${pounds(shop.deliveryFeePennies)} delivery`}</>
+          )}
+          {shop.minimumOrderPennies != null && shop.minimumOrderPennies > 0 && (
+            <span className="font-normal text-slate-600">
+              {shop.deliveryFeePennies != null && " · "}min {pounds(shop.minimumOrderPennies)}
+            </span>
+          )}
         </div>
       </div>
     </Link>
