@@ -205,6 +205,34 @@ test.describe("Postcode-proximity search (619)", () => {
     await expect(page.getByRole("link", { name: "See every kitchen" }).first()).toBeVisible()
   })
 
+  test("D-A (owner gate, 2026-08-09): a full unit is a LOCALITY question, not a text match", async ({
+    page,
+  }) => {
+    // The ordering was flipped at the 33-09 owner gate. Before it, `SE15 5BS` returned the ONE
+    // kitchen whose address carries that string, as a text match. After it, the same input
+    // returns every kitchen near that address, distance-ordered and disclosed as proximity.
+    await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
+    await page.fill("#shop-search", "SE15 5BS")
+
+    // The server's key is space-stripped; the display formatter puts the space back.
+    await expect(page.getByText(/within 3\.1 miles of SE15 5BS/i).first()).toBeVisible({
+      timeout: 20_000,
+    })
+
+    // MORE THAN ONE. A single card would be indistinguishable from the old text answer, which
+    // returned exactly the kitchen at that address — so the count is the assertion that carries
+    // the decision, not the wording.
+    const cards = page.locator("article")
+    expect(
+      await cards.count(),
+      "a locality answer must return the NEIGHBOURS too, not just the kitchen at that address"
+    ).toBeGreaterThan(1)
+
+    const distances = (await cards.allInnerTexts()).join("\n").match(/\d+(\.\d)? miles/g) ?? []
+    console.log(`D-A flip arm: ${await cards.count()} cards, distances ${JSON.stringify(distances)}`)
+    expect(distances.length).toBeGreaterThan(0)
+  })
+
   test("CA-C(ui): a text match renders no proximity wording anywhere", async ({ page }) => {
     await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
     await page.fill("#shop-search", "Nigerian")

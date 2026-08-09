@@ -74,12 +74,18 @@ public class PublicStorefrontController {
      * accurate statement has two halves:
      *
      * <ul>
-     *   <li>a {@code q} the existing text search can answer behaves <b>exactly</b> as before —
-     *       the postcode tier runs only after both text tiers return nothing;</li>
-     *   <li>a {@code q} the text search cannot answer, which resolves to a GB postcode, is served
-     *       by proximity from that postcode's centroid, and <b>says so</b> in the
-     *       {@code X-Search-Interpretation} response header.</li>
+     *   <li>a {@code q} that resolves to a GB postcode is served by proximity from that
+     *       postcode's centroid, and <b>says so</b> in the {@code X-Search-Interpretation}
+     *       response header — <b>including</b> when a shop's own text would have matched it;</li>
+     *   <li>every other {@code q}, which is every non-postcode term and every postcode-shaped
+     *       term the dataset does not know, behaves <b>exactly</b> as before.</li>
      * </ul>
+     *
+     * <p>The ordering was reversed at the 33-09 owner gate on 2026-08-09 (<em>"Interpretation-
+     * first"</em>). It shipped in 33-08 with the postcode attempt last; the accepted cost of the
+     * flip is that a shop literally named "SE22 Kitchen" no longer wins a search for {@code SE22}
+     * unless it also sits inside the radius. See
+     * {@link PublicStorefrontService#searchPublishedShops} for the full reasoning.
      *
      * <p>The header is emitted on {@code ?q=} responses only — never on the plain listing and
      * never on the {@code lat}/{@code lon} path — because it answers "how did you read my
@@ -103,10 +109,13 @@ public class PublicStorefrontController {
                     + "maximum), nearest first, each carrying 'distanceKm'. Coordinates are postcode "
                     + "centroids (~100 m, GB only), not door-level. 'lat' and 'lon' must be supplied "
                     + "together and cannot be combined with 'q'. With no coordinate the listing is "
-                    + "name-ascending and 'distanceKm' is null. A 'q' that the text search cannot "
-                    + "answer and that resolves to a GB postcode is served by proximity from that "
-                    + "postcode's centroid instead of returning nothing; the "
-                    + "'X-Search-Interpretation' response header states which reading was applied.")
+                    + "name-ascending and 'distanceKm' is null. A 'q' that resolves to a GB "
+                    + "postcode is read as a place and served by proximity from that postcode's "
+                    + "centroid, nearest first, in preference to a text match on the same string; "
+                    + "a 'q' that is not a postcode, or is a postcode the dataset does not know "
+                    + "(Code-Point Open is GB only), is answered by the text search exactly as "
+                    + "before. The 'X-Search-Interpretation' response header states which reading "
+                    + "was applied.")
     @ApiResponse(responseCode = "200", description = "A page of published shops.",
             headers = @Header(name = SearchInterpretation.HEADER,
                     description = "How the server read 'q'. Present on ?q= responses only — absent "

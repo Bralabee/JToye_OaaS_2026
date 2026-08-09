@@ -850,12 +850,13 @@ class PublicStorefrontServiceTest {
     }
 
     @Nested
-    @DisplayName("searchPublishedShops — the third tier runs LAST, or not at all")
+    @DisplayName("searchPublishedShops — interpretation runs FIRST (D-A, flipped at the 33-09 gate)")
     class PostcodeSearchTier {
 
         @Test
-        @DisplayName("CA-A: a query the text search answers never reaches the geocoder at all")
-        void textHitNeverConsultsTheGeocoder() {
+        @DisplayName("CA-A: an ordinary food search is offered to the geocoder, declined for free, "
+                + "and answered by the text path exactly as before")
+        void textHitIsUnchangedByTheFlip() {
             when(shopRepository.fullTextSearchPublished(eq("jollof"), any()))
                     .thenReturn(new PageImpl<>(List.of(publishedShop)));
 
@@ -864,39 +865,58 @@ class PublicStorefrontServiceTest {
 
             assertEquals(SearchInterpretation.Kind.TEXT, outcome.interpretation().kind());
             assertEquals(1, outcome.page().getTotalElements());
-            // The fall-through is provable BY CONSTRUCTION, not by inspection: if the geocoder is
-            // never invoked, no postcode branch can have influenced this answer. A mere
-            // "interpretation is TEXT" assertion would still pass if tier 3 ran and lost.
-            verifyNoInteractions(postcodeGeocoder);
+
+            // THE MECHANISM ASSERTION HAD TO CHANGE WITH THE ORDERING, and it is deliberately
+            // replaced by a STRONGER one rather than deleted. Under the old third-tier ordering
+            // this read `verifyNoInteractions(postcodeGeocoder)` — "the geocoder never ran" — and
+            // that is now false by design: it runs first, for every term. What actually matters
+            // is unchanged and is asserted directly: the DISTANCE QUERY is never issued for a
+            // term that is not a postcode. A mere "interpretation is TEXT" assertion would still
+            // pass if the proximity branch had run and lost.
+            verify(postcodeGeocoder).locateSearchTerm("jollof");
             verify(shopRepository, never()).findPublishedNear(
                     anyDouble(), anyDouble(), anyDouble(), anyDouble(),
                     anyDouble(), anyDouble(), anyDouble(), any());
         }
 
         @Test
-        @DisplayName("CA-A: the LIKE fallback also wins before the geocoder is consulted")
-        void likeFallbackHitNeverConsultsTheGeocoder() {
-            when(shopRepository.fullTextSearchPublished(eq("SE22"), any()))
-                    .thenReturn(new PageImpl<>(List.of()));
-            when(shopRepository.searchPublished(eq("SE22"), any()))
+        @DisplayName("D-A FLIP: a resolvable postcode is answered as a PLACE even though the text "
+                + "search would have matched the same string")
+        void aResolvablePostcodeBeatsItsOwnTextMatch() {
+            UUID shopId = publishedShop.getId();
+            // BOTH text tiers are stubbed to MATCH. That is what makes this arm a statement about
+            // ORDERING rather than about an empty fixture: under the shipped-33-08 ordering this
+            // returned TEXT and that shop, which is precisely the behaviour the owner reversed.
+            lenient().when(shopRepository.fullTextSearchPublished(eq("SE155BS"), any()))
                     .thenReturn(new PageImpl<>(List.of(publishedShop)));
+            lenient().when(shopRepository.searchPublished(eq("SE155BS"), any()))
+                    .thenReturn(new PageImpl<>(List.of(publishedShop)));
+            when(postcodeGeocoder.locateSearchTerm("SE155BS")).thenReturn(Optional.of(
+                    new PostcodeGeocoder.LocatedPostcode(
+                            new PostcodeGeocoder.Coordinate(51.472435, -0.070047),
+                            "SE155BS", PostcodeGeocoder.Precision.UNIT)));
+            when(shopRepository.findPublishedNear(anyDouble(), anyDouble(), anyDouble(), anyDouble(),
+                    anyDouble(), anyDouble(), anyDouble(), any()))
+                    .thenReturn(new PageImpl<>(List.of(projection(shopId, "test-shop-abc12345", 0.2))));
+            when(shopRepository.findAllById(List.of(shopId))).thenReturn(List.of(publishedShop));
 
             PublicStorefrontService.SearchOutcome outcome =
-                    service.searchPublishedShops("SE22", PageRequest.of(0, 20));
+                    service.searchPublishedShops("SE155BS", PageRequest.of(0, 20));
 
-            // A shop literally NAMED "SE22 Kitchen" must still win a search for SE22 (D-A).
-            assertEquals(SearchInterpretation.Kind.TEXT, outcome.interpretation().kind());
-            verifyNoInteractions(postcodeGeocoder);
+            assertEquals(SearchInterpretation.Kind.PROXIMITY, outcome.interpretation().kind());
+            assertEquals("SE155BS", outcome.interpretation().postcode());
+            assertEquals(PostcodeGeocoder.Precision.UNIT, outcome.interpretation().precision());
+
+            // DECISIVE: neither text query was issued at all, so the answer cannot have come from
+            // one that happened to lose. Both were stubbed to win.
+            verify(shopRepository, never()).fullTextSearchPublished(eq("SE155BS"), any());
+            verify(shopRepository, never()).searchPublished(eq("SE155BS"), any());
         }
 
         @Test
-        @DisplayName("both text tiers empty + a resolvable postcode → PROXIMITY at the platform radius")
-        void emptyTextTiersFallThroughToProximity() {
+        @DisplayName("a resolvable postcode → PROXIMITY at the platform radius")
+        void resolvablePostcodeUsesThePlatformRadius() {
             UUID shopId = publishedShop.getId();
-            when(shopRepository.fullTextSearchPublished(eq("SE22"), any()))
-                    .thenReturn(new PageImpl<>(List.of()));
-            when(shopRepository.searchPublished(eq("SE22"), any()))
-                    .thenReturn(new PageImpl<>(List.of()));
             when(postcodeGeocoder.locateSearchTerm("SE22")).thenReturn(Optional.of(
                     new PostcodeGeocoder.LocatedPostcode(
                             new PostcodeGeocoder.Coordinate(51.454445, -0.072403),
@@ -926,10 +946,6 @@ class PublicStorefrontServiceTest {
         @Test
         @DisplayName("an EMPTY proximity page keeps its PROXIMITY interpretation, never downgraded to text")
         void emptyProximityPageKeepsItsInterpretation() {
-            when(shopRepository.fullTextSearchPublished(eq("SE22"), any()))
-                    .thenReturn(new PageImpl<>(List.of()));
-            when(shopRepository.searchPublished(eq("SE22"), any()))
-                    .thenReturn(new PageImpl<>(List.of()));
             when(postcodeGeocoder.locateSearchTerm("SE22")).thenReturn(Optional.of(
                     new PostcodeGeocoder.LocatedPostcode(
                             new PostcodeGeocoder.Coordinate(51.454445, -0.072403),

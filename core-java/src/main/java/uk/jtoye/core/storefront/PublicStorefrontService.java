@@ -323,33 +323,45 @@ public class PublicStorefrontService {
     }
 
     /**
-     * Search published shops by name or tags, and — only if that finds nothing — by locality
-     * (33-08 / #619).
+     * Answer a search term as a PLACE if it names one, and as text otherwise (33-08 / #619).
      *
-     * <h2>Three tiers, in this order, and the order is a product decision (D-A)</h2>
+     * <h2>Interpretation-first, and the order is a product decision (D-A)</h2>
      *
      * <ol>
+     *   <li><strong>the term read as a GB postcode</strong>, answered by distance</li>
      *   <li>ranked full-text search over {@code shops.search_vector}</li>
      *   <li>the pre-existing {@code LIKE} fallback for short queries</li>
-     *   <li><strong>NEW:</strong> the term read as a GB postcode, answered by distance</li>
      * </ol>
      *
-     * <p>Tier 3 runs <strong>only when tiers 1 and 2 both returned an empty page</strong>. That
-     * makes the old behaviour preserved by construction rather than by inspection: every query
-     * that returns results today takes a path this change does not touch, so {@code SE15 -> 2},
-     * {@code SE15 5BS -> 1} and {@code jollof -> 2} (all measured live at 33-07's gate) cannot
-     * move. It also keeps a shop literally named "SE22 Kitchen" winning a search for SE22, which
-     * is what a customer typing a shop's name expects.
+     * <p><strong>This ordering was reversed at the 33-09 owner gate on 2026-08-09.</strong> It
+     * shipped in 33-08 with the postcode attempt LAST, on the argument that every query which
+     * already returned results would then take an untouched path. The owner's verdict was
+     * <em>"Interpretation-first"</em>: a full postcode that happens to match a shop's own address
+     * is a question about a PLACE, not about that shop. {@code SE15 5BS} must return every kitchen
+     * near SE15 5BS, distance-ordered and disclosed as proximity — not only the one kitchen whose
+     * address contains that string.
      *
-     * <p><em>The rejected alternative was interpretation-first</em> — trying the postcode BEFORE
-     * the text search. It arguably gives the better answer to {@code SE15 5BS} ("every kitchen
-     * near you" rather than "the kitchen at that address"), but it silently changes three
-     * measured behaviours. The resulting inconsistency is not hidden: it is disclosed in the
-     * header, and flipping the order later is a single-statement change that every test in this
-     * class still covers. <strong>This is the open question 33-09 puts to the owner.</strong>
+     * <p>The old ordering's real defect was that a customer could not tell the two behaviours
+     * apart from the input, only from the header: {@code SE22} was a locality question because
+     * nothing matched the string, while {@code SE15 5BS} was a text question because something
+     * did. Identical-looking inputs, opposite readings, decided by data the customer cannot see.
      *
-     * <p><em>Cost, stated:</em> the centroid lookup happens only on a zero-result search, so an
-     * ordinary food search costs zero extra queries.
+     * <p><em>What this costs, stated plainly:</em> a shop literally named "SE22 Kitchen" no longer
+     * wins a search for {@code SE22} unless it also sits within the radius of the SE22 centroid.
+     * That is the accepted trade, and it is the case that separates the two orderings.
+     *
+     * <h2>The text path is byte-identical, and cheap to reach</h2>
+     *
+     * <p>{@link PostcodeGeocoder#locateSearchTerm} applies its length bound and its anchored
+     * shape test BEFORE any lookup, so a non-postcode-shaped term — every ordinary food search on
+     * the platform — returns empty having issued <strong>zero</strong> queries. Running it first
+     * therefore costs a regex, not a round trip, and the text tiers below are reached in exactly
+     * the state they were reached in before.
+     *
+     * <p>A postcode-shaped term that names no row in {@code postcode_centroid} — {@code ZZ99 9ZZ},
+     * and every Northern Ireland postcode, since Code-Point Open is GB-only — also falls through
+     * here, exactly as it did under the old ordering. The table is the authority, not the regex,
+     * so a shape match alone never produces a proximity claim.
      *
      * <h2>An empty proximity page is a real answer</h2>
      *
@@ -363,6 +375,28 @@ public class PublicStorefrontService {
      */
     public SearchOutcome searchPublishedShops(String query, Pageable pageable) {
         log.debug("Searching published shops: '{}'", query);
+
+        // TIER 1 — INTERPRETATION FIRST (D-A, flipped at the 33-09 owner gate). Cheap for a
+        // non-postcode term: the length bound and the anchored shape test both run before any
+        // lookup, so an ordinary food search issues no query here at all.
+        Optional<PostcodeGeocoder.LocatedPostcode> located = postcodeGeocoder.locateSearchTerm(query);
+        if (located.isPresent()) {
+            PostcodeGeocoder.LocatedPostcode postcode = located.get();
+            // Kind and page only. The coordinate is derived from the customer's postcode and is
+            // not logged here, for the same reason a device coordinate is not logged on the
+            // lat/lon path.
+            log.debug("Search interpreted as PROXIMITY at {} precision, page {} — "
+                            + "coordinates deliberately not logged",
+                    postcode.precision(), pageable.getPageNumber());
+
+            return new SearchOutcome(
+                    nearestPublished(postcode.coordinate().latitude(), postcode.coordinate().longitude(),
+                            defaultRadiusKm, pageable),
+                    SearchInterpretation.proximity(postcode.key(), postcode.precision(), defaultRadiusKm));
+        }
+
+        // TIER 2 + 3 — the pre-existing text path, unchanged. Reached by every non-postcode term
+        // and by every postcode-shaped term the dataset does not know.
         // Use full-text search for ranked results; fall back to LIKE for short queries
         if (query != null && query.length() >= 2) {
             // Use unsorted Pageable for native queries — ts_rank handles ordering
@@ -373,32 +407,9 @@ public class PublicStorefrontService {
             }
         }
 
-        Page<PublicShopDto> textResults = shopRepository.searchPublished(query, pageable)
-                .map(this::toPublicShopDto);
-        if (textResults.hasContent()) {
-            return new SearchOutcome(textResults, SearchInterpretation.text());
-        }
-
-        // TIER 3. Reached only when the text search found nothing at all.
-        Optional<PostcodeGeocoder.LocatedPostcode> located = postcodeGeocoder.locateSearchTerm(query);
-        if (located.isEmpty()) {
-            // Not a postcode, or a postcode outside Code-Point Open (Northern Ireland is the
-            // common real case). The honest answer is the empty text page — never a proximity
-            // claim on a branch that did not apply one.
-            return new SearchOutcome(textResults, SearchInterpretation.text());
-        }
-
-        PostcodeGeocoder.LocatedPostcode postcode = located.get();
-        // Kind and page only. The coordinate is derived from the customer's postcode and is not
-        // logged here, for the same reason a device coordinate is not logged on the lat/lon path.
-        log.debug("Search interpreted as PROXIMITY at {} precision, page {} — "
-                        + "coordinates deliberately not logged",
-                postcode.precision(), pageable.getPageNumber());
-
         return new SearchOutcome(
-                nearestPublished(postcode.coordinate().latitude(), postcode.coordinate().longitude(),
-                        defaultRadiusKm, pageable),
-                SearchInterpretation.proximity(postcode.key(), postcode.precision(), defaultRadiusKm));
+                shopRepository.searchPublished(query, pageable).map(this::toPublicShopDto),
+                SearchInterpretation.text());
     }
 
     /**

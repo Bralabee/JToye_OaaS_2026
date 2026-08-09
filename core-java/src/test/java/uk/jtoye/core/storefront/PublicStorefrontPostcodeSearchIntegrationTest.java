@@ -132,10 +132,20 @@ class PublicStorefrontPostcodeSearchIntegrationTest {
 
     // ---- Shop fixtures -----------------------------------------------------------------
 
-    // NO fixture name or slug may contain "se22", "se15", "m1", "bt1" or any other search term
-    // used below. searchPublished is a LIKE over name and tags, and the FTS tier reads name,
-    // tags, description and address — so a shop called "postcode-se22-near" would be MATCHED BY
-    // TIER 2 and tier 3 would never run. The whole suite would then pass while measuring nothing.
+    // NO fixture name may contain "se22", "m1", "bt1" or any other search term used below —
+    // WITH ONE DELIBERATE EXCEPTION, SE15_NAMESAKE.
+    //
+    // The reason for the rule INVERTED at the 33-09 owner gate, and both halves are worth
+    // stating because the rule looks unchanged. Under the shipped-33-08 ordering a text match
+    // meant the postcode tier NEVER RAN, so a shop called "postcode-se22-near" would have made
+    // the whole suite pass while measuring nothing. Under interpretation-first a resolvable
+    // postcode is answered as a place BEFORE either text query is issued, so a text match can no
+    // longer suppress the proximity tier — but it can still pollute an exact-set assertion by
+    // arriving through the text path on the arms that genuinely take it.
+    //
+    // SE15_NAMESAKE exists precisely to be that text match, parked far outside every radius, so
+    // the flip is observable: it is what the old ordering returned for "SE15 5BS" and what the
+    // new ordering must not.
     private static final String SE22_NEAR = "dulwich-near-kitchen";
     private static final String SE22_MID = "dulwich-mid-kitchen";
     private static final String SE22_ALSO = "dulwich-third-kitchen";
@@ -145,11 +155,20 @@ class PublicStorefrontPostcodeSearchIntegrationTest {
     private static final String MCR_CENTRE = "manchester-centre-kitchen";
     private static final String MCR_BEYOND = "manchester-eastern-kitchen";
 
+    /**
+     * The kitchen whose own NAME carries the literal string "SE15 5BS" — the case that separates
+     * the two orderings (D-A). Deliberately 55 km away, so proximity can never return it and its
+     * presence in a result set can only mean the text path answered.
+     */
+    private static final String SE15_NAMESAKE = "namesake-far-kitchen";
+    private static final String SE15_NAMESAKE_NAME = "SE15 5BS Namesake Kitchen";
+
     private static final double SE22_NEAR_LAT = SE22_LAT + 1.5 / KM_PER_DEGREE_LATITUDE;
     private static final double SE22_MID_LAT = SE22_LAT + 2.0 / KM_PER_DEGREE_LATITUDE;
     private static final double SE22_ALSO_LAT = SE22_LAT + 2.5 / KM_PER_DEGREE_LATITUDE;
     private static final double SE22_BEYOND_LAT = SE22_LAT + 40.0 / KM_PER_DEGREE_LATITUDE;
     private static final double JOLLOF_LAT = SE22_LAT + 45.0 / KM_PER_DEGREE_LATITUDE;
+    private static final double SE15_NAMESAKE_LAT = SE22_LAT + 55.0 / KM_PER_DEGREE_LATITUDE;
 
     /** 5.8 km from the guarded centroid, along the drift the M11 intruder would cause. */
     private static final double MCR_BEYOND_LAT;
@@ -210,6 +229,9 @@ class PublicStorefrontPostcodeSearchIntegrationTest {
         seedShop(tenantA, JOLLOF, JOLLOF_LAT, SE22_LON, true, "Jollof House");
         seedShop(tenantA, MCR_CENTRE, M1_GUARDED_LAT, M1_GUARDED_LON, true, MCR_CENTRE);
         seedShop(tenantB, MCR_BEYOND, MCR_BEYOND_LAT, MCR_BEYOND_LON, true, MCR_BEYOND);
+        // The D-A flip's fixture: text-matchable on "SE15 5BS", and 55 km from every centroid
+        // this class seeds, so proximity cannot reach it.
+        seedShop(tenantA, SE15_NAMESAKE, SE15_NAMESAKE_LAT, SE22_LON, true, SE15_NAMESAKE_NAME);
     }
 
     private void seedCentroid(String postcode, double latitude, double longitude) {
@@ -324,6 +346,63 @@ class PublicStorefrontPostcodeSearchIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string(HEADER,
                         "proximity; postcode=SE15; precision=district; radiusKm=5.0"));
+    }
+
+    // =====================================================================================
+    // 3b. D-A, FLIPPED AT THE 33-09 OWNER GATE — a postcode is a place, not a string
+    // =====================================================================================
+
+    @Test
+    @DisplayName("D-A FLIP: 'SE15 5BS' answers with the kitchens NEAR SE15 5BS, not with the "
+            + "far-away kitchen whose own name carries that string")
+    void aFullUnitIsAnsweredAsLocalityNotAsItsOwnTextMatch() throws Exception {
+        // ── NON-VACUITY, FIRST ──────────────────────────────────────────────────────────────
+        // Measured with the LIKE tier's OWN predicate, against the real table. Without this the
+        // arm would pass over a fixture that simply has no text match, and would be a statement
+        // about the fixture rather than about the ordering. Under the shipped-33-08 ordering
+        // this one row IS what `q=SE15 5BS` returned.
+        Integer textMatches = jdbc.queryForObject(
+                "SELECT count(*) FROM shops WHERE published = true "
+                        + "AND lower(name) LIKE lower('%SE15 5BS%')", Integer.class);
+        assertThat(textMatches)
+                .as("CONTROL: the LIKE tier WOULD have matched this exact string")
+                .isEqualTo(1);
+        assertThat(kmBetween(SE15_5BS_LAT, SE15_5BS_LON, SE15_NAMESAKE_LAT, SE22_LON))
+                .as("CONTROL: and the namesake is far outside the radius, so proximity cannot "
+                        + "return it for an unrelated reason")
+                .isGreaterThan(RADIUS_KM);
+
+        // ── THE FLIP ────────────────────────────────────────────────────────────────────────
+        mockMvc.perform(get("/public/shops").param("q", "SE15 5BS"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HEADER,
+                        "proximity; postcode=SE155BS; precision=unit; radiusKm=5.0"));
+
+        JsonNode page = search("SE15 5BS");
+        assertThat(slugsOf(page))
+                .as("every kitchen within 5 km of SE15 5BS, nearest first")
+                .containsExactly(SE22_ALSO, SE22_MID, SE22_NEAR);
+        assertThat(slugsOf(page))
+                .as("and NOT the namesake, which is only a string match")
+                .doesNotContain(SE15_NAMESAKE);
+    }
+
+    @Test
+    @DisplayName("D-A FLIP CONTROL: the namesake is still reachable by a term that is NOT a "
+            + "postcode — the text path was reordered, not removed")
+    void theNamesakeIsStillReachableByText() throws Exception {
+        // The other half of the owner's decision: non-postcode-shaped queries are untouched.
+        // If this arm ever reds, the flip has broken the text search rather than reordered it.
+        mockMvc.perform(get("/public/shops").param("q", "Namesake"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HEADER, "text"));
+
+        JsonNode page = search("Namesake");
+        assertThat(slugsOf(page)).containsExactly(SE15_NAMESAKE);
+        page.path("content").forEach(node ->
+                assertThat(node.path("distanceKm").isNull())
+                        .as("a text result must carry no distance")
+                        .isTrue());
     }
 
     // =====================================================================================
