@@ -229,6 +229,23 @@ jobs:
           docker compose -f "$COMPOSE_FILE" logs --tail 200
           exit 1
 
+      # The OpenAPI contract, checked against the SERVICE rather than against the source
+      # tree (33-06). This is the ONLY workflow in the repository with a running core-java,
+      # which is why the gate is wired here and not in ci-cd.yaml: a hosted runner with no
+      # stack could only ever exit 2 (VOID), and a permanently-VOID required job teaches
+      # people to add `|| true`.
+      #
+      # It is not a duplicate of the openapi-compat job or of OpenApiSnapshotTest. Both of
+      # those compare the committed snapshot with a spec generated from the SOURCE TREE, and
+      # are green whether or not the deployed service was ever rebuilt from that source.
+      # This asks the other half: does the thing actually listening on 9090 emit what
+      # docs/api/openapi-snapshot.json claims. Placed BEFORE the Playwright install so a
+      # contract failure costs seconds rather than the whole suite.
+      #
+      # Exit 2 is VOID (service unreachable, empty fetch, unparseable JSON), never a pass.
+      - name: Gate — the committed OpenAPI contract vs the RUNNING service
+        run: bash scripts/check-openapi-snapshot-fresh.sh
+
       # DemoDataSeeder (@Profile("dev"), ApplicationRunner) has already created the demo
       # tenant's shops/products/customers against the fresh DB. This adds only what the
       # suite would otherwise SKIP over: the DRAFT order and the in-window promotion.
