@@ -316,6 +316,60 @@ describe("NearYouRow — the exclusion disclosure (issue 460 / plan-checker B8)"
     expect(screen.queryByText(/further than/i)).toBeNull()
   })
 
+  it("never presents a truncated page as a census — a full server page suppresses the 'further than' arithmetic (review WR-01)", async () => {
+    installGeolocation((success) => success(POSITION))
+    // TWELVE published shops. The server page holds the first EIGHT by name and
+    // the located page holds the SIX within the radius. The pre-fix arithmetic
+    // read 8 − 6 − 0 = "2 more are further than 3.1 miles away" — a claim about
+    // a listing it had only seen one page of, silently counting shops it knew
+    // nothing about (some of the four unseen shops may be INSIDE the radius).
+    // Run against the unfixed component this arm FAILS by finding that clause —
+    // that run is recorded in 33-REVIEW-FIX.md as the broken-direction proof.
+    const fullServerPage = Array.from({ length: 8 }, (_, i) =>
+      shop({ slug: `kitchen-${i}`, name: `Kitchen ${i}` })
+    )
+    mockFetch.mockResolvedValue(
+      page(
+        Array.from({ length: 6 }, (_, i) => ({
+          ...shop({ slug: `near-${i}`, name: `Near ${i}` }),
+          distanceKm: 0.5 + i,
+        }))
+      )
+    )
+
+    render(<NearYouRow serverShops={fullServerPage} serverTotal={12} />)
+    await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
+
+    await waitFor(() => expect(headingsSayingNearYou().length).toBe(1))
+    expect(screen.queryByText(/further than/i)).toBeNull()
+  })
+
+  it("CONTROL: a full page whose totals match IS a census, and the arithmetic still runs", async () => {
+    // Non-vacuity for the suppression above: if the clause were simply never
+    // rendered any more, that arm would pass while the disclosure was dead.
+    // Here the totals say the page holds EVERY published shop (8 of 8) and the
+    // located response holds every in-radius shop (6 of 6), so 8 − 6 − 0 = 2 is
+    // a true statement and must still be made.
+    installGeolocation((success) => success(POSITION))
+    const wholeCatalogue = Array.from({ length: 8 }, (_, i) =>
+      shop({ slug: `kitchen-${i}`, name: `Kitchen ${i}` })
+    )
+    mockFetch.mockResolvedValue(
+      page(
+        Array.from({ length: 6 }, (_, i) => ({
+          ...shop({ slug: `near-${i}`, name: `Near ${i}` }),
+          distanceKm: 0.5 + i,
+        }))
+      )
+    )
+
+    render(<NearYouRow serverShops={wholeCatalogue} serverTotal={8} />)
+    await userEvent.click(screen.getByRole("button", { name: /use my location/i }))
+
+    await waitFor(() => expect(headingsSayingNearYou().length).toBe(1))
+    expect(screen.getByText(/2 more kitchens are further than 3\.1 miles away/)).toBeTruthy()
+  })
+
   it("distinguishes 'too far' from 'no location data' rather than blaming both on the data", async () => {
     installGeolocation((success) => success(POSITION))
     // Only the nearest shop came back: Brixton is outside the radius, Belfast
