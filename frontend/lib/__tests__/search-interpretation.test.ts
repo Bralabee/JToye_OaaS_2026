@@ -9,9 +9,15 @@
  * `{kind:"text"}` unconditionally would satisfy the whole degradation matrix.
  *
  * EXPECTATIONS ARE LITERALS. `"3.1 miles"` is written out, never derived from
- * `MILES_PER_KM`. 33-07 records why: an expectation computed with the same
- * constant the code uses passes for EVERY factor including 1, so it cannot fail
- * in the one direction it exists to catch.
+ * the conversion constant in `lib/distance.ts`. 33-07 records why: an
+ * expectation computed with the same constant the code uses passes for EVERY
+ * factor including 1, so it cannot fail in the one direction it exists to catch.
+ *
+ * The constant is described rather than NAMED here on purpose. The acceptance
+ * criterion for this file is that its identifier appears zero times — and a
+ * comment stating the rule would have been the only match, making an
+ * expected-zero read as one on a perfectly correct tree. A rule that fires on
+ * its own definition is a recorded vacuity shape on this project.
  */
 
 import {

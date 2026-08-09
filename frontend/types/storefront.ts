@@ -44,6 +44,16 @@ import type { MediaAsset } from "@/types/api"
 
 export type { MediaAsset, MediaAssetStatus } from "@/types/api"
 
+/**
+ * How the server said it read `q` — 33-08's `X-Search-Interpretation`.
+ *
+ * Re-exported from its parser rather than redeclared, so the server page and the
+ * client island share ONE definition. Two structurally-identical copies would
+ * drift the moment the grammar gains a third reading, and the compiler would say
+ * nothing.
+ */
+export type { SearchInterpretation } from "@/lib/search-interpretation"
+
 export interface PublicProduct {
   id: string
   title: string

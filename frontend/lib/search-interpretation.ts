@@ -89,32 +89,117 @@ export type SearchSummary =
     }
   | { kind: "proximity"; text: string }
 
-// RED STUB — replaced in the GREEN commit. Present so the tests fail on real
-// assertions rather than on a missing module.
+/**
+ * The server's own emission gate, mirrored.
+ *
+ * `SearchInterpretation.headerValue()` refuses to emit a key that is not
+ * `^[A-Z0-9]{2,8}$` (33-08's T-33-08-05, response splitting), so anything else
+ * arriving here did not come from a server this client understands. This is a
+ * CHARSET AND LENGTH guard, deliberately NOT a UK-postcode shape: it cannot
+ * decide whether a string is a postcode and is never used to make that decision
+ * — the header is the decision. See CA-E.
+ */
+const SERVER_KEY = /^[A-Z0-9]{2,8}$/
+
+/** Anything a header value has no business containing. */
+const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/
+
+/** A full unit key is its outward code plus a 3-character inward code. */
+const INWARD_LENGTH = 3
+
 export function parseSearchInterpretation(
-  _raw: string | null | undefined
+  raw: string | null | undefined
 ): SearchInterpretation {
-  return TEXT_INTERPRETATION
+  if (typeof raw !== "string") return TEXT_INTERPRETATION
+  // A control character cannot have survived the server's own gate, so the whole
+  // value is refused rather than sanitised — sanitising would keep a claim made
+  // by something that is not the server.
+  if (CONTROL_CHARACTERS.test(raw)) return TEXT_INTERPRETATION
+
+  const parts = raw
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+
+  // `text`, an unknown kind, a differently-cased kind and a value with no kind
+  // at all all land here. One return, so a new kind cannot be silently adopted.
+  if (parts[0] !== "proximity") return TEXT_INTERPRETATION
+
+  const pairs = new Map<string, string>()
+  for (const part of parts.slice(1)) {
+    const eq = part.indexOf("=")
+    if (eq <= 0) continue
+    pairs.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim())
+  }
+
+  const postcode = pairs.get("postcode") ?? ""
+  if (!SERVER_KEY.test(postcode)) return TEXT_INTERPRETATION
+
+  const precision = pairs.get("precision")
+  if (precision !== "unit" && precision !== "district") return TEXT_INTERPRETATION
+
+  // An incomplete disclosure is not a disclosure: without the radius there is no
+  // honest way to say what the results were filtered by, so nothing is claimed.
+  // `Number("")` is 0, hence the emptiness check before the conversion.
+  const radiusRaw = pairs.get("radiusKm")
+  if (radiusRaw === undefined || radiusRaw.length === 0) return TEXT_INTERPRETATION
+  const radiusKm = Number(radiusRaw)
+  if (!Number.isFinite(radiusKm) || radiusKm <= 0) return TEXT_INTERPRETATION
+
+  return { kind: "proximity", postcode, precision, radiusKm }
 }
 
-// RED STUB — replaced in the GREEN commit.
+/**
+ * The server's space-stripped key, rendered the way a customer wrote it.
+ *
+ * Formatting only. A district key is printed exactly as it arrived; a unit key
+ * has its single space restored before the inward code. A key too short to hold
+ * an inward code is returned untouched rather than mangled — the server cannot
+ * produce one, and inventing a split would print something nobody typed.
+ */
 export function formatPostcodeForDisplay(
   key: string,
-  _precision: "unit" | "district"
+  precision: "unit" | "district"
 ): string {
-  return key
+  if (precision !== "unit") return key
+  if (key.length <= INWARD_LENGTH + 1) return key
+  return `${key.slice(0, key.length - INWARD_LENGTH)} ${key.slice(-INWARD_LENGTH)}`
 }
 
-// RED STUB — replaced in the GREEN commit.
+/**
+ * The one place the result summary is written, for both readings of `q`.
+ *
+ * The text branch reproduces the copy this surface has always shown, including
+ * the emphasised quoted term — hence the split return rather than a bare string:
+ * collapsing it would have silently deleted the emphasis the page already had.
+ *
+ * The proximity branch quotes the radius through `formatMiles`, from the
+ * `radiusKm` the SERVER applied. Never a second literal, and never tidied: 5 km
+ * reads "3.1 miles" because 3 miles is 4.83 km, a radius nothing applied. If a
+ * rounder number is ever wanted, change the radius and send that.
+ */
 export function searchSummary(
-  _interpretation: SearchInterpretation,
+  interpretation: SearchInterpretation,
   totalElements: number,
   query: string
 ): SearchSummary {
+  const count =
+    totalElements === 0
+      ? null
+      : `${totalElements} ${totalElements === 1 ? "kitchen" : "kitchens"}`
+
+  if (interpretation.kind === "proximity") {
+    const where = `within ${formatMiles(interpretation.radiusKm)} of ${formatPostcodeForDisplay(
+      interpretation.postcode,
+      interpretation.precision
+    )}`
+    return {
+      kind: "proximity",
+      text: count === null ? `No kitchens ${where}` : `${count} ${where}`,
+    }
+  }
+
+  const lead = count === null ? "No kitchens match " : `${count} for `
   const term = query.trim()
-  const lead = totalElements === 0 ? "No kitchens match " : `${totalElements} kitchens for `
   return { kind: "text", lead, term, text: `${lead}“${term}”` }
 }
-
-// `formatMiles` is imported so the GREEN body has one conversion and one only.
-void formatMiles

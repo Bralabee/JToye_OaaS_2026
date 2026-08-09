@@ -51,8 +51,24 @@ export type { ShopDetail } from "@/types/storefront"
  *              one on a path that is hard to exercise.
  */
 
+/**
+ * `headers` is OPTIONAL, and that is load-bearing in two directions.
+ *
+ * Forwards: `loadShopDetail` below CONSTRUCTS its own `ok` value out of six
+ * responses, so there is no single set of headers it could honestly carry.
+ * Optional means it compiles untouched.
+ *
+ * Backwards: a caller reading a header off the SSR path is reading it through a
+ * SERVER-TO-SERVER fetch, which CORS does not apply to. `X-Search-Interpretation`
+ * is therefore visible here whether or not `cors.exposed-headers` names it —
+ * which is exactly why an SSR-only (or curl-only) test would pass green while a
+ * real browser saw `null`. That is #412's recorded shape: a header genuinely on
+ * the wire and unreadable by script. The browser direction is proved separately,
+ * by CA-H's in-page `fetch` under `page.evaluate` in
+ * `frontend/e2e/storefront-flows.spec.ts` — not by anything in this module.
+ */
 export type StorefrontLoad<T> =
-  | { state: "ok"; data: T }
+  | { state: "ok"; data: T; headers?: Headers }
   | { state: "notfound" }
   | { state: "defer" }
 
@@ -75,7 +91,7 @@ async function getJson<T>(path: string): Promise<StorefrontLoad<T>> {
     if (!res.ok) return { state: "defer" }
     const body = (await res.json()) as T
     if (body == null) return { state: "defer" }
-    return { state: "ok", data: body }
+    return { state: "ok", data: body, headers: res.headers }
   } catch {
     // DNS / connect / timeout / malformed JSON. Not an authoritative answer.
     return { state: "defer" }
