@@ -25,8 +25,29 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: **33 (the-consumer-product) — EXECUTING, 5/8 plans complete (33-00..33-04), 33-05 in flight (2026-08-09).**
-*(Updated BY HAND — `gsd-sdk query state.begin-phase` was run once on 2026-08-08 and reverted: like `state.record-session`, it rewrites `stopped_at`, destroys `last_activity`, and recomputes the `progress:` counters on the wrong denominator. Hand-edit this block; do not call either verb.)*
+Phase: **33 (the-consumer-product) — EXECUTING, 6/8 plans complete (33-00..33-05). Wave 5 (33-06) is next and is unblocked.**
+*(Updated BY HAND — `gsd-sdk query state.begin-phase` was run once on 2026-08-08 and reverted: like `state.record-session`, it rewrites `stopped_at`, destroys `last_activity`, and recomputes the `progress:` counters on the wrong denominator. Hand-edit this block; do not call either verb. `roadmap.update-plan-progress` IS safe for the counts but has its own smaller defect — it rewrites the phase row's trailing cell as `In Progress|  `, dropping the separator and the em dash. Observed twice on 2026-08-09; repair that one cell by hand after calling it.)*
+
+> **33-05 COMPLETE (2026-08-09) — #460 link 3 is closed and CA-1 is spent.** `shops.latitude`
+> is POPULATED on the live dev database and read back out of the **rebuilt** runtime as both DB
+> roles: superuser `jtoye` **5 total / 3 with latitude / 3 published**, `jtoye_app` with no
+> tenant GUC **3 / 3 / 3** (it cannot see the two unpublished rows — recording that figure alone
+> would look identical to a backfill that stopped two rows early). Was **5 / 0 / 3** yesterday.
+> `check-runtime-freshness` 4/4 FRESH by `.Metadata.LastTagTime`. Two real defects fixed on the
+> way: **`POST /shops` with `latitude: 999` returned 201 Created** (no validation at all on
+> either axis — now an RFC 7807 typed 400, and the OpenAPI snapshot regenerated so the contract
+> states the bounds), and **`SE15 4QA` in our own seeded data does not exist** (absent from
+> Code-Point Open, 404 from ONSPD) so "Peckham Jollof Co." would have held NULL coordinates
+> forever and vanished from the very distance results this phase adds — corrected to `SE15 4BW`
+> and guarded by a test, not a comment. New gate `scripts/check-live-shop-coordinates.sh`
+> (declared exempt in `gate-enforcement.conf`; gates 32 / exempt 5) asserts a RELATION with an
+> explicit denominator, never a census — and was falsified four ways including **rc=2 over a
+> stopped stack**. `ShopCoordinateBackfill` is tenant-looped and proven to write **0 rows without
+> a GUC and 1 with one**, with a superuser arm proving that zero comes from RLS rather than from
+> our own code. Suites: unit **141 classes / 1017 tests / 0 fail**; integration **513 tests**,
+> where the FULL run — not this plan's own verifies — caught `OpenApiSnapshotTest`. Pre-existing
+> reds NOT from this plan and owned by 33-07 Task 4: `check-doc-metrics` and `check-claims`
+> (verified failing at `f11e3701` before any change here).
 Prior: **27 (operational-maturity) — COMPLETE 7/7 (2026-07-29)**
 Milestone: **v2.3 — OPEN, and deliberately not closed.** Widened 2026-08-01 from Phases 21–26 to
 **21–32**. Owner decision: *"2.3 is not complete. closing nothing. just document. we will proceed

@@ -346,7 +346,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
-| 33. The Consumer Product | v2.3 | 5/8 | In Progress | — |
+| 33. The Consumer Product | v2.3 | 6/8 | In Progress | — |
 | 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -751,7 +751,7 @@ Plans:
 
 **Wave 4** *(blocked on 33-02)*
 
-- [ ] 33-05-PLAN.md (Wave 4) — #460 link 3: geocode on the write path + range-validate `CreateShopRequest` (a client can POST `latitude: 999` today), seeder coordinates via the SAME geocoder, correct the seeded `SE15 4QA` which exists in neither Code-Point Open nor ONSPD, a tenant-looped backfill proven to update 0 rows without a GUC, and **CA-1 closed against the live runtime as both DB roles**
+- [x] 33-05-PLAN.md (Wave 4) — #460 link 3: geocode on the write path + range-validate `CreateShopRequest` (a client can POST `latitude: 999` today), seeder coordinates via the SAME geocoder, correct the seeded `SE15 4QA` which exists in neither Code-Point Open nor ONSPD, a tenant-looped backfill proven to update 0 rows without a GUC, and **CA-1 closed against the live runtime as both DB roles**
 
 **Wave 5** *(blocked on 33-05 — both plans create a runtime gate, and `scripts/gates/gate-enforcement.conf` cannot be pre-declared: an entry naming a not-yet-existing script makes `check-gate-enforcement.sh` exit 2 VOID, so each plan must append its own entry when it creates its own gate)*
 
