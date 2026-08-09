@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Typing a postcode into shop search finds kitchens near it, and the page says so (#619, #623) — 2026-08-09
+
+Both halves of #619, plans `33-08` (API) and `33-09` (storefront). The search box has always
+promised "Try 'jollof', 'vegan' **or your postcode**" and a postcode has always returned nothing:
+measured on the live stack before the change, `?q=SE22` was **0 shops**. It is now **3**, ordered by
+real distance, and the page states which of the two questions it answered rather than leaving the
+customer to guess.
+
+#### Added
+- **A postcode is read as a PLACE, before any text match is attempted.** `q` is offered to a new
+  search-only geocoder entry point first; a GB outward code or full unit resolves through
+  `postcode_centroid` and reuses 33-06's distance query at the platform radius. Anything that is
+  not a postcode, and any postcode the dataset does not know, falls straight through to the
+  existing full-text search and `LIKE` fallback, unchanged. The district lookup is a closed key
+  range plus a unit-length guard, so it is an **Index Scan** over 1,748,230 rows and not the
+  Parallel Seq Scan a `LIKE` prefix plans to.
+- **`X-Search-Interpretation`** — the server's own statement about how `q` was read
+  (`text`, or `proximity; postcode=SE22; precision=district; radiusKm=5.0`), emitted on `?q=`
+  responses only, declared in the OpenAPI snapshot, and added to `cors.exposed-headers` without
+  displacing the six names already there.
+- **The storefront repeats that statement, and only that statement.** `/shop?q=SE22` renders
+  *"3 kitchens within 3.1 miles of SE22"* — **in the server-rendered HTML**, so there is no flash of
+  the plain wording — with the distance on every card in miles, a generic exclusion disclosure and a
+  *See every kitchen* route out. Every other query renders exactly the copy it rendered before.
+
+#### Notes
+- There is **no UK-postcode regex anywhere in the storefront's search path**: the heading is
+  derivable only from the parsed header, and an absent, malformed or incomplete disclosure degrades
+  to plain text. A 429 or a network failure resets it too — a non-answer carries no proximity claim.
+- Distances and the radius read in **miles** (`3.1`, not a tidier `3`: three miles is 4.83 km, a
+  radius nothing applied). The wire, the config keys and the OpenAPI contract stay metric.
+- The header being on the wire is not the same as a browser being able to read it — #412 is the
+  recorded scar. Proved with an in-page `fetch`, and proved `null` with the allowlist wrong while
+  `curl` still showed it.
+- Zero new dependencies; no migration; `postcode_centroid` is public reference data with no
+  tenant column, exempt from RLS by written addition.
+
+#### Changed
+- **A full postcode is a locality question, not a string match.** The ordering shipped in the API
+  half with the postcode attempt *last*, so `?q=SE15 5BS` returned only the one kitchen whose
+  address carries that string. Reversed at the owner walkthrough on 2026-08-09
+  (*"Interpretation-first"*): it now returns **every** kitchen within the radius, nearest first —
+  measured live, `mama-ades-kitchen` at 0.0 km followed by two neighbours.
+  The old ordering's real defect was that a customer could not tell the two readings apart from
+  the input, only from the header: `SE22` was a locality question because nothing matched the
+  string, while `SE15 5BS` was a text question because something did.
+- Consequently a **bare outward code with a text match also flips**: `?q=SE15` was 2 shops by text
+  and is now 3 by proximity. This is one of 33-07's live-measured "healthy" behaviours and it has
+  deliberately moved.
+- **The accepted cost:** a shop literally named "SE22 Kitchen" no longer wins a search for `SE22`
+  unless it also sits inside the radius. That is the case that separates the two orderings, and it
+  is covered by a permanent Testcontainers arm with a far-away namesake fixture.
+
 ### The rejected client coordinate is logged at integer degrees, never the raw pair (#621) — 2026-08-09
 
 Closes **UF-33-01**, the single WARNING-level residual from phase 33's security verification.

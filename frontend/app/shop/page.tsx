@@ -1,6 +1,10 @@
 import type { Metadata } from "next"
 import { headers } from "next/headers"
 import { loadShopList } from "@/lib/storefront-server"
+import {
+  SEARCH_INTERPRETATION_HEADER,
+  parseSearchInterpretation,
+} from "@/lib/search-interpretation"
 import { resolvePublicOrigin } from "@/lib/public-origin"
 import { serialiseJsonLd, shopListStructuredData } from "@/lib/structured-data"
 import { ShopDiscoveryClient, SHOPS_PAGE_SIZE } from "./shop-discovery-client"
@@ -66,6 +70,15 @@ export default async function ShopDiscoveryPage({
   const result = await loadShopList({ page: 0, size: SHOPS_PAGE_SIZE, q })
   const initial = result.state === "ok" ? result.data : null
 
+  // The SSR seed carries the server's own reading of `q`, so the FIRST PAINT of
+  // /shop?q=SE22 is already honest. Without it the island's `serverSeeded` ref
+  // suppresses the mount fetch, the plain heading renders over a proximity
+  // result, and nothing ever corrects it. A deferred load carries no reading,
+  // which degrades to `text` — a non-answer makes no claim (CA-I).
+  const initialInterpretation = parseSearchInterpretation(
+    result.state === "ok" ? result.headers?.get(SEARCH_INTERPRETATION_HEADER) : null
+  )
+
   const nonce = (await headers()).get("x-nonce") ?? undefined
   const origin = resolvePublicOrigin()
   const jsonLd = initial ? shopListStructuredData(initial.content ?? [], origin) : null
@@ -79,7 +92,11 @@ export default async function ShopDiscoveryPage({
           dangerouslySetInnerHTML={{ __html: serialiseJsonLd(jsonLd) }}
         />
       )}
-      <ShopDiscoveryClient initial={initial} initialQuery={q} />
+      <ShopDiscoveryClient
+        initial={initial}
+        initialQuery={q}
+        initialInterpretation={initialInterpretation}
+      />
     </>
   )
 }

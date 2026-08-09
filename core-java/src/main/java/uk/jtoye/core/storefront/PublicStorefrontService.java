@@ -11,9 +11,11 @@ import org.springframework.data.domain.Sort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.geo.GeoBounds;
+import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
@@ -74,6 +76,22 @@ public class PublicStorefrontService {
     private final ShopAnnouncementRepository announcementRepository;
 
     /**
+     * The offline postcode geocoder (33-02), consulted FIRST for every {@code q} by
+     * {@link #searchPublishedShops} — D-A, flipped at the 33-09 owner gate on 2026-08-09.
+     *
+     * <p>This text was left behind by that flip and said the opposite until 2026-08-09 (WR-01):
+     * "used ONLY by the third search tier and only when the two text tiers have already returned
+     * nothing". Both clauses were false, and this field declaration is the natural entry point
+     * when tracing the dependency, so it read as evidence the flip had never happened.
+     *
+     * <p>Running it first is cheap rather than costly: {@link PostcodeGeocoder#locateSearchTerm}
+     * applies its length bound and its anchored shape test BEFORE any lookup, so an ordinary food
+     * search issues no query here at all. It is the search-side entry point
+     * {@code locateSearchTerm}, never {@code locate} — see that class.
+     */
+    private final PostcodeGeocoder postcodeGeocoder;
+
+    /**
      * Platform default and ceiling for the distance-search radius, READ from {@code jtoye.geo.*}
      * in {@code application.yml} — that block is owned and declared by 33-02, and this class only
      * consumes it. Q-2 settled the radius as a query parameter with a platform default, so both
@@ -84,6 +102,12 @@ public class PublicStorefrontService {
      * missing key invisible — the recorded failure mode where eight outbox tunables were bound by
      * {@code @Value} defaults, appeared in no yml, and could only be changed by rebuilding the
      * image. If the key goes missing the context must fail to start, loudly.
+     *
+     * <p><strong>And a PRESENT key can be as wrong as a missing one (WR-03).</strong> These are
+     * {@code ${GEO_DEFAULT_RADIUS_KM:5}} / {@code ${GEO_MAX_RADIUS_KM:50}} — operator-tunable
+     * environment variables — so the constructor validates the pair on the same principle: an
+     * unusable radius fails the context, it does not wait for a customer to find it. See
+     * {@link #requireUsableRadius}.
      */
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
@@ -93,6 +117,7 @@ public class PublicStorefrontService {
                                    EntityManager entityManager, PaymentService paymentService,
                                    ShopPromotionRepository promotionRepository,
                                    ShopAnnouncementRepository announcementRepository,
+                                   PostcodeGeocoder postcodeGeocoder,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -103,8 +128,49 @@ public class PublicStorefrontService {
         this.paymentService = paymentService;
         this.promotionRepository = promotionRepository;
         this.announcementRepository = announcementRepository;
+        this.postcodeGeocoder = postcodeGeocoder;
+        // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
+        // BeanCreationException at boot, rather than only where it becomes a query input. The
+        // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
+        // genuine proximity-filtered page carrying `radiusKm=0.0`, which the storefront's parser
+        // then correctly rejected and rendered as `No kitchens match "SE22"` — a page stating the
+        // opposite of what the server did, from one environment variable.
+        requireUsableRadius(defaultRadiusKm, maxRadiusKm);
         this.defaultRadiusKm = defaultRadiusKm;
         this.maxRadiusKm = maxRadiusKm;
+    }
+
+    /**
+     * The single definition of "a radius this platform can answer with", applied at BOTH the point
+     * it is configured and the point it reaches the query (WR-03).
+     *
+     * <p>{@code maxRadiusKm} is checked too, and not as decoration: it is
+     * {@code ${GEO_MAX_RADIUS_KM:50}}, so it is as operator-settable as the default. A
+     * {@code NaN} ceiling would make {@code radiusKm > maxRadiusKm} false for every input —
+     * IEEE-754 comparisons against NaN are always false — and the ceiling would silently stop
+     * existing rather than fail.
+     *
+     * <p>Package-private and static so the fail direction can be driven directly. A guard that has
+     * only ever been observed passing is not evidence.
+     *
+     * @throws MisconfiguredPlatformRadiusException if the radius is not finite, not positive, or
+     *         above a usable ceiling. Never {@code IllegalArgumentException}: this is the
+     *         operator's fault, and the generic handler renders that as a 400 blaming the caller.
+     */
+    static void requireUsableRadius(double radiusKm, double maxRadiusKm) {
+        if (!Double.isFinite(maxRadiusKm) || maxRadiusKm <= 0.0) {
+            throw new MisconfiguredPlatformRadiusException(
+                    "jtoye.geo.max-radius-km must be a finite number greater than 0, was: " + maxRadiusKm);
+        }
+        if (!Double.isFinite(radiusKm) || radiusKm <= 0.0) {
+            throw new MisconfiguredPlatformRadiusException(
+                    "jtoye.geo.default-radius-km must be a finite number greater than 0, was: " + radiusKm);
+        }
+        if (radiusKm > maxRadiusKm) {
+            throw new MisconfiguredPlatformRadiusException(
+                    "jtoye.geo.default-radius-km (" + radiusKm + ") must not exceed "
+                            + "jtoye.geo.max-radius-km (" + maxRadiusKm + ")");
+        }
     }
 
     /**
@@ -239,31 +305,77 @@ public class PublicStorefrontService {
             throw new IllegalArgumentException("'lon' must be a number between -180 and 180");
         }
 
-        double radius = radiusKm != null ? radiusKm : defaultRadiusKm;
-        if (!Double.isFinite(radius) || radius <= 0.0) {
-            throw new IllegalArgumentException("'radiusKm' must be a number greater than 0");
+        // WR-03: the two branches raise DIFFERENT exception types, and that is the point. A radius
+        // the caller sent is the caller's to fix (IllegalArgumentException -> typed 400). A radius
+        // they did NOT send is the operator's (MisconfiguredPlatformRadiusException -> 500 + ERROR
+        // log, raised in nearestPublished and already refused at startup). The old single branch
+        // validated both with the caller-facing message, so a bad GEO_DEFAULT_RADIUS_KM told an
+        // anonymous customer that the 'radiusKm' they never supplied was invalid.
+        double radius;
+        if (radiusKm != null) {
+            if (!Double.isFinite(radiusKm) || radiusKm <= 0.0) {
+                throw new IllegalArgumentException("'radiusKm' must be a number greater than 0");
+            }
+            if (radiusKm > maxRadiusKm) {
+                // Named ceiling, no clamp. The caller must learn that their request was refused.
+                throw new IllegalArgumentException(
+                        "'radiusKm' must not exceed " + maxRadiusKm);
+            }
+            radius = radiusKm;
+        } else {
+            radius = defaultRadiusKm;
         }
-        if (radius > maxRadiusKm) {
-            // Named ceiling, no clamp. The caller must learn that their request was refused.
-            throw new IllegalArgumentException(
-                    "'radiusKm' must not exceed " + maxRadiusKm);
-        }
+
+        log.debug("Listing published shops by distance, radiusKm={}, page {} — coordinates deliberately not logged",
+                radius, pageable.getPageNumber());
+
+        return nearestPublished(latitude, longitude, radius, pageable);
+    }
+
+    /**
+     * The distance query and its projection-to-DTO tail, shared by BOTH callers that need it:
+     * the caller-supplied coordinate path ({@link #listPublishedShopsNear}) and the postcode
+     * tier of {@link #searchPublishedShops}.
+     *
+     * <p>Extracted rather than duplicated, and the reason is specific rather than stylistic. The
+     * projection cannot carry {@code shops.opening_hours} — that column is {@code jsonb} and a
+     * native tuple hands back raw JSON that a projection getter cannot convert — so the entities
+     * are re-resolved and mapped through the SAME {@code toPublicShopDto} the unlocated listing
+     * uses. A second shop-mapping path would be the one quietly missing opening hours, and no
+     * assertion on either path alone would see it (33-06's recorded reason).
+     *
+     * <p>Callers own COORDINATE validation. The RADIUS is validated here as well as by them, and
+     * WR-03 is why that changed. This method previously trusted its radius on the reasoning that
+     * "the radius is a platform value rather than a caller's" — but a platform value is
+     * {@code ${GEO_DEFAULT_RADIUS_KM:5}}, an environment variable, and is exactly as capable of
+     * being wrong as a caller's. The two entry points then disagreed about the same bad value:
+     * {@code ?lat=&lon=} refused {@code 0} with a typed 400 while {@code ?q=SE22} answered
+     * {@code HTTP 200} with an empty page and {@code radiusKm=0.0} in the interpretation header,
+     * which the storefront reads as "not a proximity answer" and renders as
+     * {@code No kitchens match "SE22"} — over results that WERE proximity-filtered.
+     */
+    private Page<PublicShopDto> nearestPublished(double latitude, double longitude,
+                                                 double radiusKm, Pageable pageable) {
+        // WR-03 LAYER 2 — QUERY INPUT. Unreachable in a booted context, because the constructor
+        // refuses the same values at startup, and kept anyway: it is what makes the invariant
+        // local to the query that depends on it, so a future caller reaching here by another
+        // route cannot reintroduce the silent empty page. Loud (500 + ERROR log) rather than a
+        // clamp — a clamp would hand back a page whose header states a radius nothing applied.
+        requireUsableRadius(radiusKm, maxRadiusKm);
 
         // The box is computed HERE and passed as four more named parameters, which is what keeps
         // the prefilter leakproof and index-eligible under the RLS barrier — see the comment on
         // ShopRepository.findPublishedNear.
-        GeoBounds box = GeoBounds.boxAround(latitude, longitude, radius);
+        GeoBounds box = GeoBounds.boxAround(latitude, longitude, radiusKm);
 
         // Unsorted on purpose: the query owns its ordering (nearest first, id as tiebreak) and a
         // client-supplied Sort must never reach a native ORDER BY (T-33-06-02).
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
-        log.debug("Listing published shops by distance, radiusKm={}, page {} — coordinates deliberately not logged",
-                radius, unsorted.getPageNumber());
 
         Page<ShopWithDistance> page = shopRepository.findPublishedNear(
                 latitude, longitude,
                 box.minLatitude(), box.maxLatitude(), box.minLongitude(), box.maxLongitude(),
-                radius, unsorted);
+                radiusKm, unsorted);
 
         // One extra query for the page's shops, then the SAME toPublicShopDto the unlocated
         // listing uses — so a located result differs from an unlocated one by exactly one field.
@@ -292,21 +404,103 @@ public class PublicStorefrontService {
     }
 
     /**
-     * Search published shops by name or tags.
+     * Answer a search term as a PLACE if it names one, and as text otherwise (33-08 / #619).
+     *
+     * <h2>Interpretation-first, and the order is a product decision (D-A)</h2>
+     *
+     * <ol>
+     *   <li><strong>the term read as a GB postcode</strong>, answered by distance</li>
+     *   <li>ranked full-text search over {@code shops.search_vector}</li>
+     *   <li>the pre-existing {@code LIKE} fallback for short queries</li>
+     * </ol>
+     *
+     * <p><strong>This ordering was reversed at the 33-09 owner gate on 2026-08-09.</strong> It
+     * shipped in 33-08 with the postcode attempt LAST, on the argument that every query which
+     * already returned results would then take an untouched path. The owner's verdict was
+     * <em>"Interpretation-first"</em>: a full postcode that happens to match a shop's own address
+     * is a question about a PLACE, not about that shop. {@code SE15 5BS} must return every kitchen
+     * near SE15 5BS, distance-ordered and disclosed as proximity — not only the one kitchen whose
+     * address contains that string.
+     *
+     * <p>The old ordering's real defect was that a customer could not tell the two behaviours
+     * apart from the input, only from the header: {@code SE22} was a locality question because
+     * nothing matched the string, while {@code SE15 5BS} was a text question because something
+     * did. Identical-looking inputs, opposite readings, decided by data the customer cannot see.
+     *
+     * <p><em>What this costs, stated plainly:</em> a shop literally named "SE22 Kitchen" no longer
+     * wins a search for {@code SE22} unless it also sits within the radius of the SE22 centroid.
+     * That is the accepted trade, and it is the case that separates the two orderings.
+     *
+     * <h2>The text path is byte-identical, and cheap to reach</h2>
+     *
+     * <p>{@link PostcodeGeocoder#locateSearchTerm} applies its length bound and its anchored
+     * shape test BEFORE any lookup, so a non-postcode-shaped term — every ordinary food search on
+     * the platform — returns empty having issued <strong>zero</strong> queries. Running it first
+     * therefore costs a regex, not a round trip, and the text tiers below are reached in exactly
+     * the state they were reached in before.
+     *
+     * <p>A postcode-shaped term that names no row in {@code postcode_centroid} — {@code ZZ99 9ZZ},
+     * and every Northern Ireland postcode, since Code-Point Open is GB-only — also falls through
+     * here, exactly as it did under the old ordering. The table is the authority, not the regex,
+     * so a shape match alone never produces a proximity claim.
+     *
+     * <h2>An empty proximity page is a real answer</h2>
+     *
+     * <p>A postcode that resolves but has no kitchen within the radius returns an EMPTY page
+     * carrying a {@code PROXIMITY} interpretation — never a downgrade to {@code TEXT}, which
+     * would tell the customer their postcode was not understood when in fact it was.
+     *
+     * <p>The radius is {@code jtoye.geo.default-radius-km}, the same platform default the
+     * "near you" row already uses (D-C). No second radius, and therefore no second number to
+     * keep in step.
      */
-    public Page<PublicShopDto> searchPublishedShops(String query, Pageable pageable) {
+    public SearchOutcome searchPublishedShops(String query, Pageable pageable) {
         log.debug("Searching published shops: '{}'", query);
+
+        // TIER 1 — INTERPRETATION FIRST (D-A, flipped at the 33-09 owner gate). Cheap for a
+        // non-postcode term: the length bound and the anchored shape test both run before any
+        // lookup, so an ordinary food search issues no query here at all.
+        Optional<PostcodeGeocoder.LocatedPostcode> located = postcodeGeocoder.locateSearchTerm(query);
+        if (located.isPresent()) {
+            PostcodeGeocoder.LocatedPostcode postcode = located.get();
+            // Kind and page only. The coordinate is derived from the customer's postcode and is
+            // not logged here, for the same reason a device coordinate is not logged on the
+            // lat/lon path.
+            log.debug("Search interpreted as PROXIMITY at {} precision, page {} — "
+                            + "coordinates deliberately not logged",
+                    postcode.precision(), pageable.getPageNumber());
+
+            return new SearchOutcome(
+                    nearestPublished(postcode.coordinate().latitude(), postcode.coordinate().longitude(),
+                            defaultRadiusKm, pageable),
+                    SearchInterpretation.proximity(postcode.key(), postcode.precision(), defaultRadiusKm));
+        }
+
+        // TIER 2 + 3 — the pre-existing text path, unchanged. Reached by every non-postcode term
+        // and by every postcode-shaped term the dataset does not know.
         // Use full-text search for ranked results; fall back to LIKE for short queries
         if (query != null && query.length() >= 2) {
             // Use unsorted Pageable for native queries — ts_rank handles ordering
             Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
             Page<Shop> results = shopRepository.fullTextSearchPublished(query, unsorted);
             if (results.hasContent()) {
-                return results.map(this::toPublicShopDto);
+                return new SearchOutcome(results.map(this::toPublicShopDto), SearchInterpretation.text());
             }
         }
-        return shopRepository.searchPublished(query, pageable)
-                .map(this::toPublicShopDto);
+
+        return new SearchOutcome(
+                shopRepository.searchPublished(query, pageable).map(this::toPublicShopDto),
+                SearchInterpretation.text());
+    }
+
+    /**
+     * A page of shops together with the server's statement about how the query was read.
+     *
+     * <p>Nested rather than free-standing because it is this method's return shape and has no
+     * other caller. {@code Page<PublicShopDto>} itself is deliberately unchanged — every existing
+     * consumer of {@code GET /public/shops} still receives exactly the body it received before.
+     */
+    public record SearchOutcome(Page<PublicShopDto> page, SearchInterpretation interpretation) {
     }
 
     /**

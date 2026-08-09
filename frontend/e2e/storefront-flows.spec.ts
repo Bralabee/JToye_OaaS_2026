@@ -148,6 +148,183 @@ test.describe("Shop Discovery", () => {
 })
 
 // ============================
+// POSTCODE-PROXIMITY SEARCH (issue 619, CUST-01)
+// ============================
+
+/**
+ * The customer-visible half of 619. `33-08` made `?q=SE22` answer with kitchens
+ * near the SE22 district centroid and stamp `X-Search-Interpretation` on the
+ * response; these arms prove a customer can SEE that, and that the page never
+ * claims proximity the server did not disclose.
+ *
+ * NEEDS THE REBUILT STACK. The header, the SSR seed and the island are all build
+ * outputs, and `docker compose start` rebuilds nothing. Measured before the
+ * rebuild on 2026-08-09: `?q=SE22` returned 0 shops and no header at all.
+ *
+ * THE LITERAL "3.1 miles" IS THE ASSERTION, never `\d+ miles`. A loose digit
+ * class accepts "5 miles" — the kilometre number wearing a miles label, which is
+ * the single wrong answer that looks most right. 33-07 records it.
+ */
+
+/** core-java's browser-facing origin. A non-frontend host, so outside the base-URL contract. */
+const API = process.env.PLAYWRIGHT_API_URL || "http://localhost:9090"
+
+/** Exactly what the summary must say for a 5 km radius around the SE22 centroid. */
+const PROXIMITY_COPY = /within 3\.1 miles of SE22/i
+/** Deliberately loose — used ONLY for absence, where a loose pattern is the strong form. */
+const ANY_PROXIMITY_COPY = /within .* miles of/i
+/** The grammar 33-08 ships, verbatim. */
+const EXPECTED_HEADER = "proximity; postcode=SE22; precision=district; radiusKm=5.0"
+
+test.describe("Postcode-proximity search (619)", () => {
+  test("a postcode returns nearby kitchens AND the page says why those kitchens", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
+    await page.fill("#shop-search", "SE22")
+
+    // 619's user-visible goal in one assertion: kitchens, and a reason.
+    await expect(page.getByText(PROXIMITY_COPY).first()).toBeVisible({ timeout: 20_000 })
+
+    const cards = page.locator("article")
+    const cardCount = await cards.count()
+    expect(cardCount, "VOID: no kitchen cards rendered — every claim below would pass on zero")
+      .toBeGreaterThan(0)
+
+    // Every card carries its distance, in miles, from the number the ordering
+    // used. The unit is load-bearing: a bare digit class would accept the
+    // kilometre figure.
+    const distances = (await cards.allInnerTexts()).join("\n").match(/\d+(\.\d)? miles/g) ?? []
+    expect(distances.length, "no card showed a distance in miles").toBeGreaterThan(0)
+    console.log(`619 headline arm: ${cardCount} cards, distances ${JSON.stringify(distances)}`)
+
+    // The exclusion is disclosed — generically (D-D), with a route out.
+    await expect(
+      page.getByText(/Kitchens we cannot place, and any further away, are not shown\./i).first()
+    ).toBeVisible()
+    await expect(page.getByRole("link", { name: "See every kitchen" }).first()).toBeVisible()
+  })
+
+  test("D-A (owner gate, 2026-08-09): a full unit is a LOCALITY question, not a text match", async ({
+    page,
+  }) => {
+    // The ordering was flipped at the 33-09 owner gate. Before it, `SE15 5BS` returned the ONE
+    // kitchen whose address carries that string, as a text match. After it, the same input
+    // returns every kitchen near that address, distance-ordered and disclosed as proximity.
+    await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
+    await page.fill("#shop-search", "SE15 5BS")
+
+    // The server's key is space-stripped; the display formatter puts the space back.
+    await expect(page.getByText(/within 3\.1 miles of SE15 5BS/i).first()).toBeVisible({
+      timeout: 20_000,
+    })
+
+    // MORE THAN ONE. A single card would be indistinguishable from the old text answer, which
+    // returned exactly the kitchen at that address — so the count is the assertion that carries
+    // the decision, not the wording.
+    const cards = page.locator("article")
+    expect(
+      await cards.count(),
+      "a locality answer must return the NEIGHBOURS too, not just the kitchen at that address"
+    ).toBeGreaterThan(1)
+
+    const distances = (await cards.allInnerTexts()).join("\n").match(/\d+(\.\d)? miles/g) ?? []
+    console.log(`D-A flip arm: ${await cards.count()} cards, distances ${JSON.stringify(distances)}`)
+    expect(distances.length).toBeGreaterThan(0)
+  })
+
+  test("CA-C(ui): a text match renders no proximity wording anywhere", async ({ page }) => {
+    await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
+    await page.fill("#shop-search", "Nigerian")
+
+    // The healthy query still works exactly as it did — this is what makes the
+    // absence below a statement about the code rather than about the locator.
+    // (The positive control for the locator itself is the arm above, which finds
+    // the same wording once.)
+    await expect(page.locator(`text=${SHOP_NAME}`).first()).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText(/kitchens for/i).first()).toBeVisible()
+
+    await expect(page.getByText(ANY_PROXIMITY_COPY)).toHaveCount(0)
+    await expect(page.getByText(/Kitchens we cannot place/i)).toHaveCount(0)
+  })
+
+  test("CA-I: the proximity copy is in the SERVER-RENDERED HTML, not a post-hydration fix", async ({
+    page,
+    request,
+  }) => {
+    // The DECISIVE limb: an API request executes no browser JavaScript at all,
+    // so a match here can only have come from the server's own render.
+    const res = await request.get(`${BASE}/shop?q=SE22`)
+    expect(res.status()).toBe(200)
+    const html = await res.text()
+    expect(html, "the proximity copy is absent from the server-rendered document").toMatch(
+      PROXIMITY_COPY
+    )
+
+    // The plan's form as well: the DOCUMENT at domcontentloaded, not what is painted.
+    await page.goto(`${BASE}/shop?q=SE22`, { waitUntil: "domcontentloaded" })
+    expect(await page.content()).toMatch(PROXIMITY_COPY)
+  })
+
+  test("CA-H: the interpretation header is readable by BROWSER JavaScript", async ({
+    page,
+    request,
+  }) => {
+    // THE ARM CURL CANNOT REPLACE. A response header is on the wire but invisible
+    // to script unless `Access-Control-Expose-Headers` names it — #412 is the
+    // recorded scar, where a header was genuinely present and `null` in every
+    // browser, and every servlet-level test stayed green over it.
+    await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
+
+    const inBrowser = await page.evaluate(async (api) => {
+      const r = await fetch(`${api}/api/v1/public/shops?q=SE22&size=12`)
+      return { status: r.status, header: r.headers.get("x-search-interpretation") }
+    }, API)
+    console.log(`CA-H browser direction: ${JSON.stringify(inBrowser)}`)
+
+    // The wire direction, for the side-by-side reading. `request` is not a
+    // browsing context, so CORS does not apply to it — which is exactly why it
+    // cannot answer the question above.
+    const onWire = await request.get(`${API}/api/v1/public/shops?q=SE22&size=12`)
+    console.log(`CA-H wire direction: ${onWire.headers()["x-search-interpretation"]}`)
+
+    expect(inBrowser.status).toBe(200)
+    expect(inBrowser.header).toBe(EXPECTED_HEADER)
+    expect(onWire.headers()["x-search-interpretation"]).toBe(EXPECTED_HEADER)
+  })
+
+  test("T-33-09-02: the rate limiter is unchanged and its headers are still browser-readable", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
+
+    const seen = await page.evaluate(async (api) => {
+      const r = await fetch(`${api}/api/v1/public/shops?size=1`)
+      return {
+        status: r.status,
+        limit: r.headers.get("x-ratelimit-limit"),
+        remaining: r.headers.get("x-ratelimit-remaining"),
+        reset: r.headers.get("x-ratelimit-reset"),
+        interpretation: r.headers.get("x-search-interpretation"),
+      }
+    }, API)
+    console.log(`rate-limit headers in browser: ${JSON.stringify(seen)}`)
+
+    // 33-08's CORS edit had to ADD a name, never displace the six already there.
+    expect(seen.status).toBe(200)
+    expect(seen.remaining).not.toBeNull()
+    expect(seen.limit).not.toBeNull()
+    expect(seen.reset).not.toBeNull()
+
+    // And the CONTROL that makes CA-H's non-null read mean something: the same
+    // `headers.get` DOES return null when a header genuinely is not there. The
+    // plain listing carries no interpretation, because with no `q` there is no
+    // question to answer.
+    expect(seen.interpretation).toBeNull()
+  })
+})
+
+// ============================
 // SHOP MENU + PRODUCT IMAGES
 // ============================
 

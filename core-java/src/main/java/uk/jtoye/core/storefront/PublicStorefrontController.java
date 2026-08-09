@@ -1,7 +1,11 @@
 package uk.jtoye.core.storefront;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -58,11 +62,35 @@ public class PublicStorefrontController {
     /**
      * Distance search is ADDITIVE (33-06 / #460 link 5).
      *
-     * <p>With no {@code lat}/{@code lon}/{@code radiusKm} this endpoint behaves exactly as it did
-     * before: name-ascending over every published shop, or the full-text search when {@code q} is
-     * present. That unlocated default is what the landing page and {@code /shop} depend on, so it
-     * is preserved rather than replaced — a distance sort applied unconditionally would empty both
-     * surfaces for every visitor who has not granted location.
+     * <p>With no {@code lat}/{@code lon}/{@code radiusKm} this endpoint is name-ascending over
+     * every published shop, or a search when {@code q} is present. That unlocated default is what
+     * the landing page and {@code /shop} depend on, so it is preserved rather than replaced — a
+     * distance sort applied unconditionally would empty both surfaces for every visitor who has
+     * not granted location.
+     *
+     * <p><b>What a postcode-shaped {@code q} changes (33-08 / #619).</b> This docblock used to
+     * promise that with no coordinate the endpoint "behaves exactly as it did before", and that
+     * sentence is no longer precisely true, so it is replaced rather than left standing. The
+     * accurate statement has two halves:
+     *
+     * <ul>
+     *   <li>a {@code q} that resolves to a GB postcode is served by proximity from that
+     *       postcode's centroid, and <b>says so</b> in the {@code X-Search-Interpretation}
+     *       response header — <b>including</b> when a shop's own text would have matched it;</li>
+     *   <li>every other {@code q}, which is every non-postcode term and every postcode-shaped
+     *       term the dataset does not know, behaves <b>exactly</b> as before.</li>
+     * </ul>
+     *
+     * <p>The ordering was reversed at the 33-09 owner gate on 2026-08-09 (<em>"Interpretation-
+     * first"</em>). It shipped in 33-08 with the postcode attempt last; the accepted cost of the
+     * flip is that a shop literally named "SE22 Kitchen" no longer wins a search for {@code SE22}
+     * unless it also sits inside the radius. See
+     * {@link PublicStorefrontService#searchPublishedShops} for the full reasoning.
+     *
+     * <p>The header is emitted on {@code ?q=} responses only — never on the plain listing and
+     * never on the {@code lat}/{@code lon} path — because it answers "how did you read my
+     * {@code q}?" and with no {@code q} there is no question. See {@link SearchInterpretation}
+     * for the grammar, which is a published contract.
      *
      * <p><b>Nothing is silently ignored.</b> A radius with no centre, one axis without the other,
      * and text search combined with distance search are all client errors returning an RFC 7807
@@ -81,13 +109,33 @@ public class PublicStorefrontController {
                     + "maximum), nearest first, each carrying 'distanceKm'. Coordinates are postcode "
                     + "centroids (~100 m, GB only), not door-level. 'lat' and 'lon' must be supplied "
                     + "together and cannot be combined with 'q'. With no coordinate the listing is "
-                    + "unchanged: name-ascending, and 'distanceKm' is null.")
+                    + "name-ascending and 'distanceKm' is null. A 'q' that resolves to a GB "
+                    + "postcode is read as a place and served by proximity from that postcode's "
+                    + "centroid, nearest first, in preference to a text match on the same string; "
+                    + "a 'q' that is not a postcode, or is a postcode the dataset does not know "
+                    + "(Code-Point Open is GB only), is answered by the text search exactly as "
+                    + "before. The 'X-Search-Interpretation' response header states which reading "
+                    + "was applied.")
+    @ApiResponse(responseCode = "200", description = "A page of published shops.",
+            headers = @Header(name = SearchInterpretation.HEADER,
+                    description = "How the server read 'q'. Present on ?q= responses only — absent "
+                            + "from the plain listing and from the lat/lon distance path. Either "
+                            + "the single token 'text', or "
+                            + "'proximity; postcode=<KEY>; precision=<unit|district>; radiusKm=<n>'. "
+                            + "Present even when the proximity result is empty, because "
+                            + "\"no kitchens within the radius of SE22\" and \"nothing matches "
+                            + "'SE22'\" are different answers.",
+                    // implementation = String.class, not type = "string": the latter alone
+                    // renders as an EMPTY schema object in the generated snapshot, which tells a
+                    // machine consumer nothing. Verified by regenerating both ways.
+                    schema = @Schema(implementation = String.class)))
     public Page<PublicShopDto> listShops(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Double lat,
             @RequestParam(required = false) Double lon,
             @RequestParam(required = false) Double radiusKm,
-            @PageableDefault(size = 20, sort = "name", direction = Sort.Direction.ASC) Pageable pageable) {
+            @PageableDefault(size = 20, sort = "name", direction = Sort.Direction.ASC) Pageable pageable,
+            HttpServletResponse response) {
         boolean located = lat != null || lon != null || radiusKm != null;
         if (located) {
             if (q != null && !q.isBlank()) {
@@ -98,7 +146,15 @@ public class PublicStorefrontController {
             return storefrontService.listPublishedShopsNear(lat, lon, radiusKm, pageable);
         }
         if (q != null && !q.isBlank()) {
-            return storefrontService.searchPublishedShops(q.trim(), pageable);
+            // NOTE for the reader who has just seen the guard above: this branch does NOT
+            // contradict it. That guard refuses a coordinate the CALLER supplied alongside 'q'.
+            // A postcode inside 'q' is a coordinate the SERVER derived, from the term the caller
+            // asked us to interpret — there is no second, conflicting instruction to reconcile,
+            // which is exactly what made the combination ambiguous. The guard stays.
+            PublicStorefrontService.SearchOutcome outcome =
+                    storefrontService.searchPublishedShops(q.trim(), pageable);
+            response.setHeader(SearchInterpretation.HEADER, outcome.interpretation().headerValue());
+            return outcome.page();
         }
         return storefrontService.listPublishedShops(pageable);
     }

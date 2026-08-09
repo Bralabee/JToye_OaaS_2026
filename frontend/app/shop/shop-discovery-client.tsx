@@ -12,6 +12,15 @@ import {
   MAX_RETRY_ATTEMPTS,
 } from "@/lib/public-fetch-retry"
 import { isOpenNow } from "@/lib/opening-hours"
+import { formatMiles } from "@/lib/distance"
+import {
+  PROXIMITY_EXCLUSION_NOTE,
+  SEARCH_INTERPRETATION_HEADER,
+  TEXT_INTERPRETATION,
+  parseSearchInterpretation,
+  searchSummary,
+  type SearchInterpretation,
+} from "@/lib/search-interpretation"
 import { PublicShop } from "@/types/storefront"
 import { PageResponse } from "@/types/api"
 
@@ -54,6 +63,28 @@ function ShopCard({ shop }: { shop: PublicShop }) {
               {open ? "Open" : "Closed"}
             </span>
           </div>
+
+          {/* The distance pill is ABSOLUTELY POSITIONED, and that is a CLS
+              decision rather than a styling one — the same rule the landing
+              row's card records. A distance rendered in the flow would add a
+              line to every located card and push the rest of the grid down the
+              moment a postcode search returns; out of flow, a located and an
+              unlocated card are byte-identical in height.
+
+              Top-LEFT because the Open/Closed badge already owns top-right.
+
+              `shop.distanceKm` is the number the ORDERING used, computed in SQL
+              by 33-06's query. Converted here and never recomputed: a second
+              haversine in the browser is a second answer, and the card could
+              then disagree with the position it was given in the list. */}
+          {shop.distanceKm != null && (
+            <span className="absolute top-3 left-3 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold text-oxblood shadow-sm ring-1 ring-cream-100">
+              {formatMiles(shop.distanceKm)}
+              {/* Spelled out rather than abbreviated: a screen reader pronounces
+                  a two-letter unit as a word. */}
+              <span className="sr-only"> away</span>
+            </span>
+          )}
 
           {/* Logo overlay */}
           <div className="absolute bottom-3 left-3 h-12 w-12 rounded-xl bg-white shadow-lg ring-2 ring-white overflow-hidden">
@@ -158,9 +189,20 @@ interface DiscoveryProps {
   initial: PageResponse<PublicShop> | null
   /** The `?q=` the server rendered for, so the island knows what it already has. */
   initialQuery: string
+  /**
+   * How the SERVER said it read `initialQuery`, parsed from
+   * `X-Search-Interpretation` on the SSR response.
+   *
+   * Required, not optional: the `serverSeeded` ref below suppresses the first
+   * client fetch, so a direct `/shop?q=SE22` would otherwise render the plain
+   * heading over a proximity result and never correct it. An absent or
+   * unparseable header degrades to `{kind:"text"}` in the parser, so the only
+   * value this can carry is one the server actually stated.
+   */
+  initialInterpretation: SearchInterpretation
 }
 
-function ShopDiscovery({ initial, initialQuery }: DiscoveryProps) {
+function ShopDiscovery({ initial, initialQuery, initialInterpretation }: DiscoveryProps) {
   const searchParams = useSearchParams()
   const urlQuery = searchParams.get("q") ?? initialQuery
 
@@ -173,6 +215,17 @@ function ShopDiscovery({ initial, initialQuery }: DiscoveryProps) {
   const [searchQuery, setSearchQuery] = useState(urlQuery)
   const [totalPages, setTotalPages] = useState(initial?.totalPages ?? 0)
   const [totalElements, setTotalElements] = useState(initial?.totalElements ?? 0)
+  // The server's statement about how `q` was read. Seeded from the SSR response
+  // and thereafter replaced only by another server response — never derived from
+  // what the customer typed (T-33-09-01).
+  // The `??` is not slack in the contract — the prop is REQUIRED and `page.tsx`
+  // always supplies it. It is the same fail-safe direction the parser takes: an
+  // untyped caller that omits it degrades to "make no claim" instead of throwing
+  // and taking the whole storefront index down. It can never manufacture a
+  // proximity claim, only fail to repeat one.
+  const [interpretation, setInterpretation] = useState<SearchInterpretation>(
+    initialInterpretation ?? TEXT_INTERPRETATION
+  )
   const [page, setPage] = useState(0)
   // Tracks the ?q= we have already reflected into state, so the URL->state and
   // state->URL syncs below can never ping-pong.
@@ -204,11 +257,26 @@ function ShopDiscovery({ initial, initialQuery }: DiscoveryProps) {
       setShops(res.data.content)
       setTotalPages(res.data.totalPages)
       setTotalElements(res.data.totalElements)
+      // axios lower-cases response header keys. Absent (older backend, plain
+      // listing, or a browser that cannot see it because the CORS allowlist is
+      // wrong) parses to `text`, so the page simply makes no claim.
+      setInterpretation(
+        parseSearchInterpretation(
+          (res.headers as Record<string, string> | undefined)?.[SEARCH_INTERPRETATION_HEADER]
+        )
+      )
       // A real (possibly empty) 200 clears the busy state and resets the budget.
       setRateLimited(false)
       setRetriesExhausted(false)
       retryAttemptRef.current = 0
     } catch (err) {
+      // A NON-ANSWER CARRIES NO CLAIM. A 429 or a genuine failure is not a
+      // statement about how `q` was read, so the interpretation resets rather
+      // than persisting from the last good response — the same rule
+      // `getJson`'s `defer` state encodes on the server. Without this, a network
+      // error after a proximity search renders "No kitchens within 3.1 miles of
+      // SE22" over a result nothing produced.
+      setInterpretation(TEXT_INTERPRETATION)
       if (isRateLimitError(err)) {
         // Rate limited — show busy and auto-retry with bounded backoff.
         setRateLimited(true)
@@ -292,6 +360,11 @@ function ShopDiscovery({ initial, initialQuery }: DiscoveryProps) {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
+  // DERIVED, never hardcoded — the three-state pattern `near-you-row.tsx`
+  // records. `interpretation` is the only input that can turn this into a
+  // proximity claim, and it can only have come from a server response.
+  const summary = searchSummary(interpretation, totalElements, searchQuery)
+
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
       {/* Hero */}
@@ -358,15 +431,45 @@ function ShopDiscovery({ initial, initialQuery }: DiscoveryProps) {
         })}
       </div>
 
-      {/* Result summary — confirms the query actually ran */}
+      {/* Result summary — confirms the query actually ran, and says WHICH
+          question the server answered.
+
+          The whole line comes from `searchSummary`, which is the only place a
+          proximity claim can be produced and takes the interpretation the SERVER
+          stated. The element, its `aria-live="polite"` and its class list are
+          unchanged, so the reserved height and the announcement behaviour are
+          exactly what they were. */}
       {!loading && !rateLimited && searchQuery.trim() && (
         <p aria-live="polite" className="mb-4 text-sm text-slate-600">
-          {totalElements === 0
-            ? "No kitchens match "
-            : `${totalElements} ${totalElements === 1 ? "kitchen" : "kitchens"} for `}
-          <span className="font-semibold text-oxblood">
-            &ldquo;{searchQuery.trim()}&rdquo;
-          </span>
+          {summary.kind === "text" ? (
+            <>
+              {summary.lead}
+              <span className="font-semibold text-oxblood">
+                &ldquo;{summary.term}&rdquo;
+              </span>
+            </>
+          ) : (
+            <>
+              {summary.text}
+              {/* D-D: the exclusion is disclosed GENERICALLY. 33-07's row counts
+                  its exclusions; this one cannot, because the counts need a
+                  second unfiltered request and the standing web-performance
+                  criterion forbids adding a round trip to a public route. So the
+                  claim is strictly weaker — and it is still a disclosure, with a
+                  route out, rather than a silent drop. Nothing here is derived
+                  by subtraction. */}
+              <span className="mt-1 block text-slate-600">
+                {PROXIMITY_EXCLUSION_NOTE}{" "}
+                <Link
+                  href="/shop"
+                  className="font-semibold text-oxblood underline underline-offset-2 hover:text-amber-700"
+                >
+                  See every kitchen
+                </Link>
+                .
+              </span>
+            </>
+          )}
         </p>
       )}
 

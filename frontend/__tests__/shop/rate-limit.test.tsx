@@ -82,7 +82,13 @@ describe("/shop list — 429 handling", () => {
     mockGet.mockRejectedValue(rateLimited429)
 
     await act(async () => {
-      render(<ShopDiscoveryClient initial={null} initialQuery="" />)
+      render(
+        <ShopDiscoveryClient
+          initial={null}
+          initialQuery=""
+          initialInterpretation={{ kind: "text" }}
+        />
+      )
     })
     await flush()
 
@@ -94,7 +100,13 @@ describe("/shop list — 429 handling", () => {
     mockGet.mockRejectedValue(rateLimited429)
 
     await act(async () => {
-      render(<ShopDiscoveryClient initial={null} initialQuery="" />)
+      render(
+        <ShopDiscoveryClient
+          initial={null}
+          initialQuery=""
+          initialInterpretation={{ kind: "text" }}
+        />
+      )
     })
     await flush()
     expect(screen.getByText(/retrying/i)).toBeInTheDocument()

@@ -99,6 +99,7 @@ describe("/shop — server-seeded directory", () => {
         <ShopDiscoveryClient
           initial={{ content: [shop], totalPages: 1, totalElements: 1, number: 0, size: 12 }}
           initialQuery=""
+          initialInterpretation={{ kind: "text" }}
         />
       )
     })
@@ -113,7 +114,13 @@ describe("/shop — server-seeded directory", () => {
     // The control arm. Without it, "no fetch" above could be true because the
     // island never fetches at all, which would be a different bug.
     await act(async () => {
-      render(<ShopDiscoveryClient initial={null} initialQuery="" />)
+      render(
+        <ShopDiscoveryClient
+          initial={null}
+          initialQuery=""
+          initialInterpretation={{ kind: "text" }}
+        />
+      )
     })
     expect(mockGet).toHaveBeenCalledWith("/public/shops", expect.anything())
   })
