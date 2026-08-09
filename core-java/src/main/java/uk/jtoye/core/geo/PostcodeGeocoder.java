@@ -236,10 +236,26 @@ public class PostcodeGeocoder {
         // to every customer on the platform.
         if (district == null || district.getUnits() <= 0
                 || district.getLatitude() == null || district.getLongitude() == null) {
-            // WARN, and name the NORMALISED KEY only — never the raw term. The term is arbitrary
-            // customer text and does not belong in a log; the key is [A-Z0-9]{2,8} by
-            // construction. Same rule as locate().
-            log.warn("Postcode district '{}' is not in the Code-Point Open dataset — search term "
+            // DEBUG, NOT WARN, AND THE LEVEL IS THE DECISION (WR-02). The two misses on this
+            // class are not the same event and must not share a level:
+            //
+            //   locate()          a VENDOR's address line failed to geocode on the authenticated
+            //                     write path. Rare, actionable, and a silent ~1 km error on a
+            //                     shop forever if nobody looks. WARN is right there.
+            //   locateDistrict()  a CUSTOMER typed into the public search box. Its own message
+            //                     concedes the condition is expected, it is reachable
+            //                     ANONYMOUSLY (GET /public/shops?q=ZZ99), every Northern Ireland
+            //                     postcode trips it as ordinary use, and the storefront fires one
+            //                     request PER KEYSTROKE — so typing "BT15GS" logs the
+            //                     intermediate "BT1" on the way past.
+            //
+            // WARN is the level operators alert on. A WARN that fires on ordinary customer typing
+            // is how a WARN channel stops being read.
+            //
+            // Unchanged from the WARN it replaces: name the NORMALISED KEY only, never the raw
+            // term. The term is arbitrary customer text and does not belong in a log; the key is
+            // [A-Z0-9]{2,8} by construction.
+            log.debug("Postcode district '{}' is not in the Code-Point Open dataset — search term "
                     + "not resolved to a location. This is expected for Northern Ireland (the "
                     + "dataset is GB-only) and for districts that do not exist.", outward);
             return Optional.empty();
