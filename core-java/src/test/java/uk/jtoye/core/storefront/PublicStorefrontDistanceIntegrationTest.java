@@ -114,12 +114,37 @@ class PublicStorefrontDistanceIntegrationTest {
         CORNER_LON = P_LON + 0.9 * (box.maxLongitude() - P_LON);
     }
 
+    /**
+     * A latitude at which the spherical law of cosines OVERFLOWS ITS DOMAIN — measured on the live
+     * PostgreSQL 15, not assumed.
+     *
+     * <p>The {@code acos} formulation evaluates {@code sin(lat)^2 + cos(lat)^2 * cos(0)} for a
+     * coincident point. In IEEE 754 that identity is not exactly 1 for every angle. Sampling
+     * 90,001 latitudes from 0 to 90 at 0.001 degree steps, <strong>3,600 of them (4.0%)</strong>
+     * evaluate to strictly greater than 1.0 and make {@code acos} raise
+     * {@code ERROR: input is out of range}.
+     *
+     * <p>This matters because the fixture latitude used everywhere else in this class, 51.4710,
+     * is one of the 96% that evaluate to exactly 1.0 — so the coincident-point arm at that
+     * coordinate CANNOT distinguish the two formulations. Verified by running the break: swapping
+     * the query to an unclamped {@code acos} left the whole suite green. A criterion observed only
+     * passing is not evidence.
+     *
+     * <p>54.900003 is the first latitude at or above 54.9 that triggers it. Live, on the dev
+     * database: {@code acos(...)} raises the domain error while the {@code asin} haversine returns
+     * {@code 0}. It sits 395 km from the query point, so it can never enter the 5 km or 8 km arms
+     * above and change what they measure.
+     */
+    private static final double ACOS_TRAP_LAT = 54.900003;
+    private static final double ACOS_TRAP_LON = -1.6178;
+
     private static final String NEAR = "distance-near";
     private static final String MID = "distance-mid";
     private static final String FAR = "distance-far";
     private static final String CORNER = "distance-corner";
     private static final String NULLCO = "distance-null-coordinates";
     private static final String UNPUB = "distance-unpublished";
+    private static final String ACOS_TRAP = "distance-acos-trap";
 
     @Autowired private ShopRepository shopRepository;
     @Autowired private JdbcTemplate jdbc;
@@ -150,6 +175,7 @@ class PublicStorefrontDistanceIntegrationTest {
         seedShop(tenantA, CORNER, CORNER_LAT, CORNER_LON, true);
         seedShop(tenantA, NULLCO, null, null, true);
         seedShop(tenantA, UNPUB, NEAR_LAT, SHARED_LON, false);
+        seedShop(tenantA, ACOS_TRAP, ACOS_TRAP_LAT, ACOS_TRAP_LON, true);
     }
 
     private void seedShop(UUID tenantId, String slug, Double latitude, Double longitude, boolean published) {
@@ -248,6 +274,9 @@ class PublicStorefrontDistanceIntegrationTest {
 
         Page<ShopWithDistance> tight = near(P_LAT, P_LON, 5.0);
         assertThat(slugsOf(tight)).as("5 km radius").doesNotContain(CORNER);
+        // NOTE: at page size 20 over 3 rows this figure is the CONTENT size, not the count
+        // query — Spring Data skips the count entirely in that shape. See
+        // unpublishedShopIsAbsentFromContentAndCount for the arm that really exercises it.
         assertThat(tight.getTotalElements()).as("5 km total").isEqualTo(3);
 
         // The control. A filter that never admits anything is not a filter; widening must let
@@ -277,14 +306,29 @@ class PublicStorefrontDistanceIntegrationTest {
         assertThat(rows).as("the NULL-coordinate fixture must exist to be excluded").isEqualTo(1);
     }
 
+    /**
+     * THE PAGE SIZE IS 2 AND THAT IS LOAD-BEARING — measured, not assumed.
+     *
+     * <p>This arm was first written at the default page size of 20 and was found INCAPABLE OF
+     * FAILING: the deliberate break (deleting {@code published = true} from the {@code countQuery}
+     * ONLY) left the whole suite green. The cause is
+     * {@code PageableExecutionUtils.getPage} — when the offset is 0 and the page size exceeds the
+     * number of rows returned, Spring Data never issues the count query at all and reports
+     * {@code content.size()} as the total. Three rows in a page of twenty is exactly that shape,
+     * so the assertion was measuring the content it had already asserted.
+     *
+     * <p>At page size 2 the content fills the page, so the count query genuinely runs and its
+     * result is what {@code getTotalElements()} returns. With the break applied the total reads 4.
+     */
     @Test
     @DisplayName("an unpublished shop is absent from the CONTENT and from the TOTAL")
     void unpublishedShopIsAbsentFromContentAndCount() {
-        Page<ShopWithDistance> page = near(P_LAT, P_LON, 5.0);
+        Page<ShopWithDistance> page = near(P_LAT, P_LON, 5.0, PageRequest.of(0, 2, Sort.unsorted()));
 
-        assertThat(slugsOf(page)).as("page content").doesNotContain(UNPUB);
+        assertThat(slugsOf(page)).as("page content").doesNotContain(UNPUB).containsExactly(NEAR, MID);
         assertThat(page.getTotalElements())
-                .as("totalElements — an unpublished shop leaking through a countQuery that forgot "
+                .as("totalElements, from a request whose page is FULL so the countQuery is actually "
+                        + "executed — an unpublished shop leaking through a count that forgot "
                         + "published = true is invisible to a content-only assertion")
                 .isEqualTo(3);
 
@@ -307,8 +351,28 @@ class PublicStorefrontDistanceIntegrationTest {
         assertThat(slugsOf(page)).as("the shop the customer is standing on must come first")
                 .startsWith(NEAR);
         assertThat(page.getContent().get(0).getDistanceKm())
-                .as("the spherical law of cosines pushes acos's argument to 1.0000000000000002 here "
-                        + "and PostgreSQL raises 'input is out of range' — an unauthenticated 500")
+                .as("distance to the shop the customer is standing on")
+                .isEqualTo(0.0);
+    }
+
+    /**
+     * The arm that can actually tell {@code asin} from {@code acos}. See {@link #ACOS_TRAP_LAT}:
+     * the ordinary fixture latitude evaluates {@code sin^2 + cos^2} to exactly 1.0 and therefore
+     * cannot fail against the {@code acos} formulation, which was measured by running that break
+     * and watching the suite stay green. This coordinate is one of the 4% that overflow.
+     */
+    @Test
+    @DisplayName("a coincident query at an acos-hostile latitude returns 0.0 rather than a 500")
+    void coincidentPointAtAnAcosHostileLatitudeReturnsZero() {
+        Page<ShopWithDistance> page = near(ACOS_TRAP_LAT, ACOS_TRAP_LON, 5.0);
+
+        assertThat(slugsOf(page))
+                .as("only the shop at this coordinate is within 5 km of it")
+                .containsExactly(ACOS_TRAP);
+        assertThat(page.getContent().get(0).getDistanceKm())
+                .as("with an unclamped acos this query does not return a wrong number — it raises "
+                        + "'ERROR: input is out of range', i.e. an unauthenticated 500 that any "
+                        + "caller can trigger by standing on a shop's own postcode centroid")
                 .isEqualTo(0.0);
     }
 
@@ -319,6 +383,14 @@ class PublicStorefrontDistanceIntegrationTest {
     @Test
     @DisplayName("getTotalElements survives an offset past the end of the result set")
     void totalElementsSurvivesAnOffsetPastTheEnd() {
+        // The full first page: offset 0 with the page filled, so the count query really runs.
+        Page<ShopWithDistance> firstPage =
+                near(P_LAT, P_LON, 5.0, PageRequest.of(0, 2, Sort.unsorted()));
+        assertThat(firstPage.getContent()).hasSize(2);
+        assertThat(firstPage.getTotalElements())
+                .as("the count query's own answer, before any offset arithmetic")
+                .isEqualTo(3);
+
         Page<ShopWithDistance> secondPage =
                 near(P_LAT, P_LON, 5.0, PageRequest.of(1, 2, Sort.unsorted()));
 
