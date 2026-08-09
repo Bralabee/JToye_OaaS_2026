@@ -346,7 +346,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
-| 33. The Consumer Product | v2.3 | 6/8 | In Progress | — |
+| 33. The Consumer Product | v2.3 | 7/8 | In Progress | — |
 | 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -755,7 +755,7 @@ Plans:
 
 **Wave 5** *(blocked on 33-05 — both plans create a runtime gate, and `scripts/gates/gate-enforcement.conf` cannot be pre-declared: an entry naming a not-yet-existing script makes `check-gate-enforcement.sh` exit 2 VOID, so each plan must append its own entry when it creates its own gate)*
 
-- [ ] 33-06-PLAN.md (Wave 5, blocked on 33-05 — see note) — #460 link 5: `findPublishedNear` — native `asin`-haversine with a leakproof bounding-box prefilter and an explicit `countQuery`; `lat`/`lon`/`radiusKm` validated on the anonymous endpoint; `distanceKm` projected from SQL; OpenAPI snapshot freshness enforced by a gate that fails closed
+- [x] 33-06-PLAN.md (Wave 5, blocked on 33-05 — see note) — #460 link 5: `findPublishedNear` — native `asin`-haversine with a leakproof bounding-box prefilter and an explicit `countQuery`; `lat`/`lon`/`radiusKm` validated on the anonymous endpoint; `distanceKm` projected from SQL; OpenAPI snapshot freshness enforced by a gate that fails closed
 
 **Wave 6** *(blocked on 33-03, 33-05, 33-06)*
 
