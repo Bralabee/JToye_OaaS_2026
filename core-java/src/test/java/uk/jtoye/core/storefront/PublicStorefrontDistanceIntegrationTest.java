@@ -513,6 +513,47 @@ class PublicStorefrontDistanceIntegrationTest {
                 .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/type-mismatch"));
     }
 
+    /**
+     * The anonymous storefront read is CROSS-TENANT by design and this plan must not have narrowed
+     * it. {@code shops} is ENABLE + FORCE RLS and {@code shops_public_read} reads
+     * {@code ((published = true) OR (tenant_id = current_tenant_id()))}; with no tenant GUC the
+     * second limb is NULL and {@code published = true} is the sole limb. That is exactly how
+     * {@code findByPublishedTrue} already serves this endpoint, and the distance query must behave
+     * the same way.
+     *
+     * <p>The assertion is not "some shops came back" — a single-tenant result would satisfy that
+     * while a stray tenant filter silently halved the directory. It is that the shops returned
+     * resolve to MORE THAN ONE tenant, with the tenant ids read back out of the database rather
+     * than assumed from the fixture.
+     */
+    @Test
+    @DisplayName("with NO tenant GUC the distance endpoint returns published shops from more than one tenant")
+    void distanceEndpointStaysCrossTenantWithoutATenantGuc() throws Exception {
+        assertThat(TenantContext.get())
+                .as("precondition: no tenant is pinned, so the request is genuinely anonymous")
+                .isEmpty();
+
+        String body = mockMvc.perform(get("/public/shops")
+                        .param("lat", String.valueOf(P_LAT))
+                        .param("lon", String.valueOf(P_LON)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        // Slugs are read out of the RESPONSE, tenants out of the DATABASE — so this cannot pass by
+        // asserting the fixture against itself.
+        assertThat(body).contains(NEAR).contains(MID).contains(FAR);
+        List<UUID> tenantIds = jdbc.queryForList(
+                "SELECT DISTINCT tenant_id FROM shops WHERE slug IN (?, ?, ?)", UUID.class, NEAR, MID, FAR);
+        assertThat(tenantIds)
+                .as("the anonymous distance listing must span tenants, as the unlocated one does")
+                .hasSize(2)
+                .containsExactlyInAnyOrder(tenantA, tenantB);
+
+        // The unpublished shop is the other half of the same policy: cross-tenant, but published
+        // only. It sits on NEAR's exact coordinates, so only the predicate can be hiding it.
+        assertThat(body).doesNotContain(UNPUB);
+    }
+
     @Test
     @DisplayName("the radius ceiling is refused, never clamped — 51 km must not silently become 50")
     void aRadiusPastTheCeilingIsRefusedNotClamped() throws Exception {

@@ -3150,6 +3150,10 @@
           "description" : {
             "type" : "string"
           },
+          "distanceKm" : {
+            "format" : "double",
+            "type" : "number"
+          },
           "email" : {
             "type" : "string"
           },
@@ -8800,7 +8804,7 @@
     },
     "/api/v1/public/shops" : {
       "get" : {
-        "description" : "Browse available shops. Optionally filter by search query.",
+        "description" : "Browse available shops. Optionally filter by search query, or order by distance from a coordinate. Supplying 'lat' and 'lon' returns published shops within 'radiusKm' (platform default when omitted, capped by the platform maximum), nearest first, each carrying 'distanceKm'. Coordinates are postcode centroids (~100 m, GB only), not door-level. 'lat' and 'lon' must be supplied together and cannot be combined with 'q'. With no coordinate the listing is unchanged: name-ascending, and 'distanceKm' is null.",
         "operationId" : "listShops_1",
         "parameters" : [
           {
@@ -8809,6 +8813,33 @@
             "required" : false,
             "schema" : {
               "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "lat",
+            "required" : false,
+            "schema" : {
+              "format" : "double",
+              "type" : "number"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "lon",
+            "required" : false,
+            "schema" : {
+              "format" : "double",
+              "type" : "number"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "radiusKm",
+            "required" : false,
+            "schema" : {
+              "format" : "double",
+              "type" : "number"
             }
           },
           {
@@ -10652,7 +10683,7 @@
     },
     "/public/shops" : {
       "get" : {
-        "description" : "Browse available shops. Optionally filter by search query.",
+        "description" : "Browse available shops. Optionally filter by search query, or order by distance from a coordinate. Supplying 'lat' and 'lon' returns published shops within 'radiusKm' (platform default when omitted, capped by the platform maximum), nearest first, each carrying 'distanceKm'. Coordinates are postcode centroids (~100 m, GB only), not door-level. 'lat' and 'lon' must be supplied together and cannot be combined with 'q'. With no coordinate the listing is unchanged: name-ascending, and 'distanceKm' is null.",
         "operationId" : "listShops",
         "parameters" : [
           {
@@ -10661,6 +10692,33 @@
             "required" : false,
             "schema" : {
               "type" : "string"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "lat",
+            "required" : false,
+            "schema" : {
+              "format" : "double",
+              "type" : "number"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "lon",
+            "required" : false,
+            "schema" : {
+              "format" : "double",
+              "type" : "number"
+            }
+          },
+          {
+            "in" : "query",
+            "name" : "radiusKm",
+            "required" : false,
+            "schema" : {
+              "format" : "double",
+              "type" : "number"
             }
           },
           {
