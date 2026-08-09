@@ -8804,7 +8804,7 @@
     },
     "/api/v1/public/shops" : {
       "get" : {
-        "description" : "Browse available shops. Optionally filter by search query, or order by distance from a coordinate. Supplying 'lat' and 'lon' returns published shops within 'radiusKm' (platform default when omitted, capped by the platform maximum), nearest first, each carrying 'distanceKm'. Coordinates are postcode centroids (~100 m, GB only), not door-level. 'lat' and 'lon' must be supplied together and cannot be combined with 'q'. With no coordinate the listing is unchanged: name-ascending, and 'distanceKm' is null.",
+        "description" : "Browse available shops. Optionally filter by search query, or order by distance from a coordinate. Supplying 'lat' and 'lon' returns published shops within 'radiusKm' (platform default when omitted, capped by the platform maximum), nearest first, each carrying 'distanceKm'. Coordinates are postcode centroids (~100 m, GB only), not door-level. 'lat' and 'lon' must be supplied together and cannot be combined with 'q'. With no coordinate the listing is name-ascending and 'distanceKm' is null. A 'q' that the text search cannot answer and that resolves to a GB postcode is served by proximity from that postcode's centroid instead of returning nothing; the 'X-Search-Interpretation' response header states which reading was applied.",
         "operationId" : "listShops_1",
         "parameters" : [
           {
@@ -8860,7 +8860,16 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "A page of published shops.",
+            "headers" : {
+              "X-Search-Interpretation" : {
+                "description" : "How the server read 'q'. Present on ?q= responses only — absent from the plain listing and from the lat/lon distance path. Either the single token 'text', or 'proximity; postcode=<KEY>; precision=<unit|district>; radiusKm=<n>'. Present even when the proximity result is empty, because \"no kitchens within the radius of SE22\" and \"nothing matches 'SE22'\" are different answers.",
+                "schema" : {
+                  "type" : "string"
+                },
+                "style" : "simple"
+              }
+            }
           }
         },
         "summary" : "List published shops",
@@ -10683,7 +10692,7 @@
     },
     "/public/shops" : {
       "get" : {
-        "description" : "Browse available shops. Optionally filter by search query, or order by distance from a coordinate. Supplying 'lat' and 'lon' returns published shops within 'radiusKm' (platform default when omitted, capped by the platform maximum), nearest first, each carrying 'distanceKm'. Coordinates are postcode centroids (~100 m, GB only), not door-level. 'lat' and 'lon' must be supplied together and cannot be combined with 'q'. With no coordinate the listing is unchanged: name-ascending, and 'distanceKm' is null.",
+        "description" : "Browse available shops. Optionally filter by search query, or order by distance from a coordinate. Supplying 'lat' and 'lon' returns published shops within 'radiusKm' (platform default when omitted, capped by the platform maximum), nearest first, each carrying 'distanceKm'. Coordinates are postcode centroids (~100 m, GB only), not door-level. 'lat' and 'lon' must be supplied together and cannot be combined with 'q'. With no coordinate the listing is name-ascending and 'distanceKm' is null. A 'q' that the text search cannot answer and that resolves to a GB postcode is served by proximity from that postcode's centroid instead of returning nothing; the 'X-Search-Interpretation' response header states which reading was applied.",
         "operationId" : "listShops",
         "parameters" : [
           {
@@ -10739,7 +10748,16 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "A page of published shops.",
+            "headers" : {
+              "X-Search-Interpretation" : {
+                "description" : "How the server read 'q'. Present on ?q= responses only — absent from the plain listing and from the lat/lon distance path. Either the single token 'text', or 'proximity; postcode=<KEY>; precision=<unit|district>; radiusKm=<n>'. Present even when the proximity result is empty, because \"no kitchens within the radius of SE22\" and \"nothing matches 'SE22'\" are different answers.",
+                "schema" : {
+                  "type" : "string"
+                },
+                "style" : "simple"
+              }
+            }
           }
         },
         "summary" : "List published shops",

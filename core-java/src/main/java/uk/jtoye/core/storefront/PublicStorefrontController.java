@@ -116,7 +116,10 @@ public class PublicStorefrontController {
                             + "Present even when the proximity result is empty, because "
                             + "\"no kitchens within the radius of SE22\" and \"nothing matches "
                             + "'SE22'\" are different answers.",
-                    schema = @Schema(type = "string")))
+                    // implementation = String.class, not type = "string": the latter alone
+                    // renders as an EMPTY schema object in the generated snapshot, which tells a
+                    // machine consumer nothing. Verified by regenerating both ways.
+                    schema = @Schema(implementation = String.class)))
     public Page<PublicShopDto> listShops(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Double lat,

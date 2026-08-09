@@ -47,8 +47,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Tag("testcontainers")
 class PostcodeCentroidImportIntegrationTest {
 
-    /** The fixture's real row count — kept in one place so a drifting fixture fails loudly. */
-    private static final int FIXTURE_ROWS = 7;
+    /**
+     * The fixture's real row count — kept in one place so a drifting fixture fails loudly.
+     *
+     * <p>Moved 7 -> 8 by 33-08, which appended a real {@code M11} unit so the district query's
+     * unit-length guard could be falsified against the fixture. Three things move together and
+     * the suite fails loudly if they do not: this constant, {@code fixture-SOURCE.md}'s declared
+     * count, and {@code nullisland-SOURCE.md}, which must stay exactly one HIGHER — see that
+     * file.
+     */
+    private static final int FIXTURE_ROWS = 8;
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
@@ -160,7 +168,7 @@ class PostcodeCentroidImportIntegrationTest {
                 .hasMessageContaining("(0,0)");
 
         // Not merely "the bad row is absent" — the whole load is rolled back, so the table is
-        // untouched rather than partially populated with the seven good rows.
+        // untouched rather than partially populated with the eight good rows.
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM postcode_centroid", Long.class))
                 .isZero();
     }
@@ -168,7 +176,9 @@ class PostcodeCentroidImportIntegrationTest {
     @Test
     @DisplayName("a row-count mismatch aborts rather than serving a partial table")
     void rowCountMismatchAborts() {
-        // The fixture holds 7 rows; this manifest claims 8.
+        // The fixture holds 8 rows; this manifest claims 9. The GAP is the point, not the
+        // numbers: if a future fixture row is added to only one side the mismatch disappears and
+        // this arm silently stops testing anything. 33-08 hit exactly that.
         PostcodeCentroidImporter importer =
                 importerFor("postcode-centroids-fixture.csv", "nullisland-SOURCE.md");
 

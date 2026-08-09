@@ -6,5 +6,5 @@ in the importer completely unexercised — and its failure mode is refusing to b
 
 | | |
 |---|---|
-| **Dataset** | fixture (7 real Code-Point Open rows) |
-| **Rows after filter** | **7** (dropped 0) |
+| **Dataset** | fixture (8 real Code-Point Open rows) |
+| **Rows after filter** | **8** (dropped 0) |
