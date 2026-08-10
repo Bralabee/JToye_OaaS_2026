@@ -65,17 +65,22 @@ replicas:
   - name: frontend
     count: 3
 
-# Issue #271 — the Postgres egress port follows app-config `db.port`.
+# Issue #271 / Blocker D — the datastore egress ports and addresses follow
+# app-config `db.port`, `db.egress-cidr`, `redis.port` and `redis.egress-cidr`.
 #
 # REPEATED FROM k8s/base/kustomization.yaml because kustomize does not re-run a
 # base replacement against an overlay's patched ConfigMap (measured — see the
-# writeup there). Production does NOT patch db.port today, so this pass is a
-# no-op and the production render is byte-identical with or without it. It is
-# here so that a future move to a managed Postgres on a non-default port is a
-# single ConfigMap key change, instead of a change that silently leaves the
-# NetworkPolicy behind — which under an enforcing CNI CrashLoops every core-java
-# replica and fails the nightly backup, with a network denial that reads like an
-# application fault.
+# writeup there). Production patches NONE of these four keys today, so every
+# pass here is a no-op and the production render is byte-identical with or
+# without the block. It is here so that a future move to managed datastores
+# (Phase 32) is a ConfigMap change in configmap-patch.yaml and nothing else,
+# instead of a change that silently leaves the NetworkPolicy behind — which under
+# an enforcing CNI CrashLoops every core-java replica and fails the nightly
+# backup, with a network denial that reads like an application fault.
+#
+# Production being a no-op is exactly why it is NOT evidence that the block
+# works. Staging is the target that exercises it (redis.port 6380), and that is
+# where plan 29-04 ran the fail-direction arm.
 replacements:
   - source:
       kind: ConfigMap
@@ -87,8 +92,45 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+          - spec.egress.4.ports.0.port
       - select:
           kind: NetworkPolicy
           name: pg-backup-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+          - spec.egress.4.ports.0.port
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.db\.egress-cidr
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.4.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: pg-backup-allow
+        fieldPaths:
+          - spec.egress.4.to.0.ipBlock.cidr
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.redis\.port
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.5.ports.0.port
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.redis\.egress-cidr
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.5.to.0.ipBlock.cidr

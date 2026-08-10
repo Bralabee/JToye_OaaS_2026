@@ -16,8 +16,12 @@
 #   - Public 443/TCP for Keycloak (auth.olajay.co.uk), Stripe (api.stripe.com),
 #     Ollama remote (if configured), S3 public endpoints, image CDNs.
 #     See 15-RESEARCH.md §4 for the Stripe CIDR tradeoff rationale.
+#   - OUT-OF-CLUSTER managed Postgres (app-config db.egress-cidr on db.port) and
+#     managed Redis (redis.egress-cidr on redis.port), one dedicated rule each.
+#     See the block above those rules for why they cannot ride on any rule above.
 #
-# Enforces STRIDE T-15-04 (DNS egress scoped) + narrows remote egress to 443 only.
+# Enforces STRIDE T-15-04 (DNS egress scoped) + narrows remote egress to 443 only
+# for general traffic, and to exactly one port per managed datastore for D-09.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -108,11 +112,15 @@ spec:
         - protocol: TCP
           port: 5432   # Postgres — replaced from app-config db.port
     # In-cluster infrastructure namespace: Redis, RabbitMQ, MinIO, Alertmanager.
-    # These five are still literals. That is a KNOWN, deliberate limit of this
-    # change: #271 is about the Postgres port, and redis.port / rabbitmq.port /
-    # stomp.broker.relay-port already exist as app-config keys, so routing them
-    # the same way is a clean follow-up rather than something this change smuggles
-    # in. INV-7 asserts all five explicitly, so they cannot drift unnoticed.
+    # These five are still literals, and they stay literals HERE on purpose: this
+    # rule is about the in-cluster deployment shape, where those five ports are
+    # fixed by the infra namespace's own Services. Plan 29-04 took up the
+    # "clean follow-up" this comment used to name, but for the OUT-OF-CLUSTER
+    # Redis only — `redis.port` now drives spec.egress.5 below, where the value
+    # genuinely varies per environment (6379 in-cluster, 6380 on Azure Cache
+    # Basic). rabbitmq.port / stomp.broker.relay-port remain unrouted because
+    # nothing moves them out of the cluster; that is a limit, stated, not an
+    # oversight. INV-7 asserts all five explicitly, so they cannot drift unnoticed.
     - to:
         - namespaceSelector:
             matchLabels:
@@ -130,6 +138,13 @@ spec:
           port: 9093   # Alertmanager
     # Public internet for Keycloak, Stripe, Ollama remote, S3 public, CDNs
     # See 15-RESEARCH.md §4 Stripe CIDR tradeoff.
+    #
+    # THIS RULE IS 443-ONLY AND MUST STAY THAT WAY. Adding 5432 or 6380 here to
+    # reach the managed datastores is the obvious shortcut and it is forbidden
+    # (T-29-04-01): a rule that admits every public address on the database port
+    # AND on the cache port AND on 443 is not the allow-list it claims to be, and
+    # it makes the per-datastore rules below unfalsifiable. INV-7's ipBlock arm
+    # asserts this rule's (cidr, port) pair EXACTLY, so a widening fails CI.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -140,3 +155,84 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+    # =========================================================================
+    # OUT-OF-CLUSTER MANAGED DATASTORES (Blocker D, plan 29-04). Two rules, one
+    # per datastore, each holding exactly ONE port and ONE peer.
+    #
+    # WHY THEY EXIST. Everything above assumes the datastores live in the
+    # cluster: the two rules at indices 1 and 2 address their peer by
+    # `namespaceSelector: jtoye-infrastructure`. D-09 moves Postgres to an Azure
+    # Database for PostgreSQL Flexible Server and Redis to Azure Cache for Redis
+    # Basic — neither is in that namespace, so neither rule applies to them, and
+    # the 443-only rule above denies both ports. Under an enforcing CNI every
+    # core-java replica CrashLoops, with a NetworkPolicy denial that reads like a
+    # database outage. This is #271's exact failure shape recurring through a
+    # different door; #271 is CLOSED and stays closed — this EXTENDS its
+    # mechanism rather than re-opening it.
+    #
+    # THEY ARE APPENDED, NOT INSERTED, AND THAT IS LOAD-BEARING. kustomize
+    # preserves LIST order, so `spec.egress.1` addresses the authored Postgres
+    # rule. Inserting anything ahead of index 1 silently retargets the existing
+    # replacement onto a neighbouring rule. New rules therefore go at the END, at
+    # stable indices, and those indices are named in every kustomization.yaml
+    # that references them:
+    #     spec.egress.4  = managed Postgres   (cidr <- db.egress-cidr,
+    #                                          port <- db.port)
+    #     spec.egress.5  = managed Redis      (cidr <- redis.egress-cidr,
+    #                                          port <- redis.port)
+    #
+    # NEITHER PORT NOR CIDR BELOW IS AUTHORED. Both are OVERWRITTEN at render
+    # time from app-config by the `replacements:` block in
+    # k8s/base/kustomization.yaml AND in each overlay's own kustomization.yaml (a
+    # base replacement does not re-run against an overlay's patched ConfigMap —
+    # measured, see the writeup there). The committed values are the base
+    # defaults you get if a replacement is ever removed. Do not change the port
+    # or the address by editing this file; change app-config.
+    #
+    # WHY NO `namespaceSelector: {}` / `podSelector: {}` PEER ALONGSIDE THE
+    # ipBlock. Cilium cannot select pod or node IPs with an `ipBlock`, and
+    # Microsoft's AKS FAQ notes even `cidr: 0.0.0.0/0` still excludes them; the
+    # documented workaround is to add empty selectors beside the ipBlock. That
+    # workaround is CORRECT for a rule that must also reach IN-CLUSTER peers and
+    # WRONG here: an empty `namespaceSelector: {}` permits egress to every pod in
+    # every namespace on the datastore port, which is a far larger hole than the
+    # one being closed and directly contradicts T-29-04-01. PG_ACCESS_MODE is
+    # `public-with-firewall` (29-OPERATOR-DECISIONS.md §1), so both endpoints are
+    # genuinely outside the cluster and an ipBlock is the whole story. If a later
+    # phase moves either server to private access (VNet-injected), THEN the empty
+    # selectors — and dropping the RFC1918 `except:` below — become required, and
+    # that is the change to make deliberately rather than pre-emptively.
+    #
+    # THE `except:` LIST IS ONLY VALID WHILE cidr IS A SUPERNET OF IT. The
+    # Kubernetes API rejects an `except` entry that is not strictly within
+    # `cidr`, so pinning db.egress-cidr / redis.egress-cidr to a `<ip>/32` MUST
+    # drop these three entries in the same change. INV-7's ipBlock arm asserts
+    # that containment on the RENDER, so the mistake fails in CI rather than at
+    # `kubectl apply` in the middle of a deploy.
+    # =========================================================================
+    # spec.egress.4 — MANAGED POSTGRES (Azure Database for PostgreSQL Flexible
+    # Server). cidr <- app-config db.egress-cidr; port <- app-config db.port.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0   # replaced from app-config db.egress-cidr
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432   # managed Postgres — replaced from app-config db.port
+    # spec.egress.5 — MANAGED REDIS (Azure Cache for Redis Basic C0, TLS 6380;
+    # the plaintext 6379 port is disabled on the cache and enabling it would put
+    # session traffic in clear on the public internet — T-29-02-02).
+    # cidr <- app-config redis.egress-cidr; port <- app-config redis.port.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0   # replaced from app-config redis.egress-cidr
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 6379   # managed Redis — replaced from app-config redis.port
