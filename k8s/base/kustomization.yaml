@@ -46,6 +46,9 @@ resources:
   # guard reads zero policies as a BLIND PARSER, not as a pass. Same shape, same
   # reason, as networkpolicies/ directly above.
   - monitoring/prometheus-config.yaml
+  - monitoring/prometheus-deployment.yaml
+  - monitoring/postgres-exporter-deployment.yaml
+  - monitoring/redis-exporter-deployment.yaml
 
 # =============================================================================
 # THE ALERT CORPUS — one corpus, enforced rather than intended (D-16 / plan 29-06)

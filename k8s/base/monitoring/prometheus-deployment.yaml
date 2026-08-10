@@ -1,0 +1,195 @@
+---
+# prometheus-deployment.yaml — Prometheus as a cluster-internal workload (DPLY-03, plan 29-06)
+#
+# NO INGRESS, AND THAT IS A SECURITY CONTROL, NOT AN OMISSION (D-19 / T-29-06-01).
+#   Prometheus has no authentication of its own. Anything that can reach it can read
+#   every series this platform emits — request paths, queue names, tenant-shaped
+#   cardinality — and can also silence nothing, which is the only good news. So it
+#   gets a ClusterIP Service and nothing else. Only GRAFANA gets a public hostname
+#   (grafana-staging.olajay.co.uk, its own login), and that arrives in plan 29-07,
+#   which also adds a render invariant asserting that prometheus and alertmanager
+#   never acquire an Ingress backend. Reach this UI with:
+#       kubectl -n <ns> port-forward svc/prometheus 9090:9090
+#
+# NO HPA AND NO PDB, STATED RATHER THAN SILENTLY OMITTED.
+#   Every other Deployment in this base ships both. This one must not:
+#   - An HPA on Prometheus would run several replicas, each with its OWN TSDB and
+#     its OWN scrape loop, so every target would be scraped N times and every alert
+#     would be evaluated N times by instances that cannot see each other's data.
+#     Prometheus scales by federation or by remote-write, never by replica count.
+#   - A PodDisruptionBudget over a single replica is worse than none: `minAvailable: 1`
+#     on a 1-replica Deployment makes every voluntary eviction permanently
+#     impossible, so a node drain hangs forever. That exact shape is already recorded
+#     in this repo (k8s/staging/scale-patch.yaml, the edge-go PDB at minAvailable 3
+#     over 2 replicas).
+#
+# strategy: Recreate, ALSO deliberate. The default RollingUpdate would briefly run a
+#   second Prometheus that scrapes everything and evaluates every rule against an
+#   empty TSDB — which is how a `for: 5m` rule fires spuriously on a restart. One at
+#   a time, with a gap, is the correct behaviour for a singleton with local state.
+#
+# STORAGE: emptyDir, WITH ITS CONSEQUENCE WRITTEN DOWN.
+#   The retention flag says 30d and the volume does not survive the pod. Both are
+#   true, and it would be dishonest to write the flag and not say so: on any restart
+#   the metric HISTORY is lost. What is NOT lost is alerting — rules evaluate against
+#   live scrapes, so the paging path this phase exists to build is unaffected, and
+#   `for:` windows simply restart. A PersistentVolumeClaim is the upgrade, and it is
+#   deliberately not taken here: it needs a StorageClass decision and monthly cost
+#   inside the £150 ceiling (D-03), and this plan's deliverable is that the gates
+#   have something real to point at. Recorded as a follow-up rather than pretended
+#   away.
+#
+# TWO CONFIG MOUNTS, NOT ONE — and the reason is not cosmetic.
+#   /etc/prometheus/conf   <- prometheus-config   (plain ConfigMap, stable name)
+#   /etc/prometheus/rules  <- prometheus-alerts   (generated, content-hashed name)
+#   A hashed name is what makes kustomize roll this Deployment when the RULES change,
+#   which matters because Prometheus runs without `/-/reload` and would otherwise
+#   keep evaluating the old corpus while the ConfigMap in the cluster said otherwise
+#   — the k8s-shaped version of the detached-bind-mount failure that
+#   check-alert-liveness.sh's L-0 exists to catch. The two cannot share one mount
+#   point (a second volume at the same path shadows the first), and a `subPath` mount
+#   would freeze the file at pod start, which defeats the whole point. Hence two
+#   directories, and hence L-0 needs PROM_ALERTS_PATH=/etc/prometheus/rules/alerts.yml
+#   in k8s (the script has supported that override since plan 29-03).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+    component: monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+        component: monitoring
+        version: v1
+      annotations:
+        # Prometheus scrapes itself through its Service (see the `prometheus` job in
+        # prometheus-config.yaml). These annotations are the repo's house convention
+        # on every workload; nothing in this deployment consumes them today because
+        # no annotation-based service discovery is configured — the scrape config is
+        # static_configs throughout, deliberately, so that the job names stay fixed.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        # Pod-level fsGroup so the emptyDir TSDB is group-writable by the image's
+        # own unprivileged user. prom/prometheus runs as nobody (65534) and the
+        # upstream image declares /prometheus as its data directory.
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+      containers:
+      - name: prometheus
+        # PIN REUSED VERBATIM FROM COMPOSE (D-16). v2.48.0 is EOL and that is a
+        # DELIBERATE, DATED deferral, not an oversight: infra/dependency-horizons.yaml
+        # carries the exemption (expires 2026-12-31, tracked_by DEFERRED-27) with the
+        # reason that the monitoring stack moves as one piece. Adopting 3.x here would
+        # ALSO mean staging and compose evaluate PromQL differently, which would make
+        # every cross-runtime comparison in this phase meaningless.
+        image: prom/prometheus:v2.48.0
+        imagePullPolicy: IfNotPresent
+        args:
+          # Flags carried from infra/monitoring/docker-compose.monitoring.yml:44-49.
+          # The compose analog needs an entrypoint wrapper to render its config
+          # template; this one does not (see prometheus-config.yaml), so the flags
+          # are plain args.
+          - '--config.file=/etc/prometheus/conf/prometheus.yml'
+          - '--storage.tsdb.path=/prometheus'
+          - '--storage.tsdb.retention.time=30d'
+          - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+          - '--web.console.templates=/usr/share/prometheus/consoles'
+        ports:
+        - containerPort: 9090
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          # /-/healthy is the same endpoint the compose healthcheck uses (:76). It
+          # answers as soon as the process is up and is NOT a statement about whether
+          # targets are being scraped — which is correct for a liveness probe: a
+          # Prometheus whose targets are all DOWN must stay alive to say so.
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          # /-/ready is the stricter one: it reports NOT ready while the TSDB is
+          # still replaying its WAL, which on a restart is exactly when a query
+          # (or Grafana) would get partial answers.
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          # readOnlyRootFilesystem is TRUE and the TSDB is a mounted volume, which is
+          # the shape the plan asked for: give the workload a writable path, do not
+          # relax the root filesystem to get one.
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus/conf
+          readOnly: true
+        - name: rules
+          mountPath: /etc/prometheus/rules
+          readOnly: true
+        - name: tsdb
+          mountPath: /prometheus
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+      - name: rules
+        configMap:
+          # kustomize rewrites this to the content-hashed name it generates. That
+          # rewrite is what makes a rule edit roll the pod.
+          name: prometheus-alerts
+      - name: tsdb
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+    component: monitoring
+spec:
+  # ClusterIP, and there is no Ingress anywhere in this directory (T-29-06-01).
+  # Plan 29-07 provisions Grafana's datasource as http://prometheus:9090, and the
+  # `prometheus` scrape job in prometheus-config.yaml resolves through this same
+  # Service.
+  type: ClusterIP
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: http
