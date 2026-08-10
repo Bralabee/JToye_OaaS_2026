@@ -290,3 +290,15 @@ Its only artifact is a test.
 - Testcontainers spins its own throwaway Postgres per test class, which is project-name independent
   and therefore unaffected by the worktree.
 - STATE.md / ROADMAP.md deliberately untouched — orchestrator owns those.
+
+## Self-Check: PASSED
+
+| Claim | Verification | Result |
+|-------|--------------|--------|
+| `core-java/src/test/java/uk/jtoye/core/config/TenantHeaderAbsentDocumentTest.java` exists | `test -f` | FOUND |
+| `.planning/phases/28-security-triage-the-dev-prod-boundary/28-02-SUMMARY.md` exists | `test -f` | FOUND |
+| Task 1 commit `10763d4b` | `git log --oneline` | FOUND |
+| SUMMARY commit `3f9d50a9` | `git log --oneline` | FOUND |
+| `SecurityConfig.java` byte-identical to HEAD | `git hash-object` = `git rev-parse HEAD:<path>` = `d764d243d1a768b63859203279b35377a0db397f` | MATCH |
+| `TenantHeaderSchemeCustomizer.java` byte-identical to HEAD | hash = `95e442b20bbf391bea79e6809cb492424470c37d` | MATCH |
+| Working tree clean | `git status --short` | empty |
