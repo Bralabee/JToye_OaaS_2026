@@ -84,6 +84,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ActiveProfiles("test")
 @Tag("testcontainers")
 @Transactional
+// #283: the subject here is the RLS/tenant wall (a foreign shopId resolving 404), which sits
+// BELOW the shop-scope gate. Declaring the harness restores the real path — require() ->
+// FC-1 requireShopInCallerTenant -> ResourceNotFoundException — rather than stopping at a 403
+// before the assertion this class exists to make.
+@uk.jtoye.core.testsupport.AsSystemHarness
 class CrossTenantMcpWriteRlsIntegrationTest {
 
     @Container

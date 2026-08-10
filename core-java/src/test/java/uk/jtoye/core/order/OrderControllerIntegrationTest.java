@@ -44,6 +44,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 @Transactional
 @org.junit.jupiter.api.Tag("testcontainers")
+// #283: despite the name there is no MockMvc here — it calls orderService directly, so every
+// test is the harness driving the service with no principal.
+@uk.jtoye.core.testsupport.AsSystemHarness
 class OrderControllerIntegrationTest {
 
     @Container

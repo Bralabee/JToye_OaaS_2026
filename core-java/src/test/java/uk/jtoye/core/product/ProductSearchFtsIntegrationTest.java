@@ -82,6 +82,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @Transactional
 @org.junit.jupiter.api.Tag("testcontainers")
+// #283: the search path runs through productService.search (gated read-scope). The subject is
+// full-text search correctness, not authorization.
+@uk.jtoye.core.testsupport.AsSystemHarness
 class ProductSearchFtsIntegrationTest {
 
     @Container

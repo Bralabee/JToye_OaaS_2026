@@ -54,6 +54,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 @Tag("testcontainers")
 @Transactional
+// #283: drives mediaAssetService.acceptQuarantineAndQueue (gated at :118) to reach the dedup
+// behaviour under test; the gate is scaffolding here, not the subject.
+@uk.jtoye.core.testsupport.AsSystemHarness
 class MediaDedupAttachIntegrationTest {
 
     @Container

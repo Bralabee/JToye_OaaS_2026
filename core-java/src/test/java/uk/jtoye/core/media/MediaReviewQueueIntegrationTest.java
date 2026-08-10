@@ -45,6 +45,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ActiveProfiles("test")
 @Tag("testcontainers")
 @Transactional
+// #283: keepDismissesFlag() reaches mediaAssetService.keep (gated at :439) as scaffolding for
+// the review-queue behaviour under test.
+@uk.jtoye.core.testsupport.AsSystemHarness
 class MediaReviewQueueIntegrationTest {
 
     @Container
