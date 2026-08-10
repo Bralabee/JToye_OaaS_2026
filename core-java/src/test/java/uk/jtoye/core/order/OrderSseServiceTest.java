@@ -8,12 +8,14 @@ import org.mockito.Mockito;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.Membership;
 import uk.jtoye.core.security.access.ShopAccessService;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,6 +32,9 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class OrderSseServiceTest {
 
+    /** The stable, still-granted subscriber every lifecycle test in this class runs as. */
+    private static final UUID SUBSCRIBER = UUID.randomUUID();
+
     private OrderSseService orderSseService;
 
     @BeforeEach
@@ -40,6 +45,14 @@ class OrderSseServiceTest {
         // preserving the pre-scoping broadcast/prune behaviour.
         ShopAccessService shopAccessService = Mockito.mock(ShopAccessService.class);
         Mockito.when(shopAccessService.isGroupAdmin()).thenReturn(true);
+        // Phase 28 (#281 / D-09): subscribe() now refuses an emitter whose owner it cannot
+        // identify, and broadcast() re-checks that owner's CURRENT grant before every emit.
+        // These lifecycle tests are not about revocation, so the subscriber is a stable
+        // tenant-wide GROUP_ADMIN throughout — identifiable, and still granted on every
+        // re-check, which preserves the pre-#281 broadcast/prune behaviour under test.
+        Mockito.when(shopAccessService.currentVendorUserId()).thenReturn(Optional.of(SUBSCRIBER));
+        Mockito.when(shopAccessService.resolveMembership(SUBSCRIBER))
+                .thenReturn(new Membership(true, false, Map.of()));
         orderSseService = new OrderSseService(shopAccessService);
         // Required so subscribe() does not fail-closed on a missing TenantContext.
         TenantContext.set(UUID.randomUUID());
