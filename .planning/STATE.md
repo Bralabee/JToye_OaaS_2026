@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 29 executing — wave 1 of 9 dispatched (29-01, 29-02, 29-03)
-last_updated: "2026-08-10T21:05:00.000Z"
+stopped_at: Phase 29 executing — wave 1 complete (29-01/02/03 merged, gates green), wave 2 dispatched (29-04, 29-05)
+last_updated: "2026-08-10T21:30:00.000Z"
 last_activity: 2026-08-10
 progress:
   total_phases: 14
@@ -26,7 +26,14 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 29
-Plan: 0 of 16 (planned 2026-08-10 — 16 plans / 10 waves on branch `phase-29-research`; plan-checker
+Plan: 3 of 16 (wave 1 of 9 complete 2026-08-10: 29-01 operator decisions recorded — owner chose
+scale-to-zero for the snackpass estate [execution owned by 29-10], 3× B2s node pool kept, PG
+free-window horizon row assigned to 29-09; ADR-0002 Accepted. 29-02 staging overlay fixed [client-id,
+scale patch, Redis TLS, #592]. 29-03 gates cluster-capable + new NetPol probe wired [36 gates/6
+exempt]. Post-merge gates all green: docs-freshness 2812, doc-metrics 37/37, render-invariants 4
+targets, UnsubscribeLinkRoutingTest 8/8. ⚠ for later waves: only kube context on host is the
+EMPLOYER's `sipbihs2aks` — every kubectl must pass --context; AWS/Gmail/Netlify credentials still
+ABSENT, needed before 29-07/29-10/29-12/29-13. Original planning note: 16 plans / 10 waves on branch `phase-29-research`; plan-checker
 PASSED zero blockers, 4 doc warnings fixed inline; 6 checkpoint plans gate the owner decisions:
 snackpass estate disposition, credentials, DNS records, live drills. Context gathered same day —
 `29-CONTEXT.md`; both ROADMAP blockers settled in-discussion: hosting = AKS in jtoye-rg, domain =

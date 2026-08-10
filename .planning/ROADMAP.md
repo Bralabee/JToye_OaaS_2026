@@ -342,7 +342,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 3/16 | In Progress | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
@@ -536,7 +536,7 @@ and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-of
 were settled in the 2026-08-10 discussion** (`29-CONTEXT.md`): hosting = AKS in `jtoye-rg` (D-01),
 domain = `olajay.co.uk` (D-05), ADR-0002 owner-signed as proposed (D-09).
 **Requirements**: DPLY-01, DPLY-02, DPLY-03, DPLY-04, DPLY-05
-**Plans:** 16 plans in 10 waves
+**Plans:** 3/16 plans executed
 **Success Criteria** (what must be TRUE):
 
   1. Staging serves a **real Keycloak vendor login through the ingress to a dashboard**, over a
@@ -584,9 +584,9 @@ the same commit as the edit that caused it.
 
 **Wave 1** *(repo-only; no cluster exists yet)*
 
-- [ ] 29-01-PLAN.md (Wave 1) — owner decision gate: the live `snackpass-*` estate in `jtoye-rg` already runs at ≈£95/mo against D-03's £150 ceiling and the costed staging estate is ≈£147, so something must give; plus the four credentials measured absent on this host, and ADR-0002 Status → Accepted with the PostgreSQL 16 skew written down. `autonomous: false`
-- [ ] 29-02-PLAN.md (Wave 1, parallel) — **Blocker A** (staging authenticates as an OIDC client the realm does not contain, which the base ConfigMap already says in as many words), **Pitfall 6** (the `replicas: 2` transformer never reaches the HPA, so staging schedules 11 pods not 6), **Pitfall 7** (`spring.data.redis` has no `ssl:` block and Azure Cache Basic disables the plaintext port), and #592's one-click header with its oracle shown to fail first
-- [ ] 29-03-PLAN.md (Wave 1, parallel) — **Blocker B**: `check-alert-liveness.sh` carries 13 `docker` references and exits **2 (VOID)** against a k8s Prometheus, so DPLY-03's literal criterion is unmeetable today. Adds an env-selected exec path and an inspectable L-3 sink after MEASURING assumption A1; plus the new `check-networkpolicy-enforcement.sh`, demonstrated at 0, 1 and 2 before it is trusted
+- [x] 29-01-PLAN.md (Wave 1) — owner decision gate: the live `snackpass-*` estate in `jtoye-rg` already runs at ≈£95/mo against D-03's £150 ceiling and the costed staging estate is ≈£147, so something must give; plus the four credentials measured absent on this host, and ADR-0002 Status → Accepted with the PostgreSQL 16 skew written down. `autonomous: false`
+- [x] 29-02-PLAN.md (Wave 1, parallel) — **Blocker A** (staging authenticates as an OIDC client the realm does not contain, which the base ConfigMap already says in as many words), **Pitfall 6** (the `replicas: 2` transformer never reaches the HPA, so staging schedules 11 pods not 6), **Pitfall 7** (`spring.data.redis` has no `ssl:` block and Azure Cache Basic disables the plaintext port), and #592's one-click header with its oracle shown to fail first
+- [x] 29-03-PLAN.md (Wave 1, parallel) — **Blocker B**: `check-alert-liveness.sh` carries 13 `docker` references and exits **2 (VOID)** against a k8s Prometheus, so DPLY-03's literal criterion is unmeetable today. Adds an env-selected exec path and an inspectable L-3 sink after MEASURING assumption A1; plus the new `check-networkpolicy-enforcement.sh`, demonstrated at 0, 1 and 2 before it is trusted
 
 **Wave 2** *(the egress fix and the scripts that create the estate)*
 
