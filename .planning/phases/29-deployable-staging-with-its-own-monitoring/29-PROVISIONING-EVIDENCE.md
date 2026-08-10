@@ -737,14 +737,51 @@ name, so the four empties are genuine absences — the records are not yet visib
 independent resolvers were used specifically so that one resolver's negative cache could not decide
 the question.
 
-This is **not** evidence that the operator did anything wrong: the zone is at NS1 behind Netlify,
-and a record can take longer than 15 minutes to publish, particularly if the zone's negative-caching
-TTL (SOA minimum **3600 s**, visible in the delegation above) has already cached the NXDOMAIN from
-the pre-creation probes. That one-hour negative TTL is the most likely explanation for a
-correctly-created record still reading empty here, and it is why this is reported as *not yet
-observed* rather than *not created*.
+### 7.2 The propagation hypothesis was WRONG — the authoritative server says the records are absent
+
+My first reading of §7.1 was that a correctly-created record was being masked by the zone's
+negative-cache TTL (SOA minimum **3600 s**), i.e. "created but not yet visible". **A better
+instrument falsified that**, and the correction is recorded rather than quietly replaced.
+
+A recursive resolver cannot distinguish "record absent" from "record created 5 minutes ago and still
+negatively cached". The zone's **authoritative** nameserver can. Queried directly:
+
+```
+=== authoritative query against dns1.p05.nsone.net — 2026-08-10T23:30:50Z ===
+  api-staging        status=NXDOMAIN  aa     answer=<none>
+  app-staging        status=NXDOMAIN  aa     answer=<none>
+  auth-staging       status=NXDOMAIN  aa     answer=<none>
+  grafana-staging    status=NXDOMAIN  aa     answer=<none>
+
+=== POSITIVE CONTROL: a record that DOES exist in this zone ===
+  NS olajay.co.uk    status=NOERROR   answers=4
+
+=== D-08: production names ===
+  api                status=NXDOMAIN
+  app                status=NXDOMAIN
+```
+
+**`NXDOMAIN` carrying the `aa` (authoritative answer) flag, from the zone's own nameserver, means
+the name is not in the zone.** Caching plays no part: there is nothing between the query and the
+authority. The positive control is what licenses that reading — the same server returns `NOERROR`
+with four answers for the zone's NS record, so it is genuinely authoritative for `olajay.co.uk` and
+does return data when data exists.
+
+So the four A records **have not reached the live zone**. That is a different claim from "the
+operator did not create them", and the distinction matters for what to check next. The three
+plausible causes, in the order worth checking:
+
+1. **The records are unsaved or unpublished** in the Netlify DNS panel.
+2. **They were created in a zone that is not the delegated one.** `olajay.co.uk` is delegated to
+   NS1 (`dns1-4.p05.nsone.net`, SOA contact `domains+netlify.netlify.com`). If a second, separate
+   Netlify DNS zone exists for the same domain, records added there serve nothing.
+3. **The record name carries the domain twice** — entering `api-staging.olajay.co.uk` into a panel
+   that already appends the zone yields `api-staging.olajay.co.uk.olajay.co.uk`. This is the most
+   common single mistake in this workflow, and it produces exactly this symptom.
 
 **Task 3 therefore remains open**, with `INGRESS_STATIC_IP = 20.58.10.18` unchanged as the target.
+`dig @dns1.p05.nsone.net A <name>` is the check to re-run — it answers in one query and owes nothing
+to propagation.
 
 ---
 
