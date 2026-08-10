@@ -341,7 +341,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
-| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 4/11 | In Progress|  |
+| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 6/11 | In Progress|  |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
@@ -481,7 +481,7 @@ after this phase was written; they are the criterion, not new scope.
 | **#281** | — | **added** — a revoked user's open KDS SSE stream lingers until connection turnover (≤5 min). Cheap; the deliverable may legitimately be a recorded acceptance rather than a fix |
 | **#488** | — | **added** — existing image objects still hold raw bytes, EXIF GPS and client-declared Content-Type. #445's fix was forward-only, so this needs a **backfill decision** before it can be planned |
 
-**Plans:** 4/11 plans executed
+**Plans:** 6/11 plans executed
 
 > **Planning correction, carried from 28-RESEARCH.md.** Four of this phase's inputs aim at work that
 > has already shipped or at a population that measures zero, and planning them as written would have
@@ -511,8 +511,8 @@ deliberately sequenced after them so the role catalogue does not change under th
 
 **Wave 2** *(the triage record transcribes wave 1's verdicts; `asSystem()` follows the SSE change so one FULL suite covers both)*
 
-- [ ] 28-05-PLAN.md (Wave 2) — SEC-02/D-11/D-12: `docs/security/PENTEST-TRIAGE.md` with 11 sanitized dispositions, `check-pentest-triage.sh` wired into `ci-cd.yaml` in the same commit, the E1 audience audit regenerated with `jq` plus a live 401 arm and its control, and #548/#549/#551 closed
-- [ ] 28-06-PLAN.md (Wave 2, parallel) — #283/#284: explicit `SystemPrincipal` marker replacing the `auth == null` bypass, declarations only where symbol analysis proves a gated call is reached, and a **FULL** `test + integrationTest` run (62 no-principal test files depend on the old behaviour)
+- [x] 28-05-PLAN.md (Wave 2) — SEC-02/D-11/D-12: `docs/security/PENTEST-TRIAGE.md` with 11 sanitized dispositions, `check-pentest-triage.sh` wired into `ci-cd.yaml` in the same commit, the E1 audience audit regenerated with `jq` plus a live 401 arm and its control, and #548/#549/#551 closed
+- [x] 28-06-PLAN.md (Wave 2, parallel) — #283/#284: explicit `SystemPrincipal` marker replacing the `auth == null` bypass, declarations only where symbol analysis proves a gated call is reached, and a **FULL** `test + integrationTest` run (62 no-principal test files depend on the old behaviour)
 
 **Wave 3-4** *(the runtime/owner role split — D-01 is a durability fix, not the closure of a live hole: all 36 tenant tables are already ENABLE + FORCE)*
 
