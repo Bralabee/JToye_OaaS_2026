@@ -282,16 +282,16 @@ Two further measured constraints on the same server shape:
 
 ## 7. Credential presence
 
-> Filled in by 29-01 Task 2. Until that task completes, this section is **incomplete** and any
-> downstream plan reading it must treat every unlisted key as ABSENT.
+Measured 2026-08-10 by 29-01 Task 2. Two items are machine-measurable and were measured; two
+require the operator and are recorded ABSENT-pending-operator rather than assumed either way.
 
 | Key | State | Established by |
 |---|---|---|
-| `GHCR_VISIBILITY` | **PRESENT — all three packages PUBLIC, no `imagePullSecret` needed** | see §7.1 |
-| `AWS_CREDENTIALS` | *pending Task 2* | — |
-| `GMAIL_APP_PASSWORD` | *pending Task 2* | — |
-| `GRAFANA_ADMIN_PASSWORD` | *pending Task 2* | — |
-| `NETLIFY_DNS_ACCESS` | *pending Task 2* | — |
+| `GHCR_VISIBILITY` | **PRESENT** — all three packages PUBLIC, no `imagePullSecret` needed | §7.1 (anonymous registry probe, falsified) |
+| `AWS_CREDENTIALS` | **ABSENT** | §7.2 — `aws sts get-caller-identity` → "Unable to locate credentials" |
+| `GMAIL_APP_PASSWORD` | **ABSENT** | §7.3 — not present on this host; only the operator can supply it |
+| `GRAFANA_ADMIN_PASSWORD` | **SELF-SUPPLIABLE — not an operator blocker** | §7.4 |
+| `NETLIFY_DNS_ACCESS` | **UNCONFIRMED** (zone state measured; portal access is not machine-checkable) | §7.5 |
 
 ### 7.1 `GHCR_VISIBILITY` — assumption A5 CONFIRMED by measurement (2026-08-10)
 
@@ -326,22 +326,81 @@ homebrew/core/jq: PUBLIC (anon tags/list HTTP 200)
 So an existing-but-private package reads not-public, an existing-public one reads 200, and the three
 `jtoye-*` targets read 200. **Assumption A5 holds: no `imagePullSecret` is required.**
 
+### 7.2 `AWS_CREDENTIALS` — ABSENT (2026-08-10)
+
+```
+$ aws sts get-caller-identity
+Unable to locate credentials. You can configure credentials by running "aws configure".
+```
+
+The `aws` CLI itself is present (1.45.46); only the credentials are missing. **Nothing about the
+`jtoye-images` bucket could therefore be verified** — not its existence, not its region, not its
+policy shape. The four facts #294 demands are all still unmeasured; see §8.
+
+### 7.3 `GMAIL_APP_PASSWORD` — ABSENT (2026-08-10)
+
+Not present on this host, and not machine-obtainable: an app password is minted by a human in
+Google Account → Security → 2-Step Verification → App passwords. Per GLOBAL_RULE_6 the value must
+never enter this file, a commit message or any tracked artifact — only the fact that it exists and
+that it reached the secret layer. The `From` and `To` addresses are needed alongside it.
+
+### 7.4 `GRAFANA_ADMIN_PASSWORD` — self-suppliable, not an operator blocker
+
+D-19 routes the Grafana admin credential through `docs/runbooks/credential-rotation.md`, whose
+established pattern is to **generate** values with the system CSPRNG (`openssl rand`) and read them
+back by identity rather than by printing. So this is not an input the operator must find — it is
+generated at deploy time by the plan that stands Grafana up. Recorded here so that a later reader
+does not mistake its absence today for a missing prerequisite. It is deliberately **not** one of
+Task 2's four items.
+
+### 7.5 `NETLIFY_DNS_ACCESS` — zone measured, portal access UNCONFIRMED (2026-08-10T21:14:46Z)
+
+The zone state is machine-measurable and was measured. Whether the owner can *log in and add
+records* is not, and is the only part still open.
+
+```
+=== zone delegation ===
+NS : dns1.p05.nsone.net. dns2.p05.nsone.net. dns3.p05.nsone.net. dns4.p05.nsone.net.
+SOA: dns1.p05.nsone.net. domains+netlify.netlify.com. 1634401895 43200 7200 1209600 3600
+
+=== the four staging hostnames (expected empty today) ===
+  api-staging.olajay.co.uk     -> (empty)
+  app-staging.olajay.co.uk     -> (empty)
+  auth-staging.olajay.co.uk    -> (empty)
+  grafana-staging.olajay.co.uk -> (empty)
+
+=== production hostnames (D-08: must stay unresolvable until Phase 32) ===
+  api.olajay.co.uk -> (empty)  OK
+  app.olajay.co.uk -> (empty)  OK
+
+=== POSITIVE CONTROL ===
+  one.one.one.one -> 1.0.0.1 / 1.1.1.1   (resolver works, so the empties above are real)
+```
+
+**The control is what makes the empties mean anything.** An empty `dig` answer is also what a broken
+resolver returns, so "no A records" and "DNS is not working here" are otherwise indistinguishable.
+The control resolves, so the empties are genuine absences. D-05 is re-confirmed (zone live at
+NS1/Netlify, zero A records) and D-08 is currently satisfied — nothing looks live that is not.
+
 ---
 
 ## 8. What is still ABSENT and what it blocks
 
-> Completed by 29-01 Task 2. Items below are carried from the research's measured "missing with no
-> fallback" list and have **not** yet been re-confirmed by this plan.
+Nothing here is omitted or softened: an unrecorded blocker reads exactly like a satisfied one.
 
-| Item | Blocks | Research measurement (2026-08-10) |
-|---|---|---|
-| AWS credentials (eu-west-2, `jtoye-images`) | 29-13 / #294 bucket verification (D-11); the D-12 backup bucket | `aws sts get-caller-identity` → "Unable to locate credentials" |
-| Gmail SMTP app password + From/To | 29-07, 29-12 (D-17 — the phase's entire point) | not present on this host |
-| DNS A records for `*-staging.olajay.co.uk` | 29-10 (record creation), HTTP-01 issuance | zone live at NS1 (`dns1-4.p05.nsone.net`, SOA `domains+netlify.netlify.com`), **zero A records** |
-| An AKS cluster | everything | none exists in the subscription |
-| `Microsoft.ContainerService` / `Microsoft.Cache` / `Microsoft.Network` providers | 29-05 provisioning | all three **NotRegistered** — has a fallback (`az provider register`, idempotent, free) |
+| Item | State | Blocks | Measurement |
+|---|---|---|---|
+| AWS credentials (eu-west-2) | **ABSENT** | **29-13 / #294 bucket verification (D-11)** and the D-12 backup bucket. Note D-11 requires this **before first deploy**, so an unresolved ABSENT here is a scope decision, not a scheduling one | `aws sts get-caller-identity` → "Unable to locate credentials" (§7.2) |
+| #294's four bucket facts | **UNMEASURED** (blocked by the above) | 29-13. The four are: bucket exists; region is eu-west-2; derivative prefix is public-read; **quarantine prefix is NOT public** — the last is a security check, since a public quarantine prefix is a stored-XSS primitive on the storefront's own origin | cannot run without credentials |
+| D-12 dedicated backup bucket | **UNKNOWN** — neither confirmed to exist nor confirmed absent | 29-13's restore drill has nowhere to upload | cannot run without credentials |
+| Gmail SMTP app password + From/To | **ABSENT** | 29-07, 29-12 (D-17 — "alerts a human" is the phase's entire point) | not present on this host (§7.3) |
+| Netlify DNS portal access | **UNCONFIRMED** | 29-10 record creation, and therefore Let's Encrypt HTTP-01 issuance | zone measured live, access not machine-checkable (§7.5) |
+| DNS A records for `*-staging.olajay.co.uk` | **ABSENT** (expected today) | 29-10, HTTP-01 | all four empty against a working resolver (§7.5) |
+| An AKS cluster | **ABSENT** | everything downstream | no cluster in the subscription |
+| `Microsoft.ContainerService` / `Microsoft.Cache` / `Microsoft.Network` | **NotRegistered** | 29-05 provisioning | **has a fallback** — `az provider register`, idempotent and free. Not a blocker |
 
 ---
 
 *Written by plan 29-01, 2026-08-10. Decisions §3 are the owner's, given through the orchestrator's
-`AskUserQuestion` gate with auto-mode off. Sections 7 and 8 are completed by Task 2.*
+`AskUserQuestion` gate with auto-mode off. §7 and §8 record Task 2's measured half; the two
+operator-supplied credentials remain open at the time of writing.*
