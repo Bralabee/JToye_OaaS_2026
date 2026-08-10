@@ -266,7 +266,6 @@
       "security-admin-console" : [ ],
       "admin-cli" : [ ],
       "core-api" : [ ],
-      "test-client" : [ ],
       "account-console" : [ ],
       "broker" : [ {
         "id" : "6ce97374-b225-4ad6-89eb-d90fc7c55ad3",
@@ -923,48 +922,6 @@
         "id.token.claim" : "true",
         "access.token.claim" : "true",
         "claim.name" : "locale",
-        "jsonType.label" : "String"
-      }
-    } ],
-    "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email" ],
-    "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
-  }, {
-    "id" : "bbfc7e3b-740a-4d56-b201-9651d31d7a03",
-    "clientId" : "test-client",
-    "surrogateAuthRequired" : false,
-    "enabled" : true,
-    "alwaysDisplayInConsole" : false,
-    "clientAuthenticatorType" : "client-secret",
-    "redirectUris" : [ ],
-    "webOrigins" : [ "*" ],
-    "notBefore" : 0,
-    "bearerOnly" : false,
-    "consentRequired" : false,
-    "standardFlowEnabled" : false,
-    "implicitFlowEnabled" : false,
-    "directAccessGrantsEnabled" : true,
-    "serviceAccountsEnabled" : false,
-    "publicClient" : true,
-    "frontchannelLogout" : false,
-    "protocol" : "openid-connect",
-    "attributes" : {
-      "post.logout.redirect.uris" : "+"
-    },
-    "authenticationFlowBindingOverrides" : { },
-    "fullScopeAllowed" : true,
-    "nodeReRegistrationTimeout" : -1,
-    "protocolMappers" : [ {
-      "id" : "bc58ee91-f587-4e44-a5d2-b6c17cdeda3d",
-      "name" : "tenant-id-mapper",
-      "protocol" : "openid-connect",
-      "protocolMapper" : "oidc-usermodel-attribute-mapper",
-      "consentRequired" : false,
-      "config" : {
-        "userinfo.token.claim" : "true",
-        "user.attribute" : "tenant_id",
-        "id.token.claim" : "true",
-        "access.token.claim" : "true",
-        "claim.name" : "tenant_id",
         "jsonType.label" : "String"
       }
     } ],
