@@ -181,6 +181,36 @@
 #          shape as the RABBITMQ_USER pre-rollout check in
 #          k8s/base/core-java-deployment.yaml.
 #
+#          SECOND ARM (Blocker D, plan 29-04): THE ipBlock EGRESS SURFACE.
+#          The arm above keys entirely on the `jtoye-infrastructure`
+#          namespaceSelector, so it is STRUCTURALLY BLIND to a rule addressed by
+#          `ipBlock` — and D-09 moves Postgres and Redis out of the cluster,
+#          where an ipBlock is the only way to address them. Measured on this
+#          tree before the arm existed: two brand-new egress holes (5432 and 6380
+#          to 0.0.0.0/0) were added to core-java-allow and INV-7 reported
+#          `OK (2 policy/policies, db.port=5432 honoured)` on all four targets.
+#          An invariant that cannot see the new rules is worse than no invariant,
+#          because it reads as coverage. T-29-04-03.
+#
+#          So the ipBlock surface gets its OWN exact declaration, in the same
+#          shape and with the same friction: `NETPOL_IPBLOCK_EXPECTED` is the
+#          complete `<cidr>:<port>` multiset per policy, with `__DB_PORT__`,
+#          `__REDIS_PORT__`, `__DB_CIDR__` and `__REDIS_CIDR__` substituted from
+#          the rendered app-config. Three properties fall out of it:
+#            a. The 0.0.0.0/0 rules stay 443-ONLY. Bolting 5432 or 6380 onto them
+#               is the obvious shortcut for Blocker D and it is forbidden
+#               (T-29-04-01); this arm makes that an assertion rather than a code
+#               review note.
+#            b. A policy that HAS an ipBlock egress rule but NO entry in the map
+#               FAILS. Without that rule a new policy could open a hole the gate
+#               never looks at, which is the same vacuity as (a) one level up.
+#            c. Every `except:` entry must be strictly WITHIN its rule's `cidr`.
+#               The Kubernetes API enforces this and REJECTS the manifest
+#               otherwise, so narrowing `db.egress-cidr` to a `<ip>/32` while the
+#               RFC1918 excepts remain is a failed deploy. Asserting it on the
+#               render turns that into a CI failure instead. IPv4 only; anything
+#               else exits 2 rather than being skipped.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -356,6 +386,44 @@ declare -A NETPOL_INFRA_EXPECTED=(
   [pg-backup-allow]="__DB_PORT__ 9000"
 )
 INFRA_NAMESPACE_LABEL="jtoye-infrastructure"
+
+# ---------------------------------------------------------------------------
+# INV-7 SECOND ARM (Blocker D / plan 29-04): the COMPLETE expected
+# `<cidr>:<port>` multiset of every egress rule addressed by an `ipBlock`, per
+# NetworkPolicy.
+#
+# WHY IT IS A SEPARATE MAP. The map above keys on the `jtoye-infrastructure`
+# namespaceSelector and therefore cannot see an ipBlock-addressed rule at all.
+# D-09 puts Postgres and Redis OUTSIDE the cluster, where an ipBlock is the only
+# way to address them, so without this map the entire out-of-cluster egress
+# surface is ungoverned — and the gate would keep printing OK while it grew.
+# That is not hypothetical: it was measured on this tree (see the INV-7 header).
+#
+# SUBSTITUTIONS ARE THE INVARIANT; everything else is a literal, deliberately.
+#   __DB_PORT__     <- rendered app-config db.port
+#   __REDIS_PORT__  <- rendered app-config redis.port
+#   __DB_CIDR__     <- rendered app-config db.egress-cidr
+#   __REDIS_CIDR__  <- rendered app-config redis.egress-cidr
+# The `0.0.0.0/0:443` entries are literals because that rule must STAY 443-only:
+# widening it to carry a datastore port is the shortcut Blocker D invites and
+# T-29-04-01 forbids.
+#
+# EVERY POLICY WITH AN ipBlock RULE MUST APPEAR HERE. A policy that renders an
+# ipBlock egress rule and has no entry FAILS — an undeclared hole is exactly what
+# this arm exists to prevent, and silently ignoring it would reproduce the
+# blindness one level up. The four below are every such policy today;
+# 00-default-deny and 50-observability have no egress ipBlock and correctly do
+# not appear.
+#
+# Adding an out-of-cluster egress rule to a policy MUST be accompanied by adding
+# it here. Same intended friction as the map above, for the same reason.
+# ---------------------------------------------------------------------------
+declare -A NETPOL_IPBLOCK_EXPECTED=(
+  [core-java-allow]="0.0.0.0/0:443 __DB_CIDR__:__DB_PORT__ __REDIS_CIDR__:__REDIS_PORT__"
+  [pg-backup-allow]="0.0.0.0/0:443 __DB_CIDR__:__DB_PORT__"
+  [frontend-allow]="0.0.0.0/0:443"
+  [edge-go-allow]="0.0.0.0/0:443"
+)
 
 command -v kubectl > /dev/null \
     || parse_fail "kubectl not on PATH (client-side 'kubectl kustomize' is required)."
@@ -620,6 +688,135 @@ END { flush() }
 # injected rather than duplicated as a second literal.
 NETPOL_INFRA_AWK="${NETPOL_INFRA_AWK//INFRA_NS/$INFRA_NAMESPACE_LABEL}"
 
+# --- awk: the same per-DOCUMENT, rule-buffered walk, for the egress rules
+#     addressed by an `ipBlock` (INV-7 second arm, Blocker D).
+#
+#     RULE-BUFFERED FOR THE SAME REASON as the parser above, and here the
+#     ordering trap is worse: `kubectl kustomize` sorts map keys alphabetically,
+#     so a rule renders `ports:` FIRST and `to: - ipBlock: cidr:` AFTER. A scan
+#     that reads forward from the `cidr:` line finds ZERO ports and would report
+#     an empty ipBlock surface on a tree full of holes — a clean run over a
+#     broken tree. Buffering the whole rule makes the order irrelevant.
+#
+#     Output records:
+#       IPPOL   <TAB> <policy>                            (policy has >=1 ipBlock rule)
+#       IPMULTI <TAB> <policy>                            (>1 cidr in ONE rule — see below)
+#       IPB     <TAB> <policy> <TAB> <cidr> <TAB> <port>  (one per cidr x port)
+#       IPX     <TAB> <policy> <TAB> <cidr> <TAB> <except entry>
+#
+#     IPMULTI is a fail-closed signal, not a finding. With two ipBlocks in one
+#     rule the `except:` entries cannot be attributed to a cidr by position, so
+#     the containment check below would be guessing. The caller exits 2.
+NETPOL_IPBLOCK_AWK='
+function meta_name(  i, v) {
+    for (i = 1; i <= n; i++)
+        if (buf[i] ~ /^  name: /) { v = buf[i]; sub(/^  name:[[:space:]]*/, "", v); return v }
+    return "(unnamed)"
+}
+function emit_rule(  j, k, m, ncidr, nport, nexc, inexcept, t) {
+    if (rn == 0) { return }
+    ncidr = 0; nport = 0; nexc = 0; inexcept = 0
+    delete ipc; delete ipp; delete ipe
+    for (j = 1; j <= rn; j++) {
+        t = rule[j]
+        if (t ~ /^[[:space:]]*cidr:[[:space:]]*/) {
+            sub(/^[[:space:]]*cidr:[[:space:]]*/, "", t); sub(/[[:space:]]*$/, "", t)
+            ipc[++ncidr] = t; inexcept = 0; continue
+        }
+        if (t ~ /^[[:space:]]*except:[[:space:]]*$/) { inexcept = 1; continue }
+        if (t ~ /^[[:space:]]*-[[:space:]]*port:[[:space:]]*/) {
+            sub(/^[[:space:]]*-[[:space:]]*port:[[:space:]]*/, "", t); sub(/[[:space:]]*$/, "", t)
+            ipp[++nport] = t; inexcept = 0; continue
+        }
+        # An except entry is a bare scalar list item under `except:`. Restricting
+        # to a leading digit keeps `- ipBlock:` / `- namespaceSelector:` out.
+        if (inexcept && t ~ /^[[:space:]]*-[[:space:]]*[0-9]/) {
+            sub(/^[[:space:]]*-[[:space:]]*/, "", t); sub(/[[:space:]]*$/, "", t)
+            ipe[++nexc] = t; continue
+        }
+        if (inexcept && t !~ /^[[:space:]]*-/) inexcept = 0
+    }
+    if (ncidr > 0) {
+        printf "IPPOL\t%s\n", polname
+        if (ncidr > 1) printf "IPMULTI\t%s\n", polname
+        for (k = 1; k <= nport; k++)
+            for (m = 1; m <= ncidr; m++)
+                printf "IPB\t%s\t%s\t%s\n", polname, ipc[m], ipp[k]
+        for (k = 1; k <= nexc; k++)
+            printf "IPX\t%s\t%s\t%s\n", polname, ipc[1], ipe[k]
+    }
+    rn = 0; delete rule
+}
+function flush(  i, kind, l, inegress) {
+    if (n == 0) return
+    kind = ""
+    for (i = 1; i <= n; i++)
+        if (buf[i] ~ /^kind: /) { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
+    if (kind == "NetworkPolicy") {
+        polname = meta_name()
+        inegress = 0; rn = 0; delete rule
+        for (i = 1; i <= n; i++) {
+            l = buf[i]
+            if (l ~ /^  egress:[[:space:]]*$/) { inegress = 1; continue }
+            if (inegress) {
+                if (l ~ /^  [A-Za-z]/) { emit_rule(); inegress = 0; continue }
+                if (l ~ /^  - /)       { emit_rule() }
+                rule[++rn] = l
+            }
+        }
+        emit_rule()
+    }
+    n = 0; delete buf
+}
+/^---[[:space:]]*$/ { flush(); next }
+{ buf[++n] = $0 }
+END { flush() }
+'
+
+# ---------------------------------------------------------------------------
+# IPv4 CIDR containment, for INV-7's `except:`-within-`cidr` assertion.
+#
+# The Kubernetes API rejects a NetworkPolicy whose `except` entry is not
+# strictly within its `cidr`, so a tree that renders one is a manifest that
+# cannot be applied — a failed deploy rather than a caught mistake. This is the
+# exact shape narrowing `db.egress-cidr` to a `<ip>/32` produces if the RFC1918
+# excepts are left behind, which is the one-key change the whole Blocker D
+# mechanism is designed to make safe.
+#
+# IPv4 ONLY, ON PURPOSE. An IPv6 CIDR is not evaluated, and rather than being
+# skipped (which would silently reduce coverage to nothing the day the platform
+# dual-stacks) it exits 2. "Cannot evaluate" is never "clean".
+# ---------------------------------------------------------------------------
+CIDR4_RE='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$'
+
+ipv4_to_int() {
+    local ip="$1" a b c d o
+    IFS='.' read -r a b c d <<< "$ip"
+    for o in "$a" "$b" "$c" "$d"; do
+        [[ "$o" =~ ^[0-9]+$ ]] || return 1
+        (( o <= 255 )) || return 1
+    done
+    echo $(( (a << 24) + (b << 16) + (c << 8) + d ))
+}
+
+# cidr4_contains <supernet> <subnet>
+#   0 = subnet lies within supernet
+#   1 = it does not
+#   2 = cannot be evaluated (not IPv4, malformed, prefix > 32) -> caller VOIDs
+cidr4_contains() {
+    local sup="$1" sub="$2" sup_ip sup_len sub_ip sub_len si su mask
+    [[ "$sup" =~ $CIDR4_RE && "$sub" =~ $CIDR4_RE ]] || return 2
+    sup_ip="${sup%%/*}"; sup_len="${sup##*/}"
+    sub_ip="${sub%%/*}"; sub_len="${sub##*/}"
+    (( sup_len <= 32 && sub_len <= 32 )) || return 2
+    si=$(ipv4_to_int "$sup_ip") || return 2
+    su=$(ipv4_to_int "$sub_ip") || return 2
+    (( sub_len >= sup_len )) || return 1
+    if (( sup_len == 0 )); then mask=0; else mask=$(( (0xFFFFFFFF << (32 - sup_len)) & 0xFFFFFFFF )); fi
+    (( (si & mask) == (su & mask) )) && return 0
+    return 1
+}
+
 is_local_only_target() {
     local rel="$1" excluded
     for excluded in "${LOCAL_ONLY_TARGETS[@]}"; do
@@ -853,6 +1050,8 @@ for dir in "${TARGETS[@]}"; do
 
     inv7_bad=0
     inv7_checked=0
+    inv7_ip_checked=0
+    inv7_except_checked=0
     for pol in $(printf '%s\n' "${!NETPOL_INFRA_EXPECTED[@]}" | sort); do
         # $'\t' rather than a literal tab: a stripped-whitespace edit would turn
         # this into a pattern that never matches, and a never-matching presence
@@ -885,6 +1084,111 @@ for dir in "${TARGETS[@]}"; do
         fi
     done
 
+    # ---------------- INV-7, second arm: the ipBlock egress surface ----------
+    # Blocker D / plan 29-04. The arm above cannot see these rules at all — it
+    # keys on the jtoye-infrastructure namespaceSelector — so this one carries
+    # its own declaration, its own fail-closed parse guards, and its own
+    # substitutions. Every guard below is "found zero => parse_fail", never a
+    # pass: an ipBlock arm that silently checked nothing is precisely the
+    # vacuity this arm was added to remove.
+    for _key in redis.port db.egress-cidr redis.egress-cidr; do
+        _val=$(awk -F'\t' -v k="$_key" '$1 == k { v = $2; gsub(/^["\047]|["\047]$/, "", v); print v; found = 1 } END { if (!found) print "" }' "$TMP/cfg.tsv")
+        case "$_key" in
+            redis.port)         redis_port="$_val" ;;
+            db.egress-cidr)     db_cidr="$_val" ;;
+            redis.egress-cidr)  redis_cidr="$_val" ;;
+        esac
+        if [[ -z "$_val" ]]; then
+            parse_fail "[$rel] INV-7 found no app-config key '$_key' in the render. It is the RENDER-TIME declaration the out-of-cluster egress rule is derived from (Blocker D); without it this arm has nothing to compare against and would pass vacuously — restore the key, do not delete the invariant."
+        fi
+    done
+    if [[ ! "$redis_port" =~ ^[0-9]+$ ]]; then
+        parse_fail "[$rel] INV-7: app-config 'redis.port' is '$redis_port', which is not a bare port number. A NetworkPolicy port that is not an integer is a NAMED port and matches no traffic — it renders, it applies, and the managed cache is unreachable."
+    fi
+    for _c in "$db_cidr" "$redis_cidr"; do
+        [[ "$_c" =~ $CIDR4_RE ]] || parse_fail "[$rel] INV-7: app-config egress CIDR '$_c' is not an IPv4 CIDR. This arm evaluates IPv4 only and does not skip what it cannot evaluate."
+    done
+
+    awk "$NETPOL_IPBLOCK_AWK" "$render" > "$TMP/netpol-ip.tsv"
+    ippol_seen=$(awk -F'\t' '$1 == "IPPOL" { print $2 }' "$TMP/netpol-ip.tsv" | sort -u | wc -l)
+    (( ippol_seen > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicies with an ipBlock egress rule in the render. This platform ships four; zero means the ipBlock parser is blind and every out-of-cluster assertion below would pass vacuously. Fix the parser, do not delete the invariant."
+    # NOT `awk … | grep -q .`: under `set -o pipefail` grep exits at the first
+    # match, the writer takes SIGPIPE, and pipefail promotes it to 141 — so the
+    # guard would fire on the CLEAN case and stay silent on the broken one. It
+    # fails OPEN, which for a fail-closed parse guard is the worst direction.
+    # Count into a variable instead; no pipe, no inversion.
+    ipmulti_seen=$(awk -F'\t' '$1 == "IPMULTI" { n++ } END { print n+0 }' "$TMP/netpol-ip.tsv")
+    if (( ipmulti_seen > 0 )); then
+        parse_fail "[$rel] INV-7 found $ipmulti_seen egress rule(s) carrying more than one ipBlock. The 'except' entries can then no longer be attributed to a cidr by position, so the containment check would be guessing. Split the rule (one peer, one port per rule) or teach this parser to pair them."
+    fi
+
+    # (b) A policy with an ipBlock rule and NO declaration is an UNDECLARED hole.
+    while read -r undeclared; do
+        [[ -n "$undeclared" ]] || continue
+        if [[ -z "${NETPOL_IPBLOCK_EXPECTED[$undeclared]+set}" ]]; then
+            echo "  FAIL [$rel] INV-7: NetworkPolicy '$undeclared' renders an ipBlock egress rule but has no entry in NETPOL_IPBLOCK_EXPECTED." >&2
+            echo "        An out-of-cluster egress hole that this gate does not look at reads as coverage" >&2
+            echo "        while governing nothing. Declare its exact <cidr>:<port> multiset in the SAME" >&2
+            echo "        change that adds the rule." >&2
+            inv7_bad=1
+        fi
+    done < <(awk -F'\t' '$1 == "IPPOL" { print $2 }' "$TMP/netpol-ip.tsv" | sort -u)
+
+    for pol in $(printf '%s\n' "${!NETPOL_IPBLOCK_EXPECTED[@]}" | sort); do
+        if ! grep -qxF "POL"$'\t'"$pol" "$TMP/netpol.tsv"; then
+            parse_fail "[$rel] INV-7 expected a NetworkPolicy named '$pol' in the render and found none, so its ipBlock declaration governs nothing. Either the policy was renamed/removed (update NETPOL_IPBLOCK_EXPECTED in the SAME change) or the parser is blind."
+        fi
+        mapfile -t ip_pairs < <(awk -F'\t' -v p="$pol" '$1 == "IPB" && $2 == p { print $3 ":" $4 }' "$TMP/netpol-ip.tsv")
+        if (( ${#ip_pairs[@]} == 0 )); then
+            parse_fail "[$rel] INV-7 found no ipBlock <cidr>:<port> pairs on NetworkPolicy '$pol'. Either that policy lost its public/out-of-cluster egress entirely or the rule parser is blind. Fix it, do not delete the invariant."
+        fi
+        for pair in "${ip_pairs[@]}"; do
+            if [[ ! "${pair##*:}" =~ ^[0-9]+$ ]]; then
+                echo "  FAIL [$rel] INV-7: NetworkPolicy '$pol' has a non-numeric ipBlock egress port in '$pair'." >&2
+                echo "        A STRING port is a NAMED port: it renders, it applies, and it matches NO traffic." >&2
+                inv7_bad=1
+            fi
+        done
+        ip_actual=$(printf '%s\n' "${ip_pairs[@]}" | sort | tr '\n' ' ')
+        ip_expected_raw="${NETPOL_IPBLOCK_EXPECTED[$pol]}"
+        ip_expected_raw="${ip_expected_raw//__DB_PORT__/$db_port}"
+        ip_expected_raw="${ip_expected_raw//__REDIS_PORT__/$redis_port}"
+        ip_expected_raw="${ip_expected_raw//__DB_CIDR__/$db_cidr}"
+        ip_expected_raw="${ip_expected_raw//__REDIS_CIDR__/$redis_cidr}"
+        ip_expected=$(printf '%s\n' $ip_expected_raw | sort | tr '\n' ' ')
+        (( ++inv7_ip_checked ))
+        if [[ "$ip_actual" != "$ip_expected" ]]; then
+            echo "  FAIL [$rel] INV-7: NetworkPolicy '$pol' allows ipBlock egress [${ip_actual% }]; expected [${ip_expected% }]" >&2
+            echo "        (app-config db.port=$db_port redis.port=$redis_port db.egress-cidr=$db_cidr redis.egress-cidr=$redis_cidr)." >&2
+            inv7_bad=1
+        fi
+    done
+
+    # (c) Every `except:` entry must be strictly WITHIN its rule's cidr, or the
+    #     API server rejects the manifest at apply time.
+    while IFS=$'\t' read -r _tag xpol xcidr xexc; do
+        [[ "$_tag" == "IPX" ]] || continue
+        (( ++inv7_except_checked ))
+        # `_rc=$?` on its own line after the call would report the status of
+        # whatever bash ran last, and `set -e` would abort on a legitimate
+        # non-zero anyway. The `|| _rc=$?` form captures the FUNCTION's status,
+        # on the same statement, in a context set -e tolerates.
+        _rc=0
+        cidr4_contains "$xcidr" "$xexc" || _rc=$?
+        case "$_rc" in
+            0)  continue ;;
+            2)
+                parse_fail "[$rel] INV-7 could not evaluate ipBlock containment for '$xexc' within '$xcidr' on NetworkPolicy '$xpol' (not IPv4 / malformed). Cannot-evaluate is not clean." ;;
+            *)
+                echo "  FAIL [$rel] INV-7: NetworkPolicy '$xpol' has ipBlock except '$xexc' which is NOT within cidr '$xcidr'." >&2
+                echo "        The Kubernetes API rejects this manifest — 'except values must be within the cidr" >&2
+                echo "        range' — so this is a FAILED DEPLOY, not a style point. It is what narrowing" >&2
+                echo "        db.egress-cidr / redis.egress-cidr to a /32 produces if the RFC1918 except list" >&2
+                echo "        is left behind. Drop the excepts in the same change that narrows the cidr." >&2
+                inv7_bad=1 ;;
+        esac
+    done < "$TMP/netpol-ip.tsv"
+
     if (( inv7_bad != 0 )); then
         echo "        ISSUE #271. DB_PORT is Secret-driven (DEF-1) so an environment can move its" >&2
         echo "        Postgres port with no manifest edit — but THIS policy is what permits the" >&2
@@ -896,10 +1200,19 @@ for dir in "${TARGETS[@]}"; do
         echo "        check that overlay's own kustomization.yaml carries the replacements block:" >&2
         echo "        kustomize does NOT re-run a base replacement against an overlay's patched" >&2
         echo "        ConfigMap, so a base-only block leaves the overlay on the base port." >&2
+        echo "" >&2
+        echo "        BLOCKER D (the ipBlock arm). The same coupling exists for the OUT-OF-CLUSTER" >&2
+        echo "        managed datastores: D-09 puts Postgres and Redis outside the cluster, where" >&2
+        echo "        neither the jtoye-infrastructure rules nor the 443-only public rule reaches" >&2
+        echo "        them. The dedicated single-port rules are what permit those connections, and" >&2
+        echo "        their ports and addresses come from app-config db.port / redis.port /" >&2
+        echo "        db.egress-cidr / redis.egress-cidr. DO NOT fix a mismatch by widening the" >&2
+        echo "        0.0.0.0/0:443 rule to carry 5432 or 6380 — that is the shortcut this arm" >&2
+        echo "        exists to refuse (T-29-04-01), and it is not the allow-list it claims to be." >&2
         FAILED=1
         inv7_msg="FAIL"
     else
-        inv7_msg="OK ($inv7_checked policy/policies, db.port=$db_port honoured)"
+        inv7_msg="OK ($inv7_checked infra policy/policies db.port=$db_port; $inv7_ip_checked ipBlock policy/policies redis.port=$redis_port, $inv7_except_checked except entry/entries contained)"
     fi
 
     if [[ "$inv1_msg" == FAIL* || "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
