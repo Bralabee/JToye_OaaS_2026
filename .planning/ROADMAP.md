@@ -341,7 +341,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
-| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 7/11 | In Progress|  |
+| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 8/11 | In Progress|  |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
@@ -481,7 +481,7 @@ after this phase was written; they are the criterion, not new scope.
 | **#281** | — | **added** — a revoked user's open KDS SSE stream lingers until connection turnover (≤5 min). Cheap; the deliverable may legitimately be a recorded acceptance rather than a fix |
 | **#488** | — | **added** — existing image objects still hold raw bytes, EXIF GPS and client-declared Content-Type. #445's fix was forward-only, so this needs a **backfill decision** before it can be planned |
 
-**Plans:** 7/11 plans executed
+**Plans:** 8/11 plans executed
 
 > **Planning correction, carried from 28-RESEARCH.md.** Four of this phase's inputs aim at work that
 > has already shipped or at a population that measures zero, and planning them as written would have
@@ -517,7 +517,7 @@ deliberately sequenced after them so the role catalogue does not change under th
 **Wave 3-4** *(the runtime/owner role split — D-01 is a durability fix, not the closure of a live hole: all 36 tenant tables are already ENABLE + FORCE)*
 
 - [x] 28-07-PLAN.md (Wave 3) — D-01/D-03: `create-runtime-role.sql` with `ALTER DEFAULT PRIVILEGES **FOR ROLE jtoye_app**` and the two non-DML grants `PostcodeCentroidImporter` needs, the live `jtoye_backup` defect repaired and filed, Flyway's credential decoupled with `spring.flyway.url` kept declared (#517), and the pair declared across compose / `.env.example` / `verify-env.sh` / k8s
-- [ ] 28-08-PLAN.md (Wave 4) — D-03/D-04: boot-time ownership fail-fast beside the existing superuser check, the **future-table grant contract** (the highest-value new test in the phase — the only arm that distinguishes `FOR ROLE` from the inert form), the isolation suite as a non-owner, and the live arm on `products` with a summing superuser control
+- [x] 28-08-PLAN.md (Wave 4) — D-03/D-04: boot-time ownership fail-fast beside the existing superuser check, the **future-table grant contract** (the highest-value new test in the phase — the only arm that distinguishes `FOR ROLE` from the inert form), the isolation suite as a non-owner, and the live arm on `products` with a summing superuser control
 - [ ] 28-09-PLAN.md (Wave 5) — #270 + the new finding: digest-pin the `minio/mc` bootstrap and replace the two-privilege anonymous shortcut with a GetObject-only policy, proven by the same storefront key returning 200 before and after while the bucket listing goes 200 → refused
 
 **Waves 6-7** *(rotation is LAST because it invalidates every live measurement taken before it)*
