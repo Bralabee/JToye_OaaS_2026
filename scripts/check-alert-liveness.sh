@@ -41,12 +41,54 @@
 #         drafted gate lacked and the reason F-3c survived review.
 #   L-3   TRANSPORT. A synthetic alert posted to Alertmanager actually arrives
 #         at the configured destination.
+#   L-3b  SINK CO-RESIDENCY. The inspectable sink L-3 searches sits in the SAME
+#         receiver as the real human destination, so L-3's observation is
+#         evidence about the human's leg and not about a side channel.
 #
 #   WHAT L-3 PROVES AND DOES NOT PROVE: it proves the message left Alertmanager
 #   and arrived at the configured sink; it does NOT prove a human reads that
-#   sink, and today that sink is Mailhog at ops@jtoye.local with no human behind
-#   it. A real ServiceDown fired here for over 46 hours and reached nobody.
-#   Do not report a green L-3 as "operators are now notified".
+#   sink, and in compose that sink is Mailhog at ops@jtoye.local with no human
+#   behind it. A real ServiceDown fired here for over 46 hours and reached
+#   nobody. Do not report a green L-3 as "operators are now notified".
+#
+# WHY L-3b EXISTS — and the measurement that made it necessary (phase 29, D-17)
+#
+#   Staging's real alert destination is a Gmail inbox, which has no HTTP API to
+#   search. The fix is NOT to give the probe its own route: the header below
+#   already rejects that shape in prose, and prose does not survive. The fix is
+#   that the ONE receiver carries TWO email_configs entries — the Gmail relay and
+#   an in-cluster Mailhog — so the same route, the same grouping and the same
+#   template carry both, and inspecting the Mailhog leg is evidence about the
+#   Gmail leg.
+#
+#   That only works if Alertmanager fans out to EVERY email_configs entry in a
+#   receiver rather than stopping at the first. Research recorded this as
+#   assumption A1 at LOW/MEDIUM confidence, reasoned from the config schema being
+#   a list. It was MEASURED on 2026-08-10 instead, on an isolated
+#   prom/alertmanager:v0.27.0 (identical image to the live stack, same Mailhog
+#   smarthost, live stack not mutated):
+#
+#     ARM 1  one receiver, TWO email_configs, different `to:` -> ONE alert posted
+#            GET /api/v2/search?kind=containing&query=a1probe-1786394841-3233795
+#              total = 2
+#              a1-primary@jtoye.local   = 1
+#              a1-secondary@jtoye.local = 1
+#
+#     ARM 2  the control. IDENTICAL rig, ONE email_configs entry
+#            GET /api/v2/search?kind=containing&query=a1control-1786394888-3236713
+#              total = 1
+#              a1-primary@jtoye.local   = 1
+#              a1-secondary@jtoye.local = 0
+#
+#   Arm 2 is what makes arm 1 mean anything: it proves the per-recipient counter
+#   CAN return 0, so the 1/1 above is a real fan-out and not an artefact of the
+#   search matching one message twice. A1 HOLDS.
+#
+#   L-3b is the executable form of the invariant that measurement unlocked. The
+#   dual-sink receiver is only honest while both entries stay in the SAME
+#   receiver; the moment someone splits them, L-3 would go green having proved
+#   nothing about the inbox a human reads. A gate that depends on a config shape
+#   must assert that shape.
 #
 # WHY THIS GATE IS NOT IN CI — and what replaces it
 #
@@ -61,11 +103,13 @@
 # EXIT CODES — uniform across this plan's gates
 #   0 = clean · 1 = a live detection defect · 2 = VOID (could not evaluate)
 #
-#   VOID on: missing curl/jq/python3/docker, unreachable Prometheus or
+#   VOID on: missing curl/jq/python3, a missing PROM_EXEC runtime binary (docker
+#   by default, kubectl in k8s), an absent exec target, unreachable Prometheus or
 #   Alertmanager, ZERO targets or ZERO rules discovered, an unparseable
 #   expression, an exporter job with no gauge mapping, an unmapped `service:`
-#   label, or a destination that cannot be inspected. "Found nothing" is NEVER
-#   "clean", and an unmapped new thing must stop the gate rather than skip.
+#   label, an unreadable or multi-destination-but-undeclared alert receiver, or a
+#   destination that cannot be inspected. "Found nothing" is NEVER "clean", and an
+#   unmapped new thing must stop the gate rather than skip.
 #
 # NOTE ON docs/metrics.json: contributes 0. docs-freshness.sh counts no bash.
 
@@ -79,11 +123,27 @@ PROM_URL="${PROM_URL:-http://localhost:9091}"
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://localhost:9093}"
 MAILHOG_URL="${MAILHOG_URL:-http://localhost:8025}"
 ALERTS="${ALERTS:-infra/monitoring/prometheus/alerts.yml}"
-# L-0 needs to read the file out of the running Prometheus. Both are overridable
-# because neither is a property of this script — a k8s Prometheus has a different
-# container name and a different in-container path.
+# L-0 needs to read the file out of the running Prometheus. These are overridable
+# because none of them is a property of this script — a k8s Prometheus has a
+# different container name, a different in-container path, and is not reached with
+# docker at all. PROM_EXEC / PROM_RUNTIME_PROBE are declared at the L-0 block
+# below, next to the reasoning for their defaults; a k8s invocation looks like:
+#
+#   PROM_EXEC="kubectl --context <ctx> -n <ns> exec deploy/prometheus --" \
+#   PROM_RUNTIME_PROBE="kubectl --context <ctx> -n <ns> get deploy/prometheus" \
+#   PROM_ALERTS_PATH=/etc/prometheus/alerts.yml \
+#   PROM_URL=... ALERTMANAGER_URL=... MAILHOG_URL=... bash scripts/check-alert-liveness.sh
 PROM_CONTAINER="${PROM_CONTAINER:-jtoye-prometheus}"
 PROM_ALERTS_PATH="${PROM_ALERTS_PATH:-/etc/prometheus/alerts.yml}"
+
+# L-3b needs to know which of the receiver's destinations is the one this gate can
+# SEARCH, and which is the one a human READS. In compose they are the same single
+# address and both may stay unset. In staging they differ (D-17: Gmail for the
+# human, in-cluster Mailhog for this gate) and BOTH must be declared — see the
+# L-3b block for why an undeclared multi-destination receiver is VOID rather than
+# a guess.
+L3_SINK_TO="${L3_SINK_TO:-}"
+L3_HUMAN_TO="${L3_HUMAN_TO:-}"
 
 void() { echo "VOID: $*" >&2; exit 2; }
 VIOLATIONS=0
@@ -200,24 +260,73 @@ curl -sf --max-time 10 "$PROM_URL/-/healthy" >/dev/null 2>&1 \
 # into one that can never fail — the exact defect class the gate exists to catch.
 # `docker exec` runs inside the container's mount namespace and sees the attached inode,
 # which is what the Prometheus process actually reads. Use exec.
-command -v docker >/dev/null 2>&1 \
-  || void "L-0 docker not on PATH, so the running Prometheus's own copy of $ALERTS cannot be read. Unverifiable parity is VOID, never clean — set PROM_CONTAINER/PROM_ALERTS_PATH for a non-docker runtime."
-docker inspect "$PROM_CONTAINER" >/dev/null 2>&1 \
-  || void "L-0 container '$PROM_CONTAINER' not found — cannot compare the served alerts file against $ALERTS (override with PROM_CONTAINER)"
+#
+# THE SAME ASSERTION, A DIFFERENT RUNTIME (phase 29, Blocker B)
+#
+#   DPLY-03's criterion is that this gate exits 0 against the STAGING target, which is a
+#   Kubernetes Prometheus. Until 2026-08-10 the three calls above were unconditionally
+#   `docker`, and every failure path here is `void` — so against k8s this exited 2, which
+#   this script's own doctrine says is never clean. A phase SUMMARY recording that exit 2
+#   as "environment not ready" would be recording the criterion FAILING.
+#
+#   The fix is an env-selected exec, defaulting to the docker form so compose behaviour is
+#   byte-identical:
+#     PROM_EXEC           default: docker exec <PROM_CONTAINER>
+#                         k8s:     kubectl --context <ctx> -n <ns> exec deploy/prometheus --
+#     PROM_RUNTIME_PROBE  default: docker inspect <PROM_CONTAINER>
+#                         k8s:     kubectl --context <ctx> -n <ns> get deploy/prometheus
+#   and the docker-on-PATH check becomes a check on the FIRST WORD of PROM_EXEC, so a
+#   kubectl-only host is not VOIDed for lacking a docker daemon it does not need.
+#
+#   WHAT L-0 CATCHES IN K8S IS NOT WHAT IT CATCHES IN COMPOSE, and both are real. A
+#   ConfigMap is projected as a DIRECTORY OF SYMLINKS which the kubelet re-points
+#   atomically on update, so the single-file inode-detach failure above simply does not
+#   exist there — do not go looking for it. What does exist is a running pod serving an
+#   OLDER ConfigMap version than the one just applied: the kubelet syncs on its own period
+#   (up to ~1 minute plus cache TTL), and Prometheus then needs a reload it does not have
+#   enabled in this repo's config, so the projected file can be current while the process
+#   still holds the previous rules. Either way the served bytes differ from the tree's, and
+#   a byte-exact md5 of what the PROCESS reads catches both. Keep the md5.
+#
+#   NEVER `kubectl cp`. It is the k8s analogue of the `docker cp` blindness measured above:
+#   cp reads the container filesystem through the API and can disagree with what the
+#   process has open, which is precisely the disagreement this assertion exists to find.
+PROM_EXEC="${PROM_EXEC:-docker exec $PROM_CONTAINER}"
+PROM_RUNTIME_PROBE="${PROM_RUNTIME_PROBE:-docker inspect $PROM_CONTAINER}"
+read -r -a PROM_EXEC_ARGV <<<"$PROM_EXEC"
+read -r -a PROM_PROBE_ARGV <<<"$PROM_RUNTIME_PROBE"
+[ "${#PROM_EXEC_ARGV[@]}" -gt 0 ] \
+  || void "L-0 PROM_EXEC is empty — there is no command with which to read the served alerts file"
+[ "${#PROM_PROBE_ARGV[@]}" -gt 0 ] \
+  || void "L-0 PROM_RUNTIME_PROBE is empty — the target's existence would go unchecked, and 'exec failed' would be reported as drift"
+
+command -v "${PROM_EXEC_ARGV[0]}" >/dev/null 2>&1 \
+  || void "L-0 '${PROM_EXEC_ARGV[0]}' (the first word of PROM_EXEC) is not on PATH, so the running Prometheus's own copy of $ALERTS cannot be read. Unverifiable parity is VOID, never clean — set PROM_EXEC/PROM_RUNTIME_PROBE/PROM_ALERTS_PATH for this runtime."
+command -v "${PROM_PROBE_ARGV[0]}" >/dev/null 2>&1 \
+  || void "L-0 '${PROM_PROBE_ARGV[0]}' (the first word of PROM_RUNTIME_PROBE) is not on PATH"
+
+# Existence probe, by NAME. Container-not-found and deployment-not-found must BOTH still
+# exit 2 here rather than being reported below as a checksum mismatch.
+"${PROM_PROBE_ARGV[@]}" >/dev/null 2>&1 \
+  || void "L-0 target not found — '$PROM_RUNTIME_PROBE' failed, so the served alerts file cannot be compared against $ALERTS (override PROM_RUNTIME_PROBE/PROM_EXEC for this runtime)"
 
 HOST_SUM=$(md5sum "$ALERTS" | awk '{print $1}')
-CTR_SUM=$(docker exec "$PROM_CONTAINER" md5sum "$PROM_ALERTS_PATH" 2>/dev/null | awk '{print $1}') \
-  || void "L-0 cannot read $PROM_ALERTS_PATH inside '$PROM_CONTAINER'"
+CTR_SUM=$("${PROM_EXEC_ARGV[@]}" md5sum "$PROM_ALERTS_PATH" 2>/dev/null | awk '{print $1}') \
+  || void "L-0 cannot read $PROM_ALERTS_PATH via '$PROM_EXEC'"
 [ -n "$CTR_SUM" ] \
-  || void "L-0 empty checksum from '$PROM_CONTAINER:$PROM_ALERTS_PATH' — an unreadable served file is VOID, never clean"
+  || void "L-0 empty checksum from '$PROM_EXEC md5sum $PROM_ALERTS_PATH' — an unreadable served file is VOID, never clean"
 
 if [ "$HOST_SUM" != "$CTR_SUM" ]; then
   void "L-0 SOURCE DRIFT — the running Prometheus is NOT serving the file this gate reads.
        $ALERTS  md5=$HOST_SUM  inode=$(stat -c %i "$ALERTS")
-       $PROM_CONTAINER:$PROM_ALERTS_PATH  md5=$CTR_SUM  inode=$(docker exec "$PROM_CONTAINER" stat -c %i "$PROM_ALERTS_PATH" 2>/dev/null || echo '?')
-       The single-file bind mount has detached. Every result below would mix this tree's
-       file with a different tree's runtime. SIGHUP will NOT fix it — recreate:
-         docker compose --env-file .env -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate prometheus"
+       served via '$PROM_EXEC' at $PROM_ALERTS_PATH  md5=$CTR_SUM  inode=$("${PROM_EXEC_ARGV[@]}" stat -c %i "$PROM_ALERTS_PATH" 2>/dev/null || echo '?')
+       Every result below would mix this tree's file with a different tree's runtime.
+       COMPOSE: the single-file bind mount has detached; SIGHUP will NOT fix it — recreate:
+         docker compose --env-file .env -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate prometheus
+       KUBERNETES: the pod is serving an older ConfigMap version than the one applied.
+       Wait out the kubelet sync, then restart the workload — a ConfigMap edit alone does
+       not reload a Prometheus without --web.enable-lifecycle:
+         kubectl -n <ns> rollout restart deploy/prometheus"
 fi
 
 # ================================================================== L-1
@@ -388,6 +497,148 @@ RUN_TOKEN="$(jq -rn 'now|floor|tostring')-$$"
 PROBE="${PROBE_BASE}-${RUN_TOKEN}"
 PROBE_ID="probe-${RUN_TOKEN}"
 
+# ================================================================== L-3b
+# SINK CO-RESIDENCY — is the sink this gate searches in the SAME receiver as the
+# address a human reads?
+#
+# Read from the RUNNING Alertmanager (/api/v2/status -> .config.original), never
+# from a file on disk: the file the gate can see and the config the process loaded
+# are two different things, which is the same class of mistake L-0 exists for. The
+# API returns Alertmanager's own re-marshalling, so the shape is normalised and
+# predictable — measured on v0.27.0: top-level keys at column 0, the default
+# route's receiver at exactly two spaces, `receivers:` items as `- name:` at
+# column 0, and each email_configs entry's destination as a lowercase `to:`
+# (the rendered SMTP header is the canonical-cased `To:` and is deliberately
+# skipped by the parser below).
+#
+# THREE OUTCOMES, and the middle one is the point:
+#   0 destinations  -> VOID. A receiver that mails nobody makes L-3 meaningless.
+#   1 destination   -> the sink IS the destination. Nothing to co-reside with.
+#   2+ destinations -> BOTH L3_SINK_TO and L3_HUMAN_TO must be declared and both
+#                      must appear in that receiver. This is the staging shape,
+#                      and refusing to guess is deliberate: a gate that picked one
+#                      of several addresses on its own could search the leg nobody
+#                      reads and report the human's inbox as proven.
+#
+# It also refuses a route built specially for the probe. The header above rejects
+# that shape in words; this makes the words fire.
+AM_CONFIG=$(curl -sf --max-time 10 "$ALERTMANAGER_URL/api/v2/status" | jq -r '.config.original // ""') \
+  || void "L-3b cannot read $ALERTMANAGER_URL/api/v2/status — the running Alertmanager's own config is the only honest source for which receiver this probe traverses"
+[ -n "$AM_CONFIG" ] \
+  || void "L-3b $ALERTMANAGER_URL/api/v2/status returned no .config.original — an unreadable config is VOID, never clean"
+
+# Prints: line 1 = the default route's receiver name, lines 2+ = that receiver's
+# email destinations. python3 is already a hard dependency of this gate; PyYAML is
+# deliberately NOT, because adding an import that may be absent would turn a
+# REQUIRED phase-close gate into a VOID on hosts that are otherwise fine.
+route_sink_block() {
+  python3 -c '
+import re, sys
+# QUOTES are stripped via chr() rather than a literal, because this block lives
+# inside a single-quoted python3 -c string and an apostrophe would terminate it.
+# The same note guards the selectors_of block above; it is not decoration.
+QUOTES = chr(34) + chr(39)
+lines = sys.argv[1].splitlines()
+
+receiver = ""
+in_route = False
+for ln in lines:
+    if re.match(r"^route:\s*$", ln):
+        in_route = True
+        continue
+    if in_route:
+        if ln and not ln.startswith(" ") and not ln.startswith("-"):
+            in_route = False
+            continue
+        # EXACTLY two spaces. A child route under `routes:` renders as
+        # "  - receiver: x" and must not be mistaken for the default one.
+        m = re.match(r"^ {2}receiver:\s*(\S.*)$", ln)
+        if m:
+            receiver = m.group(1).strip().strip(QUOTES)
+            in_route = False
+print(receiver)
+
+dests, in_receivers, current, headers_indent = [], False, None, None
+for ln in lines:
+    if re.match(r"^receivers:\s*$", ln):
+        in_receivers = True
+        continue
+    if not in_receivers:
+        continue
+    if ln and not ln.startswith(" ") and not ln.startswith("- "):
+        break
+    m = re.match(r"^- name:\s*(\S.*)$", ln)
+    if m:
+        current = m.group(1).strip().strip(QUOTES)
+        headers_indent = None
+        continue
+    if current != receiver:
+        continue
+    indent = len(ln) - len(ln.lstrip(" "))
+    # Skip the rendered SMTP headers block: it carries a canonical-cased "To:"
+    # whose value is the same address, and counting it would double every
+    # destination. Tracked by indentation rather than by case alone.
+    if headers_indent is not None:
+        if ln.strip() and indent > headers_indent:
+            continue
+        headers_indent = None
+    if re.match(r"^\s*headers:\s*$", ln):
+        headers_indent = indent
+        continue
+    m = re.match(r"^\s*-?\s*to:\s*(\S.*)$", ln)
+    if m:
+        dests.append(m.group(1).strip().strip(QUOTES))
+for d in dests:
+    print(d)
+' "$1"
+}
+
+L3B_INFO=$(route_sink_block "$AM_CONFIG") \
+  || void "L-3b could not parse the running Alertmanager config — an unparseable config is VOID, never clean"
+L3B_RECEIVER=$(head -n1 <<<"$L3B_INFO")
+L3B_DESTS=$(tail -n +2 <<<"$L3B_INFO" | sed '/^$/d')
+# `command grep` throughout, matching the L-1b call above: in an interactive
+# harness `grep` can be a shell function routed at ugrep, and the whole point of
+# a counted result is that it must not silently change meaning.
+L3B_N=$(command grep -c . <<<"$L3B_DESTS" || true)
+[ -n "$L3B_DESTS" ] || L3B_N=0
+
+[ -n "$L3B_RECEIVER" ] \
+  || void "L-3b the running config declares no default route receiver — L-3 cannot claim a probe traversed the route real alerts take"
+[ "${L3B_N:-0}" -gt 0 ] \
+  || void "L-3b receiver '$L3B_RECEIVER' has ZERO email destinations, so a delivered probe would prove nothing about anyone's inbox"
+
+# A route or receiver built specially for the probe defeats the whole assertion.
+case "$AM_CONFIG" in
+  *"$PROBE_BASE"*)
+    void "L-3b the running Alertmanager config MENTIONS '$PROBE_BASE'. The probe must traverse the route real alerts take; a route or receiver of its own would make L-3 green while proving nothing about real delivery." ;;
+esac
+
+if [ "${L3B_N:-0}" -eq 1 ]; then
+  L3B_SOLE=$(printf '%s' "$L3B_DESTS")
+  for want in "$L3_SINK_TO" "$L3_HUMAN_TO"; do
+    [ -z "$want" ] && continue
+    [ "$want" = "$L3B_SOLE" ] \
+      || void "L-3b declared address '$want' is not the destination of receiver '$L3B_RECEIVER' (which is '$L3B_SOLE') — the gate would be searching a sink the route does not feed"
+  done
+  L3B_NOTE="single destination ($L3B_SOLE) — the searched sink IS the real destination"
+else
+  { [ -n "$L3_SINK_TO" ] && [ -n "$L3_HUMAN_TO" ]; } \
+    || void "L-3b receiver '$L3B_RECEIVER' has $L3B_N email destinations:
+$(sed 's/^/         /' <<<"$L3B_DESTS")
+       With more than one, this gate cannot know which address it can SEARCH and which a human READS.
+       Declare both — L3_SINK_TO=<inspectable sink> L3_HUMAN_TO=<real inbox> — rather than letting the
+       gate pick. Guessing here is how a green L-3 comes to mean the wrong leg was delivered."
+  for want in "$L3_SINK_TO" "$L3_HUMAN_TO"; do
+    command grep -Fxq -- "$want" <<<"$L3B_DESTS" \
+      || void "L-3b declared address '$want' is NOT a destination of receiver '$L3B_RECEIVER':
+$(sed 's/^/         /' <<<"$L3B_DESTS")
+       Same receiver, same route, same template is the whole basis for reading the sink as evidence
+       about the inbox. A destination in a DIFFERENT receiver is a side channel."
+  done
+  L3B_NOTE="$L3B_N destinations in receiver '$L3B_RECEIVER'; searched sink '$L3_SINK_TO' is co-resident with human inbox '$L3_HUMAN_TO'"
+fi
+
 # WHY THE ALERTNAME IS UNIQUE PER RUN (issue #342 item 6)
 #
 #   It was the constant "SyntheticDeliveryProbe" until 2026-07-29, and that made
@@ -470,8 +721,15 @@ echo "  L-1b  exporter-jobs=${#EXPORTER_GAUGES[@]}  blind=$L1B_BLIND  gauge-read
 echo "  L-2   rules=$RULE_N  selectors-matching-0-series=$L2_EMPTY"
 echo "  L-2b  wrong-subject=$L2B_WRONG"
 echo "  L-3   probe delivered=$FOUND  attempts{email} $SENT_BEFORE -> $SENT_AFTER  failed{email} $FAILED_BEFORE -> $FAILED_AFTER"
+echo "  L-3b  $L3B_NOTE"
 echo "  NOTE  L-3 proves the message left Alertmanager and arrived at the configured sink."
-echo "        It does NOT prove a human reads that sink. Today that sink is Mailhog with no human behind it."
+if [ -n "$L3_HUMAN_TO" ]; then
+  echo "        L-3b proves that sink shares a receiver with $L3_HUMAN_TO, and the recorded A1 measurement"
+  echo "        proves Alertmanager fans out to every entry in a receiver — so the human's leg was sent too."
+  echo "        It still does NOT prove a human READ it."
+else
+  echo "        It does NOT prove a human reads that sink. In compose that sink is Mailhog with no human behind it."
+fi
 
 if [ "$VIOLATIONS" -gt 0 ]; then
   echo "FAILED: $VIOLATIONS live detection defect(s)." >&2
