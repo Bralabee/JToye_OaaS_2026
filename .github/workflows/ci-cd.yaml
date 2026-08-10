@@ -1239,6 +1239,37 @@ jobs:
           chmod +x ./scripts/smoke-test.sh
           EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://api-staging.olajay.co.uk
 
+      # DPLY-05. Phase 26 recorded NetworkPolicy enforcement as NOT PROVEN, and a
+      # "not proven" that is never revisited becomes an inherited pass. A cluster whose
+      # CNI does not implement NetworkPolicy ACCEPTS every one of our policy objects and
+      # enforces none of them, with no error and no status field that says so — so the
+      # only evidence is a captured denial.
+      #
+      # This is the only place in the repo with both cluster credentials and a deployed
+      # namespace to probe, which is why the gate is WIRED here rather than exempted in
+      # scripts/gates/gate-enforcement.conf. Wiring beats exempting whenever a real
+      # runtime exists.
+      #
+      # BOTH exit 1 (denied arm connected) and exit 2 (could not evaluate) fail this job,
+      # and that is deliberate: DPLY-05 is a security boundary, and an unevaluatable
+      # boundary is not a passing one. The consequence is real and accepted — a probe pod
+      # that cannot be scheduled will fail the deploy and trigger the rollback step below.
+      # The alternative, continue-on-error, is how a gate becomes decoration.
+      #
+      # The script refuses to run against an ambient context (the only context on the
+      # maintainer's own host is employer infrastructure), so the context is resolved from
+      # the kubeconfig this job just wrote and passed explicitly.
+      - name: Prove NetworkPolicy enforcement with a captured denial (DPLY-05)
+        run: |
+          set -euo pipefail
+          CTX="$(kubectl config current-context)"
+          if [ -z "$CTX" ]; then
+            echo "FATAL: no current kube context after kubeconfig setup — refusing to guess." >&2
+            exit 2
+          fi
+          chmod +x ./scripts/check-networkpolicy-enforcement.sh
+          ./scripts/check-networkpolicy-enforcement.sh --context "$CTX" --namespace jtoye-staging
+
       - name: Rollback on failure
         if: failure()
         run: |
