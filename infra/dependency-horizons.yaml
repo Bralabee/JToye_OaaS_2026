@@ -241,7 +241,15 @@ dependencies:
   #  so the omission is closed here rather than inherited.
   - id: prometheus
     pin: "prom/prometheus:v2.48.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:8"]
+    # TWO SITES since plan 29-06 (DPLY-03): this image is now referenced from k8s/ as
+    # well as compose, and H-5 asserts the declared pin at EVERY declared site — so a
+    # bump that moved one and not the other is a drift failure rather than an
+    # invisible skew between the runtime you develop on and the one you ship.
+    # The compose line number is also corrected here (it read :8, the pin is at :35);
+    # it had been producing an advisory NOTE on every run.
+    sites:
+      - "infra/monitoring/docker-compose.monitoring.yml:35"
+      - "k8s/base/monitoring/prometheus-deployment.yaml:100"
     kind: image
     owner: maintainer
     eol_slug: prometheus
@@ -294,7 +302,11 @@ dependencies:
 
   - id: redis-exporter
     pin: "oliver006/redis_exporter:v1.58.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:129"]
+    # Second site added by plan 29-06 (DPLY-03) — see the prometheus row above for
+    # why every reference is declared. The compose line is corrected too (:129 -> :163).
+    sites:
+      - "infra/monitoring/docker-compose.monitoring.yml:163"
+      - "k8s/base/monitoring/redis-exporter-deployment.yaml:81"
     kind: image
     owner: maintainer
     eol_slug: null
@@ -310,7 +322,11 @@ dependencies:
 
   - id: postgres-exporter
     pin: "prometheuscommunity/postgres-exporter:v0.15.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:149"]
+    # Second site added by plan 29-06 (DPLY-03) — see the prometheus row above for
+    # why every reference is declared. The compose line is corrected too (:149 -> :183).
+    sites:
+      - "infra/monitoring/docker-compose.monitoring.yml:183"
+      - "k8s/base/monitoring/postgres-exporter-deployment.yaml:104"
     kind: image
     owner: maintainer
     eol_slug: null
