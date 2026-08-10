@@ -721,7 +721,6 @@ PG_FQDN="$(az_read '<postgres-fqdn>' postgres flexible-server show -g "$AZURE_RE
 # than hardcoded, exactly as before — Managed Redis spells it `Balanced_B0`.
 # ---------------------------------------------------------------------------
 REDIS_AMR_SKU="${REDIS_TIER}_$(printf '%s' "$REDIS_VM_SIZE" | tr '[:lower:]' '[:upper:]')"
-REDIS_DB_NAME="${REDIS_DB_NAME:-default}"
 step "STEP 7: Azure Managed Redis ${REDIS_NAME} (${REDIS_AMR_SKU})"
 # THE CLUSTER AND THE DATABASE ARE CREATED SEPARATELY, ON PURPOSE.
 # `az redisenterprise create` can make both in one call, but its own help
@@ -756,16 +755,24 @@ fi
 # renders REDIS_PASSWORD), so inheriting that flip would silently break every
 # cache connection on a CLI upgrade, with nothing in this repo having changed.
 # An announced default change is a time-bomb; pinning it is the fix.
-if ! resource_exists "Managed Redis database ${REDIS_NAME}/${REDIS_DB_NAME}" \
-       redisenterprise database show --cluster-name "$REDIS_NAME" -g "$AZURE_RESOURCE_GROUP" -n "$REDIS_DB_NAME"; then
+# NO `-n` / `--name` ON THE DATABASE COMMANDS. Managed Redis allows exactly ONE
+# database per cluster and names it `default` itself, so `az redisenterprise
+# database show|create` accept only --cluster-name and -g. Passing a name is not
+# merely redundant, it is rejected:
+#     ERROR: unrecognized arguments: -n default
+# measured 2026-08-10, AFTER the cluster had already been created — i.e. the
+# failure lands halfway through, which is exactly why the two halves are
+# separately guarded and the script is safe to re-run.
+if ! resource_exists "Managed Redis database ${REDIS_NAME}/default" \
+       redisenterprise database show --cluster-name "$REDIS_NAME" -g "$AZURE_RESOURCE_GROUP"; then
   az_mutate redisenterprise database create \
-    --cluster-name "$REDIS_NAME" -g "$AZURE_RESOURCE_GROUP" -n "$REDIS_DB_NAME" \
+    --cluster-name "$REDIS_NAME" -g "$AZURE_RESOURCE_GROUP" \
     --client-protocol Encrypted \
     --access-keys-auth Enabled \
     --port 10000
 fi
 REDIS_HOSTNAME="$(az_read '<redis-hostname>' redisenterprise show -g "$AZURE_RESOURCE_GROUP" -n "$REDIS_NAME" --query hostName -o tsv)"
-REDIS_PORT_LIVE="$(az_read '<redis-port>' redisenterprise database show --cluster-name "$REDIS_NAME" -g "$AZURE_RESOURCE_GROUP" -n "$REDIS_DB_NAME" --query port -o tsv)"
+REDIS_PORT_LIVE="$(az_read '<redis-port>' redisenterprise database show --cluster-name "$REDIS_NAME" -g "$AZURE_RESOURCE_GROUP" --query port -o tsv)"
 
 # ---------------------------------------------------------------------------
 # STEP 8 — user-assigned identity + GitHub federated credential (D-04, #99)

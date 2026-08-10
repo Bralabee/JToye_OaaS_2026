@@ -292,7 +292,65 @@ CI_FEDERATED_SUBJECT  : repo:Bralabee/JToye_OaaS_2026:environment:staging
 These were created directly rather than by the script, because the run aborted at STEP 7 (Redis,
 §4) before reaching STEP 8. The commands are the script's own, unchanged.
 
-### 2.5 Redis — NOT CREATED. See §4.
+### 2.5 Azure MANAGED Redis — `jtoye-staging-redis` (created after the §4 decision)
+
+The original service could not be created at all (§4). The owner approved the move to Azure Managed
+Redis Balanced B0, and the estate now carries it. Read off the running resources:
+
+```
+$ az redisenterprise show -g jtoye-rg -n jtoye-staging-redis --subscription c483d353-… -o json
+{ "ha": "Enabled", "host": "jtoye-staging-redis.uksouth.redis.azure.net",
+  "pna": "Enabled", "res": "Running", "sku": "Balanced_B0",
+  "state": "Succeeded", "tls": "1.2" }
+
+$ az redisenterprise database show --cluster-name jtoye-staging-redis -g jtoye-rg … -o json
+{ "cluster": "OSSCluster", "evict": "VolatileLRU", "keys": "Enabled",
+  "name": "default", "port": 10000, "proto": "Encrypted",
+  "res": "Running", "state": "Succeeded" }
+```
+
+```
+REDIS_HOST     : jtoye-staging-redis.uksouth.redis.azure.net
+REDIS_SSL_PORT : 10000        <- equals k8s/staging app-config redis.port, verified below
+```
+
+**`clientProtocol: Encrypted`** is the TLS-only posture — the direct equivalent of never passing
+`--enable-non-ssl-port` to the retired service. There is no plaintext port to disable, so
+T-29-02-02 is satisfied structurally rather than by a setting that could be flipped back.
+
+**The port agrees on both sides, and that agreement is the point.** The provisioning script's
+evidence block prints the port read from the *live database* next to the note that it must equal
+`k8s/staging`'s `redis.port`; the render says `10000` (§2.6) and the live database says `10000`.
+Under the enforcing Cilium dataplane, a disagreement here would drop every cache call silently.
+
+### 2.6 The port change proven end-to-end
+
+```
+$ bash k8s/scripts/check-render-invariants.sh
+OK [k8s/base]:       … INV-7 OK (… 4 ipBlock policy/policies redis.port=6379 …)
+OK [k8s/local]:      … INV-7 OK (… redis.port=6379 …)
+OK [k8s/production]: … INV-7 OK (… redis.port=6379 …)
+OK [k8s/staging]:    … INV-7 OK (… redis.port=10000 …)
+PASS: INV-1..INV-7 hold across 4 kustomize target(s)
+```
+
+**INV-7 required no edit, and that was verified rather than assumed.** Its `NETPOL_IPBLOCK_EXPECTED`
+map is written with a `__REDIS_PORT__` substitution rather than a literal, so it follows the rendered
+value. Staging reports `10000` while base, local and production still report `6379` — the change is
+scoped to exactly one target.
+
+The goldens diff (snapshot → `--write` → `--diff-since`) is **exactly two lines, both staging**:
+
+```
+50c50
+<   redis.port: "6380"      ->   redis.port: "10000"      (the app-config key)
+2549c2549
+<     - port: 6380          ->     - port: 10000          (the core-java-allow egress rule)
+```
+
+`k8s/goldens/production.yaml` rendered **byte-identical**. That two-line shape is itself the proof
+that the kustomize `replacements:` chain still carries the ConfigMap value into the NetworkPolicy —
+had the chain broken, only line 50 would have moved.
 
 ---
 
@@ -416,7 +474,89 @@ things in this repo encode the old one:
 3. **The `az redis` CLI path differs** (`az redisenterprise` / `az redis enterprise`), so the
    script's STEP 7 needs rewriting, not re-parameterising.
 
-None of that is a Rule 1–3 auto-fix. It is recorded here and raised as a checkpoint.
+None of that is a Rule 1–3 auto-fix. It was raised as a checkpoint and **the owner approved the
+move to Azure Managed Redis Balanced B0 on 2026-08-10**, including the billable creation. §4.3–4.5
+record what was then done and proven.
+
+### 4.3 The fail-direction arm — run twice, because the first one proved the wrong thing
+
+"INV-7 OK, `redis.port=10000`" is a pass that had not been shown capable of failing. The arm
+reproduces the #271 trap at the new port: remove the `redis.port` replacement from
+`k8s/staging/kustomization.yaml` **only**, and the staging NetworkPolicy should fall back to the
+base `6379` while app-config still says `10000` — every pod dialling a port the rule does not
+permit.
+
+**Attempt 1 was a bad instrument and is recorded rather than discarded.** A pattern-range `sed`
+mangled the YAML, so `kubectl kustomize` produced *nothing*: app-config port empty, netpol ports
+empty, INV-7 `rc=2` (VOID). Non-zero, and completely worthless — it proved "INV-7 VOIDs on a broken
+file", not "INV-7 catches a silent fallback". The broken-file failure is the easy one; the silent
+fallback is the dangerous one.
+
+**Attempt 2 deleted exactly the ten lines of the replacement stanza, leaving valid YAML:**
+
+| Arm | file hash | YAML parses | app-config `redis.port` | core-java-allow egress ports | INV-7 |
+|---|---|---|---|---|---|
+| 0 clean (first) | `25f937a0…` | yes | `"10000"` | `… 443 5432 **10000** 9090` | **rc=0** |
+| 1 BROKEN | `9e443075…` | **yes** | `"10000"` | `… 443 5432 **6379** 9090` | **rc=1** |
+| restore | `25f937a0…` | yes | — | — | — |
+| 2 clean (last) | `25f937a0…` | yes | `"10000"` | `… 443 5432 **10000** 9090` | **rc=0** |
+
+The broken tree **still renders**, which is what makes it a real test: it is a plausible,
+reviewable, wrong tree in which the app is configured for 10000 and the firewall permits only 6379.
+INV-7 returns **rc=1 (violation)**, not rc=2 (VOID) — the right verdict for the right reason.
+
+The restore was verified **by content** (`git hash-object` back to `25f937a0…`), never by
+`git diff --stat`, and the clean state was asserted **last** as well as first — including a golden
+re-check at `rc=0`, since that is the arm nothing else watches. The commit was made *before* the arms
+ran, so the restore target was a committed state rather than a staged one.
+
+### 4.4 Two more real-path defects, both the same shape as the PostgreSQL ones
+
+| # | Defect | Measured |
+|---|---|---|
+| 1 | `--public-network-access` is **required today** | `BadRequest: 'properties.publicNetworkAccess' is required in API version 2025-07-01`, while the CLI only warns it "will become required in next breaking change release (2.92.0) scheduled for Nov 2026" |
+| 2 | `az redisenterprise database create` rejects `-n` | `ERROR: unrecognized arguments: -n default` — Managed Redis allows exactly one database per cluster and names it `default` itself |
+
+Defect 1 is the **third** instance in this one plan of a single pattern: **a documented future date
+describing a constraint that binds now.** The other two were `--public-access None` (help says
+"public access mode, no firewall rule"; the server came back `Disabled`) and the O-5 retirement
+horizon itself (dated 2028-09-30; refusing creates today). Worth naming as a class, because the
+common defence — read the docs, note the date, move on — fails against all three.
+
+Defect 2 landed **after** the cluster had already been created, i.e. halfway through the step. That
+is precisely why the cluster and the database are separately guarded check-then-creates rather than
+one combined `az redisenterprise create`, whose own help calls a re-run against an existing cluster
+"(overwrite/recreate, with potential downtime)". The re-run after the fix was a clean `rc=0`.
+
+`--access-keys-auth Enabled` is now pinned rather than inherited, because the CLI announces that
+default **flips to Disabled** in 2.92.0. The application authenticates with an access key, so
+inheriting that flip would break every cache connection on a CLI upgrade with nothing in this
+repository having changed.
+
+### 4.5 FLAGGED for plan 29-11 — `clusteringPolicy: OSSCluster`
+
+The database was created with Azure's default clustering policy:
+
+```
+"cluster": "OSSCluster"
+```
+
+**This is a compatibility risk that has NOT been exercised, and it is recorded rather than assumed
+benign.** The application connects through Spring Data Redis / Lettuce configured as a *standalone*
+client (`spring.data.redis.host` / `.port` / `.password` — see `application.yml`), not as a
+cluster-aware client. Under OSS Cluster mode a client may receive `MOVED` redirects, which a
+standalone Lettuce connection does not follow.
+
+On `Balanced_B0` there is a single shard, so in practice every key lives in one place and redirects
+should not arise — which is exactly the kind of "should" that this repository's own rules say not to
+trust. Azure's alternative is `clusteringPolicy: EnterpriseCluster`, which presents one logical
+endpoint for non-cluster-aware clients.
+
+**Nothing here proves the app can talk to this cache.** No workload is deployed yet, so no
+connection has been attempted. Plan **29-11** owns the first real connection and must treat
+`redis_up` / a successful cache round-trip as the acceptance criterion — not the presence of the
+resource. If it fails with `MOVED`, the remedy is a policy change on the database, not an
+application change.
 
 ---
 
@@ -482,20 +622,20 @@ Live retail API, GBP, `uksouth`, 2026-08-10 — not the research quoted back:
 | PostgreSQL storage | 32 GiB | £0.1008/GiB/mo | **3.23** |
 | Static ingress IP | Standard IPv4 static | £0.0038/hr | **2.77** |
 | AKS egress IP | Standard IPv4 static (managed outbound) | £0.0038/hr | **2.77** |
-| **CREATED TODAY** | | | **£129.22** |
-| Redis (BLOCKED, §4) | AMR Balanced B0, if adopted | £0.0136/hr | (9.93) |
-| **PROJECTED COMPLETE ESTATE** | | | **£139.15** |
+| Redis | Azure Managed Redis `Balanced_B0` | £0.0136/hr | **9.93** |
+| **CREATED TODAY — COMPLETE ESTATE** | | | **£139.15** |
 
 ```
-PROJECTED ESTATE      GBP 139.15/mo
+ACTUAL ESTATE         GBP 139.15/mo
 CEILING (D-03)        GBP 150.00/mo
 HEADROOM              GBP  10.85/mo
 ```
 
-**Headroom improves from the planned £3.00 to £10.85**, because the Redis line the API forced us off
+**Headroom improved from the planned £3.00 to £10.85**, because the Redis line the API forced us off
 is £5.55/mo cheaper, and because the research's £147.00 slightly overstated the node/IP lines. Both
 the node line (£0.0358/hr) and the PostgreSQL line (£42.05/mo) reproduce 29-01's figures exactly,
-which is a useful cross-check that the instrument is the same one.
+which is a useful cross-check that the instrument is the same one. The forced Redis migration is the
+rare case of a blocking external change that leaves the budget *better* than the plan assumed.
 
 **Assumption A8 (`--tier free` incurs no control-plane charge) remains INFERRED, not verified.** It
 is inferred from the absence of a Free line item in the retail price list, and the cluster is hours
@@ -568,6 +708,44 @@ so every empty above is a genuine absence.
 
 **`INGRESS_STATIC_IP = 20.58.10.18` is the value all four A records must point at.**
 
+### 7.1 After the operator began adding records — still 0 of 4 at the deadline
+
+The owner reported adding the four A records. Verification ran on a bounded window: polls every 45 s
+for 15 minutes against `1.1.1.1`, asserting the **IP value per name** rather than merely a non-empty
+answer (a record pointing somewhere else would satisfy "non-empty" and then serve nothing).
+
+```
+window   : 2026-08-10T23:11Z -> 23:26Z, then a second window from 23:26Z
+result   : DEADLINE_REACHED — 0 of 4 resolve
+
+  api-staging.olajay.co.uk      -> (empty)   want 20.58.10.18
+  app-staging.olajay.co.uk      -> (empty)   want 20.58.10.18
+  auth-staging.olajay.co.uk     -> (empty)   want 20.58.10.18
+  grafana-staging.olajay.co.uk  -> (empty)   want 20.58.10.18
+
+POSITIVE CONTROL
+  one.one.one.one @1.1.1.1      -> 1.1.1.1 1.0.0.1     <- resolver works
+  one.one.one.one @system       -> 1.0.0.1 1.1.1.1     <- second resolver works
+
+D-08 (production must stay empty)
+  api.olajay.co.uk              -> (empty)   OK
+  app.olajay.co.uk              -> (empty)   OK
+```
+
+**The controls are what make this a finding rather than noise.** Both resolvers answer for a known
+name, so the four empties are genuine absences — the records are not yet visible in public DNS. Two
+independent resolvers were used specifically so that one resolver's negative cache could not decide
+the question.
+
+This is **not** evidence that the operator did anything wrong: the zone is at NS1 behind Netlify,
+and a record can take longer than 15 minutes to publish, particularly if the zone's negative-caching
+TTL (SOA minimum **3600 s**, visible in the delegation above) has already cached the NXDOMAIN from
+the pre-creation probes. That one-hour negative TTL is the most likely explanation for a
+correctly-created record still reading empty here, and it is why this is reported as *not yet
+observed* rather than *not created*.
+
+**Task 3 therefore remains open**, with `INGRESS_STATIC_IP = 20.58.10.18` unchanged as the target.
+
 ---
 
 ## 8. Status against the plan's success criteria
@@ -576,9 +754,10 @@ so every empty above is a genuine absence.
 |---|---|
 | Estate exists in the owner's subscription, enforcing dataplane, PG16 server | **MET** — `cilium` + `version: 16`, both read off the resource |
 | Node allocatable measured and the estate shown to fit | **MET** — 1900m / 2.72 GiB per node; app tier uses 19% of free CPU |
-| `jtoye_backup` has BYPASSRLS, proven from the DB side with a failing arm | **NOT STARTED** — Task 2, blocked (§9) |
-| All four staging names resolve, no production name resolves | **NOT STARTED** — Task 3, operator action (§9) |
-| Redis provisioned | **BLOCKED** — §4, needs a decision |
+| Redis provisioned | **MET** — Azure Managed Redis `Balanced_B0`, port 10000 live, TLS-only (§2.5) |
+| The whole provisioning script runs clean end-to-end | **MET** — `rc=0` at 2026-08-10T23:26:20Z, after four real-path defects were fixed |
+| `jtoye_backup` has BYPASSRLS, proven from the DB side with a failing arm | **NOT STARTED** — Task 2, blocked on operator credentials (§9, §9.2) |
+| All four staging names resolve, no production name resolves | **NOT YET OBSERVED** — 0 of 4 at the 15-min deadline against working controls (§7.1) |
 
 ---
 
@@ -586,8 +765,8 @@ so every empty above is a genuine absence.
 
 | Item | Blocks | Why it cannot be auto-resolved |
 |---|---|---|
-| **Redis service choice** | Task 1 completion, 29-11+ | Rule 4 architectural: different provider, port 6380 → 10000, ADR-0002 + `REDIS_SKU` + configmap + NetworkPolicy all change together (§4) |
-| **AWS keys ×4** (media + backup, eu-west-2) | **Task 2 entirely** | Recorded ABSENT (29-01 §7.2). Operator-only |
+| ~~Redis service choice~~ | — | **RESOLVED 2026-08-10** — owner approved Azure Managed Redis Balanced B0; created, verified, port swept (§2.5, §4) |
+| **AWS keys ×4** (media + backup, eu-west-2) | **Task 2 entirely** | Recorded ABSENT (29-01 §7.2). Operator-only. Template now at `~/.jtoye/staging-operator.env` (§9.2) |
 | **Gmail app password + From/To** | **Task 2 entirely** | Recorded ABSENT (29-01 §7.3). Operator-only |
 | **Netlify DNS portal access** | Task 3 | UNCONFIRMED (29-01 §7.5); cert-manager has no Netlify solver, so there is no automation path (D-07) |
 
@@ -649,6 +828,38 @@ copy, and the server is unusable without it (recoverable only by an admin-passwo
 > non-alphanumeric}. The generated value keeps a 40-character alphanumeric random core (~238 bits)
 > with affixes that satisfy the category rule without reducing that core's entropy. Recorded so the
 > contract can be corrected rather than repeatedly tripped over.
+
+### 9.2 The operator credential template — written, awaiting values
+
+The owner elected to supply the seven operator-only values via a local env file. A **template** now
+exists, machine-local and outside the repository:
+
+```
+/home/sanmi/.jtoye/staging-operator.env      mode 0600
+```
+
+It contains the seven names `staging-secrets.sh`'s preflight expects, each empty, each with a
+one-line comment naming where the value comes from. Populated state, measured — **names and a
+boolean only, never a value, and never a length that could narrow a secret**:
+
+```
+  AWS_MEDIA_ACCESS_KEY_ID          EMPTY
+  AWS_MEDIA_SECRET_ACCESS_KEY      EMPTY
+  AWS_BACKUP_ACCESS_KEY_ID         EMPTY
+  AWS_BACKUP_SECRET_ACCESS_KEY     EMPTY
+  ALERTMANAGER_SMTP_PASSWORD       EMPTY
+  ALERTMANAGER_SMTP_FROM           EMPTY
+  ALERTMANAGER_SMTP_TO             EMPTY
+
+populated=0  empty=7  of 7        (measured 2026-08-11T00:12Z)
+```
+
+Two notes the template itself carries, because both are common failure modes:
+- The Gmail value must be a **16-character app password**, not the account password — Gmail rejects
+  the latter for SMTP.
+- `ALERTMANAGER_SMTP_TO` is REQUIRED, not optional. A missing To does not error; it silently sends
+  nowhere, which is indistinguishable from a healthy system with no alerts — the exact failure this
+  phase exists to eliminate.
 
 ---
 
