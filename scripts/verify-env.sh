@@ -38,6 +38,15 @@ REQUIRED_VARS=(
   REDIS_PASSWORD
   RABBITMQ_DEFAULT_PASS
   DB_PASSWORD
+  # Runtime/migrator split (SEC-04 / #552, D-01). DB_MIGRATION_USER is a role
+  # NAME (jtoye_app) rather than a secret, but it belongs here for the same reason
+  # MINIO_ROOT_USER does: it must be SET, and a half-applied split — the app moved
+  # to jtoye_runtime with no migrator declared — silently points Flyway at a role
+  # with no CREATE, so the app never boots on a fresh database. Cross-checks in
+  # sections (d)/(d2) below add the "set, but to the WRONG role" case a presence
+  # check cannot see.
+  DB_MIGRATION_USER
+  DB_MIGRATION_PASSWORD
   RABBITMQ_PASSWORD
   MINIO_ROOT_USER
   MINIO_ROOT_PASSWORD
@@ -208,6 +217,14 @@ CREDENTIAL_PAIRS=(
   # after Tomcat has already started — so the container looks alive for a few
   # seconds before the context aborts.
   "RABBITMQ_DEFAULT_USER|RABBITMQ_USER|RABBITMQ_DEFAULT_PASS|RABBITMQ_PASSWORD|-"
+  # SEC-04 / #552 (D-01). The app role (DB_USER) and the migrator role
+  # (DB_MIGRATION_USER) may legitimately be the SAME (backward-compat: both
+  # jtoye_app) or DIFFERENT (the split: DB_USER=jtoye_runtime, migrator=jtoye_app).
+  # When they name the same role the two passwords MUST agree, exactly as for the
+  # Postgres/Keycloak pair above — otherwise one of the app or Flyway is refused.
+  # When they differ, this pair is skipped and the split is honoured. Default for
+  # DB_MIGRATION_USER mirrors application.yml's fallback to the owner role.
+  "DB_USER|DB_MIGRATION_USER|DB_PASSWORD|DB_MIGRATION_PASSWORD|jtoye_app"
 )
 PAIRS_CHECKED=0
 for pair in "${CREDENTIAL_PAIRS[@]}"; do
@@ -236,6 +253,23 @@ for pair in "${CREDENTIAL_PAIRS[@]}"; do
   fi
 done
 [ "$PAIRS_CHECKED" -gt 0 ] || { fail "No credential pairs were evaluated — this check is vacuous"; ERRORS=$((ERRORS + 1)); }
+
+# ---- (d2) runtime/migrator split: the migrator must be the OWNER role --------
+# DB_MIGRATION_USER is the role Flyway migrates AS (application.yml). It needs
+# CREATE on schema public, which the DML-only jtoye_runtime does NOT have — so
+# pointing the migrator at the runtime role means the app never boots on a fresh
+# database (it dies in the first migration). "Unset" is already caught by the
+# required-variable check in (a); this catches the subtler "set, but to the WRONG
+# role", which a presence check cannot see. The role NAMES are project constants
+# (infra/db/init/00-create-db.sql, infra/db/create-runtime-role.sql), not
+# environment-varying values, so naming them here does not embed a secret.
+echo "Checking the Flyway migrator role is the owner, not the DML-only runtime role..."
+OWNER_ROLE="jtoye_app"
+RUNTIME_ROLE="jtoye_runtime"
+if [ "${DB_MIGRATION_USER-}" = "$RUNTIME_ROLE" ]; then
+  fail "DB_MIGRATION_USER is '${RUNTIME_ROLE}', the DML-only runtime role. Flyway migrates as DB_MIGRATION_USER and needs CREATE on schema public, which ${RUNTIME_ROLE} lacks — the app never boots on a fresh database. Set DB_MIGRATION_USER=${OWNER_ROLE} (the owner/migrator); ${RUNTIME_ROLE} belongs in DB_USER."
+  ERRORS=$((ERRORS + 1))
+fi
 
 # ---- (e) realm password policy ----------------------------------------------
 # A credential is not merely "strong enough for us" — if it is imported into a

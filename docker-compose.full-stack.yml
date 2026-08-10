@@ -271,6 +271,13 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      # Runtime/migrator split (SEC-04 / #552, D-01): the app connects as DB_USER
+      # (the DML-only jtoye_runtime), Flyway migrates as DB_MIGRATION_USER (the
+      # owner jtoye_app). Plain ${VAR} for the username to match DB_USER's own
+      # treatment; ${VAR:?} for the password so a missing value fails loud and
+      # names the key. verify-env.sh requires both before the stack ever comes up.
+      DB_MIGRATION_USER: ${DB_MIGRATION_USER}
+      DB_MIGRATION_PASSWORD: ${DB_MIGRATION_PASSWORD:?DB_MIGRATION_PASSWORD must be set}
       # JWKS is fetched from the INTERNAL Keycloak host (reachable in-network)…
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
       # …but tokens are stamped with the PUBLIC issuer (KC_HOSTNAME=localhost:8085),
