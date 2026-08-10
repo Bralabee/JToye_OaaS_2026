@@ -54,6 +54,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 // once at context refresh whatever its interval — so a startup sweep could delete
 // (or decline to delete) an object behind the assertion's back. Trigger removed.
 @Import(NoScheduledTriggersTestConfig.class)
+// #283: markerLifecycle() seeds through the gated media accept. Inert for the other 10 tests,
+// which drive the reaper/sweep directly and never reach the gate.
+@uk.jtoye.core.testsupport.AsSystemHarness
 class MediaDurabilityIntegrationTest {
 
     @Container

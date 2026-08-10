@@ -108,10 +108,10 @@ Recorded here 2026-08-01 for completeness. Phase 27 was executed and closed 7/7 
 
 ### Security triage (SEC) — Phase 28
 
-- [ ] **SEC-01**: Pentest finding A1 re-verified against a stack rebuilt from HEAD, recorded CONFIRMED or FALSIFIED with the measurement that settled it. Source: `SECURITY-FINDINGS.md` (git-excluded, Strix run `d8c0`, 2026-07-31). Its stated root cause does not hold on the tree — both tables carry FORCE RLS and both services gate writes on `require(shopId, SHOP_MANAGER)`.
-- [ ] **SEC-02**: All 11 findings triaged — a sanitized public issue or a dated written acceptance each. No literal secret values, no exploit chain, no repro payloads (the repo is public).
-- [ ] **SEC-03**: No dev-only branch reachable under the `prod` profile, and the `X-Tenant-Id` fallback no longer advertised in the unauthenticated OpenAPI spec. CI gate shown to fail against a reintroduced fallback.
-- [ ] **SEC-04**: Compose publishes no infrastructure port on `0.0.0.0`; local credentials rotated. Also closes the #283/#284/#289 bypass class.
+- [x] **SEC-01**: Pentest finding A1 re-verified against a stack rebuilt from HEAD, recorded CONFIRMED or FALSIFIED with the measurement that settled it. Source: `SECURITY-FINDINGS.md` (git-excluded, Strix run `d8c0`, 2026-07-31). Its stated root cause does not hold on the tree — both tables carry FORCE RLS and both services gate writes on `require(shopId, SHOP_MANAGER)`.
+- [x] **SEC-02**: All 11 findings triaged — a sanitized public issue or a dated written acceptance each. No literal secret values, no exploit chain, no repro payloads (the repo is public).
+- [x] **SEC-03**: No dev-only branch reachable under the `prod` profile, and the `X-Tenant-Id` fallback no longer advertised in the unauthenticated OpenAPI spec. CI gate shown to fail against a reintroduced fallback.
+- [x] **SEC-04**: Compose publishes no infrastructure port on `0.0.0.0`; local credentials rotated. Also closes the #283/#284/#289 bypass class.
 
 ### Deployable staging (DPLY) — Phase 29
 
@@ -239,10 +239,10 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | OPS-03 | Phase 27 | 27-00, 27-04 | Complete |
 | OPS-04 | Phase 27 | 27-01, 27-02 | Complete |
 | OPS-05 | Phase 27 | 27-05 | Complete |
-| SEC-01 | Phase 28 | not yet planned | Not started |
-| SEC-02 | Phase 28 | not yet planned | Not started |
-| SEC-03 | Phase 28 | not yet planned | Not started |
-| SEC-04 | Phase 28 | not yet planned | Not started |
+| SEC-01 | Phase 28 | 28-01 | Complete |
+| SEC-02 | Phase 28 | 28-05, 28-11 | Complete |
+| SEC-03 | Phase 28 | 28-02 | Complete |
+| SEC-04 | Phase 28 | 28-04, 28-06, 28-07, 28-08, 28-09, 28-10 | Complete |
 | DPLY-01 | Phase 29 | not yet planned | Not started |
 | DPLY-02 | Phase 29 | not yet planned | Not started |
 | DPLY-03 | Phase 29 | not yet planned | Not started |

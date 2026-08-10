@@ -95,15 +95,25 @@ spring:
     # Flyway borrows from the application's Hikari pool, Hikari does not reset
     # custom GUCs on return, and the session-scoped sentinel would leak into
     # application request connections — a far worse hazard on an RLS system
-    # than the bug being fixed. The values are placeholders onto the same
-    # spring.datasource.* properties, so there is one source of truth for the
-    # credentials and nothing new to keep in sync.
+    # than the bug being fixed. So spring.flyway.url STAYS a plain placeholder
+    # onto spring.datasource.url and must not be removed (#517).
+    #
+    # user/password, by contrast, are now INDIRECTED through
+    # DB_MIGRATION_USER/DB_MIGRATION_PASSWORD (SEC-04 / #552, D-01). The runtime
+    # role split points spring.datasource.username at the DML-only jtoye_runtime;
+    # a shared credential would drag Flyway onto it too, and migrations would fail
+    # immediately with no CREATE on the schema. The nested default
+    # ${DB_MIGRATION_USER:${spring.datasource.username}} means an environment that
+    # sets NEITHER new key resolves to the datasource values — i.e. behaves
+    # EXACTLY as before — while an environment adopting the split sets the pair to
+    # the owner/migrator role. Proven both directions from the RESOLVED config by
+    # FlywayCredentialDecouplingTest (RESEARCH assumption A3, previously unverified).
     #
     # Inherited by every profile: application-staging.yml / application-prod.yml
     # deliberately do NOT restate these keys (see the note in each).
     url: ${spring.datasource.url}
-    user: ${spring.datasource.username}
-    password: ${spring.datasource.password}
+    user: ${DB_MIGRATION_USER:${spring.datasource.username}}
+    password: ${DB_MIGRATION_PASSWORD:${spring.datasource.password}}
     init-sqls:
       - "SET app.current_tenant_id = '00000000-0000-0000-0000-000000000000'"
   rabbitmq:

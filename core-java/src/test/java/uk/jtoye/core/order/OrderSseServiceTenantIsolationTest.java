@@ -7,11 +7,13 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.Membership;
 import uk.jtoye.core.security.access.ShopAccessService;
 
 import java.lang.reflect.Field;
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -46,9 +48,19 @@ class OrderSseServiceTenantIsolationTest {
     private final ShopAccessService shopAccessService = Mockito.mock(ShopAccessService.class);
     private final OrderSseService service = new OrderSseService(shopAccessService);
 
+    /** The stable, still-granted subscriber every tenant-routing test here runs as. */
+    private static final UUID SUBSCRIBER = UUID.randomUUID();
+
     @BeforeEach
     void stubGroupAdmin() {
         Mockito.when(shopAccessService.isGroupAdmin()).thenReturn(true);
+        // Phase 28 (#281 / D-09): subscribe() now requires an identifiable owner and
+        // broadcast() re-checks that owner's CURRENT grant per emit. This suite asserts
+        // per-TENANT routing, so the subscriber stays a granted tenant-wide GROUP_ADMIN
+        // throughout — isolating tenant routing from the (separately tested) re-check.
+        Mockito.when(shopAccessService.currentVendorUserId()).thenReturn(Optional.of(SUBSCRIBER));
+        Mockito.when(shopAccessService.resolveMembership(SUBSCRIBER))
+                .thenReturn(new Membership(true, false, Map.of()));
     }
 
     @AfterEach

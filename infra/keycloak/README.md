@@ -244,8 +244,29 @@ docker cp jtoye-keycloak:/tmp/realm-export.json ./infra/keycloak/realm-export.js
 `realm-export.json` at container start from environment variables in `.env`:
 - `core-api`: `${KEYCLOAK_CLIENT_SECRET}`
 - `edge-api`: `${EDGE_API_CLIENT_SECRET}`
+- `integration-catalog-ro`: `${INTEGRATION_CATALOG_RO_SECRET}`
+- `integration-orders-rw`: `${INTEGRATION_ORDERS_RW_SECRET}`
 
 Generate fresh strong values (e.g. `openssl rand -hex 32`) per environment and store them securely.
+
+The full rotation procedure — including the superseded-fails/current-succeeds acceptance arm
+each secret must pass on the RUNNING realm — is `docs/runbooks/credential-rotation.md`.
+
+### Realm import provenance
+
+**2026-08-10 — plan 28-10 (SEC-04 / #552 / D-02 + #551 / D-12).** A single
+`kc.sh import --file .../realm-export.json --override true` (server stopped, then restarted)
+carried **two payloads in one import event**:
+
+1. **D-02 rotation** — the four rotated `jtoye-dev` client secrets above, re-rendered from `.env`.
+2. **D-12 audience decision** — the unused public client staged out by plan 28-05
+   (`realm-export.template.json`); the import took the running realm from 11 clients to 10.
+
+The running realm's client secrets therefore differ from any value read before 2026-08-10.
+Because the realm is Postgres-backed (`KC_DB: postgres`), **editing the template alone changes
+nothing** — the change reaches the running realm only through that import plus a restart, and is
+verified by a token request per client, never by reading the rendered file. See
+`docs/runbooks/credential-rotation.md` §3.
 
 ## Token Claims
 

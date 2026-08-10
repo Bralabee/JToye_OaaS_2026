@@ -167,6 +167,92 @@ class RlsContractTest {
     }
 
     /**
+     * D-13 (Phase 28 / plan 28-01) companion sweep: every public table that has RLS
+     * ENABLED must also carry AT LEAST ONE policy.
+     *
+     * <p><strong>Why this is a LIVENESS defect and not a leak.</strong> PostgreSQL's
+     * row-security default is deny: with {@code ENABLE ROW LEVEL SECURITY} on and no
+     * policy present, the table returns zero rows and accepts zero writes for every
+     * non-bypassing role. Nothing escapes. So this sweep does not protect tenant data —
+     * {@link #everyPublicTableHasRlsAndForce} does that. It protects the FEATURE built
+     * on the table, which is worth catching precisely because a silently-dead table is
+     * indistinguishable from an empty one: every query succeeds, every count is 0, every
+     * test that seeds nothing stays green, and the surface reads as "no data yet" rather
+     * than "unreachable". The 33-02 {@code postcode_centroid} note records the same
+     * reasoning from the other direction — a FORCE'd policy-less table would "silently
+     * disable locality platform-wide while every test stayed green".
+     *
+     * <p>Generalises {@code DatabaseConfigurationValidator.validateRlsPolicies}, which
+     * makes the same check but only over five hardcoded tables
+     * ({@code shops, products, orders, customers, financial_transactions}). This walks
+     * the catalog, so a future migration that enables RLS and forgets its policy breaks
+     * the build instead of shipping a dead table.
+     *
+     * <p><strong>Exemptions are BY ADDITION.</strong> A table that legitimately has RLS
+     * enabled with no policy goes in {@link #EXEMPT_TABLES} with a written justification,
+     * exactly as the sweep above requires — the assertion itself is never weakened. Note
+     * that today no such table exists: every entry in {@code EXEMPT_TABLES} is exempt
+     * because it has RLS OFF, so this method skips them for a different reason than
+     * {@link #everyPublicTableHasRlsAndForce} does, and reaching them here at all would
+     * itself be new information.
+     *
+     * <p><strong>The denominator is load-bearing, not decoration.</strong> "Zero tables
+     * without a policy" is satisfied vacuously by a query that returns nothing at all —
+     * a mistyped catalog name, a schema filter that matches nothing, a {@code relkind}
+     * that excludes every row. The {@code >= 30} floor is the same "found nothing is
+     * never clean" contract {@code scripts/check-no-create-extension.sh:67} states as
+     * "refusing to report clean over an empty scan". Measured live 2026-08-10: 36 public
+     * tables have RLS enabled and all 36 carry at least one policy; the floor is set
+     * below that so ordinary schema churn does not red the build, while an empty or
+     * near-empty scan still does.
+     */
+    @Test
+    void everyRlsEnabledTableHasAtLeastOnePolicy() {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT c.relname, count(p.oid) AS policy_count " +
+                        "FROM pg_class c " +
+                        "LEFT JOIN pg_policy p ON p.polrelid = c.oid " +
+                        "WHERE c.relkind = 'r' " +
+                        "  AND c.relnamespace = 'public'::regnamespace " +
+                        "  AND c.relrowsecurity = true " +
+                        "GROUP BY c.relname " +
+                        "ORDER BY c.relname");
+
+        int tablesWithAtLeastOnePolicy = 0;
+
+        for (Map<String, Object> row : rows) {
+            String name = (String) row.get("relname");
+            if (EXEMPT_TABLES.contains(name)) continue;
+
+            long policyCount = ((Number) row.get("policy_count")).longValue();
+
+            assertThat(policyCount)
+                    .as("public.%s has ENABLE ROW LEVEL SECURITY but ZERO policies — PostgreSQL's " +
+                            "row-security default is deny, so this table now returns no rows and " +
+                            "accepts no writes for the application role, and every feature built on " +
+                            "it is silently dead while all its queries still succeed. Add the tenant " +
+                            "policy to the migration that enables RLS on %s (see V2__rls_policies.sql " +
+                            "for the shape, and use the safe current_tenant_id() helper, never a raw " +
+                            "current_setting(...)::uuid cast). If %s is genuinely meant to have RLS on " +
+                            "with no policy, add it to RlsContractTest.EXEMPT_TABLES BY ADDITION with a " +
+                            "written justification — DO NOT weaken this assertion.", name, name, name)
+                    .isGreaterThanOrEqualTo(1L);
+
+            tablesWithAtLeastOnePolicy++;
+        }
+
+        assertThat(tablesWithAtLeastOnePolicy)
+                .as("NON-VACUITY DENOMINATOR: this sweep observed only %d non-exempt table(s) with " +
+                        "RLS enabled and at least one policy, but the schema is known to carry ~36. " +
+                        "The 'zero policy-less tables' result above is therefore evidence about the " +
+                        "QUERY, not about the schema — a mistyped catalog name, a namespace filter " +
+                        "that matches nothing, or a relkind that excludes every row all satisfy it " +
+                        "while proving nothing. Fix the walk rather than lowering this floor.",
+                        tablesWithAtLeastOnePolicy)
+                .isGreaterThanOrEqualTo(30);
+    }
+
+    /**
      * AUDIT-W0-05 sentinel: redundant with {@link #everyPublicTableHasRlsAndForce}
      * but produces a sharper failure message naming the specific table when V35
      * is missed or its FORCE clauses are partially reverted. The 9 tables

@@ -21,6 +21,7 @@ import org.testcontainers.utility.DockerImageName;
 import uk.jtoye.core.config.DatabaseConfigurationValidator;
 import uk.jtoye.core.security.RateLimitInterceptor;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.SystemPrincipal;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopService;
@@ -67,6 +68,9 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 @Testcontainers
 @ActiveProfiles("dev")
 @Tag("testcontainers")
+// #283: drives a gated service read to exercise cache degradation under a Redis outage; the
+// subject is the fallback-to-source-of-truth behaviour, not the gate.
+@uk.jtoye.core.testsupport.AsSystemHarness
 class RedisFaultInjectionIntegrationTest {
 
     @Container
@@ -173,10 +177,13 @@ class RedisFaultInjectionIntegrationTest {
         // throw, within a bounded time (CacheErrorHandler degraded the failed GET).
         // TenantContext is set INSIDE the lambda because assertTimeoutPreemptively
         // runs the body on a separate thread (ThreadLocal does not propagate).
+        // #283: the SystemPrincipal declaration is made inside for exactly the same reason —
+        // it is a plain ThreadLocal and is deliberately not inherited, so the class-level
+        // @AsSystemHarness declaration on the test thread does not reach this body.
         assertTimeoutPreemptively(Duration.ofSeconds(10), () -> {
             TenantContext.set(TENANT);
             try {
-                Optional<ShopDto> degraded = shopService.getShopById(shopId);
+                Optional<ShopDto> degraded = SystemPrincipal.asSystem(() -> shopService.getShopById(shopId));
                 assertThat(degraded)
                         .as("Redis down ⇒ cached read must fall back to source-of-truth, not 500")
                         .isPresent();

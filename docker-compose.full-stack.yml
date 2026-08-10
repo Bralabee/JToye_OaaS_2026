@@ -271,6 +271,13 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      # Runtime/migrator split (SEC-04 / #552, D-01): the app connects as DB_USER
+      # (the DML-only jtoye_runtime), Flyway migrates as DB_MIGRATION_USER (the
+      # owner jtoye_app). Plain ${VAR} for the username to match DB_USER's own
+      # treatment; ${VAR:?} for the password so a missing value fails loud and
+      # names the key. verify-env.sh requires both before the stack ever comes up.
+      DB_MIGRATION_USER: ${DB_MIGRATION_USER}
+      DB_MIGRATION_PASSWORD: ${DB_MIGRATION_PASSWORD:?DB_MIGRATION_PASSWORD must be set}
       # JWKS is fetched from the INTERNAL Keycloak host (reachable in-network)…
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
       # …but tokens are stamped with the PUBLIC issuer (KC_HOSTNAME=localhost:8085),
@@ -538,7 +545,12 @@ services:
     networks:
       - jtoye-network
 
-  # MinIO init — creates bucket with public-read policy
+  # MinIO init — creates the bucket and applies its anonymous access policy.
+  # Runs minio/mc holding the ROOT object-storage credentials, so the image is
+  # DIGEST-PINNED via MINIO_MC_IMAGE_TAG (#270): a mutable tag would run whatever
+  # `latest` resolves to next with full bucket authority. The pin lives as a
+  # one-line, reviewable value in .env/.env.example (name:tag@sha256:...), and a
+  # WRONG digest fails the pull loudly rather than silently falling back to latest.
   minio-init:
     image: minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
     container_name: jtoye-minio-init
@@ -548,13 +560,30 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
-      mc mb --ignore-existing local/jtoye-images &&
-      mc anonymous set download local/jtoye-images &&
-      echo 'Bucket jtoye-images ready with public-read policy'
-      "
+      # The exact reference this bootstrap was launched with, echoed at run time so
+      # a future run STATES which minio/mc it ran instead of leaving it inferred.
+      MINIO_MC_IMAGE_REF: minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
+      # Anonymous bucket policy (#626): s3:GetObject ONLY, on the OBJECT arn (/*).
+      # Deliberately grants NO s3:ListBucket / GetBucketLocation on the bucket arn, so a
+      # storefront image stays anonymously readable BY URL while the object inventory is
+      # no longer anonymously ENUMERABLE. Applied via `mc anonymous set-json` because the
+      # built-in `download` preset bundles ListBucket with GetObject and has no GetObject-only
+      # form (verified against minio/mc RELEASE.2025-08-13 + MinIO docs).
+      ANON_BUCKET_POLICY: '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::jtoye-images/*"]}]}'
+    # Exec-list form (not a folded string): a single /bin/sh, so the JSON policy above
+    # expands from one env var with no nested-quote or glob hazard. `set -e` keeps it fail-loud.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "minio-init-image-ref=$$MINIO_MC_IMAGE_REF"
+        mc --version
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing local/jtoye-images
+        printf '%s' "$$ANON_BUCKET_POLICY" > /tmp/anon-getobject-policy.json
+        mc anonymous set-json /tmp/anon-getobject-policy.json local/jtoye-images
+        echo 'Bucket jtoye-images ready: anonymous s3:GetObject only, no s3:ListBucket (#626)'
     networks:
       - jtoye-network
 

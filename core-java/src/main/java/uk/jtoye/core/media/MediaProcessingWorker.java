@@ -287,6 +287,17 @@ public class MediaProcessingWorker {
      * <p>Delegates to the shared {@link MediaAssetService#placeAsset} attach-or-repoint logic
      * (the SAME logic the accept-time dedup share reuses — CR-01), so the worker and the accept
      * path can never drift on how a placement slot is created vs repointed.
+     *
+     * <p><b>#283/#284 — this is the documented near-miss, and it is load-bearing that
+     * {@code placeAsset} does NOT gate.</b> This listener thread carries no
+     * {@code Authentication}, and since Phase 28 that no longer grants anything: an undeclared
+     * no-principal thread is DENIED at
+     * {@code ShopAccessService.require(...)}. {@code MediaAssetService} gates three of its
+     * entry points (:118, :384, :439); {@code placeAsset} is the one it reaches, and it does
+     * not. If a gate is ever added to this path, this worker must declare itself with
+     * {@code SystemPrincipal.asSystem(...)} — a one-line wrap here, NOT a change to the gate.
+     * {@code SystemPrincipalGuardTest.backgroundListenerPathStillCompletesUndeclared} fails the
+     * build the moment that happens, which is the whole point of #284's guard.
      */
     private void placeOnActive(MediaAsset asset) {
         UUID productId = asset.getProductId();

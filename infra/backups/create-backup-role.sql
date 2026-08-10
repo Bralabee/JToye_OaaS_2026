@@ -41,5 +41,21 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO jtoye_backup;
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO jtoye_backup;
 
 -- Cover objects created after this runs, so future migrations stay dumpable.
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO jtoye_backup;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO jtoye_backup;
+--
+-- `FOR ROLE jtoye_app` is load-bearing and was MISSING here until 2026-08-10
+-- (SEC-04 / #552). Without it, ALTER DEFAULT PRIVILEGES registers the defaults
+-- against the CURRENT role — the postgres superuser running this file — while
+-- Flyway creates every table AS jtoye_app, so a superuser-registered default
+-- covers NOTHING Flyway makes. Measured live before this fix: jtoye_backup could
+-- SELECT 40 of 41 tables; the miss was postcode_centroid (V61, owned by
+-- jtoye_app, created after this script last ran), and `SET ROLE jtoye_backup;
+-- COPY postcode_centroid TO STDOUT` — exactly what pg_dump runs per table —
+-- aborted with "permission denied for table postcode_centroid" (rc=1). pg_dump
+-- does NOT silently skip; the whole dump fails.
+--
+-- The two GRANT SELECT ON ALL TABLES/SEQUENCES lines above are also the
+-- corrective re-grant: they cover every table that EXISTS now (postcode_centroid
+-- included), bringing an existing database current. These two lines stop the
+-- defect recurring on the next table a migration adds.
+ALTER DEFAULT PRIVILEGES FOR ROLE jtoye_app IN SCHEMA public GRANT SELECT ON TABLES TO jtoye_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE jtoye_app IN SCHEMA public GRANT SELECT ON SEQUENCES TO jtoye_backup;

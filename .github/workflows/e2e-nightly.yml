@@ -118,7 +118,16 @@ jobs:
           # to that script's REQUIRED_VARS and not to this loop, so the next run
           # would have failed preflight on CHANGE_ME values inherited from
           # .env.example. One list, one source of truth.
-          DERIVED="KC_DB_PASSWORD POSTGRES_EXPORTER_PASSWORD RABBITMQ_PASSWORD KC_SEED_USER_PASSWORD"
+          # DB_MIGRATION_USER / DB_MIGRATION_PASSWORD are DERIVED, not generated (SEC-04 / #552,
+          # D-01). DB_MIGRATION_USER is a role NAME — the owner/migrator jtoye_app that Flyway
+          # migrates AS — and randomising a name points Flyway at a role that does not exist, so
+          # every migration fails auth (the same class of break KC_DB_PASSWORD was added here for).
+          # DB_MIGRATION_PASSWORD must equal DB_PASSWORD: on a fresh volume
+          # infra/db/init/00-create-db.sql creates jtoye_app AND jtoye_runtime BOTH with DB_PASSWORD,
+          # the app connects as DB_USER=jtoye_runtime and Flyway as jtoye_app, so the migrator's
+          # password is DB_PASSWORD. DB_USER itself is NOT in REQUIRED_VARS, so it is never in this
+          # loop and keeps .env.example's jtoye_runtime.
+          DERIVED="KC_DB_PASSWORD POSTGRES_EXPORTER_PASSWORD RABBITMQ_PASSWORD KC_SEED_USER_PASSWORD DB_MIGRATION_USER DB_MIGRATION_PASSWORD"
           required=$(bash scripts/verify-env.sh --list-required)
           [ -n "$required" ] || { echo "FATAL: verify-env.sh --list-required produced nothing" >&2; exit 1; }
 
@@ -142,6 +151,14 @@ jobs:
           [ -n "$pg_pw" ] || { echo "FATAL: POSTGRES_PASSWORD not found in .env after generation" >&2; exit 1; }
           echo "KC_DB_PASSWORD=${pg_pw}" >> .env
           echo "POSTGRES_EXPORTER_PASSWORD=${pg_pw}" >> .env
+
+          # The migrator role NAME must stay jtoye_app, and its password must equal the (generated)
+          # DB_PASSWORD that 00-create-db.sql created jtoye_app with. Read DB_PASSWORD back out of the
+          # file just written so the two cannot drift, exactly as KC_DB_PASSWORD mirrors POSTGRES_PASSWORD.
+          db_pw=$(sed -n 's/^DB_PASSWORD=//p' .env | tail -n1)
+          [ -n "$db_pw" ] || { echo "FATAL: DB_PASSWORD not found in .env after generation" >&2; exit 1; }
+          echo "DB_MIGRATION_USER=jtoye_app" >> .env
+          echo "DB_MIGRATION_PASSWORD=${db_pw}" >> .env
 
           # Not only Postgres. RABBITMQ_DEFAULT_USER (what the broker is
           # provisioned with) and RABBITMQ_USER (what core-java presents) are

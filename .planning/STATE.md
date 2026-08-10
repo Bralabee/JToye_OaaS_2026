@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
-status: executing
-stopped_at: Phase 28 context gathered
-last_updated: "2026-08-10T00:42:38.921Z"
-last_activity: 2026-08-09
+status: ready_to_plan
+stopped_at: Phase 28 complete (11/11) — ready to discuss Phase 33
+last_updated: 2026-08-10T09:47:48.313Z
+last_activity: 2026-08-10
 progress:
   total_phases: 14
   completed_phases: 8
-  total_plans: 66
-  completed_plans: 66
+  total_plans: 77
+  completed_plans: 78
   percent: 57
 ---
 
@@ -21,11 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 33 — the-consumer-product
+**Current focus:** Phase 33 — the consumer product
 
 ## Current Position
 
-Phase: **33 (the-consumer-product) — original 8/8 plans SHIPPED via PR #620 (verification PASSED with 3 owner overrides, 2026-08-09: CUST-02/CUST-04 deferred per D-2/D-3, MANUAL_REVIEW adjudicator carried forward). REOPENED ADDITIVELY 2026-08-09 for issue #619 (postcode-proximity search, CUST-01): plans 33-08 (API half — geocoder district entry point + third search tier + X-Search-Interpretation header; wave 1, autonomous) and 33-09 (customer-visible half — disclosed heading + E2E + owner walkthrough gate; wave 2, depends_on 33-08) planned, checker-passed on iteration 2, on branch `feature/33-08-postcode-proximity-search`. BOTH EXECUTED 2026-08-09 — phase back to 10/10. 33-08: 7 commits a5b05236..1abf622d. 33-09: 6 commits d9352a17..ae9138c7, owner gate verdict "Approved" with D-A REVERSED to interpretation-first (a geocodable postcode-shaped q is a locality question — SE15 5BS returns 3 nearby kitchens at 0.0/0.4/1.9 mi, unit precision; non-geocodable falls through to text byte-identically), wording kept. Live-proven on the rebuilt stack: SE22 0→3 shops; Jest 944/944, Playwright storefront-flows 44/44, integration 542/0, all gates rc=0 incl. runtime-freshness (needed --force-recreate — up -d --build leaves containers on old IDs) and openapi-snapshot-fresh (closed 33-08's Open Item 1). Ship steps in progress: code review → secure-phase → PR → squash-merge on green (subject must carry (#PR) — rebase-merge voids the changelog gate).**
+Phase: 33
+Plan: Not started
 *(The `Plan: 1 of 8` line that stood here on 2026-08-09 was wrong and is deleted — it was written by
 one of the two verbs named below and would have sent a fresh session back to the start of a phase
 that is seven eighths done. The rest of that same uncommitted rewrite — `stopped_at`,
@@ -304,7 +305,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Ready to execute
+Status: Ready to plan
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -315,7 +316,7 @@ Status: Ready to execute
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-08-09
+Last activity: 2026-08-10
 
 Progress: [██████████] 98%
 
@@ -350,7 +351,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 **Velocity (v2.3):**
 
-- Total plans completed: 44 (phase 23) + 12 (phases 21-22) = 29
+- Total plans completed: 55 (phase 23) + 12 (phases 21-22) = 29
 - Average duration: ~15m
 - Total execution time: ~0.25 hours
 
@@ -364,6 +365,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | 24 | 6 | - | - |
 | 25 | 4 | - | - |
 | 26 | **9/9** | ~9h05m | ~61min |
+| 28 | 11 | - | - |
 
 *Updated after each plan completion*
 | Phase 24 P01 | ~20min | 3 tasks | 10 files |

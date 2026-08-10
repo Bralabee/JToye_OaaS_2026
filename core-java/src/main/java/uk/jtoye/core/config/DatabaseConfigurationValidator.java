@@ -62,6 +62,12 @@ public class DatabaseConfigurationValidator {
             // CRITICAL: Check if using superuser (bypasses RLS)
             validateNotSuperuser();
 
+            // CRITICAL: Check the app role does NOT own the tables it reads (SEC-04 / #552, D-03).
+            // Registered immediately after the superuser check because it is the same class of
+            // assertion against the same catalog: a role that owns its tables can read past a
+            // forgotten FORCE RLS exactly as a superuser can bypass RLS outright.
+            validateNotTableOwner();
+
             // Check RLS policies exist and are enabled
             validateRlsPolicies();
 
@@ -114,6 +120,62 @@ public class DatabaseConfigurationValidator {
         }
 
         log.info("✅ User '{}' is NOT a superuser (RLS will be enforced)", dbUsername);
+    }
+
+    /**
+     * CRITICAL: Ensure the application database role does NOT OWN the tables it reads
+     * (SEC-04 / #552, D-03). The companion of {@link #validateNotSuperuser()}.
+     *
+     * <p><strong>Why ownership is a security property, not a tidiness one.</strong> Every tenant
+     * table uses ENABLE + FORCE ROW LEVEL SECURITY, so even a table owner is subject to RLS
+     * <em>today</em>. What ownership removes is the durability of that guarantee: a table's owner
+     * is only kept off other tenants' rows for as long as FORCE is remembered on
+     * <em>every current and future table</em>. A single migration that forgets
+     * {@code ALTER TABLE ... FORCE ROW LEVEL SECURITY} makes that table fully readable by its
+     * owner across all tenants, silently, with every existing test still green. A non-owner
+     * runtime role ({@code jtoye_runtime}) cannot be the role that ownership exempts, so isolation
+     * stops depending on memory and starts depending on the role's privileges. This is the durable
+     * fix D-01 asks for, and this check is the boot-time guard that keeps a reverted environment
+     * from quietly restoring the owner role.
+     *
+     * <p><strong>Zero-tolerance is deliberate.</strong> The failure fires when the current role
+     * owns ONE OR MORE public regular tables. There is no allowed exception count: "the runtime
+     * role owns its tables" is D-03's exact wording, and a non-zero threshold nobody can justify
+     * later becomes a threshold nobody dares tighten. If a future need to allow a specific
+     * owned table ever arises, it must be argued for explicitly and named here — never a bare
+     * numeric slack.
+     *
+     * <p>Per ASVS V7 the exception message names the ROLE and the reason, never a credential value.
+     */
+    private void validateNotTableOwner() {
+        log.info("Checking if database user OWNS the tables it reads...");
+
+        // relowner keyed to the CURRENT_USER: count the public regular relations this role owns.
+        // current_user::regrole resolves the role name to its pg_authid oid for the comparison.
+        String sql =
+            "SELECT count(*) FROM pg_class " +
+            "WHERE relkind = 'r' " +
+            "  AND relnamespace = 'public'::regnamespace " +
+            "  AND relowner = current_user::regrole";
+        Integer ownedTables = jdbcTemplate.queryForObject(sql, Integer.class);
+
+        if (ownedTables != null && ownedTables > 0) {
+            String error = String.format(
+                "CRITICAL SECURITY ERROR: Application database role '%s' OWNS %d table(s) in schema " +
+                "public. A table's owner is kept off other tenants' rows ONLY by FORCE ROW LEVEL " +
+                "SECURITY being remembered on EVERY current and future table; ownership makes " +
+                "multi-tenant isolation depend on that memory rather than on the role's privileges, " +
+                "so the first migration that forgets FORCE hands the owner every tenant's rows " +
+                "silently. Solution: set DB_USER to the non-owner runtime role (jtoye_runtime) that " +
+                "holds DML grants and owns nothing; Flyway keeps the owner/migrator role via " +
+                "DB_MIGRATION_USER. Provision the role with infra/db/create-runtime-role.sql. " +
+                "Files to update: .env, docker-compose.full-stack.yml, k8s/base/secrets-template.yaml.example",
+                dbUsername, ownedTables
+            );
+            throw new SecurityConfigurationException(error);
+        }
+
+        log.info("✅ Role '{}' OWNS no public tables (isolation does not depend on FORCE being remembered)", dbUsername);
     }
 
     /**

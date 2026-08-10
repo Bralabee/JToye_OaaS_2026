@@ -46,6 +46,7 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 # pg-backup-cronjob.yaml reads as PGPASSWORD for the BYPASSRLS jtoye_backup role.
 # Do not treat a mismatch between the two documents as a defect.
 export POSTGRES_PASSWORD=$(openssl rand -base64 32)
+export POSTGRES_RUNTIME_PASSWORD=$(openssl rand -base64 32)
 export POSTGRES_BACKUP_PASSWORD=$(openssl rand -base64 32)
 export REDIS_PASSWORD=$(openssl rand -base64 32)
 export RABBITMQ_PASSWORD=$(openssl rand -base64 32)
@@ -60,17 +61,20 @@ kubectl create namespace jtoye-production
 # backup-* keys: BYPASSRLS dump role for the pg-backup CronJob (#90).
 # Create the role itself via infra/backups/create-backup-role.sql.
 #
-# DEF-2 (Phase 26 / INFRA-02b): `username` MUST be the NOSUPERUSER application
-# role `jtoye_app`, NOT the `jtoye` superuser this recipe used to name. A
-# superuser BYPASSES every Row-Level Security policy, so multi-tenant isolation
-# becomes impossible — and core-java refuses to start rather than run that way:
-# DatabaseConfigurationValidator queries pg_roles at boot and throws
-# SecurityConfigurationException ("Application is using PostgreSQL superuser ...
-# Superusers BYPASS Row-Level Security policies"). A copy-paste of the old
-# recipe therefore produced a pod that never became READY.
-# In .env the two are already separate pairs and it is the FIRST you want:
-#   DB_USER / DB_PASSWORD             -> the app role (jtoye_app) — USE THIS
-#   POSTGRES_USER / POSTGRES_PASSWORD -> the superuser — do NOT use for the app
+# DEF-2 (Phase 26 / INFRA-02b): `username` MUST be a NOSUPERUSER role, NOT the
+# `jtoye` superuser this recipe used to name. A superuser BYPASSES every
+# Row-Level Security policy, so multi-tenant isolation becomes impossible — and
+# core-java refuses to start rather than run that way: DatabaseConfigurationValidator
+# queries pg_roles at boot and throws SecurityConfigurationException ("Application
+# is using PostgreSQL superuser ... Superusers BYPASS Row-Level Security
+# policies"). A copy-paste of the old recipe produced a pod that never became READY.
+# SEC-04 / #552 (D-01): the split adds a third role. `username=jtoye_app` is now
+# the OWNER/migrator (Flyway needs CREATE); `runtime-username=jtoye_runtime` is the
+# DML-only role the APPLICATION connects as, and it cannot own anything, so it can
+# never be the role ownership exempts. In .env the roles are separate keys:
+#   DB_USER / DB_PASSWORD                     -> jtoye_runtime, the app — USE THIS
+#   DB_MIGRATION_USER / DB_MIGRATION_PASSWORD -> jtoye_app, the migrator (Flyway)
+#   POSTGRES_USER / POSTGRES_PASSWORD         -> the superuser — do NOT use for the app
 # `backup-username=jtoye_backup` below is the deliberate exception: a read-only
 # BYPASSRLS role that exists precisely so pg_dump captures rows from FORCE-RLS
 # tenant tables (as the app role it would dump 0 rows).
@@ -90,6 +94,8 @@ kubectl create secret generic postgres-credentials \
   --from-literal=database=jtoye \
   --from-literal=username=jtoye_app \
   --from-literal=password="$POSTGRES_PASSWORD" \
+  --from-literal=runtime-username=jtoye_runtime \
+  --from-literal=runtime-password="$POSTGRES_RUNTIME_PASSWORD" \
   --from-literal=backup-username=jtoye_backup \
   --from-literal=backup-password="$POSTGRES_BACKUP_PASSWORD" \
   -n jtoye-production

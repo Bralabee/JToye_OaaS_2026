@@ -688,6 +688,24 @@ jobs:
           chmod +x ./scripts/check-no-create-extension.sh
           ./scripts/check-no-create-extension.sh
 
+      # Plan 28-05 (SEC-02). The eleven findings of the 2026-07-31 grey-box run are
+      # dispositioned in docs/security/PENTEST-TRIAGE.md. That document was chosen over
+      # issue comments precisely because a comment thread is invisible to repo-level
+      # review — so it needs something that reds when a row is removed, blanked, or
+      # quietly turned back into a mention. This gate is that something; without it the
+      # record is a promise rather than a contract.
+      #
+      # Static by construction: it reads ONE tracked markdown file by absolute path,
+      # touches no database and makes no network call, so it says the same thing on a
+      # hosted runner as it does locally. It therefore belongs here and must NEVER get a
+      # scripts/gates/gate-enforcement.conf entry — that table's bar is "a hosted runner
+      # does not have the thing this inspects", which is simply false for a file in the
+      # checkout.
+      - name: Assert every pentest finding carries a disposition (28-05 SEC-02)
+        run: |
+          chmod +x ./scripts/check-pentest-triage.sh
+          ./scripts/check-pentest-triage.sh
+
       # 5. check-image-supply-chain.sh — #276. The container-image gate compares two
       #    things that BOTH move on their own (a floating base tag's content, and
       #    Trivy's daily-refreshed vulnerability DB), so build-and-push went red on
