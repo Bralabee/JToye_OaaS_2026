@@ -341,7 +341,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
-| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete   | 2026-08-10 |
+| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
