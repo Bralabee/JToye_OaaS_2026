@@ -44,8 +44,24 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'keycloak')\gexec
 SELECT format('CREATE ROLE jtoye_app LOGIN PASSWORD %L', :'app_password')
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'jtoye_app')\gexec
 
+-- Create role jtoye_runtime — the non-owner DML application role (SEC-04 / #552,
+-- D-01). This is the FRESH-VOLUME provisioning path; it mirrors the operator
+-- bootstrap infra/db/create-runtime-role.sql, which is the EXISTING-VOLUME path.
+-- This init directory runs ONLY on an empty data directory, so a long-lived dev
+-- volume never sees these lines and needs create-runtime-role.sql run by hand.
+-- Only one of the two paths fires on any given machine.
+--
+-- Created with DB_PASSWORD: the split points the application's DB_USER at
+-- jtoye_runtime, and the app authenticates with DB_PASSWORD. jtoye_app above stays
+-- the owner/migrator; Flyway reaches it via DB_MIGRATION_USER/DB_MIGRATION_PASSWORD
+-- (application.yml), which default to the datasource values so an environment that
+-- has not adopted the split behaves exactly as before.
+SELECT format('CREATE ROLE jtoye_runtime LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD %L', :'app_password')
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'jtoye_runtime')\gexec
+
 GRANT ALL PRIVILEGES ON DATABASE jtoye TO jtoye;
 GRANT CONNECT ON DATABASE jtoye TO jtoye_app;
+GRANT CONNECT, TEMPORARY ON DATABASE jtoye TO jtoye_runtime;
 
 -- Optional: ensure uuid extension exists in target DB
 \connect jtoye
@@ -57,3 +73,24 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO jtoye_app;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO jtoye_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO jtoye_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO jtoye_app;
+
+-- jtoye_runtime (SEC-04 / #552, D-01): non-owner DML role. USAGE only on the
+-- schema — NO CREATE, which stays jtoye_app's (the migrator). The object-level
+-- grants below cover tables that EXIST at init time (none yet on a fresh volume);
+-- ALTER DEFAULT PRIVILEGES FOR ROLE jtoye_app covers everything Flyway creates
+-- afterward. FOR ROLE is load-bearing: without it the defaults register against
+-- the superuser running this init and cover nothing Flyway makes — the exact
+-- defect repaired on jtoye_backup in infra/backups/create-backup-role.sql.
+GRANT USAGE ON SCHEMA public TO jtoye_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO jtoye_runtime;
+GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO jtoye_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE jtoye_app IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO jtoye_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE jtoye_app IN SCHEMA public
+  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO jtoye_runtime;
+-- NOTE: TRUNCATE on postcode_centroid (PostcodeCentroidImporter.java:162) is NOT
+-- grantable here — that table is created later by Flyway (V61), so it does not yet
+-- exist at cluster-init time, and a table-named grant cannot forward-reference it.
+-- A fresh volume only connects the app as jtoye_runtime once plan 28-08 wires the
+-- live application; run infra/db/create-runtime-role.sql once after the first
+-- migration to add the postcode_centroid TRUNCATE grant it names explicitly.
