@@ -531,9 +531,12 @@ deliberately sequenced after them so the role catalogue does not change under th
 
 **Goal**: A staging environment exists that a human can log into and that **alerts a human when it
 breaks** — the first runtime of this platform outside a laptop.
-**Depends on**: Phase 28 (do not deploy an untriaged exposure surface). Blocked on the production-domain
-and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-off**.
+**Depends on**: Phase 28 (do not deploy an untriaged exposure surface). ~~Blocked on the production-domain
+and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-off**.~~ **All three blockers
+were settled in the 2026-08-10 discussion** (`29-CONTEXT.md`): hosting = AKS in `jtoye-rg` (D-01),
+domain = `olajay.co.uk` (D-05), ADR-0002 owner-signed as proposed (D-09).
 **Requirements**: DPLY-01, DPLY-02, DPLY-03, DPLY-04, DPLY-05
+**Plans:** 16 plans in 10 waves
 **Success Criteria** (what must be TRUE):
 
   1. Staging serves a **real Keycloak vendor login through the ingress to a dashboard**, over a
@@ -572,6 +575,43 @@ and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-of
 | **#300** | DPLY-02 | sealed-secrets / external-secrets for the local secrets path; sibling of #100 |
 | **#304** | DPLY-01 | `stomp-relay.spec.ts` is a compose-era artifact with 4 structural mismatches. It cannot be reworked to be ingress-capable until an ingress exists, which is what this phase builds |
 | **#592** | DPLY-02 | one-click unsubscribe (RFC 8058) is unwired in k8s — `notification.unsubscribe.one-click-base-url` has zero references under `k8s/`, so `List-Unsubscribe` degrades to RFC 2369 in every deployed environment |
+
+**Plans** — 16, planned 2026-08-10. Research found **four defects on the current tree** (Blockers A–D)
+that each independently prevent a success criterion and are invisible to every gate that exists today;
+they are Wave-1/Wave-2 work with their own falsification arms. The manifest plans are a deliberate serial
+chain because `k8s/goldens/` is one shared artifact and the house rule is that a golden is regenerated in
+the same commit as the edit that caused it.
+
+**Wave 1** *(repo-only; no cluster exists yet)*
+
+- [ ] 29-01-PLAN.md (Wave 1) — owner decision gate: the live `snackpass-*` estate in `jtoye-rg` already runs at ≈£95/mo against D-03's £150 ceiling and the costed staging estate is ≈£147, so something must give; plus the four credentials measured absent on this host, and ADR-0002 Status → Accepted with the PostgreSQL 16 skew written down. `autonomous: false`
+- [ ] 29-02-PLAN.md (Wave 1, parallel) — **Blocker A** (staging authenticates as an OIDC client the realm does not contain, which the base ConfigMap already says in as many words), **Pitfall 6** (the `replicas: 2` transformer never reaches the HPA, so staging schedules 11 pods not 6), **Pitfall 7** (`spring.data.redis` has no `ssl:` block and Azure Cache Basic disables the plaintext port), and #592's one-click header with its oracle shown to fail first
+- [ ] 29-03-PLAN.md (Wave 1, parallel) — **Blocker B**: `check-alert-liveness.sh` carries 13 `docker` references and exits **2 (VOID)** against a k8s Prometheus, so DPLY-03's literal criterion is unmeetable today. Adds an env-selected exec path and an inspectable L-3 sink after MEASURING assumption A1; plus the new `check-networkpolicy-enforcement.sh`, demonstrated at 0, 1 and 2 before it is trusted
+
+**Wave 2** *(the egress fix and the scripts that create the estate)*
+
+- [ ] 29-04-PLAN.md (Wave 2) — **Blocker D**: under an enforcing CNI the current policies deny **every** managed datastore (443-only public rule, RFC1918 `except[]`, no `jtoye-infrastructure` namespace) — #271's failure shape recurring through a different door. Per-datastore single-port rules, `redis.port` routed exactly as `db.port` is, INV-7 moved in the same commit, and `check-connection-math.sh` taught to read the managed server's real limits
+- [ ] 29-05-PLAN.md (Wave 2, parallel) — the three bring-up scripts, each refusing the employer subscription and the employer kube context: `azure-staging-provision.sh`, `staging-secrets.sh` (fail loud BY NAME, DB-side BYPASSRLS verification), `staging-bootstrap.sh` (digest-pinned cert-manager/operator/ingress-nginx outside `k8s/`, with Pitfall 5's `allow-snippet-annotations` handled rather than discovered)
+
+**Waves 3-6** *(the manifests, serialised on the goldens; 29-10 runs in parallel on the cloud side)*
+
+- [ ] 29-06-PLAN.md (Wave 3) — Prometheus + both exporters in k8s, reproducing the compose job names verbatim so both gates run unchanged; "one corpus" (D-16) becomes executable as `check-alert-corpus-parity.sh` because kustomize cannot read a generator file outside its root
+- [ ] 29-10-PLAN.md (Wave 3, parallel) — the estate created and each property READ BACK: the enforcing dataplane from `az aks show`, **PostgreSQL 16** (Blocker C — BYPASSRLS is impossible on PG≤15, so `jtoye_backup` cannot exist and the dump captures zero rows), `uuid-ossp` on `azure.extensions` before the first Flyway run, node allocatable MEASURED (assumption A2), and four DNS A records. `autonomous: false`
+- [ ] 29-07-PLAN.md (Wave 4) — Alertmanager (template rendered at pod start; one receiver, two sinks) + Grafana; the `50-observability.yaml` placeholder replaced with its displacement named; a new render invariant with an EMPTY allowlist making an Ingress on Prometheus or Alertmanager a CI failure (D-19)
+- [ ] 29-08-PLAN.md (Wave 5) — in-cluster Keycloak (D-02/#296), executing `k8s/base/ingress.yaml`'s own removal note: host rule and TLS SAN come back TOGETHER with the Service, in that order, because all four SANs share ONE ACME order. Realm `redirectUris`/`webOrigins` parameterised so no environment inherits `"*"`; staging gains `X-Robots-Tag: noindex`
+- [ ] 29-09-PLAN.md (Wave 6) — RabbitmqCluster with STOMP and an explicit image pin (which is what resolves the `rabbitmq-k8s` `pin: unknown` row before its 2026-10-26 expiry), staging-only Mailhog asserted ABSENT from production, both ClusterIssuers, and a dated horizon row per new artefact including the retired-ingress-controller acceptance
+
+**Waves 7-9** *(the four proofs, each with its fail direction run first)*
+
+- [ ] 29-11-PLAN.md (Wave 7) — **DPLY-01**: deploy, issue certificates staging-endpoint-first, build the staging seed path that does not exist anywhere in the repo, verify the SERVED headers and CSP (not the Ingress object), compare rolled-out image digests, and run the login proof RED against an absent client before accepting any green. `autonomous: false`
+- [ ] 29-12-PLAN.md (Wave 8) — **DPLY-03**: both alert gates exit **0** against staging with rc and ISO-8601 timestamps recorded; exit 2 is a task failure, not an environment caveat. Expects L-2b to have opinions now that Keycloak's JVM is scraped for the first time (Phase 27's F-3c shape). `autonomous: false`
+- [ ] 29-13-PLAN.md (Wave 8, parallel) — **DPLY-04**: the scripted PITR drill with a `trap` that deletes the second billable server, and **arm A** — a zero-row dump shown PASSING `MIN_BACKUP_BYTES` and `pg_restore --list`, the 26-07 L4 precedent. Corrects SYSTEM_DESIGN_V2's WAL-G PITR claim
+- [ ] 29-14-PLAN.md (Wave 8, parallel) — **DPLY-05**: control arm FIRST (a broken probe reads as a perfect security posture), then the literal `TIMEOUT` captured from the denied arm beside the allowed arm's silence. Phase 26's "enforcement NOT PROVEN" is replaced by a measurement, not inherited
+- [ ] 29-15-PLAN.md (Wave 9) — **#99**: the long-lived kubeconfig secret replaced by an Azure OIDC federated credential, a post-rollout digest assertion (the k8s half of the runtime-parity doctrine `check-runtime-freshness.sh` cannot serve), and one GREEN deploy run as the closing evidence. `autonomous: false`
+
+**Wave 10** *(close-out)*
+
+- [ ] 29-16-PLAN.md (Wave 10) — **DPLY-02** in full: sixteen issues closed or deferred with a written reason and a revival condition, the now-false #296 disposition line corrected, D-18's ONE honest runbook page with every command actually run, the PG16 skew written into CLAUDE.md, and every gate's rc recorded including any that did not pass. `autonomous: false`
 
 **UI hint**: no
 
