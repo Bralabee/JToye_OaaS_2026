@@ -950,9 +950,12 @@ same session read 0 as `jtoye_app` and 51 after `RESET ROLE`.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does the runtime role need `tenants` INSERT?**
+> All four questions were answered during planning and are wired into the plans
+> (plan-checker Dimension 11, marked resolved 2026-08-10).
+
+1. **Does the runtime role need `tenants` INSERT?** — RESOLVED: see 28-07-PLAN.md interfaces block (grant DML on `tenants` like every other table; admin API is the lifecycle writer).
    - Known: `DevTenantService` (`:21`) inserts into `tenants`; `tenants` is deliberately RLS-free
      and role-gated. The dev-only tenant endpoint is disabled in production.
    - Unclear: whether `DevTenantController` is profile-gated tightly enough that `jtoye_runtime`
@@ -960,7 +963,7 @@ same session read 0 as `jtoye_app` and 51 after `RESET ROLE`.
    - Recommendation: grant DML on `tenants` like every other table for now (the admin API is the
      lifecycle writer and it runs in the same JVM); revisit only if a plan wants a tighter split.
 
-2. **What is the grant-cache TTL for D-09, i.e. the revocation latency?**
+2. **What is the grant-cache TTL for D-09, i.e. the revocation latency?** — RESOLVED: 5 minutes (`CacheConfig.java:97`); stated as the cross-replica revocation latency in 28-04-PLAN.md.
    - Known: `resolveMembership` is `@Cacheable("shopMembership")` with `evictMembershipAfterCommit`
      on grant/revoke, so the *normal* path is immediate.
    - Unclear: the configured TTL for `shopMembership` in `CacheConfig`, which bounds staleness when
@@ -969,7 +972,7 @@ same session read 0 as `jtoye_app` and 51 after `RESET ROLE`.
      latency in the plan — D-09's promise ("a revoked user receives no further events") is only true
      up to that TTL across replicas.
 
-3. **Is `#289`'s STOMP shop gate genuinely out of D-10's scope?**
+3. **Is `#289`'s STOMP shop gate genuinely out of D-10's scope?** — RESOLVED: measured by 28-04-PLAN.md Task 3 with a named disposition.
    - Known: #289 is CLOSED (2026-08-05); STOMP is a different transport with its own
      `TenantChannelInterceptor`.
    - Unclear: whether STOMP subscriptions re-check per message or only at SUBSCRIBE — the same
@@ -977,7 +980,7 @@ same session read 0 as `jtoye_app` and 51 after `RESET ROLE`.
    - Recommendation: measure it in the same task as D-09. If it re-checks per message, record that
      and move on; if not, it is the same defect class D-10 explicitly says to fix together.
 
-4. **Where does the D-11 completeness gate get its list of 11 finding IDs?**
+4. **Where does the D-11 completeness gate get its list of 11 finding IDs?** — RESOLVED: implemented per this recommendation in 28-05-PLAN.md Task 2 (literal ID array in the gate script).
    - Known: `SECURITY-FINDINGS.md` is git-excluded, so the gate cannot read it.
    - Recommendation: the gate should assert against a literal `A1 A2 A3 B1 B2 C1 C2 C3 C4 D1 E1`
      list embedded in the script, cross-checked against `docs/security/PENTEST-TRIAGE.md`. That is
