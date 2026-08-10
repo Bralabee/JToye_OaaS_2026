@@ -545,7 +545,12 @@ services:
     networks:
       - jtoye-network
 
-  # MinIO init — creates bucket with public-read policy
+  # MinIO init — creates the bucket and applies its anonymous access policy.
+  # Runs minio/mc holding the ROOT object-storage credentials, so the image is
+  # DIGEST-PINNED via MINIO_MC_IMAGE_TAG (#270): a mutable tag would run whatever
+  # `latest` resolves to next with full bucket authority. The pin lives as a
+  # one-line, reviewable value in .env/.env.example (name:tag@sha256:...), and a
+  # WRONG digest fails the pull loudly rather than silently falling back to latest.
   minio-init:
     image: minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
     container_name: jtoye-minio-init
@@ -555,8 +560,13 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+      # The exact reference this bootstrap was launched with, echoed at run time so
+      # a future run STATES which minio/mc it ran instead of leaving it inferred.
+      MINIO_MC_IMAGE_REF: minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
     entrypoint: >
       /bin/sh -c "
+      echo minio-init-image-ref=$$MINIO_MC_IMAGE_REF &&
+      mc --version &&
       mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
       mc mb --ignore-existing local/jtoye-images &&
       mc anonymous set download local/jtoye-images &&
