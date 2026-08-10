@@ -103,11 +103,13 @@
 # EXIT CODES — uniform across this plan's gates
 #   0 = clean · 1 = a live detection defect · 2 = VOID (could not evaluate)
 #
-#   VOID on: missing curl/jq/python3/docker, unreachable Prometheus or
+#   VOID on: missing curl/jq/python3, a missing PROM_EXEC runtime binary (docker
+#   by default, kubectl in k8s), an absent exec target, unreachable Prometheus or
 #   Alertmanager, ZERO targets or ZERO rules discovered, an unparseable
 #   expression, an exporter job with no gauge mapping, an unmapped `service:`
-#   label, or a destination that cannot be inspected. "Found nothing" is NEVER
-#   "clean", and an unmapped new thing must stop the gate rather than skip.
+#   label, an unreadable or multi-destination-but-undeclared alert receiver, or a
+#   destination that cannot be inspected. "Found nothing" is NEVER "clean", and an
+#   unmapped new thing must stop the gate rather than skip.
 #
 # NOTE ON docs/metrics.json: contributes 0. docs-freshness.sh counts no bash.
 
@@ -121,9 +123,16 @@ PROM_URL="${PROM_URL:-http://localhost:9091}"
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://localhost:9093}"
 MAILHOG_URL="${MAILHOG_URL:-http://localhost:8025}"
 ALERTS="${ALERTS:-infra/monitoring/prometheus/alerts.yml}"
-# L-0 needs to read the file out of the running Prometheus. Both are overridable
-# because neither is a property of this script — a k8s Prometheus has a different
-# container name and a different in-container path.
+# L-0 needs to read the file out of the running Prometheus. These are overridable
+# because none of them is a property of this script — a k8s Prometheus has a
+# different container name, a different in-container path, and is not reached with
+# docker at all. PROM_EXEC / PROM_RUNTIME_PROBE are declared at the L-0 block
+# below, next to the reasoning for their defaults; a k8s invocation looks like:
+#
+#   PROM_EXEC="kubectl --context <ctx> -n <ns> exec deploy/prometheus --" \
+#   PROM_RUNTIME_PROBE="kubectl --context <ctx> -n <ns> get deploy/prometheus" \
+#   PROM_ALERTS_PATH=/etc/prometheus/alerts.yml \
+#   PROM_URL=... ALERTMANAGER_URL=... MAILHOG_URL=... bash scripts/check-alert-liveness.sh
 PROM_CONTAINER="${PROM_CONTAINER:-jtoye-prometheus}"
 PROM_ALERTS_PATH="${PROM_ALERTS_PATH:-/etc/prometheus/alerts.yml}"
 
@@ -251,24 +260,73 @@ curl -sf --max-time 10 "$PROM_URL/-/healthy" >/dev/null 2>&1 \
 # into one that can never fail — the exact defect class the gate exists to catch.
 # `docker exec` runs inside the container's mount namespace and sees the attached inode,
 # which is what the Prometheus process actually reads. Use exec.
-command -v docker >/dev/null 2>&1 \
-  || void "L-0 docker not on PATH, so the running Prometheus's own copy of $ALERTS cannot be read. Unverifiable parity is VOID, never clean — set PROM_CONTAINER/PROM_ALERTS_PATH for a non-docker runtime."
-docker inspect "$PROM_CONTAINER" >/dev/null 2>&1 \
-  || void "L-0 container '$PROM_CONTAINER' not found — cannot compare the served alerts file against $ALERTS (override with PROM_CONTAINER)"
+#
+# THE SAME ASSERTION, A DIFFERENT RUNTIME (phase 29, Blocker B)
+#
+#   DPLY-03's criterion is that this gate exits 0 against the STAGING target, which is a
+#   Kubernetes Prometheus. Until 2026-08-10 the three calls above were unconditionally
+#   `docker`, and every failure path here is `void` — so against k8s this exited 2, which
+#   this script's own doctrine says is never clean. A phase SUMMARY recording that exit 2
+#   as "environment not ready" would be recording the criterion FAILING.
+#
+#   The fix is an env-selected exec, defaulting to the docker form so compose behaviour is
+#   byte-identical:
+#     PROM_EXEC           default: docker exec <PROM_CONTAINER>
+#                         k8s:     kubectl --context <ctx> -n <ns> exec deploy/prometheus --
+#     PROM_RUNTIME_PROBE  default: docker inspect <PROM_CONTAINER>
+#                         k8s:     kubectl --context <ctx> -n <ns> get deploy/prometheus
+#   and the docker-on-PATH check becomes a check on the FIRST WORD of PROM_EXEC, so a
+#   kubectl-only host is not VOIDed for lacking a docker daemon it does not need.
+#
+#   WHAT L-0 CATCHES IN K8S IS NOT WHAT IT CATCHES IN COMPOSE, and both are real. A
+#   ConfigMap is projected as a DIRECTORY OF SYMLINKS which the kubelet re-points
+#   atomically on update, so the single-file inode-detach failure above simply does not
+#   exist there — do not go looking for it. What does exist is a running pod serving an
+#   OLDER ConfigMap version than the one just applied: the kubelet syncs on its own period
+#   (up to ~1 minute plus cache TTL), and Prometheus then needs a reload it does not have
+#   enabled in this repo's config, so the projected file can be current while the process
+#   still holds the previous rules. Either way the served bytes differ from the tree's, and
+#   a byte-exact md5 of what the PROCESS reads catches both. Keep the md5.
+#
+#   NEVER `kubectl cp`. It is the k8s analogue of the `docker cp` blindness measured above:
+#   cp reads the container filesystem through the API and can disagree with what the
+#   process has open, which is precisely the disagreement this assertion exists to find.
+PROM_EXEC="${PROM_EXEC:-docker exec $PROM_CONTAINER}"
+PROM_RUNTIME_PROBE="${PROM_RUNTIME_PROBE:-docker inspect $PROM_CONTAINER}"
+read -r -a PROM_EXEC_ARGV <<<"$PROM_EXEC"
+read -r -a PROM_PROBE_ARGV <<<"$PROM_RUNTIME_PROBE"
+[ "${#PROM_EXEC_ARGV[@]}" -gt 0 ] \
+  || void "L-0 PROM_EXEC is empty — there is no command with which to read the served alerts file"
+[ "${#PROM_PROBE_ARGV[@]}" -gt 0 ] \
+  || void "L-0 PROM_RUNTIME_PROBE is empty — the target's existence would go unchecked, and 'exec failed' would be reported as drift"
+
+command -v "${PROM_EXEC_ARGV[0]}" >/dev/null 2>&1 \
+  || void "L-0 '${PROM_EXEC_ARGV[0]}' (the first word of PROM_EXEC) is not on PATH, so the running Prometheus's own copy of $ALERTS cannot be read. Unverifiable parity is VOID, never clean — set PROM_EXEC/PROM_RUNTIME_PROBE/PROM_ALERTS_PATH for this runtime."
+command -v "${PROM_PROBE_ARGV[0]}" >/dev/null 2>&1 \
+  || void "L-0 '${PROM_PROBE_ARGV[0]}' (the first word of PROM_RUNTIME_PROBE) is not on PATH"
+
+# Existence probe, by NAME. Container-not-found and deployment-not-found must BOTH still
+# exit 2 here rather than being reported below as a checksum mismatch.
+"${PROM_PROBE_ARGV[@]}" >/dev/null 2>&1 \
+  || void "L-0 target not found — '$PROM_RUNTIME_PROBE' failed, so the served alerts file cannot be compared against $ALERTS (override PROM_RUNTIME_PROBE/PROM_EXEC for this runtime)"
 
 HOST_SUM=$(md5sum "$ALERTS" | awk '{print $1}')
-CTR_SUM=$(docker exec "$PROM_CONTAINER" md5sum "$PROM_ALERTS_PATH" 2>/dev/null | awk '{print $1}') \
-  || void "L-0 cannot read $PROM_ALERTS_PATH inside '$PROM_CONTAINER'"
+CTR_SUM=$("${PROM_EXEC_ARGV[@]}" md5sum "$PROM_ALERTS_PATH" 2>/dev/null | awk '{print $1}') \
+  || void "L-0 cannot read $PROM_ALERTS_PATH via '$PROM_EXEC'"
 [ -n "$CTR_SUM" ] \
-  || void "L-0 empty checksum from '$PROM_CONTAINER:$PROM_ALERTS_PATH' — an unreadable served file is VOID, never clean"
+  || void "L-0 empty checksum from '$PROM_EXEC md5sum $PROM_ALERTS_PATH' — an unreadable served file is VOID, never clean"
 
 if [ "$HOST_SUM" != "$CTR_SUM" ]; then
   void "L-0 SOURCE DRIFT — the running Prometheus is NOT serving the file this gate reads.
        $ALERTS  md5=$HOST_SUM  inode=$(stat -c %i "$ALERTS")
-       $PROM_CONTAINER:$PROM_ALERTS_PATH  md5=$CTR_SUM  inode=$(docker exec "$PROM_CONTAINER" stat -c %i "$PROM_ALERTS_PATH" 2>/dev/null || echo '?')
-       The single-file bind mount has detached. Every result below would mix this tree's
-       file with a different tree's runtime. SIGHUP will NOT fix it — recreate:
-         docker compose --env-file .env -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate prometheus"
+       served via '$PROM_EXEC' at $PROM_ALERTS_PATH  md5=$CTR_SUM  inode=$("${PROM_EXEC_ARGV[@]}" stat -c %i "$PROM_ALERTS_PATH" 2>/dev/null || echo '?')
+       Every result below would mix this tree's file with a different tree's runtime.
+       COMPOSE: the single-file bind mount has detached; SIGHUP will NOT fix it — recreate:
+         docker compose --env-file .env -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate prometheus
+       KUBERNETES: the pod is serving an older ConfigMap version than the one applied.
+       Wait out the kubelet sync, then restart the workload — a ConfigMap edit alone does
+       not reload a Prometheus without --web.enable-lifecycle:
+         kubectl -n <ns> rollout restart deploy/prometheus"
 fi
 
 # ================================================================== L-1
