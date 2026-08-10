@@ -117,6 +117,31 @@ commonAnnotations:
 # patches touch that ConfigMap, so the overlay must run its own pass. It is the
 # same repetition the `labels: fields:` list already carries for D-17, and for
 # the same structural reason.
+#
+# -----------------------------------------------------------------------------
+# BLOCKER D (plan 29-04) EXTENDS THE SAME MECHANISM TO THE MANAGED DATASTORES.
+#
+# D-09 moves Postgres and Redis OUT of the cluster. The two in-cluster rules
+# address their peer by `namespaceSelector: jtoye-infrastructure`, which a
+# managed server is not in, so under an enforcing CNI they do not apply to it and
+# the 443-only public rule denies both 5432 and 6380. Two new rules, appended at
+# stable indices so no existing index moved, carry one port and one peer each:
+#
+#   NetworkPolicy       index  what                     port <-        cidr <-
+#   core-java-allow     4      managed Postgres         db.port        db.egress-cidr
+#   core-java-allow     5      managed Redis            redis.port     redis.egress-cidr
+#   pg-backup-allow     4      managed Postgres         db.port        db.egress-cidr
+#
+# `redis.port` being routed here is the "clean follow-up" the comment in
+# networkpolicies/20-core-java.yaml named by hand — taken up now because Azure
+# Cache Basic serves TLS on 6380 and disables plaintext 6379, so the value
+# genuinely varies per environment for the first time.
+#
+# EVERY ONE OF THESE ALSO HAS TO BE REPEATED IN EVERY OVERLAY, for the same
+# measured reason as db.port. Staging patches redis.port to 6380 in its own
+# configmap-patch.yaml; without staging's own pass the staging render would emit
+# the BASE 6379 and the cache would be unreachable — the #271 trap exactly, and
+# the fail-direction arm plan 29-04 ran to prove this repetition is load-bearing.
 # =============================================================================
 replacements:
   - source:
@@ -129,8 +154,45 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+          - spec.egress.4.ports.0.port
       - select:
           kind: NetworkPolicy
           name: pg-backup-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+          - spec.egress.4.ports.0.port
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.db\.egress-cidr
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.4.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: pg-backup-allow
+        fieldPaths:
+          - spec.egress.4.to.0.ipBlock.cidr
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.redis\.port
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.5.ports.0.port
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.redis\.egress-cidr
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.5.to.0.ipBlock.cidr

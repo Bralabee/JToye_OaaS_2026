@@ -77,7 +77,12 @@ spec:
       ports:
         - protocol: TCP
           port: 9000
-    # S3 public endpoint (for external S3, optional)
+    # S3 public endpoint (for external S3, optional).
+    #
+    # 443-ONLY, AND IT MUST STAY THAT WAY. Adding the Postgres port here to reach
+    # the managed server is the obvious shortcut and it is forbidden
+    # (T-29-04-01). The dedicated rule below is the supported route; INV-7's
+    # ipBlock arm asserts this rule's (cidr, port) pair exactly.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -88,6 +93,36 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+    # =========================================================================
+    # spec.egress.4 — OUT-OF-CLUSTER MANAGED POSTGRES (Blocker D, plan 29-04)
+    #
+    # pg-backup dumps the SAME database core-java uses, so D-09 breaks its
+    # nightly run in exactly the same way and for exactly the same reason: the
+    # rule at index 1 addresses `namespaceSelector: jtoye-infrastructure`, which
+    # an Azure Flexible Server is not in, and the 443-only rule above denies
+    # 5432. The difference is the failure is SILENT — at 02:00, in a CronJob
+    # nobody watches, producing no backup rather than a CrashLoop somebody sees.
+    # That asymmetry is why this rule is not "nice to have alongside".
+    #
+    # APPENDED at a stable index for the same reason as 20-core-java.yaml: this
+    # policy's `spec.egress.1` is the in-cluster Postgres rule the existing
+    # replacement targets, and inserting ahead of it would silently retarget it.
+    #
+    # cidr <- app-config db.egress-cidr; port <- app-config db.port. Neither is
+    # authored — see 20-core-java.yaml for the full rationale, including why no
+    # empty `namespaceSelector: {}` peer is added and why narrowing the cidr to a
+    # /32 must drop the RFC1918 `except:` entries in the same change.
+    # =========================================================================
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0   # replaced from app-config db.egress-cidr
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432   # managed Postgres — replaced from app-config db.port
 
 # -----------------------------------------------------------------------------
 # Notes for jtoye-infrastructure namespace maintainer (not applied by this

@@ -186,6 +186,16 @@ replicas:
 # the case no other target covers. Issue #297 (install Calico) is what turns
 # these policies from valid into enforced, and it needs a host-gateway egress
 # allowance that does not exist yet; see k8s/LOCAL.md §6.
+#
+# BLOCKER D (plan 29-04) ADDS THREE MORE SOURCES: db.egress-cidr, redis.port and
+# redis.egress-cidr, driving the two out-of-cluster managed-datastore rules
+# (spec.egress.4 and .5 of core-java-allow, spec.egress.4 of pg-backup-allow).
+# Local patches none of the three, so those passes are no-ops here and the local
+# render carries the base values — and the rules themselves are as inert locally
+# as every other NetworkPolicy is (no enforcing CNI). They are repeated anyway
+# for the same structural reason as db.port: a base-only replacement does not
+# re-run against this overlay's patched ConfigMap, so the day local points at
+# anything managed, the derivation is already wired.
 replacements:
   - source:
       kind: ConfigMap
@@ -197,8 +207,45 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+          - spec.egress.4.ports.0.port
       - select:
           kind: NetworkPolicy
           name: pg-backup-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+          - spec.egress.4.ports.0.port
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.db\.egress-cidr
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.4.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: pg-backup-allow
+        fieldPaths:
+          - spec.egress.4.to.0.ipBlock.cidr
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.redis\.port
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.5.ports.0.port
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.redis\.egress-cidr
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: core-java-allow
+        fieldPaths:
+          - spec.egress.5.to.0.ipBlock.cidr

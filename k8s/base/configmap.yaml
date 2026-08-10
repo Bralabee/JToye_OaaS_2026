@@ -93,6 +93,47 @@ data:
   # ---------------------------------------------------------------------------
   db.max-connections: "200"
 
+  # ---------------------------------------------------------------------------
+  # Postgres EGRESS CIDR — a render-time declaration, the address half of the
+  # port declaration above (Blocker D / plan 29-04)
+  #
+  # WHAT CONSUMES THIS: nothing injects it. Like db.port it exists so the
+  # NetworkPolicy egress rule that PERMITS the connection is DERIVED rather than
+  # authored twice — here it drives `spec.egress.4.to.0.ipBlock.cidr` of both
+  # core-java-allow and pg-backup-allow.
+  #
+  # WHY IT EXISTS AT ALL. D-09 moves Postgres OUT of the cluster to an Azure
+  # Database for PostgreSQL Flexible Server. The two in-cluster rules address
+  # their peer by `namespaceSelector: jtoye-infrastructure`, which a managed
+  # server is not in, so under an enforcing CNI neither rule applies to it and
+  # every replica CrashLoops with a network denial that reads like a database
+  # fault. That is #271's failure shape arriving through a different door.
+  #
+  # SOURCE of this value: `0.0.0.0/0`, i.e. the same address scope the public-443
+  # rule in networkpolicies/20-core-java.yaml has always carried, narrowed here to
+  # exactly ONE port instead of being bolted onto the 443 rule (which is
+  # explicitly forbidden — see T-29-04-01: a 443 rule that also admits 5432 is not
+  # the allow-list it claims to be).
+  #
+  # NARROWING IT IS THE INTENDED END STATE, AND IT IS A TWO-PART CHANGE.
+  # PG_ACCESS_MODE is `public-with-firewall` (29-OPERATOR-DECISIONS.md §1), so the
+  # server has a public IP and this can become `<ip>/32` once 29-05/29-10 have
+  # provisioned it. The Kubernetes API validates that every `except:` entry is
+  # strictly WITHIN `cidr`, so narrowing to a /32 must ALSO drop the RFC1918
+  # `except:` list from that rule in the same change — otherwise the manifest is
+  # rejected at apply time. INV-7's ipBlock arm asserts that containment at RENDER
+  # time so the rejection is a CI failure rather than a failed deploy.
+  #
+  # WHY THE DEFAULT IS NOT ALREADY A /32. No server exists yet (29-05 provisions
+  # it), and an Azure Flexible Server's public IP is not a documented stable
+  # value — Microsoft's guidance is to resolve the FQDN. A pinned /32 that shifts
+  # under maintenance is a 3am NetworkPolicy denial. The DURABLE address-side
+  # control is the server's own firewall scoped to the AKS egress IP, which plan
+  # 29-10 owns (T-29-10-01); this key is the cluster-side half and is deliberately
+  # operable without it.
+  # ---------------------------------------------------------------------------
+  db.egress-cidr: "0.0.0.0/0"
+
   # --- Issue #506: the SERVER-SIDE core API base for the frontend -------------
   #
   # api.url above is the BROWSER's view of core. It is baked into the frontend
@@ -146,7 +187,24 @@ data:
   # 6380, so staging sets this "true" AND patches redis.port to "6380" — the two
   # always move together.
   redis.ssl: "false"
-  
+
+  # ---------------------------------------------------------------------------
+  # Redis EGRESS CIDR — the address half of redis.port, for the same reason
+  # db.egress-cidr exists (Blocker D / plan 29-04)
+  #
+  # D-09 puts the cache on Azure Cache for Redis Basic C0, which is outside the
+  # cluster and serves TLS on 6380 with the plaintext 6379 port disabled. The
+  # in-cluster `jtoye-infrastructure` rule therefore does not apply to it, and the
+  # public-443 rule denies 6380 — so without this the staging cache is
+  # unreachable under an enforcing CNI.
+  #
+  # SOURCE and narrowing rules are identical to db.egress-cidr above; read that
+  # comment, including the `except:`-within-`cidr` constraint that makes pinning a
+  # /32 a two-part change.
+  # ---------------------------------------------------------------------------
+  redis.egress-cidr: "0.0.0.0/0"
+
+
   # RabbitMQ configuration
   rabbitmq.host: "rabbitmq.jtoye-infrastructure.svc.cluster.local"
   rabbitmq.port: "5672"
