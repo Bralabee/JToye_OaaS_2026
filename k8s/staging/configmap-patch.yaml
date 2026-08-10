@@ -30,14 +30,46 @@ data:
   # diverge without a manifest edit.
   keycloak.public.issuer.uri: "https://auth-staging.olajay.co.uk/realms/jtoye-staging"
 
-  # keycloak.client-id is DELIBERATELY NOT OVERRIDDEN here (plan 26-08). The base
-  # value is the byte-identical string `frontend` that used to be hardcoded in
-  # frontend-deployment.yaml, so staging keeps authenticating as exactly the same
-  # OIDC client it always has — the key exists so it CAN be changed per
-  # environment without patching the Deployment, not because staging needs a
-  # different value. Only k8s/local patches it (to `core-api`, the jtoye-dev
-  # realm's actual client). Adding a redundant `keycloak.client-id: "frontend"`
-  # line here would be noise, not documentation.
+  # --- The realm's ACTUAL OIDC client (plan 29-02 / Blocker A) ---------------
+  #
+  # WHAT STOOD HERE BEFORE, AND WHY IT IS GONE (not silently deleted).
+  #   Until plan 29-02 this block said keycloak.client-id was "DELIBERATELY NOT
+  #   OVERRIDDEN here (plan 26-08)", on the reasoning that the base value
+  #   `frontend` was byte-identical to the literal once hardcoded in
+  #   frontend-deployment.yaml, so staging "keeps authenticating as exactly the
+  #   same OIDC client it always has", and that a redundant restatement of the
+  #   base value "would be noise, not documentation".
+  #
+  #   That reasoning was sound about CONTINUITY and wrong about CORRECTNESS. It
+  #   preserved a value that never worked: staging had never completed an
+  #   ingress login, so "the same client it always has" was the same client that
+  #   had never authenticated anyone. 26-08 was scoped to the local overlay and
+  #   fixed `frontend` only there; staging inherited the broken value untouched.
+  #
+  # THE MEASUREMENT, RE-RUN NOW RATHER THAN QUOTED FROM RESEARCH (2026-08-10):
+  #     rg -uu --count-matches --include-zero '"clientId" : "frontend"' \
+  #        infra/keycloak/realm-export.template.json   ->  0
+  #   POSITIVE CONTROL, because an already-0 grep is a statement about the
+  #   PATTERN until something proves the pattern can match at all:
+  #     rg -uu --count-matches --include-zero '"clientId" : "core-api"' \
+  #        infra/keycloak/realm-export.template.json   ->  1
+  #   The complete client list in that template is: account, account-console,
+  #   admin-cli, broker, core-api, edge-api, integration-catalog-ro,
+  #   integration-orders-rw, realm-management, security-admin-console. There is
+  #   no `frontend` client in any realm this repository ships.
+  #
+  # WHY NO GATE CAUGHT IT. The render is valid, the key exists, and the value is
+  # a non-empty string — every static assertion staging has is satisfied by a
+  # client id that does not exist. The failure is only observable at the
+  # authorize request, which is DPLY-01's first step, which is why this is a
+  # blocker rather than a tidy-up.
+  #
+  # `core-api` is the realm's confidential browser-flow client — the same value
+  # .env's KEYCLOAK_CLIENT_ID names and the same one k8s/local patches. Adding a
+  # `frontend` client to the realm template instead is NOT this plan's fix: the
+  # realm parameterisation (staging realm name, redirect URIs, web origins)
+  # belongs to plan 29-08, and is named there so it is not lost.
+  keycloak.client-id: "core-api"
 
   # Single staging platform origin. NOT a wildcard. Read by CorsConfig AND
   # WebSocketConfig (the KDS STOMP handshake).
@@ -46,6 +78,39 @@ data:
   # D-19: unsubscribe + email open/click tracking links in staging notifications.
   notification.email.tracking-base-url: "https://app-staging.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app-staging.olajay.co.uk"
+
+  # Issue #592 — the RFC 8058 one-click target. DERIVED FROM THIS OVERLAY'S OWN
+  # api.url above, never from the base's production value, and that is not a
+  # style point: inheriting base here would make a STAGING rehearsal email
+  # advertise a one-click POST at the PRODUCTION API, so a recipient
+  # unsubscribing from a test email would mutate real production consent.
+  # UnsubscribeLinkRoutingTest asserts this equality per overlay.
+  notification.unsubscribe.one-click-base-url: "https://api-staging.olajay.co.uk"
+
+  # --- Pitfall 7 (Phase 29 / plan 29-02): managed-datastore transport --------
+  # Azure Cache for Redis Basic DISABLES the plaintext 6379 port and serves TLS
+  # on 6380 (ADR-0002 / D-09). These two always move together — TLS against 6379
+  # finds nothing listening, plaintext against 6380 fails the handshake.
+  # Enabling the cache's plaintext port instead would be the wrong fix: it puts
+  # session and cache traffic on the public internet in clear (T-29-02-02).
+  redis.ssl: "true"
+  redis.port: "6380"
+
+  # Assumption A6: staging asks for `require`, so a plaintext connection is
+  # REFUSED rather than silently downgraded. Azure Database for PostgreSQL
+  # Flexible Server ships require_secure_transport=on, so this is the mode that
+  # matches the server; base keeps "prefer" so compose is byte-identical.
+  db.ssl-mode: "require"
+
+  # The managed server's connection ceiling — a render-time declaration, no env.
+  # SOURCE: 429 is the documented default max_connections for a B2s Burstable
+  # Flexible Server (414 usable after the 15 reserved), recorded in
+  # 29-RESEARCH.md:187 citing learn.microsoft.com/azure/postgresql/
+  # configure-maintain/concepts-limits. It is NOT yet confirmed against a
+  # provisioned server: plan 29-01 owns provisioning and 29-04 owns teaching
+  # check-connection-math.sh to read this key. Re-measure with
+  # `SHOW max_connections;` on the real server before either lands.
+  db.max-connections: "429"
 
   # D-19: where Stripe returns a vendor after Connect onboarding. Paths match the
   # application.yml defaults; only the origin is staging-specific.

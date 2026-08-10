@@ -11,7 +11,19 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:jtoye}
+    # sslMode is EXPLICIT and config-injected (Phase 29 / plan 29-02, assumption A6).
+    #
+    # A6 was an UNMEASURED research assumption: pgjdbc 42.7 is BELIEVED to default to
+    # sslMode=prefer, which would let a managed server with require_secure_transport=on
+    # connect without a URL change. If that belief is wrong the failure mode is total —
+    # every database connection fails on the first deploy, before a single request is
+    # served — so the driver default is not something to inherit silently.
+    #
+    # `prefer` is byte-identical to the assumed default, so compose is unchanged: it
+    # negotiates TLS when the server offers it and falls back to plaintext when it does
+    # not. Staging sets DB_SSL_MODE=require via app-config db.ssl-mode, which REFUSES a
+    # plaintext connection rather than silently downgrading.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:jtoye}?sslMode=${DB_SSL_MODE:prefer}
     username: ${DB_USER:jtoye_app}
     password: ${DB_PASSWORD:}
     hikari:
@@ -34,6 +46,19 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       timeout: 2000ms
+      # Phase 29 / plan 29-02, Pitfall 7. Azure Cache for Redis Basic DISABLES the
+      # plaintext 6379 port and serves TLS on 6380, so a managed cache is
+      # unreachable without this. Until now the whole spring.data.redis block had
+      # host/port/password/timeout/pool and no `ssl:` at all — a capability absent
+      # from BOTH the manifests and the config, which is why check-env-contract.sh
+      # could not see the gap (it compares the two sides; neither side had it).
+      #
+      # DEFAULT false, so compose is byte-identical: local Redis speaks plaintext
+      # on 6379 and nothing about it changes. Staging sets REDIS_SSL=true and
+      # redis.port 6380 together — enabling the cache's plaintext port instead is
+      # the wrong fix and is rejected here in writing (threat T-29-02-02).
+      ssl:
+        enabled: ${REDIS_SSL:false}
       lettuce:
         pool:
           max-active: 8

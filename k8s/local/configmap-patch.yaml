@@ -176,6 +176,19 @@ data:
   # origin still has to be right or the redirect leaves the platform entirely.)
   notification.email.tracking-base-url: "http://app.jtoye.local"
   notification.unsubscribe.base-url: "http://app.jtoye.local"
+
+  # Issue #592 (added by Phase 29 / plan 29-02 alongside the base key).
+  # THIS OVERRIDE IS NOT OPTIONAL. The base value is the PRODUCTION API origin
+  # (https://api.olajay.co.uk), and unlike the two keys above — whose base values
+  # only produce a dead link — this one is the target a mail client POSTs
+  # `List-Unsubscribe=One-Click` to. Inheriting base would mean a locally-sent
+  # rehearsal email carried a one-click POST at the REAL production API, so
+  # clicking unsubscribe in Mailhog would mutate live production consent.
+  #
+  # It is the API origin, NOT the app origin: the clickable page is a Next.js
+  # route (frontend) and answers 405 to a POST, while the one-click endpoint is
+  # core-java's /api/v1/public/unsubscribe (issue #516).
+  notification.unsubscribe.one-click-base-url: "http://api.jtoye.local"
   stripe.connect.return-url: "http://app.jtoye.local/dashboard/payments/connect/return"
   stripe.connect.refresh-url: "http://app.jtoye.local/dashboard/payments/connect/refresh"
 
