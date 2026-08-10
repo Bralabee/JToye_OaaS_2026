@@ -84,6 +84,823 @@ metadata:
   namespace: jtoye-staging
 ---
 apiVersion: v1
+data:
+  alerts.yml: |
+    # Alerting rules for JToye OaaS
+    groups:
+      - name: api_alerts
+        interval: 30s
+        rules:
+          # High error rate alert
+          - alert: HighErrorRate
+            expr: |
+              (
+                sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) by (service)
+                /
+                sum(rate(http_server_requests_seconds_count[5m])) by (service)
+              ) * 100 > 3
+            for: 5m
+            labels:
+              severity: critical
+              component: api
+              service: core-java
+            annotations:
+              summary: "High error rate detected on {{ $labels.service }}"
+              description: "Service {{ $labels.service }} has {{ $value | humanizePercentage }} error rate (threshold: 3%)"
+
+          # Service down alert
+          - alert: ServiceDown
+            expr: up == 0
+            for: 2m
+            labels:
+              severity: critical
+              component: platform
+              service: platform
+            annotations:
+              summary: "Service {{ $labels.job }} is down"
+              description: "{{ $labels.job }} instance {{ $labels.instance }} has been down for more than 2 minutes"
+
+          # High response time
+          - alert: HighResponseTime
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(http_server_requests_seconds_bucket[5m])) by (service, le)
+              ) > 1
+            for: 5m
+            labels:
+              severity: warning
+              component: performance
+              service: core-java
+            annotations:
+              summary: "High response time on {{ $labels.service }}"
+              description: "P95 latency is {{ $value | humanizeDuration }} (threshold: 1s)"
+
+      - name: database_alerts
+        interval: 30s
+        rules:
+          # Database connection pool exhaustion
+          - alert: DatabaseConnectionPoolExhausted
+            expr: |
+              (
+                hikaricp_connections_active / hikaricp_connections_max
+              ) * 100 > 90
+            for: 5m
+            labels:
+              severity: critical
+              component: database
+              service: core-java
+            annotations:
+              summary: "Database connection pool near exhaustion"
+              description: "Connection pool is {{ $value | humanizePercentage }} full (threshold: 90%)"
+
+          # Database down.
+          #
+          # D-11 (phase 27, plan 27-03). `up{job="postgres"}` is the health of the EXPORTER,
+          # not of the database. Measured 2026-07-26 on this very stack:
+          #     up{job="postgres"} = 1     <- Prometheus scrapes the exporter fine
+          #     pg_up              = 0     <- the exporter cannot talk to the DATABASE
+          # so this rule reported healthy through a total loss of database visibility. The
+          # correct signal, `pg_up`, was present, was 0, and was referenced by NO rule
+          # (`grep -c pg_up alerts.yml` -> 0). Same contract failure as StompBrokerLag,
+          # different metric: an alert that is structurally incapable of firing.
+          #
+          # From Prometheus's seat an exporter that cannot reach the database is
+          # indistinguishable from a database that is down — and that is the point. The
+          # runbook's first-response step distinguishes them with
+          # `docker exec jtoye-postgres pg_isready` (the database) against
+          # `docker logs jtoye-postgres-exporter` (the exporter).
+          - alert: DatabaseDown
+            expr: up{job="postgres"} == 0 or pg_up == 0
+            for: 1m
+            labels:
+              severity: critical
+              component: database
+              service: postgresql
+            annotations:
+              summary: "PostgreSQL database is down"
+              description: "PostgreSQL has been unreachable for more than 1 minute"
+
+          # Too many database connections
+          - alert: TooManyDatabaseConnections
+            expr: pg_stat_database_numbackends > 100
+            for: 5m
+            labels:
+              severity: warning
+              component: database
+              service: postgresql
+            annotations:
+              summary: "High number of database connections"
+              description: "Database has {{ $value }} connections (threshold: 100)"
+
+      - name: resource_alerts
+        interval: 30s
+        rules:
+          # High memory usage.
+          #
+          # D-11 (phase 27, plan 27-03) — the static `service: core-java` label is DELETED
+          # here, deliberately, and must not be re-added. A static rule label OVERRIDES the
+          # series' own label of the same name, so hard-coding it made this alert name the
+          # wrong JVM: the annotation interpolates {{ $labels.service }}, and until 27-00
+          # fixed the core-java scrape port the only JVM being scraped was Keycloak. The
+          # email would have read "High JVM heap memory usage on core-java" while describing
+          # Keycloak's heap. Measured 2026-07-29, with BOTH JVMs now scraped:
+          #     jvm_memory_used_bytes{area="heap"} -> service = "keycloak" and "core-api"
+          # so with the static label the alert is not merely wrong, it is ambiguous across
+          # two instances. The scrape jobs already set `service`; the expression is correct
+          # and is untouched. The LABEL was the defect.
+          #
+          # This rule is a deliberate `service`-label exemption in
+          # scripts/check-alert-rules.sh (LABEL_EXEMPT). Adding the label back turns that
+          # gate RED as a stale exemption.
+          - alert: HighMemoryUsage
+            expr: |
+              (
+                jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}
+              ) * 100 > 85
+            for: 5m
+            labels:
+              severity: warning
+              component: jvm
+            annotations:
+              summary: "High JVM heap memory usage on {{ $labels.service }}"
+              description: "Heap memory is {{ $value | humanizePercentage }} full (threshold: 85%)"
+
+          # Frequent garbage collection.
+          #
+          # D-11 (phase 27, plan 27-03) — same defect and same fix as HighMemoryUsage above:
+          # the static `service: core-java` label is DELETED so the series' own `service`
+          # survives into {{ $labels.service }} and the alert names the JVM it measured.
+          # Expression untouched. Also a LABEL_EXEMPT entry in check-alert-rules.sh.
+          - alert: FrequentGarbageCollection
+            expr: rate(jvm_gc_pause_seconds_count[5m]) > 50
+            for: 5m
+            labels:
+              severity: warning
+              component: jvm
+            annotations:
+              summary: "Frequent garbage collection on {{ $labels.service }}"
+              description: "GC rate is {{ $value | humanize }} per second (threshold: 50/s)"
+
+      - name: business_alerts
+        interval: 30s
+        rules:
+          # No orders created recently (potential issue)
+          #
+          # THE SELECTOR MUST NAME BOTH CREATE PATHS, AND IT DID NOT (issue #342).
+          # Measured 2026-07-29: the old selector `uri=~"/orders|/api/v[0-9]+/orders"`
+          # matched ZERO series while the same metric without labels matched 78.
+          # Prometheus `=~` is FULLY ANCHORED, so `/orders` matches only the exact
+          # string `/orders`, and neither alternative matches a `/public/...` path.
+          # Every URI that actually returns POST 201 was:
+          #   /api/v1/admin/tenants  /api/v1/customers  /api/v1/products
+          #   /api/v1/shops          /public/shops/{slug}/orders   <-- orders
+          # Orders are created by the STOREFRONT CHECKOUT
+          # (PublicStorefrontController:99), and by the vendor-side
+          # OrderController:63 (`POST /api/v1/orders`) which simply had no traffic in
+          # the measured environment. Both are legitimate; both are matched now.
+          #
+          # WHY THIS WAS WORSE THAN "DATALESS": the expression fires when orders STOP
+          # (`< 1`). Over an EMPTY selector it returns the empty vector, so a total
+          # outage of order creation produced NO alert — the exact inverse of intent.
+          #
+          # `[^/]+` not `.*` for the slug: Micrometer emits the URI TEMPLATE, so the
+          # literal text is `{slug}`, which contains no `/`. Braces are regex
+          # metacharacters and would need escaping; a negated character class avoids
+          # that entirely and cannot over-match across path segments.
+          #
+          # RESIDUAL LIMIT, stated rather than hidden: `increase()` needs the series to
+          # EXIST. On a deployment where no order has ever been created the series is
+          # absent and this rule still cannot fire. Covering that needs an `absent()`
+          # arm, which would page on every fresh environment — deliberately not added.
+          - alert: NoOrdersCreated
+            expr: |
+              (
+                increase(http_server_requests_seconds_count{uri=~"/api/v[0-9]+/orders|/public/shops/[^/]+/orders",method="POST",status="201"}[30m]) < 1
+              )
+            for: 30m
+            labels:
+              severity: info
+              component: business
+              service: core-java
+            annotations:
+              summary: "No orders created in last 30 minutes"
+              description: "No successful order creation detected. This may indicate a business issue."
+
+          # High tenant isolation check failures (security concern).
+          # Backed by the real Micrometer counter tenant.context.missing
+          # (-> tenant_context_missing_total), emitted by JwtTenantFilter when an
+          # authenticated JWT principal reaches the tenant filter with no resolvable
+          # tenant claim (issue #98 [P2-7] item 2).
+          - alert: TenantIsolationFailure
+            expr: rate(tenant_context_missing_total[5m]) > 0.1
+            for: 2m
+            labels:
+              severity: critical
+              component: security
+              service: core-java
+            annotations:
+              summary: "Tenant context missing in requests"
+              description: "{{ $value }} requests per second lack tenant context (potential security issue)"
+
+          # Payment failure spike. Backed by the real Micrometer counter
+          # jtoye.payment.failed (-> jtoye_payment_failed_total), emitted by
+          # PaymentService.handlePaymentIntentFailed on every Stripe
+          # payment_intent.payment_failed webhook (issue #98 [P2-7] item 2).
+          - alert: PaymentFailureSpike
+            expr: rate(jtoye_payment_failed_total[5m]) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+              component: payment
+              service: core-java
+            annotations:
+              summary: "Elevated Stripe payment-failure rate"
+              description: "{{ $value }} payment failures per second over the last 5m (threshold: 0.1/s) — investigate card declines, Stripe outages, or checkout regressions."
+
+      - name: infrastructure_alerts
+        interval: 30s
+        rules:
+          # DISABLED — PENDING node-exporter deploy (issue #98 [P2-7] — cluster-blocked).
+          # The DiskSpaceLow / DiskSpaceCritical rules reference node_filesystem_*
+          # series that ONLY node-exporter emits, and node-exporter is not yet
+          # deployed (out of scope for the local-repo do-now slice). Leaving them
+          # LIVE would reference never-emitted metrics (a phantom-alert gap). They
+          # are kept here (commented) to document intended coverage — re-enable both
+          # the moment node-exporter is scraping.
+          #
+          # - alert: DiskSpaceLow
+          #   expr: |
+          #     (
+          #       node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+          #       / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
+          #     ) * 100 < 15
+          #   for: 10m
+          #   labels:
+          #     severity: warning
+          #     component: infrastructure
+          #     service: node
+          #   annotations:
+          #     summary: "Disk space low on {{ $labels.instance }}"
+          #     description: "Only {{ $value | humanize }}% disk space remaining on {{ $labels.mountpoint }} (threshold: 15%)"
+          #
+          # - alert: DiskSpaceCritical
+          #   expr: |
+          #     (
+          #       node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+          #       / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
+          #     ) * 100 < 5
+          #   for: 5m
+          #   labels:
+          #     severity: critical
+          #     component: infrastructure
+          #     service: node
+          #   annotations:
+          #     summary: "Disk space critical on {{ $labels.instance }}"
+          #     description: "Only {{ $value | humanize }}% disk space remaining — immediate action required"
+
+          # Keycloak down
+          - alert: KeycloakDown
+            expr: up{job="keycloak"} == 0
+            for: 2m
+            labels:
+              severity: critical
+              component: auth
+              service: keycloak
+            annotations:
+              summary: "Keycloak identity provider is down"
+              description: "Keycloak has been unreachable for more than 2 minutes — all authentication will fail"
+
+          # Redis down.
+          #
+          # TS-15 (docs/ops/terminal-states.yaml), issue #342 item 5. Identical defect to
+          # DatabaseDown/D-11 above, in a second metric: `up{job="redis"}` is the health of
+          # the EXPORTER, and `redis_up` — the exporter's own report of whether it can reach
+          # Redis — was live and referenced by NO rule (`grep -c redis_up alerts.yml` -> 0).
+          #
+          # Unlike the postgres case this was LATENT, never observed failing, which is why it
+          # survived a review that fixed its twin. So it was induced rather than argued.
+          # Measured 2026-07-29 with jtoye-redis stopped and jtoye-redis-exporter left running:
+          #     up{job="redis"} = 1     <- the exporter still answers, so the OLD rule is blind
+          #     redis_up        = 0     <- Redis is actually unreachable
+          #     up{job="redis"} == 0                    -> 0 samples  (would NOT have fired)
+          #     up{job="redis"} == 0 or redis_up == 0   -> 1 sample   (fires)
+          # and on restore both return 0 samples, so this does not page in steady state.
+          #
+          # A total loss of the cache would have alerted nobody.
+          - alert: RedisDown
+            expr: up{job="redis"} == 0 or redis_up == 0
+            for: 1m
+            labels:
+              severity: critical
+              component: cache
+              service: redis
+            annotations:
+              summary: "Redis cache is down"
+              description: "Redis has been unreachable for more than 1 minute — cache operations will fail"
+
+      # =====================================================================================
+      # messaging_alerts — rewritten by phase 27, plan 27-03.
+      #
+      # Until this rewrite this group held exactly ONE rule, StompBrokerLag, and that rule
+      # was incapable of firing from the day it was written (see its dormant block at the
+      # bottom). Meanwhile four dead-letter queues existed with zero consumers and NINE real
+      # tenant-bearing messages sat dead on webhook.deliveries.dlq — the oldest since
+      # 2026-07-15 — with no signal that would have said so.
+      #
+      # EVERY LIVE RULE BELOW IS ON A SERIES PROVEN TO EXIST, LABELS INCLUDED. That is
+      # enforced, not promised: scripts/check-alert-metrics.sh queries each rule's bare
+      # series SELECTOR (not the whole expression) against the live Prometheus and fails
+      # when it matches zero series. Checking the label set and not just the metric name is
+      # what catches the actual defect — `rabbitmq_queue_messages_ready` exists;
+      # `rabbitmq_queue_messages_ready{queue=~...}` does not.
+      #
+      # The rabbitmq_detailed_* series come from the `rabbitmq-queues` scrape job added in
+      # prometheus.yml.tmpl by the same plan. Without that job every rule here matches
+      # nothing.
+      #
+      # REGEX STYLE. Every regex uses the `[.]` character class for a literal dot. That is
+      # HOUSE STYLE, not a correctness fix: measured on this Prometheus, PromQL unescapes
+      # `\\` to `\` before RE2 sees it, so `\\.` is a literal dot too and matches
+      # identically. `[.]` is preferred only because it is byte-identical under block, plain
+      # and double-quoted YAML scalars and so cannot be broken by a later reformat.
+      # DO NOT "correct" `\\.` regexes elsewhere in this repo — they are right.
+      # The real hazard is a SINGLE backslash: `\.` is rejected at query time with
+      # `bad_data: unknown escape sequence`, i.e. it fails loudly rather than silently.
+      # =====================================================================================
+      - name: messaging_alerts
+        interval: 30s
+        rules:
+          # ---------------------------------------------------------------------------
+          # 1. The broker itself.
+          #
+          # Mirrors RedisDown. Deliberately scoped to job="rabbitmq" and NOT
+          # job=~"rabbitmq|rabbitmq-queues": the second scrape job hits the SAME broker on
+          # the same port, so its outage is the same outage, and ServiceDown (up == 0,
+          # unscoped) already covers it. "Completing" this regex to include both jobs would
+          # buy nothing and double-page. Leave it.
+          # ---------------------------------------------------------------------------
+          - alert: RabbitMQDown
+            expr: up{job="rabbitmq"} == 0
+            for: 1m
+            labels:
+              severity: critical
+              component: messaging
+              service: rabbitmq
+            annotations:
+              summary: "RabbitMQ broker is down"
+              description: >-
+                RabbitMQ has been unreachable for more than 1 minute. Verified blast radius:
+                the transactional outbox flushers stop draining (rows accumulate PENDING,
+                exponential backoff engages, and payment_outbox_dead_letter_total /
+                media_outbox_dead_letter_total start rising once attempts reach 10);
+                kitchen-display broadcasts stop; outbound webhook fan-out stops; media
+                processing stops. core-java's compose healthcheck will flip to unhealthy and
+                NOTHING restarts it — `restart: unless-stopped` does not act on health.
+
+          # ---------------------------------------------------------------------------
+          # 2. Payment dead letters get their own critical rule, because a lost payment
+          #    event is money. Excluded from the generic rule below so the two can never
+          #    double-page for one incident.
+          # ---------------------------------------------------------------------------
+          - alert: PaymentDeadLetterQueueNonEmpty
+            expr: rabbitmq_detailed_queue_messages{queue="payment.events.dlq"} > 0
+            for: 1m
+            labels:
+              severity: critical
+              component: messaging
+              service: rabbitmq
+            annotations:
+              summary: "Payment events are dead-lettered ({{ $value }} on payment.events.dlq)"
+              description: >-
+                {{ $value }} message(s) are parked on payment.events.dlq, which has no
+                consumer by design. Each one is a payment event the platform failed to
+                process three times. Do NOT purge before archiving — the payload is the only
+                remaining copy of the event. See docs/runbooks/alerts.md
+                (## PaymentDeadLetterQueueNonEmpty) and `scripts/dlq-inspect.sh --peek`.
+
+          # ---------------------------------------------------------------------------
+          # 3. Every other dead-letter queue, PER QUEUE so the email names it.
+          #
+          # WHY THIS IS A SIGNAL AND NOT A PERMANENT PAGE (plan 27-03, M1). This rule fires
+          # at depth >= 1 on queues that have NO consumer, so it fires and does not resolve
+          # until a human acts. That is only acceptable because plan 27-05 removed the
+          # PRODUCING fault — a Jackson2JsonMessageConverter built with no trusted packages,
+          # which dead-lettered 100% of outbound webhooks from the day Phase 22 shipped.
+          # THE POST-27-05 STEADY-STATE BASELINE FOR webhook.deliveries.dlq IS 0, NOT 9.
+          #
+          # Consequently: a DeadLetterQueueNonEmpty{queue="webhook.deliveries.dlq"} still
+          # firing after 27-05 has landed AND 27-02 has disposed of the historic batch is a
+          # REAL REGRESSION, not the known state — it means the converter fix did not take,
+          # or a second producer exists. Do not learn to ignore it.
+          #
+          # Shipping this rule into a tree where the producer was still live would have
+          # manufactured exactly the alert fatigue this work exists to remove.
+          # ---------------------------------------------------------------------------
+          - alert: DeadLetterQueueNonEmpty
+            expr: rabbitmq_detailed_queue_messages{queue=~".*[.]dlq", queue!="payment.events.dlq"} > 0
+            for: 5m
+            labels:
+              severity: warning
+              component: messaging
+              service: rabbitmq
+            annotations:
+              summary: "Dead letters parked on {{ $labels.queue }} ({{ $value }})"
+              description: >-
+                {{ $value }} message(s) are parked on {{ $labels.queue }}. Dead-letter queues
+                have no consumer by design, so this will not clear itself. Peek
+                non-destructively with `scripts/dlq-inspect.sh --peek {{ $labels.queue }}`,
+                read x-death[0] for the reason and the original exchange, then decide
+                fix-then-redrive vs discard. Archive before any purge — the payload is the
+                only remaining copy of the event, and it carries tenant data.
+
+          # ---------------------------------------------------------------------------
+          # 4. Live-queue backlog.
+          #
+          # Negative selector, not an allowlist of today's queues: a queue added in a later
+          # phase is covered the day it exists. An allowlist would rot silently, which is the
+          # same defect class this group was rewritten to remove.
+          #
+          # The SSE arm of the regex is REDUNDANT BY DESIGN — prometheus.yml.tmpl's
+          # metric_relabel_configs already drops those series before they are stored, so
+          # there is nothing here for it to exclude. It is kept as defence in depth, and it
+          # is provable rather than decorative: comment out the drop rule, restart
+          # Prometheus, and the raw series family gains the SSE queue while THIS selector
+          # still excludes it (27-03 T2.6). An unprovable defence-in-depth guard is a trap
+          # this project has already been bitten by.
+          # ---------------------------------------------------------------------------
+          - alert: DomainQueueBacklog
+            expr: rabbitmq_detailed_queue_messages_ready{queue!~".*[.]dlq|order[.]state-changes[.]sse[.].*"} > 100
+            for: 10m
+            labels:
+              severity: warning
+              component: messaging
+              service: rabbitmq
+            annotations:
+              summary: "Queue backlog on {{ $labels.queue }} ({{ $value }} ready)"
+              description: >-
+                {{ $labels.queue }} has {{ $value }} messages ready for more than 10 minutes.
+                The consumer is alive but not keeping up. Check MessagingConsumerMissing
+                first (a dead consumer is a different fault), then core-java thread and
+                database saturation — DatabaseConnectionPoolExhausted is the usual upstream.
+
+          # ---------------------------------------------------------------------------
+          # 5. The "everything is UP and nothing is working" alert.
+          #
+          # No depth alert can catch this: core-java UP, broker UP, but a listener container
+          # died or lost its channel, so events land in a queue nobody reads. for: 5m absorbs
+          # a normal restart.
+          #
+          # DLQs are excluded because zero consumers is their CORRECT AND PERMANENT state.
+          # All four sit at 0 consumers right now. Widening this selector to `.*` pages four
+          # times forever — do not "fix" it that way (27-03 T2.7 falsifies exactly that).
+          # ---------------------------------------------------------------------------
+          - alert: MessagingConsumerMissing
+            expr: rabbitmq_detailed_queue_consumers{queue!~".*[.]dlq"} == 0
+            for: 5m
+            labels:
+              severity: critical
+              component: messaging
+              service: rabbitmq
+            annotations:
+              summary: "No consumer on {{ $labels.queue }}"
+              description: >-
+                {{ $labels.queue }} has had no consumer for 5 minutes while the broker is up.
+                Messages are accumulating with nothing to process them. Check core-java's log
+                for AMQP connection loss, then `rabbitmq-diagnostics list_connections`.
+
+          # ---------------------------------------------------------------------------
+          # 6. Outbox poison / exhaustion. Names verified in the live scrape.
+          #
+          # Two increment paths with COMPLETELY different operator responses, so the
+          # description must distinguish them:
+          #   - poison payload (JsonProcessingException) -> permanent, NEVER resurrected
+          #     (the resurrection queries carry `AND poison = FALSE`)
+          #   - attempts >= 10 -> the resurrection pass will re-lease it
+          # A poison row is visible ONLY in the database — no metric, no endpoint, no log
+          # line after the initial log.error. The runbook carries the query, including the
+          # RLS caveat that makes the naive form return zero rows and look reassuring.
+          # ---------------------------------------------------------------------------
+          - alert: OutboxDeadLetterRising
+            expr: increase(payment_outbox_dead_letter_total[15m]) > 0 or increase(media_outbox_dead_letter_total[15m]) > 0
+            for: 0m
+            labels:
+              severity: warning
+              component: messaging
+              service: core-java
+            annotations:
+              summary: "Transactional outbox is dead-lettering ({{ $value }} in 15m)"
+              description: >-
+                An outbox row was abandoned in the last 15 minutes. TWO causes, different
+                responses: a poison payload (JsonProcessingException) is permanent and is
+                NEVER resurrected; attempts >= 10 will be re-leased by the resurrection pass.
+                poison=true rows are visible ONLY in the database — see
+                docs/runbooks/alerts.md (## OutboxDeadLetterRising) for the query and its
+                RLS caveat.
+
+          # ---------------------------------------------------------------------------
+          # 7. StompBrokerLag — DORMANT. Follows the DiskSpaceLow precedent above.
+          #
+          # THE CORRECTED EXPRESSION, ready to uncomment verbatim:
+          #
+          #     sum(rabbitmq_detailed_queue_messages_ready{queue=~"stomp-subscription.*|amq[.]gen-.*"}) > 0
+          #
+          # WHY IT WAS BROKEN. As shipped this rule selected on
+          # `rabbitmq_queue_messages_ready`, which comes from the AGGREGATED /metrics
+          # endpoint and carries NO queue label at all. Measured 2026-07-29:
+          #     query=sum(rabbitmq_queue_messages_ready{queue=~"stomp-subscription.*|amq[.]gen-.*"}) > 0
+          #       -> {"resultType":"vector","result":[]}
+          #     control query=rabbitmq_queue_messages_ready
+          #       -> one series, value 9, metric keys [__name__ component instance job service]
+          # The value was there; the label was not. This rule was VACUOUS FROM INTRODUCTION,
+          # and the nine dead messages it arguably would have caught are the proof.
+          #
+          # WHY IT SHIPS DORMANT RATHER THAN LIVE. The corrected expression still matches
+          # nothing here, and cannot be made to match by any user action:
+          #   - the canonical local runtime is STOMP_BROKER_MODE=in-memory, so nothing is
+          #     relayed to RabbitMQ and a subscribing client creates no broker queue at all;
+          #   - measured: zero STOMP connections to the broker (GET /api/connections shows
+          #     one AMQP 0-9-1 connection and nothing else);
+          #   - relay mode is a k8s-base setting, and k8s/ ships no Prometheus.
+          # The rule is inapplicable in BOTH runtimes today. A live rule that cannot fire is
+          # precisely the defect this group was rewritten to remove, so it is not shipped
+          # live merely to look complete.
+          #
+          # PROVEN CAPABLE OF FIRING. The corrected expression was observed evaluating > 0
+          # against a throwaway queue named stomp-subscription-probe27 (created via the
+          # management API, published to, then deleted). An alert never observed firing is
+          # not an alert; this observes the EXPRESSION firing without pretending the RULE is
+          # live.
+          #
+          # RE-ENABLE TRIGGER AND OWNER: issue #304 (rework frontend/e2e/stomp-relay.spec.ts
+          # to be ingress-capable). Whoever makes that spec establish a real SUBSCRIBE in
+          # relay mode is the person who should uncomment this rule.
+          #
+          # THIS DORMANCY CANNOT ROT. scripts/check-alert-metrics.sh carries a DORMANT_RULES
+          # entry for StompBrokerLag and FAILS when its selector STARTS returning series —
+          # "this rule now has data, re-enable it". The red is the instruction. Only a
+          # deliberate STOMP_BROKER_MODE=relay can produce it; no ordinary user action can.
+          #
+          # - alert: StompBrokerLag
+          #   expr: |
+          #     sum(rabbitmq_detailed_queue_messages_ready{queue=~"stomp-subscription.*|amq[.]gen-.*"}) > 0
+          #   for: 30s
+          #   labels:
+          #     severity: warning
+          #     component: messaging
+          #     service: rabbitmq
+          #   annotations:
+          #     summary: "STOMP broker message lag detected"
+          #     description: "Undelivered messages in STOMP subscription queues: {{ $value }}. Kitchen display clients may experience delayed order updates."
+kind: ConfigMap
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: prometheus-alerts-k24fddf4kk
+  namespace: jtoye-staging
+---
+apiVersion: v1
+data:
+  prometheus.yml: |
+    # RENDERED-FREE BY DESIGN. The compose analog is a .tmpl whose two port
+    # placeholders are sed-substituted by entrypoint.sh at container start, because
+    # Prometheus has no native env-var substitution in scrape configs. Here both
+    # ports are FIXED properties of the k8s runtime rather than of a .env file
+    # (core-java's prod profile always serves actuator on the management port; the
+    # edge leaves EDGE_MANAGEMENT_PORT unset so /metrics stays on the app port), so
+    # there is nothing to render and no entrypoint wrapper is needed.
+    global:
+      scrape_interval: 15s # Scrape targets every 15 seconds
+      evaluation_interval: 15s # Evaluate rules every 15 seconds
+      external_labels:
+        # NOT per-environment yet, and that is stated rather than hidden. The
+        # compose analog carries cluster: 'jtoye-dev' / environment: 'development'.
+        # This ConfigMap is in the BASE, so staging and production share it, and a
+        # per-environment value would need either an app-config key routed by a
+        # `replacements:` substring rule or a whole-blob overlay patch. Nothing
+        # consumes these two labels today (the rule corpus does not read them, and
+        # Alertmanager groups by alertname/service), so the honest value is the one
+        # true of both targets. Making them per-environment belongs with the
+        # Alertmanager routing in plan 29-07.
+        cluster: 'jtoye-k8s'
+        environment: 'kubernetes'
+
+    # Alertmanager — the Deployment and Service arrive in plan 29-07 (D-17: Gmail
+    # relay + an in-cluster Mailhog sink in the SAME receiver). The ADDRESS is
+    # unchanged from compose because the k8s Service carries the same name.
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ['alertmanager:9093']
+
+    # Load alerting rules. ABSOLUTE PATH, unlike the compose analog's relative
+    # 'alerts.yml': the corpus is a SEPARATE ConfigMap mounted at its own path, so
+    # that the rule file can carry a content hash (and roll the pod on change) while
+    # this config does not. See prometheus-deployment.yaml.
+    rule_files:
+      - '/etc/prometheus/rules/alerts.yml'
+
+    # Scrape configurations
+    scrape_configs:
+      # Prometheus itself, scraped through its OWN ClusterIP Service rather than
+      # through the loopback address the compose analog uses. INV-4 is the reason and
+      # this file's YAML header carries the measurement; it is the only address here
+      # that deviates from the plan's interface table, and the job_name is untouched.
+      #
+      # THIS COMMENT DELIBERATELY DOES NOT SPELL THE FORBIDDEN TOKEN. Everything
+      # inside this `prometheus.yml: |` block is ConfigMap DATA and therefore lands
+      # in the render, where INV-4 greps for it — so a comment naming the literal it
+      # replaced would fail the invariant on a CORRECT tree. Measured, not predicted:
+      # the first draft of this comment did exactly that and INV-4 reported the
+      # comment line and the target line together. Same trap as a doc rule that must
+      # name the string it forbids. The full explanation lives in the YAML header
+      # above, which is NOT part of the data blob.
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['prometheus:9090']
+            labels:
+              service: 'prometheus'
+
+      # Core Java API (Spring Boot Actuator).
+      #
+      # The actuator port DIFFERS BY RUNTIME, which is why the compose analog
+      # injects it rather than carrying a literal (phase 27, plan 27-00):
+      #
+      #   prod / k8s  — application-prod.yml:106-107 sets a SEPARATE internal
+      #                 management port, `${MANAGEMENT_SERVER_PORT:9091}`, so actuator
+      #                 is served ONLY there. k8s/base/core-java-deployment.yaml
+      #                 declares containerPort 9091 `management` and annotates
+      #                 `prometheus.io/port: "9091"` — correct for that runtime.
+      #   dev/compose — docker-compose.full-stack.yml runs SPRING_PROFILES_ACTIVE=dev,
+      #                 which sets NO management.server.port, so the actuator stays on
+      #                 the app port and the scrape endpoint is opted in via
+      #                 MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE.
+      #
+      # THIS FILE SERVES ONE RUNTIME, so 9091 is a fact here rather than a guess —
+      # which is precisely why the placeholder does not carry across. Before 27-00 the
+      # COMPOSE file carried this same 9091 literal and six alerts were dataless while
+      # two more silently bound to Keycloak's JVM despite carrying `service: core-java`
+      # (evidence: .planning/phases/27-observability-hardening/baselines/B-1.txt, B-7.txt).
+      # The lesson is "do not carry another runtime's literal", not "never write a port".
+      #
+      # 9091 is deliberately NOT on the core-java Service, so this scrape reaches the
+      # POD network directly; k8s/base/networkpolicies/20-core-java.yaml already
+      # carries the Prometheus-scrape ingress rule for it.
+      - job_name: 'core-java'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets: ['core-java:9091']
+            labels:
+              service: 'core-api'
+              component: 'backend'
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: instance
+            replacement: 'core-java'
+
+      # Edge Go API (Gin gateway) — the edge exposes a Prometheus /metrics endpoint
+      # (prometheusMiddleware + promhttp in edge-go/cmd/edge/metrics.go), emitting
+      # http_requests_total + http_request_duration_seconds labelled by
+      # method/route-template/status. Job re-enabled (issue #98 item 3).
+      #
+      # 8080, NOT the compose 9101, and the compose template's own header says why:
+      # k8s leaves EDGE_MANAGEMENT_PORT unset, so /metrics stays on the app port —
+      # which is what k8s/base/edge-go-deployment.yaml's `prometheus.io/port: "8080"`
+      # annotation has always said. The edge serves /metrics on EXACTLY ONE of the two
+      # ports (registerAppMetricsRoute registers the app-port route only while
+      # EDGE_MANAGEMENT_PORT is empty), so a wrong value here is a permanently-DOWN
+      # target, never a duplicate scrape.
+      - job_name: 'edge-go'
+        metrics_path: '/metrics'
+        static_configs:
+          - targets: ['edge-go:8080']
+            labels:
+              service: 'edge-api'
+              component: 'gateway'
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: instance
+            replacement: 'edge-go'
+
+      # PostgreSQL Database — via the exporter in postgres-exporter-deployment.yaml,
+      # which connects to the MANAGED Flexible Server (D-09), not to an in-cluster
+      # Postgres. `pg_up` is the exporter's own report of whether it can reach the
+      # database, and DatabaseDown reads it (alerts.yml:85) precisely because the
+      # exporter can answer 200 while the database behind it is dead.
+      - job_name: 'postgres'
+        static_configs:
+          - targets: ['postgres-exporter:9187']
+            labels:
+              service: 'postgresql'
+              component: 'database'
+
+      # Keycloak. FIRST TIME this target is ever reachable in k8s — there is no
+      # Keycloak Service in any render today; plan 29-08 ships the in-cluster
+      # Keycloak (D-02) with KC_METRICS_ENABLED. Until then this target is DOWN,
+      # which is expected and is not a reason to delete the job: deleting it would
+      # orphan the `keycloak` row in check-alert-liveness.sh's SERVICE_JOB_MAP and
+      # the two Keycloak rules in the corpus.
+      - job_name: 'keycloak'
+        metrics_path: '/metrics'
+        static_configs:
+          - targets: ['keycloak:8080']
+            labels:
+              service: 'keycloak'
+              component: 'auth'
+        # Keycloak may not expose metrics by default - this is optional
+
+      # Redis — via the exporter in redis-exporter-deployment.yaml, which connects to
+      # the managed Azure Cache (D-09) over TLS. `redis_up` is the exporter's own
+      # report of whether it can reach the cache, and RedisDown reads it
+      # (alerts.yml:303) for the same reason as pg_up above.
+      - job_name: 'redis'
+        static_configs:
+          - targets: ['redis-exporter:9121']
+            labels:
+              service: 'redis'
+              component: 'cache'
+
+      # RabbitMQ Management Plugin. The cluster operator names the client Service
+      # after the RabbitmqCluster, and plan 29-09 names that cluster `jtoye-rabbitmq`
+      # — so this address is BYTE-IDENTICAL to the compose one, by coincidence of
+      # naming rather than by accident of copying. The operator always enables
+      # rabbitmq_prometheus and exposes 15692 on that Service.
+      - job_name: 'rabbitmq'
+        static_configs:
+          - targets: ['jtoye-rabbitmq:15692']
+            labels:
+              service: 'rabbitmq'
+              component: 'messaging'
+        # RabbitMQ management plugin exposes Prometheus metrics on port 15692
+        #
+        # LEAVE THIS JOB ALONE. It supplies the node-level series and the `up` series
+        # RabbitMQDown depends on. The per-queue job below is ADDITIVE — see its header.
+
+      # RabbitMQ PER-QUEUE metrics (phase 27, plan 27-03, decision D-01).
+      #
+      # WHY A SECOND JOB EXISTS. The default /metrics endpoint above returns metrics
+      # AGGREGATED BY NAME — it carries no `queue` and no `vhost` label at all. Measured
+      # live 2026-07-29:
+      #
+      #   query=rabbitmq_queue_messages_ready
+      #     -> {__name__, component, instance, job, service} = 9      <- NO queue label
+      #
+      # That is why the repo's only messaging rule, StompBrokerLag, could never fire: its
+      # `queue=~"stomp-subscription.*|amq[.]gen-.*"` selector matched a series family that
+      # has no `queue` label, so it returned the empty vector from the day it was written
+      # while nine real dead messages sat unreported on webhook.deliveries.dlq. `promtool
+      # check rules` passed the file throughout — syntax validity is exactly the assurance
+      # that is worthless here.
+      #
+      # DISTINCT PREFIX, SO IT CANNOT COLLIDE. /metrics/detailed emits the
+      # `rabbitmq_detailed_` prefix, which the plugin designs for concurrent use with the
+      # aggregated endpoint. No existing expression changes meaning.
+      #
+      # ACCEPTED COST: this adds a second `up{job="rabbitmq-queues"}` series, so one broker
+      # outage can be named by ServiceDown under either job. That is the same outage, not a
+      # new fault — the runbook says so, and RabbitMQDown is deliberately scoped to
+      # job="rabbitmq" only so the two can never double-page.
+      - job_name: 'rabbitmq-queues'
+        metrics_path: '/metrics/detailed'
+        params:
+          family: ['queue_coarse_metrics', 'queue_consumer_count']
+        static_configs:
+          - targets: ['jtoye-rabbitmq:15692']
+            labels:
+              service: 'rabbitmq'
+              component: 'messaging'
+        metric_relabel_configs:
+          # LOAD-BEARING, NOT DECORATIVE. The SSE fan-out declares an AnonymousQueue per
+          # JVM (RabbitMQConfig.ORDER_EVENTS_FANOUT_QUEUE_PREFIX ->
+          # order.state-changes.sse.<random>); the random suffix changes on EVERY restart,
+          # so keeping these series would leak one label value per restart, forever.
+          # Durable queues only. Proven load-bearing by its own control: comment this block
+          # out and `rabbitmq_detailed_queue_messages_ready{queue=~"order[.]state-changes[.]sse[.].*"}`
+          # goes from empty to >= 1 naming the live SSE queue (27-03 T1.4).
+          - source_labels: [queue]
+            regex: 'order[.]state-changes[.]sse[.].*'
+            action: drop
+kind: ConfigMap
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: prometheus
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: prometheus-config
+  namespace: jtoye-staging
+---
+apiVersion: v1
 kind: Service
 metadata:
   annotations:
@@ -159,6 +976,90 @@ spec:
     targetPort: 3000
   selector:
     app: frontend
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: postgres-exporter
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: postgres-exporter
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: metrics
+    port: 9187
+    protocol: TCP
+    targetPort: 9187
+  selector:
+    app: postgres-exporter
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: prometheus
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: prometheus
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: http
+    port: 9090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app: prometheus
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: redis-exporter
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: redis-exporter
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: metrics
+    port: 9121
+    protocol: TCP
+    targetPort: 9121
+  selector:
+    app: redis-exporter
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
@@ -866,6 +1767,307 @@ spec:
           readOnlyRootFilesystem: false
           runAsNonRoot: true
           runAsUser: 1001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: postgres-exporter
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: postgres-exporter
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-exporter
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+        documentation: https://github.com/jtoye/oaas-platform
+        maintainer: jtoye-devops-team
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9187"
+        prometheus.io/scrape: "true"
+      labels:
+        app: postgres-exporter
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: monitoring
+        environment: staging
+        version: v1
+    spec:
+      containers:
+      - env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              key: host
+              name: postgres-credentials
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              key: port
+              name: postgres-credentials
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              key: database
+              name: postgres-credentials
+        - name: DATA_SOURCE_URI
+          value: $(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=require
+        - name: DATA_SOURCE_USER
+          valueFrom:
+            secretKeyRef:
+              key: runtime-username
+              name: postgres-credentials
+        - name: DATA_SOURCE_PASS
+          valueFrom:
+            secretKeyRef:
+              key: runtime-password
+              name: postgres-credentials
+        image: prometheuscommunity/postgres-exporter:v0.15.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          tcpSocket:
+            port: 9187
+          timeoutSeconds: 5
+        name: postgres-exporter
+        ports:
+        - containerPort: 9187
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          tcpSocket:
+            port: 9187
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      securityContext:
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: prometheus
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: prometheus
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+        documentation: https://github.com/jtoye/oaas-platform
+        maintainer: jtoye-devops-team
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9090"
+        prometheus.io/scrape: "true"
+      labels:
+        app: prometheus
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: monitoring
+        environment: staging
+        version: v1
+    spec:
+      containers:
+      - args:
+        - --config.file=/etc/prometheus/conf/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        - --storage.tsdb.retention.time=30d
+        - --web.console.libraries=/usr/share/prometheus/console_libraries
+        - --web.console.templates=/usr/share/prometheus/consoles
+        image: prom/prometheus:v2.48.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+        name: prometheus
+        ports:
+        - containerPort: 9090
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 500m
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /etc/prometheus/conf
+          name: config
+          readOnly: true
+        - mountPath: /etc/prometheus/rules
+          name: rules
+          readOnly: true
+        - mountPath: /prometheus
+          name: tsdb
+      securityContext:
+        fsGroup: 65534
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+      volumes:
+      - configMap:
+          name: prometheus-config
+        name: config
+      - configMap:
+          name: prometheus-alerts-k24fddf4kk
+        name: rules
+      - emptyDir: {}
+        name: tsdb
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: redis-exporter
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: redis-exporter
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+        documentation: https://github.com/jtoye/oaas-platform
+        maintainer: jtoye-devops-team
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9121"
+        prometheus.io/scrape: "true"
+      labels:
+        app: redis-exporter
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: monitoring
+        environment: staging
+        version: v1
+    spec:
+      containers:
+      - env:
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              key: redis.host
+              name: app-config
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              key: redis.port
+              name: app-config
+        - name: REDIS_ADDR
+          value: rediss://$(REDIS_HOST):$(REDIS_PORT)
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: redis-credentials
+        image: oliver006/redis_exporter:v1.58.0
+        imagePullPolicy: IfNotPresent
+        name: redis-exporter
+        ports:
+        - containerPort: 9121
+          name: metrics
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      securityContext:
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
 ---
 apiVersion: batch/v1
 kind: CronJob

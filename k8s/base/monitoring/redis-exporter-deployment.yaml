@@ -1,0 +1,165 @@
+---
+# redis-exporter-deployment.yaml — redis_up for the MANAGED cache (DPLY-03, plan 29-06)
+#
+# WHAT IT IS FOR. RedisDown reads `up{job="redis"} == 0 or redis_up == 0`
+# (alerts.yml:303). alerts.yml:289-298 records why the second half exists: the
+# exporter can be UP while the cache behind it is unreachable, and before Phase 27
+# `redis_up` was live and referenced by no rule at all.
+#
+# rediss://, NOT redis://, AND THE SCHEME IS LOAD-BEARING (T-29-06-03).
+#   Azure Cache for Redis Basic DISABLES the plaintext 6379 port and serves TLS on
+#   6380 (ADR-0002 / D-09), which is why k8s/staging/configmap-patch.yaml sets
+#   redis.port: "6380" and redis.ssl: "true" together.
+#
+#   MEASURED rather than assumed (2026-08-10, this exact image pin, against the live
+#   plaintext compose Redis, so the two arms differ ONLY in the scheme):
+#     arm plain   REDIS_ADDR=redis://redis:6379   -> redis_up 1
+#     arm tls     REDIS_ADDR=rediss://redis:6379  -> "Couldn't connect to redis
+#                                                    instance (rediss://redis:6379)"
+#   The second arm is the control that matters: if `rediss://` were silently ignored,
+#   both arms would have reported 1 and this literal would prove nothing. It changes
+#   the transport, so it is a real control and not decoration.
+#
+#   ONE OPERATIONAL CONSEQUENCE, MEASURED IN THE SAME RUN: with the wrong scheme the
+#   exporter's /metrics endpoint HANGS rather than returning redis_up 0 (curl exited
+#   28, timeout). The alert still fires — a hung scrape makes `up{job="redis"}` 0,
+#   which is the first half of the same expression — but anyone debugging by hand
+#   should expect a hang, not a zero.
+#
+# WHY THIS WORKLOAD HAS **NO** LIVENESS AND **NO** READINESS PROBE.
+#   The compose analog states a reason (:175-178) that does NOT transfer verbatim,
+#   and pretending otherwise would be inheriting a conclusion rather than a fact:
+#   compose's problem is that the image is scratch-based with no shell, so an
+#   EXEC-style healthcheck can never pass. In Kubernetes the kubelet performs
+#   httpGet/tcpSocket probes itself and needs nothing inside the image, so that
+#   specific reason is spent.
+#
+#   The decision stands anyway, for a k8s-specific reason measured above: an httpGet
+#   probe on /metrics HANGS whenever the cache is unreachable, so failureThreshold
+#   would be reached and the kubelet would CrashLoop the exporter — restarting the
+#   one component whose job is to report that the cache is unreachable, and
+#   destroying the `redis_up == 0` signal in the process. A tcpSocket probe would
+#   avoid the hang but would only ever assert that a listener is bound, which the
+#   scrape itself already tells Prometheus. So: no probe, and the real health signal
+#   for this exporter is its own `redis` scrape job — which is exactly what the
+#   compose file concluded, by a different route.
+#
+# NO HPA, NO PDB: singleton, same reasoning as prometheus-deployment.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  labels:
+    app: redis-exporter
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+        component: monitoring
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      containers:
+      - name: redis-exporter
+        # PIN REUSED VERBATIM FROM COMPOSE (D-16). Its horizon row is a dated
+        # manual_review (endoflife.date has no product for it), and
+        # docs/ops/terminal-states.yaml TS-16 records this image's compose entry
+        # drifting from its RUNNING container for 20 days unnoticed.
+        image: oliver006/redis_exporter:v1.58.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9121
+          name: metrics
+          protocol: TCP
+        env:
+        # THE HOST AND THE PORT COME FROM THE SAME app-config KEYS core-java DIALS.
+        # That coupling is the point, and it is #271's lesson applied to a third
+        # consumer: k8s/base/core-java-deployment.yaml injects REDIS_HOST/REDIS_PORT
+        # from redis.host/redis.port, and plan 29-04 derives the NetworkPolicy egress
+        # port from redis.port too. If this exporter carried its own literal, the day
+        # someone repoints the cache the app would move and the exporter would keep
+        # reporting redis_up on the OLD endpoint — a green light for a cache nothing
+        # uses. The password is the only piece that is a secret and it comes from the
+        # Secret; redis-credentials carries a `password` key and nothing else
+        # (k8s/base/secrets-template.yaml.example:143, scripts/staging-secrets.sh),
+        # which is why the host is sourced from app-config rather than from there.
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: redis.host
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: redis.port
+        # $(VAR) expansion of the two envs declared above. Kubernetes resolves this
+        # against variables defined EARLIER in this same list, so the order is
+        # load-bearing and neither may move below this line.
+        #
+        # THE SCHEME IS A LITERAL AND IT IS CORRECT FOR STAGING, NOT FOR EVERY TARGET.
+        # Staging is the managed Azure cache (TLS 6380). PRODUCTION still renders the
+        # base's in-cluster redis.host on plaintext 6379, so `rediss://` there would
+        # fail the handshake. That is stated rather than hidden, and it is the same
+        # shape as plan 29-04's recorded "production RESERVED = 3 is correct today and
+        # wrong the moment production moves to a managed server": production is not
+        # deployed in this phase (D-08 keeps its hostnames unresolvable until Phase
+        # 32), and the cutover change must move the scheme with the port. Making the
+        # scheme derivable needs a new app-config key, which belongs with the plan that
+        # owns configmap.yaml in this wave (29-07), not with a silent second literal
+        # here.
+        - name: REDIS_ADDR
+          value: "rediss://$(REDIS_HOST):$(REDIS_PORT)"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-credentials
+              key: password
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        # NO livenessProbe AND NO readinessProbe — see this file's header for the
+        # measurement behind that. Do not "fix" this by adding an httpGet on
+        # /metrics: it turns a cache outage into a CrashLoop of the exporter that
+        # reports the cache outage.
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  labels:
+    app: redis-exporter
+    component: monitoring
+spec:
+  # ClusterIP only — the `redis` scrape job's target address, never published.
+  type: ClusterIP
+  selector:
+    app: redis-exporter
+  ports:
+  - port: 9121
+    targetPort: 9121
+    protocol: TCP
+    name: metrics
