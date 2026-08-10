@@ -411,6 +411,19 @@ jobs:
           chmod +x ./k8s/scripts/render-golden.sh
           ./k8s/scripts/render-golden.sh
 
+      # DPLY-03 / D-16 (plan 29-06). k8s/base/monitoring/alerts.yml is a
+      # byte-identical COPY of infra/monitoring/prometheus/alerts.yml, because
+      # kustomize refuses to read a configMapGenerator file from outside its own
+      # root and resolves a symlink the same way. This is what makes "one alert
+      # corpus" a build failure instead of an intention: if the two drift, both
+      # Prometheus instances keep evaluating, everything stays green, and the only
+      # consequence is that an alert added in compose never fires in staging.
+      # Exit 1 = drifted, exit 2 = an input is missing or empty (never a pass).
+      - name: Assert the k8s alert corpus has not drifted from infra/monitoring (D-16)
+        run: |
+          chmod +x ./scripts/check-alert-corpus-parity.sh
+          ./scripts/check-alert-corpus-parity.sh
+
   # Job 1c: Branch-parity gate (2026-07-26).
   #
   # Asserts the PR branch contains every commit already on its base branch. A

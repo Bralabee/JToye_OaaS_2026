@@ -226,8 +226,12 @@
 #          one extra shimmed value keeps the total at 8 and a count-only
 #          assertion passes).
 #
-#   LOC-2  The D-09 scale triple. Exactly 3 Deployments at `replicas: 1`, 3 HPAs
-#          at `minReplicas: 1`, 3 PDBs at `minAvailable: 1` — an HPA floor of 3
+#   LOC-2  The D-09 scale triple. EVERY Deployment the base renders must appear in
+#          the local render at `replicas: 1`, and likewise every HPA at
+#          `minReplicas: 1` and every PDB at `minAvailable: 1`. The three expected
+#          COUNTS are read out of the k8s/base render rather than written here as
+#          the literal `3`, which went stale the moment base gained the monitoring
+#          workloads (plan 29-06) — see the note beside the comparison. An HPA floor of 3
 #          would scale a 1-replica Deployment straight back up, and a PDB
 #          minAvailable of 2 over one replica makes the pod undrainable. AND the
 #          local HPA maxReplicas multiset must equal the one k8s/base renders:
@@ -1418,13 +1422,39 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
 
     (( dep_replicas > 0 && hpa_mins > 0 && pdb_mins > 0 )) || parse_fail "LOC-2 found Deployment replicas=$dep_replicas, HPA minReplicas=$hpa_mins, PDB minAvailable=$pdb_mins in the k8s/local render — a zero means the parser is blind and the count assertions would pass vacuously. Fix the parser, do not delete the invariant."
 
+    # THE EXPECTED COUNTS COME FROM THE BASE RENDER, NOT FROM A LITERAL (plan 29-06).
+    #
+    # They were the literal `3` — the three app Deployments, their three HPAs and
+    # their three PDBs. That number went stale the moment k8s/base gained the
+    # monitoring workloads (DPLY-03): the local render legitimately carries six
+    # Deployments, all six correctly at `replicas: 1`, and LOC-2 reported
+    # "expected 3 … found 6 object(s), 6 of them at 1" — an expected-N that is wrong
+    # on a CORRECT tree.
+    #
+    # Deriving the expectation from base is the same discipline the maxReplicas arm
+    # a few lines below already uses, and which this invariant's header calls for by
+    # name ("Compared AGAINST BASE rather than against hardcoded numbers, so a
+    # legitimate future base change carries through instead of going stale").
+    #
+    # IT IS STRICTLY STRONGER THAN THE LITERAL, not a relaxation. The weak form
+    # `ones == total` would pass on a local render that had LOST a Deployment
+    # entirely; comparing the count against base catches that, catches a Deployment
+    # local has and base does not, AND still catches the original defect (a workload
+    # left unscaled). A workload with no HPA or no PDB — every monitoring singleton
+    # is deliberately both, see k8s/base/monitoring/prometheus-deployment.yaml —
+    # simply contributes nothing to those two counts on either side.
+    base_deps=$(awk -F'\t' '$1=="Deployment" && $3=="replicas"'                 "$TMP/base_scale.tsv" | wc -l)
+    base_hpas=$(awk -F'\t' '$1=="HorizontalPodAutoscaler" && $3=="minReplicas"' "$TMP/base_scale.tsv" | wc -l)
+    base_pdbs=$(awk -F'\t' '$1=="PodDisruptionBudget" && $3=="minAvailable"'    "$TMP/base_scale.tsv" | wc -l)
+    (( base_deps > 0 && base_hpas > 0 && base_pdbs > 0 )) || parse_fail "LOC-2 found Deployment=$base_deps, HPA=$base_hpas, PDB=$base_pdbs in the k8s/base render, so the local-vs-base count comparison has no reference and would pass vacuously. Fix the parser, do not delete the invariant."
+
     loc2_bad=0
-    for spec in "Deployment replicas 3 $dep_replicas $dep_ones" \
-                "HorizontalPodAutoscaler minReplicas 3 $hpa_mins $hpa_ones" \
-                "PodDisruptionBudget minAvailable 3 $pdb_mins $pdb_ones"; do
+    for spec in "Deployment replicas $base_deps $dep_replicas $dep_ones" \
+                "HorizontalPodAutoscaler minReplicas $base_hpas $hpa_mins $hpa_ones" \
+                "PodDisruptionBudget minAvailable $base_pdbs $pdb_mins $pdb_ones"; do
         read -r kind field want total ones <<< "$spec"
         if (( total != want || ones != want )); then
-            echo "  FAIL [k8s/local] LOC-2: expected $want $kind object(s) with '$field: 1'; found $total object(s), $ones of them at 1." >&2
+            echo "  FAIL [k8s/local] LOC-2: expected $want $kind object(s) with '$field: 1' (the count k8s/base renders); found $total object(s), $ones of them at 1." >&2
             awk -F'\t' -v k="$kind" -v f="$field" '$1==k && $3==f { print "        " $1 "/" $2 ": " $3 ": " $4 }' "$TMP/loc_scale.tsv" >&2
             loc2_bad=1
         fi
@@ -1448,7 +1478,11 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
         FAILED=1
         loc2_msg="FAIL"
     else
-        loc2_msg="OK (replicas/minReplicas/minAvailable = 1 x3 each; maxReplicas [$loc_max] == base)"
+        # The counts are PRINTED rather than described as "x3": the literal in this
+        # message would have kept saying 3 while the render carried 6, and a summary
+        # line that disagrees with what was measured is how a reviewer stops reading
+        # them (issue #385, the pin-not-at-site label, is the same defect one file over).
+        loc2_msg="OK (replicas x$dep_ones/$base_deps, minReplicas x$hpa_ones/$base_hpas, minAvailable x$pdb_ones/$base_pdbs all = 1; maxReplicas [$loc_max] == base)"
     fi
 
     # ---------------- LOC-3 ----------------

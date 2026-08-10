@@ -1,0 +1,208 @@
+---
+# postgres-exporter-deployment.yaml — pg_up for the MANAGED database (DPLY-03, plan 29-06)
+#
+# WHAT IT IS FOR. Two rules in the corpus read this exporter's series and neither can
+# be satisfied by anything else:
+#   DatabaseDown              up{job="postgres"} == 0 or pg_up == 0     (alerts.yml:85)
+#   DatabaseConnectionsHigh   pg_stat_database_numbackends > 100        (alerts.yml:97)
+# The `or pg_up == 0` half is the whole point of an exporter: it can answer HTTP 200
+# while the database behind it is dead, and alerts.yml:73-82 records that happening.
+#
+# IT POINTS OUT OF THE CLUSTER. D-09 moves Postgres to an Azure Database for
+# PostgreSQL Flexible Server, so this connection leaves the cluster. Plan 29-04
+# already opened the egress for it (core-java-allow spec.egress.4, port from
+# app-config db.port, address from db.egress-cidr) — but that rule selects
+# `app: core-java` pods, NOT this one. THIS pod's egress is part of the observability
+# NetworkPolicy set, which plan 29-07 owns (it replaces the inert
+# app=nonexistent-placeholder in networkpolicies/50-observability.yaml). Under an
+# enforcing CNI this exporter has NO egress at all until that lands; it is recorded
+# here so the resulting pg_up=0 is diagnosed in one step rather than as a database
+# fault.
+#
+# ---------------------------------------------------------------------------------
+# THE DSN IS ASSEMBLED FROM THREE ENVS, AND EVERY CREDENTIAL-BEARING ONE IS valueFrom
+# ---------------------------------------------------------------------------------
+# postgres_exporter accepts EITHER one `DATA_SOURCE_NAME` DSN or the split trio
+# `DATA_SOURCE_URI` + `DATA_SOURCE_USER` + `DATA_SOURCE_PASS`. The split form is used
+# here, and it is strictly better than the DSN the compose analog carries:
+#
+#   1. NO CREDENTIAL IS EVER IN A `value:` FIELD. The username and the password are
+#      each their own env with their own secretKeyRef (T-29-06-02). A single composed
+#      DSN would put a credential REFERENCE inside a literal, which reads to a
+#      reviewer exactly like a credential in a literal.
+#   2. NO URL-ENCODING HAZARD. A password containing `@`, `/` or `:` silently
+#      corrupts a `postgresql://user:pass@host/db` DSN. DATA_SOURCE_PASS is not
+#      parsed as a URL.
+#   3. `sslmode=require` STAYS REVIEWABLE IN THIS REPO (T-29-06-03). It lives in
+#      DATA_SOURCE_URI, which carries no secret, so the transport policy is asserted
+#      by reading the manifest instead of by trusting whatever an operator typed into
+#      a Secret.
+#
+# MEASURED, NOT ASSUMED (2026-08-10, this exact image pin, on this machine):
+#   ARM A  DATA_SOURCE_URI+USER+PASS set, unreachable host, --network none
+#          -> exporter starts, NO "empty dsn" warning: the trio was accepted
+#   ARM B  (control) same command with NONE of the three set
+#          -> level=warn msg="Failed to create PostgresCollector" err="empty dsn"
+#   ARM C  the trio against the live compose Postgres as the RUNTIME role
+#          -> pg_up 1, "Established new database connection", and 5
+#             pg_stat_database_numbackends series present
+#   ARM D  (control) identical rig with a deliberately wrong password
+#          -> pg_up 0, "password authentication failed"
+# Arm B is what makes arm A mean anything (it proves the exporter CAN report the
+# absence), and arm D is what makes arm C mean anything (it proves pg_up CAN be 0).
+#
+# WHICH ROLE, AND THE PRIVILEGE THIS DELIBERATELY DOES NOT TAKE.
+#   `runtime-username` / `runtime-password` — the NOSUPERUSER, non-BYPASSRLS DML role
+#   from the Phase 28 owner/runtime split, created on the managed server by
+#   scripts/staging-secrets.sh. It is the LEAST privileged role that exists in the
+#   postgres-credentials Secret today. Not `username` (that is jtoye_app, the OWNER of
+#   every table and the role Flyway migrates as — a metrics scraper has no business
+#   holding it) and not the compose analog's default, which is the SUPERUSER.
+#   The cost is measured rather than assumed: in ARM C the `wal` collector failed with
+#   `pq: permission denied for function pg_ls_waldir`. No rule in the corpus reads WAL
+#   series, and both series that ARE read (pg_up, pg_stat_database_numbackends) were
+#   present. The end state is a dedicated role with `GRANT pg_monitor`, which is an
+#   operator step on the managed server and belongs with the other role bootstrap in
+#   scripts/staging-secrets.sh — recorded as a follow-up, with the exact symptom above
+#   so it is not re-diagnosed from scratch.
+#
+# NO HPA, NO PDB: a singleton exporter, for the same two reasons written up in
+# prometheus-deployment.yaml (N replicas = N connections against a metered
+# connection budget; a PDB over one replica blocks node drains forever).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter
+  labels:
+    app: postgres-exporter
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-exporter
+  template:
+    metadata:
+      labels:
+        app: postgres-exporter
+        component: monitoring
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      containers:
+      - name: postgres-exporter
+        # PIN REUSED VERBATIM FROM COMPOSE (D-16). endoflife.date has no product for
+        # this exporter, so its horizon row is a dated manual_review rather than an
+        # exemption (infra/dependency-horizons.yaml).
+        image: prometheuscommunity/postgres-exporter:v0.15.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9187
+          name: metrics
+          protocol: TCP
+        env:
+        # The three components of the connection target. Each is its own env so that
+        # DATA_SOURCE_URI below can reference them; Kubernetes expands $(VAR) in a
+        # `value:` using env vars declared EARLIER in this same list, which is why the
+        # order here is load-bearing and why none of these comes from `envFrom`
+        # (envFrom-sourced variables are explicitly not referenceable).
+        #
+        # The connection FAILS LOUDLY if that expansion ever did not happen: the URI
+        # would contain the literal text of the reference, the exporter could not
+        # connect, and pg_up would be 0 — which DatabaseDown fires on. The failure
+        # mode is the alert this plan is wiring up, not a silent wrong number.
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: host
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: port
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: database
+        # sslmode=require REFUSES a plaintext connection rather than silently
+        # downgrading (T-29-06-03). It is the compose default
+        # (POSTGRES_EXPORTER_SSLMODE:-require), it is what Phase 27's deferred-items
+        # §8 records as the deployed default, and Azure Database for PostgreSQL
+        # Flexible Server ships require_secure_transport=on — so this matches the
+        # server rather than hoping about it. It is a literal here ON PURPOSE: a
+        # transport control that lives only inside an operator-supplied Secret cannot
+        # be reviewed from this repository.
+        - name: DATA_SOURCE_URI
+          value: "$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=require"
+        - name: DATA_SOURCE_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: runtime-username
+        - name: DATA_SOURCE_PASS
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: runtime-password
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        # tcpSocket, NOT httpGet on /metrics. A scrape of /metrics opens a DATABASE
+        # connection and runs the whole collector set, so an HTTP probe would add a
+        # third query stream against a metered connection budget (#94) and would turn
+        # a database outage into a CrashLoop — restarting the one component whose job
+        # is to report that outage. A socket check answers "is the exporter process
+        # serving" without touching Postgres, which is exactly the question a probe
+        # should ask.
+        livenessProbe:
+          tcpSocket:
+            port: 9187
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          tcpSocket:
+            port: 9187
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-exporter
+  labels:
+    app: postgres-exporter
+    component: monitoring
+spec:
+  # ClusterIP only. This Service is the `postgres` scrape job's target address; it is
+  # never published, and it carries database-shaped internals.
+  type: ClusterIP
+  selector:
+    app: postgres-exporter
+  ports:
+  - port: 9187
+    targetPort: 9187
+    protocol: TCP
+    name: metrics
