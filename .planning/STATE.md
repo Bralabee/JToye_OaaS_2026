@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Completed 26-09-PLAN.md — **Phase 26 CLOSED 9/9; milestone v2.3 build complete (6/6 phases, 48/48 plans)**
-last_updated: "2026-08-09T14:52:22.535Z"
+stopped_at: Phase 28 context gathered
+last_updated: "2026-08-10T00:42:38.921Z"
 last_activity: 2026-08-09
 progress:
   total_phases: 14
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 66
-  completed_plans: 64
-  percent: 50
+  completed_plans: 66
+  percent: 57
 ---
 
 # Project State
@@ -582,9 +582,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-26T00:45:00.000Z
-Stopped at: Completed 26-09-PLAN.md — **Phase 26 CLOSED 9/9; milestone v2.3 build complete (6/6 phases, 48/48 plans)**
-Resume file: None
+Last session: 2026-08-10T00:42:38.904Z
+Stopped at: Phase 28 context gathered
+Resume file: .planning/phases/28-security-triage-the-dev-prod-boundary/28-CONTEXT.md
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
