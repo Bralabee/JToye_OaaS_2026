@@ -245,6 +245,15 @@ None for this plan. Downstream, plan 29-07 must set `L3_SINK_TO` and `L3_HUMAN_T
 - **29-14** — run the live two-arm probe. If the denied arm connects, that is a real finding about the cluster's CNI, not a gate to relax.
 - **29-15** — the `deploy-staging` step is already added; if that plan reshapes the job for Azure OIDC, keep the step and keep the explicit `--context` resolution.
 
+## Self-Check: PASSED
+
+Claims verified rather than trusted:
+
+- Files exist: `scripts/check-networkpolicy-enforcement.sh` (17193 B, mode 755), `scripts/check-alert-liveness.sh` (42230 B), `.github/workflows/ci-cd.yaml`, `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-03-SUMMARY.md`.
+- Commits exist: `8172fcf1`, `0e6b4a6d`, `caa6f230` — all present in `git log`, all on `worktree-agent-*`, none on a protected ref.
+- No file deletions in any of the three task commits (`git diff --diff-filter=D HEAD~1 HEAD` empty each time).
+- Committed blob of the new gate matches the working tree: `bfdfad2a5ee0f1528925625eb5208f4298e8e1fb`.
+
 ---
 *Phase: 29-deployable-staging-with-its-own-monitoring*
 *Completed: 2026-08-10*
