@@ -24,6 +24,7 @@ import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -695,6 +696,31 @@ public class ShopAccessService {
             }
         }
         throw new ShopAccessDeniedException(null, ShopRole.GROUP_ADMIN);
+    }
+
+    /**
+     * The current request principal's vendor user id, or {@link Optional#empty()} when the
+     * caller cannot be identified as a UUID-subject vendor user: an absent, anonymous or
+     * non-{@code Jwt} principal, or a JWT whose {@code sub} is not a UUID (the declared
+     * machine-client shape).
+     *
+     * <p>Deliberately NOT a rewrite of {@link #requireVendorUserId()}: that method's contract
+     * is to DENY an unidentifiable principal with the typed {@link ShopAccessDeniedException}
+     * 403, and several call sites rely on exactly that. This is the non-throwing sibling, for
+     * the one caller that must make its OWN decision about an unidentifiable principal —
+     * {@code OrderSseService.subscribe()} (#281), which refuses to ATTACH an emitter whose
+     * owner it could never re-check, rather than raising a 403 out of a stream handshake.
+     *
+     * <p>Reads only the ambient security context, performs no writes, and is NOT an
+     * authorization decision: a present user id says "this principal has a UUID subject" and
+     * nothing whatsoever about what that user may read.
+     */
+    public Optional<UUID> currentVendorUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof Jwt jwt) {
+            return Optional.ofNullable(parseSub(jwt));
+        }
+        return Optional.empty();
     }
 
     private UUID currentTenantId() {
