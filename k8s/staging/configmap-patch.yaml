@@ -88,13 +88,33 @@ data:
   notification.unsubscribe.one-click-base-url: "https://api-staging.olajay.co.uk"
 
   # --- Pitfall 7 (Phase 29 / plan 29-02): managed-datastore transport --------
-  # Azure Cache for Redis Basic DISABLES the plaintext 6379 port and serves TLS
-  # on 6380 (ADR-0002 / D-09). These two always move together — TLS against 6379
-  # finds nothing listening, plaintext against 6380 fails the handshake.
-  # Enabling the cache's plaintext port instead would be the wrong fix: it puts
-  # session and cache traffic on the public internet in clear (T-29-02-02).
+  # The managed cache is TLS-only, so `redis.ssl` and `redis.port` always move
+  # together — TLS against a plaintext port finds nothing listening, and
+  # plaintext against a TLS port fails the handshake. Enabling a plaintext port
+  # on the cache instead would be the wrong fix: it puts session and cache
+  # traffic on the public internet in clear (T-29-02-02).
+  #
+  # PORT 10000, NOT 6380 — CHANGED 2026-08-10 (plan 29-10, owner-approved).
+  # The original value was 6380 because ADR-0002 / D-09 chose Azure Cache for
+  # Redis Basic C0. That service CANNOT BE CREATED ANY MORE: `az redis create`
+  # returns
+  #     BadRequest: Azure Cache for Redis is retiring, create Azure Managed
+  #                 Redis instance instead
+  # measured live on 2026-08-10 while provisioning this very estate. Plan 29-01
+  # had recorded that retirement as obligation O-5 dated 2028-09-30, "long
+  # horizon, no action this phase" — the horizon binds TODAY, roughly two years
+  # early, and a dated row could not have caught it because the row's own date
+  # said there was nothing to do.
+  #
+  # The replacement is Azure Managed Redis (Balanced B0, GBP 9.93/mo — cheaper
+  # than the blocked Basic C0's GBP 15.48), and it serves TLS on **10000**.
+  #
+  # THIS VALUE IS LOAD-BEARING BEYOND THE APP. `k8s/staging/kustomization.yaml`
+  # feeds it via `replacements:` into the `core-java-allow` NetworkPolicy egress
+  # rule. The staging cluster runs an ENFORCING Cilium dataplane, so a wrong
+  # port here is not a warning — every cache call is silently dropped.
   redis.ssl: "true"
-  redis.port: "6380"
+  redis.port: "10000"
 
   # Assumption A6: staging asks for `require`, so a plaintext connection is
   # REFUSED rather than silently downgraded. Azure Database for PostgreSQL

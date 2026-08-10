@@ -7,9 +7,17 @@
 # `redis_up` was live and referenced by no rule at all.
 #
 # rediss://, NOT redis://, AND THE SCHEME IS LOAD-BEARING (T-29-06-03).
-#   Azure Cache for Redis Basic DISABLES the plaintext 6379 port and serves TLS on
-#   6380 (ADR-0002 / D-09), which is why k8s/staging/configmap-patch.yaml sets
-#   redis.port: "6380" and redis.ssl: "true" together.
+#   The managed cache is TLS-ONLY with no plaintext port, which is why
+#   k8s/staging/configmap-patch.yaml sets redis.port and redis.ssl: "true"
+#   together.
+#
+#   THE STAGING PORT IS 10000, NOT 6380 (changed 2026-08-10, plan 29-10).
+#   ADR-0002 / D-09 originally chose Azure Cache for Redis Basic, which served
+#   TLS on 6380. That service can no longer be created — `az redis create`
+#   returns BadRequest telling you to use Azure Managed Redis instead — and the
+#   replacement serves TLS on 10000. The scheme argument below is unaffected:
+#   Managed Redis is TLS-only too, so `rediss://` is if anything more strictly
+#   required than before.
 #
 #   MEASURED rather than assumed (2026-08-10, this exact image pin, against the live
 #   plaintext compose Redis, so the two arms differ ONLY in the scheme):
@@ -111,7 +119,10 @@ spec:
         # load-bearing and neither may move below this line.
         #
         # THE SCHEME IS A LITERAL AND IT IS CORRECT FOR STAGING, NOT FOR EVERY TARGET.
-        # Staging is the managed Azure cache (TLS 6380). PRODUCTION still renders the
+        # Staging is the managed Azure cache (Azure Managed Redis, TLS on 10000 — see
+        # the header; it was 6380 until 2026-08-10). The PORT itself is read from
+        # app-config just above, so it follows the overlay and needed no edit when that
+        # number moved. PRODUCTION still renders the
         # base's in-cluster redis.host on plaintext 6379, so `rediss://` there would
         # fail the handshake. That is stated rather than hidden, and it is the same
         # shape as plan 29-04's recorded "production RESERVED = 3 is correct today and

@@ -46,17 +46,22 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       timeout: 2000ms
-      # Phase 29 / plan 29-02, Pitfall 7. Azure Cache for Redis Basic DISABLES the
-      # plaintext 6379 port and serves TLS on 6380, so a managed cache is
-      # unreachable without this. Until now the whole spring.data.redis block had
-      # host/port/password/timeout/pool and no `ssl:` at all — a capability absent
-      # from BOTH the manifests and the config, which is why check-env-contract.sh
-      # could not see the gap (it compares the two sides; neither side had it).
+      # Phase 29 / plan 29-02, Pitfall 7. The managed cache is TLS-ONLY with no
+      # plaintext port, so it is unreachable without this. Until now the whole
+      # spring.data.redis block had host/port/password/timeout/pool and no `ssl:`
+      # at all — a capability absent from BOTH the manifests and the config,
+      # which is why check-env-contract.sh could not see the gap (it compares the
+      # two sides; neither side had it).
       #
       # DEFAULT false, so compose is byte-identical: local Redis speaks plaintext
-      # on 6379 and nothing about it changes. Staging sets REDIS_SSL=true and
-      # redis.port 6380 together — enabling the cache's plaintext port instead is
-      # the wrong fix and is rejected here in writing (threat T-29-02-02).
+      # on 6379 and nothing about it changes. Staging sets REDIS_SSL=true and its
+      # own redis.port together — enabling a plaintext port on the managed cache
+      # instead is the wrong fix and is rejected here in writing (T-29-02-02).
+      #
+      # The staging port moved 6380 -> 10000 on 2026-08-10 (plan 29-10): Azure
+      # Cache for Redis can no longer be created, and its replacement, Azure
+      # Managed Redis, serves TLS on 10000. Nothing here encodes either number —
+      # the port arrives as REDIS_PORT, which is the whole point of this block.
       ssl:
         enabled: ${REDIS_SSL:false}
       lettuce:

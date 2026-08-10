@@ -173,7 +173,8 @@ commonAnnotations:
 # D-09 moves Postgres and Redis OUT of the cluster. The two in-cluster rules
 # address their peer by `namespaceSelector: jtoye-infrastructure`, which a
 # managed server is not in, so under an enforcing CNI they do not apply to it and
-# the 443-only public rule denies both 5432 and 6380. Two new rules, appended at
+# the 443-only public rule denies both the Postgres and the Redis port. Two new
+# rules, appended at
 # stable indices so no existing index moved, carry one port and one peer each:
 #
 #   NetworkPolicy       index  what                     port <-        cidr <-
@@ -182,13 +183,16 @@ commonAnnotations:
 #   pg-backup-allow     4      managed Postgres         db.port        db.egress-cidr
 #
 # `redis.port` being routed here is the "clean follow-up" the comment in
-# networkpolicies/20-core-java.yaml named by hand — taken up now because Azure
-# Cache Basic serves TLS on 6380 and disables plaintext 6379, so the value
-# genuinely varies per environment for the first time.
+# networkpolicies/20-core-java.yaml named by hand — taken up now because the
+# managed cache is TLS-only on a non-default port while compose stays on
+# plaintext 6379, so the value genuinely varies per environment for the first
+# time.
 #
 # EVERY ONE OF THESE ALSO HAS TO BE REPEATED IN EVERY OVERLAY, for the same
-# measured reason as db.port. Staging patches redis.port to 6380 in its own
-# configmap-patch.yaml; without staging's own pass the staging render would emit
+# measured reason as db.port. Staging patches redis.port to 10000 in its own
+# configmap-patch.yaml (it was 6380 until 2026-08-10, when Azure Cache for Redis
+# stopped being creatable and plan 29-10 moved staging to Azure Managed Redis);
+# without staging's own pass the staging render would emit
 # the BASE 6379 and the cache would be unreachable — the #271 trap exactly, and
 # the fail-direction arm plan 29-04 ran to prove this repetition is load-bearing.
 # =============================================================================

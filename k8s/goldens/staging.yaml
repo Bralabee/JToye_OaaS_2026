@@ -47,7 +47,7 @@ data:
   rabbitmq.port: "5672"
   redis.egress-cidr: 0.0.0.0/0
   redis.host: redis-cluster.jtoye-infrastructure.svc.cluster.local
-  redis.port: "6380"
+  redis.port: "10000"
   redis.ssl: "true"
   s3.backup.bucket: jtoye-db-backups
   s3.backup.endpoint: ""
@@ -2546,7 +2546,7 @@ spec:
         - 172.16.0.0/12
         - 192.168.0.0/16
   - ports:
-    - port: 6380
+    - port: 10000
       protocol: TCP
     to:
     - ipBlock:

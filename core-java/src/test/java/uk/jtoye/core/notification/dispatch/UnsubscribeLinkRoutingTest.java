@@ -310,8 +310,8 @@ class UnsubscribeLinkRoutingTest {
                 Map.of("REDIS_SSL", "true", "DB_SSL_MODE", "require"));
 
         assertThat(env.getProperty("spring.data.redis.ssl.enabled"))
-                .as("Azure Cache for Redis Basic disables plaintext 6379 and serves TLS on 6380, so this "
-                        + "must be switchable by configuration alone")
+                .as("the managed cache (Azure Managed Redis since 2026-08-10) is TLS-only with no "
+                        + "plaintext port, so this must be switchable by configuration alone")
                 .isEqualTo("true");
         assertThat(env.getProperty("spring.datasource.url")).contains("sslMode=require");
     }

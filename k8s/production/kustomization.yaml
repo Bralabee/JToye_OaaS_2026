@@ -79,8 +79,9 @@ replicas:
 # backup, with a network denial that reads like an application fault.
 #
 # Production being a no-op is exactly why it is NOT evidence that the block
-# works. Staging is the target that exercises it (redis.port 6380), and that is
-# where plan 29-04 ran the fail-direction arm.
+# works. Staging is the target that exercises it (redis.port 10000 — it was 6380
+# until plan 29-10 moved staging to Azure Managed Redis on 2026-08-10), and that
+# is where plans 29-04 and 29-10 ran the fail-direction arm.
 replacements:
   - source:
       kind: ConfigMap
