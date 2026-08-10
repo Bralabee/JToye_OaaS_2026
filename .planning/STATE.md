@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 29 executing — wave 1 complete (29-01/02/03 merged, gates green), wave 2 dispatched (29-04, 29-05)
-last_updated: "2026-08-10T21:30:00.000Z"
+stopped_at: Phase 29 executing — waves 1-2 complete (5/16 merged, gates green), wave 3 dispatched (29-06 monitoring, 29-10 provisioning checkpoint)
+last_updated: "2026-08-10T22:35:00.000Z"
 last_activity: 2026-08-10
 progress:
   total_phases: 14
@@ -26,7 +26,13 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 29
-Plan: 3 of 16 (wave 1 of 9 complete 2026-08-10: 29-01 operator decisions recorded — owner chose
+Plan: 5 of 16 (wave 2 complete 2026-08-10: 29-04 NetPol egress rules per-datastore + INV-7 ipBlock
+arm [was measurably blind, recorded before fixed] + connection-budget gate with control; 29-05 three
+provisioning scripts ~1.9k lines, zero cloud mutation proven 10→10, EXIT-trap exit-code rewrite
+found+fixed, jtoye_app managed-server bootstrap added [STEP 4a]. ⚠ ambient az default on this host
+is the EMPLOYER subscription — pinning is load-bearing. Blocking creds for 29-10: PG admin pair,
+Gmail app password+From/To, AWS media+backup keys, Netlify DNS access.)
+(wave 1 of 9 complete 2026-08-10: 29-01 operator decisions recorded — owner chose
 scale-to-zero for the snackpass estate [execution owned by 29-10], 3× B2s node pool kept, PG
 free-window horizon row assigned to 29-09; ADR-0002 Accepted. 29-02 staging overlay fixed [client-id,
 scale patch, Redis TLS, #592]. 29-03 gates cluster-capable + new NetPol probe wired [36 gates/6

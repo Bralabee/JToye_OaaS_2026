@@ -342,7 +342,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 3/16 | In Progress | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 5/16 | In Progress | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
@@ -536,7 +536,7 @@ and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-of
 were settled in the 2026-08-10 discussion** (`29-CONTEXT.md`): hosting = AKS in `jtoye-rg` (D-01),
 domain = `olajay.co.uk` (D-05), ADR-0002 owner-signed as proposed (D-09).
 **Requirements**: DPLY-01, DPLY-02, DPLY-03, DPLY-04, DPLY-05
-**Plans:** 3/16 plans executed
+**Plans:** 5/16 plans executed
 **Success Criteria** (what must be TRUE):
 
   1. Staging serves a **real Keycloak vendor login through the ingress to a dashboard**, over a
@@ -590,8 +590,8 @@ the same commit as the edit that caused it.
 
 **Wave 2** *(the egress fix and the scripts that create the estate)*
 
-- [ ] 29-04-PLAN.md (Wave 2) — **Blocker D**: under an enforcing CNI the current policies deny **every** managed datastore (443-only public rule, RFC1918 `except[]`, no `jtoye-infrastructure` namespace) — #271's failure shape recurring through a different door. Per-datastore single-port rules, `redis.port` routed exactly as `db.port` is, INV-7 moved in the same commit, and `check-connection-math.sh` taught to read the managed server's real limits
-- [ ] 29-05-PLAN.md (Wave 2, parallel) — the three bring-up scripts, each refusing the employer subscription and the employer kube context: `azure-staging-provision.sh`, `staging-secrets.sh` (fail loud BY NAME, DB-side BYPASSRLS verification), `staging-bootstrap.sh` (digest-pinned cert-manager/operator/ingress-nginx outside `k8s/`, with Pitfall 5's `allow-snippet-annotations` handled rather than discovered)
+- [x] 29-04-PLAN.md (Wave 2) — **Blocker D**: under an enforcing CNI the current policies deny **every** managed datastore (443-only public rule, RFC1918 `except[]`, no `jtoye-infrastructure` namespace) — #271's failure shape recurring through a different door. Per-datastore single-port rules, `redis.port` routed exactly as `db.port` is, INV-7 moved in the same commit, and `check-connection-math.sh` taught to read the managed server's real limits
+- [x] 29-05-PLAN.md (Wave 2, parallel) — the three bring-up scripts, each refusing the employer subscription and the employer kube context: `azure-staging-provision.sh`, `staging-secrets.sh` (fail loud BY NAME, DB-side BYPASSRLS verification), `staging-bootstrap.sh` (digest-pinned cert-manager/operator/ingress-nginx outside `k8s/`, with Pitfall 5's `allow-snippet-annotations` handled rather than discovered)
 
 **Waves 3-6** *(the manifests, serialised on the goldens; 29-10 runs in parallel on the cloud side)*
 
