@@ -33,6 +33,52 @@ resources:
   - networkpolicies/30-edge-go.yaml
   - networkpolicies/40-datastores.yaml
   - networkpolicies/50-observability.yaml
+  # Monitoring (DPLY-03 / plan 29-06) — closes Phase 27 deferred-items.md §5,
+  # "everything Phase 27 built is compose-scoped by construction", which is why a
+  # staging deploy was wholly unmonitored: k8s/ shipped ZERO monitoring manifests.
+  #
+  # THESE ARE RESOURCE ENTRIES, NOT A NESTED OVERLAY, and that is a measured
+  # decision rather than a style one. k8s/scripts/check-no-plaintext-secrets.sh:37
+  # and k8s/scripts/check-render-invariants.sh:435 both discover their render
+  # targets with `find k8s -maxdepth 2 -name kustomization.yaml`. A standalone
+  # k8s/monitoring/ overlay would therefore become a FOURTH render target
+  # containing zero NetworkPolicies — and INV-7's `pol_seen > 0 || parse_fail`
+  # guard reads zero policies as a BLIND PARSER, not as a pass. Same shape, same
+  # reason, as networkpolicies/ directly above.
+  - monitoring/prometheus-config.yaml
+
+# =============================================================================
+# THE ALERT CORPUS — one corpus, enforced rather than intended (D-16 / plan 29-06)
+#
+# k8s/base/monitoring/alerts.yml is a BYTE-IDENTICAL COPY of
+# infra/monitoring/prometheus/alerts.yml, which is canonical. It is a copy and not
+# a reference because kustomize refuses to read a generator file from outside its
+# own kustomization root ("security; file is not in or below the current
+# directory"), and it resolves a symlink the same way. There is no supported
+# escape, so "one corpus" is made true by scripts/check-alert-corpus-parity.sh —
+# an md5 byte-equality gate wired into the k8s-validate job — rather than by
+# intention. It has been demonstrated at exit 0 (identical), 1 (drifted) and 2
+# (missing or empty input).
+#
+# THE COPY DELIBERATELY CARRIES NO HEADER OF ITS OWN. A "this is a copy" banner
+# inside it would make the two files differ by construction, so the parity gate
+# could never pass; adding the banner to BOTH would change the canonical file's
+# md5 and VOID check-alert-liveness.sh's L-0 against every already-running compose
+# Prometheus (a single-file bind mount detaches on inode change). The statement
+# lives here and in the gate instead.
+#
+# GENERATED, SO IT CARRIES A CONTENT HASH — the opposite choice from
+# monitoring/prometheus-config.yaml above, on purpose. Prometheus runs without
+# `/-/reload`, so a config change needs a pod restart either way; a hashed
+# ConfigMap name makes kustomize roll the Deployment automatically when the RULES
+# change, which is the change most likely to be made by someone who does not know
+# that. The scrape config stays a plain ConfigMap because it changes rarely and
+# its restart step is documented in its own header.
+# =============================================================================
+configMapGenerator:
+  - name: prometheus-alerts
+    files:
+      - alerts.yml=monitoring/alerts.yml
 
 # Common labels applied to all resources.
 #
