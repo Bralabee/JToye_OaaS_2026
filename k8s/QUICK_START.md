@@ -8,6 +8,93 @@
 > the nginx security-header snippet, NetworkPolicy enforcement), so a local pass is never mistaken
 > for a production guarantee.
 
+> **AKS STAGING has its own scripted path — see [Staging on AKS](#staging-on-aks-scripted)
+> below.** The hand-typed `kubectl create secret` recipe further down is the PRODUCTION path and is
+> kept as-is. Do not use it for staging: it has no subscription guard, no kube-context guard, no
+> pinned digests for the third-party installs, and no DB-side read-back of the BYPASSRLS role.
+
+---
+
+## Staging on AKS (scripted)
+
+Three scripts, run in this order. Each is idempotent, guard-first, and refuses rather than
+corrects. **None of them may be run against the ambient Azure subscription or the ambient kubectl
+context** — measured 2026-08-10, both defaults on the current operator host point at *employer*
+infrastructure (`Prod - HS2 Ltd` and the `sipbihs2aks` cluster), so `--subscription` and
+`--context` are always explicit and a forbidden target is refused even when named on purpose.
+
+```bash
+# 1. The Azure estate. --dry-run prints every az command and executes none.
+#    Every SKU, count, version and ceiling is READ from
+#    .planning/phases/29-.../29-OPERATOR-DECISIONS.md — a missing key refuses by name.
+scripts/azure-staging-provision.sh --dry-run
+scripts/azure-staging-provision.sh          # for real; needs PG_ADMIN_USER + PG_ADMIN_PASSWORD
+
+# Copy the printed EVIDENCE BLOCK. Later steps need facts they cannot infer:
+# the AKS node resource group, the static ingress IP, the Postgres FQDN and the
+# AKS egress IP (the only address the Postgres firewall admits).
+
+# 2. Resolve the staging kube context, explicitly. Never `az aks get-credentials`
+#    without --context: it would overwrite or shadow the employer context.
+az aks get-credentials -g jtoye-rg -n jtoye-staging-aks --context jtoye-staging --subscription <owner-sub-id>
+
+# 3. Platform components, from PINNED, sha256-VERIFIED release artefacts.
+#    Order is load-bearing: cert-manager first, because the RabbitMQ operator
+#    manifest contains 3 cert-manager.io/v1 objects and fails without its CRDs.
+scripts/staging-bootstrap.sh --verify-artefacts-only          # digests only, no cluster needed
+scripts/staging-bootstrap.sh --context jtoye-staging \
+  --node-resource-group <from evidence block> \
+  --static-ip-name jtoye-staging-ingress-ip
+
+# 4. Database roles + Secrets, out-of-band.
+scripts/staging-secrets.sh --context jtoye-staging --roles-only   # roles, then read them back
+scripts/staging-secrets.sh --context jtoye-staging                # roles + every Secret
+scripts/staging-secrets.sh --context jtoye-staging --verify-roles-only   # mutates nothing
+
+# 5. The four *-staging.olajay.co.uk A records, by hand at Netlify DNS (D-07),
+#    all pointing at the static ingress IP. RECORDS FIRST, TLS SAN SECOND — all
+#    SANs share one certificate order and a failed challenge fails the WHOLE order.
+
+# 6. The application.
+kubectl --context jtoye-staging apply -k k8s/staging
+```
+
+### Staging secrets mechanism — DECIDED, with the deferral reason recorded
+
+**Staging uses plain Kubernetes Secrets, created out-of-band by
+`scripts/staging-secrets.sh`.** Nothing it creates is ever a kustomize resource, so
+`k8s/scripts/check-no-plaintext-secrets.sh` stays satisfied — the manifests still ship no
+`kind: Secret`.
+
+**#100 and #300 (sealed-secrets) are DEFERRED, not dropped.** The reason: a single-operator
+staging cluster gains very little from a sealing controller, and pays for it immediately with a
+controller to run, a private keypair that must itself be backed up (and whose loss makes every
+committed ciphertext undecryptable), and a second failure mode on day one — a pod stuck in
+`CreateContainerConfigError` because the controller had not yet unsealed, which looks exactly like
+a missing Secret. The value sealed-secrets adds is *committing ciphertext to git for a team*, and
+there is no team here yet. Revisit when either (a) a second operator needs to deploy, or (b)
+production cutover lands (Phase 32), whichever is first. This reason is carried into the DPLY-02
+disposition sweep in plan 29-16.
+
+What is NOT deferred, because it is the part that actually protects the credentials: values never
+appear in a script, a commit message or any tracked artifact (GLOBAL_RULE_6); they come from the
+environment along the path `docs/runbooks/credential-rotation.md` defines; and the bootstrap
+refuses **by name** before creating anything if one is missing, because a half-bootstrapped cluster
+is worse than one that refused to start.
+
+### What a green staging bring-up still does not prove
+
+- **That the security headers are actually served.** `nginx.ingress.kubernetes.io/configuration-snippet`
+  is silently inert unless the controller ConfigMap sets *both* `allow-snippet-annotations: "true"`
+  and `annotations-risk-level: "Critical"` (`configuration-snippet` is classified Critical while the
+  risk level defaults to High). `scripts/staging-bootstrap.sh` sets both and records the
+  CVE-2021-25742 acceptance in its header — but verify on the **response**, never the object:
+  `curl -sI https://app-staging.olajay.co.uk | grep -i strict-transport-security`.
+- **That backups contain rows.** The `jtoye_backup` BYPASSRLS role is read back from `pg_roles` by
+  the bootstrap, but a dump with rows is DPLY-04's two-arm drill, not this.
+- **That NetworkPolicies are enforced.** That is `scripts/check-networkpolicy-enforcement.sh`,
+  control arm first.
+
 ## TL;DR - Deploy to Production in 5 Minutes
 
 ### Prerequisites Installed?
