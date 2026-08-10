@@ -1,0 +1,100 @@
+# =============================================================================
+# STAGING scale minimums (Phase 29 / plan 29-02, Pitfall 6)
+#
+# WHAT GOES WRONG WITHOUT THIS FILE
+#   kustomization.yaml declares `replicas: 2` for core-java, edge-go and
+#   frontend, and that number is what every reader assumes staging runs. It is
+#   not. The kustomize `replicas:` transformer reaches ONLY Deployment /
+#   ReplicationController / ReplicaSet / StatefulSet — it does NOT touch
+#   HorizontalPodAutoscaler or PodDisruptionBudget
+#   [kubectl.docs.kubernetes.io/references/kustomize/kustomization/replicas/,
+#   verified by render in 26-RESEARCH.md P-1]. The base HPAs therefore keep
+#   their own floors, and an HPA floor WINS: it scales the Deployment straight
+#   back up past the overlay's intent.
+#
+# MEASURED ON THE PRE-CHANGE RENDER (`kubectl kustomize k8s/staging`, 2026-08-10)
+#   minReplicas:  3 (core-java) / 5 (edge-go) / 3 (frontend)   = 11 app pods
+#   minAvailable: 2 (core-java) / 3 (edge-go) / 2 (frontend)
+#   maxReplicas: 10 / 20 / 10
+#
+#   So staging schedules ELEVEN app pods, not the six `replicas: 2` implies —
+#   roughly 2.6 vCPU and 4.1 GiB of requests before a single platform service
+#   (Keycloak, Prometheus, Grafana, Alertmanager, exporters) is scheduled.
+#   Nothing inside the ~£150/mo estate ceiling (D-03) fits that.
+#
+#   The PDBs are the second, quieter half. minAvailable 3 over an edge-go
+#   Deployment of 2 replicas is UNSATISFIABLE: every voluntary eviction — node
+#   drain, rollout, node-pool upgrade — is blocked forever, because evicting any
+#   pod would breach a budget that the replica count cannot satisfy even at full
+#   health. core-java and frontend sit at minAvailable 2 over 2, which is the
+#   same trap with zero margin rather than negative margin.
+#
+# WHY THIS MECHANISM
+#   kustomize matches each document to its target by GVK + name, so ONE
+#   `patches: - path: scale-patch.yaml` entry covers all six objects. No
+#   JSON6902 patch, no selectors, no target: block (26-RESEARCH.md P-2). This is
+#   the second of the two scaling mechanisms; `replicas:` in kustomization.yaml
+#   is the first, and neither is sufficient alone.
+#
+#   Phase 26 hit this exact defect and built k8s/local/scale-patch.yaml for it.
+#   Staging had no equivalent, so the measured 11-pod render survived every gate
+#   the platform has — the render is valid, and no invariant asserts a
+#   relationship between an overlay's `replicas:` and its inherited HPA floor.
+#
+# maxReplicas IS DELIBERATELY UNTOUCHED — DO NOT "TIDY" IT
+#   HPA maxReplicas is an INPUT to the Postgres connection budget:
+#   k8s/scripts/check-connection-math.sh reads it from
+#   k8s/base/core-java-deployment.yaml and asserts
+#   maxReplicas x DB_POOL_SIZE (+ Keycloak, exporter, healthcheck, pg-backup)
+#   fits max_connections with >= 20% headroom. Lowering it here would make the
+#   staging render disagree with the budget that gate actually checks, so the
+#   render would no longer prove the same arithmetic. It also buys nothing: a
+#   ceiling is not a cost, only a floor is. Scaling UP under real load is the
+#   behaviour staging is meant to rehearse.
+#
+# NOTHING ELSE IS SET IN ANY DOCUMENT BELOW. Each patch carries exactly the one
+# field it changes, so a base change to metrics, behaviour or selectors flows
+# through to staging untouched.
+# =============================================================================
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: core-java-hpa
+spec:
+  minReplicas: 1
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+spec:
+  minReplicas: 1
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: edge-go-hpa
+spec:
+  minReplicas: 1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: core-java-pdb
+spec:
+  minAvailable: 1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+spec:
+  minAvailable: 1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: edge-go-pdb
+spec:
+  minAvailable: 1

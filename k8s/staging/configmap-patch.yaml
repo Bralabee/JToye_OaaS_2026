@@ -30,14 +30,46 @@ data:
   # diverge without a manifest edit.
   keycloak.public.issuer.uri: "https://auth-staging.olajay.co.uk/realms/jtoye-staging"
 
-  # keycloak.client-id is DELIBERATELY NOT OVERRIDDEN here (plan 26-08). The base
-  # value is the byte-identical string `frontend` that used to be hardcoded in
-  # frontend-deployment.yaml, so staging keeps authenticating as exactly the same
-  # OIDC client it always has — the key exists so it CAN be changed per
-  # environment without patching the Deployment, not because staging needs a
-  # different value. Only k8s/local patches it (to `core-api`, the jtoye-dev
-  # realm's actual client). Adding a redundant `keycloak.client-id: "frontend"`
-  # line here would be noise, not documentation.
+  # --- The realm's ACTUAL OIDC client (plan 29-02 / Blocker A) ---------------
+  #
+  # WHAT STOOD HERE BEFORE, AND WHY IT IS GONE (not silently deleted).
+  #   Until plan 29-02 this block said keycloak.client-id was "DELIBERATELY NOT
+  #   OVERRIDDEN here (plan 26-08)", on the reasoning that the base value
+  #   `frontend` was byte-identical to the literal once hardcoded in
+  #   frontend-deployment.yaml, so staging "keeps authenticating as exactly the
+  #   same OIDC client it always has", and that a redundant restatement of the
+  #   base value "would be noise, not documentation".
+  #
+  #   That reasoning was sound about CONTINUITY and wrong about CORRECTNESS. It
+  #   preserved a value that never worked: staging had never completed an
+  #   ingress login, so "the same client it always has" was the same client that
+  #   had never authenticated anyone. 26-08 was scoped to the local overlay and
+  #   fixed `frontend` only there; staging inherited the broken value untouched.
+  #
+  # THE MEASUREMENT, RE-RUN NOW RATHER THAN QUOTED FROM RESEARCH (2026-08-10):
+  #     rg -uu --count-matches --include-zero '"clientId" : "frontend"' \
+  #        infra/keycloak/realm-export.template.json   ->  0
+  #   POSITIVE CONTROL, because an already-0 grep is a statement about the
+  #   PATTERN until something proves the pattern can match at all:
+  #     rg -uu --count-matches --include-zero '"clientId" : "core-api"' \
+  #        infra/keycloak/realm-export.template.json   ->  1
+  #   The complete client list in that template is: account, account-console,
+  #   admin-cli, broker, core-api, edge-api, integration-catalog-ro,
+  #   integration-orders-rw, realm-management, security-admin-console. There is
+  #   no `frontend` client in any realm this repository ships.
+  #
+  # WHY NO GATE CAUGHT IT. The render is valid, the key exists, and the value is
+  # a non-empty string — every static assertion staging has is satisfied by a
+  # client id that does not exist. The failure is only observable at the
+  # authorize request, which is DPLY-01's first step, which is why this is a
+  # blocker rather than a tidy-up.
+  #
+  # `core-api` is the realm's confidential browser-flow client — the same value
+  # .env's KEYCLOAK_CLIENT_ID names and the same one k8s/local patches. Adding a
+  # `frontend` client to the realm template instead is NOT this plan's fix: the
+  # realm parameterisation (staging realm name, redirect URIs, web origins)
+  # belongs to plan 29-08, and is named there so it is not lost.
+  keycloak.client-id: "core-api"
 
   # Single staging platform origin. NOT a wildcard. Read by CorsConfig AND
   # WebSocketConfig (the KDS STOMP handshake).

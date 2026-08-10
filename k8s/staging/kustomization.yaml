@@ -58,6 +58,12 @@ images:
 # behaviour-preserving replacement for the deprecated `patchesStrategicMerge`.
 patches:
   - path: configmap-patch.yaml
+  # HPA minReplicas + PDB minAvailable. The `replicas:` list below reaches ONLY
+  # Deployments, so WITHOUT this patch the base HPA floors (3/5/3) win and
+  # staging schedules 11 app pods rather than the 6 that list implies — and the
+  # edge-go PDB (minAvailable 3 over 2 replicas) makes every voluntary eviction
+  # permanently impossible. See scale-patch.yaml for the measured render.
+  - path: scale-patch.yaml
   # Ingress hostnames. WITHOUT these two, staging rendered the PRODUCTION hosts
   # (api./app.) inside namespace jtoye-staging while configmap-patch.yaml told the
   # app it lived at api-staging./app-staging. — so the app was configured for hosts
