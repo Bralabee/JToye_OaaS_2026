@@ -1,6 +1,6 @@
 # ADR-0002: Managed services vs in-cluster manifests for stateful infrastructure
 
-**Status:** Proposed (2026-07-12) — needs owner sign-off before #101 implementation starts
+**Status:** Accepted (2026-08-10) — signed by the owner as proposed, in the Phase 29 discussion; recorded as D-09 in `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-CONTEXT.md`
 **Refs:** #101 (no PITR / no DB HA), #98 (observability), #100 (sealed secrets), SYSTEM_DESIGN_V2 §3.2/§7.1
 
 ## Context
@@ -76,3 +76,92 @@ own if the question is still open by then.
 
 **Status deliberately unchanged.** Resolving the operator question needs owner sign-off, which is a
 human decision and not an agent's to record.
+
+## 2026-08-10 — Signed, and the open question above is closed (Phase 29, plan 29-01)
+
+The owner signed this ADR **as proposed** during the Phase 29 discussion on 2026-08-10, recorded as
+decision **D-09** in `.planning/phases/29-deployable-staging-with-its-own-monitoring/29-CONTEXT.md`.
+The Status line at the top of this file now reads Accepted. **DPLY-04 (PITR per #101) is thereby
+unblocked by a record rather than by an assumption.**
+
+Two things are deliberately *not* rewritten, per this file's own convention that dated records are
+appended rather than edited: the `## Decision (proposed)` heading keeps its original wording as the
+historical artefact it is, and the 2026-07-29 section above is left byte-identical even though the
+question it raises is answered here.
+
+### The `rabbitmq-k8s` open question is closed
+
+The 2026-07-29 section recorded that the staging/production broker's version was "unknown and
+unknowable from this checkout", tracked as the `rabbitmq-k8s` row in `infra/dependency-horizons.yaml`
+with `pin: unknown`, `owner: UNASSIGNED` and a `manual_review` expiring **2026-10-26**. The
+in-cluster route this ADR proposed is now signed, which answers it:
+
+- **RabbitMQ cluster operator v2.22.3** (released 2026-07-17), image
+  `ghcr.io/rabbitmq/cluster-operator:2.22.3`, vendored as the single `cluster-operator.yml` manifest
+  into namespace `rabbitmq-system` — no Helm, consistent with D-16.
+- The broker itself is pinned to **`rabbitmq:4.3.4-management-alpine`**, the same version the
+  dev/compose stack moved to on 2026-07-29. The STOMP plugin is enabled through the operator's
+  `additionalPlugins`, which is precisely the "explicit control of the STOMP plugin" this ADR gave
+  as the reason to keep RabbitMQ in-cluster rather than managed.
+
+So the version stops being a property of infrastructure nobody owns and becomes **a declared,
+in-repo pin** — which is what the horizon row was waiting for. Note that the operator manifest
+carries `cert-manager.io/v1` `Certificate` and `Issuer` objects, so **cert-manager (v1.21.1) must be
+installed first** or the operator apply fails on unknown kinds.
+
+### PostgreSQL **16** is a requirement of this decision, not a preference
+
+Choosing managed PostgreSQL has a consequence that was not visible when this ADR was drafted, and it
+is recorded here rather than left to surface as a SKU argument in a provisioning script.
+
+`infra/backups/create-backup-role.sql` creates `jtoye_backup` with **`BYPASSRLS`**, and its own
+header notes that BYPASSRLS can only be granted by a superuser. On Azure Database for PostgreSQL
+Flexible Server the admin login `azure_pg_admin` is a **pseudo**-superuser — Microsoft retains the
+real one. Microsoft documents that on **PostgreSQL 15 and earlier you cannot create non-admin users
+with BYPASSRLS**, and that **PostgreSQL 16 removed the superuser requirement**, so an
+`azure_pg_admin`-created role can hold it from PG16 onward.
+
+The failure mode if this is got wrong is quiet and severe: without `jtoye_backup`, the logical dump
+runs as a role subject to FORCE RLS and captures **zero rows from every tenant-scoped table**. The
+backup still exists, still has a plausible size, and still passes `pg_restore --list` — a green
+backup over an empty database. That is exactly the defect `create-backup-role.sql` was written to
+prevent, and exactly what DPLY-04's arm A exists to catch.
+
+**This is a deliberate, staging-only version skew, and it is written down rather than slipped in.**
+It diverges from two places that say PostgreSQL 15:
+
+- `CLAUDE.md`'s tech-stack line, which states **PostgreSQL 15** for the platform; and
+- the **`postgres:15-alpine`** pin that docker-compose uses for local development and that
+  `infra/dependency-horizons.yaml` tracks.
+
+Local dev is unaffected and stays on 15 (this ADR's original "Local dev is unaffected — docker-compose
+remains the dev stack" consequence still holds). The alternative — moving compose to 16 — is a real
+option but is its own change with its own test surface, and is not folded in here. Corroboration
+that 16 is the natural default anyway: the pre-existing `snackpass-pg` Flexible Server in the same
+resource group already reports `version: 16` `[VERIFIED: az postgres flexible-server show, 2026-08-10]`.
+
+Two adjacent constraints measured on that same live server, recorded because they bite at first
+deploy rather than later:
+
+- `azure.extensions` reads `vector,pgcrypto`. `V1__base_schema.sql` runs
+  `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` (the sole exemption in
+  `scripts/check-no-create-extension.sh`). **`uuid-ossp` must be added to the `azure.extensions`
+  allowlist before the first Flyway run**, or V1 fails and nothing after it executes.
+- Azure reserves **15** connections for replication and monitoring, while
+  `k8s/scripts/check-connection-math.sh` assumes `RESERVED=3`. On a `Standard_B2s` server
+  (429 total / 414 user) the 155-connection budget still fits comfortably; on `B1ms` (50/35) it
+  does not, by roughly a factor of three. This is one reason the free-tier B1ms allowance cannot
+  simply be pointed at staging.
+
+### Known, non-blocking horizons created by this decision
+
+Accepting managed services means accepting their retirement clocks. Neither of these blocks Phase 29;
+both are recorded so they are foreseen rather than discovered.
+
+| Horizon | Date | Impact |
+|---|---|---|
+| **Azure Cache for Redis Basic/Standard/Premium retires** in favour of Azure Managed Redis | **2028-09-30** (Enterprise tiers retire 2027-03-30; a CLI migration path lands in phases from Feb 2026) | The `Basic C0` cache this ADR selects for Redis must migrate before then. Long horizon, no action this phase |
+| **The `snackpass-pg` free-tier window closes** | **~2027-07-21** (server created 2026-07-21 + 12 months; exact date to be confirmed from Azure Portal → Cost Management → Credits + offers) | Measured 2026-08-10: that server's meters are named `B1MS Compute - Free` and `Storage Data Stored - Free`, i.e. the £0.00 is zero-rated usage, not deferred billing. When the window closes it begins billing at roughly £21/month, **breaching the ~£150/month estate ceiling with no deploy and no code change** |
+
+Both belong in `infra/dependency-horizons.yaml` alongside the `rabbitmq-k8s` row that plan 29-09
+updates; they are recorded here first so the reason survives independently of the row.
