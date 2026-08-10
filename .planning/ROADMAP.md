@@ -481,6 +481,50 @@ after this phase was written; they are the criterion, not new scope.
 | **#281** | — | **added** — a revoked user's open KDS SSE stream lingers until connection turnover (≤5 min). Cheap; the deliverable may legitimately be a recorded acceptance rather than a fix |
 | **#488** | — | **added** — existing image objects still hold raw bytes, EXIF GPS and client-declared Content-Type. #445's fix was forward-only, so this needs a **backfill decision** before it can be planned |
 
+**Plans:** 11 plans in 7 waves (planned 2026-08-10)
+
+> **Planning correction, carried from 28-RESEARCH.md.** Four of this phase's inputs aim at work that
+> has already shipped or at a population that measures zero, and planning them as written would have
+> produced vacuous criteria — the exact defect `CRITERIA-DECAY-2026-08-08.md` exists to prevent, one
+> phase later. **D-14 / #549 is already implemented** (#442 gated the doc endpoints on
+> `looksLocal && !isDeployedProfile`, and all three profile arms already exist), so 28-02 supplies the
+> missing fail direction rather than a config change. **D-13's coverage sweep already exists**
+> (`RlsContractTest.everyPublicTableHasRlsAndForce`); the one real gap is "RLS enabled but ZERO
+> policies", which 28-01 closes. **#488's urgent subset measures 0** (768 objects enumerated, 0
+> outside the Content-Type allowlist, 0 of 37 legacy objects carrying EXIF/GPS — both with controls),
+> so 28-03 delivers the enumeration gate, the recorded census and the dated deferred plan, and
+> D-06/D-07/D-08 are carried forward in full as that plan's specification rather than built over an
+> empty input. **SC-4's loopback half was already satisfied**; only rotation and the role split remain.
+> Two new exposures the research found are filed this phase: anonymous `s3:ListBucket` on
+> `jtoye-images` (fixed in 28-09) and a live `ALTER DEFAULT PRIVILEGES` defect leaving `jtoye_backup`
+> unable to read the newest table (repaired in 28-07).
+
+Plans:
+
+**Wave 1** *(measure and dispose — all four read the live stack or add tests only; the role split is
+deliberately sequenced after them so the role catalogue does not change under their measurements)*
+
+- [ ] 28-01-PLAN.md (Wave 1) — SEC-01: re-verify pentest A1 against a stack rebuilt from HEAD, recorded CONFIRMED/FALSIFIED, with a break arm that must red exactly one named test; plus D-13's real gap, an "RLS enabled but zero policies" sweep with a denominator
+- [ ] 28-02-PLAN.md (Wave 1, parallel) — SEC-03: assert the **served** `/v3/api-docs` document with `TenantFilter` absent (three arms: strip, filter-present control, non-empty `paths`), and supply D-14's missing fail direction against the already-shipped staging gating
+- [ ] 28-03-PLAN.md (Wave 1, parallel) — #488/D-05: credentialed Content-Type enumeration gate landed with its `gate-enforcement.conf` entry, the census recorded with controls, the dated deferred-sweep plan carrying D-06/D-07/D-08, and the anonymous-listing exposure filed
+- [ ] 28-04-PLAN.md (Wave 1, parallel) — #281/D-09/D-10: per-emit grant re-check on the one SSE surface, with the **liveness** control arm that stops a tenant-unpinned lookup silently killing the KDS, and the STOMP channel measured
+
+**Wave 2** *(the triage record transcribes wave 1's verdicts; `asSystem()` follows the SSE change so one FULL suite covers both)*
+
+- [ ] 28-05-PLAN.md (Wave 2) — SEC-02/D-11/D-12: `docs/security/PENTEST-TRIAGE.md` with 11 sanitized dispositions, `check-pentest-triage.sh` wired into `ci-cd.yaml` in the same commit, the E1 audience audit regenerated with `jq` plus a live 401 arm and its control, and #548/#549/#551 closed
+- [ ] 28-06-PLAN.md (Wave 2, parallel) — #283/#284: explicit `SystemPrincipal` marker replacing the `auth == null` bypass, declarations only where symbol analysis proves a gated call is reached, and a **FULL** `test + integrationTest` run (62 no-principal test files depend on the old behaviour)
+
+**Wave 3-4** *(the runtime/owner role split — D-01 is a durability fix, not the closure of a live hole: all 36 tenant tables are already ENABLE + FORCE)*
+
+- [ ] 28-07-PLAN.md (Wave 3) — D-01/D-03: `create-runtime-role.sql` with `ALTER DEFAULT PRIVILEGES **FOR ROLE jtoye_app**` and the two non-DML grants `PostcodeCentroidImporter` needs, the live `jtoye_backup` defect repaired and filed, Flyway's credential decoupled with `spring.flyway.url` kept declared (#517), and the pair declared across compose / `.env.example` / `verify-env.sh` / k8s
+- [ ] 28-08-PLAN.md (Wave 4) — D-03/D-04: boot-time ownership fail-fast beside the existing superuser check, the **future-table grant contract** (the highest-value new test in the phase — the only arm that distinguishes `FOR ROLE` from the inert form), the isolation suite as a non-owner, and the live arm on `products` with a summing superuser control
+- [ ] 28-09-PLAN.md (Wave 5) — #270 + the new finding: digest-pin the `minio/mc` bootstrap and replace the two-privilege anonymous shortcut with a GetObject-only policy, proven by the same storefront key returning 200 before and after while the bucket listing goes 200 → refused
+
+**Waves 6-7** *(rotation is LAST because it invalidates every live measurement taken before it)*
+
+- [ ] 28-10-PLAN.md (Wave 6) — D-02/D-12: blocking owner gate confirming which credentials #552 covers (research assumption A5), then rotation with a superseded-fails/current-succeeds arm per surface, ONE Keycloak import carrying both rotation and the audience decision, and `docs/runbooks/credential-rotation.md`. `autonomous: false`
+- [ ] 28-11-PLAN.md (Wave 7) — close-out: the DESIGNED `check-doc-metrics` red closed by `docs-freshness.sh --write` plus prose, final dispositions including what did NOT close, a full gate sweep with every rc recorded, the HANDOFF gate count re-measured rather than remembered, and runtime + branch parity proven by content
+
 **UI hint**: no
 
 ### Phase 29: Deployable Staging, With Its Own Monitoring
