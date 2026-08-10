@@ -13,7 +13,9 @@ data:
   api.internal.url: http://core-java:9090
   api.url: https://api.olajay.co.uk
   cors.allowed-origins: https://app.olajay.co.uk
+  db.max-connections: "200"
   db.port: "5432"
+  db.ssl-mode: prefer
   frontend.url: https://app.olajay.co.uk
   jwt.expected-audience: core-api
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
@@ -30,6 +32,7 @@ data:
   media.outbox.resurrect.interval.ms: "300000"
   notification.email.tracking-base-url: https://app.olajay.co.uk
   notification.unsubscribe.base-url: https://app.olajay.co.uk
+  notification.unsubscribe.one-click-base-url: https://api.olajay.co.uk
   payment.outbox.backoff.base.ms: "5000"
   payment.outbox.backoff.cap.ms: "300000"
   payment.outbox.flush.interval.ms: "5000"
@@ -43,6 +46,7 @@ data:
   rabbitmq.port: "5672"
   redis.host: redis-cluster.jtoye-infrastructure.svc.cluster.local
   redis.port: "6379"
+  redis.ssl: "false"
   s3.backup.bucket: jtoye-db-backups
   s3.backup.endpoint: ""
   s3.backup.prefix: backups
@@ -244,6 +248,11 @@ spec:
             secretKeyRef:
               key: password
               name: postgres-credentials
+        - name: DB_SSL_MODE
+          valueFrom:
+            configMapKeyRef:
+              key: db.ssl-mode
+              name: app-config
         - name: DB_POOL_SIZE
           value: "12"
         - name: JTOYE_RABBIT_DEFAULT_PREFETCH
@@ -345,6 +354,16 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: redis.host
+              name: app-config
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              key: redis.port
+              name: app-config
+        - name: REDIS_SSL
+          valueFrom:
+            configMapKeyRef:
+              key: redis.ssl
               name: app-config
         - name: RABBITMQ_HOST
           valueFrom:
@@ -484,6 +503,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: notification.unsubscribe.base-url
+              name: app-config
+        - name: NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              key: notification.unsubscribe.one-click-base-url
               name: app-config
         - name: NOTIFICATION_UNSUBSCRIBE_SECRET
           valueFrom:
