@@ -341,7 +341,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
-| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 0/? | Not started | — |
+| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 4/11 | In Progress|  |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
@@ -481,7 +481,7 @@ after this phase was written; they are the criterion, not new scope.
 | **#281** | — | **added** — a revoked user's open KDS SSE stream lingers until connection turnover (≤5 min). Cheap; the deliverable may legitimately be a recorded acceptance rather than a fix |
 | **#488** | — | **added** — existing image objects still hold raw bytes, EXIF GPS and client-declared Content-Type. #445's fix was forward-only, so this needs a **backfill decision** before it can be planned |
 
-**Plans:** 11 plans in 7 waves (planned 2026-08-10)
+**Plans:** 4/11 plans executed
 
 > **Planning correction, carried from 28-RESEARCH.md.** Four of this phase's inputs aim at work that
 > has already shipped or at a population that measures zero, and planning them as written would have
@@ -504,10 +504,10 @@ Plans:
 **Wave 1** *(measure and dispose — all four read the live stack or add tests only; the role split is
 deliberately sequenced after them so the role catalogue does not change under their measurements)*
 
-- [ ] 28-01-PLAN.md (Wave 1) — SEC-01: re-verify pentest A1 against a stack rebuilt from HEAD, recorded CONFIRMED/FALSIFIED, with a break arm that must red exactly one named test; plus D-13's real gap, an "RLS enabled but zero policies" sweep with a denominator
-- [ ] 28-02-PLAN.md (Wave 1, parallel) — SEC-03: assert the **served** `/v3/api-docs` document with `TenantFilter` absent (three arms: strip, filter-present control, non-empty `paths`), and supply D-14's missing fail direction against the already-shipped staging gating
-- [ ] 28-03-PLAN.md (Wave 1, parallel) — #488/D-05: credentialed Content-Type enumeration gate landed with its `gate-enforcement.conf` entry, the census recorded with controls, the dated deferred-sweep plan carrying D-06/D-07/D-08, and the anonymous-listing exposure filed
-- [ ] 28-04-PLAN.md (Wave 1, parallel) — #281/D-09/D-10: per-emit grant re-check on the one SSE surface, with the **liveness** control arm that stops a tenant-unpinned lookup silently killing the KDS, and the STOMP channel measured
+- [x] 28-01-PLAN.md (Wave 1) — SEC-01: re-verify pentest A1 against a stack rebuilt from HEAD, recorded CONFIRMED/FALSIFIED, with a break arm that must red exactly one named test; plus D-13's real gap, an "RLS enabled but zero policies" sweep with a denominator
+- [x] 28-02-PLAN.md (Wave 1, parallel) — SEC-03: assert the **served** `/v3/api-docs` document with `TenantFilter` absent (three arms: strip, filter-present control, non-empty `paths`), and supply D-14's missing fail direction against the already-shipped staging gating
+- [x] 28-03-PLAN.md (Wave 1, parallel) — #488/D-05: credentialed Content-Type enumeration gate landed with its `gate-enforcement.conf` entry, the census recorded with controls, the dated deferred-sweep plan carrying D-06/D-07/D-08, and the anonymous-listing exposure filed
+- [x] 28-04-PLAN.md (Wave 1, parallel) — #281/D-09/D-10: per-emit grant re-check on the one SSE surface, with the **liveness** control arm that stops a tenant-unpinned lookup silently killing the KDS, and the STOMP channel measured
 
 **Wave 2** *(the triage record transcribes wave 1's verdicts; `asSystem()` follows the SSE change so one FULL suite covers both)*
 
