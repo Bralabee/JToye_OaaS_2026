@@ -48,7 +48,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 
 **Go-to-market closure (added 2026-08-01 — v2.3 stays open until these land):**
 
-- [ ] **Phase 28: Security Triage + the Dev/Prod Boundary** — The 11 findings in the untracked Strix pentest backlog triaged into the tracker or formally accepted; the dev-only tenant-header path no longer advertised or reachable under `prod`; the local stack stops publishing infrastructure to `0.0.0.0`
+- [x] **Phase 28: Security Triage + the Dev/Prod Boundary** — The 11 findings in the untracked Strix pentest backlog triaged into the tracker or formally accepted; the dev-only tenant-header path no longer advertised or reachable under `prod`; the local stack stops publishing infrastructure to `0.0.0.0` (completed 2026-08-10)
 - [ ] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today
 - [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock
 - [ ] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice
@@ -341,7 +341,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 25. Mutating MCP Tools | v2.3 | 4/4 | Complete    | 2026-07-24 |
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
-| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 10/11 | In Progress|  |
+| 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete   | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
@@ -481,7 +481,7 @@ after this phase was written; they are the criterion, not new scope.
 | **#281** | — | **added** — a revoked user's open KDS SSE stream lingers until connection turnover (≤5 min). Cheap; the deliverable may legitimately be a recorded acceptance rather than a fix |
 | **#488** | — | **added** — existing image objects still hold raw bytes, EXIF GPS and client-declared Content-Type. #445's fix was forward-only, so this needs a **backfill decision** before it can be planned |
 
-**Plans:** 10/11 plans executed
+**Plans:** 11/11 plans complete
 
 > **Planning correction, carried from 28-RESEARCH.md.** Four of this phase's inputs aim at work that
 > has already shipped or at a population that measures zero, and planning them as written would have
@@ -523,7 +523,7 @@ deliberately sequenced after them so the role catalogue does not change under th
 **Waves 6-7** *(rotation is LAST because it invalidates every live measurement taken before it)*
 
 - [x] 28-10-PLAN.md (Wave 6) — D-02/D-12: blocking owner gate confirming which credentials #552 covers (research assumption A5), then rotation with a superseded-fails/current-succeeds arm per surface, ONE Keycloak import carrying both rotation and the audience decision, and `docs/runbooks/credential-rotation.md`. `autonomous: false`
-- [ ] 28-11-PLAN.md (Wave 7) — close-out: the DESIGNED `check-doc-metrics` red closed by `docs-freshness.sh --write` plus prose, final dispositions including what did NOT close, a full gate sweep with every rc recorded, the HANDOFF gate count re-measured rather than remembered, and runtime + branch parity proven by content
+- [x] 28-11-PLAN.md (Wave 7) — close-out: the DESIGNED `check-doc-metrics` red closed by `docs-freshness.sh --write` plus prose, final dispositions including what did NOT close, a full gate sweep with every rc recorded, the HANDOFF gate count re-measured rather than remembered, and runtime + branch parity proven by content
 
 **UI hint**: no
 
