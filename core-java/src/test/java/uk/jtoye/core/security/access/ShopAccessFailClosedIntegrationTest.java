@@ -56,9 +56,15 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
  * </ul>
  *
  * <p>The seven cases prove the closed gate. Cases 1-4 and 7 are demonstrated RED against
- * the pre-fix code (see 23-08-SUMMARY); case 5 is a preservation guard (green before AND
- * after — the retained {@code auth == null} internal bypass that 62 no-principal test
- * files depend on); case 6 proves the explicit, empty-by-default machine allowlist.
+ * the pre-fix code (see 23-08-SUMMARY); case 6 proves the explicit, empty-by-default machine
+ * allowlist.
+ *
+ * <p><strong>Case 5 changed meaning in Phase 28 (#283).</strong> It was the preservation
+ * guard for the retained {@code auth == null} internal bypass — green before AND after 23-08,
+ * asserting that a no-principal caller still passed. Plan 28-06 removed that bypass: internal
+ * trust is now DECLARED through {@link SystemPrincipal#asSystem}, so case 5 asserts the
+ * inverse (denied undeclared, allowed declared). It is the one case here whose expected
+ * outcome the fix deliberately flipped.
  */
 @SpringBootTest
 @Testcontainers
@@ -195,21 +201,35 @@ class ShopAccessFailClosedIntegrationTest {
     // --- Preservation guards: internal + declared-machine callers still work ---------
 
     /**
-     * Case 5 — PRESERVATION GUARD (green before AND after the fix). With the
-     * SecurityContext cleared and only {@link TenantContext} set, a gated call still
-     * succeeds — the retained {@code auth == null} internal path that the 62 existing
-     * no-principal test files depend on. If this fails, the fix has over-reached.
+     * Case 5 — <strong>INVERTED by Phase 28 / #283.</strong> This case used to be the
+     * PRESERVATION GUARD for the retained {@code auth == null} internal bypass: it asserted
+     * that a gated call with the SecurityContext cleared and only {@link TenantContext} set
+     * still SUCCEEDED. That bypass is the thing #283 removes, so the assertion is now the
+     * other way round — an absent {@code Authentication} with no declaration is DENIED, and
+     * the same call succeeds only once the caller DECLARES itself internal via
+     * {@link SystemPrincipal#asSystem}.
+     *
+     * <p>Recorded rather than silently rewritten: this test was not "made to pass". It
+     * asserted the old contract correctly and now asserts the new one, both directions in one
+     * method so the change of rule is legible at the point of the change. The fuller proof
+     * (typed 403 shape, scope lifetime, and #284's background-path guard) lives in
+     * {@code SystemPrincipalGuardTest}.
      */
     @Test
-    void absentAuthenticationStillPasses() {
+    void absentAuthenticationIsDeniedUnlessDeclaredSystem() {
         UUID tenant = UUID.randomUUID();
         ensureTenant(tenant);
 
         SecurityContextHolder.clearContext();
         TenantContext.set(tenant);
 
-        assertThatCode(() -> staffManagementService.list())
-                .as("an internal caller with no Authentication (only TenantContext) still passes the gate")
+        assertThatThrownBy(() -> staffManagementService.list())
+                .as("#283: no Authentication and no declaration is DENIED — trust is never inferred "
+                        + "from a missing principal")
+                .isInstanceOf(ShopAccessDeniedException.class);
+
+        assertThatCode(() -> SystemPrincipal.asSystem(() -> staffManagementService.list()))
+                .as("#283: an internal caller that DECLARES itself passes the gate")
                 .doesNotThrowAnyException();
     }
 

@@ -259,22 +259,24 @@ public class ShopAccessService {
     }
 
     /**
-     * True for a realm-admin (D-03 bridge), a genuinely internal caller (no
-     * {@code Authentication} on the thread at all), a declared machine client (CR-03
-     * allowlist), or a tenant-wide GROUP_ADMIN grant. Every OTHER request-scoped
-     * principal — anonymous, non-{@code Jwt}, or a JWT whose {@code sub} is not a
-     * UUID and is not an allowlisted machine client — is DENIED (fail-closed, typed
-     * {@link ShopAccessDeniedException} 403), never escalated to GROUP_ADMIN and never
+     * True for a realm-admin (D-03 bridge), a DECLARED internal system caller
+     * ({@link SystemPrincipal#asSystem}), a declared machine client (CR-03 allowlist), or a
+     * tenant-wide GROUP_ADMIN grant. Every OTHER caller — anonymous, non-{@code Jwt}, a JWT
+     * whose {@code sub} is not a UUID and is not an allowlisted machine client, <em>and now
+     * also a thread carrying no {@code Authentication} at all</em> — is DENIED (fail-closed,
+     * typed {@link ShopAccessDeniedException} 403), never escalated to GROUP_ADMIN and never
      * a 500.
      *
-     * <p><strong>Retained internal bypass ({@code Authentication == null}):</strong>
-     * a gate call with NO {@code Authentication} on the thread is treated as a trusted
-     * internal path — a scheduled job, an AMQP/event listener, or an internal
-     * service-to-service call that set {@link TenantContext} programmatically (plus the
-     * 62 no-principal tests that depend on it). This is a deliberately narrow, RETAINED
-     * bypass — it is not enforced as a proven-safe property of every no-JWT call, but
-     * its external reachability is prevented by Spring Security rejecting
-     * unauthenticated requests with 401 BEFORE any gated service is entered.
+     * <p><strong>The internal bypass is DECLARED, not inferred (#283 — closed in Phase 28).</strong>
+     * This javadoc previously described a retained bypass in which a gate call with NO
+     * {@code Authentication} on the thread was treated as trusted internal work — a scheduled
+     * job, an AMQP listener, an internal service-to-service call, or one of the 62
+     * no-principal tests that depended on it. Its safety rested on an unenforced property
+     * (that Spring Security 401s an unauthenticated request before any gated service is
+     * entered, so no background path reaches one), and #284 recorded that it was "one new
+     * call away" from being false. It is replaced: an internal caller now declares itself
+     * through {@link SystemPrincipal#asSystem}, and an absent principal with no declaration
+     * is denied. See {@link #isInternalCaller()}.
      *
      * <p><strong>CR-03 / D-04:</strong> the former, wider rule ("any call with no JWT
      * principal is trusted, and any unparseable subject is trusted") mapped "I cannot
@@ -402,10 +404,15 @@ public class ShopAccessService {
      *
      * <p><strong>Why this cannot reuse {@link #isGroupAdmin()}/{@link #grantedShopIds()}:</strong>
      * those read the ambient security context, and the STOMP CONNECT path populates only the
-     * WebSocket session principal, never that context. After 23-08 an absent
-     * {@code Authentication} is the retained internal-caller bypass, so the ambient-context
-     * methods would classify a WebSocket subscriber as internal and return {@code true} —
-     * failing OPEN. Identity therefore arrives explicitly here (T-23-11-02).
+     * WebSocket session principal, never that context — so the ambient-context methods would
+     * be deciding about an identity that is not there. Under 23-08 that failed OPEN (an absent
+     * {@code Authentication} was the retained internal-caller bypass, so a WebSocket subscriber
+     * was classified as internal and granted). Phase 28 (#283) inverted that default: an
+     * undeclared no-principal thread is now DENIED, so the same reuse would fail CLOSED and
+     * refuse every legitimate subscriber instead. Both directions are wrong for the same
+     * reason — the decision needs the identity the session principal holds. Identity therefore
+     * arrives explicitly here (T-23-11-02), and this method is unaffected by the #283 change
+     * because it never consults the ambient context at all.
      *
      * <p>The group/grant decision funnels through {@link #isGroupAdminForUser} so it stays
      * byte-identical to the HTTP boundary. A specific-shop caller is permitted when it holds
@@ -614,14 +621,35 @@ public class ShopAccessService {
     }
 
     /**
-     * True ONLY when there is no {@code Authentication} on the current thread — the
-     * retained internal-caller bypass (scheduler, listener, internal service call, or a
-     * test that set only {@link TenantContext}). An anonymous or otherwise
-     * non-authenticated request principal is NOT internal and is denied; see
-     * {@link #isGroupAdmin()} for why this narrow rule is fail-closed (CR-03 / D-04).
+     * True ONLY when the current thread is inside an explicitly DECLARED
+     * {@link SystemPrincipal#asSystem} scope (#283).
+     *
+     * <p>Trust is granted ONLY by that declaration — <strong>never inferred from a missing
+     * principal</strong>. This method used to return
+     * {@code SecurityContextHolder.getContext().getAuthentication() == null}, i.e. it read
+     * "I have no identity" as "I am trusted". That rule was correct only for as long as no
+     * gated service was reachable from a background path, which nothing enforced and any new
+     * call could end (#284). An absent {@code Authentication} with no declaration is now
+     * DENIED, in this class's established fail-closed shape: the ladder in
+     * {@link #isGroupAdmin()} falls through to {@link #requireVendorUserId()}, which raises
+     * the typed {@link ShopAccessDeniedException} 403 — never an untyped 500.
+     *
+     * <p>The rule that an ANONYMOUS or otherwise non-authenticated <em>request</em> principal
+     * is NOT internal was already correct and survives unchanged — in fact it strengthens,
+     * because the condition is now a positive declaration rather than the absence of one
+     * thing. A request thread never enters {@code asSystem} (only background entry points
+     * that act as the system do), so a request principal of any shape answers {@code false}
+     * here and is decided by the ladder below it.
+     *
+     * <p>Mirrors {@link #isDeclaredMachineClient(Jwt)}: declaration over inference. And as
+     * there, <strong>RLS still tenant-scopes a system caller</strong> — the marker is an
+     * authorisation declaration about the shop-scope gate only, and grants no tenancy escape
+     * whatsoever.
+     *
+     * @see SystemPrincipal
      */
     private boolean isInternalCaller() {
-        return SecurityContextHolder.getContext().getAuthentication() == null;
+        return SystemPrincipal.isSystem();
     }
 
     /**

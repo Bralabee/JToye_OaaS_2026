@@ -59,6 +59,10 @@ import static org.mockito.Mockito.verify;
 @ActiveProfiles("test")
 @Transactional
 @org.junit.jupiter.api.Tag("testcontainers")
+// #283: same shape as CrossTenantMcpWriteRlsIntegrationTest — the subject is the cross-tenant
+// IDOR 404 (PR #70 / issue #71), reached THROUGH the shop gate. Declaring the harness keeps
+// requireShopInCallerTenant as the thing that answers, which is what these tests assert.
+@uk.jtoye.core.testsupport.AsSystemHarness
 class ShopImageCrossTenantIntegrationTest {
 
     @Container

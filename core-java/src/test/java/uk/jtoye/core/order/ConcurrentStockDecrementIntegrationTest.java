@@ -15,6 +15,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.exception.InsufficientStockException;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.SystemPrincipal;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,6 +63,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+// #283: drives orderService.createOrder/confirmOrder (gated) to reach the concurrent
+// stock-decrement race under test.
+@uk.jtoye.core.testsupport.AsSystemHarness
 class ConcurrentStockDecrementIntegrationTest {
 
     @Container
@@ -162,11 +166,19 @@ class ConcurrentStockDecrementIntegrationTest {
         }
     }
 
+    /**
+     * #283: the system declaration is made HERE, on the worker thread, for the same reason
+     * {@link TenantContext} is — {@code SystemPrincipal} is a plain {@link ThreadLocal} and is
+     * deliberately NOT inherited by a spawned thread, so a declaration made by the class-level
+     * {@code @AsSystemHarness} on the test thread does not (and must not) reach these workers.
+     * Without it both workers are denied at the gate and the race under test never runs, which
+     * is exactly how this surfaced: "exactly one CONFIRM succeeds" saw ZERO succeed.
+     */
     private Throwable runConfirm(UUID orderId, CountDownLatch gate) {
         TenantContext.set(TENANT_ID);
         try {
             gate.await();
-            orderService.confirmOrder(orderId);
+            SystemPrincipal.asSystem(() -> orderService.confirmOrder(orderId));
             return null;
         } catch (Throwable t) {
             return t;

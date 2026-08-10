@@ -73,6 +73,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+// #283: the guest storefront path itself is unauthenticated by design, but this test drives
+// orderService.confirmOrder (the VENDOR-side gated call) to reach the stock-convergence
+// assertion. That vendor half is the harness acting as the system.
+@uk.jtoye.core.testsupport.AsSystemHarness
 class GuestCheckoutStockConvergenceIntegrationTest {
 
     private static final Logger log =

@@ -59,6 +59,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 // asserts on the only one that ever runs.
 @org.springframework.context.annotation.Import(
         uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig.class)
+// #283: seeds its DRAFT orders through orderService.createOrder — a gated call made by the
+// harness, not by the ScheduledCleanupService under test (which reaches no gate at all).
+@uk.jtoye.core.testsupport.AsSystemHarness
 class ScheduledCleanupServiceIntegrationTest {
 
     @Container
