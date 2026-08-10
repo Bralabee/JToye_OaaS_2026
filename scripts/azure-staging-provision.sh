@@ -624,6 +624,27 @@ if [ "$DRY_RUN" -eq 0 ]; then
     refuse "admin-credentials" "${admin_missing} administrator credential variable(s) missing — see the names above. Generate with 'openssl rand -hex 32' (docs/runbooks/credential-rotation.md). No value is ever written into this script."
 fi
 
+# `--public-access Enabled`, NOT `None`. MEASURED 2026-08-10 on az-cli 2.89.0:
+# the CLI's own help says `None` "sets the server in public access mode but does
+# not create a firewall rule", which is EXACTLY the shape this estate wants — but
+# the server it actually produced reported `network.publicNetworkAccess:
+# Disabled`, and the very next step died with
+#   "Firewall rule operations are not supported for a server without public
+#    access enabled."
+# So the documented meaning and the observed behaviour disagree, and the
+# behaviour is what ships. `Enabled` creates the server in public-access mode
+# with NO firewall rules of its own; the single scoped rule below is still the
+# only way in. That keeps PG_ACCESS_MODE=public-with-firewall true, and it is
+# NOT the wide-open shape `snackpass-pg` has (threat T-29-10-01).
+#
+# `--output none` is load-bearing, not tidiness. `az postgres flexible-server
+# create` prints a JSON result containing BOTH a `password` field and a full
+# `connectionString` with the administrator password embedded in it. The
+# REDACT_FLAGS mechanism above only redacts the rendered COMMAND in --dry-run; on
+# a real run it is the CLI's OUTPUT that discloses, and nothing was suppressing
+# it. Measured: the password reached the run log in plaintext twice, and had to
+# be rotated. Every other value this script needs is read back explicitly in the
+# evidence step, so discarding this output costs nothing.
 if ! resource_exists "Flexible Server ${PG_SERVER_NAME}" postgres flexible-server show -g "$AZURE_RESOURCE_GROUP" -n "$PG_SERVER_NAME"; then
   az_mutate postgres flexible-server create \
     -g "$AZURE_RESOURCE_GROUP" -n "$PG_SERVER_NAME" \
@@ -634,8 +655,9 @@ if ! resource_exists "Flexible Server ${PG_SERVER_NAME}" postgres flexible-serve
     --backup-retention "$PG_BACKUP_RETENTION_DAYS" \
     --admin-user "${PG_ADMIN_USER:-<PG_ADMIN_USER>}" \
     --admin-password "${PG_ADMIN_PASSWORD:-<PG_ADMIN_PASSWORD>}" \
-    --public-access None \
-    --yes
+    --public-access Enabled \
+    --yes \
+    --output none
 fi
 
 # The allowlist BEFORE anything can run Flyway. V1 failing means nothing else
