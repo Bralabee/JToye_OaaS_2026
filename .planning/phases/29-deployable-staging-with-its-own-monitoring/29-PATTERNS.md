@@ -21,17 +21,17 @@
 | `k8s/staging/kustomization.yaml` | MOD | config | transform | `k8s/local/kustomization.yaml` | **exact** |
 | `k8s/staging/ingress-hosts-patch.yaml` | MOD | config (JSON6902) | transform | itself (lines 1–49) | **exact** |
 | `k8s/base/ingress.yaml` | MOD | route | request-response | itself (lines 47–88, the removal note) | **exact** |
-| `k8s/monitoring/prometheus-deployment.yaml` | NEW | service (deployment) | request-response | `k8s/base/edge-go-deployment.yaml` + compose `prometheus` | role-match |
-| `k8s/monitoring/alertmanager-deployment.yaml` | NEW | service | pub-sub / event-driven | `k8s/base/edge-go-deployment.yaml` + compose `alertmanager` | role-match |
-| `k8s/monitoring/grafana-deployment.yaml` | NEW | service | request-response | `k8s/base/frontend-deployment.yaml` (Svc+HPA+PDB set) | role-match |
-| `k8s/monitoring/{postgres,redis}-exporter-deployment.yaml` | NEW | service | request-response | compose `postgres-exporter`/`redis-exporter` | role-match |
-| `k8s/monitoring/prometheus-config.yaml` (ConfigMap) | NEW | config | transform | `infra/monitoring/prometheus/prometheus.yml.tmpl` | **exact (corpus)** |
-| `k8s/monitoring/alertmanager-config.yaml` (ConfigMap) | NEW | config | transform | `infra/monitoring/alertmanager/alertmanager.yml.tmpl` | **exact (corpus)** |
-| `k8s/monitoring/grafana-provisioning.yaml` (ConfigMap) | NEW | config | transform | `infra/monitoring/grafana/provisioning/**` | **exact (corpus)** |
-| `k8s/monitoring/kustomization.yaml` | NEW | config | transform | `k8s/base/kustomization.yaml` | **exact** |
-| `k8s/keycloak/keycloak-deployment.yaml` | NEW | service (IdP) | request-response | `k8s/base/edge-go-deployment.yaml` + compose `keycloak` (:138–183) | role-match |
-| `k8s/keycloak/realm-import-configmap.yaml` | NEW | config | file-I/O | `infra/keycloak/realm-export.template.json` + compose realm-render | role-match |
-| `k8s/base/mailhog-deployment.yaml` | NEW | service | pub-sub | `k8s/base/edge-go-deployment.yaml` | role-match |
+| `k8s/base/monitoring/prometheus-deployment.yaml` | NEW | service (deployment) | request-response | `k8s/base/edge-go-deployment.yaml` + compose `prometheus` | role-match |
+| `k8s/base/monitoring/alertmanager-deployment.yaml` | NEW | service | pub-sub / event-driven | `k8s/base/edge-go-deployment.yaml` + compose `alertmanager` | role-match |
+| `k8s/base/monitoring/grafana-deployment.yaml` | NEW | service | request-response | `k8s/base/frontend-deployment.yaml` (Svc+HPA+PDB set) | role-match |
+| `k8s/base/monitoring/{postgres,redis}-exporter-deployment.yaml` | NEW | service | request-response | compose `postgres-exporter`/`redis-exporter` | role-match |
+| `k8s/base/monitoring/prometheus-config.yaml` (ConfigMap) | NEW | config | transform | `infra/monitoring/prometheus/prometheus.yml.tmpl` | **exact (corpus)** |
+| `k8s/base/monitoring/alertmanager-config.yaml` (ConfigMap) | NEW | config | transform | `infra/monitoring/alertmanager/alertmanager.yml.tmpl` | **exact (corpus)** |
+| `k8s/base/monitoring/grafana-provisioning.yaml` (ConfigMap) | NEW | config | transform | `infra/monitoring/grafana/provisioning/**` | **exact (corpus)** |
+| ~~`k8s/base/monitoring/kustomization.yaml`~~ | SUPERSEDED | — | — | base subdirs carry NO kustomization.yaml (resource entries of `k8s/base/kustomization.yaml`, mirroring `networkpolicies/`) so the maxdepth-2 discovery gates gain no 4th render target — see 29-06/29-08 | — |
+| `k8s/base/keycloak/keycloak-deployment.yaml` | NEW | service (IdP) | request-response | `k8s/base/edge-go-deployment.yaml` + compose `keycloak` (:138–183) | role-match |
+| `k8s/base/keycloak/realm-import-configmap.yaml` | NEW | config | file-I/O | `infra/keycloak/realm-export.template.json` + compose realm-render | role-match |
+| `k8s/staging/mailhog.yaml` | NEW | service | pub-sub | `k8s/base/edge-go-deployment.yaml` | role-match |
 | `k8s/base/rabbitmq-cluster.yaml` (`RabbitmqCluster`) | NEW | model (CR) | pub-sub | — | **none** |
 | `k8s/staging/cluster-issuer.yaml` (cert-manager) | NEW | model (CR) | event-driven | — | **none** |
 | `k8s/base/networkpolicies/20-core-java.yaml` | MOD | middleware (policy) | request-response | itself (:73–142) | **exact** |
@@ -1196,3 +1196,15 @@ counts, not just "restored OK".
 **Analog search scope:** `k8s/` (base, staging, local, production, scripts, goldens), `scripts/` + `scripts/gates/` + `scripts/lib/`, `infra/monitoring/`, `infra/keycloak/`, `infra/backups/`, `docs/runbooks/`, `docs/architecture/decisions/`, `.github/workflows/`, `core-java/src/main/resources/`, `docker-compose.full-stack.yml`
 **Files scanned:** 41 read (24 in full, 17 targeted by grep-then-offset)
 **Pattern extraction date:** 2026-08-10
+
+---
+
+## Correction note — 2026-08-10, post-planning (plan-checker warning 1)
+
+The File Classification table above was corrected AFTER the planner locked placement:
+monitoring and Keycloak manifests live under `k8s/base/monitoring/` and `k8s/base/keycloak/`
+(resource subdirectories with **no** kustomization.yaml, mirroring `networkpolicies/`), and
+Mailhog is **staging-only** at `k8s/staging/mailhog.yaml` per D-13, asserted ABSENT from the
+production render (29-09). Prose sections below the table that still say `k8s/monitoring/`,
+`k8s/keycloak/`, or a base Mailhog were written pre-decision and are kept as a record — the
+PLAN files and the corrected table are authoritative.

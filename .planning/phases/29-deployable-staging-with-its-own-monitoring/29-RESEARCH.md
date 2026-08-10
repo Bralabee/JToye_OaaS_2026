@@ -1074,23 +1074,26 @@ Directives the planner must honour, extracted verbatim in substance:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **What is the seeded-rows story for staging?**
+> All five questions below were resolved during planning (2026-08-10). Each item's
+> "Recommendation" was adopted; the resolving plan is noted inline as **RESOLVED →**.
+
+1. **What is the seeded-rows story for staging?** **RESOLVED → 29-11** (one-shot seed Job, idempotent by row count)
    - Known: DPLY-01 requires "real seeded rows"; CONTEXT.md leaves the path to discretion.
    - Unclear: there is no staging seed path anywhere in the repo. Compose seeds via the dev
      realm + local fixtures; `.planning` memory notes E2E baseline work needed seed fixtures first.
    - Recommendation: a one-shot `Job` running the same fixture path the E2E baseline uses,
      gated so it cannot run twice, and asserted by a row count — not by "the page rendered".
 
-2. **Plain Secrets or SealedSecrets for staging (#100/#300)?**
+2. **Plain Secrets or SealedSecrets for staging (#100/#300)?** **RESOLVED → 29-05** (plain Secrets via extended bootstrap script; #100/#300 deferred with reason)
    - Known: `check-no-plaintext-secrets.sh` already forbids `kind: Secret` in any build; the
      bootstrap-script pattern exists and works (`scripts/k8s-local-secrets.sh`).
    - Unclear: whether the operator wants a sealing keypair to back up on day one.
    - Recommendation: plain Secrets via an extended bootstrap script; defer #100/#300 with the
      reason recorded. Revisit when a second operator exists.
 
-3. **How does the runtime-parity doctrine apply to a k8s runtime?**
+3. **How does the runtime-parity doctrine apply to a k8s runtime?** **RESOLVED → 29-11 / 29-15** (post-rollout image-digest parity assertion; `check-runtime-freshness.sh` stated plainly as not-the-instrument)
    - Known: `scripts/check-runtime-freshness.sh` compares per-service Docker
      `.Metadata.LastTagTime` against the newest commit touching that service's build paths, and
      VOIDs (exit 2) if any built service is missing or not running. It is deliberately absent from
@@ -1103,7 +1106,7 @@ Directives the planner must honour, extracted verbatim in substance:
      rollout: read the running pods' image digests and assert they equal the pushed digests for
      that SHA. State plainly that `check-runtime-freshness.sh` is **not** the instrument here.
 
-4. **ingress-nginx or the AKS application-routing add-on?**
+4. **ingress-nginx or the AKS application-routing add-on?** **RESOLVED → 29-05** (self-installed controller-v1.15.1; dated horizon row + Gateway-API deferral)
    - Known: both are unmaintained-or-time-boxed; self-installed gives full annotation control and
      zero manifest churn; the add-on gets Microsoft patches to Nov 2026 but constrains annotations
      and owns its own ConfigMap.
@@ -1111,7 +1114,7 @@ Directives the planner must honour, extracted verbatim in substance:
    - Recommendation: self-install `controller-v1.15.1` for annotation fidelity, record a dated
      horizon row and a Gateway-API migration deferral. Revisit at Phase 32 cutover, not now.
 
-5. **Does `k8s/production` need to keep rendering while staging diverges?**
+5. **Does `k8s/production` need to keep rendering while staging diverges?** **RESOLVED → fix-the-base throughout** (29-04/29-06/29-07/29-08/29-09: environment-invariant shape in base, endpoints in overlay)
    - Known: `render-golden.sh` byte-compares **both** goldens; `check-render-invariants.sh` runs
      per target; production hosts stay unresolvable (D-08).
    - Unclear: whether NetworkPolicy/monitoring changes land in `base` (affecting both goldens) or
