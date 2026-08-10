@@ -1,7 +1,17 @@
 package uk.jtoye.core.notification.dispatch;
 
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,11 +30,15 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.TreeMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Issue #516 — the unsubscribe URL an email advertises must RESOLVE, in every
@@ -145,6 +159,203 @@ class UnsubscribeLinkRoutingTest {
                             overlay.name, broken)
                     .isFalse();
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Issue #592 — the one-click origin must actually be SUPPLIED by the
+    // manifests, not inferred by this test.
+    //
+    // WHY THE THREE TESTS ABOVE COULD NOT SEE #592. apiOrigin() falls back to
+    // the ConfigMap's api.url when notification.unsubscribe.one-click-base-url
+    // is absent. That fallback is this test's own convenience — the APPLICATION
+    // has no such fallback. NotificationProperties.oneClickBaseUrl defaults to
+    // "" and NotificationDispatchService only composes a one-click URL when
+    // oneClickConfigured() is true, so in a real deployment an absent key means
+    // EmailChannel stamps the page URL under a plain RFC 2369 List-Unsubscribe
+    // and NEVER stamps List-Unsubscribe-Post. Every assertion above stayed
+    // green over exactly that state, because each one asked "would the origin
+    // this test computed route correctly?" rather than "is an origin supplied
+    // at all?".
+    //
+    // Measured on the pre-wiring tree: the key has ZERO references anywhere
+    // under k8s/, so one-click was degraded in EVERY deployed environment.
+    //
+    // The assertions below therefore read the key STRICTLY (no fallback) and
+    // then run the REAL EmailChannel over the REAL dispatch output, asserting
+    // the headers that are actually stamped rather than re-deriving the rule.
+    // ------------------------------------------------------------------
+
+    /** The overlays that reach a real cluster. `local` is a laptop shim and is asserted separately. */
+    private static final List<String> DEPLOYED_OVERLAYS = List.of("base", "staging", "production");
+
+    @Test
+    @DisplayName("#592 — every DEPLOYED overlay advertises a true RFC 8058 one-click unsubscribe, not an RFC 2369 fallback")
+    void deployedOverlaysAdvertiseRfc8058OneClick() throws Exception {
+        List<Overlay> overlays = loadOverlays();
+        assertThat(overlays).hasSize(OVERLAYS.size());
+
+        for (Overlay overlay : overlays) {
+            if (!DEPLOYED_OVERLAYS.contains(overlay.name)) {
+                continue;
+            }
+            String configured = overlay.configMap.get(ONE_CLICK_ORIGIN_KEY);
+            assertThat(configured)
+                    .as("%s: app-config key '%s' is not supplied by the committed manifests, so "
+                                    + "NotificationProperties.oneClickBaseUrl stays \"\" and List-Unsubscribe "
+                                    + "degrades to RFC 2369 in this environment (issue #592).",
+                            overlay.name, ONE_CLICK_ORIGIN_KEY)
+                    .isNotNull()
+                    .isNotBlank();
+
+            MimeMessage sent = deliveredEmail(overlay.require(APP_ORIGIN_KEY), configured);
+
+            String[] post = sent.getHeader("List-Unsubscribe-Post");
+            assertThat(post)
+                    .as("%s: List-Unsubscribe-Post is absent — the mail advertises no one-click capability", overlay.name)
+                    .isNotNull();
+            assertThat(post[0]).isEqualTo("List-Unsubscribe=One-Click");
+
+            String header = sent.getHeader("List-Unsubscribe")[0];
+            assertThat(header)
+                    .as("%s: the RFC 8058 target must be an https URI at the API origin", overlay.name)
+                    .startsWith("<https://")
+                    .contains(trimTrailingSlash(configured));
+        }
+    }
+
+    @Test
+    @DisplayName("#592 — each overlay's one-click origin is its OWN api origin, never another environment's")
+    void oneClickOriginIsTheOverlaysOwnApiOrigin() {
+        // A base value inherited unchanged is the DEF-6 shape in its most
+        // damaging form here: a locally- or staging-sent email would advertise a
+        // one-click POST at the PRODUCTION API, so a recipient unsubscribing from
+        // a rehearsal email would mutate real production consent.
+        List<Overlay> overlays = loadOverlays();
+        assertThat(overlays).hasSize(OVERLAYS.size());
+
+        for (Overlay overlay : overlays) {
+            String configured = overlay.configMap.get(ONE_CLICK_ORIGIN_KEY);
+            assertThat(configured)
+                    .as("%s: app-config key '%s' is not supplied (issue #592)", overlay.name, ONE_CLICK_ORIGIN_KEY)
+                    .isNotNull()
+                    .isNotBlank();
+            assertThat(trimTrailingSlash(configured))
+                    .as("%s: the one-click origin must equal this overlay's OWN %s (%s), not an inherited value",
+                            overlay.name, API_ORIGIN_KEY, overlay.require(API_ORIGIN_KEY))
+                    .isEqualTo(trimTrailingSlash(overlay.require(API_ORIGIN_KEY)));
+        }
+    }
+
+    @Test
+    @DisplayName("#592 control — with NO one-click origin the header provably degrades to RFC 2369")
+    void withoutAnOriginTheHeaderDegradesToRfc2369() throws Exception {
+        // The permanent fail-direction. This is the state the tree was in before
+        // the wiring landed, and it must stay distinguishable: if this ever
+        // starts stamping List-Unsubscribe-Post, the oracle above has stopped
+        // being able to tell a wired environment from an unwired one, and #592
+        // could regress invisibly.
+        MimeMessage sent = deliveredEmail("https://app.olajay.co.uk", "");
+
+        assertThat(sent.getHeader("List-Unsubscribe-Post"))
+                .as("an unconfigured environment must NOT claim a one-click capability it cannot honour")
+                .isNull();
+        assertThat(sent.getHeader("List-Unsubscribe")[0])
+                .as("the RFC 2369 fallback still carries the clickable PAGE url")
+                .startsWith("<https://app.olajay.co.uk/unsubscribe");
+    }
+
+    // ------------------------------------------------------------------
+    // Pitfall 7 (Phase 29 / plan 29-02) — the transport-security switches that
+    // travel WITH the config injection above.
+    //
+    // WHY THESE LIVE IN THIS CLASS. They are not about unsubscribe links, and
+    // that is worth saying plainly. They are here because this class is already
+    // the committed-CONFIGURATION oracle — it reads k8s/base/configmap.yaml, the
+    // overlay patches and the Ingress, and asks whether a deployed environment
+    // resolves to something that works. REDIS_SSL and DB_SSL_MODE are the same
+    // question about the same manifests, landed by the same plan, and the thing
+    // that must be proven about them is identical in shape to #592's: the
+    // DEFAULT must keep compose byte-identical while the overlay can change it
+    // without a code edit.
+    //
+    // These resolve the placeholder through Spring rather than grepping for the
+    // literal. A string assertion would pass on `ssl: enabled: ${REDIS_SSL:true}`
+    // — the exact inversion that would silently break every compose developer.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Pitfall 7 — REDIS_SSL and DB_SSL_MODE default to the compose-identical values when unset")
+    void transportSecuritySwitchesDefaultToComposeBehaviour() {
+        StandardEnvironment env = applicationYamlEnvironment(Map.of());
+
+        assertThat(env.getProperty("spring.data.redis.ssl.enabled"))
+                .as("with REDIS_SSL unset the Redis connection must stay plaintext, or every compose "
+                        + "developer's Redis breaks the moment this key is introduced")
+                .isEqualTo("false");
+
+        assertThat(env.getProperty("spring.datasource.url"))
+                .as("the JDBC URL must carry a config-injected sslMode defaulting to 'prefer' (assumption A6): "
+                        + "an UNMEASURED driver default whose failure mode is every DB connection failing on "
+                        + "the first deploy is not something to inherit silently")
+                .contains("sslMode=prefer");
+    }
+
+    @Test
+    @DisplayName("Pitfall 7 control — the same keys flip to TLS when the environment supplies them")
+    void transportSecuritySwitchesFlipWhenSupplied() {
+        // The fail-direction for the test above: a hardcoded literal would satisfy
+        // the defaults assertion just as well, so prove the values are genuinely
+        // wired to the env vars the manifests inject.
+        StandardEnvironment env = applicationYamlEnvironment(
+                Map.of("REDIS_SSL", "true", "DB_SSL_MODE", "require"));
+
+        assertThat(env.getProperty("spring.data.redis.ssl.enabled"))
+                .as("Azure Cache for Redis Basic disables plaintext 6379 and serves TLS on 6380, so this "
+                        + "must be switchable by configuration alone")
+                .isEqualTo("true");
+        assertThat(env.getProperty("spring.datasource.url")).contains("sslMode=require");
+    }
+
+    /** application.yml resolved through Spring, with {@code overrides} winning as a real environment would. */
+    private static StandardEnvironment applicationYamlEnvironment(Map<String, Object> overrides) {
+        List<PropertySource<?>> sources;
+        try {
+            sources = new YamlPropertySourceLoader()
+                    .load("application", new ClassPathResource("application.yml"));
+        } catch (IOException e) {
+            fail("could not load application.yml: %s", e.getMessage());
+            return new StandardEnvironment();
+        }
+        if (sources.isEmpty()) {
+            fail("application.yml produced zero property sources — the assertion would be vacuous");
+        }
+        StandardEnvironment env = new StandardEnvironment();
+        // Injected env vars win over the file, exactly as a container's env does.
+        env.getPropertySources().addFirst(new MapPropertySource("injected", new LinkedHashMap<>(overrides)));
+        sources.forEach(s -> env.getPropertySources().addLast(s));
+        return env;
+    }
+
+    /**
+     * Runs the REAL {@link EmailChannel} over the REAL dispatch output and hands
+     * back the MimeMessage it actually sent, so the assertions read the headers
+     * production stamps rather than a second copy of the stamping rule.
+     */
+    private static MimeMessage deliveredEmail(String appOrigin, String oneClickOrigin) {
+        NotificationMessage message = UnsubscribeLinkFixture.dispatchAndCapture(appOrigin, oneClickOrigin);
+
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(mailSender.createMimeMessage())
+                .thenReturn(new MimeMessage(Session.getInstance(new Properties())));
+
+        EmailChannel channel = new EmailChannel(mailSender);
+        ReflectionTestUtils.setField(channel, "fromAddress", "noreply@jtoye.uk");
+        ReflectionTestUtils.setField(channel, "emailEnabled", true);
+        channel.deliver(message);
+
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        return captor.getValue();
     }
 
     // ------------------------------------------------------------------
