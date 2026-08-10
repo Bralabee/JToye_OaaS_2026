@@ -105,6 +105,21 @@ spec:
             secretKeyRef:
               name: postgres-credentials
               key: password
+        # --- Assumption A6 (Phase 29 / plan 29-02): Postgres TLS mode ---------
+        # Consumed by the JDBC URL (`?sslMode=${DB_SSL_MODE:prefer}`). It comes
+        # from app-config, NOT from postgres-credentials: unlike host/port/
+        # database/username/password above, the TLS mode is not a secret and it
+        # is not operator-supplied out-of-band — it is a per-environment policy
+        # that belongs in a reviewable manifest.
+        #
+        # A6 was an UNMEASURED research assumption (pgjdbc 42.7 is believed to
+        # default to `prefer`). Its failure mode is every database connection
+        # failing on the first deploy, so it is stated rather than inherited.
+        - name: DB_SSL_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: db.ssl-mode
         # Issue #94 [P2-3]: Hikari pool sized against the HPA replica CEILING.
         # (maxReplicas 10 + surge 1) × 12 + Keycloak 20 + pg-backup 1 +
         # exporter 2 = 155 ≤ 0.8 × (max_connections 200 − 3 reserved) = 157.
@@ -233,6 +248,27 @@ spec:
             configMapKeyRef:
               name: app-config
               key: redis.host
+        # --- Pitfall 7 (Phase 29 / plan 29-02): the managed-cache pair --------
+        # REDIS_PORT and REDIS_SSL always move TOGETHER. Azure Cache for Redis
+        # Basic disables the plaintext 6379 port and serves TLS on 6380, so
+        # either alone is a broken configuration: TLS against 6379 finds nothing
+        # listening, and plaintext against 6380 fails the handshake.
+        #
+        # REDIS_PORT was NOT injected before this plan even though app-config has
+        # carried a redis.port key since the base was written and application.yml
+        # has always read ${REDIS_PORT:6379}. The key reached nothing, so patching
+        # redis.port in an overlay would have been silently ignored — the DEF-6
+        # shape. Injecting it is what makes staging's 6380 real.
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: redis.port
+        - name: REDIS_SSL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: redis.ssl
         - name: RABBITMQ_HOST
           valueFrom:
             configMapKeyRef:
@@ -448,6 +484,17 @@ spec:
             configMapKeyRef:
               name: app-config
               key: notification.unsubscribe.base-url
+        # Issue #592 — the RFC 8058 one-click target, and a DIFFERENT origin from
+        # the key above (issue #516: the app origin serves the clickable page, the
+        # API origin serves the endpoint a provider POSTs to). Unsupplied, the
+        # application.yml default is the empty string and List-Unsubscribe
+        # degrades to a plain RFC 2369 link with no List-Unsubscribe-Post — which
+        # is what every deployed environment did until this entry existed.
+        - name: NOTIFICATION_UNSUBSCRIBE_ONE_CLICK_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: notification.unsubscribe.one-click-base-url
         # OPTIONAL Secret (notification-credentials). The application.yml
         # default for this signing secret is the EMPTY STRING — i.e. an HMAC
         # over an empty key, which is forgeable. Wiring it here makes the real

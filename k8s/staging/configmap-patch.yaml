@@ -79,6 +79,39 @@ data:
   notification.email.tracking-base-url: "https://app-staging.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app-staging.olajay.co.uk"
 
+  # Issue #592 — the RFC 8058 one-click target. DERIVED FROM THIS OVERLAY'S OWN
+  # api.url above, never from the base's production value, and that is not a
+  # style point: inheriting base here would make a STAGING rehearsal email
+  # advertise a one-click POST at the PRODUCTION API, so a recipient
+  # unsubscribing from a test email would mutate real production consent.
+  # UnsubscribeLinkRoutingTest asserts this equality per overlay.
+  notification.unsubscribe.one-click-base-url: "https://api-staging.olajay.co.uk"
+
+  # --- Pitfall 7 (Phase 29 / plan 29-02): managed-datastore transport --------
+  # Azure Cache for Redis Basic DISABLES the plaintext 6379 port and serves TLS
+  # on 6380 (ADR-0002 / D-09). These two always move together — TLS against 6379
+  # finds nothing listening, plaintext against 6380 fails the handshake.
+  # Enabling the cache's plaintext port instead would be the wrong fix: it puts
+  # session and cache traffic on the public internet in clear (T-29-02-02).
+  redis.ssl: "true"
+  redis.port: "6380"
+
+  # Assumption A6: staging asks for `require`, so a plaintext connection is
+  # REFUSED rather than silently downgraded. Azure Database for PostgreSQL
+  # Flexible Server ships require_secure_transport=on, so this is the mode that
+  # matches the server; base keeps "prefer" so compose is byte-identical.
+  db.ssl-mode: "require"
+
+  # The managed server's connection ceiling — a render-time declaration, no env.
+  # SOURCE: 429 is the documented default max_connections for a B2s Burstable
+  # Flexible Server (414 usable after the 15 reserved), recorded in
+  # 29-RESEARCH.md:187 citing learn.microsoft.com/azure/postgresql/
+  # configure-maintain/concepts-limits. It is NOT yet confirmed against a
+  # provisioned server: plan 29-01 owns provisioning and 29-04 owns teaching
+  # check-connection-math.sh to read this key. Re-measure with
+  # `SHOW max_connections;` on the real server before either lands.
+  db.max-connections: "429"
+
   # D-19: where Stripe returns a vendor after Connect onboarding. Paths match the
   # application.yml defaults; only the origin is staging-specific.
   stripe.connect.return-url: "https://app-staging.olajay.co.uk/dashboard/payments/connect/return"
