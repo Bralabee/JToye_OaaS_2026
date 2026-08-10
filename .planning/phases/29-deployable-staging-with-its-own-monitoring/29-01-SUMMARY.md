@@ -177,6 +177,14 @@ Resolved *without* the operator: GHCR visibility (PUBLIC), the DNS zone state, a
 - The three Azure resource providers are still `NotRegistered` (has a fallback — `az provider register`).
 - The only kube context on this host is `sipbihs2aks`, the **employer's cluster**. Every `kubectl` in later plans must pass `--context` explicitly or run after `az aks get-credentials`.
 
+## Self-Check: PASSED
+
+All three claimed files exist on disk; all four claimed commits resolve via
+`git cat-file -e`; both `must_haves.artifacts` contains-assertions hold
+(`snackpass` ×45 in the record, `Accepted` ×2 in the ADR). No file under `k8s/`,
+`scripts/`, `core-java/` or `.github/` was touched — `git diff --name-only 282ac017 HEAD`
+returns exactly the two files in `files_modified`, and no commit deleted a tracked file.
+
 ---
 *Phase: 29-deployable-staging-with-its-own-monitoring*
 *Completed: 2026-08-10*
