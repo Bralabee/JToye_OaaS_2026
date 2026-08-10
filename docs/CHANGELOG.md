@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      check-changelog-contract needs the SQUASH merge subject to carry "(#NNN)" (a rebase merge strips
      it — see the FLOOR note in scripts/gates/changelog-contract.conf). On conflict, keep THIS entry:
      "take theirs" silently deletes it and no gate catches that until after merge. -->
-### Phase 28 — security triage and the dev/prod boundary — 2026-08-10
+### Phase 28 — security triage and the dev/prod boundary — 2026-08-10 (#630)
 
 Eleven plans dispositioning a grey-box penetration test and hardening the boundary between the local
 dev stack and a deployed one. All eleven findings are tracked in `docs/security/PENTEST-TRIAGE.md`
