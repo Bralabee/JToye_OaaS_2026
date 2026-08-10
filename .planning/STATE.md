@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: ready_to_plan
-stopped_at: Phase 28 complete (11/11) — ready to discuss Phase 33
-last_updated: 2026-08-10T09:47:48.313Z
+stopped_at: Phase 29 context gathered — ready to plan Phase 29
+last_updated: 2026-08-10T12:00:00.000Z
 last_activity: 2026-08-10
 progress:
   total_phases: 14
@@ -21,12 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 33 — the consumer product
+**Current focus:** Phase 29 — deployable staging, with its own monitoring
 
 ## Current Position
 
-Phase: 33
-Plan: Not started
+Phase: 29
+Plan: Not started (context gathered 2026-08-10 — `29-CONTEXT.md`; both ROADMAP blockers settled
+in-discussion: hosting = AKS in jtoye-rg, domain = olajay.co.uk; ADR-0002 owner-signed, so
+DPLY-04 is unblocked)
 *(The `Plan: 1 of 8` line that stood here on 2026-08-09 was wrong and is deleted — it was written by
 one of the two verbs named below and would have sent a fresh session back to the start of a phase
 that is seven eighths done. The rest of that same uncommitted rewrite — `stopped_at`,
