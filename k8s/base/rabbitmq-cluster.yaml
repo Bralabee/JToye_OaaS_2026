@@ -1,0 +1,238 @@
+---
+# rabbitmq-cluster.yaml
+#
+# =============================================================================
+# WHAT THIS REPLACES, AND WHY IT IS NOT A NEW DEPENDENCY (D-09 / ADR-0002)
+#
+#   Until this file, the staging/production broker was NOT DEPLOYED FROM THIS
+#   REPOSITORY AT ALL. `infra/dependency-horizons.yaml`'s `rabbitmq-k8s` row
+#   recorded that in the bluntest possible terms — `pin: unknown`, `sites: []`,
+#   `owner: UNASSIGNED` — with a manual review expiring **2026-10-26**. Its note
+#   carried the measurement that produced it: *"grep -rn 'image:.*rabbitmq' k8s/
+#   returns NOTHING"*. The version of the message broker every order, every media
+#   upload and every KDS STOMP frame passes through was unknowable from the tree
+#   that ships it.
+#
+#   This file is what resolves that row. It is not "adding RabbitMQ" — RabbitMQ
+#   has always been on the request path (see docs/runbooks/messaging.md). It is
+#   moving the DECLARATION of it into the repository, where a gate can read it.
+#
+# WHY THE OPERATOR AND NOT A HAND-WRITTEN StatefulSet
+#
+#   A hand-rolled StatefulSet would have to own: the PVC template, the erlang
+#   cookie, `enabled_plugins`, the default-user bootstrap, the readiness gate that
+#   knows the difference between "the port is open" and "the node has joined", and
+#   the ordered restart that a plugin change does or does not need. The operator
+#   owns all of that upstream, and — the reason that matters here — it is the
+#   thing that makes `rabbitmq_stomp` a DECLARED one-line fact instead of a
+#   configuration file we maintain.
+#
+# THE STOMP PORT IS VERIFIED, NOT ASSUMED
+#
+#   A STOMP destination that never binds is the exact shape of this project's
+#   recorded STOMP-relay trap (a relay that rejects the destination while
+#   reconnect-polling fakes liveness). So the claim was read out of the operator's
+#   own source at the PINNED tag rather than taken from documentation:
+#
+#     https://raw.githubusercontent.com/rabbitmq/cluster-operator/v2.22.3/
+#       internal/resource/service.go  (fetched 2026-08-11, HTTP 200)
+#
+#       if builder.Instance.AdditionalPluginEnabled("rabbitmq_stomp") {
+#           servicePortsMap["stomp"] = corev1.ServicePort{
+#               Protocol: corev1.ProtocolTCP, Port: 61613,
+#               TargetPort: intstr.FromInt(61613), Name: "stomp", ... }
+#       }
+#
+#   That block is UNCONDITIONAL on TLS. A SECOND block further down adds
+#   `stomps` on 61614 — but it sits inside the TLS branch, so with no
+#   `spec.tls` configured (as here) 61613 is the only STOMP port that appears.
+#   That distinction is why the source was read rather than the port memorised:
+#   61614 in a policy would look plausible and match nothing.
+#
+#   Two more facts read out of the same tree, both load-bearing below:
+#     - internal/resource/service.go:31   `ServiceSuffix = ""`, and
+#       api/v1beta1/rabbitmqcluster_types.go:529 `ChildResourceName` joins on "-"
+#       then TrimSuffix's it — so the CLIENT SERVICE IS NAMED EXACTLY
+#       `jtoye-rabbitmq`. That is already what plan 29-06's Prometheus scrape
+#       config targets (`jtoye-rabbitmq:15692`), written a plan before the
+#       workload existed.
+#     - internal/resource/service.go:285  port 15692 (`prometheus`) is on the
+#       client Service whenever the metrics plugin is on, which the operator
+#       always enables.
+#
+# THE POD LABELS ARE THE OPERATOR'S, AND kustomize CANNOT CHANGE THEM
+#
+#   networkpolicies/50-observability.yaml left this workload's rule unwritten on
+#   purpose, saying *"its pod labels are the operator's to declare … guessing a
+#   selector here would produce a rule that silently matches nothing"*. Measured,
+#   at the pinned tag, in internal/metadata/label.go:
+#
+#       Label(instanceName) = { app.kubernetes.io/name: <instance>,
+#                               app.kubernetes.io/component: rabbitmq,
+#                               app.kubernetes.io/part-of:   rabbitmq }
+#
+#       GetLabels(instanceName, instanceLabels) merges the CR's OWN labels on top
+#       — but SKIPS every key with the `app.kubernetes.io` prefix.
+#
+#   Two consequences, and the second is a trap:
+#     1. This kustomization's common labels (`app.kubernetes.io/managed-by`,
+#        `app.kubernetes.io/part-of: jtoye-platform`) are applied to THIS CR's
+#        metadata and then DROPPED by the operator before they reach a pod. A
+#        NetworkPolicy selecting `app.kubernetes.io/part-of: jtoye-platform`
+#        would therefore match every other workload in the namespace and NOT the
+#        broker.
+#     2. `app.kubernetes.io/name: jtoye-rabbitmq` is the one key the operator
+#        also uses as the StatefulSet's own `spec.selector.matchLabels`
+#        (LabelSelector()), so it is guaranteed present on every broker pod and
+#        cannot drift without the operator's own selector drifting with it.
+#   networkpolicies/40-datastores.yaml selects on exactly that key, and nothing
+#   else, for exactly that reason.
+#
+# THE IMAGE PIN IS EXPLICIT, AND THAT IS THE DELIVERABLE
+#
+#   The operator ships a perfectly good default image. Accepting it would leave
+#   `pin: unknown` TRUE IN SUBSTANCE while the horizon row said otherwise: the
+#   deployed version would be a property of whichever operator release happened to
+#   be installed, discoverable only by `kubectl describe` against a live cluster.
+#   `spec.image` is therefore set explicitly, to the SAME tag compose runs
+#   (`rabbitmq:4.3.4-management-alpine`), so dev and staging are one declared
+#   version and `check-dependency-horizons.sh` H-1 discovers it from `k8s/base`.
+#
+#   4.3.4 is not a free choice. docs/runbooks/rabbitmq-broker-upgrade.md records
+#   that there is NO in-place 3.12 -> 4.x path (the chain is 3.12 -> 3.13 -> 4.2
+#   -> 4.3 and 4.3 has no Mnesia reader at all), so the dev broker was moved by
+#   FRESH INSTALL. That is exactly what a brand-new staging cluster is, which is
+#   why adopting 4.3.4 here is the cheap moment and a later 3.x-compatible choice
+#   would not be. The community-support window closes 2026-11-30 — this row goes
+#   AMBER ~2026-09-01 and RED on 2026-12-01 with no commit in between, as
+#   infra/dependency-horizons.yaml's header states in advance.
+#
+# CREDENTIALS: THE OPERATOR WAITS FOR A SECRET IT DOES NOT CREATE
+#
+#   `secretBackend.externalSecret` names an out-of-band Secret, so NO `kind:
+#   Secret` enters any kustomize build and check-no-plaintext-secrets.sh stays
+#   satisfied. The operator BLOCKS until that Secret exists rather than generating
+#   its own — which is the behaviour we want, because a generated credential would
+#   not be the one core-java is injected with.
+#
+#   ### THE KEY THE SECRET MUST CARRY, AND IT IS NOT `username`/`password` ###
+#
+#   Read at the pinned tag, internal/resource/statefulset.go:958-983
+#   (`appendDefaultUserSecretVolumeProjection`): under `externalSecret` the
+#   operator projects EXACTLY ONE key out of the named Secret —
+#
+#       Items: []corev1.KeyToPath{{ Key: "default_user.conf",
+#                                   Path: "default_user.conf" }}
+#
+#   — and mounts it at /etc/rabbitmq/conf.d/11-default_user.conf. Its content is
+#   an ini stanza (internal/resource/default_user_secret.go:204-218):
+#
+#       default_user = <username>
+#       default_pass = <password>
+#
+#   core-java, meanwhile, reads `username` and `password` from the SAME Secret
+#   (core-java-deployment.yaml:319-328, `rabbitmq-credentials`). So the Secret
+#   needs THREE keys, and the third must agree with the first two:
+#
+#       username           <- read by core-java   (RABBITMQ_USER)
+#       password           <- read by core-java   (RABBITMQ_PASSWORD)
+#       default_user.conf  <- read by the OPERATOR, and by nothing else
+#
+#   A Secret carrying only the first two renders fine, applies fine, and produces
+#   a broker whose default user is not the one the application authenticates as:
+#   every AMQP and STOMP connection is refused with ACCESS_REFUSED while every
+#   manifest looks correct. `scripts/staging-secrets.sh` owns creating it — that
+#   file belongs to plan 29-10 and is deliberately not edited from here; the
+#   obligation is recorded in this phase's deferred-items.md with the owner named
+#   rather than assumed to be obvious.
+#
+# ORDERING: `kustomize build` DOES NOT NEED THE CRDs — `--dry-run=server` DOES
+#
+#   `kubectl kustomize k8s/staging` renders this document without knowing what a
+#   RabbitmqCluster is; kustomize does no schema validation. A SERVER-side
+#   dry-run is a different thing entirely: it asks the API server to admit the
+#   object, and until `scripts/staging-bootstrap.sh` has installed the operator
+#   (which installs the `rabbitmq.com/v1beta1` CRDs) the API server answers
+#
+#       error: unable to recognize "STDIN": no matches for kind "RabbitmqCluster"
+#           in version "rabbitmq.com/v1beta1"
+#
+#   So the bootstrap script MUST run before the first `kubectl apply -k` or
+#   `apply --dry-run=server` of any overlay. That is a sequencing constraint on
+#   plan 29-11, stated here so it is not discovered against a live cluster. The
+#   same constraint is why cert-manager must be installed FIRST of all: the
+#   operator's own release manifest contains `cert-manager.io/v1` objects.
+#
+#   THE SAME CONSTRAINT APPLIES TO k8s/local, AND IT IS HANDLED THERE. minikube
+#   runs no operator, and scripts/k8s-local-up.sh does `apply -k --dry-run=server`
+#   — so a rendered RabbitmqCluster would fail the whole local bring-up, not just
+#   this object. k8s/local/kustomization.yaml therefore removes this document from
+#   its render with a `$patch: delete`, which is consistent with that overlay's
+#   stated design rather than a workaround: local deliberately consumes the
+#   COMPOSE backing services over host.minikube.internal, and its
+#   configmap-patch.yaml already shims `rabbitmq.host` and `stomp.broker.relay-host`
+#   to exactly that.
+#
+# WHAT NOT TO "FIX"
+#
+#   - Do not delete `spec.image` to "let the operator manage it". That single line
+#     is what resolves the `rabbitmq-k8s` horizon row; removing it re-opens the
+#     unknown while leaving the row claiming otherwise.
+#   - Do not add `spec.tls`. It would add 61614/`stomps` and 15691/`prometheus-tls`
+#     to the client Service, and every NetworkPolicy and scrape target that names
+#     the plaintext port would then be addressing a port the Service still has but
+#     the application is no longer told to use. TLS on the in-cluster broker is a
+#     deliberate change with its own policy and config edits, not a flag.
+#   - Do not replace `secretBackend.externalSecret` with an operator-generated
+#     credential. core-java is injected from `rabbitmq-credentials`; a generated
+#     secret would be a different credential, and the symptom is ACCESS_REFUSED on
+#     a cluster where everything reports healthy.
+#
+# PERSISTENCE: the operator's default `spec.persistence.storage` is 10Gi against
+#   the cluster's default StorageClass. It is left at the default deliberately —
+#   this broker holds no durable business state (the outbox tables in Postgres are
+#   the durability layer; see the "Keep RabbitMQ" decision record and
+#   docs/runbooks/messaging.md), so the number is not load-bearing and inventing a
+#   different one would be a decision dressed as configuration. Stated here so the
+#   value is declared rather than merely defaulted.
+# =============================================================================
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  name: jtoye-rabbitmq
+  labels:
+    app.kubernetes.io/component: broker
+spec:
+  # ONE replica. Staging is a rehearsal environment under a ~GBP 150/mo estate
+  # ceiling (D-03), and a 3-node quorum would triple this workload's CPU, memory
+  # and PVC footprint to buy availability nothing in staging measures. The
+  # clustering ports in networkpolicies/40-datastores.yaml are written anyway —
+  # see the note there for why that is not speculative.
+  replicas: 1
+
+  # EXPLICIT, and see the header: this line is the deliverable, not a default
+  # someone forgot to remove. Same tag as docker-compose.full-stack.yml:240.
+  image: rabbitmq:4.3.4-management-alpine
+
+  secretBackend:
+    # The operator waits for this Secret rather than generating one. It must
+    # carry `default_user.conf` as well as `username`/`password` — see the header
+    # for the source reference and for what happens when it does not.
+    externalSecret:
+      name: rabbitmq-credentials
+
+  rabbitmq:
+    additionalPlugins:
+      # THE ONE LINE THIS WHOLE MOVE IS FOR. `rabbitmq_prometheus` is not listed
+      # because the operator always enables it (and 15692 with it); `rabbitmq_stomp`
+      # is not enabled by default and adds port 61613 named `stomp` to the client
+      # Service. Verified in the operator's source at the pinned tag — header.
+      - rabbitmq_stomp
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"

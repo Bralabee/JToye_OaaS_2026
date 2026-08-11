@@ -102,3 +102,81 @@ compose Postgres (`docker-compose.full-stack.yml` healthcheck asserts it exists)
 so pointing an in-cluster local Keycloak at the same database would give two
 servers one schema — which is why the answer is a decision and not a default, and
 why this plan recorded it instead of guessing.
+
+---
+
+## DEF-29-4 — `rabbitmq-credentials` needs a THIRD key (`default_user.conf`) or the broker refuses every connection
+
+- **Found during:** plan 29-09, Task 1, reading the cluster operator's source at the pinned tag
+- **Owner:** `scripts/staging-secrets.sh` — plan 29-10's file, deliberately not edited from 29-09
+
+**The measurement.** Read at `v2.22.3`, the tag `scripts/staging-bootstrap.sh`
+pins. `internal/resource/statefulset.go:958-983`
+(`appendDefaultUserSecretVolumeProjection`): when `secretBackend.externalSecret`
+is set, the operator projects **exactly one key** out of the named Secret —
+
+```go
+Items: []corev1.KeyToPath{{ Key: "default_user.conf", Path: "default_user.conf" }}
+```
+
+— and mounts it at `/etc/rabbitmq/conf.d/11-default_user.conf`. The content format
+is an ini stanza (`internal/resource/default_user_secret.go:204-218`):
+
+```
+default_user = <username>
+default_pass = <password>
+```
+
+**The collision.** `k8s/base/core-java-deployment.yaml:319-328` reads `username`
+and `password` from the *same* `rabbitmq-credentials` Secret. So that Secret needs
+three keys, and the third must agree with the first two:
+
+| Key | Read by | Consequence if absent/divergent |
+|---|---|---|
+| `username` | core-java `RABBITMQ_USER` | app authenticates as the Spring default `jtoye` |
+| `password` | core-java `RABBITMQ_PASSWORD` | app has no credential |
+| `default_user.conf` | **the operator, and nothing else** | broker's default user is not the one the app uses |
+
+**Why it is not fixed here.** 29-09 owns the manifests; `scripts/staging-secrets.sh`
+belongs to plan 29-10 and that worktree is parked. Editing another plan's file
+across a worktree boundary is how two agents produce one broken merge.
+
+**How it will surface if nobody acts:** every AMQP and STOMP connection refused
+with `ACCESS_REFUSED`, on a cluster where the CR is `Ready`, the pod passes its
+probes, the NetworkPolicy permits the traffic and every static gate is green. The
+platform reports a *messaging* failure caused by a *secret-shape* omission.
+
+---
+
+## DEF-29-5 — `keycloak.admin.base-url` in the base ConfigMap still names the `jtoye-infrastructure` namespace
+
+- **Found during:** plan 29-09, Task 1, while sweeping app-config for infra-namespace addresses
+- **Owner:** whoever next edits `k8s/base/configmap.yaml`'s identity block (29-08's surface)
+
+**The measurement** (2026-08-11, from the repo root, `--include` scoped so the
+`.planning` tree and the goldens cannot pad the count):
+
+```
+k8s/base/configmap.yaml:16   keycloak.admin.base-url: "http://keycloak.jtoye-infrastructure.svc.cluster.local:8080"
+k8s/base/configmap.yaml:262  redis.host:              "redis-cluster.jtoye-infrastructure.svc.cluster.local"
+k8s/base/configmap.yaml:295  rabbitmq.host:           "rabbitmq.jtoye-infrastructure.svc.cluster.local"   <- fixed by 29-09
+k8s/base/configmap.yaml:331  stomp.broker.relay-host: "rabbitmq.jtoye-infrastructure.svc.cluster.local"   <- fixed by 29-09
+```
+
+D-02 (plan 29-08) moved Keycloak in-cluster, into the app's own namespace, exactly
+as D-09 moved the broker — but the admin base URL still points at a Service in a
+namespace this repository does not create. `redis.host` is a different case and is
+**correct as it stands**: D-09 moved Redis to a managed endpoint addressed by
+`ipBlock`, and staging patches the host in its own overlay.
+
+**Why it is not fixed here.** `keycloak.admin.base-url` drives the Keycloak
+deprovisioning admin client (issue #102), which is `jtoye.keycloak.admin.enabled=false`
+by default — so the value is inert today and changing it is a behaviour decision
+about a feature 29-09 does not own. It is recorded rather than swept in because a
+same-shaped edit in the same file is exactly how an unrelated regression rides
+along on a plausible-looking commit.
+
+**How it will surface if nobody acts:** the admin re-trigger endpoint
+`POST /api/v1/admin/tenants/{id}/keycloak/deprovision` fails to resolve its host
+the first time an operator enables the feature in staging — long after the change
+that made it wrong.

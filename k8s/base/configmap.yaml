@@ -291,8 +291,31 @@ data:
   redis.egress-cidr: "0.0.0.0/0"
 
 
-  # RabbitMQ configuration
-  rabbitmq.host: "rabbitmq.jtoye-infrastructure.svc.cluster.local"
+  # --- RabbitMQ (D-09 / ADR-0002, plan 29-09) --------------------------------
+  # THE HOST CHANGED, AND WITHOUT IT THE BROKER MOVE WOULD BE INERT.
+  # This key used to read `rabbitmq.jtoye-infrastructure.svc.cluster.local` — a
+  # Service in a namespace this repository does not create, belonging to a broker
+  # it did not deploy. D-09 moves the broker in-cluster via the cluster operator
+  # (k8s/base/rabbitmq-cluster.yaml), into the SAME namespace as core-java.
+  #
+  # Leaving the old value would have produced the worst kind of green: the CR
+  # renders, the NetworkPolicy permits the new pods, every gate passes — and the
+  # application still dials a name that resolves to nothing, so the broker sits
+  # idle while the platform reports a connection failure at a layer nobody
+  # changed. A structural pass over a dead path.
+  #
+  # `jtoye-rabbitmq` is the operator's CLIENT SERVICE, named after the cluster
+  # (verified: internal/resource/service.go:31 `ServiceSuffix = ""` +
+  # rabbitmqcluster_types.go:529 `ChildResourceName`). The bare, same-namespace
+  # short name is deliberate — it is what makes ONE base value correct in every
+  # overlay, since each renders its own broker in its own namespace. It matches
+  # what plan 29-06's Prometheus scrape config already targets.
+  #
+  # k8s/local overrides both host keys to `host.minikube.internal` (the compose
+  # broker) and is unaffected; LOC-1 asserts that shim per key by name.
+  rabbitmq.host: "jtoye-rabbitmq"
+  # 5672 is the operator's AMQP port and it does not vary: changing it needs a
+  # `spec.override.service` patch on the CR, not a config edit.
   rabbitmq.port: "5672"
 
   # RabbitMQ listener tuning (Phase 27 / 27-04). Bound by RabbitListenerProperties under
@@ -327,8 +350,19 @@ data:
   sql.log.level: "WARN"
 
   # STOMP broker relay configuration
+  #
+  # SAME MOVE, SAME REASON as rabbitmq.host above — and this is the half where a
+  # stale value is hardest to diagnose. The recorded STOMP trap on this project is
+  # that a relay which cannot reach its broker RECONNECT-POLLS, so the KDS
+  # WebSocket looks alive while no frame is ever delivered. A relay host pointing
+  # at a namespace that does not exist is exactly that failure.
+  #
+  # 61613 is the port `additionalPlugins: [rabbitmq_stomp]` adds to the operator's
+  # client Service (read at the pinned tag v2.22.3, internal/resource/service.go
+  # :163-171). NOT 61614 — that is `stomps`, and it only exists when the cluster
+  # is configured with TLS, which it is not.
   stomp.broker.mode: "relay"
-  stomp.broker.relay-host: "rabbitmq.jtoye-infrastructure.svc.cluster.local"
+  stomp.broker.relay-host: "jtoye-rabbitmq"
   stomp.broker.relay-port: "61613"
 
   # pg-backup CronJob S3 target (#90). Leave s3.backup.endpoint empty for real

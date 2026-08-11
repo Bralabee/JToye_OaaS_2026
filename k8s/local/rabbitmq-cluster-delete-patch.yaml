@@ -1,0 +1,50 @@
+---
+# rabbitmq-cluster-delete-patch.yaml
+#
+# =============================================================================
+# WHY THE LOCAL OVERLAY REMOVES THE BROKER CR FROM ITS RENDER
+#
+# THE GOOD BEING PRESERVED. `scripts/k8s-local-up.sh` runs
+# `kubectl apply -k k8s/local --dry-run=server` (line 453) before the real apply.
+# A server-side dry-run asks the API server to admit every object, and minikube
+# runs no RabbitMQ cluster operator, so a rendered `RabbitmqCluster` fails the
+# WHOLE bring-up — not just that object:
+#
+#     error: unable to recognize "STDIN": no matches for kind "RabbitmqCluster"
+#         in version "rabbitmq.com/v1beta1"
+#
+# Plan 29-09 adds that CR to k8s/base (D-09 / ADR-0002). Without this patch, a
+# working local deploy-layer rehearsal — the one surface no other local runtime
+# exercises — would stop working the moment the broker landed. Regression by
+# omission is a defect even when every gate is green.
+#
+# THIS IS THE OVERLAY'S OWN DESIGN, NOT A WORKAROUND. k8s/local/kustomization.yaml
+# states it plainly: *"The local cluster consumes the SHARED docker-compose
+# backing services (Postgres, Redis, RabbitMQ, Keycloak, MinIO, Mailhog) over
+# host.minikube.internal"*, and k8s/local/configmap-patch.yaml already shims
+# `rabbitmq.host` and `stomp.broker.relay-host` to `host.minikube.internal`. A
+# local cluster was never going to talk to an in-cluster broker; deleting the CR
+# makes the render agree with the configuration that was already there.
+#
+# WHY THIS IS NOT THE SAME CALL PLAN 29-08 MADE FOR KEYCLOAK. That plan
+# deliberately left an unusable Keycloak in the local render (see
+# .planning/.../deferred-items.md DEF-29-3) because LOC-2 in
+# k8s/scripts/check-render-invariants.sh compares DEPLOYMENT COUNTS: every
+# Deployment base renders must appear in the local render at `replicas: 1`, so a
+# `$patch: delete` there would fail that invariant — LOC-2 doing its job. A
+# `RabbitmqCluster` is not a Deployment, so no such invariant governs it. The two
+# failure modes differ in severity as well as in mechanism: Keycloak's is one pod
+# stuck at CreateContainerConfigError with a named missing Secret key, loud and
+# contained; this one aborts the apply of all ~40 objects.
+#
+# WHAT REMAINS ASSERTED LOCALLY. `rabbitmq-allow` in
+# networkpolicies/40-datastores.yaml still renders here — NetworkPolicies are
+# deliberately unpatched in this overlay (D-11) so local proves their manifest
+# VALIDITY, never their enforcement. Only the workload is removed, which is the
+# minimum that keeps the bring-up working.
+# =============================================================================
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  name: jtoye-rabbitmq
+$patch: delete

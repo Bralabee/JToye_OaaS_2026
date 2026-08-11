@@ -101,6 +101,24 @@ resources:
   - keycloak/realm-import-configmap.yaml
   - keycloak/keycloak-deployment.yaml
   - keycloak/keycloak-networkpolicy.yaml
+  # The message broker (D-09 / ADR-0002, plan 29-09) — the last datastore this
+  # repository did not declare. `infra/dependency-horizons.yaml`'s `rabbitmq-k8s`
+  # row read `pin: unknown` / `sites: []` / `owner: UNASSIGNED` precisely because
+  # `grep -rn 'image:.*rabbitmq' k8s/` returned nothing; this entry is what makes
+  # that grep return something, which is what resolves the row before its
+  # 2026-10-26 review expires.
+  #
+  # A CUSTOM RESOURCE, SO IT RENDERS WITHOUT ITS CRD BUT DOES NOT APPLY WITHOUT
+  # IT. `kubectl kustomize` does no schema validation, so every gate in this
+  # repository is satisfied by the file alone. A SERVER-side dry-run is not:
+  # `scripts/staging-bootstrap.sh` must install cert-manager and then the
+  # RabbitMQ cluster operator BEFORE the first `kubectl apply -k` of any overlay,
+  # or the API server answers `no matches for kind "RabbitmqCluster"`. That is a
+  # sequencing constraint on plan 29-11, recorded here and in the manifest's own
+  # header so it is not met for the first time against a live cluster.
+  # k8s/local removes this document from its render for the same reason — see
+  # the note in k8s/local/kustomization.yaml.
+  - rabbitmq-cluster.yaml
 
 # =============================================================================
 # THE ALERT CORPUS — one corpus, enforced rather than intended (D-16 / plan 29-06)

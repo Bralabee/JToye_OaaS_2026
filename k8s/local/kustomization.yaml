@@ -149,6 +149,13 @@ patches:
   - path: scale-patch.yaml
   - path: ingress-patch.yaml
   - path: sse-ingress-patch.yaml
+  # Removes the operator-managed broker CR (plan 29-09) from the local render.
+  # minikube installs no RabbitMQ cluster operator, and scripts/k8s-local-up.sh
+  # does `apply -k --dry-run=server`, so an unrecognised kind aborts the entire
+  # local bring-up rather than just that object. The full reasoning — including
+  # why this is the OPPOSITE call from the one plan 29-08 made for Keycloak — is
+  # in the patch file's own header.
+  - path: rabbitmq-cluster-delete-patch.yaml
 
 # Local runs ONE of each service (D-09, DEF-3).
 #
