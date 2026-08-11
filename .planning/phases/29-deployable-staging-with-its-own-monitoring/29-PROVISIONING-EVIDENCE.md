@@ -845,6 +845,63 @@ serving contains the **Zoho MX records** (`mx.zoho.eu`, `mx2.zoho.eu`, `mx3.zoho
 **`v=spf1 include:zoho.eu ~all`** TXT record. If the panel on screen does **not** show those, it is
 the wrong zone — and adding records there will never take effect.
 
+### 7.4 Third attempt: the Zoho discriminator was satisfied, and the records still are not there
+
+The owner located the panel showing the Zoho MX records and added the four A records there.
+Re-measured **2026-08-11T05:22Z** — unchanged:
+
+```
+api-staging / app-staging / auth-staging / grafana-staging   ->  aa-NXDOMAIN, all four
+CONTROL  NS olajay.co.uk -> NOERROR, 4 answers ; MX -> the three Zoho hosts
+```
+
+Three additional questions were asked, then the loop was stopped.
+
+**Q1 — has the zone been written to at all? No.** The SOA serial reads `1634401895` on all four
+nameservers and is now unchanged across **four** readings spanning ~8 hours (21:14Z, 23:26Z, 05:12Z,
+05:22Z). It is a 2021 timestamp.
+
+**Q2 — do the names exist as some other record type? No.** Asked explicitly for `A`, `CNAME` and
+`AAAA` on each of the four: **NXDOMAIN for all twelve**. `NXDOMAIN` is a statement about the *name*,
+not the type, so a record of the wrong type is ruled out.
+
+**Q3 — are the records on a different NS1 delegation set?** This was a specific, testable
+hypothesis: Netlify assigns each zone a delegation set (`dns1-4.pNN.nsone.net`), and a domain removed
+and re-added can land on a new set while the registrar still points at the old one — which would fit
+every symptom, including the owner correctly finding a panel with the Zoho records. Probed
+`p01`–`p10` directly:
+
+```
+dns1.p01 … dns1.p10 .nsone.net    ->  aa-NXDOMAIN on every one, no answers
+registrar delegation (dig @dns1.nic.uk)  ->  dns1-4.p05.nsone.net
+```
+
+**Hypothesis NOT supported.** Every NS1 set answers authoritatively and none holds the records, so
+the records are not in NS1 at all.
+
+**What is established, and what is not.** Established: the records are absent from every NS1
+delegation set; the served zone has not been written to since 2021 by its own serial; the delegation
+is unambiguous and points at `p05`. Not established: which panel the owner's edits are actually
+reaching — that is not observable from outside, and guessing it a third time would repeat the two
+guesses already falsified (§7.2 doubled name, §7.4 Q3 delegation set).
+
+**The one comparison that would settle it, and it must be made from inside the panel:** in the
+Netlify DNS zone that shows the Zoho MX records, read the **nameservers Netlify lists for that
+zone** and compare them against the registrar's delegation, `dns1-4.p05.nsone.net`.
+
+- If Netlify lists a **different** set (e.g. `p06`), the zone is real but undelegated — fix by
+  updating the nameservers at the registrar to match what Netlify lists.
+- If Netlify lists **`p05`**, then edits should be reaching the servers being queried and are not,
+  which points at an unpublished/pending state on Netlify's side rather than anything this end can
+  correct.
+
+**Task 3 remains open. `INGRESS_STATIC_IP = 20.58.10.18` is unchanged.** D-08 is incidentally still
+satisfied — no production name resolves either.
+
+**What this blocks:** Let's Encrypt **HTTP-01** issuance needs these names resolving to the ingress
+IP, so TLS for the staging hostnames cannot be obtained until this is fixed. It does not block the
+cluster, the datastores, or any in-cluster work.
+
 ---
 
 ## 8. Status against the plan's success criteria
@@ -975,6 +1032,38 @@ either.
 
 Task 2 therefore did not start. All seven names are deficient (empty); **no value is recorded here,
 only the fact of absence.**
+
+### 9.3 Task 2 is PARKED by owner decision, 2026-08-11
+
+**Owner decision, delivered 2026-08-11 through the orchestrator's `AskUserQuestion` gate:
+"Park secrets for now."** Taken knowingly, with the downstream cost stated at the time. This is a
+deliberate deferral, not an unfinished task that was quietly dropped — recorded here so that a later
+reader cannot mistake one for the other.
+
+**What is deferred, in the order it must be done when the values arrive:**
+
+1. Populate the seven names in `~/.jtoye/staging-operator.env` — four `AWS_*` (eu-west-2 media and
+   backup) and three `ALERTMANAGER_SMTP_*` (Gmail app password, From, To).
+2. Run `scripts/staging-secrets.sh --context jtoye-staging` to create the staging namespace and every
+   Secret the `k8s/staging` render consumes.
+3. Bootstrap the three database roles on the managed server — `jtoye_app`, `jtoye_runtime`,
+   `jtoye_backup` — and run the §9.0 `pg_roles` verification **including its fail-direction arm** and
+   the `<readable> of <total>` table count.
+
+**Step 3 must run from INSIDE the cluster**, not from this host: the Postgres firewall admits only
+`20.26.28.17` (the AKS egress IP), so `psql` from here is refused. The alternative is a temporary
+operator-IP firewall rule, added and then removed.
+
+**What the park blocks downstream, stated rather than discovered later:**
+
+| Blocked | Why |
+|---|---|
+| **29-12** — alert liveness | Alertmanager cannot send without the SMTP credential; "alerts a human" is this phase's entire point (D-17) |
+| **29-13** — PITR / restore drill | needs the AWS backup bucket credential, and `jtoye_backup` does not exist yet |
+| **DPLY-04** — the BYPASSRLS proof | `rolbypassrls` cannot be read from a role that has not been created |
+
+The PG16 precondition that makes DPLY-04 *possible* is met and verified (§2.3); only the role
+bootstrap and its verification are outstanding.
 
 Two notes the template itself carries, because both are common failure modes:
 - The Gmail value must be a **16-character app password**, not the account password — Gmail rejects

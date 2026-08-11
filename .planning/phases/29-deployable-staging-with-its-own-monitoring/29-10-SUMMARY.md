@@ -3,7 +3,7 @@ phase: 29-deployable-staging-with-its-own-monitoring
 plan: 10
 subsystem: infra
 tags: [azure, aks, cilium, postgresql, redis, dns, cost, secrets, provisioning]
-status: CHECKPOINT (2nd) — Task 1 COMPLETE; Task 2 credentials still empty (verified against a working control); Task 3 zone holds zero A records — edits landing in a different zone
+status: Task 1 COMPLETE · Task 2 PARKED by owner decision 2026-08-11 · Task 3 BLOCKED — records absent from every NS1 delegation set
 
 # Dependency graph
 requires:
@@ -50,8 +50,9 @@ key-decisions:
   - "Did NOT substitute Azure Managed Redis for the blocked Azure Cache for Redis — different provider and port, so Rule 4, raised as a checkpoint"
   - "Rotated the administrator password after the CLI disclosed it in its own output, rather than only scrubbing the log"
 
-requirements-completed: []
-requirements-partial: [DPLY-01]
+requirements-completed: [DPLY-01]
+requirements-partial: [DPLY-05]
+requirements-blocked: [DPLY-04]
 
 # Metrics
 duration: 90min
@@ -78,8 +79,8 @@ completed: 2026-08-10
 | 1b | Move staging to Azure Managed Redis, port 6380 → 10000 | `b8a85f15` | 13 files — configmap-patch, goldens, base comments, decision record, provisioning script |
 | 1c | Managed Redis live; provisioning script rc=0 end-to-end | `5f0f7018` | `29-PROVISIONING-EVIDENCE.md`, `scripts/azure-staging-provision.sh` |
 | — | merge 29-06's monitoring manifests + goldens | `(merge)` | `e9e39c19` merged conflict-free before any edit |
-| 2 | Databases, three roles, BYPASSRLS proof | — | **BLOCKED** — 7 operator values still empty |
-| 3 | DNS A records at Netlify | — | **BLOCKED** — records absent at the authoritative NS |
+| 2 | Databases, three roles, BYPASSRLS proof | — | **PARKED by owner 2026-08-11** — 7 operator values never supplied |
+| 3 | DNS A records at Netlify | — | **BLOCKED** — absent from every NS1 delegation set, after 3 operator attempts |
 
 ## What exists now
 
@@ -221,6 +222,24 @@ waiting instead of checking.
 
 **Base-env Python is blocked on this host** (same guard 29-01 hit); `jq` and `awk` were used for the price arithmetic instead.
 
+## Task 2: PARKED by owner decision (2026-08-11)
+
+**"Park secrets for now"** — owner decision delivered 2026-08-11 through the orchestrator's
+`AskUserQuestion` gate, taken knowingly with the downstream cost stated. A deliberate deferral, not
+an unfinished task that was quietly dropped. Full detail in `29-PROVISIONING-EVIDENCE.md` §9.3.
+
+**Remaining work, in order:** populate the seven names in `~/.jtoye/staging-operator.env` → run
+`scripts/staging-secrets.sh --context jtoye-staging` (namespace + Secrets) → bootstrap the three DB
+roles and run the §9.0 `pg_roles` verification *including its fail-direction arm* and the
+`<readable> of <total>` count. **Step 3 must run from inside the cluster** — the Postgres firewall
+admits only the AKS egress IP, so `psql` from this host is refused.
+
+**What the park blocks:** **29-12** (Alertmanager cannot send without the SMTP credential — "alerts a
+human" is the phase's whole point, D-17), **29-13** (PITR drill needs the AWS backup credential and
+`jtoye_backup`), and **DPLY-04** (`rolbypassrls` cannot be read from a role that does not exist). The
+PG16 precondition that makes DPLY-04 *possible* is met and verified; only the bootstrap is
+outstanding.
+
 ## Round 2: both "it's fixed" reports were checked, and both were still open
 
 The owner reported DNS fixed and secrets filled. Both were re-measured rather than taken on trust,
@@ -283,15 +302,27 @@ None in code. What has **not** happened:
 **Task 1 is COMPLETE.** The estate exists and the provisioning script runs clean end-to-end at
 `rc=0`. Two blockers remain, both operator-only. Details in `29-PROVISIONING-EVIDENCE.md` §7.2, §9.
 
-1. **Task 2 is blocked ENTIRELY, and that is measured rather than assumed.** `scripts/staging-secrets.sh` runs its 23-name value preflight at STEP 3 (lines 223–280), **before** the `case "$MODE"` dispatch and **not** gated by it — so `--roles-only` and even read-only `--verify-roles-only` refuse until all 23 variables are present. Seven are operator-only, and after the values were reported filled they measured **`populated=0 empty=7`** again. That negative was falsified first: a filled scratch copy reports `7 of 7`, so the checker is not blind; and the file's mtime (`00:11:09`) and size (1766 B) are byte-identical to creation, so it was never edited. No other `*.env` under `$HOME` was modified either.
-2. **Task 3: the four A records are absent, and the cause is now diagnosed.** The zone that actually serves `olajay.co.uk` — delegation confirmed at the `.co.uk` registry — holds **zero A records anywhere**: not the four staging names, not their doubled variants (that theory was tested and falsified), not `www`/`mail`/`staging`/`test`, and the apex returns NODATA for A. It does serve Zoho MX and an SPF TXT. So the edits are reaching a different zone from the one being served.
+1. **Task 2 — PARKED by owner** (above). The measurement that preceded the park: `staging-secrets.sh` runs its 23-name preflight at STEP 3 (lines 223–280), **before** the `case "$MODE"` dispatch and **not** gated by it, so even read-only `--verify-roles-only` refuses until all 23 are present. Seven were operator-only and measured `populated=0 empty=7` on both checks.
+2. **Task 3 — BLOCKED after three operator attempts.** The four names are absent from **every** NS1 delegation set (`p01`–`p10` probed directly, all `aa`-NXDOMAIN), not merely from the delegated one. They do not exist as `A`, `CNAME` or `AAAA`. The served zone's SOA serial (`1634401895`, a 2021 timestamp) is unchanged across four readings spanning ~8 h, so it has not been written to. Delegation is unambiguous (`dns1-4.p05.nsone.net`, confirmed at the `.co.uk` registry).
 
-**Re-check for Task 3** — one query, owes nothing to propagation:
+**Two hypotheses were raised and both were falsified by test, not by argument:** the doubled name
+(`api-staging.olajay.co.uk.olajay.co.uk` — also NXDOMAIN) and a stale delegation set (no NS1 set
+holds the records). Which panel the owner's edits actually reach is **not observable from outside**,
+and a third guess would have repeated the pattern.
+
+**The one comparison that would settle it, made from inside the panel:** in the Netlify zone showing
+the Zoho MX records, read the nameservers Netlify lists **for that zone** and compare against the
+registrar's `dns1-4.p05.nsone.net`. A different set (e.g. `p06`) means the zone is real but
+undelegated — fix at the registrar. `p05` means edits should be reaching the servers being queried
+and are not, which points at an unpublished state on Netlify's side.
+
+**Re-check** — one query, owes nothing to propagation:
 `dig @dns1.p05.nsone.net A api-staging.olajay.co.uk` (expect `20.58.10.18`).
 
-**Discriminator for finding the right zone, no tooling needed:** the serving zone contains the Zoho
-MX records (`mx.zoho.eu`, `mx2.zoho.eu`, `mx3.zoho.eu`) and `v=spf1 include:zoho.eu ~all`. A panel
-that does not show those is the wrong zone, and records added there will never take effect.
+**What Task 3 blocks:** Let's Encrypt **HTTP-01** issuance needs these names resolving to the ingress
+IP, so staging TLS cannot be obtained until it is fixed. It blocks neither the cluster, the
+datastores, nor any in-cluster work. D-08 is incidentally still satisfied — no production name
+resolves either.
 
 **Second, independent Task 2 blocker:** the Postgres firewall admits only the AKS egress IP, so
 `psql` from this host is refused. The role bootstrap must run from inside the cluster, or a
