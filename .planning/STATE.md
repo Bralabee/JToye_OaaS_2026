@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 29 executing — 7/16 complete + 29-10 PARTIAL (secrets AND DNS both parked by owner; DNS diagnosis — zone never written, all NS1 sets probed); wave 5 dispatched (29-08 Keycloak + ingress)
-last_updated: "2026-08-11T06:10:00.000Z"
+stopped_at: Phase 29 executing — 8/16 complete + 29-10 PARTIAL (secrets AND DNS parked by owner); wave 6 dispatched (29-09 RabbitMQ + Mailhog + cert-manager issuer)
+last_updated: "2026-08-11T07:00:00.000Z"
 last_activity: 2026-08-10
 progress:
   total_phases: 14
@@ -26,7 +26,14 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 29
-Plan: 7 of 16 + 29-10 PARTIAL (wave 4, 2026-08-11: 29-07 Alertmanager dual-sink [Gmail password via
+Plan: 8 of 16 + 29-10 PARTIAL (wave 5, 2026-08-11: 29-08 Keycloak in-cluster + per-env realm + four
+staging hosts routed; KC_HOSTNAME_STRICT=true [forged-Host iss defence]; cluster realm ships core-api
+ONLY — confidential clients need a second client-secret key in staging-secrets.sh when 29-10 resumes;
+ingress-hosts-patch "FAILS LOUDLY" claim was FALSE — render-golden.sh is the ONLY guard on base-rule
+insertion, so never reflex `--write` to green it; check-connection-math reads compose for every env —
+k8s KC pool value is discipline-only. ALL FOUR staging SANs share one ACME order: TLS issues for none
+until every A record resolves.)
+(wave 4, 2026-08-11: 29-07 Alertmanager dual-sink [Gmail password via
 mounted Secret file, L3_SINK_TO/L3_HUMAN_TO satisfied, route byte-for-byte vs compose, amtool caught
 a block-scalar swallowing the second sink], Grafana provisioned no-Ingress-yet, seven observability
 NetworkPolicies + INV-8; deferred: core-java Service lacks 9091 so that scrape target will read DOWN
