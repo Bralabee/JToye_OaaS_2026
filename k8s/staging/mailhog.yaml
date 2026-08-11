@@ -1,0 +1,294 @@
+---
+# mailhog.yaml — STAGING ONLY (D-13)
+#
+# =============================================================================
+# WHY THIS IS AN OVERLAY RESOURCE AND MUST NEVER MOVE TO k8s/base
+#
+#   D-13 is a deliberate ASYMMETRY, not an oversight, and the two halves point in
+#   opposite directions on purpose:
+#
+#     APPLICATION email in staging is CAPTURED and never delivered. A rehearsal
+#     environment holds real-shaped vendor and customer rows; onboarding mail,
+#     order confirmations and unsubscribe links generated against them must not
+#     reach a real inbox. Mailhog is the trap.
+#
+#     ALERT email (D-17) is REAL, to the owner's actual inbox, because "alerts a
+#     human" is this phase's entire point. Alertmanager keeps its Gmail relay.
+#
+#   PUT THIS FILE IN k8s/base AND THE FIRST HALF INVERTS INTO A DEFECT. Production
+#   would gain an application-email BLACK HOLE: every vendor onboarding mail, every
+#   order confirmation, every GDPR/PECR-relevant unsubscribe link swallowed by an
+#   in-cluster sink, with the application reporting a successful send. Silent, and
+#   discoverable only by a customer who never received something. That is why this
+#   is an overlay resource and why the assertion in this plan's acceptance criteria
+#   is two-directional: `mailhog` present in the staging render AND absent from the
+#   production render, with the zero proven falsifiable rather than assumed.
+#
+# WHAT ELSE DEPENDS ON THIS EXISTING
+#
+#   `scripts/check-alert-liveness.sh` L-3 proves the paging path by SEARCHING the
+#   destination for a probe it posted. D-17 makes the primary destination Gmail,
+#   which has no HTTP API, so on its own L-3 could only ever VOID. Plan 29-07's
+#   fix was not a side channel: `alerting.secondary.smtp.*` adds a SECOND
+#   `email_configs` entry to the SAME Alertmanager receiver, so the message the
+#   gate can read is the message the owner got — same route, same grouping, same
+#   template. `k8s/staging/configmap-patch.yaml:281` has named `mailhog:1025` as a
+#   forward reference since that plan. This file is what makes it resolve, and the
+#   8025 HTTP API below is the surface L-3 inspects.
+#
+#   So one Service now serves two independent consumers on two ports:
+#     1025 <- Alertmanager's capture leg (D-17/L-3)  AND core-java's app mail (D-13)
+#     8025 <- check-alert-liveness.sh L-3, by port-forward or an in-cluster job
+#
+# NO INGRESS, AND THE ABSENCE IS ASSERTED RATHER THAN INTENDED
+#
+#   The Mailhog HTTP API is UNAUTHENTICATED by design and its archive holds real
+#   captured notification content — customer names, addresses, order contents. The
+#   compose stack already learned this the expensive way (#441: an all-interfaces
+#   bind published dev-tenant mail to the local network with no credential at all,
+#   which is why docker-compose.full-stack.yml:712 pins both ports to
+#   `${JTOYE_BIND_HOST:-127.0.0.1}`). Publishing it through the ingress would be
+#   the same defect with a public hostname and a valid certificate on it.
+#
+#   `mailhog` is therefore added to `NEVER_PUBLISHED_BACKENDS` in
+#   k8s/scripts/check-render-invariants.sh in the same change, alongside
+#   `prometheus` and `alertmanager` — INV-8 fails the build if any Ingress rule
+#   ever routes to this Service. That converts a convention into a named CI
+#   failure, which is the only form that survives a hurried change.
+#
+# THE IMAGE IS ALREADY PINNED AND ALREADY HAS A HORIZON ROW
+#
+#   `mailhog/mailhog:v1.0.1` is the exact tag compose runs
+#   (docker-compose.full-stack.yml:702). MailHog is ARCHIVED upstream — the
+#   horizon is not "unknown pending a check" but "there will never be another
+#   version" — and `infra/dependency-horizons.yaml`'s `mailhog` row records that
+#   with a dated manual review. This plan adds THIS file as a second site to that
+#   row and corrects its note, which until now read *"Dev-only SMTP sink, never
+#   deployed to staging or production"* — true when written, false from here.
+#
+#   H-1 discovery scans `k8s/base` and the compose files, NOT the overlays
+#   (scripts/check-dependency-horizons.sh:119 `K8S_GLOB_DIR="k8s/base"`), so this
+#   pin is invisible to coverage and visible only to H-5 drift via the declared
+#   site. Recorded so nobody reads a green horizons run as proof this file is
+#   covered from both directions — it is covered from one.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailhog
+  labels:
+    app: mailhog
+    component: mail-capture
+spec:
+  # ONE replica, and more would be wrong rather than merely wasteful: MailHog's
+  # default storage is IN-MEMORY and per-process, so two replicas would scatter
+  # captured mail across two archives behind one Service. L-3 would then search a
+  # replica that did not receive its probe and report a paging-path failure that
+  # is really a load-balancing artefact — a false RED on the gate whose entire
+  # purpose is to be trustworthy.
+  replicas: 1
+  strategy:
+    # RECREATE, not RollingUpdate. With in-memory storage a rolling update would
+    # briefly run two archives; and since the archive is disposable by design,
+    # there is nothing to preserve across a restart anyway. Stating it here stops
+    # a future reader "fixing" the strategy to match the app deployments.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mailhog
+  template:
+    metadata:
+      labels:
+        app: mailhog
+        component: mail-capture
+    spec:
+      containers:
+        - name: mailhog
+          # Same pin as compose. See the header for its horizon row.
+          image: mailhog/mailhog:v1.0.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 1025
+              name: smtp
+              protocol: TCP
+            - containerPort: 8025
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              # A cap on the in-memory archive as much as on the process: staging
+              # generates little mail, and an unbounded sink on a ~GBP 150/mo
+              # estate (D-03) is a slow memory leak with a friendly name.
+              memory: "128Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8025
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8025
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            # The image runs as `mailhog` (uid 1000) already; this makes it
+            # explicit and enforceable. Both listeners are above 1024, so nothing
+            # here needs a privileged port.
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailhog
+  labels:
+    app: mailhog
+    component: mail-capture
+spec:
+  # ClusterIP, and there is no Ingress for it anywhere — INV-8 asserts that
+  # rather than trusting it (see the header).
+  type: ClusterIP
+  selector:
+    app: mailhog
+  ports:
+    # The name `mailhog` and the port 1025 are exactly what
+    # k8s/staging/configmap-patch.yaml's `alerting.secondary.smtp.smarthost`
+    # already says, and what `smtp.host`/`smtp.port` are patched to in the same
+    # change. Changing either here without changing both there produces an
+    # Alertmanager capture leg that logs a send failure and an application whose
+    # email channel is silently inert.
+    - port: 1025
+      targetPort: 1025
+      protocol: TCP
+      name: smtp
+    - port: 8025
+      targetPort: 8025
+      protocol: TCP
+      name: http
+---
+# =============================================================================
+# THE POLICY FOR THIS WORKLOAD, AND THE ONE ADDITIVE RULE THAT LETS core-java
+# REACH IT (plan 29-09)
+#
+# WHY IT IS HERE AND NOT IN k8s/base/networkpolicies/. Both documents below
+# govern a STAGING-ONLY workload, so authoring them in base would ship two
+# policies that select nothing in three of four targets. The alertmanager side is
+# the opposite case and lives in base for the opposite reason
+# (50-observability.yaml's `spec.egress.2` is inert in base/local/production
+# because no pod carries `app: mailhog` there, and it is written in base so the
+# alert path is exercised by every target's render).
+#
+# WHY core-java's HOP IS AN ADDITIVE POLICY AND NOT AN EDIT TO core-java-allow.
+# 50-observability.yaml's "STILL OWED" note anticipated it living in
+# core-java-allow. It does not, and the reason is structural: that policy's egress
+# rules are addressed BY INDEX from four kustomization.yaml files, so a
+# staging-only insertion would either shift those indices or require a staging
+# patch that no other target's render exercises. Kubernetes UNIONS the ingress and
+# egress rules of every policy selecting a pod, so an additive policy grants the
+# SMTP hop without touching that list at all — the same mechanism, and the same
+# reasoning, as `core-java-scrape-allow` in 50-observability.yaml.
+#
+# THE TRAP THAT MAKES "ADDITIVE" NEED CARE. A policy naming a `policyTypes` that
+# it then leaves EMPTY does not grant nothing — it brings the pod under that
+# policy type while granting nothing, which is the one way an additive policy can
+# SUBTRACT. `mailhog-smtp-from-core-java` therefore names EGRESS ONLY; core-java's
+# ingress stays entirely in core-java-allow and core-java-scrape-allow.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailhog-allow
+  labels:
+    app.kubernetes.io/name: mailhog-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: mailhog
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Alertmanager's capture leg (D-13/D-17). The outbound half is
+    # `spec.egress.2` of `alertmanager-allow` in
+    # k8s/base/networkpolicies/50-observability.yaml, which has been waiting for
+    # this pod to exist.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: alertmanager
+      ports:
+        - protocol: TCP
+          port: 1025
+    # Application mail (D-13) — the reason this workload exists at all.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: core-java
+      ports:
+        - protocol: TCP
+          port: 1025
+    # THE HTTP API HAS NO in-cluster CLIENT, DELIBERATELY. `check-alert-liveness.sh`
+    # L-3 reaches 8025 by `kubectl port-forward`, whose traffic originates in the
+    # node's host network namespace rather than from a pod — a path NetworkPolicy
+    # does not govern, which is why the absence of an 8025 ingress rule is not a
+    # contradiction of the gate that uses it. Prometheus's rule below exists only
+    # so that a future scrape of Mailhog would not have to reopen this file; it is
+    # NOT written, because nothing scrapes Mailhog today and an allow-list is not
+    # the place for speculative peers.
+  egress:
+    # NO EGRESS RULES AT ALL, AND THAT IS THE ASSERTION.
+    #
+    # `policyTypes` names Egress with an EMPTY rule list, which denies every
+    # outbound connection this pod could make. That is exactly right and it is not
+    # incidental: this archive holds captured customer and vendor mail, so a pod
+    # that can dial out is an exfiltration path for precisely the data D-13 exists
+    # to keep off the wire. MailHog v1.0.1 with its DEFAULT in-memory storage
+    # initiates nothing — no DNS, no upstream relay, no database — so denying all
+    # egress costs it nothing today.
+    #
+    # THE ONE CHANGE THAT WOULD BREAK THIS: switching to `-storage=mongodb` or
+    # setting an outgoing SMTP relay (`-outgoing-smtp`), either of which needs DNS
+    # and a datastore hop. Neither is configured; if one ever is, this list gains
+    # the rule in the SAME change or the feature fails as a silent timeout.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailhog-smtp-from-core-java
+  labels:
+    app.kubernetes.io/name: mailhog-smtp-from-core-java
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: core-java
+  # EGRESS ONLY. See the block above for why naming Ingress here would make this
+  # "additive" policy subtract.
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mailhog
+      ports:
+        - protocol: TCP
+          port: 1025

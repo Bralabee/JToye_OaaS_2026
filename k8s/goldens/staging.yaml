@@ -182,6 +182,7 @@ data:
   alerting.smtp.smarthost: smtp.gmail.com:587
   api.internal.url: http://core-java:9090
   api.url: https://api-staging.olajay.co.uk
+  cert-manager.acme-email: devops@olajay.co.uk
   cert-manager.cluster-issuer: letsencrypt-staging
   cors.allowed-origins: https://app-staging.olajay.co.uk
   db.egress-cidr: 0.0.0.0/0
@@ -220,7 +221,7 @@ data:
   rabbit.media.concurrency: "1"
   rabbit.media.max.concurrency: "2"
   rabbit.media.prefetch: "2"
-  rabbitmq.host: rabbitmq.jtoye-infrastructure.svc.cluster.local
+  rabbitmq.host: jtoye-rabbitmq
   rabbitmq.port: "5672"
   redis.egress-cidr: 0.0.0.0/0
   redis.host: redis-cluster.jtoye-infrastructure.svc.cluster.local
@@ -235,12 +236,12 @@ data:
   s3.public-url: https://s3.eu-west-2.amazonaws.com/jtoye-images
   s3.region: eu-west-2
   smtp.auth: "false"
-  smtp.host: email-smtp.eu-west-2.amazonaws.com
-  smtp.port: "587"
-  smtp.starttls: "true"
+  smtp.host: mailhog
+  smtp.port: "1025"
+  smtp.starttls: "false"
   sql.log.level: DEBUG
   stomp.broker.mode: relay
-  stomp.broker.relay-host: rabbitmq.jtoye-infrastructure.svc.cluster.local
+  stomp.broker.relay-host: jtoye-rabbitmq
   stomp.broker.relay-port: "61613"
   stripe.connect.refresh-url: https://app-staging.olajay.co.uk/dashboard/payments/connect/refresh
   stripe.connect.return-url: https://app-staging.olajay.co.uk/dashboard/payments/connect/return
@@ -1651,6 +1652,32 @@ kind: Service
 metadata:
   annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app: mailhog
+    component: mail-capture
+    environment: staging
+  name: mailhog
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: smtp
+    port: 1025
+    protocol: TCP
+    targetPort: 1025
+  - name: http
+    port: 8025
+    protocol: TCP
+    targetPort: 8025
+  selector:
+    app: mailhog
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
   labels:
@@ -2984,6 +3011,77 @@ kind: Deployment
 metadata:
   annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app: mailhog
+    component: mail-capture
+    environment: staging
+  name: mailhog
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mailhog
+      environment: staging
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+      labels:
+        app: mailhog
+        component: mail-capture
+        environment: staging
+    spec:
+      containers:
+      - image: mailhog/mailhog:v1.0.1
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 8025
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 3
+        name: mailhog
+        ports:
+        - containerPort: 1025
+          name: smtp
+          protocol: TCP
+        - containerPort: 8025
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 8025
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
   labels:
@@ -3572,6 +3670,46 @@ spec:
     kind: Deployment
     name: frontend
 ---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    environment: staging
+  name: letsencrypt-prod
+  namespace: jtoye-staging
+spec:
+  acme:
+    email: devops@olajay.co.uk
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    server: https://acme-v02.api.letsencrypt.org/directory
+    solvers:
+    - http01:
+        ingress:
+          ingressClassName: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    environment: staging
+  name: letsencrypt-staging
+  namespace: jtoye-staging
+spec:
+  acme:
+    email: devops@olajay.co.uk
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    solvers:
+    - http01:
+        ingress:
+          ingressClassName: nginx
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -3809,10 +3947,6 @@ spec:
   - ports:
     - port: 6379
       protocol: TCP
-    - port: 5672
-      protocol: TCP
-    - port: 61613
-      protocol: TCP
     - port: 9000
       protocol: TCP
     - port: 9093
@@ -3851,6 +3985,20 @@ spec:
         - 10.0.0.0/8
         - 172.16.0.0/12
         - 192.168.0.0/16
+  - ports:
+    - port: 5672
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: jtoye-rabbitmq
+  - ports:
+    - port: 61613
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: jtoye-rabbitmq
   ingress:
   - from:
     - podSelector:
@@ -4216,6 +4364,69 @@ kind: NetworkPolicy
 metadata:
   annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/name: mailhog-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: mailhog-allow
+  namespace: jtoye-staging
+spec:
+  egress: null
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: alertmanager
+    ports:
+    - port: 1025
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: core-java
+    ports:
+    - port: 1025
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: mailhog
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/name: mailhog-smtp-from-core-java
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: mailhog-smtp-from-core-java
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 1025
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: mailhog
+  podSelector:
+    matchLabels:
+      app: core-java
+  policyTypes:
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
   labels:
@@ -4413,6 +4624,13 @@ spec:
     - podSelector:
         matchLabels:
           app: keycloak
+  - ports:
+    - port: 15692
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: jtoye-rabbitmq
   ingress:
   - from:
     - podSelector:
@@ -4431,6 +4649,82 @@ spec:
   podSelector:
     matchLabels:
       app: prometheus
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: rabbitmq-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: rabbitmq-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 4369
+      protocol: TCP
+    - port: 25672
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: jtoye-rabbitmq
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: core-java
+    ports:
+    - port: 5672
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: core-java
+    ports:
+    - port: 61613
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 15692
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: jtoye-rabbitmq
+    ports:
+    - port: 4369
+      protocol: TCP
+    - port: 25672
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: jtoye-rabbitmq
   policyTypes:
   - Ingress
   - Egress
@@ -4488,3 +4782,34 @@ spec:
   policyTypes:
   - Ingress
   - Egress
+---
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: jtoye-rabbitmq
+  namespace: jtoye-staging
+spec:
+  image: rabbitmq:4.3.4-management-alpine
+  rabbitmq:
+    additionalPlugins:
+    - rabbitmq_stomp
+  replicas: 1
+  resources:
+    limits:
+      cpu: "1"
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  secretBackend:
+    externalSecret:
+      name: rabbitmq-credentials

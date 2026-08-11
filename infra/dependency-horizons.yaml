@@ -46,9 +46,16 @@
 #   Same recorded architectural fact as docs/ops/terminal-states.yaml. All admin here is
 #   tenant-scoped; there is no cross-tenant operator role and no ops rota. Writing
 #   `owner: platform` (as 27-00-PLAN.md's schema example shows) would be fabrication.
-#   `maintainer` is used wherever the maintainer can actually act. `UNASSIGNED` appears on
-#   exactly one row, and only because that row's whole point is that nobody owns it — and
-#   the gate requires a dated `manual_review` before it will accept UNASSIGNED at all.
+#   `maintainer` is used wherever the maintainer can actually act.
+#
+#   `UNASSIGNED` NOW APPEARS ON NO ROW AT ALL, and this paragraph used to say it appeared
+#   on exactly one — `rabbitmq-k8s`, "only because that row's whole point is that nobody
+#   owns it". Plan 29-09 resolved that row: the broker is deployed from this repository now
+#   (k8s/base/rabbitmq-cluster.yaml), so the maintainer genuinely can act on it and claiming
+#   otherwise would be the fabrication this paragraph warns against, pointing the other way.
+#   THE RULE STANDS AND IS UNCHANGED: the gate requires a dated `manual_review` before it
+#   will accept UNASSIGNED at all, so the next genuinely unowned artifact is still writable
+#   here and still dated. Zero is the current measurement, not a new prohibition.
 #
 # ON `kind`: FIVE VALUES, ONE MORE THAN THE PLAN NAMED
 #
@@ -143,7 +150,15 @@ dependencies:
 
   - id: rabbitmq
     pin: "rabbitmq:4.3.4-management-alpine"
-    sites: ["docker-compose.full-stack.yml:149"]
+    # THE COMPOSE SITE ONLY, and the k8s site deliberately lives on the SEPARATE
+    # `rabbitmq-k8s` row further down rather than being appended here. Two rows, one pin,
+    # on purpose: they are two independent deployment surfaces (the dev broker in compose,
+    # the operator-managed broker on the cluster) that CAN diverge, and the whole reason
+    # `rabbitmq-k8s` exists is that for months they did — invisibly, because the k8s side
+    # had no declaration at all. Merging them now would delete the row whose resolution is
+    # a named deliverable of phase 29 and would leave nothing to notice the next divergence.
+    # The line number is corrected here too (it read :149; the pin is at :240).
+    sites: ["docker-compose.full-stack.yml:240"]
     kind: image
     owner: maintainer
     eol_slug: rabbitmq
@@ -223,14 +238,35 @@ dependencies:
 
   - id: mailhog
     pin: "mailhog/mailhog:v1.0.1"
-    sites: ["docker-compose.full-stack.yml:526"]
+    # TWO SITES since plan 29-09 (D-13), and the compose line is corrected in the same
+    # edit (it read :526; the pin is at :702, which had been producing an advisory NOTE
+    # on every run). Same discipline as the `prometheus` row below: H-5 asserts the
+    # declared pin at EVERY declared site, so a bump that moved one and not the other is
+    # a drift failure rather than an invisible skew between dev and staging.
+    sites:
+      - "docker-compose.full-stack.yml:702"
+      - "k8s/staging/mailhog.yaml:108"
     kind: image
     owner: maintainer
     eol_slug: null
     note: >-
       endoflife.date 404 (measured 2026-07-27). MailHog is archived upstream and receives no
       releases; the horizon is not "unknown pending a check" so much as "there will never be
-      another version". Dev-only SMTP sink, never deployed to staging or production.
+      another version".
+
+      THE LAST SENTENCE OF THIS NOTE USED TO READ "Dev-only SMTP sink, never deployed to
+      staging or production." That was true when written and is FALSE from 2026-08-11: D-13
+      deploys this image to STAGING as the application-email capture sink
+      (k8s/staging/mailhog.yaml). It remains absent from production BY DESIGN — an
+      application-email black hole there would silently swallow real vendor mail — and that
+      absence is asserted two-directionally in the render rather than merely intended.
+
+      COVERAGE IS ONE-DIRECTIONAL FOR THE NEW SITE, AND SAYING SO IS THE POINT. H-1 discovery
+      scans the compose files and `k8s/base` only (this gate's `K8S_GLOB_DIR`), never the
+      overlays, so the staging pin is invisible to coverage and visible only to H-5 drift via
+      the site declared above. Deleting that site line would therefore make the staging pin
+      unwatched by BOTH rules at once, which is precisely how a row goes on describing a tree
+      it no longer covers.
     manual_review:
       last_checked: "2026-07-27"
       expires: "2027-01-27"
@@ -506,25 +542,224 @@ dependencies:
       postgres major upgrade that forgets the backup image shows up as two rows disagreeing
       rather than as one silent skew.
 
-  # ------------------------------------------------------------------ out of repo
-  #  The shape 27-02 hands back (D-Q). Seeded EMPTY here so 27-02 only fills it in.
-  #  `pin: unknown` + `manual_review` is the honest state, not a placeholder for forgotten
-  #  work — and the gate PRINTS it on every run so it cannot become invisible.
+  # ------------------------------------------------------------------ the k8s broker
+  #  THIS SECTION USED TO BE HEADED "out of repo" AND TO READ, IN FULL:
+  #
+  #      The shape 27-02 hands back (D-Q). Seeded EMPTY here so 27-02 only fills it in.
+  #      `pin: unknown` + `manual_review` is the honest state, not a placeholder for
+  #      forgotten work — and the gate PRINTS it on every run so it cannot become invisible.
+  #
+  #  That was correct, and the mechanism worked exactly as designed: the row printed
+  #  `UNKNOWN rabbitmq-k8s … owner=UNASSIGNED review-expires=2026-10-26` on EVERY run for
+  #  two weeks, which is how it came to be a named deliverable of phase 29 instead of a
+  #  surprise on 2026-10-26. It is RESOLVED below, before its own expiry, by plan 29-09.
   - id: rabbitmq-k8s
-    pin: unknown
-    sites: []
-    kind: out_of_repo
-    owner: UNASSIGNED
+    pin: "rabbitmq:4.3.4-management-alpine"
+    sites: ["k8s/base/rabbitmq-cluster.yaml:215"]
+    kind: image
+    owner: maintainer
+    eol_slug: rabbitmq
+    eol_cycle: "4.3"
+    eol_date: "false"
+    eol_source: vendor
+    vendor_eol: "2026-11-30"
+    vendor_source: "https://www.rabbitmq.com/release-information"
+    note: >-
+      RESOLVED 2026-08-11 by plan 29-09 (D-09 / ADR-0002), before the 2026-10-26 review this
+      row used to carry.
+
+      WHAT IT SAID AND WHY IT WAS TRUE. Until now: pin `unknown`, `sites: []`,
+      `kind: out_of_repo`, `owner: UNASSIGNED`, with the measurement that produced it —
+      "MEASURED 2026-07-26: `grep -rn 'image:.*rabbitmq' k8s/` returns NOTHING; the only
+      rabbitmq strings under k8s/ are the configmap host/port and the `rabbitmq-credentials`
+      Secret refs. Its version is therefore unresolvable from this repo by construction."
+      The UNASSIGNED owner was equally deliberate: there is no platform-operator identity in
+      this system (see the header), so naming one would have been fabrication.
+
+      WHAT MADE IT RESOLVABLE. `k8s/base/rabbitmq-cluster.yaml` deploys the broker from THIS
+      repository via the RabbitMQ cluster operator, and pins `spec.image` EXPLICITLY rather
+      than accepting the operator's default. That explicit pin is the whole resolution:
+      accepting the default would have left the deployed version a property of whichever
+      operator release happened to be installed — `pin: unknown` still true in substance while
+      this row claimed otherwise. `owner` becomes `maintainer` because the artifact is now one
+      the maintainer can actually act on, which is the header's own test for that field.
+
+      THE `manual_review` BLOCK IS DROPPED, NOT RE-DATED. A review exists to re-check a
+      horizon that cannot be established; this one now resolves against the catalogue and the
+      vendor like any other pin. Leaving a dated review here would schedule a human to
+      re-discover a fact the gate already fetches, and it would FAIL on 2026-10-26 for no
+      reason at all.
+
+      SAME PIN AS THE `rabbitmq` ROW, AND TWO ROWS ON PURPOSE — see that row's `sites:` note.
+      Compose and the cluster are two deployment surfaces that can diverge; this row is what
+      would notice next time.
+
+      THE VENDOR OVERRIDE IS INHERITED FROM THAT ROW AND IS LOAD-BEARING. endoflife.date
+      returns `"eol": false` for cycle 4.3 while the vendor publishes community support ending
+      2026-11-30, so without `eol_source: vendor` this row would report clean straight through
+      that date. At HORIZON_WARN_DAYS=90 it therefore goes AMBER ~2026-09-01 and RED on
+      2026-12-01 with no commit in between — stated in this file's header, intended, and now
+      true of TWO rows rather than one. Procedure and rollback for the next move:
+      docs/runbooks/rabbitmq-broker-upgrade.md (there is no in-place 3.12 -> 4.x path; the dev
+      broker moved by fresh install, which is what a new staging cluster is).
+
+  # ------------------------------------------------------------------ cluster platform
+  #  ADDED BY PLAN 29-09. Components installed onto the CLUSTER by
+  #  `scripts/staging-bootstrap.sh` from pinned upstream release manifests, by URL + sha256,
+  #  deliberately NOT vendored into `k8s/*/kustomization.yaml` (~5,900 lines of CRDs would
+  #  balloon every golden for no assurance gain — 29-RESEARCH.md "Don't Hand-Roll").
+  #
+  #  `kind: platform` IS A SIXTH VALUE, AND THE HEADER'S PRECEDENT FOR ADDING ONE IS FOLLOWED
+  #  RATHER THAN IGNORED. The existing five are image | toolchain | first_party | out_of_repo
+  #  | pseudo, and `pseudo` was itself added with a written justification. None of the five
+  #  describes these three: they are not container image references (H-1 would never discover
+  #  them, because there is no `image:` line to find), they are not build toolchains, we are
+  #  not upstream of them, and they are emphatically NOT `out_of_repo` — that kind is exempt
+  #  from H-5 drift, which is the ONE rule that can see these at all. `platform` therefore
+  #  behaves exactly like `image` under every rule in the gate (no kind-scoped exemption
+  #  matches it) while naming what the artifact actually is. Verified: nothing outside
+  #  check-dependency-horizons.sh reads this field — `scripts/gates/postgres-major-parity.conf`
+  #  and check-doc-citations.sh key on `pin:` and `eol_slug` respectively.
+  #
+  #  COVERAGE HERE IS ONE-DIRECTIONAL, SAID PLAINLY. H-1 cannot discover any of these (they
+  #  are not in the declared source surface), so the ONLY thing tying them to the tree is the
+  #  `sites:` line and H-5's fixed-string check against it. Deleting a site makes the row
+  #  invisible to every rule at once. That is a real weakness of this section and it is
+  #  recorded rather than papered over — measured on 2026-08-11 by pointing `cert-manager`'s
+  #  site at a path that does not exist: the gate answered
+  #  `H-5 cert-manager: declared site file does not exist` and exited 2 (VOID).
+  - id: cert-manager
+    pin: 'CERT_MANAGER_VERSION="v1.21.1"'
+    sites: ["scripts/staging-bootstrap.sh:204"]
+    kind: platform
+    owner: maintainer
+    eol_slug: cert-manager
+    eol_cycle: "1.21"
+    eol_date: "false"
+    note: >-
+      SLUG MEASURED, NOT DERIVED (this file's header rule). 2026-08-11,
+      `curl -o /dev/null -w '%{http_code} %{url_effective}'` against
+      https://endoflife.date/api/cert-manager.json -> `200`, no redirect, and cycle "1.21"
+      present with `"eol": false, "latest": "1.21.1", "latestReleaseDate": "2026-07-29"`.
+      That the slug happens to equal the project name is a measured coincidence here, not a
+      derivation — the header lists five rows where deriving it would have been wrong.
+
+      The pin is the shell assignment rather than an image reference because this artifact IS
+      a version string: `scripts/staging-bootstrap.sh` composes the release URL from it and
+      verifies the downloaded `cert-manager.yaml` (1,034,400 bytes) against a recorded sha256.
+      Matching the whole assignment, quotes included, is what makes H-5's fixed-string check
+      unambiguous — a bare `v1.21.1` would also match a version of something else.
+
+      INSTALLED FIRST OF THE THREE, AND THAT ORDER IS NOT COSMETIC: the RabbitMQ cluster
+      operator's own release manifest contains `cert-manager.io/v1` `Certificate` and `Issuer`
+      objects, so applying the operator before cert-manager's CRDs exist fails. The
+      ClusterIssuers this phase adds (k8s/staging/cluster-issuer.yaml) need the same CRDs.
+
+  - id: rabbitmq-cluster-operator
+    pin: 'RABBITMQ_OPERATOR_VERSION="v2.22.3"'
+    sites: ["scripts/staging-bootstrap.sh:209"]
+    kind: platform
+    owner: maintainer
     eol_slug: null
     note: >-
-      The staging/production broker is not deployed from this repo. MEASURED 2026-07-26:
-      `grep -rn 'image:.*rabbitmq' k8s/` returns NOTHING — the only rabbitmq strings under
-      k8s/ are the configmap host/port and the `rabbitmq-credentials` Secret refs. Its
-      version is therefore unresolvable from this repo by construction, which is why this row
-      is UNASSIGNED: there is no platform-operator identity here to assign it to, and saying
-      so is more useful than inventing a name. See ADR-0002 and
-      docs/runbooks/rabbitmq-broker-upgrade.md.
+      endoflife.date has no product for this operator. MEASURED 2026-08-11: `cluster-operator`
+      -> 404 and `rabbitmq-cluster-operator` -> 404, and the full catalogue
+      (https://endoflife.date/api/all.json) contains `rabbitmq` but nothing operator-shaped.
+
+      THE `rabbitmq` ROW'S HORIZON DOES NOT COVER THIS ONE, and the temptation to reuse it is
+      exactly the derivation this file's header forbids: the operator versions independently
+      of the broker it deploys (v2.22.3 released 2026-07-17; the broker line it runs here is
+      4.3.4), the same way Alertmanager versions independently of Prometheus — which is the
+      assumption that let Alertmanager be omitted from 27-02's draft manifest entirely.
+
+      Release v2.22.3 was DOWNLOADED AND READ, not merely referenced (29-RESEARCH.md "Package
+      Legitimacy Audit"): `cluster-operator.yml`, 351,140 bytes, 15 documents, namespace
+      `rabbitmq-system`, and the operator image `ghcr.io/rabbitmq/cluster-operator:2.22.3` read
+      out of the manifest itself at line 5818. The digest is pinned in
+      scripts/staging-bootstrap.sh alongside the version.
     manual_review:
-      last_checked: "2026-07-26"
-      expires: "2026-10-26"
-      url: "https://www.rabbitmq.com/release-information"
+      last_checked: "2026-08-11"
+      expires: "2027-02-11"
+      url: "https://github.com/rabbitmq/cluster-operator/releases"
+
+  - id: ingress-nginx
+    pin: 'INGRESS_NGINX_VERSION="controller-v1.15.1"'
+    sites: ["scripts/staging-bootstrap.sh:214"]
+    kind: platform
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      THE SHARPEST ROW IN THIS FILE, and the only one whose horizon is not in the future.
+
+      SLUG: MEASURED 2026-08-11 as a 404 — `ingress-nginx` -> 404 and `nginx-ingress` -> 404,
+      and the full catalogue holds `nginx` (the web server) and `haproxy-ingress` but NOT this
+      controller. Tracking it under `nginx` would be precisely the derivation this file's
+      header forbids: the controller's support lifecycle is the Kubernetes project's, not
+      F5/NGINX's, and the two have now diverged completely.
+
+      THE VENDOR HORIZON IS IN THE PAST AND THE CATALOGUE CANNOT SAY SO. ingress-nginx is
+      RETIRED: retirement announced 2025-11-11 and effective March 2026, with NO releases, NO
+      bugfixes and — the part that matters — NO SECURITY FIXES after that date. Its planned
+      successor InGate was ALSO retired. `controller-v1.15.1` (2026-03-19) is the last release
+      that will ever exist.
+
+      SO THE SECURITY CONSEQUENCE, STATED PLAINLY RATHER THAN IMPLIED: deploying this on a
+      public-facing staging edge in August 2026 ships an UNPATCHED INTERNET-FACING COMPONENT.
+      Any vulnerability disclosed from here on has no upstream fix — only a migration.
+
+      THE ALTERNATIVE IS NOT A FIX, WHICH IS WHY THIS IS A DEFERRAL AND NOT A CHOICE. The AKS
+      application-routing add-on runs Microsoft's own NGINX build, patched only THROUGH
+      NOVEMBER 2026 — a horizon extension of roughly three months, bought at the cost of
+      losing control of the controller ConfigMap and of the `configuration-snippet` security
+      headers this platform sets. Neither option is "fine". The real fix is Gateway API, which
+      is a rework of both Ingresses, their annotations and the cert-manager solver, and is not
+      something to attempt in the same phase that first deploys them.
+    exemption:
+      reason: >-
+        MIGRATION TO GATEWAY API, DEFERRED WITH A DATE. Kubernetes' own recommended successor,
+        and the only path that ends with a supported edge. Deferred out of phase 29 because
+        that phase's deliverable is a staging environment that EXISTS and alerts a human;
+        rewriting the ingress layer in the same change would put the one surface every DPLY-01
+        proof runs through into flux. The review date is deliberately shorter than this file's
+        usual six months: this is an unpatched public component, not a stale dev-only pin, and
+        it should be re-argued while the memory of the decision is fresh rather than
+        rediscovered when a CVE lands.
+      expires: "2026-12-31"
+      tracked_by: "DEFERRED-29"
+    manual_review:
+      last_checked: "2026-08-11"
+      expires: "2026-12-31"
+      url: "https://github.com/kubernetes/ingress-nginx/releases"
+
+  - id: agnhost
+    pin: "registry.k8s.io/e2e-test-images/agnhost:2.33"
+    sites: ["scripts/check-networkpolicy-enforcement.sh:122"]
+    kind: image
+    owner: maintainer
+    eol_slug: null
+    note: >-
+      endoflife.date 404 (MEASURED 2026-08-11). A Kubernetes SIG-Testing e2e helper image with
+      no product page and no published support horizon.
+
+      `kind: image` rather than `platform`, unlike the three rows above, because this genuinely
+      IS an image reference — it is simply referenced from a SHELL SCRIPT rather than from a
+      manifest, so H-1's declared source surface (the compose files, `k8s/base`, the four
+      Dockerfiles) cannot discover it and H-5's site is again the only tie to the tree.
+
+      THE PIN IS THE DEFAULT INSIDE A PARAMETER EXPANSION —
+      `AGNHOST_IMAGE="${NETPOL_AGNHOST_IMAGE:-registry.k8s.io/e2e-test-images/agnhost:2.33}"` —
+      and H-5's fixed-string match finds it there, the same way it matches the MinIO and Ollama
+      rows' `${VAR:-latest}` pins. An operator overriding NETPOL_AGNHOST_IMAGE at run time is
+      running an unpinned image, which is a property of the override, not of this row.
+
+      NOTE THE REGISTRY. 29-RESEARCH.md quotes Microsoft's recipe using the RETIRED
+      `k8s.gcr.io` host; the script uses `registry.k8s.io`, which is the live one. This row
+      records the value in the tree, not the value in the citation.
+
+      DPLY-05 ONLY: this image runs in a throwaway probe namespace to capture a denied
+      connection (a two-arm proof whose success output is silence and whose denial output is
+      the literal `TIMEOUT`). It is never part of the platform's running surface.
+    manual_review:
+      last_checked: "2026-08-11"
+      expires: "2027-02-11"
+      url: "https://github.com/kubernetes/kubernetes/tree/master/test/images/agnhost"

@@ -58,15 +58,81 @@ data:
   # been produced here.
   cert-manager.cluster-issuer: "letsencrypt-staging"
 
+  # The ACME registration contact, injected into BOTH ClusterIssuers in
+  # k8s/staging/cluster-issuer.yaml by this overlay's `replacements:` block.
+  #
+  # NOT A NEW VALUE AND NOT A PERSON'S MAILBOX. `k8s/DEPLOYMENT.md:81` has used
+  # `devops@olajay.co.uk` in its hand-applied ClusterIssuer recipe all along; this
+  # adopts it rather than inventing one, and it is a role alias at the platform
+  # domain (D-05). Plan 29-07 recorded that "the owner's inbox is not a value this
+  # repository holds" — that rule is about the ALERT destination, which stays in
+  # the `alertmanager-smtp` Secret, and it is not contradicted here: an ACME
+  # contact is a registration field on a public certificate order, not a paging
+  # address.
+  #
+  # WHAT IT BUYS AND WHAT IT DOES NOT. Let's Encrypt sends expiry warnings to this
+  # address; it never verifies that the mailbox exists. So if `devops@olajay.co.uk`
+  # is not routed anywhere, certificate-expiry warnings go nowhere and the first
+  # symptom is an expired certificate. That is a real gap, it is recorded rather
+  # than assumed away, and it is not load-bearing for issuance itself — which is
+  # why it does not block this plan.
+  #
+  # A key rather than a literal so the address changes in ONE place, per
+  # GLOBAL_RULE_6 — the same reason `cert-manager.cluster-issuer` above is a key.
+  cert-manager.acme-email: "devops@olajay.co.uk"
+
   # DEF-6 / D-13 / D-19 (Phase 26 / INFRA-02): the env-VARYING subset of the new
   # base app-config keys. Each value is derived from this overlay's OWN
   # keycloak.issuer.uri / frontend.url above — never from the production values
   # the base carries — so a staging email link, a staging CORS origin and a
   # staging Stripe Connect return all resolve to the staging platform.
   #
-  # Media storage (s3.*) and SMTP are deliberately NOT overridden here: those
-  # base values are the correct AWS eu-west-2 regional endpoints for staging and
-  # production alike, and smtp.auth stays "false" in both.
+  # Media storage (s3.*) is deliberately NOT overridden here: those base values
+  # are the correct AWS eu-west-2 regional endpoints for staging and production
+  # alike.
+  #
+  # --- D-13: APPLICATION EMAIL IS CAPTURED IN STAGING, NEVER DELIVERED ---------
+  #
+  # THE SENTENCE ABOVE USED TO INCLUDE SMTP, AND IT NO LONGER DOES. Until plan
+  # 29-09 it read: *"Media storage (s3.*) and SMTP are deliberately NOT overridden
+  # here: those base values are the correct AWS eu-west-2 regional endpoints for
+  # staging and production alike, and smtp.auth stays 'false' in both."* That was
+  # a statement about ENDPOINT CORRECTNESS and it was right on its own terms — the
+  # SES endpoint for eu-west-2 is the same string in both environments. What it
+  # missed is that staging must not USE it.
+  #
+  # `smtp.auth` is "false" in the base, so no credential is offered and today the
+  # email channel is inert everywhere. But "inert because a credential is missing"
+  # is one `smtp-credentials` Secret away from "delivering real onboarding and
+  # order-confirmation mail from a rehearsal environment, to real addresses, off
+  # real-shaped seeded rows". D-13 makes that impossible by construction rather
+  # than by omission: staging points at an in-cluster sink that captures and never
+  # forwards, so creating that Secret in staging changes nothing about who
+  # receives mail.
+  #
+  # `mailhog` is the ClusterIP Service in k8s/staging/mailhog.yaml, in this
+  # namespace. It is the SAME Service `alerting.secondary.smtp.smarthost` below
+  # names — one workload, two independent consumers, and deliberately so: the
+  # thing that captures application mail is the thing L-3 can read.
+  smtp.host: "mailhog"
+  smtp.port: "1025"
+  # STARTTLS OFF. MailHog v1.0.1 does not advertise STARTTLS at all, and the base
+  # value is "true".
+  #
+  # THE HONEST FOOTNOTE, because a value that cannot matter should not be quoted
+  # as if it does: `core-java/src/main/resources/application.yml:163-164` binds
+  # this to `spring.mail.properties.mail.smtp.starttls.enabled`, and the JavaMail
+  # property is spelled `mail.smtp.starttls.enable` — no trailing "d". Spring
+  # passes `spring.mail.properties.*` through verbatim, so JavaMail has never read
+  # this key in ANY environment and STARTTLS has been off everywhere regardless of
+  # what the ConfigMap said. Recorded in this phase's deferred-items.md; it is an
+  # application-config defect, not this plan's to fix. The value is set to "false"
+  # anyway, so that the declaration matches reality whenever the spelling is
+  # corrected — which is the moment a stale "true" here would start refusing to
+  # connect to a sink that speaks no TLS.
+  smtp.starttls: "false"
+  # smtp.auth stays "false" — inherited from base, restated nowhere. Mailhog
+  # accepts any credential or none; offering one would be noise.
 
   # D-13 split-horizon: in staging one host serves both roles today, so this is
   # byte-identical to keycloak.issuer.uri above — the key exists so the two can

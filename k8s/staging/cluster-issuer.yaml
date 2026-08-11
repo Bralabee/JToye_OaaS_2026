@@ -1,0 +1,149 @@
+---
+# cluster-issuer.yaml — the certificate issuers this repository never defined
+#
+# =============================================================================
+# WHAT WAS MISSING, AND FOR HOW LONG
+#
+#   `k8s/base/ingress.yaml:32` has carried
+#   `cert-manager.io/cluster-issuer: "letsencrypt-prod"` since long before this
+#   phase — as an authored literal until plan 29-08 routed it through app-config,
+#   and as that replacement's base default since — and NOTHING IN THIS REPOSITORY
+#   DEFINED THAT ISSUER. The annotation named an object that existed only in a
+#   `kubectl apply -f -` heredoc inside `k8s/DEPLOYMENT.md:73-88` —
+#   documentation, not a manifest, applied by hand or
+#   not at all. On a cluster where it was never applied, cert-manager logs
+#   `ClusterIssuer.cert-manager.io "letsencrypt-prod" not found`, no Certificate
+#   is created, the Ingress serves the default self-signed certificate, and every
+#   browser shows a name-mismatch warning. The Ingress itself is perfectly valid
+#   throughout.
+#
+#   These two documents are that missing half, promoted from prose to a gated
+#   manifest. `devops@olajay.co.uk` is not a new value — it is the address the
+#   DEPLOYMENT.md recipe already used, adopted rather than invented, and it is a
+#   ROLE alias at the platform domain rather than any person's mailbox. It is
+#   injected from app-config for the reason everything else here is (GLOBAL_RULE_6
+#   — one declaration, changeable without a manifest edit), not because it is
+#   sensitive.
+#
+# WHY BOTH ISSUERS SHIP TOGETHER, AND WHY STAGING GOES FIRST
+#
+#   Let's Encrypt's PRODUCTION endpoint enforces rate limits — notably a
+#   duplicate-certificate limit per week — and A FAILED HTTP-01 ORDER BURNS THAT
+#   QUOTA. Three facts make that a live hazard here rather than a theoretical one:
+#
+#     1. All four staging hostnames (api-, app-, auth-, grafana-staging) share ONE
+#        `jtoye-staging-tls` Secret and are issued as a SINGLE ACME order, so ONE
+#        failed challenge fails the WHOLE order — including the names that would
+#        have worked. `k8s/base/ingress.yaml`'s own comment block says this.
+#     2. NONE of those four names resolves yet. D-08 keeps staging DNS parked
+#        until the owner adds the records, and plan 29-08 measured the
+#        consequence: issuance succeeds for none of them until every one resolves.
+#     3. So the FIRST attempts are the ones most likely to fail, and each failure
+#        against the production endpoint spends quota that then blocks the retry.
+#
+#   `letsencrypt-staging` has no meaningful quota and issues an UNTRUSTED
+#   certificate — which is exactly right for proving the ISSUANCE PATH works
+#   before spending production quota on it. A browser will warn; that cost is
+#   visible rather than silent, and it is temporary.
+#
+#   THE PROMOTION IS A CONFIG CHANGE, NOT A MANIFEST EDIT. Plan 29-08 routed the
+#   annotation through app-config `cert-manager.cluster-issuer` (see the
+#   `replacements:` block in k8s/base/kustomization.yaml and the repeat in
+#   k8s/staging/kustomization.yaml — a base replacement does not re-run against an
+#   overlay's patched ConfigMap). Staging patches it to `letsencrypt-staging`.
+#   Plan 29-11 flips that ONE key to `letsencrypt-prod`, and only after a
+#   certificate has actually been produced here. Shipping only the staging issuer
+#   would make that flip a two-file change under time pressure, which is how it
+#   gets done wrong.
+#
+# THESE ARE CLUSTER-SCOPED OBJECTS IN A NAMESPACED OVERLAY
+#
+#   A `ClusterIssuer` has no namespace. kustomize does not know that — it has no
+#   schema for a CRD it has never seen — so the overlay's `namespace:` transformer
+#   stamps `metadata.namespace: jtoye-staging` onto the rendered documents. The
+#   API server DISCARDS that field for a cluster-scoped resource, so the apply is
+#   correct; it is recorded here because a reviewer reading the golden will see a
+#   namespace on a cluster-scoped object and reasonably wonder.
+#
+#   THE REAL CONSEQUENCE IS ELSEWHERE, AND IT IS SHARED STATE. Because they are
+#   cluster-scoped, these two objects are the SAME two objects for every overlay
+#   applied to the same cluster. That is why they live in `k8s/staging/` and not
+#   in `k8s/base`: a production overlay rendering its own copy would put two
+#   definitions of one cluster-wide name into contention, and whichever applied
+#   last would win silently. When production gains its own cluster it gets its own
+#   copy of this file; while staging and production could share a cluster, one
+#   definition is the only safe number.
+#
+# ORDERING: cert-manager MUST BE INSTALLED FIRST
+#
+#   `kubectl kustomize` renders these without knowing what a ClusterIssuer is. A
+#   SERVER-side dry-run does not: until `scripts/staging-bootstrap.sh` has
+#   installed cert-manager v1.21.1 (which installs the `cert-manager.io/v1` CRDs)
+#   the API server answers `no matches for kind "ClusterIssuer"`. The same
+#   constraint applies to k8s/base/rabbitmq-cluster.yaml, and cert-manager must
+#   also precede the RabbitMQ operator because the operator's own release manifest
+#   contains `cert-manager.io/v1` objects. Sequencing constraint on plan 29-11,
+#   stated here so it is not met for the first time against a live cluster.
+#
+# NOTHING HERE ISSUES A CERTIFICATE ON ITS OWN. An Issuer is a capability, not an
+# action: cert-manager creates a Certificate only when an Ingress carries the
+# annotation AND its hosts resolve. Applying this file while DNS is parked is
+# inert and safe, which is precisely why it can land now.
+# =============================================================================
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    # THE ACME STAGING ENDPOINT. Not a typo for the production one, and not a
+    # placeholder: see the rate-limit reasoning in the header. This issuer is
+    # what `cert-manager.cluster-issuer` resolves to in the staging overlay today.
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    # INJECTED from app-config `cert-manager.acme-email` by the `replacements:`
+    # block in k8s/staging/kustomization.yaml. The value committed here is the
+    # base default you get if that replacement is ever removed — do not treat
+    # editing it as the way to change the contact address.
+    email: devops@olajay.co.uk
+    privateKeySecretRef:
+      # cert-manager CREATES this Secret; it is not one we ship, so
+      # check-no-plaintext-secrets.sh is unaffected. Separate key per issuer on
+      # purpose: one ACME account per endpoint, so the staging registration
+      # cannot be mistaken for the production one.
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            # HTTP-01, not DNS-01, and that is forced rather than preferred: the
+            # olajay.co.uk zone is hosted at Netlify DNS (NS1 infrastructure,
+            # measured 2026-08-10) and cert-manager ships NO Netlify solver. D-07
+            # rejected a zone migration as overkill for four stable records.
+            #
+            # `nginx` is the IngressClass the self-installed
+            # ingress-nginx controller-v1.15.1 registers
+            # (scripts/staging-bootstrap.sh). cert-manager creates a temporary
+            # solver Ingress in this class for each challenge; if the class name
+            # ever diverges from the controller's, every challenge times out with
+            # no error anywhere except the Order's status.
+            ingressClassName: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    # THE PRODUCTION ENDPOINT. This object exists so that plan 29-11's promotion
+    # is a one-key config change — it is DEFINED here and REFERENCED by nobody
+    # until `cert-manager.cluster-issuer` is flipped. Defining an issuer costs
+    # nothing and issues nothing; see the header's last paragraph.
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Same injection, same source key, same reason. Both issuers take the same
+    # contact address: it identifies the operator, not the environment.
+    email: devops@olajay.co.uk
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

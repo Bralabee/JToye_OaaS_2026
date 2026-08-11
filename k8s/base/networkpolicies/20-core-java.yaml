@@ -11,8 +11,11 @@
 # Egress:
 #   - DNS to kube-dns.
 #   - jtoye-infrastructure namespace on Postgres (app-config `db.port`), Redis
-#     (6379), RabbitMQ AMQP (5672), RabbitMQ STOMP (61613), MinIO (9000),
-#     Alertmanager (9093).
+#     (6379), MinIO (9000), Alertmanager (9093).
+#   - The IN-CLUSTER broker by podSelector: AMQP (5672) and STOMP (61613), one
+#     rule each. These two used to ride on the jtoye-infrastructure rule above;
+#     D-09 moved the broker into this namespace, so that peer no longer selects
+#     it. See the block at spec.egress.6.
 #   - Public 443/TCP for Keycloak (auth.olajay.co.uk), Stripe (api.stripe.com),
 #     Ollama remote (if configured), S3 public endpoints, image CDNs.
 #     See 15-RESEARCH.md §4 for the Stripe CIDR tradeoff rationale.
@@ -111,16 +114,39 @@ spec:
       ports:
         - protocol: TCP
           port: 5432   # Postgres — replaced from app-config db.port
-    # In-cluster infrastructure namespace: Redis, RabbitMQ, MinIO, Alertmanager.
-    # These five are still literals, and they stay literals HERE on purpose: this
-    # rule is about the in-cluster deployment shape, where those five ports are
+    # In-cluster infrastructure namespace: Redis, MinIO, Alertmanager.
+    # These three are still literals, and they stay literals HERE on purpose: this
+    # rule is about the in-cluster deployment shape, where those ports are
     # fixed by the infra namespace's own Services. Plan 29-04 took up the
     # "clean follow-up" this comment used to name, but for the OUT-OF-CLUSTER
     # Redis only — `redis.port` now drives spec.egress.5 below, where the value
     # genuinely varies per environment (6379 in-cluster, 10000 on the managed
-    # cache). rabbitmq.port / stomp.broker.relay-port remain unrouted because
-    # nothing moves them out of the cluster; that is a limit, stated, not an
-    # oversight. INV-7 asserts all five explicitly, so they cannot drift unnoticed.
+    # cache). INV-7 asserts all three explicitly, so they cannot drift unnoticed.
+    #
+    # ### THE TWO RABBITMQ PORTS LEFT THIS RULE IN PLAN 29-09, AND WHY ###
+    #
+    # This rule used to carry `5672` (AMQP) and `61613` (STOMP) alongside the
+    # three below, and this comment used to end: *"rabbitmq.port /
+    # stomp.broker.relay-port remain unrouted because nothing moves them out of
+    # the cluster; that is a limit, stated, not an oversight."*
+    #
+    # D-09 / ADR-0002 falsified the premise, though not in the direction that
+    # sentence anticipated. The broker did not move OUT of the cluster — it moved
+    # IN, from the `jtoye-infrastructure` namespace to an operator-managed
+    # StatefulSet in THIS namespace (k8s/base/rabbitmq-cluster.yaml). A rule
+    # addressed by `namespaceSelector: jtoye-infrastructure` does not select a pod
+    # in `jtoye-staging`, so leaving the two ports here would have permitted a
+    # peer that no longer exists while denying the one that does: every AMQP
+    # publish and every STOMP frame dropped under the enforcing Cilium dataplane,
+    # with the manifest reading as correct. Same failure shape as #271, reached
+    # through a third door.
+    #
+    # They are now `spec.egress.6` and `spec.egress.7` below, addressed by
+    # podSelector, one port each. `NETPOL_INFRA_EXPECTED` in
+    # k8s/scripts/check-render-invariants.sh lost them from `core-java-allow` in
+    # the SAME commit — that file's header calls the friction intentional, and the
+    # fail-direction arm for this change is precisely "leave the declaration
+    # behind and watch INV-7 name the two ports".
     - to:
         - namespaceSelector:
             matchLabels:
@@ -128,10 +154,6 @@ spec:
       ports:
         - protocol: TCP
           port: 6379   # Redis
-        - protocol: TCP
-          port: 5672   # RabbitMQ AMQP
-        - protocol: TCP
-          port: 61613  # RabbitMQ STOMP
         - protocol: TCP
           port: 9000   # MinIO
         - protocol: TCP
@@ -238,3 +260,50 @@ spec:
       ports:
         - protocol: TCP
           port: 6379   # managed Redis — replaced from app-config redis.port
+    # =========================================================================
+    # IN-CLUSTER BROKER (D-09 / ADR-0002, plan 29-09). Two rules, one per
+    # protocol, each holding exactly ONE port and ONE peer.
+    #
+    # APPENDED, NOT INSERTED, for the reason the block above states at length:
+    # `spec.egress.1`, `.4` and `.5` are addressed BY INDEX from four
+    # kustomization.yaml files, so anything placed ahead of them silently
+    # retargets a replacement onto its neighbour. These take indices 6 and 7.
+    #
+    # THE PEER IS A podSelector AND THE LABEL IS THE OPERATOR'S. Measured at the
+    # pinned tag v2.22.3 (internal/metadata/label.go): the operator puts
+    # `app.kubernetes.io/name: <cluster name>` on every broker pod and uses that
+    # same single key as the StatefulSet's own selector, while DISCARDING any
+    # `app.kubernetes.io/*` label the CR carries — so this kustomization's common
+    # `part-of: jtoye-platform` never reaches a broker pod and a selector on it
+    # would match everything else in the namespace instead. The full source
+    # citation is in k8s/base/rabbitmq-cluster.yaml's header.
+    #
+    # NEITHER PORT IS ROUTED THROUGH app-config, and that is a limit stated
+    # rather than an oversight. app-config `rabbitmq.port` and
+    # `stomp.broker.relay-port` exist and the application reads them, but both
+    # are now fixed by the OPERATOR: 5672 is the AMQP default it always exposes
+    # and 61613 is the port `additionalPlugins: [rabbitmq_stomp]` adds. They
+    # cannot vary per environment without a `spec.override.service` patch, so a
+    # `replacements:` pass would derive a value that has one possible answer.
+    # The day an override makes them vary, the rules are already shaped for it —
+    # one port each, at named indices.
+    # =========================================================================
+    # spec.egress.6 — BROKER AMQP.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: jtoye-rabbitmq
+      ports:
+        - protocol: TCP
+          port: 5672   # RabbitMQ AMQP (operator default)
+    # spec.egress.7 — BROKER STOMP. Its own rule, because this is the pair most
+    # easily conflated and the KDS relay's failure mode is a reconnect loop that
+    # imitates liveness. 61613 is `stomp`; 61614 is `stomps` and exists only when
+    # the cluster is configured with TLS, which it is not.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: jtoye-rabbitmq
+      ports:
+        - protocol: TCP
+          port: 61613  # RabbitMQ STOMP (rabbitmq_stomp plugin)

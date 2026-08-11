@@ -415,9 +415,23 @@ ALLOW_UNRESOLVED_INGRESS_BACKEND=()
 # a duplicate FAILS, and a STALE entry — one whose Service is not in fact
 # published anywhere — FAILS, so it cannot rot into a standing excuse.
 # ---------------------------------------------------------------------------
+# MAILHOG JOINS THE LIST (D-13, plan 29-09), and it is the sharpest entry of the
+# three. Prometheus and Alertmanager leak metrics and a mute button; Mailhog's
+# unauthenticated HTTP API serves the CAPTURED CONTENT of every application email
+# staging sends — customer names, delivery addresses, order contents, unsubscribe
+# tokens. The compose stack learned this at first hand (#441: an all-interfaces
+# bind published dev-tenant mail to the local network with no credential, which is
+# why docker-compose.full-stack.yml pins both its ports to loopback). Publishing
+# it through the ingress would be that same defect with a public hostname and a
+# valid certificate on it.
+#
+# It is a STAGING-ONLY Service, so on three of four targets this entry can never
+# match. That is not a reason to leave it out: the list is checked against Ingress
+# BACKENDS, and an Ingress rule can be added in any overlay at all.
 NEVER_PUBLISHED_BACKENDS=(
   'prometheus'
   'alertmanager'
+  'mailhog'
 )
 ALLOW_PUBLISHED_MONITORING_BACKEND=()
 
@@ -450,8 +464,26 @@ FORBIDDEN_RENDER_LITERALS=(
 # The map is keyed by NetworkPolicy metadata.name, which the overlays do not
 # rename (only namespace and labels differ per target).
 # ---------------------------------------------------------------------------
+# PLAN 29-09 REMOVED 5672 AND 61613 FROM core-java-allow, AND THE DIRECTION IS
+# THE POINT. Every previous edit to this map ADDED a port; this one takes two
+# away, because D-09 moved the broker from the `jtoye-infrastructure` namespace
+# to an operator-managed StatefulSet in the app's OWN namespace
+# (k8s/base/rabbitmq-cluster.yaml). This map keys strictly on the
+# jtoye-infrastructure namespaceSelector, so the two ports genuinely left its
+# jurisdiction: they are now `spec.egress.6` and `.7` of core-java-allow,
+# addressed by podSelector, and this arm cannot see them by construction.
+#
+# THAT HAS A CONSEQUENCE FOR ANYONE WRITING A FAIL ARM AGAINST THIS GATE.
+# "Change a RabbitMQ port in the policy and watch INV-7 name it" WAS a falsifiable
+# assertion and is no longer one — after this change INV-7's first arm is blind to
+# both ports, so that arm would pass on a broken tree. The strictly stronger form,
+# and the one plan 29-09 actually ran: leave THIS map at its old six-port value
+# while the policy has moved to four, and confirm the gate FAILS naming [5672,
+# 61613] on all four targets. That arm proves the friction this map exists for —
+# the declaration must move with the policy — and it is the direction a future
+# editor is actually at risk of getting wrong.
 declare -A NETPOL_INFRA_EXPECTED=(
-  [core-java-allow]="__DB_PORT__ 5672 6379 9000 9093 61613"
+  [core-java-allow]="__DB_PORT__ 6379 9000 9093"
   [pg-backup-allow]="__DB_PORT__ 9000"
 )
 INFRA_NAMESPACE_LABEL="jtoye-infrastructure"
@@ -1246,7 +1278,7 @@ for dir in "${TARGETS[@]}"; do
     # for whoever reads the failure, and the assertion is `> 0`. Writing an exact
     # expected count here would be a second place to update every time a policy is
     # added, and the thing being guarded against is a BLIND PARSER, not a miscount.
-    (( pol_seen > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicy documents in the render. This platform ships twelve (five app-tier + seven observability, plan 29-07 — counted off the render, not remembered); zero means the parser is blind and every port assertion below would pass vacuously. Fix the parser, do not delete the invariant."
+    (( pol_seen > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicy documents in the render. This platform ships fourteen (five app-tier + seven observability + keycloak-allow (plan 29-08) + rabbitmq-allow (plan 29-09) — counted off the render, not remembered); zero means the parser is blind and every port assertion below would pass vacuously. Fix the parser, do not delete the invariant."
 
     inv7_bad=0
     inv7_checked=0

@@ -206,6 +206,34 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    # THE BROKER (plan 29-09) — appended at the END, per the append-only rule.
+    # This is the outbound half of the second entry in the "STILL OWED" section
+    # at the bottom of this file, and it pays it: the `rabbitmq` and
+    # `rabbitmq-queues` jobs both target `jtoye-rabbitmq:15692` and have been DOWN
+    # by construction since plan 29-06 wrote them, because no such workload
+    # existed. The matching INGRESS half is `rabbitmq-allow` in
+    # networkpolicies/40-datastores.yaml, beside the CR it governs, and both land
+    # in the same commit — an egress rule and its ingress rule that arrive
+    # separately produce a scrape denied at exactly one end, which reads as a dead
+    # exporter.
+    #
+    # THE SELECTOR IS THE OPERATOR'S LABEL, NOT `app: rabbitmq`. That owed entry
+    # warned that guessing would "produce a rule that silently matches nothing";
+    # the label was read out of internal/metadata/label.go at the pinned tag
+    # v2.22.3 instead — see k8s/base/rabbitmq-cluster.yaml's header for the
+    # citation and for why `app.kubernetes.io/part-of: jtoye-platform` would be
+    # the wrong key here even though kustomize puts it on the CR.
+    #
+    # ONE PORT, 15692. Both scrape jobs hit the same port — `rabbitmq-queues`
+    # differs only by path (`/metrics/detailed`) and query parameters, which
+    # NetworkPolicy does not see.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: jtoye-rabbitmq
+      ports:
+        - protocol: TCP
+          port: 15692
 ---
 # -----------------------------------------------------------------------------
 # ALERTMANAGER — receives from Prometheus, sends mail, and nothing else
@@ -563,14 +591,28 @@ spec:
 #     the egress rule is the last rule of prometheus-allow above, and the ingress
 #     half is in k8s/base/keycloak/keycloak-networkpolicy.yaml, beside the
 #     Deployment and Service it governs, exactly as this note asked.
-#   - jtoye-rabbitmq (plan 29-09). The `rabbitmq` and `rabbitmq-queues` jobs
-#     target jtoye-rabbitmq:15692. The broker is operator-managed, so its pod
+#   - jtoye-rabbitmq — PAID, 2026-08-11 by plan 29-09, and left here as a record
+#     rather than deleted. What was owed: "The `rabbitmq` and `rabbitmq-queues`
+#     jobs target jtoye-rabbitmq:15692. The broker is operator-managed, so its pod
 #     labels are the operator's to declare — which is why the rule belongs with
 #     the plan that installs it, and why guessing a selector here would produce a
-#     rule that silently matches nothing.
-#   - core-java -> mailhog:1025 (plan 29-09). Application email in staging is
-#     captured by the same Mailhog this file already lets Alertmanager reach, but
-#     the app-side egress lives in core-java-allow.
+#     rule that silently matches nothing." Both halves now exist — the egress rule
+#     is the last rule of prometheus-allow above, the ingress half is
+#     `rabbitmq-allow` in networkpolicies/40-datastores.yaml beside the CR — and
+#     the selector was READ out of the operator's source at the pinned tag rather
+#     than guessed, exactly as this note asked.
+#   - core-java -> mailhog:1025 — PAID, 2026-08-11 by plan 29-09. What was owed:
+#     "Application email in staging is captured by the same Mailhog this file
+#     already lets Alertmanager reach, but the app-side egress lives in
+#     core-java-allow." It does NOT live there in the end, and the difference is
+#     deliberate: Mailhog is a STAGING-ONLY workload (D-13), so a rule in the base
+#     `core-java-allow` would be inert in base/local/production and the one piece
+#     of core-java's egress no other target's render exercises. It is authored in
+#     k8s/staging/mailhog.yaml beside the workload instead, as an ADDITIVE policy
+#     selecting `app: core-java` — Kubernetes unions the egress rules of every
+#     policy selecting a pod, so it grants the SMTP hop without touching
+#     core-java-allow's index-addressed rule list. Same mechanism, and the same
+#     reason, as `core-java-scrape-allow` below.
 #   - THE core-java SERVICE DOES NOT EXPOSE 9091. `prometheus-config.yaml` scrapes
 #     `core-java:9091` while core-java-deployment.yaml:56-62 exposes 9091 on the
 #     POD only and deliberately keeps it off the Service. The policy above is

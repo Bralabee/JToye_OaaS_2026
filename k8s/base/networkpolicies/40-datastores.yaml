@@ -4,12 +4,46 @@
 # Policies for workloads we DO ship that interact with datastores or that
 # belong in the "infrastructure adjacency" bucket.
 #
-# NOTE: Postgres, Redis, RabbitMQ, MinIO, Alertmanager themselves live in the
-# `jtoye-infrastructure` namespace and are NOT managed by this kustomization.
-# This file's job is to:
+# =============================================================================
+# THE PREMISE THIS HEADER USED TO CARRY, AND WHY HALF OF IT IS NOW FALSE
+#
+#   Until plan 29-09 this header said, without qualification:
+#
+#       "Postgres, Redis, RabbitMQ, MinIO, Alertmanager themselves live in the
+#        `jtoye-infrastructure` namespace and are NOT managed by this
+#        kustomization."
+#
+#   That sentence has been overtaken twice, in opposite directions, and both
+#   corrections are recorded rather than quietly applied:
+#
+#     - Postgres and Redis moved OUT of any namespace at all. D-09 puts them on
+#       Azure managed services, addressed by `ipBlock` (see the spec.egress.4
+#       block below and networkpolicies/20-core-java.yaml for the full writeup).
+#     - RabbitMQ moved IN. D-09 / ADR-0002 runs the broker in-cluster via the
+#       cluster operator, and k8s/base/rabbitmq-cluster.yaml means this
+#       kustomization now DOES manage it. Its policy is in this file, below.
+#
+#   Alertmanager is likewise now a workload this repository ships (plan 29-07,
+#   k8s/base/monitoring/) with its policy in networkpolicies/50-observability.yaml.
+#   MinIO is the only name in the original sentence still described by it.
+#
+#   THE CONSEQUENCE THAT MATTERS. The `jtoye-infrastructure` egress rules below
+#   and in 20-core-java.yaml address their peer by NAMESPACE. A broker that now
+#   runs in the SAME namespace as core-java matches none of them, so a policy
+#   left pointing at `jtoye-infrastructure` would deny every AMQP and STOMP
+#   connection under the enforcing Cilium dataplane while reading as correct.
+#   That is why the RabbitMQ ports MOVED out of 20-core-java.yaml's
+#   infrastructure rule in the same commit as this file gained the broker's own
+#   policy, and why `NETPOL_INFRA_EXPECTED` in
+#   k8s/scripts/check-render-invariants.sh moved with them.
+#
+# This file's job is therefore now to:
 #   1. Constrain the `pg-backup` CronJob workload we DO ship.
-#   2. Document the expected policy shape for the infra-namespace maintainer
-#      (see comments at bottom) so the other team mirrors the boundary.
+#   2. Govern the operator-managed broker this kustomization now ships.
+#   3. Document the expected policy shape for the infra-namespace maintainer
+#      (see comments at bottom) so the other team mirrors the boundary — kept
+#      because MinIO is still addressed that way.
+# =============================================================================
 #
 # Enforces STRIDE T-15-03 (pg-backup has no ingress surface).
 
@@ -123,6 +157,151 @@ spec:
       ports:
         - protocol: TCP
           port: 5432   # managed Postgres — replaced from app-config db.port
+---
+# =============================================================================
+# THE OPERATOR-MANAGED BROKER (D-09 / ADR-0002, plan 29-09)
+#
+# WHY THIS POLICY IS NOT OPTIONAL. `00-default-deny.yaml` selects EVERY pod in
+# the namespace with `podSelector: {}`, and the staging cluster runs an ENFORCING
+# Cilium dataplane (measured, plan 29-10). Without this document the broker pod
+# would have NO NETWORK AT ALL: no DNS, no AMQP, no STOMP, no scrape — which
+# presents as a total messaging outage and is actually a network denial. That is
+# the same trap plan 29-06 recorded in advance for the monitoring workloads, and
+# it is written down here for the same reason.
+#
+# THE SELECTOR IS ONE KEY, AND WHICH KEY IS MEASURED, NOT CHOSEN
+#   networkpolicies/50-observability.yaml deliberately left this rule unwritten:
+#   *"The broker is operator-managed, so its pod labels are the operator's to
+#   declare — which is why the rule belongs with the plan that installs it, and
+#   why guessing a selector here would produce a rule that silently matches
+#   nothing."* Read at the pinned tag v2.22.3, internal/metadata/label.go:
+#
+#       Label(instance)        -> app.kubernetes.io/name: <instance>
+#                                 app.kubernetes.io/component: rabbitmq
+#                                 app.kubernetes.io/part-of:   rabbitmq
+#       LabelSelector(instance)-> app.kubernetes.io/name: <instance>   (STS selector)
+#       GetLabels(...)         -> merges the CR's own labels but SKIPS every key
+#                                 prefixed `app.kubernetes.io`
+#
+#   So `app.kubernetes.io/name: jtoye-rabbitmq` is guaranteed on every broker pod
+#   AND is the operator's own StatefulSet selector, while this kustomization's
+#   common `app.kubernetes.io/part-of: jtoye-platform` is applied to the CR and
+#   then DISCARDED before it reaches a pod. A policy selecting `part-of:
+#   jtoye-platform` here would match every workload except the one it names.
+#
+# ONE PORT PER RULE, for the reason 20-core-java.yaml sets out: egress rules are
+# OR-combined and each rule is (peers x ports), so splitting changes no security
+# posture — what it buys is that a `replacements:` fieldPath means "the STOMP
+# rule's only port" rather than "whichever port sorts first". The append-only
+# rule applies here from the day this policy gains its first replacement.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-allow
+  labels:
+    app.kubernetes.io/name: rabbitmq-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: jtoye-rabbitmq
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # AMQP — the primary pool, the outbox flushers and every @RabbitListener.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: core-java
+      ports:
+        - protocol: TCP
+          port: 5672
+    # STOMP — the KDS relay. A SEPARATE rule from AMQP on purpose: these two are
+    # the pair most likely to be mistaken for one another, and the recorded
+    # STOMP-relay trap is that a broken relay reconnect-polls and fakes liveness,
+    # so a denial here would look like a client-side reconnect loop rather than a
+    # policy. 61613 is the operator's own port for `rabbitmq_stomp`, read out of
+    # internal/resource/service.go:163-171 at the pinned tag — NOT 61614, which is
+    # `stomps` and only exists when `spec.tls` is configured.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: core-java
+      ports:
+        - protocol: TCP
+          port: 61613
+    # PROMETHEUS SCRAPE. Pays the second half of the debt 50-observability.yaml
+    # recorded under "STILL OWED": the `rabbitmq` and `rabbitmq-queues` jobs both
+    # target jtoye-rabbitmq:15692 and have been DOWN by construction since plan
+    # 29-06 wrote them, because the workload did not exist. The outbound half is
+    # the last egress rule of `prometheus-allow`, and the two land together — an
+    # egress rule and its ingress rule that arrive separately produce a scrape
+    # denied at exactly one end, which reads as a dead exporter.
+    #
+    # 15692 is on the client Service whenever the metrics plugin is enabled, and
+    # the operator always enables it (internal/resource/service.go:285-291).
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 15692
+    # PEER DISCOVERY + ERLANG DISTRIBUTION, broker-to-broker ONLY.
+    #
+    # WRITTEN AT replicas: 1, WHERE IT GRANTS NOTHING, AND THAT IS DELIBERATE.
+    # With one replica there is no peer, so this rule permits a conversation that
+    # never happens; its peer is the broker's own pods, so it widens nothing for
+    # anything else. What it buys is that raising `replicas` to 3 does not
+    # silently fail to form a cluster under the enforcing dataplane — a failure
+    # that presents as nodes that start, pass their probes, and never see each
+    # other. Discovering that at 2 a.m. costs far more than two inert rules.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: jtoye-rabbitmq
+      ports:
+        - protocol: TCP
+          port: 4369    # epmd
+        - protocol: TCP
+          port: 25672   # erlang distribution
+  egress:
+    # DNS. Exactly one key in the kube-dns selector — INV-3 asserts that, because
+    # the label transformer once injected extra keys here and narrowed the
+    # selector to zero pods. The broker needs it: peer discovery resolves the
+    # headless Service, so this is load-bearing the moment replicas > 1.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The outbound half of peer discovery. Same self-selector, same reasoning as
+    # its ingress twin above.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: jtoye-rabbitmq
+      ports:
+        - protocol: TCP
+          port: 4369
+        - protocol: TCP
+          port: 25672
+    # THERE IS NO PUBLIC EGRESS RULE, AND THE ABSENCE IS THE ASSERTION.
+    # A message broker has no business on the internet: it fetches no plugins at
+    # runtime (they ship in the image), federates with nothing, and shovels to
+    # nowhere. INV-7's ipBlock arm FAILS any policy that renders an ipBlock rule
+    # without a declaration in NETPOL_IPBLOCK_EXPECTED, so adding one later is a
+    # deliberate two-file change and not a quiet one.
 
 # -----------------------------------------------------------------------------
 # Notes for jtoye-infrastructure namespace maintainer (not applied by this
@@ -170,7 +349,20 @@ spec:
 #         - protocol: TCP
 #           port: 5432
 #
-# Mirror for redis (6379), rabbitmq (5672, 61613), minio (9000),
-# alertmanager (9093). All accept ONLY from app=core-java and, where
+# Mirror for minio (9000). All accept ONLY from app=core-java and, where
 # relevant, pg-backup.
+#
+# THE LIST USED TO NAME redis (6379), rabbitmq (5672, 61613) AND alertmanager
+# (9093) TOO, and each was removed for a different, recorded reason rather than
+# tidied away:
+#   - redis      -> D-09 moved it to Azure Managed Redis, outside every namespace.
+#                   Its boundary is now the `ipBlock` rule in 20-core-java.yaml
+#                   plus the server's own firewall, not a mirrored ingress policy.
+#   - rabbitmq   -> plan 29-09 moved it INTO this kustomization. Its ingress
+#                   policy is `rabbitmq-allow` above — in this repository, gated
+#                   by CI, and no longer a request to another maintainer.
+#   - alertmanager -> plan 29-07 shipped it as a workload here; its policy is in
+#                   networkpolicies/50-observability.yaml.
+# Leaving them listed would have asked a maintainer to mirror boundaries that no
+# longer exist, which is worse than asking for nothing.
 # -----------------------------------------------------------------------------
