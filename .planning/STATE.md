@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 29 executing — 6/16 complete + 29-10 PARTIAL (estate LIVE, Task 1 done; Task 2 secrets PARKED by owner, Task 3 DNS re-verify in flight); wave 4 dispatched (29-07)
-last_updated: "2026-08-11T00:45:00.000Z"
+stopped_at: Phase 29 executing — 7/16 complete + 29-10 PARTIAL (secrets AND DNS both parked by owner; DNS diagnosis — zone never written, all NS1 sets probed); wave 5 dispatched (29-08 Keycloak + ingress)
+last_updated: "2026-08-11T06:10:00.000Z"
 last_activity: 2026-08-10
 progress:
   total_phases: 14
@@ -26,7 +26,14 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 29
-Plan: 6 of 16 + 29-10 PARTIAL (wave 3, 2026-08-11: 29-06 k8s Prometheus + exporters + one-alert-corpus
+Plan: 7 of 16 + 29-10 PARTIAL (wave 4, 2026-08-11: 29-07 Alertmanager dual-sink [Gmail password via
+mounted Secret file, L3_SINK_TO/L3_HUMAN_TO satisfied, route byte-for-byte vs compose, amtool caught
+a block-scalar swallowing the second sink], Grafana provisioned no-Ingress-yet, seven observability
+NetworkPolicies + INV-8; deferred: core-java Service lacks 9091 so that scrape target will read DOWN
+on first deploy for a non-NetPol reason. DNS ALSO parked by owner 2026-08-11: the served zone was
+never written [SOA serial static 8h, all NS1 sets p01-p10 NXDOMAIN]; next action is comparing the
+Netlify zone's listed nameservers to dns1-4.p05.nsone.net. Both parked items re-raise at 29-11.)
+(wave 3, 2026-08-11: 29-06 k8s Prometheus + exporters + one-alert-corpus
 gate; 29-10 Task 1 COMPLETE and merged — staging estate LIVE: AKS jtoye-staging-aks [cilium dataplane
 + policy], PG Flexible Server 16, Managed Redis Balanced_B0 port 10000 [Azure Cache retired TODAY,
 owner approved AMR B0; 6380→10000 swept across 13 files], static IP 20.58.10.18, snackpass at 0
