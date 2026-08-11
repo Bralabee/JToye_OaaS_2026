@@ -1,0 +1,253 @@
+---
+# grafana-deployment.yaml — the dashboard a human opens at 2 a.m. (DPLY-03 /
+# D-19, plan 29-07)
+#
+# ⚠ THE ADMIN PASSWORD IS APPLIED ONLY WHEN GRAFANA FIRST CREATES THE ADMIN USER.
+#   This is recorded verbatim in substance from
+#   infra/monitoring/docker-compose.monitoring.yml:20-27, which carries it because
+#   the defect ALREADY HAPPENED once on this platform: the credential was injected
+#   from the environment with no literal in the file — and the INJECTED VALUE was
+#   itself the factory default. A config-level reading ("the credential comes from
+#   a Secret, therefore it is not the default") was true and useless at the same
+#   time.
+#
+#   So NOTHING in this file is evidence about the running instance. The
+#   secretKeyRef below is necessary and not sufficient. On a data volume that
+#   already holds an admin user, changing the Secret changes nothing until either
+#   `grafana cli admin reset-admin-password` is run against the instance or the
+#   volume is recreated. VERIFICATION BELONGS TO PLAN 29-11, against the RUNNING
+#   Grafana, in the same shape as scripts/check-infra-exposure.sh assertion C —
+#   which interrogates the live instance precisely because reading a manifest
+#   cannot answer this.
+#
+# THIS IS THE ONE MONITORING WORKLOAD THAT LATER GAINS AN INGRESS (D-19).
+#   Prometheus and Alertmanager have no authentication of their own and stay
+#   cluster-internal — INV-8 in k8s/scripts/check-render-invariants.sh now FAILS
+#   the build if either ever acquires an Ingress backend. Grafana has its own
+#   login, so it is the one that gets a public hostname
+#   (grafana-staging.olajay.co.uk).
+#
+#   THE INGRESS IS NOT IN THIS FILE, AND THAT ORDERING IS ENFORCED. Plan 29-08
+#   adds the host rule, the TLS SAN and the DNS record together. INV-6 fails CI
+#   when an Ingress names a Service absent from the same render, so the Service
+#   below has to exist first — which is exactly why it lands a plan earlier
+#   instead of both arriving at once.
+#
+# NO HPA AND NO PDB, STATED RATHER THAN SILENTLY OMITTED.
+#   - Grafana's default database is SQLite on its own data volume. Two replicas
+#     over one emptyDir each means two independent instances with divergent users,
+#     API keys and starred dashboards, and a Service that load-balances between
+#     them at random — a login that works on one refresh and fails on the next.
+#     Horizontal scale needs an external database (Postgres) first, which is a
+#     cost and a schema this phase does not take on.
+#   - A PodDisruptionBudget over a single replica is worse than none:
+#     `minAvailable: 1` on a 1-replica Deployment makes every voluntary eviction
+#     permanently impossible, so a node drain hangs forever (the shape already
+#     recorded in k8s/staging/scale-patch.yaml).
+#
+# GF_INSTALL_PLUGINS IS DELIBERATELY NOT CARRIED OVER from the compose analog
+#   (:93, grafana-piechart-panel). MEASURED rather than assumed: the panel types
+#   in the entire shipped dashboard corpus are `gauge` x1 and `timeseries` x1,
+#   both core. Installing it here would make every pod start depend on an outbound
+#   fetch from grafana.com — a third-party startup dependency, and one the
+#   observability NetworkPolicy would have to open a hole for — to deliver a panel
+#   type nothing uses. If a future dashboard needs it, add the plugin AND the
+#   egress rule AND the horizon row in the same change.
+#
+# STORAGE: emptyDir, WITH ITS CONSEQUENCE WRITTEN DOWN. /var/lib/grafana holds the
+#   SQLite database: the admin user, any manually-created user, API keys, and
+#   dashboards saved through the UI. On a pod restart all of it is gone and the
+#   admin user is re-created from the Secret. What is NOT lost is anything this
+#   repository ships — the datasource and the dashboard are provisioned from the
+#   ConfigMap on every start, which is the whole point of provisioning them. A
+#   PersistentVolumeClaim is the upgrade and needs a StorageClass and a cost
+#   decision inside the £150 ceiling (D-03).
+#
+#   One consequence is worth naming rather than discovering: because the volume is
+#   empty on every start, the FIRST-USER-CREATION trap above resolves in the
+#   helpful direction here — a rotated Secret DOES take effect on the next restart.
+#   That is a property of the emptyDir, not of the manifest, and it stops being
+#   true the day a PVC lands. 29-11 verifies against the instance either way.
+#
+# readOnlyRootFilesystem: true, MEASURED against the pinned image rather than
+#   hoped for. `docker run --read-only --user 472:472` with only /var/lib/grafana
+#   writable starts cleanly on grafana/grafana:10.2.2 (2026-08-11): it creates its
+#   SQLite database, runs its migrations, and logs to stdout because the image's
+#   own entrypoint passes `default.log.mode=console`, so nothing writes to
+#   /var/log/grafana.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    app: grafana
+    component: monitoring
+spec:
+  replicas: 1
+  strategy:
+    # Recreate, for the same reason as the two singletons beside it: the default
+    # RollingUpdate would briefly run a second Grafana with its own empty SQLite
+    # database behind the same Service.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+        component: monitoring
+        version: v1
+      annotations:
+        # House convention on every workload. Nothing consumes these today: the
+        # scrape config is static_configs throughout, and `grafana` is deliberately
+        # not one of the eight compose job names the alert gates recognise — adding
+        # a ninth would VOID check-alert-liveness.sh L-1b, which is a data-block
+        # change, not a manifest one.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        # grafana/grafana runs as the `grafana` user, uid/gid 472. fsGroup makes
+        # the emptyDir data volume writable by it.
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+      containers:
+      - name: grafana
+        # PIN REUSED VERBATIM FROM COMPOSE (D-16). infra/dependency-horizons.yaml
+        # carries the dated exemption (expires 2026-12-31) with the reason that the
+        # monitoring stack moves as one piece — staging and compose must render the
+        # same dashboards against the same Grafana.
+        image: grafana/grafana:10.2.2
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        env:
+        # NO SELF-REGISTRATION. Grafana is the one monitoring surface that becomes
+        # publicly reachable (D-19), so an open sign-up form on it would be an
+        # anonymous account on the platform's whole metrics estate.
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        # The admin pair comes from the `grafana-admin` Secret created by
+        # scripts/staging-secrets.sh, and follows docs/runbooks/credential-rotation.md.
+        # NEVER a `value:` — INV-2 in check-render-invariants.sh fails an EnvVar
+        # carrying both, and INV-1's sibling rule is the reason this shape exists at
+        # all. See the header for why this is necessary and NOT sufficient.
+        - name: GF_SECURITY_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin
+              key: username
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin
+              key: password
+        # Grafana builds every ABSOLUTE link from this — password-reset mails,
+        # share URLs, alert links, and an OIDC callback if one is ever configured.
+        # From app-config so the staging overlay points it at its own host without
+        # a manifest edit; the base value is production-correct.
+        - name: GF_SERVER_ROOT_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: grafana.root-url
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          # /api/health is the endpoint the compose healthcheck uses
+          # (infra/monitoring/docker-compose.monitoring.yml:105).
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        # The two provisioning directories, one key each. Mounting the whole
+        # /etc/grafana/provisioning tree would shadow the image's plugins/,
+        # notifiers/ and alerting/ subdirectories.
+        - name: provisioning-datasources
+          mountPath: /etc/grafana/provisioning/datasources
+          readOnly: true
+        - name: provisioning-dashboards
+          mountPath: /etc/grafana/provisioning/dashboards
+          readOnly: true
+        # The dashboard JSON, at the path dashboard-provider.yml's `options.path`
+        # names. This mount is NESTED INSIDE the data volume below and that is
+        # deliberate: the provider config points at /var/lib/grafana/dashboards,
+        # and changing it would fork the k8s copy from the compose copy for no
+        # gain.
+        - name: dashboards
+          mountPath: /var/lib/grafana/dashboards
+          readOnly: true
+        - name: data
+          mountPath: /var/lib/grafana
+      volumes:
+      - name: provisioning-datasources
+        configMap:
+          name: grafana-provisioning
+          items:
+          - key: datasource.yml
+            path: prometheus.yml
+      - name: provisioning-dashboards
+        configMap:
+          name: grafana-provisioning
+          items:
+          - key: dashboard-provider.yml
+            path: dashboard.yml
+      - name: dashboards
+        configMap:
+          name: grafana-provisioning
+          items:
+          - key: stomp-dashboard.json
+            path: stomp-dashboard.json
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    app: grafana
+    component: monitoring
+spec:
+  # ClusterIP TODAY. Plan 29-08 adds the Ingress that publishes
+  # grafana-staging.olajay.co.uk to THIS Service on THIS port — INV-6 requires the
+  # Service to be in the same render as any rule naming it, which is why this
+  # lands first. Until then:
+  #     kubectl -n <ns> port-forward svc/grafana 3000:3000
+  type: ClusterIP
+  selector:
+    app: grafana
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http

@@ -67,6 +67,19 @@ resources:
   # to re-run, and a hashed name would add nothing.
   - monitoring/alertmanager-config.yaml
   - monitoring/alertmanager-deployment.yaml
+  # Grafana (D-19) — the ONLY monitoring workload that later gains a public
+  # hostname, because it is the only one with a login of its own. Its Ingress
+  # arrives in plan 29-08, together with the TLS SAN and the DNS record; INV-6
+  # requires the Service to be in the same render as any rule naming it, which is
+  # why the Service lands a plan earlier. INV-8 makes the other half enforceable:
+  # an Ingress backed by `prometheus` or `alertmanager` is a CI failure.
+  #
+  # Also a PLAIN ConfigMap. Grafana's file provider re-reads its dashboard
+  # directory every 10s (dashboard.yml `updateIntervalSeconds`) and a ConfigMap
+  # volume update propagates without a restart, so a content hash would roll the
+  # pod to deliver something the running pod already picks up.
+  - monitoring/grafana-provisioning.yaml
+  - monitoring/grafana-deployment.yaml
 
 # =============================================================================
 # THE ALERT CORPUS — one corpus, enforced rather than intended (D-16 / plan 29-06)
