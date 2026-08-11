@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 29 executing — 8/16 complete + 29-10 PARTIAL (secrets AND DNS parked by owner); wave 6 dispatched (29-09 RabbitMQ + Mailhog + cert-manager issuer)
-last_updated: "2026-08-11T07:00:00.000Z"
+stopped_at: Phase 29 PAUSED at wave-7 boundary — 9/16 complete; 29-11 depends on 29-10, which is blocked on TWO owner actions (Netlify DNS zone fix + seven secrets in ~/.jtoye/staging-operator.env)
+last_updated: "2026-08-11T09:30:00.000Z"
 last_activity: 2026-08-10
 progress:
   total_phases: 14
@@ -26,7 +26,24 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 29
-Plan: 8 of 16 + 29-10 PARTIAL (wave 5, 2026-08-11: 29-08 Keycloak in-cluster + per-env realm + four
+Plan: 9 of 16 + 29-10 PARTIAL — **PAUSED at the wave-7 boundary 2026-08-11.** Waves 1-6 done
+(29-01..09 complete; 29-10 Task 1 complete/merged). 29-11 (first deploy + real login) depends on
+29-10, which waits on TWO owner actions: (1) DNS — the served zone was never written; compare the
+Netlify zone showing the Zoho MX records against delegation dns1-4.p05.nsone.net, then four A
+records api-staging/app-staging/auth-staging/grafana-staging → 20.58.10.18; confirm with
+`dig @dns1.p05.nsone.net A api-staging.olajay.co.uk`; ALL FOUR SANs share one ACME order so TLS
+issues for none until every name resolves. (2) Secrets — fill all seven values in
+~/.jtoye/staging-operator.env (AWS media pair, AWS backup pair, ALERTMANAGER_SMTP_PASSWORD/FROM/TO).
+RESUME PATH: resume 29-10's parked worktree (Task 2 secrets → in-cluster role bootstrap; Task 3 DNS
+verify), honouring DEF-29-4 (rabbitmq-credentials Secret must carry default_user.conf AND
+username/password — operator projects only the former, core-java reads the latter; missing half =
+ACCESS_REFUSED with all static gates green) and 29-08's second-client-secret key need in
+staging-secrets.sh; then wave 7 = 29-11.
+(wave 6, 2026-08-11: 29-09 RabbitmqCluster in-cluster pinned + STOMP, Mailhog staging trap, both
+ClusterIssuers, horizon rows dated incl. snackpass-pg free-window ~2027-07-21; base configmap
+broker hosts repointed [would have been structurally green, functionally dead]; k8s/local bring-up
+saved via $patch: delete; three ACs failed-as-written, replaced with stronger falsifiable forms.)
+(wave 5, 2026-08-11: 29-08 Keycloak in-cluster + per-env realm + four
 staging hosts routed; KC_HOSTNAME_STRICT=true [forged-Host iss defence]; cluster realm ships core-api
 ONLY — confidential clients need a second client-secret key in staging-secrets.sh when 29-10 resumes;
 ingress-hosts-patch "FAILS LOUDLY" claim was FALSE — render-golden.sh is the ONLY guard on base-rule
