@@ -1,0 +1,150 @@
+---
+# keycloak-networkpolicy.yaml — the network half of the in-cluster identity
+# provider (DPLY-05 / #271's failure shape, plan 29-08)
+#
+# THIS FILE IS NOT OPTIONAL SCAFFOLDING, AND k8s/base/networkpolicies/
+# 50-observability.yaml SAID SO IN ADVANCE. Its closing section records what was
+# still owed:
+#     "keycloak (plan 29-08). The `keycloak` scrape job targets keycloak:8080 and
+#      is DOWN until that workload lands. Prometheus needs an egress rule to
+#      `app: keycloak` on 8080 and Keycloak needs the matching ingress. Both
+#      belong with the manifests that create it."
+# This is the second half. The first half — Prometheus' egress — is added to
+# prometheus-allow in 50-observability.yaml in the same change, because an egress
+# rule and its matching ingress rule that arrive separately produce a scrape that
+# is denied at exactly one end, which reads as a dead exporter.
+#
+# WHY IT IS URGENT RATHER THAN TIDY. `00-default-deny.yaml` selects EVERY pod in
+# the namespace with `podSelector: {}`, and the staging cluster runs an ENFORCING
+# Cilium dataplane (measured, plan 29-10). Without this policy the Keycloak pod
+# has NO NETWORK AT ALL: no DNS, no database, and no way for the ingress
+# controller to reach it. The symptom is a pod that starts, fails its readiness
+# probe on a database connection timeout, and reads as a database fault. That is
+# the same class 50-observability.yaml was written to stop happening to the five
+# monitoring workloads, arriving through a different door.
+#
+# IT LIVES HERE, NOT IN networkpolicies/, ON PURPOSE. The five files in that
+# directory have their egress rules addressed BY INDEX from four separate
+# kustomization.yaml files, and every edit to them is an opportunity to shift an
+# index — #271's failure shape. A new policy in its own file beside the workload
+# it governs cannot shift anyone else's index, and keeps the Deployment, the
+# Service, the realm and the policy reviewable as one unit.
+#
+# THE `replacements:` INDEX CONTRACT. `spec.egress.0` is DNS and `spec.egress.1`
+# is the managed Postgres rule, carrying exactly ONE peer and ONE port so that
+# `spec.egress.1.ports.0.port` means "the Postgres port" and not "whichever port
+# sorts first". That is the same shape postgres-exporter-allow uses and the same
+# reason. NEW RULES GO AT THE END; inserting one ahead of index 1 silently
+# retargets the replacement onto its neighbour.
+#
+# INV-7's ipBlock ARM MOVES IN THE SAME COMMIT, AND THAT IS THE POINT. This
+# policy renders an ipBlock egress rule, and INV-7 FAILS a policy that does so
+# with no entry in NETPOL_IPBLOCK_EXPECTED — an undeclared hole in an egress
+# allow-list is exactly what that arm exists to prevent. The entry is added to
+# k8s/scripts/check-render-invariants.sh in this same change. That friction is
+# deliberate, and it fired for real on all four targets while this file was being
+# written, before the map was updated.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-allow
+  labels:
+    app.kubernetes.io/name: keycloak-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # The published surface. Same peer shape as frontend-allow, edge-go-allow and
+    # grafana-allow use for theirs. In BASE and PRODUCTION this rule is inert by
+    # construction — no Ingress in those renders routes to this Service (D-08
+    # keeps production hostnames unresolvable until Phase 32) — but the rule is
+    # authored here rather than in a staging patch for the reason grafana-allow
+    # records: an Ingress whose backend Service exists and whose pods deny the
+    # controller answers 504 through a correctly-published hostname with a valid
+    # certificate, which is the most expensive possible way to discover a missing
+    # ingress rule.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    # The scrape. KC_METRICS_ENABLED puts the Prometheus endpoint on the main HTTP
+    # port in this version line, so the scrape port and the login port are the
+    # same 8080 — which is why this is a second `from:` peer on the same port
+    # rather than a second port.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+    # The platform's own admin client (#102 remainder, OFF by default). app-config
+    # keycloak.admin.base-url names this Service on 8080, so the day
+    # keycloak.admin.enabled flips to "true" the call must already be permitted —
+    # otherwise a tenant offboard hangs on a connection timeout that reads as a
+    # Keycloak outage. Authoring it now costs nothing: the feature is inert until
+    # that key changes, and the rule grants exactly the port the login path
+    # already grants the ingress controller.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: core-java
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # spec.egress.0 — DNS. Exactly ONE key in the kube-dns selector; INV-3 asserts
+    # that, because the label transformer once injected extra keys here and
+    # narrowed the selector to zero pods, costing core-java all DNS under an
+    # enforcing CNI. It is load-bearing twice over for this workload: the database
+    # host is a DNS name.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # spec.egress.1 — MANAGED POSTGRES. NEITHER VALUE BELOW IS AUTHORED: both are
+    # overwritten at render time from app-config `db.egress-cidr` / `db.port` by
+    # the `replacements:` block in k8s/base/kustomization.yaml AND in every
+    # overlay's own kustomization.yaml — a base replacement does not re-run against
+    # an overlay's patched ConfigMap, which plans 29-04 and 29-10 each measured.
+    # The committed values are the base defaults you get if a replacement is ever
+    # removed. Change app-config, never this line.
+    #
+    # Keycloak reaches the SAME managed server core-java does (D-02: its own
+    # database, the same Flexible Server), so it carries the same derived pair —
+    # and NOTHING ELSE. In particular there is no 0.0.0.0/0:443 rule: an identity
+    # provider with general internet egress is an SSRF surface, and this realm
+    # configures no external identity provider and no outbound webhook. Adding one
+    # later is a deliberate change that must also add the INV-7 entry.
+    #
+    # The RFC1918 `except:` entries must be dropped in the SAME change that
+    # narrows the cidr to a /32 — the Kubernetes API rejects an `except:` outside
+    # its `cidr`, and INV-7 asserts that containment at render time so the
+    # rejection is a CI failure rather than a failed deploy.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0   # replaced from app-config db.egress-cidr
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432   # managed Postgres — replaced from app-config db.port

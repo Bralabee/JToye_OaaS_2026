@@ -80,6 +80,27 @@ resources:
   # pod to deliver something the running pod already picks up.
   - monitoring/grafana-provisioning.yaml
   - monitoring/grafana-deployment.yaml
+  # Keycloak (D-02 / #296 / DPLY-01, plan 29-08) — the identity provider stops
+  # being an EXTERNAL managed service and becomes a workload this repository
+  # owns, backed by its own `keycloak` database on the managed Flexible Server.
+  #
+  # THIS IS WHAT k8s/base/ingress.yaml:84-88 WAS WAITING FOR. That file removed a
+  # Keycloak host rule and TLS SAN in plan 26-04 because no Service by that name
+  # existed in any render, and left a standing instruction that both come back
+  # "TOGETHER WITH its Service and Deployment, in that order — never before
+  # them". D-02 made the condition true; these three resources are the "in that
+  # order" half, and the staging overlay adds the host rule in the same change.
+  # #296's in-cluster-Keycloak hardening conditions are live from here.
+  #
+  # RESOURCE ENTRIES, NOT A NESTED OVERLAY — the same measured reason as
+  # networkpolicies/ and monitoring/ above: check-no-plaintext-secrets.sh:37 and
+  # check-render-invariants.sh:435 both discover render targets with
+  # `find k8s -maxdepth 2 -name kustomization.yaml`, so a k8s/keycloak/ overlay
+  # would become a FIFTH render target and INV-7's `pol_seen > 0 || parse_fail`
+  # guard reads a policy-free target as a BLIND PARSER, not as a pass.
+  - keycloak/realm-import-configmap.yaml
+  - keycloak/keycloak-deployment.yaml
+  - keycloak/keycloak-networkpolicy.yaml
 
 # =============================================================================
 # THE ALERT CORPUS — one corpus, enforced rather than intended (D-16 / plan 29-06)
@@ -256,6 +277,18 @@ replacements:
           name: postgres-exporter-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+      # KEYCLOAK JOINS THE SAME MECHANISM (plan 29-08). It reaches the SAME
+      # managed server core-java does — its own database on that server (D-02) —
+      # so it needs the same derived port, and it has exactly ONE out-of-cluster
+      # rule at `spec.egress.1` (index 0 is DNS). A literal here would deny every
+      # database connection the day an environment moves off 5432, and the
+      # symptom would be a readiness probe failing on a connection timeout, i.e.
+      # a network denial that reads as a database fault.
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -274,6 +307,11 @@ replacements:
       - select:
           kind: NetworkPolicy
           name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
         fieldPaths:
           - spec.egress.1.to.0.ipBlock.cidr
   - source:

@@ -15,6 +15,49 @@ data:
   # Keycloak deprovisioning realm (issue #102 remainder) — staging realm.
   keycloak.admin.realms: "jtoye-staging"
 
+  # --- IN-CLUSTER KEYCLOAK (D-02, plan 29-08) --------------------------------
+  # Staging is the FIRST environment to run Keycloak in-cluster, so these four
+  # are the first environment-varying values the new workload reads. Every one is
+  # derived from THIS overlay's own keycloak.issuer.uri / frontend.url above,
+  # never from the base's production values — the same discipline the notification
+  # and Stripe origins below already follow, and for a sharper reason here: an
+  # inherited redirect URI would send a staging vendor's authorization code to the
+  # PRODUCTION app origin.
+  #
+  # keycloak.hostname and keycloak.realm.name must reconstruct keycloak.issuer.uri
+  # exactly — `https://<hostname>/realms/<realm.name>`. With
+  # KC_HOSTNAME_STRICT="true" the hostname alone decides the `iss` claim on every
+  # token, and JWT_EXPECTED_ISSUER (from keycloak.public.issuer.uri above) is what
+  # core-java validates it against. A mismatch is issue #87's outage class from
+  # the IdP side: every login succeeds at Keycloak and every API call 401s.
+  keycloak.hostname: "auth-staging.olajay.co.uk"
+  keycloak.realm.name: "jtoye-staging"
+
+  # T-29-08-01. The dev realm gives `core-api` webOrigins ["*"]; staging is a
+  # PUBLIC environment and inherits no wildcard. render.sh in the realm ConfigMap
+  # refuses a `*` or `+` outright, so this cannot silently regress to one.
+  keycloak.realm.redirect-uris: "https://app-staging.olajay.co.uk/*"
+  keycloak.realm.web-origins: "https://app-staging.olajay.co.uk"
+
+  # --- T-29-08-04: issue against the STAGING ACME endpoint first --------------
+  # All four staging SANs share ONE `jtoye-staging-tls` Secret and are issued as a
+  # SINGLE ACME order, so one failed HTTP-01 challenge fails the whole order —
+  # including the api- and app- hosts that would otherwise have worked. DNS for
+  # these four names does not resolve yet (D-08 / plan 29-10), which makes the
+  # first attempts the ones most likely to fail, and Let's Encrypt's PRODUCTION
+  # endpoint charges each failure against a weekly duplicate-certificate quota
+  # that then blocks the retry.
+  #
+  # `letsencrypt-staging` has no meaningful quota and issues an untrusted
+  # certificate — which is exactly right for proving the ISSUANCE PATH works
+  # before spending production quota on it. A browser will warn; that is the
+  # cost, it is temporary, and it is visible rather than silent.
+  #
+  # THE FLIP TO letsencrypt-prod IS A ONE-KEY CHANGE IN THIS FILE (plan 29-11),
+  # not a manifest edit, and it must not happen until a certificate has actually
+  # been produced here.
+  cert-manager.cluster-issuer: "letsencrypt-staging"
+
   # DEF-6 / D-13 / D-19 (Phase 26 / INFRA-02): the env-VARYING subset of the new
   # base app-config keys. Each value is derived from this overlay's OWN
   # keycloak.issuer.uri / frontend.url above — never from the production values

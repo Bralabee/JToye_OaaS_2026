@@ -16,9 +16,93 @@ data:
   keycloak.admin.base-url: "http://keycloak.jtoye-infrastructure.svc.cluster.local:8080"
   keycloak.admin.realms: "jtoye-prod"
 
+  # ===========================================================================
+  # IN-CLUSTER KEYCLOAK (D-02 / #296, plan 29-08). Read by the Keycloak workload
+  # in k8s/base/keycloak/, NOT by core-java — which is why these five are not in
+  # any application*.yml and check-env-contract.sh (which reads the three BUILT
+  # services' deployments) does not see them. Same shape, same reason, as the
+  # monitoring keys at the bottom of this file.
+  # ===========================================================================
+
+  # --- The public host, and the single source of every URL Keycloak stamps ----
+  # KC_HOSTNAME. With KC_HOSTNAME_STRICT="true" (see keycloak-deployment.yaml's
+  # header for why the compose "false" is deliberately not copied), this is the
+  # ONLY thing that decides the `iss` claim of every token the realm issues — so
+  # it and keycloak.issuer.uri above must name the same host, or core-java
+  # rejects every real token against JWT_EXPECTED_ISSUER. That is issue #87's
+  # outage class (jwt_issuer_jwks_split_horizon), reached from the IdP side.
+  # SOURCE: the host part of keycloak.issuer.uri directly above. It is a separate
+  # key rather than a derivation because kustomize cannot split a URL; the two
+  # are asserted against each other on the RUNNING server in plan 29-11, which is
+  # the only place the claim is actually observable.
+  keycloak.hostname: "auth.olajay.co.uk"
+
+  # --- The realm, as a value rather than a suffix -----------------------------
+  # SOURCE: the tail of keycloak.issuer.uri above (and byte-identical to
+  # keycloak.admin.realms). Same reason as the hostname key: the realm import
+  # needs the bare name, and a URL cannot be split at render time.
+  keycloak.realm.name: "jtoye-prod"
+
+  # --- T-29-08-01: the wildcard that must not be inherited --------------------
+  # These two are the whole reason the realm import is parameterised. The realm
+  # this repository ships to DEVELOPERS gives the `core-api` client
+  # `webOrigins: ["*"]` (infra/keycloak/realm-export.template.json), and a
+  # wildcard origin on a confidential browser-flow client in a PUBLIC environment
+  # means any site a vendor visits can read cross-origin responses from the
+  # identity provider. Security Domain V2 names it; this is where it is closed.
+  #
+  # ONE VALUE EACH, NOT A LIST, deliberately: `<origin>/*` as a redirect pattern
+  # already covers every callback path the frontend uses, including NextAuth's
+  # /api/auth/callback/keycloak, so a list would be extra surface for no reach.
+  # k8s/base/keycloak/realm-import-configmap.yaml's render.sh REFUSES a `*` or
+  # `+` here rather than rendering it, so patching this key to a wildcard fails
+  # the pod at Init instead of producing a silently permissive realm.
+  # SOURCE: the frontend.url key below, which each overlay patches to its own
+  # platform origin.
+  keycloak.realm.redirect-uris: "https://app.olajay.co.uk/*"
+  keycloak.realm.web-origins: "https://app.olajay.co.uk"
+
+  # --- Keycloak's OWN database on the shared managed server (D-02) ------------
+  # NOT the platform database. Keycloak creates and migrates ~90 tables of its
+  # own, none of which carry a tenant_id or an RLS policy; putting them beside
+  # the platform's would place un-scoped tables inside the schema
+  # RlsContractTest sweeps. scripts/azure-staging-provision.sh:681 creates both
+  # databases on the one server for exactly this split.
+  # SOURCE: that script's KEYCLOAK_DB_NAME default (line 193).
+  keycloak.db.name: "keycloak"
+
   # API URLs
   api.url: "https://api.olajay.co.uk"
   frontend.url: "https://app.olajay.co.uk"
+
+  # ---------------------------------------------------------------------------
+  # cert-manager ClusterIssuer — a RENDER-TIME declaration, like db.port
+  # (T-29-08-04, plan 29-08)
+  #
+  # WHAT CONSUMES THIS: the `replacements:` block in k8s/base/kustomization.yaml
+  # writes it into the `cert-manager.io/cluster-issuer` annotation of BOTH
+  # Ingresses. It was a hardcoded `letsencrypt-prod` literal on
+  # k8s/base/ingress.yaml:8 until this plan — an environment-VARYING value baked
+  # into the shared base, which is the GLOBAL_RULE_6 / ARCHITECTURE_RULE_8
+  # violation DEF-1's DB_PORT hardcode was.
+  #
+  # WHY IT VARIES, AND WHY THE DEFAULT DIRECTION MATTERS. All four staging SANs
+  # share ONE `jtoye-staging-tls` Secret, and cert-manager issues that
+  # certificate as a SINGLE ACME order covering every SAN — so one failed HTTP-01
+  # challenge fails the WHOLE order (k8s/base/ingress.yaml:47-61 records the
+  # class). Let's Encrypt's production endpoint counts each such failure against
+  # a weekly duplicate-certificate quota, and the four staging hostnames have no
+  # DNS records yet (D-08 / plan 29-10), so the FIRST attempts are the ones most
+  # likely to fail. Staging therefore issues against `letsencrypt-staging`, whose
+  # quota is effectively unlimited and whose certificates are untrusted by
+  # browsers — which is correct for proving the ISSUANCE path works. The switch
+  # to `letsencrypt-prod` is then a one-key config change in plan 29-11, not a
+  # manifest edit.
+  #
+  # SOURCE of this value: byte-identical to the literal it replaces, so the
+  # production render resolves to the SAME issuer it always did — the render
+  # gains a ConfigMap key and a replacement, never a changed value.
+  cert-manager.cluster-issuer: "letsencrypt-prod"
 
   # ---------------------------------------------------------------------------
   # Postgres port — the RENDER-TIME declaration (issue #271)
@@ -304,13 +388,47 @@ data:
   # through. Only the local overlay patches this key; see
   # k8s/local/configmap-patch.yaml.
   #
-  # SOURCE: byte-identical to the literal it replaces, so the staging and
-  # production renders resolve to the SAME string they did before — the render
-  # gains a ConfigMap key and an env SOURCE, never a changed value. Asserted on
-  # the production render (T-26-48: a silently changed OIDC client identity is
-  # an elevation-of-privilege surface, so the value equality is a criterion,
-  # not an assumption).
-  keycloak.client-id: "frontend"
+  # THE BASE VALUE CHANGED FROM `frontend` TO `core-api` IN PLAN 29-08, and the
+  # displaced reasoning is recorded rather than deleted.
+  #
+  #   WHAT IT SAID BEFORE: "SOURCE: byte-identical to the literal it replaces, so
+  #   the staging and production renders resolve to the SAME string they did
+  #   before — the render gains a ConfigMap key and an env SOURCE, never a
+  #   changed value. Asserted on the production render (T-26-48: a silently
+  #   changed OIDC client identity is an elevation-of-privilege surface, so the
+  #   value equality is a criterion, not an assumption)."
+  #
+  #   THAT WAS RIGHT ABOUT CONTINUITY AND WRONG ABOUT CORRECTNESS, and plan 29-02
+  #   proved it for staging with a measurement re-run rather than quoted:
+  #       rg -uu --count-matches --include-zero '"clientId" : "frontend"' \
+  #          infra/keycloak/realm-export.template.json   ->  0
+  #     POSITIVE CONTROL, because an already-0 grep is a statement about the
+  #     PATTERN until something proves the pattern can match at all:
+  #       rg -uu --count-matches --include-zero '"clientId" : "core-api"' \
+  #          infra/keycloak/realm-export.template.json   ->  1
+  #   There is no `frontend` client in any realm this repository ships. 29-02
+  #   fixed staging by patching the overlay and recorded that production still
+  #   rendered the phantom, assigning it here.
+  #
+  #   WHY IT IS FIXED HERE AND NOT DEFERRED AGAIN: this plan is the one that
+  #   ships the cluster realm (k8s/base/keycloak/realm-import-configmap.yaml),
+  #   and that realm contains exactly one client — `core-api`. Leaving the base
+  #   at `frontend` would mean the base ConfigMap and the base realm, in the same
+  #   render, disagreeing about the identity the frontend authenticates as. The
+  #   failure is invisible to every static assertion (the key exists, the value
+  #   is a non-empty string) and observable only at the authorize request.
+  #
+  #   T-26-48 IS NOT WEAKENED BY THIS, it is satisfied differently: the criterion
+  #   was that a change of OIDC client identity must be deliberate and asserted,
+  #   not that the value must never change. This change is the deliberate one,
+  #   and the assertion it now answers to is that the rendered client id names a
+  #   client the rendered realm actually contains.
+  #
+  # SOURCE: the `clientId` of the sole client in
+  # k8s/base/keycloak/realm-import-configmap.yaml, which is the same value
+  # .env's KEYCLOAK_CLIENT_ID names and the same one k8s/local and k8s/staging
+  # already patch.
+  keycloak.client-id: "core-api"
 
   # --- CORS + token audience -------------------------------------------------
   # cors.allowed-origins pins the single platform origin. NOT a wildcard.

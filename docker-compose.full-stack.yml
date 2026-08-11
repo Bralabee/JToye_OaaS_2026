@@ -95,6 +95,29 @@ services:
       KC_SEED_USER_PASSWORD: ${KC_SEED_USER_PASSWORD:?KC_SEED_USER_PASSWORD must be set (renders realm seed-user password)}
       INTEGRATION_CATALOG_RO_SECRET: ${INTEGRATION_CATALOG_RO_SECRET:?INTEGRATION_CATALOG_RO_SECRET must be set (renders realm integration-catalog-ro client)}
       INTEGRATION_ORDERS_RW_SECRET: ${INTEGRATION_ORDERS_RW_SECRET:?INTEGRATION_ORDERS_RW_SECRET must be set (renders realm integration-orders-rw client)}
+      # --- T-29-08-01 (plan 29-08): the wildcard web origin, closed ------------
+      # Both of these replaced a literal `"webOrigins" : [ "*" ]` in
+      # realm-export.template.json. A wildcard origin on a CONFIDENTIAL
+      # browser-flow client means any site a developer visits can make credentialed
+      # cross-origin calls to the identity provider as that client. It reached
+      # production posture through the cluster realm, which is why plan 29-08
+      # parameterises it — and closing it only there would leave the shipped
+      # developer default as the thing every new environment gets copied from.
+      #
+      # LITERALS, NOT `${VAR:?...}`, ON PURPOSE. These are dev-only origin lists
+      # that do not vary between developers, and a `:?` guard would break every
+      # existing .env on this repo at the next `docker compose up` for a value
+      # nobody needs to choose. The per-ENVIRONMENT values for the cluster live in
+      # app-config (keycloak.realm.web-origins), not here.
+      #
+      # DERIVED, NOT INVENTED: each list is exactly the origins of that client's
+      # own `redirectUris` in the same file. An origin a client may be redirected
+      # to is an origin that legitimately calls it; anything else would be new
+      # surface added under the cover of a security fix. Port 3001 is deliberately
+      # absent — it belongs to the CUSTOMER realm
+      # (CUSTOMER_STOREFRONT_WEB_ORIGINS below), not to jtoye-dev's core-api.
+      CORE_API_WEB_ORIGINS: '"http://localhost:8080", "http://localhost:3000", "http://localhost:3100", "http://localhost:9090", "http://app.jtoye.local"'
+      EDGE_API_WEB_ORIGINS: '"http://localhost:8090"'
       # Customer realm (jtoye-customers, Phase 18) render inputs — non-secret local-dev config.
       CUSTOMER_STOREFRONT_REDIRECT_URIS: ${CUSTOMER_STOREFRONT_REDIRECT_URIS:?CUSTOMER_STOREFRONT_REDIRECT_URIS must be set (renders customer storefront redirect URIs)}
       CUSTOMER_STOREFRONT_WEB_ORIGINS: ${CUSTOMER_STOREFRONT_WEB_ORIGINS:?CUSTOMER_STOREFRONT_WEB_ORIGINS must be set (renders customer storefront web origins)}
@@ -115,7 +138,13 @@ services:
       - |
         set -e
         apk add --no-cache gettext >/dev/null
-        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET' \
+        # THE NAME LIST IS THE CONTRACT. A placeholder that is NOT named here
+        # survives into the rendered file as a literal dollar-brace token —
+        # envsubst leaves unlisted names untouched — and Keycloak would then treat
+        # that literal as the value. CORE_API_WEB_ORIGINS and EDGE_API_WEB_ORIGINS
+        # were added by plan 29-08 together with the placeholders they render;
+        # extend this list, never shorten it.
+        envsubst '$$KEYCLOAK_CLIENT_SECRET $$EDGE_API_CLIENT_SECRET $$KC_SEED_USER_PASSWORD $$INTEGRATION_CATALOG_RO_SECRET $$INTEGRATION_ORDERS_RW_SECRET $$CORE_API_WEB_ORIGINS $$EDGE_API_WEB_ORIGINS' \
           < /keycloak/realm-export.template.json > /keycloak/realm-export.json
         echo "Rendered infra/keycloak/realm-export.json from template"
         # Second realm (Phase 18): render jtoye-customers passing ONLY the explicit

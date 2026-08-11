@@ -112,6 +112,13 @@ replacements:
           name: postgres-exporter-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+      # Keycloak (plan 29-08) joins on the same terms: its own database on the
+      # SAME managed server, one out-of-cluster rule at spec.egress.1.
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -130,6 +137,11 @@ replacements:
       - select:
           kind: NetworkPolicy
           name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
         fieldPaths:
           - spec.egress.1.to.0.ipBlock.cidr
   - source:

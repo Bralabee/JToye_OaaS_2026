@@ -1,0 +1,327 @@
+---
+# realm-import-configmap.yaml — the cluster realm, parameterised per environment
+# (DPLY-01 / D-02 / T-29-08-01, plan 29-08)
+#
+# ==========================================================================
+# ASSUMPTION A7 WAS MEASURED, NOT ASSUMED — AND IT HOLDS WITH ONE CORRECTION
+#
+#   A7 as written: "the realm can be imported with `--import-realm` at pod start
+#   from a ConfigMap, as compose does from a bind mount."
+#
+#   MEASURED 2026-08-11 against the pinned image, quay.io/keycloak/keycloak:24.0.5,
+#   with the container's import directory populated the way a ConfigMap volume
+#   populates one (read-only, symlinked through ..data):
+#     ARM 1 (the claim)   `start --import-realm` with a realm JSON present in
+#                         /opt/keycloak/data/import  ->  the realm is created.
+#     ARM 2 (the control) the SAME command with the directory EMPTY  ->  no realm
+#                         is created and the server starts anyway, silently.
+#   Arm 2 is what licenses reading arm 1 as evidence: it proves the import step
+#   can produce "no realm" without producing an error, so a created realm is a
+#   real import rather than a default.
+#
+#   THE CORRECTION, and it is the reason the mount below is an emptyDir rather
+#   than the ConfigMap itself: a ConfigMap volume is READ-ONLY, and the realm has
+#   to be RENDERED before it is imported (the client secret must not be a
+#   ConfigMap literal). So the ConfigMap is mounted at a template path, an
+#   initContainer renders it, and the RENDERED file lands in an emptyDir that is
+#   what /opt/keycloak/data/import actually is. A7 holds for the import; it does
+#   not hold for rendering in place, and that distinction is the whole design.
+#
+#   NOT USED: a Job. It was the recorded fallback and it is worse here — a Job
+#   racing a Deployment has no ordering guarantee, so the server can come up
+#   before the realm exists and answer 404 on the authorize endpoint for a while.
+#   An initContainer is ordered by construction.
+# ==========================================================================
+#
+# WHY THIS IS NOT A COPY OF infra/keycloak/realm-export.template.json, AND WHY
+# THERE IS NO PARITY GATE.
+#   The alert corpus solves the same problem the opposite way: k8s/base/monitoring/
+#   alerts.yml is a BYTE-IDENTICAL copy of the canonical file, made true by
+#   scripts/check-alert-corpus-parity.sh rather than by intention. That mechanism
+#   is unavailable here and saying so is more useful than pretending otherwise:
+#   the two files MUST differ. The dev template legitimately carries loopback
+#   redirect URIs, seed users with a shared password, and three client secrets
+#   that only a developer .env supplies; INV-4 forbids the first in any non-local
+#   render, and the other two have no source in a staging namespace. A parity gate
+#   over two files that must differ could only ever be red.
+#
+#   So the relationship is DERIVATION, stated: the realm settings, the client
+#   shape, the tenant_id and audience mappers, and the six taxonomy client scopes
+#   below are taken from that file. What is deliberately NOT taken is listed under
+#   "WHAT THIS REALM DOES NOT CONTAIN" so the omissions are reviewable rather than
+#   discovered.
+#
+# WHAT THIS REALM DOES NOT CONTAIN — each omission with its reason and its owner.
+#   - SEED USERS. The dev realm ships tenant-a-user / tenant-b-user / admin-user
+#     with a password from one shared variable. On a hostname the internet can
+#     reach, a committed-recipe account is a standing credential-stuffing target,
+#     and the variable has no source in the staging bootstrap. The vendor account
+#     DPLY-01 logs in with is created by the operator against the running realm;
+#     the platform already auto-provisions the application-side grant on first
+#     login (shop_staff.grant_source = JIT, V57).
+#   - THE `edge-api` CLIENT and the two `integration-*` machine clients. Each is a
+#     CONFIDENTIAL client, i.e. each is defined by a secret, and the staging
+#     `keycloak-credentials` Secret carries exactly one client secret today
+#     (scripts/staging-secrets.sh:486-491, another plan's file). Importing a
+#     confidential client with no secret of its own is worse than omitting it: it
+#     exists, it is enabled, and its credential is whatever Keycloak generates and
+#     nobody holds. Adding them is one change — a secret key per client in the
+#     bootstrap script AND a block here — and it belongs with whoever next edits
+#     that script.
+#   - GROUPS. The dev realm's `groups` array is empty (realm-export.template.json
+#     :356); tenant assignment is a USER ATTRIBUTE that the tenant_id mapper below
+#     reads. Shipping empty groups would look like a feature and be nothing.
+#
+# sslRequired IS "external", NOT "all", AND THAT IS A DECISION.
+#   "all" is the stricter setting and was evaluated. It would break the platform's
+#   own in-cluster admin path: app-config keycloak.admin.base-url is a plain-HTTP
+#   in-cluster Service URL (the #102 deprovisioning client), and under "all"
+#   Keycloak refuses realm endpoints over plain HTTP from ANY address — so
+#   enabling that feature later would fail with a 403 that reads like an
+#   authorisation fault. "external" keeps the public boundary enforced (and the
+#   ingress independently sets force-ssl-redirect and HSTS) while leaving the
+#   in-cluster path usable. What "external" does NOT do is prove that the served
+#   response is actually HTTPS — that is a claim about the running ingress, and it
+#   is plan 29-11's to make against a real request, not this file's.
+#
+# THE PLACEHOLDER SYNTAX IS `__NAME__`, NOT `${NAME}`, AND THAT IS DELIBERATE.
+#   Keycloak's own realm JSON uses `${...}` for its localisation tokens
+#   (`${authBaseUrl}`, `${emailScopeConsentText}`, `${role_...}`). The compose
+#   render works around that by naming every substitutable variable explicitly and
+#   relying on envsubst to leave the rest alone — and its own comment records the
+#   trap that creates: *"A placeholder that is NOT named here survives into the
+#   rendered file as a literal dollar-brace token — envsubst leaves unlisted names
+#   untouched — and Keycloak would then treat that literal as the client id."*
+#   Using a syntax Keycloak never uses removes the collision entirely, and
+#   render.sh then guards the residue POSITIVELY: it greps its own output for any
+#   surviving `__NAME__` token and REFUSES to write the file. That is strictly
+#   stronger than the compose behaviour, which ships the literal in silence.
+#
+# EVERYTHING BELOW `realm.json.tmpl: |` AND `render.sh: |` IS ConfigMap DATA AND
+# LANDS IN THE RENDER, so it is subject to INV-4's forbidden-literal scan. Keep
+# explanatory prose in THIS header, above `data:`, where it is not data.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm-import
+  labels:
+    app: keycloak
+    component: identity
+data:
+  realm.json.tmpl: |
+    {
+      "realm" : "__REALM_NAME__",
+      "enabled" : true,
+      "sslRequired" : "external",
+      "defaultSignatureAlgorithm" : "RS256",
+      "registrationAllowed" : false,
+      "registrationEmailAsUsername" : false,
+      "rememberMe" : false,
+      "verifyEmail" : false,
+      "loginWithEmailAllowed" : true,
+      "duplicateEmailsAllowed" : false,
+      "resetPasswordAllowed" : false,
+      "editUsernameAllowed" : false,
+      "bruteForceProtected" : true,
+      "permanentLockout" : false,
+      "maxFailureWaitSeconds" : 900,
+      "minimumQuickLoginWaitSeconds" : 60,
+      "waitIncrementSeconds" : 60,
+      "quickLoginCheckMilliSeconds" : 1000,
+      "maxDeltaTimeSeconds" : 43200,
+      "failureFactor" : 30,
+      "passwordPolicy" : "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername",
+      "accessTokenLifespan" : 300,
+      "accessTokenLifespanForImplicitFlow" : 300,
+      "ssoSessionIdleTimeout" : 1800,
+      "ssoSessionMaxLifespan" : 7200,
+      "accessCodeLifespan" : 60,
+      "accessCodeLifespanUserAction" : 300,
+      "accessCodeLifespanLogin" : 1800,
+      "clientScopes" : [ {
+        "name" : "catalog:read",
+        "description" : "Read-only access to the product catalog surface (issue #206 [AI-4]). Emitted into the token scope claim; the resource server maps it to SCOPE_catalog:read.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      }, {
+        "name" : "catalog:write",
+        "description" : "Write access to the product catalog surface (issue #206 [AI-4]). Emitted into the token scope claim; the resource server maps it to SCOPE_catalog:write, which gates all nine ProductController mutations.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      }, {
+        "name" : "orders:read",
+        "description" : "Reserved taxonomy scope for the [AI-1] MCP auth model (#203). DEFINED to seed the capability taxonomy; NOT granted to any client and NOT enforced in this slice.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      }, {
+        "name" : "orders:write",
+        "description" : "Enforced (Phase 25 [AI-02]): gates POST /api/v1/orders via @PreAuthorize(hasAuthority('SCOPE_orders:write')). Emitted into the token scope claim; the resource server maps it to SCOPE_orders:write.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      }, {
+        "name" : "customers:read",
+        "description" : "Reserved taxonomy scope for the [AI-02] MCP auth model (Phase 25). DEFINED for taxonomy symmetry with catalog:*/orders:*; NOT granted to any client and NOT enforced in this slice.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      }, {
+        "name" : "customers:write",
+        "description" : "Enforced (Phase 25 [AI-02]): gates POST /api/v1/customers via @PreAuthorize(hasAuthority('SCOPE_customers:write')). Emitted into the token scope claim; the resource server maps it to SCOPE_customers:write.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      } ],
+      "clients" : [ {
+        "clientId" : "core-api",
+        "enabled" : true,
+        "surrogateAuthRequired" : false,
+        "alwaysDisplayInConsole" : false,
+        "clientAuthenticatorType" : "client-secret",
+        "secret" : "__CORE_API_CLIENT_SECRET__",
+        "redirectUris" : [ "__CORE_API_REDIRECT_URI__" ],
+        "webOrigins" : [ "__CORE_API_WEB_ORIGIN__" ],
+        "notBefore" : 0,
+        "bearerOnly" : false,
+        "consentRequired" : false,
+        "standardFlowEnabled" : true,
+        "implicitFlowEnabled" : false,
+        "directAccessGrantsEnabled" : true,
+        "serviceAccountsEnabled" : true,
+        "publicClient" : false,
+        "frontchannelLogout" : false,
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "post.logout.redirect.uris" : "__CORE_API_REDIRECT_URI__"
+        },
+        "authenticationFlowBindingOverrides" : { },
+        "fullScopeAllowed" : true,
+        "nodeReRegistrationTimeout" : -1,
+        "protocolMappers" : [ {
+          "name" : "tenant-id-mapper",
+          "protocol" : "openid-connect",
+          "protocolMapper" : "oidc-usermodel-attribute-mapper",
+          "consentRequired" : false,
+          "config" : {
+            "userinfo.token.claim" : "true",
+            "user.attribute" : "tenant_id",
+            "id.token.claim" : "true",
+            "access.token.claim" : "true",
+            "claim.name" : "tenant_id",
+            "jsonType.label" : "String"
+          }
+        }, {
+          "name" : "core-api-audience-mapper",
+          "protocol" : "openid-connect",
+          "protocolMapper" : "oidc-audience-mapper",
+          "consentRequired" : false,
+          "config" : {
+            "included.client.audience" : "core-api",
+            "access.token.claim" : "true",
+            "id.token.claim" : "false",
+            "introspection.token.claim" : "true"
+          }
+        } ],
+        "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "catalog:read", "catalog:write", "orders:write", "customers:write" ],
+        "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
+      } ]
+    }
+
+  render.sh: |
+    #!/bin/bash
+    # Renders the realm import from the template beside it, then hands the result
+    # to the import directory the server reads at startup.
+    #
+    # NEVER add `set -x`: the client secret passes through this script and would
+    # land in pod logs.
+    set -euo pipefail
+
+    TEMPLATE=/etc/keycloak/tmpl/realm.json.tmpl
+    RENDERED=/opt/keycloak/data/import/realm.json
+
+    fatal() { echo "FATAL: $*" >&2; exit 1; }
+
+    [ -f "$TEMPLATE" ] || fatal "realm template not found at $TEMPLATE"
+
+    # Every input is checked BY NAME. An empty value here does not produce an
+    # error later — it produces a realm that imports cleanly and cannot be logged
+    # into: an empty redirect URI rejects every authorization request, an empty
+    # web origin blocks every cross-origin call, and an empty client secret makes
+    # a confidential client unauthenticatable. All four look identical in the
+    # server log, which is why each is named separately.
+    [ -n "${KC_REALM_NAME:-}" ] \
+      || fatal "KC_REALM_NAME is empty (app-config keycloak.realm.name) — the realm name is the tail of the issuer URI every token is validated against"
+    [ -n "${KC_REALM_REDIRECT_URI:-}" ] \
+      || fatal "KC_REALM_REDIRECT_URI is empty (app-config keycloak.realm.redirect-uris) — a client with no redirect URI rejects every authorization request"
+    [ -n "${KC_REALM_WEB_ORIGIN:-}" ] \
+      || fatal "KC_REALM_WEB_ORIGIN is empty (app-config keycloak.realm.web-origins) — refusing to import; an empty origin list is not the same as the wildcard it replaced, but it is equally unusable"
+    [ -n "${KC_CORE_API_CLIENT_SECRET:-}" ] \
+      || fatal "KC_CORE_API_CLIENT_SECRET is empty (secret keycloak-credentials, key frontend-client-secret) — a confidential client with no secret cannot authenticate anyone"
+
+    # T-29-08-01, asserted on the INPUT rather than trusted. A wildcard origin on
+    # a confidential browser-flow client lets any site a vendor visits read
+    # cross-origin responses from the identity provider. The dev realm carries one
+    # by history; no environment rendered from this file may inherit it, and an
+    # operator who patches the app-config key to a wildcard gets a refusal rather
+    # than a silently permissive realm.
+    case "$KC_REALM_WEB_ORIGIN" in
+      '*'|'+') fatal "KC_REALM_WEB_ORIGIN is '$KC_REALM_WEB_ORIGIN' — a wildcard web origin is exactly the threat this realm is parameterised to close (T-29-08-01). Set app-config keycloak.realm.web-origins to this environment's own origin." ;;
+    esac
+
+    mkdir -p "$(dirname "$RENDERED")"
+
+    # sed, and the delimiter is '|' so a URL's slashes need no escaping. The
+    # placeholder syntax is __NAME__ precisely so Keycloak's own ${...} tokens
+    # are not candidates for substitution and survive untouched.
+    sed \
+      -e "s|__REALM_NAME__|${KC_REALM_NAME}|g" \
+      -e "s|__CORE_API_REDIRECT_URI__|${KC_REALM_REDIRECT_URI}|g" \
+      -e "s|__CORE_API_WEB_ORIGIN__|${KC_REALM_WEB_ORIGIN}|g" \
+      -e "s|__CORE_API_CLIENT_SECRET__|${KC_CORE_API_CLIENT_SECRET}|g" \
+      "$TEMPLATE" > "$RENDERED"
+
+    # THE RESIDUE GUARD. This is the positive form of the trap the compose render
+    # comment describes: there, an unlisted name survives as a literal token and
+    # the server treats it as a value. Here the render REFUSES. A new placeholder
+    # added to the template without a matching substitution above fails the pod at
+    # Init, by name, instead of importing a realm whose client id is a token.
+    if grep -q '__[A-Z0-9_]\{1,\}__' "$RENDERED"; then
+      echo "FATAL: unrendered placeholder(s) remain in $RENDERED:" >&2
+      grep -o '__[A-Z0-9_]\{1,\}__' "$RENDERED" | sort -u >&2
+      exit 1
+    fi
+
+    # Structural validation before the server ever reads it. An initContainer that
+    # exits non-zero blocks the pod, so a malformed realm is a visible
+    # Init:CrashLoopBackOff rather than a running server with no realm — which is
+    # the failure the A7 control arm showed is otherwise SILENT.
+    if command -v python3 > /dev/null 2>&1; then
+      python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$RENDERED" \
+        || fatal "the rendered realm at $RENDERED is not valid JSON"
+      echo "keycloak realm render: JSON validated with python3"
+    else
+      echo "keycloak realm render: WARNING - no python3 in this image, JSON validity is UNVERIFIED at render time" >&2
+    fi
+
+    echo "keycloak realm render: wrote realm '${KC_REALM_NAME}' to $RENDERED"

@@ -1,0 +1,434 @@
+---
+# keycloak-deployment.yaml — the identity provider becomes a workload this
+# repository owns (DPLY-01 / D-02 / #296, plan 29-08)
+#
+# WHAT CHANGED, AND WHY THE INGRESS FILE SAID TO WAIT FOR IT.
+#   k8s/base/ingress.yaml:84-88 carried a standing instruction: *"IF AN IN-CLUSTER
+#   KEYCLOAK IS EVER DEPLOYED: the host rule and the TLS SAN come back TOGETHER
+#   WITH its Service and Deployment, in that order — never before them."* Until
+#   now Keycloak was an EXTERNAL managed IdP in every k8s environment, so there
+#   was no Service to route to and the honest render was one with neither. D-02
+#   makes the condition true: staging runs Keycloak in-cluster, backed by its own
+#   `keycloak` database on the managed Flexible Server. This file is the Service
+#   and Deployment half; the host rule and the SAN are added in the staging
+#   overlay in the same change (plan 29-08 Task 2).
+#
+# ⚠ KEYCLOAK IS POSTGRES-BACKED, SO A VOLUME DROP IS A NO-OP AND `--import-realm`
+#   SKIPS A REALM THAT ALREADY EXISTS.
+#   Recorded verbatim in substance from infra/keycloak/README.md § "Replacing a
+#   realm that already exists", which carries it because it has already cost real
+#   time: you edit the template, the render step reports success, the rendered
+#   JSON on disk is visibly correct, Keycloak starts clean with no warning — and
+#   the running realm is unchanged. Nothing in any log says a realm was skipped.
+#   Realm state lives in the `keycloak` DATABASE, not in any pod volume, so
+#   deleting the pod changes nothing either. Re-import is
+#   `kc.sh import --override true` PLUS a restart, with the server stopped, and it
+#   is verified by reading the value back OUT OF THE RUNNING SERVER — never off
+#   the disk. That is why this Deployment has no `emptyDir` pretending to be
+#   realm storage: there is nothing for one to hold.
+#
+# `start`, NOT `start --optimized`, AND THE COST IS STATED.
+#   The interfaces block of plan 29-08 asked for `start-dev` to be RECONSIDERED
+#   rather than copied, because this host is public. It is: `start-dev` runs the
+#   dev profile (in-memory caches, HTTP allowed unconditionally, hostname checks
+#   relaxed) and is unfit for a hostname on the internet.
+#
+#   `--optimized` was evaluated and REJECTED, on a property of the pinned image
+#   rather than a preference. `--optimized` skips the augmentation step and
+#   REQUIRES that a prior `kc.sh build` already baked the build-time options in
+#   use. Three of ours are build-time — `db`, `health-enabled`, `metrics-enabled`
+#   — and the upstream quay.io image is not built with them, so `start --optimized`
+#   would fail at boot. Baking them needs a repo-built Keycloak image, i.e. a
+#   fourth Dockerfile, a fourth CI build and a fourth tag in every overlay's
+#   `images:` list. THE COST OF NOT DOING IT: `start` re-runs augmentation on
+#   every pod start, which is why the startupProbe below allows 5 minutes rather
+#   than the 90s compose gives it. That is a slower rollout, not a weaker one.
+#
+# KC_PROXY_HEADERS IS NOT OPTIONAL HERE, AND ITS ABSENCE IS NOT A SOFT FAILURE.
+#   Upstream (docs/guides/server/reverseproxy.adoc): *"If you use a reverse proxy
+#   for anything other than TLS passthrough and do not set this option, Keycloak
+#   will return 403 Forbidden responses to requests that perform origin
+#   checking."* TLS terminates at ingress-nginx, so every request arrives over
+#   plain HTTP with X-Forwarded-* headers — exactly the case that option governs.
+#   `xforwarded` is the value for a proxy that sets X-Forwarded-* (nginx) rather
+#   than the RFC 7239 `Forwarded` header.
+#
+#   RESIDUAL RISK, NAMED: `proxy-headers` supersedes the deprecated `proxy`
+#   option, and the pin here is 24.0.5. If that spelling is not recognised by
+#   this exact tag, kc.sh exits with an unknown-option error at boot — a loud
+#   CrashLoopBackOff naming the option, not a silent misconfiguration. That is
+#   the failure direction to prefer, and it is verified against the running pod
+#   in plan 29-11, not from this file.
+#
+# KC_HOSTNAME_STRICT IS "true" — THE COMPOSE VALUE IS DELIBERATELY NOT COPIED.
+#   docker-compose.full-stack.yml:157 sets it "false", which is right for a dev
+#   stack reached by several names. Here it is wrong in a way that matters: with
+#   strict OFF, Keycloak builds issuer and endpoint URLs from the incoming Host
+#   header, so anyone who can reach the ingress with a forged Host can make the
+#   IdP advertise — and stamp — an issuer of their choosing. `iss` is the value
+#   core-java validates against JWT_EXPECTED_ISSUER, so that is a token-forgery
+#   surface, not a cosmetic one. Strict ON pins every URL to KC_HOSTNAME, which
+#   comes from app-config and is therefore the one value the platform declares.
+#
+# THE CONNECTION-BUDGET LINE ITEM IS LOAD-BEARING AND IS NOT A FREE PARAMETER.
+#   KC_DB_POOL_MAX_SIZE is "20" because k8s/scripts/check-connection-math.sh:161
+#   extracts `KC_DB_POOL_MAX_SIZE: "([0-9]+)"` OUT OF THE COMPOSE FILE and spends
+#   it as `keycloak(20)` in the k8s budget for staging and production alike. A
+#   different number here does not fail that gate — it makes the gate measure a
+#   fiction, silently. Change this and you change the gate in the same commit, or
+#   the platform's Postgres budget stops describing the platform.
+#
+# NOTE FOR PLAN 29-12 (L-2b): TWO JVMs ARE IN THE CLUSTER AGAIN.
+#   With Keycloak scraped in-cluster for the first time, `HighMemoryUsage` and
+#   `FrequentGarbageCollection` have a second JVM to bind to. Phase 27's finding
+#   F-3c is exactly this shape — an alert binding to Keycloak's JVM while
+#   carrying `service: core-java`, i.e. a true alert with a false subject. Expect
+#   L-2b to have opinions, and treat them as findings about the RULES, not about
+#   this workload.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+    component: identity
+spec:
+  # ONE REPLICA, AND SCALING IS NOT A REPLICA-COUNT DECISION.
+  # Keycloak scales by CLUSTERING its Infinispan caches (JGroups discovery, a
+  # cache stack, and a shared view). Two replicas WITHOUT that configuration are
+  # two independent servers behind one Service: a login lands on A, the browser's
+  # next request lands on B, B has never heard of that authentication session,
+  # and the user gets "Cookie not found" on a random fraction of logins. That is
+  # worse than a single replica in every respect, including availability.
+  replicas: 1
+  strategy:
+    # Recreate, for the same reason as the monitoring singletons beside it: the
+    # default RollingUpdate would briefly run the un-clustered pair described
+    # above, which is the intermittent-login failure with a shorter fuse.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+        component: identity
+        version: v1
+      annotations:
+        # KC_METRICS_ENABLED below puts a Prometheus endpoint on /metrics at the
+        # main HTTP port in this version line. The `keycloak` scrape job in
+        # k8s/base/monitoring/prometheus-config.yaml already targets keycloak:8080
+        # and has been DOWN since that config landed, because the workload it
+        # names did not exist. This is the half that makes it UP.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        # The upstream image runs as uid 1000 and owns nothing it needs to write
+        # outside its own install tree, which the container filesystem provides.
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+      # The realm import is RENDERED here, before the server starts, for the same
+      # reason Alertmanager's config is: the client secret must not be a literal
+      # in a ConfigMap, and check-no-plaintext-secrets.sh forbids a `kind: Secret`
+      # in any build — so the credential can only arrive as a mounted Secret that
+      # the rendered file consumes. render.sh validates every input BY NAME and
+      # refuses to emit a file with an unrendered placeholder left in it. Full
+      # reasoning is in realm-import-configmap.yaml's header.
+      - name: render-realm
+        image: quay.io/keycloak/keycloak:24.0.5
+        imagePullPolicy: IfNotPresent
+        command:
+          - /bin/bash
+          - /etc/keycloak/render/render.sh
+        env:
+        # The realm NAME is the tail of app-config keycloak.issuer.uri, and the
+        # two must agree or every token this realm issues carries an `iss` the
+        # resource server rejects. It is a separate key rather than a substring
+        # extraction because kustomize cannot split a URL, and a gate that derives
+        # one from the other is plan 29-11's to write against the running server.
+        - name: KC_REALM_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.realm.name
+        # T-29-08-01. These two are the whole point of parameterising the realm:
+        # the shipped dev template gives core-api `webOrigins: ["*"]`, and a
+        # wildcard origin on a confidential browser-flow client in a PUBLIC
+        # environment means any site a vendor visits can read cross-origin
+        # responses from the IdP. Per environment, never inherited.
+        - name: KC_REALM_REDIRECT_URI
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.realm.redirect-uris
+        - name: KC_REALM_WEB_ORIGIN
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.realm.web-origins
+        # The core-api client secret. `frontend-client-secret` is the EXISTING key
+        # name in the keycloak-credentials Secret (scripts/staging-secrets.sh:489)
+        # and it holds KEYCLOAK_CLIENT_SECRET — the secret of the client the
+        # frontend authenticates AS, which is `core-api`. The key name predates
+        # plan 29-02's finding that no `frontend` client has ever existed; it is
+        # NOT renamed here because that script is another plan's file and a
+        # rename would need both halves to move at once.
+        - name: KC_CORE_API_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-credentials
+              key: frontend-client-secret
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "10m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: realm-tmpl
+          mountPath: /etc/keycloak/tmpl
+          readOnly: true
+        - name: realm-render
+          mountPath: /etc/keycloak/render
+          readOnly: true
+        - name: realm-import
+          mountPath: /opt/keycloak/data/import
+      containers:
+      - name: keycloak
+        # SAME PIN AS COMPOSE (docker-compose.full-stack.yml:139). Reusing the
+        # existing pin rather than choosing a version means this plan adds NO new
+        # supply-chain surface: the image is already pulled, already scanned and
+        # already recorded. Moving it is a deliberate, separate change with a
+        # horizon row.
+        image: quay.io/keycloak/keycloak:24.0.5
+        imagePullPolicy: IfNotPresent
+        args:
+          - start
+          - --import-realm
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: KEYCLOAK_ADMIN
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-credentials
+              key: admin-username
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-credentials
+              key: admin-password
+        - name: KC_DB
+          value: "postgres"
+        # THE THREE URL PARTS ARE SEPARATE OPTIONS, NOT A COMPOSED JDBC STRING,
+        # and that is forced rather than stylistic. A composed
+        # `jdbc:postgresql://host:port/db` would have to be assembled from three
+        # values two of which live in a Secret — and a Secret value can never
+        # appear in a kustomize render by design. Keycloak's own db-url-host /
+        # db-url-port / db-url-database options let each part arrive
+        # independently, which is the only shape that keeps the credential path
+        # intact.
+        - name: KC_DB_URL_HOST
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: host
+        - name: KC_DB_URL_PORT
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: port
+        # ITS OWN DATABASE ON THE SAME SERVER (D-02). Not the platform database:
+        # Keycloak creates and migrates ~90 tables of its own, and none of them
+        # carry a tenant_id or an RLS policy. Putting them beside the platform's
+        # would put un-scoped tables inside the schema RlsContractTest sweeps.
+        # scripts/azure-staging-provision.sh:681 creates both databases on the one
+        # server for exactly this split.
+        - name: KC_DB_URL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.db.name
+        - name: KC_DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-credentials
+              key: db-username
+        - name: KC_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-credentials
+              key: db-password
+        # --- Assumption A6, reached through a different door -------------------
+        # The managed server ships require_secure_transport=on, so a plaintext
+        # connection is refused. app-config db.ssl-mode is the platform's ONE
+        # declaration of that policy (base "prefer", staging "require"), and it is
+        # reused here rather than restated: a second TLS-mode key would be two
+        # sources for one fact, which is the #271 shape.
+        #
+        # THE `$(VAR)` BELOW IS KUBERNETES' OWN EXPANSION, not a shell. The kubelet
+        # substitutes an env value defined EARLIER in this same list, so
+        # DB_SSL_MODE must stay above KC_DB_URL_PROPERTIES. `kubectl kustomize`
+        # does not expand it, so the render shows the literal — which is correct:
+        # the render is a manifest, and the substitution is the kubelet's.
+        - name: DB_SSL_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: db.ssl-mode
+        - name: KC_DB_URL_PROPERTIES
+          value: "?sslmode=$(DB_SSL_MODE)"
+        # LOAD-BEARING — see the header. check-connection-math.sh spends this as
+        # `keycloak(20)` in every k8s environment's Postgres budget, and it reads
+        # the number out of the COMPOSE file. The two must agree or the budget is
+        # arithmetic over a number nothing checks.
+        - name: KC_DB_POOL_MAX_SIZE
+          value: "20"
+        - name: KC_HEALTH_ENABLED
+          value: "true"
+        # LOAD-BEARING — the `keycloak` scrape job in prometheus-config.yaml has
+        # been DOWN since it was written. Without this it stays DOWN and
+        # check-alert-liveness.sh L-1 fails against the staging target.
+        - name: KC_METRICS_ENABLED
+          value: "true"
+        # From app-config, never a literal: this is the single most
+        # environment-varying value in the file, and with KC_HOSTNAME_STRICT below
+        # it is the ONLY thing that decides what `iss` every token carries.
+        - name: KC_HOSTNAME
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.hostname
+        # See the header: the compose value ("false") is deliberately NOT copied.
+        - name: KC_HOSTNAME_STRICT
+          value: "true"
+        # TLS terminates at the ingress, so the pod speaks plain HTTP on 8080 and
+        # trusts the proxy's X-Forwarded-* headers. Both halves are required:
+        # without http-enabled the production profile refuses to start without a
+        # certificate, and without proxy-headers Keycloak answers 403 to every
+        # request that performs an origin check.
+        - name: KC_HTTP_ENABLED
+          value: "true"
+        - name: KC_PROXY_HEADERS
+          value: "xforwarded"
+        # Carried across from compose unchanged. The container memory limit below
+        # is sized FROM this, not the other way round.
+        - name: JAVA_OPTS
+          value: "-Xms512m -Xmx1024m"
+        resources:
+          requests:
+            # request == limit (Guaranteed-memory QoS), the same reasoning
+            # core-java records: a JVM commits its heap early and holds it, so a
+            # request below the steady-state RSS overcommits the node for the
+            # whole life of the pod. 1536Mi is the 1024m max heap plus ~500Mi for
+            # metaspace, code cache, GC structures and thread stacks — derived
+            # from JAVA_OPTS above rather than picked.
+            memory: "1536Mi"
+            cpu: "250m"
+          limits:
+            memory: "1536Mi"
+            cpu: "1000m"
+        # KC_HEALTH_ENABLED puts /health/started, /health/live and /health/ready
+        # on the main HTTP port in this version line. The compose healthcheck
+        # (docker-compose.full-stack.yml:176) targets /health/ready on 8080, which
+        # is the same surface.
+        startupProbe:
+          httpGet:
+            path: /health/started
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 3
+          # 5 minutes. Generous ON PURPOSE and not padding: `start` (see the
+          # header) re-runs the Quarkus augmentation step on every boot, and the
+          # first boot against an empty database ALSO runs Keycloak's own schema
+          # migration. A tight threshold turns a slow-but-correct first start into
+          # a CrashLoopBackOff that looks like a configuration fault.
+          failureThreshold: 60
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8080
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          # FALSE, and stated rather than left to be discovered. `start` writes
+          # the augmented Quarkus application into /opt/keycloak/lib/quarkus on
+          # every boot, so a read-only root filesystem makes the server unable to
+          # start at all. Making it true is a real improvement and it is a
+          # DIFFERENT change: it requires the pre-built image discussed in the
+          # header, at which point `start --optimized` needs no write either.
+          readOnlyRootFilesystem: false
+        volumeMounts:
+        - name: realm-import
+          mountPath: /opt/keycloak/data/import
+          readOnly: true
+      volumes:
+      - name: realm-tmpl
+        configMap:
+          name: keycloak-realm-import
+          items:
+          - key: realm.json.tmpl
+            path: realm.json.tmpl
+      - name: realm-render
+        configMap:
+          name: keycloak-realm-import
+          items:
+          - key: render.sh
+            path: render.sh
+      # The rendered realm: written by the initContainer, read by the server.
+      # `--import-realm` reads every *.json in this directory at startup.
+      - name: realm-import
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+    component: identity
+spec:
+  # THE NAME AND PORT ARE ALREADY A CONTRACT IN THREE PLACES, all of which were
+  # written against a Service that did not exist yet:
+  #   - app-config keycloak.admin.base-url points at keycloak:8080 (issue #102);
+  #   - the `keycloak` Prometheus scrape job targets keycloak:8080;
+  #   - k8s/staging/ingress-hosts-patch.yaml routes auth-staging to this name.
+  # INV-6 in k8s/scripts/check-render-invariants.sh fails the build if an Ingress
+  # names a Service absent from the same render, which is precisely why this
+  # Service and that host rule land together.
+  type: ClusterIP
+  selector:
+    app: keycloak
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http

@@ -187,6 +187,25 @@ spec:
       ports:
         - protocol: TCP
           port: 9093
+    # KEYCLOAK (plan 29-08) — appended at the END, per the append-only rule in
+    # this file's header. This is the outbound half of what the "STILL OWED"
+    # section at the bottom recorded: the `keycloak` scrape job targets
+    # keycloak:8080 and has been DOWN since prometheus-config.yaml was written,
+    # because the workload it names did not exist. The matching INGRESS half is
+    # in k8s/base/keycloak/keycloak-networkpolicy.yaml, and both land together —
+    # an egress rule and its ingress rule that arrive separately produce a scrape
+    # denied at exactly one end, which reads as a dead exporter.
+    #
+    # 8080 IS BOTH THE LOGIN PORT AND THE METRICS PORT in this version line
+    # (KC_METRICS_ENABLED puts /metrics on the main HTTP port), so this is one
+    # port and not the 9091-style split core-java needs.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
 ---
 # -----------------------------------------------------------------------------
 # ALERTMANAGER — receives from Prometheus, sends mail, and nothing else
@@ -536,10 +555,14 @@ spec:
 # =============================================================================
 # STILL OWED, RECORDED SO IT IS NOT REDISCOVERED AT 2 A.M.
 #
-#   - keycloak (plan 29-08). The `keycloak` scrape job targets keycloak:8080 and
-#     is DOWN until that workload lands. Prometheus needs an egress rule to
-#     `app: keycloak` on 8080 and Keycloak needs the matching ingress. Both belong
-#     with the manifests that create it.
+#   - keycloak — PAID, 2026-08-11 by plan 29-08, and left here as a record rather
+#     than deleted. What was owed: "The `keycloak` scrape job targets
+#     keycloak:8080 and is DOWN until that workload lands. Prometheus needs an
+#     egress rule to `app: keycloak` on 8080 and Keycloak needs the matching
+#     ingress. Both belong with the manifests that create it." Both now exist —
+#     the egress rule is the last rule of prometheus-allow above, and the ingress
+#     half is in k8s/base/keycloak/keycloak-networkpolicy.yaml, beside the
+#     Deployment and Service it governs, exactly as this note asked.
 #   - jtoye-rabbitmq (plan 29-09). The `rabbitmq` and `rabbitmq-queues` jobs
 #     target jtoye-rabbitmq:15692. The broker is operator-managed, so its pod
 #     labels are the operator's to declare — which is why the rule belongs with

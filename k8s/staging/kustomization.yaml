@@ -137,6 +137,17 @@ replacements:
           name: postgres-exporter-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+      # Keycloak (plan 29-08). Staging is where this one is REAL rather than
+      # anticipatory: D-02 runs the identity provider in-cluster here, against its
+      # own database on the managed Flexible Server, under the enforcing Cilium
+      # dataplane. A missed pass means the pod is permitted the BASE 5432 while
+      # dialling whatever staging declares — the #271 trap on the one workload
+      # whose failure stops every login.
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -155,6 +166,11 @@ replacements:
       - select:
           kind: NetworkPolicy
           name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
         fieldPaths:
           - spec.egress.1.to.0.ipBlock.cidr
   - source:

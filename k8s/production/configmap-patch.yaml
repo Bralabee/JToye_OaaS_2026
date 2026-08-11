@@ -32,16 +32,28 @@ data:
   # fact rather than an assumption.
   keycloak.public.issuer.uri: "https://auth.olajay.co.uk/realms/jtoye-prod"
 
-  # keycloak.client-id is DELIBERATELY NOT OVERRIDDEN here (plan 26-08), and this
-  # is the ONE exception to this overlay's state-it-explicitly convention above.
-  # The base value is the byte-identical string `frontend` that used to be
-  # hardcoded in frontend-deployment.yaml, so production continues to authenticate
-  # as exactly the same OIDC client identity it always has. Restating it here
-  # would add a second place a reviewer must keep in sync for a value that is not
-  # environment-varying, and T-26-48 makes the production render's value equality
-  # an asserted criterion rather than a convention — so the assertion, not a
-  # duplicated line, is what protects it. Only k8s/local patches this key (to
-  # `core-api`, the jtoye-dev realm's actual client).
+  # keycloak.client-id is still DELIBERATELY NOT OVERRIDDEN here, but the REASON
+  # changed in plan 29-08 and the old one is recorded rather than quietly
+  # replaced.
+  #
+  #   THE OLD REASON (plan 26-08): "The base value is the byte-identical string
+  #   `frontend` that used to be hardcoded in frontend-deployment.yaml, so
+  #   production continues to authenticate as exactly the same OIDC client
+  #   identity it always has."
+  #
+  #   THAT SENTENCE IS NOW FALSE IN ITS PREMISE. Plan 29-02 measured that no
+  #   `frontend` client exists in any realm this repository ships, and plan 29-08
+  #   changed the BASE value to `core-api` — the sole client in the cluster realm
+  #   at k8s/base/keycloak/realm-import-configmap.yaml. So production no longer
+  #   inherits a phantom: it inherits the corrected value, which is what the
+  #   29-02 summary assigned to 29-08/Phase 32 and what this note now records as
+  #   done rather than owed.
+  #
+  # NOT RESTATED HERE, for the reason the old note gave and which still holds:
+  # the value is not environment-varying (every environment authenticates as
+  # `core-api`), so a duplicate line would be a second place to keep in sync for
+  # no gain. Production's own cutover — DNS, a realm on a resolvable host, and a
+  # client secret — is Phase 32's (D-08); this key is correct in advance of it.
 
   # Single production platform origin. NOT a wildcard. Read by CorsConfig AND
   # WebSocketConfig (the KDS STOMP handshake).
