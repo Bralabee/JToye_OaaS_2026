@@ -1,0 +1,269 @@
+---
+# alertmanager-config.yaml — the alert route as a TEMPLATE, plus the script that
+# renders it at pod start (DPLY-03 / D-17 / D-13, plan 29-07)
+#
+# WHY A TEMPLATE AND A RENDER SCRIPT RATHER THAN A PLAIN ConfigMap.
+#   Alertmanager has NO native env-var substitution. The compose analog says so in
+#   its own words and renders from a template for exactly this reason
+#   (infra/monitoring/alertmanager/alertmanager.yml.tmpl:7-9 — "DO NOT replace with
+#   ${VAR} syntax — Alertmanager will pass it through literally and amtool will
+#   reject the config"; infra/monitoring/docker-compose.monitoring.yml:112-113 says
+#   the same at the service). The constraint is a property of the BINARY, so it
+#   holds identically in Kubernetes.
+#
+#   That matters here because the SMTP credential must not be a literal. A plain
+#   ConfigMap carrying the Gmail app password would be a plaintext secret in every
+#   render, and a `kind: Secret` in the kustomization is forbidden outright by
+#   k8s/scripts/check-no-plaintext-secrets.sh. Rendering at pod start is what lets
+#   the credential arrive from a mounted Secret instead.
+#
+# WHICH CREDENTIAL MECHANISM, AND WHY — smtp_auth_password_file, NOT a rendered
+# literal from a secretKeyRef env.
+#   Both were available. The file wins on one measurable property: with
+#   `smtp_auth_password_file` the rendered config contains a PATH, so the password
+#   exists only in the tmpfs-backed Secret mount and never in the config file that
+#   scripts and humans read. check-alert-liveness.sh L-3b reads the RUNNING
+#   Alertmanager's own `/api/v2/status` `.config.original` on every run; a rendered
+#   literal would put the Gmail app password into that response, into the gate's
+#   VOID messages, and into anything that logs them.
+#
+#   MEASURED, not assumed — v0.27.0 (the pinned image), 2026-08-11:
+#     amtool check-config with smtp_auth_password_file + a per-entry
+#       `smarthost:` and `require_tls: false`   -> SUCCESS, rc=0
+#     CONTROL, same file with the field renamed to smtp_auth_password_fileZZ
+#       -> rc=1, "field smtp_auth_password_fileZZ not found in type config.plain"
+#   The control is what makes the SUCCESS mean something: it proves amtool rejects
+#   an unknown field at all, so the accepted spelling is a real supported field and
+#   not a silently-ignored one.
+#
+# ONE RECEIVER, TWO SINKS — the route is NOT changed.
+#   `route:` below is copied from infra/monitoring/alertmanager/alertmanager.yml.tmpl
+#   :20-25 unchanged: receiver, group_by, group_wait 30s, group_interval 5m,
+#   repeat_interval 12h. The second destination is a second entry in the SAME
+#   receiver's `email_configs` LIST, so the inspected delivery IS the real delivery.
+#
+#   A probe-only route with group_wait 0s would be easier and is explicitly
+#   rejected by check-alert-liveness.sh's own header, and L-3b now enforces that
+#   rejection: a config that MENTIONS the probe alertname is VOID, and a
+#   multi-destination receiver whose declared addresses are not co-resident is VOID.
+#
+#   ASSUMPTION A1 WAS MEASURED BEFORE THIS FILE WAS WRITTEN (plan 29-03, recorded
+#   in scripts/check-alert-liveness.sh's header and 29-03-SUMMARY.md):
+#     arm 1 — ONE receiver, TWO email_configs with different `to:`
+#             -> Mailhog total 2, a1-primary@ 1, a1-secondary@ 1
+#     arm 2 — CONTROL, identical rig with ONE email_configs
+#             -> total 1, a1-primary@ 1, a1-secondary@ 0
+#   A1 HOLDS: Alertmanager delivers to EVERY entry in a receiver. Arm 2 is what
+#   licenses that reading — it proves the per-recipient counter can return 0, so
+#   the 1/1 is a real fan-out rather than one message counted twice. The recorded
+#   fallback (teaching L-3 an IMAP or webhook sink) was therefore NOT taken.
+#
+# THE SECOND SINK IS CONDITIONAL, AND THE CONDITION IS AN EXPLICIT `if`.
+#   `envsubst` cannot DROP a block, only blank it, and a blanked `- to: ''` entry
+#   is a delivery attempt to the empty address on every alert. So render.sh below
+#   omits the whole entry when alerting.secondary.smtp.smarthost is empty. Base and
+#   production therefore carry ONE Gmail sink; staging carries the Mailhog capture
+#   beside it (D-13), which is what makes L-3 inspectable without bypassing the
+#   real route.
+#
+# WHAT check-alert-liveness.sh NEEDS FROM WHOEVER RUNS IT AGAINST THIS (plan 29-12).
+#   L-3b VOIDs on a two-destination receiver with either address undeclared, which
+#   is deliberate: a gate that picked one of several addresses could prove the leg
+#   nobody reads. The staging invocation is
+#
+#     L3_SINK_TO="<app-config alerting.secondary.smtp.to>" \
+#     L3_HUMAN_TO="$(kubectl -n <ns> get secret alertmanager-smtp \
+#                      -o jsonpath='{.data.to}' | base64 -d)" \
+#     PROM_EXEC="kubectl --context <ctx> -n <ns> exec deploy/prometheus --" \
+#     PROM_RUNTIME_PROBE="kubectl --context <ctx> -n <ns> get deploy/prometheus" \
+#     PROM_ALERTS_PATH=/etc/prometheus/rules/alerts.yml \
+#     PROM_URL=... ALERTMANAGER_URL=... MAILHOG_URL=... \
+#     bash scripts/check-alert-liveness.sh
+#
+#   L3_HUMAN_TO is read OUT OF THE SECRET rather than written here, because the
+#   owner's inbox is not a value this repository holds. L3_SINK_TO is an app-config
+#   value precisely so the sink has ONE source that the render and the gate share.
+#
+# WHY THE RENDER SCRIPT LIVES IN THIS ConfigMap AND NOT IN THE IMAGE.
+#   The pinned image is upstream's; there is no repo-built Alertmanager image to
+#   bake a script into, and adding one would put a build step between a config edit
+#   and a deploy. A ConfigMap-mounted script is the same idiom compose uses for the
+#   same reason (a bind-mounted entrypoint.sh).
+#
+# EVERYTHING BELOW `alertmanager.yml.tmpl: |` AND `render.sh: |` IS ConfigMap DATA
+# AND LANDS IN THE RENDER. Comments inside those blocks are therefore subject to
+# INV-4's forbidden-literal scan, which is how plan 29-06 made its own assertion
+# fail on a correct tree (a header comment that named the token it forbade). Keep
+# explanatory prose in THIS header, above `data:`, where it is not data.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  labels:
+    app: alertmanager
+    component: monitoring
+data:
+  # Route/receiver/template copied from infra/monitoring/alertmanager/
+  # alertmanager.yml.tmpl:14-47. The four route values are byte-equal to it.
+  # Placeholder names differ from the compose file's only where this runtime needs
+  # a value compose does not have (the auth pair and the secondary sink).
+  alertmanager.yml.tmpl: |
+    global:
+      resolve_timeout: 5m
+      smtp_smarthost: '__SMTP_SMARTHOST__'
+      smtp_from: '__SMTP_FROM__'
+      smtp_require_tls: __SMTP_REQUIRE_TLS__
+      smtp_auth_username: '__SMTP_AUTH_USERNAME__'
+      smtp_auth_password_file: __SMTP_AUTH_PASSWORD_FILE__
+
+    route:
+      receiver: email-default
+      group_by: ['alertname', 'service']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+
+    receivers:
+      - name: email-default
+        email_configs:
+          - to: '__SMTP_TO__'
+            send_resolved: true
+            headers:
+              Subject: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.service }}/{{ .CommonLabels.severity }})'
+            html: |-
+              <p><b>Status:</b> {{ .Status | toUpper }}</p>
+              {{ range .Alerts }}
+              <hr>
+              <p><b>Alert:</b> {{ .Annotations.summary }}</p>
+              <p><b>Description:</b> {{ .Annotations.description }}</p>
+              <p><b>Severity:</b> {{ .Labels.severity }}</p>
+              <p><b>Service:</b> {{ .Labels.service }}</p>
+              <p><b>Started:</b> {{ .StartsAt }}</p>
+              {{ end }}
+    __SECONDARY_SINK_BLOCK__
+
+    inhibit_rules: []
+
+  # ---------------------------------------------------------------------------
+  # render.sh — runs as an initContainer, writes the rendered config to a shared
+  # emptyDir, and refuses to produce one it cannot validate.
+  #
+  # It fails LOUDLY on every missing input rather than starting with an empty
+  # value. An Alertmanager that boots with an empty To, an empty From or an empty
+  # password is the worst outcome available: it looks healthy, its /-/healthy
+  # probe passes, and it delivers nothing.
+  # ---------------------------------------------------------------------------
+  render.sh: |
+    #!/bin/sh
+    # Renders the alert config from the template beside it. NEVER add `set -x`:
+    # the SMTP credential is read from a file here and would land in pod logs.
+    set -eu
+
+    TEMPLATE=/etc/alertmanager/tmpl/alertmanager.yml.tmpl
+    RENDERED=/etc/alertmanager/rendered/alertmanager.yml
+    PASSWORD_FILE=/etc/alertmanager/smtp/password
+
+    fatal() { echo "FATAL: $*" >&2; exit 1; }
+
+    [ -f "$TEMPLATE" ] || fatal "template not found at $TEMPLATE"
+
+    # The four values that decide whether any human is reached. Each is checked by
+    # NAME so the failure message says which one, rather than producing a config
+    # that is syntactically perfect and delivers to nobody.
+    [ -n "${ALERTMANAGER_SMTP_SMARTHOST:-}" ] || fatal "ALERTMANAGER_SMTP_SMARTHOST is empty (app-config alerting.smtp.smarthost)"
+    [ -n "${ALERTMANAGER_SMTP_FROM:-}" ]      || fatal "ALERTMANAGER_SMTP_FROM is empty (secret alertmanager-smtp, key from)"
+    [ -n "${ALERTMANAGER_SMTP_TO:-}" ]        || fatal "ALERTMANAGER_SMTP_TO is empty (secret alertmanager-smtp, key to) — an alert route with no destination is not a paging path"
+    [ -n "${ALERTMANAGER_SMTP_AUTH_USERNAME:-}" ] || fatal "ALERTMANAGER_SMTP_AUTH_USERNAME is empty (secret alertmanager-smtp, key username)"
+
+    # The credential is a FILE, not a value: Alertmanager reads it itself at send
+    # time. Both arms below are load-bearing. A missing file is the
+    # secret-not-created case; a present-but-empty file is the
+    # secret-created-from-an-empty-variable case, which every string check would
+    # pass and which authenticates as nobody.
+    [ -f "$PASSWORD_FILE" ] || fatal "no SMTP credential mounted at $PASSWORD_FILE — create the alertmanager-smtp secret (scripts/staging-secrets.sh) before deploying; refusing to start an alert path that cannot authenticate"
+    [ -s "$PASSWORD_FILE" ] || fatal "the SMTP credential at $PASSWORD_FILE is EMPTY — an empty app password authenticates as nobody and every alert would fail to send"
+
+    # STARTTLS on the primary relay. It is an env with a visible value in the
+    # Deployment rather than a config key, because it is a property of the relay
+    # the base points at, not of the environment.
+    : "${ALERTMANAGER_SMTP_REQUIRE_TLS:=true}"
+
+    # ---- the conditional second sink (D-13) ---------------------------------
+    # EMPTY smarthost means OMIT THE WHOLE ENTRY. Blanking it instead would leave
+    # a destination of '' that Alertmanager tries on every notification.
+    : "${ALERTMANAGER_SECONDARY_SMTP_SMARTHOST:=}"
+    : "${ALERTMANAGER_SECONDARY_SMTP_TO:=}"
+    SECONDARY_SINK_BLOCK=""
+    if [ -n "$ALERTMANAGER_SECONDARY_SMTP_SMARTHOST" ]; then
+      # Half-configured is an operator error, not a default. Rendering a sink with
+      # a relay and no address would be a silent no-op leg inside a receiver whose
+      # whole purpose is that its legs are equivalent.
+      [ -n "$ALERTMANAGER_SECONDARY_SMTP_TO" ] \
+        || fatal "ALERTMANAGER_SECONDARY_SMTP_SMARTHOST is set but ALERTMANAGER_SECONDARY_SMTP_TO is empty (app-config alerting.secondary.smtp.to)"
+      # Same receiver, same route, same grouping. require_tls is false because the
+      # capture relay speaks plain SMTP; it is set PER ENTRY so the primary keeps
+      # the global true. auth is inherited and harmless: the capture relay does not
+      # advertise the AUTH extension, so Alertmanager skips authentication for it.
+      #
+      # THE SIX/EIGHT SPACE INDENT IS LOAD-BEARING, AND ONE LINE PER printf
+      # ARGUMENT IS HOW IT STAYS READABLE. These are the indents of the RENDERED
+      # file, and the entry above ends in an `html: |-` block scalar: a list item
+      # indented to that scalar's own depth is SWALLOWED by it, and the keys after
+      # it then land in the FIRST entry's mapping. Six spaces is shallower than the
+      # scalar, so it terminates it and opens a sibling item.
+      #
+      # A plain multi-line "..." string was the first attempt and it is a trap
+      # here: only the FIRST line's leading spaces survive intact, because every
+      # continuation line also carries this ConfigMap block scalar's own indent,
+      # which the mount strips. Both wrong shapes were MEASURED against amtool
+      # rather than reasoned about — "field send_resolved already set" for the
+      # swallowed case, "field smarthost not found" for the dedented case. Each
+      # line below is a separate quoted argument, so what you read is what is
+      # written.
+      SECONDARY_SINK_BLOCK=$(printf '%s\n%s\n%s\n%s' \
+        "      - to: '${ALERTMANAGER_SECONDARY_SMTP_TO}'" \
+        "        smarthost: '${ALERTMANAGER_SECONDARY_SMTP_SMARTHOST}'" \
+        "        require_tls: false" \
+        "        send_resolved: true")
+      echo "alertmanager render: secondary capture sink ENABLED beside the primary inbox in receiver email-default"
+    else
+      echo "alertmanager render: no secondary sink configured — receiver email-default has ONE destination"
+    fi
+
+    # sed for the scalars; awk for the block, because a block carries newlines and
+    # sed's s/// cannot substitute those portably. ENVIRON rather than `awk -v`:
+    # -v applies backslash-escape processing to the value. When the block is empty
+    # its placeholder LINE IS DROPPED rather than blanked, so the one-sink render
+    # has no stray blank line in the receivers list.
+    mkdir -p "$(dirname "$RENDERED")"
+    sed \
+      -e "s|__SMTP_SMARTHOST__|${ALERTMANAGER_SMTP_SMARTHOST}|g" \
+      -e "s|__SMTP_FROM__|${ALERTMANAGER_SMTP_FROM}|g" \
+      -e "s|__SMTP_TO__|${ALERTMANAGER_SMTP_TO}|g" \
+      -e "s|__SMTP_REQUIRE_TLS__|${ALERTMANAGER_SMTP_REQUIRE_TLS}|g" \
+      -e "s|__SMTP_AUTH_USERNAME__|${ALERTMANAGER_SMTP_AUTH_USERNAME}|g" \
+      -e "s|__SMTP_AUTH_PASSWORD_FILE__|${PASSWORD_FILE}|g" \
+      "$TEMPLATE" \
+    | SECONDARY_SINK_BLOCK="${SECONDARY_SINK_BLOCK}" awk '
+        /^[[:space:]]*__SECONDARY_SINK_BLOCK__$/ {
+            if (ENVIRON["SECONDARY_SINK_BLOCK"] != "") print ENVIRON["SECONDARY_SINK_BLOCK"];
+            next
+        }
+        { print }
+      ' > "$RENDERED"
+
+    # No placeholder may survive. This catches a renamed placeholder the
+    # substitution list was not updated for, which would otherwise start cleanly
+    # and mail a literal token instead of an address.
+    if grep -q '__[A-Z0-9_]\{1,\}__' "$RENDERED"; then
+      echo "FATAL: unrendered placeholder(s) remain in $RENDERED:" >&2
+      grep -o '__[A-Z0-9_]\{1,\}__' "$RENDERED" | sort -u >&2
+      exit 1
+    fi
+
+    # Validate BEFORE the main container ever sees the file. An initContainer that
+    # exits non-zero blocks the pod, so a malformed config is a visible
+    # Init:CrashLoopBackOff rather than a running Alertmanager nobody hears from.
+    /bin/amtool check-config "$RENDERED"
+
+    echo "alertmanager render: wrote and validated $RENDERED"

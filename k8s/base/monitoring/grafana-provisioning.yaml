@@ -1,0 +1,218 @@
+---
+# grafana-provisioning.yaml — the existing Grafana corpus, verbatim (DPLY-03 /
+# D-16, plan 29-07)
+#
+# THREE KEYS, THREE MOUNT POINTS, ONE ConfigMap. Grafana reads each from a
+# different directory, so grafana-deployment.yaml mounts this ConfigMap three
+# times with an `items:` selector rather than dumping all three into one place:
+#   datasource.yml       -> /etc/grafana/provisioning/datasources/
+#   dashboard-provider.yml -> /etc/grafana/provisioning/dashboards/
+#   stomp-dashboard.json -> /var/lib/grafana/dashboards/
+# Mounting the whole /etc/grafana/provisioning tree instead would SHADOW the
+# image's own plugins/, notifiers/ and alerting/ directories, which is a silent
+# behaviour change for something this file has no opinion about.
+#
+# THE THREE VALUES ARE BYTE-IDENTICAL COPIES of the compose corpus (D-16, "one
+# rule corpus, one dashboard corpus"):
+#   infra/monitoring/grafana/provisioning/datasources/prometheus.yml
+#   infra/monitoring/grafana/provisioning/dashboards/dashboard.yml
+#   infra/monitoring/grafana/dashboards/stomp-dashboard.json
+# They are COPIES rather than references for the reason recorded in
+# k8s/base/kustomization.yaml for the alert corpus: kustomize refuses to read a
+# generator file from outside its own root ("security; file is not in or below
+# the current directory") and resolves a symlink the same way. There is no
+# supported escape.
+#
+# NOT ONE BYTE HAD TO CHANGE, INCLUDING THE DATASOURCE URL. The compose corpus
+# already says `url: http://prometheus:9090`, which is exactly the ClusterIP
+# Service plan 29-06 created — so the k8s copy and the compose copy agree
+# without an edit, and INV-4 has nothing to object to. That is worth stating
+# because the plan allowed the url to differ; it does not.
+#
+# THE KEY NAMES DIFFER FROM THE SOURCE FILENAMES, AND ONLY THE NAMES.
+# `dashboard.yml` and `prometheus.yml` would collide in one ConfigMap's key space
+# with no hint of which is which, so the keys are `datasource.yml` and
+# `dashboard-provider.yml`; each mount's `path:` restores the filename Grafana
+# expects. The BYTES are what the parity assertion compares, and they are equal.
+#
+# ADMIN CREDENTIAL: NOT HERE, AND NOT PROVABLE HERE EITHER. See
+# grafana-deployment.yaml's header — Grafana applies GF_SECURITY_ADMIN_PASSWORD
+# only when it FIRST CREATES the admin user, so no manifest-level reading of it
+# proves anything about a running instance.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+  labels:
+    app: grafana
+    component: monitoring
+data:
+  # VERBATIM: infra/monitoring/grafana/provisioning/datasources/prometheus.yml
+  # (md5 73d0c40933b746029e3fbf22d5aa6e2a). `prometheus:9090` is the Service in
+  # k8s/base/monitoring/prometheus-deployment.yaml.
+  datasource.yml: |
+    # Grafana datasource configuration for Prometheus
+    apiVersion: 1
+
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: true
+        jsonData:
+          timeInterval: "15s"
+          httpMethod: "POST"
+
+  # VERBATIM: infra/monitoring/grafana/provisioning/dashboards/dashboard.yml
+  # (md5 5ba03c44219998deee190caa829d1747). `updateIntervalSeconds: 10` is why
+  # this ConfigMap is NOT content-hashed: Grafana re-reads the dashboard
+  # directory itself, and a ConfigMap volume update propagates without a restart,
+  # so a hashed name would roll the pod to deliver something it already picks up.
+  dashboard-provider.yml: |
+    # Grafana dashboard provisioning configuration
+    apiVersion: 1
+
+    providers:
+      - name: 'JToye Dashboards'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+
+  # VERBATIM: infra/monitoring/grafana/dashboards/stomp-dashboard.json
+  # (md5 4136b0520b80e72a946b2b0cd150914f). Two panels, `gauge` and `timeseries`
+  # — both CORE panel types, which is the measured reason the compose analog's
+  # GF_INSTALL_PLUGINS=grafana-piechart-panel is deliberately not carried over
+  # (grafana-deployment.yaml's header records the count).
+  stomp-dashboard.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 5 },
+                  { "color": "red", "value": 10 }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "id": 1,
+          "options": {
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "title": "RabbitMQ Total Connections",
+          "type": "gauge",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rabbitmq_connections",
+              "legendFormat": "connections",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisLabel": "messages",
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "spanNulls": false
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "id": 2,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "title": "STOMP Subscription Queue Depth",
+          "type": "timeseries",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rabbitmq_queue_messages_ready{queue=~\"stomp-subscription.*\"})",
+              "legendFormat": "ready messages",
+              "refId": "A"
+            }
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["stomp", "rabbitmq", "messaging"],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "",
+      "title": "STOMP Broker Relay",
+      "uid": "stomp-relay-dashboard",
+      "version": 1
+    }

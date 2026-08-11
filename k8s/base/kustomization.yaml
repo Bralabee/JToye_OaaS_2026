@@ -49,6 +49,37 @@ resources:
   - monitoring/prometheus-deployment.yaml
   - monitoring/postgres-exporter-deployment.yaml
   - monitoring/redis-exporter-deployment.yaml
+  # The half of DPLY-03 that involves a human (plan 29-07): an Alertmanager that
+  # reaches a real inbox (D-17) with an inspectable second sink in the SAME
+  # receiver (D-13).
+  #
+  # THE ALERTMANAGER CONFIG IS A TEMPLATE, RENDERED BY AN initContainer, and that
+  # is forced rather than chosen: Alertmanager has no env-var substitution, so the
+  # Gmail app password cannot arrive through a `${VAR}`, and it must not be a
+  # ConfigMap literal. check-no-plaintext-secrets.sh forbids a `kind: Secret` in
+  # any build, so the credential arrives as a mounted Secret FILE that the
+  # rendered config only names. Same idiom as the compose analog's entrypoint.
+  #
+  # A PLAIN ConfigMap, NOT configMapGenerator — the opposite choice from
+  # prometheus-alerts below and for the stated reason there. A content hash exists
+  # to force a pod roll when the mounted content changes; this config is rendered
+  # by an initContainer, so any change already requires a roll for the render step
+  # to re-run, and a hashed name would add nothing.
+  - monitoring/alertmanager-config.yaml
+  - monitoring/alertmanager-deployment.yaml
+  # Grafana (D-19) — the ONLY monitoring workload that later gains a public
+  # hostname, because it is the only one with a login of its own. Its Ingress
+  # arrives in plan 29-08, together with the TLS SAN and the DNS record; INV-6
+  # requires the Service to be in the same render as any rule naming it, which is
+  # why the Service lands a plan earlier. INV-8 makes the other half enforceable:
+  # an Ingress backed by `prometheus` or `alertmanager` is a CI failure.
+  #
+  # Also a PLAIN ConfigMap. Grafana's file provider re-reads its dashboard
+  # directory every 10s (dashboard.yml `updateIntervalSeconds`) and a ConfigMap
+  # volume update propagates without a restart, so a content hash would roll the
+  # pod to deliver something the running pod already picks up.
+  - monitoring/grafana-provisioning.yaml
+  - monitoring/grafana-deployment.yaml
 
 # =============================================================================
 # THE ALERT CORPUS — one corpus, enforced rather than intended (D-16 / plan 29-06)
@@ -214,6 +245,17 @@ replacements:
         fieldPaths:
           - spec.egress.1.ports.0.port
           - spec.egress.4.ports.0.port
+      # THE MONITORING EXPORTERS JOIN THE SAME MECHANISM (plan 29-07). Each dials
+      # the SAME managed server as core-java, so each needs the same derived port,
+      # and each has exactly ONE out-of-cluster rule at `spec.egress.1` (index 0 is
+      # DNS). A literal here would leave pg_up / redis_up reporting on whichever
+      # port was true when the file was written — a green light for a datastore
+      # nothing uses, which is worse than a red one.
+      - select:
+          kind: NetworkPolicy
+          name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -229,6 +271,11 @@ replacements:
           name: pg-backup-allow
         fieldPaths:
           - spec.egress.4.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
   - source:
       kind: ConfigMap
       name: app-config
@@ -239,6 +286,11 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.5.ports.0.port
+      - select:
+          kind: NetworkPolicy
+          name: redis-exporter-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -249,3 +301,8 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.5.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: redis-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr

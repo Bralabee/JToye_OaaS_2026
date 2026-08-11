@@ -10,6 +10,176 @@ metadata:
 ---
 apiVersion: v1
 data:
+  alertmanager.yml.tmpl: |
+    global:
+      resolve_timeout: 5m
+      smtp_smarthost: '__SMTP_SMARTHOST__'
+      smtp_from: '__SMTP_FROM__'
+      smtp_require_tls: __SMTP_REQUIRE_TLS__
+      smtp_auth_username: '__SMTP_AUTH_USERNAME__'
+      smtp_auth_password_file: __SMTP_AUTH_PASSWORD_FILE__
+
+    route:
+      receiver: email-default
+      group_by: ['alertname', 'service']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+
+    receivers:
+      - name: email-default
+        email_configs:
+          - to: '__SMTP_TO__'
+            send_resolved: true
+            headers:
+              Subject: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.service }}/{{ .CommonLabels.severity }})'
+            html: |-
+              <p><b>Status:</b> {{ .Status | toUpper }}</p>
+              {{ range .Alerts }}
+              <hr>
+              <p><b>Alert:</b> {{ .Annotations.summary }}</p>
+              <p><b>Description:</b> {{ .Annotations.description }}</p>
+              <p><b>Severity:</b> {{ .Labels.severity }}</p>
+              <p><b>Service:</b> {{ .Labels.service }}</p>
+              <p><b>Started:</b> {{ .StartsAt }}</p>
+              {{ end }}
+    __SECONDARY_SINK_BLOCK__
+
+    inhibit_rules: []
+  render.sh: |
+    #!/bin/sh
+    # Renders the alert config from the template beside it. NEVER add `set -x`:
+    # the SMTP credential is read from a file here and would land in pod logs.
+    set -eu
+
+    TEMPLATE=/etc/alertmanager/tmpl/alertmanager.yml.tmpl
+    RENDERED=/etc/alertmanager/rendered/alertmanager.yml
+    PASSWORD_FILE=/etc/alertmanager/smtp/password
+
+    fatal() { echo "FATAL: $*" >&2; exit 1; }
+
+    [ -f "$TEMPLATE" ] || fatal "template not found at $TEMPLATE"
+
+    # The four values that decide whether any human is reached. Each is checked by
+    # NAME so the failure message says which one, rather than producing a config
+    # that is syntactically perfect and delivers to nobody.
+    [ -n "${ALERTMANAGER_SMTP_SMARTHOST:-}" ] || fatal "ALERTMANAGER_SMTP_SMARTHOST is empty (app-config alerting.smtp.smarthost)"
+    [ -n "${ALERTMANAGER_SMTP_FROM:-}" ]      || fatal "ALERTMANAGER_SMTP_FROM is empty (secret alertmanager-smtp, key from)"
+    [ -n "${ALERTMANAGER_SMTP_TO:-}" ]        || fatal "ALERTMANAGER_SMTP_TO is empty (secret alertmanager-smtp, key to) — an alert route with no destination is not a paging path"
+    [ -n "${ALERTMANAGER_SMTP_AUTH_USERNAME:-}" ] || fatal "ALERTMANAGER_SMTP_AUTH_USERNAME is empty (secret alertmanager-smtp, key username)"
+
+    # The credential is a FILE, not a value: Alertmanager reads it itself at send
+    # time. Both arms below are load-bearing. A missing file is the
+    # secret-not-created case; a present-but-empty file is the
+    # secret-created-from-an-empty-variable case, which every string check would
+    # pass and which authenticates as nobody.
+    [ -f "$PASSWORD_FILE" ] || fatal "no SMTP credential mounted at $PASSWORD_FILE — create the alertmanager-smtp secret (scripts/staging-secrets.sh) before deploying; refusing to start an alert path that cannot authenticate"
+    [ -s "$PASSWORD_FILE" ] || fatal "the SMTP credential at $PASSWORD_FILE is EMPTY — an empty app password authenticates as nobody and every alert would fail to send"
+
+    # STARTTLS on the primary relay. It is an env with a visible value in the
+    # Deployment rather than a config key, because it is a property of the relay
+    # the base points at, not of the environment.
+    : "${ALERTMANAGER_SMTP_REQUIRE_TLS:=true}"
+
+    # ---- the conditional second sink (D-13) ---------------------------------
+    # EMPTY smarthost means OMIT THE WHOLE ENTRY. Blanking it instead would leave
+    # a destination of '' that Alertmanager tries on every notification.
+    : "${ALERTMANAGER_SECONDARY_SMTP_SMARTHOST:=}"
+    : "${ALERTMANAGER_SECONDARY_SMTP_TO:=}"
+    SECONDARY_SINK_BLOCK=""
+    if [ -n "$ALERTMANAGER_SECONDARY_SMTP_SMARTHOST" ]; then
+      # Half-configured is an operator error, not a default. Rendering a sink with
+      # a relay and no address would be a silent no-op leg inside a receiver whose
+      # whole purpose is that its legs are equivalent.
+      [ -n "$ALERTMANAGER_SECONDARY_SMTP_TO" ] \
+        || fatal "ALERTMANAGER_SECONDARY_SMTP_SMARTHOST is set but ALERTMANAGER_SECONDARY_SMTP_TO is empty (app-config alerting.secondary.smtp.to)"
+      # Same receiver, same route, same grouping. require_tls is false because the
+      # capture relay speaks plain SMTP; it is set PER ENTRY so the primary keeps
+      # the global true. auth is inherited and harmless: the capture relay does not
+      # advertise the AUTH extension, so Alertmanager skips authentication for it.
+      #
+      # THE SIX/EIGHT SPACE INDENT IS LOAD-BEARING, AND ONE LINE PER printf
+      # ARGUMENT IS HOW IT STAYS READABLE. These are the indents of the RENDERED
+      # file, and the entry above ends in an `html: |-` block scalar: a list item
+      # indented to that scalar's own depth is SWALLOWED by it, and the keys after
+      # it then land in the FIRST entry's mapping. Six spaces is shallower than the
+      # scalar, so it terminates it and opens a sibling item.
+      #
+      # A plain multi-line "..." string was the first attempt and it is a trap
+      # here: only the FIRST line's leading spaces survive intact, because every
+      # continuation line also carries this ConfigMap block scalar's own indent,
+      # which the mount strips. Both wrong shapes were MEASURED against amtool
+      # rather than reasoned about — "field send_resolved already set" for the
+      # swallowed case, "field smarthost not found" for the dedented case. Each
+      # line below is a separate quoted argument, so what you read is what is
+      # written.
+      SECONDARY_SINK_BLOCK=$(printf '%s\n%s\n%s\n%s' \
+        "      - to: '${ALERTMANAGER_SECONDARY_SMTP_TO}'" \
+        "        smarthost: '${ALERTMANAGER_SECONDARY_SMTP_SMARTHOST}'" \
+        "        require_tls: false" \
+        "        send_resolved: true")
+      echo "alertmanager render: secondary capture sink ENABLED beside the primary inbox in receiver email-default"
+    else
+      echo "alertmanager render: no secondary sink configured — receiver email-default has ONE destination"
+    fi
+
+    # sed for the scalars; awk for the block, because a block carries newlines and
+    # sed's s/// cannot substitute those portably. ENVIRON rather than `awk -v`:
+    # -v applies backslash-escape processing to the value. When the block is empty
+    # its placeholder LINE IS DROPPED rather than blanked, so the one-sink render
+    # has no stray blank line in the receivers list.
+    mkdir -p "$(dirname "$RENDERED")"
+    sed \
+      -e "s|__SMTP_SMARTHOST__|${ALERTMANAGER_SMTP_SMARTHOST}|g" \
+      -e "s|__SMTP_FROM__|${ALERTMANAGER_SMTP_FROM}|g" \
+      -e "s|__SMTP_TO__|${ALERTMANAGER_SMTP_TO}|g" \
+      -e "s|__SMTP_REQUIRE_TLS__|${ALERTMANAGER_SMTP_REQUIRE_TLS}|g" \
+      -e "s|__SMTP_AUTH_USERNAME__|${ALERTMANAGER_SMTP_AUTH_USERNAME}|g" \
+      -e "s|__SMTP_AUTH_PASSWORD_FILE__|${PASSWORD_FILE}|g" \
+      "$TEMPLATE" \
+    | SECONDARY_SINK_BLOCK="${SECONDARY_SINK_BLOCK}" awk '
+        /^[[:space:]]*__SECONDARY_SINK_BLOCK__$/ {
+            if (ENVIRON["SECONDARY_SINK_BLOCK"] != "") print ENVIRON["SECONDARY_SINK_BLOCK"];
+            next
+        }
+        { print }
+      ' > "$RENDERED"
+
+    # No placeholder may survive. This catches a renamed placeholder the
+    # substitution list was not updated for, which would otherwise start cleanly
+    # and mail a literal token instead of an address.
+    if grep -q '__[A-Z0-9_]\{1,\}__' "$RENDERED"; then
+      echo "FATAL: unrendered placeholder(s) remain in $RENDERED:" >&2
+      grep -o '__[A-Z0-9_]\{1,\}__' "$RENDERED" | sort -u >&2
+      exit 1
+    fi
+
+    # Validate BEFORE the main container ever sees the file. An initContainer that
+    # exits non-zero blocks the pod, so a malformed config is a visible
+    # Init:CrashLoopBackOff rather than a running Alertmanager nobody hears from.
+    /bin/amtool check-config "$RENDERED"
+
+    echo "alertmanager render: wrote and validated $RENDERED"
+kind: ConfigMap
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: alertmanager
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: alertmanager-config
+  namespace: jtoye-staging
+---
+apiVersion: v1
+data:
+  alerting.secondary.smtp.smarthost: mailhog:1025
+  alerting.secondary.smtp.to: alerts-sink@jtoye-staging.local
+  alerting.smtp.smarthost: smtp.gmail.com:587
   api.internal.url: http://core-java:9090
   api.url: https://api-staging.olajay.co.uk
   cors.allowed-origins: https://app-staging.olajay.co.uk
@@ -18,6 +188,7 @@ data:
   db.port: "5432"
   db.ssl-mode: require
   frontend.url: https://app-staging.olajay.co.uk
+  grafana.root-url: https://grafana-staging.olajay.co.uk
   jwt.expected-audience: core-api
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
   keycloak.admin.enabled: "false"
@@ -81,6 +252,177 @@ metadata:
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
   name: app-config
+  namespace: jtoye-staging
+---
+apiVersion: v1
+data:
+  dashboard-provider.yml: |
+    # Grafana dashboard provisioning configuration
+    apiVersion: 1
+
+    providers:
+      - name: 'JToye Dashboards'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+  datasource.yml: |
+    # Grafana datasource configuration for Prometheus
+    apiVersion: 1
+
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: true
+        jsonData:
+          timeInterval: "15s"
+          httpMethod: "POST"
+  stomp-dashboard.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 5 },
+                  { "color": "red", "value": 10 }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "id": 1,
+          "options": {
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": ["lastNotNull"],
+              "fields": "",
+              "values": false
+            },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "title": "RabbitMQ Total Connections",
+          "type": "gauge",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rabbitmq_connections",
+              "legendFormat": "connections",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisLabel": "messages",
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "spanNulls": false
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "id": 2,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "title": "STOMP Subscription Queue Depth",
+          "type": "timeseries",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rabbitmq_queue_messages_ready{queue=~\"stomp-subscription.*\"})",
+              "legendFormat": "ready messages",
+              "refId": "A"
+            }
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["stomp", "rabbitmq", "messaging"],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "",
+      "title": "STOMP Broker Relay",
+      "uid": "stomp-relay-dashboard",
+      "version": 1
+    }
+kind: ConfigMap
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: grafana
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: grafana-provisioning
   namespace: jtoye-staging
 ---
 apiVersion: v1
@@ -908,6 +1250,34 @@ metadata:
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
   labels:
+    app: alertmanager
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: alertmanager
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: http
+    port: 9093
+    protocol: TCP
+    targetPort: 9093
+  selector:
+    app: alertmanager
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
     app: core-java
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
@@ -976,6 +1346,34 @@ spec:
     targetPort: 3000
   selector:
     app: frontend
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: grafana
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: grafana
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: http
+    port: 3000
+    protocol: TCP
+    targetPort: 3000
+  selector:
+    app: grafana
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
@@ -1064,6 +1462,189 @@ spec:
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
   type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: alertmanager
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: alertmanager
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+        documentation: https://github.com/jtoye/oaas-platform
+        maintainer: jtoye-devops-team
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9093"
+        prometheus.io/scrape: "true"
+      labels:
+        app: alertmanager
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: monitoring
+        environment: staging
+        version: v1
+    spec:
+      containers:
+      - args:
+        - --config.file=/etc/alertmanager/rendered/alertmanager.yml
+        - --storage.path=/alertmanager
+        image: prom/alertmanager:v0.27.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /-/healthy
+            port: 9093
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+        name: alertmanager
+        ports:
+        - containerPort: 9093
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /-/ready
+            port: 9093
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 25m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /etc/alertmanager/rendered
+          name: rendered
+          readOnly: true
+        - mountPath: /alertmanager
+          name: storage
+      initContainers:
+      - command:
+        - /bin/sh
+        - /etc/alertmanager/render/render.sh
+        env:
+        - name: ALERTMANAGER_SMTP_SMARTHOST
+          valueFrom:
+            configMapKeyRef:
+              key: alerting.smtp.smarthost
+              name: app-config
+        - name: ALERTMANAGER_SMTP_REQUIRE_TLS
+          value: "true"
+        - name: ALERTMANAGER_SMTP_FROM
+          valueFrom:
+            secretKeyRef:
+              key: from
+              name: alertmanager-smtp
+        - name: ALERTMANAGER_SMTP_TO
+          valueFrom:
+            secretKeyRef:
+              key: to
+              name: alertmanager-smtp
+        - name: ALERTMANAGER_SMTP_AUTH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: alertmanager-smtp
+        - name: ALERTMANAGER_SECONDARY_SMTP_SMARTHOST
+          valueFrom:
+            configMapKeyRef:
+              key: alerting.secondary.smtp.smarthost
+              name: app-config
+        - name: ALERTMANAGER_SECONDARY_SMTP_TO
+          valueFrom:
+            configMapKeyRef:
+              key: alerting.secondary.smtp.to
+              name: app-config
+        image: prom/alertmanager:v0.27.0
+        imagePullPolicy: IfNotPresent
+        name: render-config
+        resources:
+          limits:
+            cpu: 200m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /etc/alertmanager/tmpl
+          name: tmpl
+          readOnly: true
+        - mountPath: /etc/alertmanager/render
+          name: render
+          readOnly: true
+        - mountPath: /etc/alertmanager/smtp
+          name: smtp
+          readOnly: true
+        - mountPath: /etc/alertmanager/rendered
+          name: rendered
+      securityContext:
+        fsGroup: 65534
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+      volumes:
+      - configMap:
+          items:
+          - key: alertmanager.yml.tmpl
+            path: alertmanager.yml.tmpl
+          name: alertmanager-config
+        name: tmpl
+      - configMap:
+          items:
+          - key: render.sh
+            path: render.sh
+          name: alertmanager-config
+        name: render
+      - name: smtp
+        secret:
+          defaultMode: 256
+          items:
+          - key: password
+            path: password
+          secretName: alertmanager-smtp
+      - emptyDir: {}
+        name: rendered
+      - emptyDir: {}
+        name: storage
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1767,6 +2348,142 @@ spec:
           readOnlyRootFilesystem: false
           runAsNonRoot: true
           runAsUser: 1001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: grafana
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: monitoring
+    environment: staging
+  name: grafana
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+        documentation: https://github.com/jtoye/oaas-platform
+        maintainer: jtoye-devops-team
+        prometheus.io/path: /metrics
+        prometheus.io/port: "3000"
+        prometheus.io/scrape: "true"
+      labels:
+        app: grafana
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: monitoring
+        environment: staging
+        version: v1
+    spec:
+      containers:
+      - env:
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        - name: GF_SECURITY_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: grafana-admin
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: grafana-admin
+        - name: GF_SERVER_ROOT_URL
+          valueFrom:
+            configMapKeyRef:
+              key: grafana.root-url
+              name: app-config
+        image: grafana/grafana:10.2.2
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+        name: grafana
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /etc/grafana/provisioning/datasources
+          name: provisioning-datasources
+          readOnly: true
+        - mountPath: /etc/grafana/provisioning/dashboards
+          name: provisioning-dashboards
+          readOnly: true
+        - mountPath: /var/lib/grafana/dashboards
+          name: dashboards
+          readOnly: true
+        - mountPath: /var/lib/grafana
+          name: data
+      securityContext:
+        fsGroup: 472
+        runAsGroup: 472
+        runAsNonRoot: true
+        runAsUser: 472
+      volumes:
+      - configMap:
+          items:
+          - key: datasource.yml
+            path: prometheus.yml
+          name: grafana-provisioning
+        name: provisioning-datasources
+      - configMap:
+          items:
+          - key: dashboard-provider.yml
+            path: dashboard.yml
+          name: grafana-provisioning
+        name: provisioning-dashboards
+      - configMap:
+          items:
+          - key: stomp-dashboard.json
+            path: stomp-dashboard.json
+          name: grafana-provisioning
+        name: dashboards
+      - emptyDir: {}
+        name: data
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -2484,6 +3201,67 @@ metadata:
   labels:
     app.kubernetes.io/component: networkpolicy
     app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: alertmanager-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: alertmanager-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 587
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  - ports:
+    - port: 1025
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: mailhog
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 9093
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: alertmanager
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: core-java-allow
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
@@ -2593,6 +3371,36 @@ metadata:
   labels:
     app.kubernetes.io/component: networkpolicy
     app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: core-java-scrape-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: core-java-scrape-allow
+  namespace: jtoye-staging
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 9091
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: core-java
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: default-deny
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
@@ -2685,6 +3493,36 @@ metadata:
   labels:
     app.kubernetes.io/component: networkpolicy
     app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: edge-go-scrape-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: edge-go-scrape-allow
+  namespace: jtoye-staging
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 8080
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: edge-go
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: frontend-allow
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
@@ -2742,25 +3580,47 @@ metadata:
   annotations:
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
-    jtoye.co.uk/notes: |
-      No observability pods are shipped from this kustomization yet.
-      Replace with concrete policies when Grafana/Prometheus/Alertmanager
-      move into this namespace. Prometheus-scrape ingress rules for
-      core-java + edge-go live in 20-core-java.yaml + 30-edge-go.yaml.
-    jtoye.co.uk/placeholder: "true"
     maintainer: jtoye-devops-team
   labels:
     app.kubernetes.io/component: networkpolicy
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: observability-placeholder
+    app.kubernetes.io/name: grafana-allow
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
-  name: observability-placeholder
+  name: grafana-allow
   namespace: jtoye-staging
 spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 9090
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - port: 3000
+      protocol: TCP
   podSelector:
     matchLabels:
-      app: nonexistent-placeholder
+      app: grafana
   policyTypes:
   - Ingress
   - Egress
@@ -2831,6 +3691,207 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: pg-backup
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: postgres-exporter-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: postgres-exporter-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 5432
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 9187
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: postgres-exporter
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: prometheus-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: prometheus-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 9091
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: core-java
+  - ports:
+    - port: 8080
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: edge-go
+  - ports:
+    - port: 9187
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: postgres-exporter
+  - ports:
+    - port: 9121
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: redis-exporter
+  - ports:
+    - port: 9090
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+  - ports:
+    - port: 9093
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: alertmanager
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: grafana
+    ports:
+    - port: 9090
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 9090
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: redis-exporter-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: redis-exporter-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 10000
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 9121
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: redis-exporter
   policyTypes:
   - Ingress
   - Egress

@@ -1,45 +1,559 @@
 ---
 # 50-observability.yaml
 #
-# This file reserves the policy slot for observability workloads (Prometheus,
-# Grafana, Alertmanager) that we expect to run in a `monitoring` or
-# `jtoye-infrastructure` namespace. We do NOT ship those workloads from this
-# repo, so this file intentionally contains only a documentation-style
-# placeholder policy naming the expected labels.
+# =============================================================================
+# WHAT THIS FILE USED TO BE, AND WHY IT IS GONE (Incremental Betterment: the
+# displaced good is named, not silently deleted)
 #
-# The Prometheus scrape ingress rules for core-java (:9090) and edge-go (:8080)
-# are already in 20-core-java.yaml and 30-edge-go.yaml respectively — that's
-# where they live because the rule is attached to the TARGET pod, not the
-# scraper pod.
+#   Until plan 29-07 this file held exactly ONE policy, `observability-placeholder`,
+#   selecting `app: nonexistent-placeholder` — a deliberately inert document that
+#   reserved the slot and validated cleanly through kustomize and
+#   `kubectl --dry-run`. Its header gave the reason: *"We do NOT ship those
+#   workloads from this repo"*, and its own replacement condition: *"If a future
+#   phase ships Grafana / Prometheus / Alertmanager manifests in the
+#   jtoye-production namespace, replace the contents of this file with concrete
+#   policies."*
 #
-# If a future phase ships Grafana / Prometheus / Alertmanager manifests in
-# the jtoye-production namespace, replace the contents of this file with
-# concrete policies.
+#   BOTH HALVES OF THAT PREMISE ARE NOW FALSE. Plan 29-06 shipped Prometheus and
+#   the two exporters; plan 29-07 (this change) ships Alertmanager and Grafana.
+#   Five monitoring workloads are rendered by this kustomization in every target.
+#   So this file is executing its own written instruction.
+#
+#   WHAT THE PLACEHOLDER ACTUALLY PROVIDED, and what replaces it:
+#     - a valid document so the kustomization and dry-run stay clean
+#         -> replaced by seven real policies that are equally valid, and by the
+#            goldens, which now diff a real object set rather than an inert one
+#     - a written record of the expected labels
+#         -> replaced by policies that SELECT those labels for real
+#     - a note that scrape-ingress rules live with the TARGET pod, in
+#       20-core-java.yaml and 30-edge-go.yaml
+#         -> STILL TRUE, and still where they live. See "the two rules that are
+#            not in this file" at the bottom.
+#   Nothing the placeholder did is lost. It was a promissory note; this is the
+#   payment.
+#
+# WHY THIS IS URGENT RATHER THAN TIDY (recorded gap from plan 29-06)
+#   `00-default-deny.yaml` selects EVERY pod in the namespace with
+#   `podSelector: {}`. The staging cluster runs an ENFORCING Cilium dataplane
+#   (measured: `networkPolicy: cilium`, plan 29-10). With the placeholder in
+#   place, all five monitoring pods had NO NETWORK AT ALL: no DNS, every scrape
+#   target DOWN, both exporters unable to reach their datastores, and no alert
+#   able to leave the cluster. That reads as a total monitoring failure and is
+#   actually a network denial — which is precisely why 29-06 recorded it here in
+#   advance rather than leaving it to be diagnosed at 2 a.m.
+#
+# SHAPE: ONE POLICY PER WORKLOAD, ONE PORT PER RULE WHERE IT MATTERS
+#   Copied from 20-core-java.yaml's discipline. Egress rules are OR-combined and
+#   each rule is (peers x ports), so splitting a rule changes no security
+#   posture — what it buys is that a `replacements:` fieldPath like
+#   `spec.egress.1.ports.0.port` means "the Postgres port" and not "whichever
+#   port sorts first", and that INV-7's exact multiset assertion has something
+#   unambiguous to address.
+#
+#   THE APPEND-ONLY RULE APPLIES HERE TOO. Every kustomization.yaml that
+#   references these policies addresses egress rules BY INDEX. New rules go at
+#   the END. Inserting one silently retargets an existing replacement onto its
+#   neighbour, which is #271's failure shape reached through a different door.
+#
+# INV-7 MOVES IN THE SAME COMMIT, AND THAT IS THE POINT
+#   Three of these policies carry an `ipBlock` egress rule (both exporters to
+#   their managed datastore, Alertmanager to the SMTP relay). INV-7's second arm
+#   FAILS a policy that renders an ipBlock rule with no entry in
+#   `NETPOL_IPBLOCK_EXPECTED` — an undeclared hole is exactly what that arm
+#   exists to prevent. So all three are declared in
+#   k8s/scripts/check-render-invariants.sh in this same change. That friction is
+#   deliberate: an egress allow-list is a security boundary. It fired for real
+#   while this file was being written, on all four targets, before the map was
+#   updated.
+# =============================================================================
 
 # -----------------------------------------------------------------------------
-# Placeholder policy — matches no pods today (app=nonexistent-placeholder).
-# Intentionally inert so kustomize + kubectl --dry-run validate it cleanly
-# while leaving the file available for future population.
+# PROMETHEUS — scrapes everything, is scraped by nobody, reachable only by Grafana
+#
+# NO INGRESS FROM ANYWHERE EXCEPT GRAFANA. Prometheus has no authentication of
+# its own: anything that can reach :9090 can read every series this platform
+# emits. D-19 keeps it cluster-internal and INV-8 makes an Ingress on it a CI
+# failure; this policy is the other half — even INSIDE the cluster, only the one
+# workload that needs to query it may.
+#
+# kubectl port-forward still works and is the documented way in
+# (prometheus-deployment.yaml's header). Port-forward traffic originates from the
+# node's kubelet in the host network namespace, not from a pod, and Cilium's
+# default host-to-local-pod allowance covers it. It is not a hole this policy
+# opens; it is a path NetworkPolicy does not govern, which is why the
+# port-forward instruction is not a contradiction of this rule.
 # -----------------------------------------------------------------------------
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: observability-placeholder
+  name: prometheus-allow
   labels:
-    app.kubernetes.io/name: observability-placeholder
+    app.kubernetes.io/name: prometheus-allow
     app.kubernetes.io/component: networkpolicy
     app.kubernetes.io/part-of: jtoye-platform
-  annotations:
-    jtoye.co.uk/placeholder: "true"
-    jtoye.co.uk/notes: |
-      No observability pods are shipped from this kustomization yet.
-      Replace with concrete policies when Grafana/Prometheus/Alertmanager
-      move into this namespace. Prometheus-scrape ingress rules for
-      core-java + edge-go live in 20-core-java.yaml + 30-edge-go.yaml.
 spec:
   podSelector:
     matchLabels:
-      app: nonexistent-placeholder
+      app: prometheus
   policyTypes:
     - Ingress
     - Egress
+  ingress:
+    # Grafana's provisioned datasource (http://prometheus:9090) — the only
+    # in-cluster client.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: grafana
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Prometheus scrapes ITSELF through its own Service (the `prometheus` job
+    # targets prometheus:9090 — plan 29-06 changed it off the loopback literal
+    # because INV-4 forbids that in every non-local render). Egress permits the
+    # call; without this the same policy denies its arrival.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+  egress:
+    # DNS. Exactly one key in the kube-dns selector — INV-3 asserts that, because
+    # the label transformer once injected extra keys here and narrowed the
+    # selector to zero pods, costing core-java all DNS under an enforcing CNI.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # core-java's INTERNAL management port. The `core-java` scrape job targets
+    # :9091, not the app port: 9090 serves no actuator at all in the prod profile
+    # (core-java-deployment.yaml:27-33). A policy permitting 9090 here would look
+    # right and scrape nothing.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: core-java
+      ports:
+        - protocol: TCP
+          port: 9091
+    # edge-go serves /metrics on its app port in k8s (EDGE_MANAGEMENT_PORT is
+    # deliberately unset here — see check-env-contract.sh's allowlist entry).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: edge-go
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres-exporter
+      ports:
+        - protocol: TCP
+          port: 9187
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis-exporter
+      ports:
+        - protocol: TCP
+          port: 9121
+    # The self-scrape, outbound half.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Alertmanager — the `alerting:` block in prometheus-config.yaml, i.e. the
+    # entire paging path. Without this rule every rule still evaluates, every
+    # alert still shows as firing in the UI, and nobody is ever told.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: alertmanager
+      ports:
+        - protocol: TCP
+          port: 9093
+---
+# -----------------------------------------------------------------------------
+# ALERTMANAGER — receives from Prometheus, sends mail, and nothing else
+#
+# THE SMTP EGRESS IS THE ONE RULE THAT LEAVES THE CLUSTER, and it is 587-ONLY to
+# 0.0.0.0/0 minus RFC1918. Widening it to 443 "because everything else uses 443"
+# would hand this pod a general internet egress it has no use for.
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager-allow
+  labels:
+    app.kubernetes.io/name: alertmanager-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: alertmanager
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9093
+  egress:
+    # DNS — and here it is load-bearing twice over: the smarthost is a DNS name.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # spec.egress.1 — THE SMTP RELAY (D-17). Public, because the relay is Gmail.
+    #
+    # THE PORT IS AUTHORED HERE BUT IT IS NOT INDEPENDENT. app-config
+    # `alerting.smtp.smarthost` is the single declaration of the relay, and its
+    # port suffix must equal this one. A kustomize `replacements:` cannot split
+    # `host:port`, so INV-7's ipBlock arm derives `__SMTP_PORT__` from that
+    # app-config value instead: change the smarthost to a relay on 465 or 2525
+    # without changing this line and CI FAILS by name. That is the same coupling
+    # db.port has, enforced by the gate rather than by a render-time rewrite.
+    #
+    # 587 is Gmail's submission port and requires STARTTLS, which the Deployment
+    # sets as a visible literal beside the smarthost env.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 587
+    # spec.egress.2 — the STAGING capture relay (D-13), in this namespace.
+    #
+    # INERT IN BASE, LOCAL AND PRODUCTION BY CONSTRUCTION: no pod carries
+    # `app: mailhog` there, so this rule selects nothing and grants nothing.
+    # Mailhog is a STAGING-ONLY resource (plan 29-09 adds k8s/staging/mailhog.yaml
+    # per D-13) because an application-email black hole in production would
+    # silently swallow real vendor mail.
+    #
+    # It is authored HERE rather than in a staging patch because the policy
+    # belongs with the workload it governs, and because a staging-only NetworkPolicy
+    # patch would be the one piece of the alert path that no other target's render
+    # ever exercises. The staging app-config keys that turn the second sink ON
+    # (alerting.secondary.smtp.*) and this rule move together.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mailhog
+      ports:
+        - protocol: TCP
+          port: 1025
+---
+# -----------------------------------------------------------------------------
+# GRAFANA — the one monitoring workload that becomes publicly reachable (D-19)
+#
+# Ingress from the ingress-nginx controller is authored NOW even though the
+# Ingress object itself arrives in plan 29-08. The alternative is worse: an
+# Ingress whose backend Service exists and whose pods deny the controller answers
+# 504 through a correctly-published hostname with a valid certificate, which is
+# the most expensive possible way to discover a missing ingress rule.
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-allow
+  labels:
+    app.kubernetes.io/name: grafana-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Same peer shape as frontend-allow and edge-go-allow use for their published
+    # surfaces.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The provisioned datasource, and the ONLY thing Grafana may reach. In
+    # particular there is deliberately NO public egress: the compose analog's
+    # GF_INSTALL_PLUGINS is not carried over (grafana-deployment.yaml records the
+    # measurement), so nothing here needs to fetch from grafana.com, and a
+    # dashboard that could query arbitrary external URLs is an SSRF surface behind
+    # a login.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+---
+# -----------------------------------------------------------------------------
+# POSTGRES-EXPORTER — scraped by Prometheus, dials the managed Postgres
+#
+# The out-of-cluster rule exists for the reason 20-core-java.yaml's does: D-09
+# puts the database on an Azure Flexible Server, which is in no namespace, so an
+# in-cluster `namespaceSelector` rule cannot address it and a 443-only public
+# rule denies its port. Without this rule `pg_up` is 0 and DatabaseDown fires
+# permanently — an alert about the network, worded as an alert about the database.
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-exporter-allow
+  labels:
+    app.kubernetes.io/name: postgres-exporter-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres-exporter
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9187
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # spec.egress.1 — MANAGED POSTGRES. NEITHER VALUE BELOW IS AUTHORED: both are
+    # overwritten at render time from app-config `db.egress-cidr` / `db.port` by
+    # the `replacements:` block in k8s/base/kustomization.yaml AND in every
+    # overlay's own kustomization.yaml — a base replacement does not re-run against
+    # an overlay's patched ConfigMap, which plans 29-04 and 29-10 each measured.
+    # The committed values are the base defaults you get if a replacement is ever
+    # removed. Change app-config, never this line.
+    #
+    # No empty `namespaceSelector: {}` peer beside the ipBlock, and the RFC1918
+    # `except:` entries must be dropped in the same change that narrows the cidr
+    # to a /32 — both for the reasons written out in 20-core-java.yaml.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0   # replaced from app-config db.egress-cidr
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432   # managed Postgres — replaced from app-config db.port
+---
+# -----------------------------------------------------------------------------
+# REDIS-EXPORTER — scraped by Prometheus, dials the managed cache
+#
+# Same shape, same reason. The staging cache is Azure Managed Redis on TLS 10000
+# (it was 6380 until 2026-08-10, when Azure Cache for Redis stopped being
+# creatable at all), so this port genuinely varies per environment — which is
+# exactly why it is derived rather than authored.
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-exporter-allow
+  labels:
+    app.kubernetes.io/name: redis-exporter-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: redis-exporter
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9121
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # spec.egress.1 — MANAGED REDIS. cidr <- app-config redis.egress-cidr;
+    # port <- app-config redis.port. Neither is authored; see the postgres-exporter
+    # rule above and 20-core-java.yaml for the full rationale.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0   # replaced from app-config redis.egress-cidr
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 6379   # managed Redis — replaced from app-config redis.port
+---
+# =============================================================================
+# THE TWO RULES THAT ARE NOT IN THIS FILE — and why they are, in fact, here
+#
+# The placeholder's header was right about the principle: a scrape-ingress rule
+# is attached to the TARGET pod, and 20-core-java.yaml / 30-edge-go.yaml each
+# already carry one. What it could not anticipate is that BOTH of those rules
+# admit only `namespaceSelector: monitoring` and
+# `namespaceSelector: jtoye-infrastructure` — two namespaces this repository does
+# not create. Prometheus now runs in the SAME namespace as its targets, matching
+# neither selector, so both scrapes are DENIED under an enforcing CNI while every
+# other layer looks correct.
+#
+# The two policies below are ADDITIVE: Kubernetes unions the ingress rules of
+# every policy selecting a pod, so they grant the in-namespace scrape without
+# touching the existing cross-namespace grant (which stays, in case a `monitoring`
+# namespace ever exists — displacing a working good to add a new one is exactly
+# what the Incremental Betterment doctrine forbids). They live HERE rather than in
+# 20-/30- for one concrete reason beyond tidiness: those two files' egress rules
+# are addressed BY INDEX from four kustomization.yaml files, and every edit to
+# them is an opportunity to shift an index. A separate additive policy cannot.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: core-java-scrape-allow
+  labels:
+    app.kubernetes.io/name: core-java-scrape-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: core-java
+  # INGRESS ONLY. Naming Egress here as well would make this an egress policy
+  # selecting core-java with an EMPTY rule list — and an empty egress rule list
+  # grants nothing while still bringing the pod under egress policy, which is the
+  # one way an "additive" policy can subtract. core-java's egress stays entirely
+  # in core-java-allow.
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9091
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: edge-go-scrape-allow
+  labels:
+    app.kubernetes.io/name: edge-go-scrape-allow
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/part-of: jtoye-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: edge-go
+  # Ingress only, for the same reason as core-java-scrape-allow above.
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+# =============================================================================
+# STILL OWED, RECORDED SO IT IS NOT REDISCOVERED AT 2 A.M.
+#
+#   - keycloak (plan 29-08). The `keycloak` scrape job targets keycloak:8080 and
+#     is DOWN until that workload lands. Prometheus needs an egress rule to
+#     `app: keycloak` on 8080 and Keycloak needs the matching ingress. Both belong
+#     with the manifests that create it.
+#   - jtoye-rabbitmq (plan 29-09). The `rabbitmq` and `rabbitmq-queues` jobs
+#     target jtoye-rabbitmq:15692. The broker is operator-managed, so its pod
+#     labels are the operator's to declare — which is why the rule belongs with
+#     the plan that installs it, and why guessing a selector here would produce a
+#     rule that silently matches nothing.
+#   - core-java -> mailhog:1025 (plan 29-09). Application email in staging is
+#     captured by the same Mailhog this file already lets Alertmanager reach, but
+#     the app-side egress lives in core-java-allow.
+#   - THE core-java SERVICE DOES NOT EXPOSE 9091. `prometheus-config.yaml` scrapes
+#     `core-java:9091` while core-java-deployment.yaml:56-62 exposes 9091 on the
+#     POD only and deliberately keeps it off the Service. The policy above is
+#     correct as written — NetworkPolicy governs pod IP:port, not Service ports —
+#     but the scrape will still fail to connect until the Service gains a second
+#     ClusterIP port (which does not publish it: the Ingress names its backend
+#     port explicitly). Recorded in this phase's deferred-items.md with the
+#     measurement; it is 29-06's file, not this plan's.
+# =============================================================================

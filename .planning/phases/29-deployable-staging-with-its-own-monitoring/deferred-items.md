@@ -1,0 +1,65 @@
+# Phase 29 — deferred items
+
+Out-of-scope discoveries made while executing this phase's plans. Each is
+**recorded rather than fixed**, with the measurement that found it, so the next
+reader neither re-diagnoses it nor trusts a green gate that does not cover it.
+
+---
+
+## DEF-29-1 — the `core-java` Service does not expose 9091, so its scrape cannot connect
+
+- **Found during:** plan 29-07, Task 3, while writing Prometheus's egress rule
+- **Owner:** whoever owns the core-java manifest (29-06 authored the scrape target;
+  `k8s/base/core-java-deployment.yaml` is not in 29-07's `files_modified`)
+
+**The measurement**
+
+| Fact | Where | Value |
+|---|---|---|
+| scrape target | `k8s/base/monitoring/prometheus-config.yaml:179` | `core-java:9091` |
+| container port | `k8s/base/core-java-deployment.yaml:60-62` | `9091` (name `management`) |
+| **Service ports** | `k8s/base/core-java-deployment.yaml:692-696` | **`9090` only** |
+
+`core-java:9091` resolves to the Service ClusterIP, which has no port 9091, so the
+connection is refused. The `core-java` scrape target will be **DOWN on first
+deploy** — and the manifest says the omission is deliberate: *"Deliberately NOT
+added to the Service/Ingress below, so metrics + probe surface stay off the public
+network."*
+
+**Why it is not fixed here.** Two different layers. NetworkPolicy governs pod
+`IP:port`, so 29-07's `prometheus-allow` egress rule (`app: core-java` on 9091) is
+correct as written and needs no change either way. The Service-port gap is a
+service-discovery defect in another plan's file.
+
+**The likely fix, with the objection already answered.** Add a second ClusterIP
+port (`9091`, name `management`) to the `core-java` Service. That does **not**
+publish it: the Ingress names its backend port explicitly (`number: 9090`), and a
+ClusterIP port is cluster-internal by definition — so the manifest's stated intent
+("off the public network") survives. The alternative is `kubernetes_sd_config`
+pod-level discovery, which 29-06 deliberately avoided because
+`check-alert-liveness.sh` VOIDs on any job name it does not recognise and static
+targets are what keep the eight names fixed.
+
+**How it will surface if nobody acts:** `up{job="core-java"} == 0`, and the
+`ServiceDown`/app-tier rules keyed on it firing permanently against a perfectly
+healthy application.
+
+---
+
+## DEF-29-2 — `check-env-contract.sh`'s EDGE_MANAGEMENT_PORT reason is now stale
+
+- **Found during:** plan 29-07, Task 1, while checking the gate was unaffected
+- **Owner:** whoever next edits that allowlist
+
+`k8s/scripts/check-env-contract.sh:186` justifies the omission with *"NOTHING
+SCRAPES EDGE-GO IN K8S AT ALL. k8s/ ships zero monitoring manifests (DPLY-03) — no
+Prometheus, no ServiceMonitor"*. Plan 29-06 made that false: there is a Prometheus,
+and it scrapes `edge-go:8080`.
+
+**The CONCLUSION is still correct and the entry must stay** — k8s deliberately
+leaves `EDGE_MANAGEMENT_PORT` unset so `/metrics` stays on 8080, which is exactly
+what the scrape config targets and what the pod annotations advertise. Only the
+stated reason has gone out of date, and the entry's own text asks for the revisit
+to happen "as ONE change with DPLY-03". Recorded rather than edited because
+rewriting another gate's allowlist reason is not this plan's change, and a wrong
+reason attached to a right entry is a documentation defect, not a live one.

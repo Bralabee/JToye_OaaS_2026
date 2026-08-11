@@ -411,3 +411,55 @@ data:
   webhook.delivery.max-attempts: "8"
   webhook.delivery.retention-days: "30"
   webhook.target.block-private-ranges: "true"
+
+  # ===========================================================================
+  # MONITORING / ALERTING (DPLY-03, plan 29-07). Read by the Alertmanager and
+  # Grafana workloads in k8s/base/monitoring/, NOT by core-java — which is why
+  # these four are not in any application*.yml and check-env-contract.sh (which
+  # reads the three BUILT services' deployments) does not see them.
+  #
+  # WHY THE DESTINATION ADDRESSES ARE NOT HERE. D-17's inbox and the SMTP
+  # username live in the `alertmanager-smtp` Secret alongside the app password,
+  # and scripts/staging-secrets.sh:507-517 records the reason: ONE source for the
+  # whole destination, so a missing To refuses at bootstrap instead of sending
+  # nowhere in silence. Restating them here would be two sources for one fact —
+  # the #271 shape — and would put the owner's personal inbox in a tracked file.
+  # ===========================================================================
+
+  # --- D-17: the primary relay, the one a human actually reads -----------------
+  # SOURCE: 29-CONTEXT.md D-17 — "real email via Gmail SMTP (smtp.gmail.com app
+  # password) to the owner's real inbox". 587 is Gmail's submission port and
+  # requires STARTTLS, which the Deployment sets as a visible literal beside it.
+  # The app password itself is never a value: Alertmanager reads it from the
+  # mounted Secret file (see alertmanager-config.yaml's header for the measurement
+  # that chose smtp_auth_password_file over a rendered literal).
+  alerting.smtp.smarthost: "smtp.gmail.com:587"
+
+  # --- D-13: the SECOND sink in the SAME receiver, empty by default ------------
+  # EMPTY MEANS THE ENTRY IS OMITTED ENTIRELY, not blanked — an explicit `if` in
+  # render.sh, because a blanked `to: ''` is a delivery attempt to the empty
+  # address on every alert. So base and production carry ONE Gmail destination.
+  #
+  # Staging sets both to its in-cluster capture relay. That is what makes
+  # check-alert-liveness.sh L-3 able to INSPECT the delivery without a probe-only
+  # route: the sink shares the receiver, the route and the grouping with the human
+  # inbox, so the message the gate reads is the message the human got. Assumption
+  # A1 (Alertmanager fans out to every email_configs entry in one receiver) was
+  # MEASURED with a control arm in plan 29-03 before this shape was written.
+  #
+  # alerting.secondary.smtp.to is also the value L3_SINK_TO must be given, which
+  # is why it is a config key rather than a literal in a workflow: the render and
+  # the gate read the same declaration.
+  alerting.secondary.smtp.smarthost: ""
+  alerting.secondary.smtp.to: ""
+
+  # --- D-19: Grafana's public origin ------------------------------------------
+  # GF_SERVER_ROOT_URL. Grafana builds every absolute link from this — OAuth
+  # redirects, alert notification links, share URLs, and the OIDC callback if one
+  # is ever configured — so a wrong value produces a login loop or a link that
+  # sends a reader to another environment, both while the UI itself looks fine.
+  # SOURCE: the same olajay.co.uk platform origin the api.url / frontend.url keys
+  # above use, with the grafana- prefix D-19 names. Each overlay patches its own;
+  # the base value is production-correct. Production is NOT deployed this phase
+  # (D-08), so this base value is a declaration, not a live host.
+  grafana.root-url: "https://grafana.olajay.co.uk"
