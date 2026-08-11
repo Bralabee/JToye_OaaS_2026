@@ -24,8 +24,40 @@
 # ops touch only the host strings, leaving the backends untouched.
 #
 # Index-coupled by necessity (rules[0]=api, rules[1]=app in k8s/base/ingress.yaml).
-# If the base reorders or adds a rule, `kustomize build` FAILS LOUDLY on a missing
-# path rather than silently mis-patching — which is the behaviour we want.
+#
+# ### CORRECTION, 2026-08-11 (plan 29-08) — MEASURED, and the old claim was WRONG.
+#
+# This header used to say: *"If the base reorders or adds a rule, `kustomize build`
+# FAILS LOUDLY on a missing path rather than silently mis-patching — which is the
+# behaviour we want."* Plan 29-08 ran that as a deliberate break arm, because a
+# safety property nobody has watched fail is not a safety property. It is FALSE in
+# the case that matters most.
+#
+# THE ARM: a well-formed rule inserted AHEAD of index 0 in k8s/base/ingress.yaml.
+# Every JSON6902 path stayed valid — there is nothing missing to fail on — so
+# `kubectl kustomize k8s/staging` exited **0** and produced:
+#
+#     api-staging.olajay.co.uk      -> frontend      <- SWAPPED
+#     app-staging.olajay.co.uk      -> core-java     <- SWAPPED
+#     app.olajay.co.uk              -> frontend      <- PRODUCTION host, unpatched,
+#                                                       inside the staging render
+#
+# The loud failure only happens when the base change makes a path DISAPPEAR (a
+# removed rule, a shortened list). An ADDED rule is precisely the case that stays
+# silent, and it is also the likelier edit.
+#
+# WHAT ACTUALLY HOLDS THE LINE, measured in the same arm:
+#     kubectl kustomize          rc=0   <- saw nothing
+#     check-render-invariants.sh rc=0   <- saw nothing (INV-6 only asks whether a
+#                                          backend RESOLVES; all four still did)
+#     render-golden.sh           rc=1   <- CAUGHT IT
+# So the guard is the committed golden render, not the patch mechanism. That is
+# why regenerating a golden must always be a reviewed diff with every changed line
+# accounted for, and never a reflex `--write` to make CI green.
+#
+# THE OPERATIONAL RULE IS UNCHANGED AND NOW HAS A REASON THAT IS TRUE: APPEND
+# ONLY. New rules go at the END of the base list and are added here with `op: add`
+# and a `-` path. Never insert.
 #
 # The secret NAME keeps its `jtoye-` prefix: that is the product identifier
 # (J'TOYE DIGITAL LTD), not the domain. Only hostnames moved.
@@ -47,3 +79,71 @@
 - op: replace
   path: /spec/rules/1/host
   value: app-staging.olajay.co.uk
+
+# =============================================================================
+# THE TWO NEW HOSTS (plan 29-08 / DPLY-01 / D-19, 2026-08-11)
+#
+# `op: add`, APPENDED, NEVER INSERTED — and that is the whole reason this section
+# is at the BOTTOM of the file. Every `op: replace` above addresses its target BY
+# POSITION (`/spec/tls/0/hosts/0`, `/spec/rules/0/host`, `/spec/rules/1/host`),
+# because IngressSpec.rules carries no patchMergeKey. An op that inserted ahead of
+# index 0 or 1 would leave those replaces pointing at the wrong rule and silently
+# publish the api hostname on the app backend. `-` means "append to the end of the
+# list", so the existing indices cannot move.
+#
+# SAN FIRST, RULE SECOND, per host — the order k8s/base/ingress.yaml's own removal
+# note specifies. It is not cosmetic here: all four SANs share ONE
+# `jtoye-staging-tls` Secret and are issued as a SINGLE ACME order, so a SAN whose
+# rule (and therefore whose backend) does not exist yet is a challenge that cannot
+# be answered, and one failed challenge fails the order for api- and app- too.
+#
+# WHY THESE TWO CAN BE ADDED AT ALL, WHEN THE KEYCLOAK SAN WAS REMOVED IN 26-04:
+# both backends now exist in the SAME render. `keycloak` is the ClusterIP Service
+# from k8s/base/keycloak/ (D-02, added in this same change) and `grafana` is the
+# one from k8s/base/monitoring/ (D-19, plan 29-07, which landed the Service a plan
+# early precisely so this rule could name it). INV-6 in
+# k8s/scripts/check-render-invariants.sh fails the build if either stops
+# resolving, with an EMPTY allowlist behind it.
+#
+# GRAFANA IS THE ONLY MONITORING SURFACE THAT MAY BE PUBLISHED (D-19): it has a
+# login of its own. Prometheus and Alertmanager have none — a reachable Prometheus
+# hands over every series the platform emits, and a reachable Alertmanager is a
+# mute button for the entire alerting surface. INV-8 makes an Ingress on either a
+# CI failure rather than a review question.
+#
+# DNS IS PLAN 29-10's AND IT IS DELIBERATELY NOT DONE YET. Adding the name here is
+# what that plan waits for; publishing a hostname the controller serves before its
+# A record exists is inert, whereas the reverse order is the failure this file's
+# header is about.
+- op: add
+  path: /spec/tls/0/hosts/-
+  value: auth-staging.olajay.co.uk
+- op: add
+  path: /spec/rules/-
+  value:
+    host: auth-staging.olajay.co.uk
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 8080
+- op: add
+  path: /spec/tls/0/hosts/-
+  value: grafana-staging.olajay.co.uk
+- op: add
+  path: /spec/rules/-
+  value:
+    host: grafana-staging.olajay.co.uk
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000

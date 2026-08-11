@@ -14,6 +14,14 @@ metadata:
   name: jtoye-sse-ingress
   annotations:
     # TLS Configuration (mirrors jtoye-ingress)
+    #
+    # ALSO REPLACED AT RENDER TIME from app-config `cert-manager.cluster-issuer`
+    # (plan 29-08) — and this Ingress is not an afterthought in that change, it is
+    # a requirement of it. Both Ingresses name the SAME certificate Secret in each
+    # environment (`jtoye-staging-tls` / `jtoye-tls`), so two DIFFERENT issuers
+    # across them would put two cert-manager Certificates in contention for one
+    # Secret. Read the full rationale on k8s/base/ingress.yaml's copy of this
+    # annotation; the literal here is the same base default, unchanged.
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
