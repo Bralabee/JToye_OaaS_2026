@@ -183,19 +183,21 @@ data:
   # SOURCE: byte-identical to the application.yml default `${REDIS_SSL:false}`,
   # so the base render and every compose developer are unchanged; the key exists
   # so an overlay pointing at a managed cache can turn TLS on WITHOUT a code
-  # change. Azure Cache for Redis Basic disables plaintext 6379 and serves TLS on
-  # 6380, so staging sets this "true" AND patches redis.port to "6380" — the two
-  # always move together.
+  # change. The managed cache is TLS-only with no plaintext port, so staging sets
+  # this "true" AND patches redis.port — the two always move together. (Staging's
+  # port is 10000 for Azure Managed Redis; it was 6380 for Azure Cache for Redis
+  # Basic until 2026-08-10, when that service stopped being creatable.)
   redis.ssl: "false"
 
   # ---------------------------------------------------------------------------
   # Redis EGRESS CIDR — the address half of redis.port, for the same reason
   # db.egress-cidr exists (Blocker D / plan 29-04)
   #
-  # D-09 puts the cache on Azure Cache for Redis Basic C0, which is outside the
-  # cluster and serves TLS on 6380 with the plaintext 6379 port disabled. The
+  # D-09 puts the cache on a managed Azure service outside the cluster, TLS-only
+  # with no plaintext port (Azure Managed Redis Balanced B0 on 10000 since
+  # 2026-08-10; previously Azure Cache for Redis Basic C0 on 6380). The
   # in-cluster `jtoye-infrastructure` rule therefore does not apply to it, and the
-  # public-443 rule denies 6380 — so without this the staging cache is
+  # public-443 rule denies that port — so without this the staging cache is
   # unreachable under an enforcing CNI.
   #
   # SOURCE and narrowing rules are identical to db.egress-cidr above; read that

@@ -37,7 +37,7 @@ Downstream plans grep for these exact key names. All 10 are defined.
 | `PG_SERVER_VERSION` | `16` | **NOT optional** — Blocker C. See §5 |
 | `PG_SERVER_SKU` | `Standard_B2s` Burstable | implied by the owner accepting the £147.00 costed estate unchanged (§3, Q2). **B1ms is ruled out** — see §5 |
 | `PG_ACCESS_MODE` | `public-with-firewall` | research default; read by 29-04 Task 1. The firewall rule must be scoped to the AKS egress IP — the wide rule on `snackpass-pg` is explicitly NOT the shape to copy (29-10 T-29-10-01) |
-| `REDIS_SKU` | Azure Cache for Redis `Basic C0` | ADR-0002 / D-09; £15.48/mo line of the costed estate |
+| `REDIS_SKU` | Azure Managed Redis `Balanced B0` | **SUPERSEDED 2026-08-10 by plan 29-10, owner-approved.** Was Azure Cache for Redis `Basic C0` (£15.48/mo). That service can no longer be created — `az redis create` returns `BadRequest: Azure Cache for Redis is retiring, create Azure Managed Redis instance instead`, measured live while provisioning. Balanced B0 is **£9.93/mo**, so the forced move is £5.55/mo CHEAPER. Serves TLS on **port 10000**, not 6380. See §9 |
 | `SNACKPASS_DISPOSITION` | `scale-to-zero` | **owner decision 2026-08-10** (see §3, Q1) |
 | `MONTHLY_CEILING_GBP` | `150` | D-03 **unchanged** — the owner did not supersede it (see §3, Q2) |
 
@@ -276,7 +276,7 @@ Two further measured constraints on the same server shape:
 | **O-1** | ~48h after 29-10 applies `minReplicas: 0`, re-run the Container Apps meter query and confirm `Standard vCPU Idle Usage` and `Standard Memory Idle Usage` have dropped toward zero. If they have not, `scale-to-zero` did not work and the estate must be revisited. | 29-10 (apply) → a later verification | F1 is a mechanism claim about the future. Recording it as proven would be exactly the "structural green over a dead feature" failure — the config would read `minReplicas: 0` while the meters kept billing. |
 | **O-2** | Land a dated horizon row for the `snackpass-pg` free-window expiry: **~2027-07-21** (creation 2026-07-21 + 12 months), impact ~£21/month B1ms, **exact date to be confirmed from Azure Portal → Cost Management → Credits + offers**. The *reason* is already written into ADR-0002's 2026-08-10 section, so it survives independently of the row. | **29-09** (it already edits `infra/dependency-horizons.yaml` for the `rabbitmq-k8s` row — 29-01 deliberately does not touch that file, to avoid a parallel-wave conflict) | It breaches the £150 ceiling with **no deploy and no code change**. Unrecorded, it is discovered on an invoice. |
 | **O-3** | ~~Carry the PG16-vs-PG15 skew in ADR-0002 with its evidence, naming both the `CLAUDE.md` PostgreSQL 15 line and the `postgres:15-alpine` compose pin it diverges from.~~ **DONE 2026-08-10** — ADR-0002 § "2026-08-10 — Signed…", subsection "PostgreSQL **16** is a requirement of this decision, not a preference". | 29-01 Task 3 ✓ | A version skew that lives only in a SKU argument is indistinguishable from an accident. |
-| **O-5** | Land a horizon row for the **Azure Cache for Redis Basic retirement, 2028-09-30** (Enterprise 2027-03-30). Recorded in ADR-0002's 2026-08-10 section; long horizon, no action this phase. | 29-09 | Accepting a managed service means accepting its retirement clock. |
+| **O-5** | ~~Land a horizon row for the **Azure Cache for Redis Basic retirement, 2028-09-30** (Enterprise 2027-03-30); long horizon, no action this phase.~~ **FALSIFIED 2026-08-10 by plan 29-10 — the horizon binds TODAY, not 2028.** `az redis create` returns `BadRequest: Azure Cache for Redis is retiring, create Azure Managed Redis instance instead`. Superseded by the move to Azure Managed Redis Balanced B0 (§9). 29-09 still owns the `infra/dependency-horizons.yaml` row, which should now record the *Managed Redis* clock rather than a retirement that has already arrived. | 29-09 | Accepting a managed service means accepting its retirement clock — **and a dated row is not enough.** This row's own date said "no action this phase", so it could not have caught a retirement that started refusing creates two years early. A horizon must be re-measured, not just re-read (see the recorded `trap_deferral_reread_only_on_expiry` shape). |
 | **O-4** | 29-10 must record the **after** replica state for all six apps against the **before** table in §2.2. | 29-10 | "The disposition was applied" is not observable without both readings. |
 
 ---
@@ -402,6 +402,71 @@ Nothing here is omitted or softened: an unrecorded blocker reads exactly like a 
 
 ---
 
+---
+
+## 9. Redis: superseded 2026-08-10 by measurement, owner-approved
+
+**Appended by plan 29-10.** The convention of this file is that dated records are appended, never
+rewritten; §1's `REDIS_SKU` cell and §6's O-5 row carry pointers here.
+
+### 9.1 What was measured
+
+While provisioning the estate, STEP 7 of `scripts/azure-staging-provision.sh` ran the command this
+record's own `REDIS_SKU` value implies:
+
+```
+$ az redis create -g jtoye-rg -n jtoye-staging-redis --location uksouth \
+    --sku Basic --vm-size c0 --minimum-tls-version 1.2 --subscription c483d353-…
+
+ERROR: (BadRequest) Azure Cache for Redis is retiring, create Azure Managed Redis
+       instance instead. Learn more: https://aka.ms/AzureCacheForRedisRetirement
+RequestID=0f2ed6cd-fe5d-4b16-9992-74a4dfed65ef
+```
+
+**The API refuses new Azure Cache for Redis resources outright.** This is not a deprecation warning
+and not a future date — it is a hard refusal, today.
+
+### 9.2 Why this is worth writing down beyond the SKU change
+
+§6's obligation **O-5** recorded exactly this retirement, with the date **2028-09-30**, and
+concluded "long horizon, no action this phase". That conclusion was correct given the date and
+wrong given reality. The instructive part is the mechanism: **a horizon row is re-read on its own
+expiry, so a row whose reason becomes false before its date survives unexamined.** The row could
+never have caught this, because its date said there was nothing to check.
+
+The general lesson, consistent with this repo's recorded traps: a dated deferral must be re-measured
+against the world, not just re-read against the calendar.
+
+### 9.3 The replacement, priced live
+
+Azure retail price API, GBP, `uksouth`, 2026-08-10 (88 items under `serviceName eq 'Redis Cache'`):
+
+| Product | SKU | Rate | £/mo |
+|---|---|---|---|
+| **Azure Managed Redis — Balanced** | **B0** | £0.0136/hr | **9.93** |
+| Azure Managed Redis — Balanced | B1 | £0.0280/hr | 20.44 |
+| ~~Azure Redis Cache Basic~~ | C0 | £0.0212/hr | 15.48 — **cannot be created** |
+
+**`REDIS_SKU = Azure Managed Redis Balanced B0`**, approved by the owner 2026-08-10 including the
+billable creation. The move is **£5.55/mo cheaper** than the blocked plan, so estate headroom
+improves rather than degrades.
+
+### 9.4 What the change touches, and why the port matters most
+
+Azure Managed Redis serves TLS on **port 10000**, where Azure Cache Basic served **6380**. The
+staging cluster runs an **enforcing Cilium dataplane**, and `k8s/staging/kustomization.yaml` feeds
+`redis.port` by `replacements:` into the `core-java-allow` NetworkPolicy egress rule — so a stale
+port is not a warning, it silently drops every cache call.
+
+`redis.ssl: "true"` is **unchanged and still correct**: Managed Redis is TLS-only, exactly as Basic
+was, so 29-02's TLS work carries over untouched. Only the port moves.
+
+`infra/dependency-horizons.yaml` is deliberately **not** edited here — 29-09 owns that file, and two
+plans editing one YAML in parallel is the conflict 29-01 already avoided once.
+
+---
+
 *Written by plan 29-01, 2026-08-10. Decisions §3 are the owner's, given through the orchestrator's
 `AskUserQuestion` gate with auto-mode off. §7 and §8 record Task 2's measured half; the two
-operator-supplied credentials remain open at the time of writing.*
+operator-supplied credentials remain open at the time of writing. §9 appended by plan 29-10,
+2026-08-10, recording an owner-approved supersession forced by measurement.*

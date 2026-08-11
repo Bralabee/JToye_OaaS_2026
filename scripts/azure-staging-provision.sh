@@ -624,6 +624,27 @@ if [ "$DRY_RUN" -eq 0 ]; then
     refuse "admin-credentials" "${admin_missing} administrator credential variable(s) missing — see the names above. Generate with 'openssl rand -hex 32' (docs/runbooks/credential-rotation.md). No value is ever written into this script."
 fi
 
+# `--public-access Enabled`, NOT `None`. MEASURED 2026-08-10 on az-cli 2.89.0:
+# the CLI's own help says `None` "sets the server in public access mode but does
+# not create a firewall rule", which is EXACTLY the shape this estate wants — but
+# the server it actually produced reported `network.publicNetworkAccess:
+# Disabled`, and the very next step died with
+#   "Firewall rule operations are not supported for a server without public
+#    access enabled."
+# So the documented meaning and the observed behaviour disagree, and the
+# behaviour is what ships. `Enabled` creates the server in public-access mode
+# with NO firewall rules of its own; the single scoped rule below is still the
+# only way in. That keeps PG_ACCESS_MODE=public-with-firewall true, and it is
+# NOT the wide-open shape `snackpass-pg` has (threat T-29-10-01).
+#
+# `--output none` is load-bearing, not tidiness. `az postgres flexible-server
+# create` prints a JSON result containing BOTH a `password` field and a full
+# `connectionString` with the administrator password embedded in it. The
+# REDACT_FLAGS mechanism above only redacts the rendered COMMAND in --dry-run; on
+# a real run it is the CLI's OUTPUT that discloses, and nothing was suppressing
+# it. Measured: the password reached the run log in plaintext twice, and had to
+# be rotated. Every other value this script needs is read back explicitly in the
+# evidence step, so discarding this output costs nothing.
 if ! resource_exists "Flexible Server ${PG_SERVER_NAME}" postgres flexible-server show -g "$AZURE_RESOURCE_GROUP" -n "$PG_SERVER_NAME"; then
   az_mutate postgres flexible-server create \
     -g "$AZURE_RESOURCE_GROUP" -n "$PG_SERVER_NAME" \
@@ -634,8 +655,9 @@ if ! resource_exists "Flexible Server ${PG_SERVER_NAME}" postgres flexible-serve
     --backup-retention "$PG_BACKUP_RETENTION_DAYS" \
     --admin-user "${PG_ADMIN_USER:-<PG_ADMIN_USER>}" \
     --admin-password "${PG_ADMIN_PASSWORD:-<PG_ADMIN_PASSWORD>}" \
-    --public-access None \
-    --yes
+    --public-access Enabled \
+    --yes \
+    --output none
 fi
 
 # The allowlist BEFORE anything can run Flyway. V1 failing means nothing else
@@ -666,22 +688,91 @@ done
 PG_FQDN="$(az_read '<postgres-fqdn>' postgres flexible-server show -g "$AZURE_RESOURCE_GROUP" -n "$PG_SERVER_NAME" --query fullyQualifiedDomainName -o tsv)"
 
 # ---------------------------------------------------------------------------
-# STEP 7 — Azure Cache for Redis (D-09)
+# STEP 7 — Azure MANAGED Redis (D-09, as superseded 2026-08-10)
 #
-# Basic tier serves TLS on 6380 and the plaintext 6379 port is DISABLED by
-# default. That is correct and must NOT be "fixed" by enabling the non-SSL port:
-# the app side gains a `redis.ssl` switch instead (RESEARCH Pitfall 7). No
-# --enable-non-ssl-port appears in this file, deliberately.
+# THIS WAS `az redis create` AND COULD NOT STAY THAT WAY. Measured live on
+# 2026-08-10 while provisioning this estate:
+#
+#   ERROR: (BadRequest) Azure Cache for Redis is retiring, create Azure Managed
+#          Redis instance instead.
+#
+# The old service is REFUSED at create time — not deprecated, not warned about.
+# 29-OPERATOR-DECISIONS.md §6 had recorded that retirement as obligation O-5
+# dated 2028-09-30, "no action this phase"; §9 records the falsification and the
+# owner-approved move to Azure Managed Redis Balanced B0 (GBP 9.93/mo, which is
+# GBP 5.55/mo CHEAPER than the blocked Basic C0).
+#
+# TWO RESOURCES, NOT ONE. `redisenterprise` (the ARM type behind Managed Redis)
+# separates the CLUSTER from the DATABASE. A cluster with no database serves
+# nothing and has no port, so both steps are required and the database create is
+# NOT optional tidy-up.
+#
+# PORT 10000, NOT 6380. Managed Redis serves TLS on 10000. That value is
+# mirrored in k8s/staging/configmap-patch.yaml (`redis.port`) and flows from
+# there into the core-java-allow NetworkPolicy egress rule by kustomize
+# `replacements:`. Under the enforcing Cilium dataplane this cluster runs, a
+# stale port silently drops every cache call rather than warning.
+#
+# `--client-protocol Encrypted` is the TLS-only posture, and is the direct
+# equivalent of NOT passing --enable-non-ssl-port to the old service: plaintext
+# access is never enabled here, deliberately (RESEARCH Pitfall 7, T-29-02-02).
+#
+# The SKU is assembled from the decision record's "<tier> <size>" cell rather
+# than hardcoded, exactly as before — Managed Redis spells it `Balanced_B0`.
 # ---------------------------------------------------------------------------
-step "STEP 7: Azure Cache for Redis ${REDIS_NAME} (${REDIS_TIER} ${REDIS_VM_SIZE})"
-if ! resource_exists "Redis cache ${REDIS_NAME}" redis show -g "$AZURE_RESOURCE_GROUP" -n "$REDIS_NAME"; then
-  az_mutate redis create \
+REDIS_AMR_SKU="${REDIS_TIER}_$(printf '%s' "$REDIS_VM_SIZE" | tr '[:lower:]' '[:upper:]')"
+step "STEP 7: Azure Managed Redis ${REDIS_NAME} (${REDIS_AMR_SKU})"
+# THE CLUSTER AND THE DATABASE ARE CREATED SEPARATELY, ON PURPOSE.
+# `az redisenterprise create` can make both in one call, but its own help
+# describes re-running it against an existing cluster as
+# "(overwrite/recreate, with potential downtime)". This script is idempotent and
+# is expected to be re-run after a partial failure — which is exactly how the
+# two defects above were found — so a combined create would turn a safe re-run
+# into an outage. `--no-database` plus a separately-guarded database create
+# keeps each half independently check-then-create.
+#
+# `--public-network-access Enabled` IS REQUIRED TODAY, not "soon". The CLI only
+# warns that the argument "will become required in next breaking change
+# release (2.92.0) scheduled for Nov 2026", but the API already refuses without
+# it:
+#     ERROR: (BadRequest) 'properties.publicNetworkAccess' is required in API
+#            version 2025-07-01
+# measured 2026-08-10. That is the same shape as the two other divergences this
+# script has already hit — a documented future date describing a constraint that
+# binds now — so the value is passed explicitly rather than left to a default.
+if ! resource_exists "Managed Redis cluster ${REDIS_NAME}" redisenterprise show -g "$AZURE_RESOURCE_GROUP" -n "$REDIS_NAME"; then
+  az_mutate redisenterprise create \
     -g "$AZURE_RESOURCE_GROUP" -n "$REDIS_NAME" \
     --location "$AZURE_LOCATION" \
-    --sku "$REDIS_TIER" --vm-size "$REDIS_VM_SIZE" \
-    --minimum-tls-version 1.2
+    --sku "$REDIS_AMR_SKU" \
+    --minimum-tls-version 1.2 \
+    --public-network-access Enabled \
+    --no-database
 fi
-REDIS_HOSTNAME="$(az_read '<redis-hostname>' redis show -g "$AZURE_RESOURCE_GROUP" -n "$REDIS_NAME" --query hostName -o tsv)"
+# `--access-keys-auth Enabled` is stated rather than defaulted, because the CLI
+# announces that this default FLIPS to Disabled in 2.92.0 (Nov 2026). The
+# application authenticates to the cache with an access key (staging-secrets.sh
+# renders REDIS_PASSWORD), so inheriting that flip would silently break every
+# cache connection on a CLI upgrade, with nothing in this repo having changed.
+# An announced default change is a time-bomb; pinning it is the fix.
+# NO `-n` / `--name` ON THE DATABASE COMMANDS. Managed Redis allows exactly ONE
+# database per cluster and names it `default` itself, so `az redisenterprise
+# database show|create` accept only --cluster-name and -g. Passing a name is not
+# merely redundant, it is rejected:
+#     ERROR: unrecognized arguments: -n default
+# measured 2026-08-10, AFTER the cluster had already been created — i.e. the
+# failure lands halfway through, which is exactly why the two halves are
+# separately guarded and the script is safe to re-run.
+if ! resource_exists "Managed Redis database ${REDIS_NAME}/default" \
+       redisenterprise database show --cluster-name "$REDIS_NAME" -g "$AZURE_RESOURCE_GROUP"; then
+  az_mutate redisenterprise database create \
+    --cluster-name "$REDIS_NAME" -g "$AZURE_RESOURCE_GROUP" \
+    --client-protocol Encrypted \
+    --access-keys-auth Enabled \
+    --port 10000
+fi
+REDIS_HOSTNAME="$(az_read '<redis-hostname>' redisenterprise show -g "$AZURE_RESOURCE_GROUP" -n "$REDIS_NAME" --query hostName -o tsv)"
+REDIS_PORT_LIVE="$(az_read '<redis-port>' redisenterprise database show --cluster-name "$REDIS_NAME" -g "$AZURE_RESOURCE_GROUP" --query port -o tsv)"
 
 # ---------------------------------------------------------------------------
 # STEP 8 — user-assigned identity + GitHub federated credential (D-04, #99)
@@ -750,7 +841,8 @@ Postgres FQDN      : ${PG_FQDN:-<unresolved>}
 Postgres version   : ${PG_SERVER_VERSION} (${PG_SERVER_SKU} ${PG_SERVER_TIER})
 Postgres databases : ${PLATFORM_DB}, ${KEYCLOAK_DB_NAME}
 azure.extensions   : ${PG_EXTENSIONS}
-Redis hostname     : ${REDIS_HOSTNAME:-<unresolved>} (TLS 6380 only; plaintext 6379 stays disabled)
+Redis hostname     : ${REDIS_HOSTNAME:-<unresolved>} (Azure MANAGED Redis, TLS only)
+Redis port (live)  : ${REDIS_PORT_LIVE:-<unresolved>}      <- must equal k8s/staging redis.port, or the NetworkPolicy drops every cache call
 identity clientId  : ${IDENTITY_CLIENT_ID:-<unresolved>}
 identity tenantId  : ${IDENTITY_TENANT_ID:-<unresolved>}
 fedcred subject    : ${FEDCRED_SUBJECT}

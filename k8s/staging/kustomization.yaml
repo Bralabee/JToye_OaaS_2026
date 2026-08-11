@@ -93,12 +93,15 @@ replicas:
 # REPEATED FROM k8s/base/kustomization.yaml because kustomize does not re-run a
 # base replacement against an overlay's patched ConfigMap (measured — see the
 # writeup there). Staging does NOT patch db.port today, so that pass is still a
-# no-op — but `redis.port` IS patched here (configmap-patch.yaml sets 6380 for
-# Azure Cache for Redis Basic, which disables plaintext 6379), so this block has
+# no-op — but `redis.port` IS patched here (configmap-patch.yaml sets 10000 for
+# Azure Managed Redis, which is TLS-only; it was 6380 for Azure Cache for Redis
+# Basic until 2026-08-10, when that service stopped being creatable at all and
+# plan 29-10 moved staging across), so this block has
 # stopped being belt-and-braces and is now the only thing that makes staging's
-# cache port real. Plan 29-04 measured the fail direction: with this block
-# removed from THIS file only, the staging render emitted the BASE 6379 while
-# every staging pod dialled 6380 — the #271 trap, reproduced on demand.
+# cache port real. Plans 29-04 and 29-10 each measured the fail direction: with
+# this block removed from THIS file only, the staging render emits the BASE 6379
+# while every staging pod dials the patched port — the #271 trap, reproduced on
+# demand, and re-reproduced when the port moved.
 #
 # The db.port half stays for the reason it was written: the day someone repoints
 # staging at a managed Postgres on a non-default port, adding the key to

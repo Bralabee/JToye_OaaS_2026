@@ -117,8 +117,8 @@ spec:
     # fixed by the infra namespace's own Services. Plan 29-04 took up the
     # "clean follow-up" this comment used to name, but for the OUT-OF-CLUSTER
     # Redis only — `redis.port` now drives spec.egress.5 below, where the value
-    # genuinely varies per environment (6379 in-cluster, 6380 on Azure Cache
-    # Basic). rabbitmq.port / stomp.broker.relay-port remain unrouted because
+    # genuinely varies per environment (6379 in-cluster, 10000 on the managed
+    # cache). rabbitmq.port / stomp.broker.relay-port remain unrouted because
     # nothing moves them out of the cluster; that is a limit, stated, not an
     # oversight. INV-7 asserts all five explicitly, so they cannot drift unnoticed.
     - to:
@@ -222,9 +222,11 @@ spec:
       ports:
         - protocol: TCP
           port: 5432   # managed Postgres — replaced from app-config db.port
-    # spec.egress.5 — MANAGED REDIS (Azure Cache for Redis Basic C0, TLS 6380;
-    # the plaintext 6379 port is disabled on the cache and enabling it would put
-    # session traffic in clear on the public internet — T-29-02-02).
+    # spec.egress.5 — MANAGED REDIS (Azure Managed Redis Balanced B0, TLS 10000
+    # since 2026-08-10; was Azure Cache for Redis Basic C0 on 6380 until that
+    # service stopped being creatable. The managed cache has no plaintext port
+    # and enabling one would put session traffic in clear on the public
+    # internet — T-29-02-02).
     # cidr <- app-config redis.egress-cidr; port <- app-config redis.port.
     - to:
         - ipBlock:

@@ -249,16 +249,22 @@ spec:
               name: app-config
               key: redis.host
         # --- Pitfall 7 (Phase 29 / plan 29-02): the managed-cache pair --------
-        # REDIS_PORT and REDIS_SSL always move TOGETHER. Azure Cache for Redis
-        # Basic disables the plaintext 6379 port and serves TLS on 6380, so
-        # either alone is a broken configuration: TLS against 6379 finds nothing
-        # listening, and plaintext against 6380 fails the handshake.
+        # REDIS_PORT and REDIS_SSL always move TOGETHER. The managed cache is
+        # TLS-only with no plaintext port, so either alone is a broken
+        # configuration: TLS against a plaintext port finds nothing listening,
+        # and plaintext against a TLS port fails the handshake.
         #
         # REDIS_PORT was NOT injected before this plan even though app-config has
         # carried a redis.port key since the base was written and application.yml
         # has always read ${REDIS_PORT:6379}. The key reached nothing, so patching
         # redis.port in an overlay would have been silently ignored — the DEF-6
-        # shape. Injecting it is what makes staging's 6380 real.
+        # shape. Injecting it is what makes the staging port real.
+        #
+        # The concrete staging value moved 6380 -> 10000 on 2026-08-10 (plan
+        # 29-10): Azure Cache for Redis can no longer be created at all, and the
+        # replacement, Azure Managed Redis, serves TLS on 10000. Base keeps 6379
+        # for compose, which runs redis:7-alpine in-cluster; the number lives in
+        # k8s/staging/configmap-patch.yaml, never here.
         - name: REDIS_PORT
           valueFrom:
             configMapKeyRef:
