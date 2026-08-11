@@ -1,3 +1,86 @@
+# HANDOFF — Phase 29 paused at the wave-7 boundary
+
+**Written 2026-08-11 (housekeeping). This section supersedes the Phase 28 block below for anything
+concerning current execution state; everything below it is retained as history.**
+
+**Written:** 2026-08-11 (housekeeping) · **Branch:** `phase-29-research` (0 behind origin/main) ·
+**Authoritative state:** `.planning/STATE.md` (this file is the summary; STATE.md wins on conflict)
+
+Gate expectation for phase close-out (not yet a measurement — several gates need the staging
+cluster and can only VOID from this host today):
+
+EXPECT 38 x rc=0 — the repo's gate-script count (H-1's denominator; `check-gate-enforcement.sh`
+reports 37 because it counts differently), at 29-16 close-out.
+
+## Goal and progress
+
+Execute Phase 29 (deployable staging with its own monitoring) — 16 plans in 9 waves.
+**9/16 complete + 29-10 partial.** Waves 1–6 merged to `phase-29-research`, every post-merge gate
+green (render-invariants INV-1..8, render-golden, gate-enforcement 37 gates, alert-corpus parity,
+connection-math, docs-freshness 2812, doc-metrics 37/37, check-claims 43/43).
+
+**Delivered and live** (owner's Azure sub `c483d353`, rg `jtoye-rg`): AKS `jtoye-staging-aks`
+(Cilium dataplane+policy), PostgreSQL Flexible Server 16, Azure Managed Redis Balanced_B0 **port
+10000**, static ingress IP `20.58.10.18`, CI federated identity; snackpass estate at 0 replicas.
+£139.15/mo vs £150 ceiling. Full manifest set merged: Prometheus+exporters, Alertmanager dual-sink,
+Grafana, Keycloak+realm, ingress (4 staging hosts), RabbitmqCluster, Mailhog, ClusterIssuers.
+
+## Why it is paused
+
+Wave 7 = 29-11 (first deploy + real vendor login) depends on 29-10, whose Tasks 2–3 are blocked on
+two OWNER actions (both parked by explicit owner decision 2026-08-11):
+
+1. **DNS** — the served zone (`dns1-4.p05.nsone.net`) has ZERO A records; the panel being edited is
+   not the delegated zone. Find the Netlify zone whose panel shows the **Zoho MX records**, add
+   `api-staging` / `app-staging` / `auth-staging` / `grafana-staging` → `20.58.10.18`.
+   Instant proof: `dig @dns1.p05.nsone.net A api-staging.olajay.co.uk` → `20.58.10.18`.
+   All four SANs share ONE ACME order — TLS issues for none until every name resolves.
+2. **Secrets** — fill all seven values in `~/.jtoye/staging-operator.env` (AWS media pair, AWS
+   backup pair, `ALERTMANAGER_SMTP_PASSWORD` = 16-char Gmail app password, `_FROM`, `_TO`).
+   Also: bank `~/.jtoye/staging-admin.env` (only copy of the staging DB admin credential).
+
+## Failed approaches (do not repeat)
+
+- Owner twice reported DNS "added"; authoritative dig said otherwise both times. Falsified en route:
+  doubled-name theory (NXDOMAIN too), stale-delegation theory (all NS1 sets p01–p10 probed, absent
+  everywhere). SOA serial static since 2021 ⇒ the zone has never been written. Verify by
+  authoritative dig, never by panel screenshots or propagation waits.
+- `az account show` unpinned returns the EMPLOYER's subscription (`Prod - HS2 Ltd`) — every az call
+  must pin `--subscription c483d353-...`. The only kube context is the employer's `sipbihs2aks`;
+  staging kubectl must pass an explicit context.
+
+## Environment state
+
+- Local compose stack: running, 4/4 images FRESH (core-java rebuilt 2026-08-11; 29-02's keys proven
+  by content inside the running jar); `NoOrdersCreated` counter reseeded.
+- Parked worktree: `.claude/worktrees/agent-acedd037d6b3648d0` on branch
+  `worktree-agent-acedd037d6b3648d0` — 29-10's executor context, ALL commits merged (through
+  `459f5d37`). Do NOT delete; it resumes Task 2/3. Do NOT push it (temporary agent branch).
+- `phase-29-research`: ~75 unpushed commits, secret-path scan clean, 0 behind origin/main.
+
+## Resume instructions
+
+1. When the owner confirms either parked item: resume 29-10's executor (its worktree above) — Task 2
+   = secrets preflight → in-cluster role bootstrap (PG firewall admits only the AKS egress IP);
+   Task 3 = authoritative DNS verify. Honour **DEF-29-4**: the `rabbitmq-credentials` Secret must
+   carry `default_user.conf` AND `username`/`password` (operator projects only the former, core-java
+   reads the latter; missing half = ACCESS_REFUSED with all static gates green). Also add the second
+   client-secret key 29-08 recorded as needed in `staging-secrets.sh`.
+2. Then wave 7: dispatch 29-11 (first deploy + login, checkpoint plan) → wave 8 (29-12 alert
+   liveness [needs Gmail secret], 29-13 PITR [needs AWS backup key], 29-14 NetPol enforcement,
+   29-15 CI/CD deploy) → wave 9 (29-16 close-out) → phase verification (gsd-verifier), code-review
+   gate, roadmap completion.
+3. Obligation **O-1** due ~2026-08-12 evening: re-measure the two snackpass idle meters (Cost
+   Management, 429-throttles readily — bounded-retry query bodies in the 29-01 session scratchpad);
+   if they have not collapsed, scale-to-zero did not work and the estate decision must be revisited.
+4. Changelog: Phase 29's `[Unreleased]` entry is owed at ship/PR time per the repo's changelog
+   contract (heading gets "(#NNN)" when the PR exists) — 29-16/gsd-ship owns it.
+
+Expected outcomes on resume: secrets preflight prints `populated=7 empty=0`; all four dig queries
+answer `20.58.10.18`; then 29-10 completes and wave 7 unblocks.
+
+---
+
 # Handoff: Phase 28 at close-out — Security Triage + the Dev/Prod Boundary (11/11 plans)
 
 **Generated 2026-08-10 by plan 28-11 (phase finisher). This section supersedes the Phase 33 block
@@ -2702,9 +2785,11 @@ for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   esac
   bash "$g" "$@" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 36 x rc=0. A VOID (2) is not a pass. (34 -> 36: phase 28 added
+# EXPECT 38 x rc=0. A VOID (2) is not a pass. (34 -> 36: phase 28 added
 #   check-media-content-types.sh (plan 28-03, media Content-Type allowlist) and
-#   check-pentest-triage.sh (plan 28-05, the eleven-finding disposition record).
+#   check-pentest-triage.sh (plan 28-05, the eleven-finding disposition record.
+#   36 -> 38: phase 29 added check-networkpolicy-enforcement.sh (plan 29-03) and
+#   check-alert-corpus-parity.sh (plan 29-06)).
 #   32 -> 34: plan 33-05 added
 #   check-live-shop-coordinates.sh, proving the seeded coordinates exist on the
 #   LIVE database, and plan 33-06 added check-openapi-snapshot-fresh.sh, diffing
