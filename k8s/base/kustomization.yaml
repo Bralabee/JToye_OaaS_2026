@@ -49,6 +49,24 @@ resources:
   - monitoring/prometheus-deployment.yaml
   - monitoring/postgres-exporter-deployment.yaml
   - monitoring/redis-exporter-deployment.yaml
+  # The half of DPLY-03 that involves a human (plan 29-07): an Alertmanager that
+  # reaches a real inbox (D-17) with an inspectable second sink in the SAME
+  # receiver (D-13).
+  #
+  # THE ALERTMANAGER CONFIG IS A TEMPLATE, RENDERED BY AN initContainer, and that
+  # is forced rather than chosen: Alertmanager has no env-var substitution, so the
+  # Gmail app password cannot arrive through a `${VAR}`, and it must not be a
+  # ConfigMap literal. check-no-plaintext-secrets.sh forbids a `kind: Secret` in
+  # any build, so the credential arrives as a mounted Secret FILE that the
+  # rendered config only names. Same idiom as the compose analog's entrypoint.
+  #
+  # A PLAIN ConfigMap, NOT configMapGenerator — the opposite choice from
+  # prometheus-alerts below and for the stated reason there. A content hash exists
+  # to force a pod roll when the mounted content changes; this config is rendered
+  # by an initContainer, so any change already requires a roll for the render step
+  # to re-run, and a hashed name would add nothing.
+  - monitoring/alertmanager-config.yaml
+  - monitoring/alertmanager-deployment.yaml
 
 # =============================================================================
 # THE ALERT CORPUS — one corpus, enforced rather than intended (D-16 / plan 29-06)

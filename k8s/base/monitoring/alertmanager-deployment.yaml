@@ -1,0 +1,288 @@
+---
+# alertmanager-deployment.yaml — Alertmanager as a cluster-internal workload
+# (DPLY-03 / D-17 / D-19, plan 29-07)
+#
+# THE SERVICE NAME AND PORT ARE ALREADY A CONTRACT. k8s/base/monitoring/
+# prometheus-config.yaml:118-121 sends alerts to `alertmanager:9093`, copied
+# verbatim from the compose corpus. Renaming this Service or moving its port
+# silently detaches the whole paging path — Prometheus keeps evaluating, keeps
+# showing alerts as firing, and nothing is ever sent.
+#
+# NO INGRESS, AND THAT IS A SECURITY CONTROL (D-19 / T-29-07-01).
+#   Alertmanager has no authentication of its own, and its UI can CREATE SILENCES.
+#   A publicly reachable one is a mute button for the platform's entire alerting
+#   surface, held by anyone who finds the hostname. So it gets a ClusterIP and
+#   nothing else, exactly like Prometheus beside it. Only GRAFANA gets a public
+#   hostname (its own login), and that Ingress arrives in plan 29-08.
+#
+#   This is no longer only a convention: INV-8 in k8s/scripts/check-render-invariants.sh
+#   FAILS the build if any Ingress in any render routes to a Service named
+#   `prometheus` or `alertmanager`, with an EMPTY allowlist behind it. Reach this
+#   UI with:
+#       kubectl -n <ns> port-forward svc/alertmanager 9093:9093
+#
+# NO HPA AND NO PDB, STATED RATHER THAN SILENTLY OMITTED.
+#   - Alertmanager scales by CLUSTERING (--cluster.peer), not by replica count. A
+#     second replica with no gossip configuration is a second independent notifier:
+#     every alert is emailed twice, and a silence created on one is invisible to
+#     the other. An HPA would produce exactly that on a CPU spike.
+#   - A PodDisruptionBudget over a single replica is worse than none:
+#     `minAvailable: 1` on a 1-replica Deployment makes every voluntary eviction
+#     permanently impossible, so a node drain hangs forever. That shape is already
+#     recorded in this repo (k8s/staging/scale-patch.yaml, the edge-go PDB at
+#     minAvailable 3 over 2 replicas).
+#
+# strategy: Recreate, for the same reason as Prometheus. The default RollingUpdate
+#   would briefly run two un-clustered notifiers over one Service, which is the
+#   duplicate-notification shape above with a shorter fuse.
+#
+# STORAGE: emptyDir, WITH ITS CONSEQUENCE WRITTEN DOWN. /alertmanager holds the
+#   notification log and active silences. On a pod restart both are lost, so an
+#   alert that is still firing is notified again (repeat_interval restarts) and a
+#   silence someone created is gone. Neither loses an alert — the failure mode is
+#   noisier, not quieter, which is the right direction for the one component whose
+#   job is to be heard. A PersistentVolumeClaim is the upgrade and needs a
+#   StorageClass and a cost decision inside the £150 ceiling (D-03).
+#
+# --web.external-url IS DELIBERATELY ABSENT, unlike the compose analog.
+#   infra/monitoring/alertmanager/entrypoint.sh:227 passes a loopback URL. Copying
+#   it here would put that literal into the base, staging and production renders,
+#   where INV-4 forbids it — the DEF-6 recurrence guard, and the exact trap plan
+#   29-06 measured when it tried to keep the compose self-scrape target. There is
+#   also nothing correct to put there: this workload has no public URL by design.
+#   Unset, Alertmanager derives its own links from the listen address, which is
+#   right for a port-forwarded UI.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  labels:
+    app: alertmanager
+    component: monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+        component: monitoring
+        version: v1
+      annotations:
+        # House convention on every workload. Nothing consumes these today: the
+        # scrape config is static_configs throughout so the job names stay fixed,
+        # and `alertmanager` is deliberately NOT one of the eight scrape jobs
+        # (prometheus-config.yaml:60 records why).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9093"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        # prom/alertmanager runs as nobody (65534). fsGroup makes the emptyDir
+        # storage and the rendered-config volume group-writable by that user.
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+      initContainers:
+      # The config is rendered here, BEFORE the notifier starts, because
+      # Alertmanager has no env-var substitution of its own and the SMTP
+      # credential must not be a literal in a ConfigMap. render.sh validates every
+      # input by name and runs `amtool check-config` on its own output, so a
+      # missing credential or a malformed config is a visible Init failure rather
+      # than a running Alertmanager that reaches nobody. Full reasoning, and the
+      # measurement that chose `smtp_auth_password_file`, is in
+      # alertmanager-config.yaml's header.
+      - name: render-config
+        image: prom/alertmanager:v0.27.0
+        imagePullPolicy: IfNotPresent
+        command:
+          - /bin/sh
+          - /etc/alertmanager/render/render.sh
+        env:
+        # The relay. app-config so an environment can move it without a manifest
+        # edit; base is Gmail (D-17).
+        - name: ALERTMANAGER_SMTP_SMARTHOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: alerting.smtp.smarthost
+        # STARTTLS on the primary relay — a property of that relay, not of the
+        # environment, so it is a reviewable literal here rather than a config key.
+        # Gmail requires it on 587. The SECOND sink overrides it per entry.
+        - name: ALERTMANAGER_SMTP_REQUIRE_TLS
+          value: "true"
+        # From / To / auth username come from the SAME Secret as the password, and
+        # that is deliberate: scripts/staging-secrets.sh:507-517 records the reason
+        # — one source for the whole destination, so a missing To refuses at
+        # bootstrap instead of sending nowhere in silence. The owner's inbox is
+        # also not a value this repository holds.
+        - name: ALERTMANAGER_SMTP_FROM
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-smtp
+              key: from
+        - name: ALERTMANAGER_SMTP_TO
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-smtp
+              key: to
+        - name: ALERTMANAGER_SMTP_AUTH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-smtp
+              key: username
+        # The conditional second sink (D-13). EMPTY in base and production, so the
+        # render omits the entry entirely and those environments carry ONE Gmail
+        # destination. Staging patches both keys to its in-cluster capture relay,
+        # which is what makes check-alert-liveness.sh L-3 inspectable without a
+        # probe-only route.
+        - name: ALERTMANAGER_SECONDARY_SMTP_SMARTHOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: alerting.secondary.smtp.smarthost
+        - name: ALERTMANAGER_SECONDARY_SMTP_TO
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: alerting.secondary.smtp.to
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: tmpl
+          mountPath: /etc/alertmanager/tmpl
+          readOnly: true
+        - name: render
+          mountPath: /etc/alertmanager/render
+          readOnly: true
+        - name: smtp
+          mountPath: /etc/alertmanager/smtp
+          readOnly: true
+        - name: rendered
+          mountPath: /etc/alertmanager/rendered
+      containers:
+      - name: alertmanager
+        # PIN REUSED VERBATIM FROM COMPOSE (D-16), same image as the initContainer
+        # above so the config is validated by the binary that will read it.
+        # infra/dependency-horizons.yaml carries the dated exemption.
+        image: prom/alertmanager:v0.27.0
+        imagePullPolicy: IfNotPresent
+        args:
+          # The rendered config, not the template. The storage path matches the
+          # compose analog's --storage.path.
+          - '--config.file=/etc/alertmanager/rendered/alertmanager.yml'
+          - '--storage.path=/alertmanager'
+        ports:
+        - containerPort: 9093
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "25m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          # /-/healthy is the endpoint the compose healthcheck uses
+          # (infra/monitoring/docker-compose.monitoring.yml:155). It answers as
+          # soon as the process is up and says nothing about whether mail is
+          # deliverable — correct for liveness: an Alertmanager whose relay is
+          # refusing connections must stay alive to retry and to log.
+          httpGet:
+            path: /-/healthy
+            port: 9093
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9093
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          # readOnlyRootFilesystem TRUE with both writable paths as mounted
+          # volumes — the shape this repo uses everywhere: give the workload a
+          # writable path, never relax the root filesystem to get one.
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: rendered
+          mountPath: /etc/alertmanager/rendered
+          readOnly: true
+        - name: storage
+          mountPath: /alertmanager
+      volumes:
+      - name: tmpl
+        configMap:
+          name: alertmanager-config
+          items:
+          - key: alertmanager.yml.tmpl
+            path: alertmanager.yml.tmpl
+      - name: render
+        configMap:
+          name: alertmanager-config
+          items:
+          - key: render.sh
+            path: render.sh
+      # ONLY the password key is projected as a file. The other three keys of this
+      # Secret arrive as env above; mounting the whole Secret would put the
+      # credential's neighbours on disk for no reason. The volume is REQUIRED (no
+      # `optional: true`): if the Secret is missing the pod refuses to start with
+      # a named error, which is the correct outcome for an alert path that could
+      # not authenticate. `optional: true` would start it silently.
+      - name: smtp
+        secret:
+          secretName: alertmanager-smtp
+          items:
+          - key: password
+            path: password
+          defaultMode: 0400
+      # The rendered config: written by the initContainer, read by the notifier.
+      - name: rendered
+        emptyDir: {}
+      - name: storage
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  labels:
+    app: alertmanager
+    component: monitoring
+spec:
+  # ClusterIP, and there is no Ingress anywhere in this directory (T-29-07-01),
+  # which INV-8 now asserts rather than trusting. The name and port are the ones
+  # prometheus-config.yaml's `alerting:` block already sends to.
+  type: ClusterIP
+  selector:
+    app: alertmanager
+  ports:
+  - port: 9093
+    targetPort: 9093
+    protocol: TCP
+    name: http

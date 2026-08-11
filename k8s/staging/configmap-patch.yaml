@@ -136,3 +136,48 @@ data:
   # application.yml defaults; only the origin is staging-specific.
   stripe.connect.return-url: "https://app-staging.olajay.co.uk/dashboard/payments/connect/return"
   stripe.connect.refresh-url: "https://app-staging.olajay.co.uk/dashboard/payments/connect/refresh"
+
+  # --- D-13 / D-17: the SECOND alert sink, and why it is a STAGING key ---------
+  #
+  # WHAT THIS BUYS. `check-alert-liveness.sh` L-3 proves the paging path by
+  # SEARCHING the destination for a probe it posted. D-17 makes that destination
+  # Gmail, which has no HTTP API, so on its own L-3 could only ever VOID. The fix
+  # is not a side-channel: these two keys add a second `email_configs` entry to
+  # the SAME receiver, so the message the gate can read is the message the owner
+  # got — same route, same grouping, same template. Assumption A1 (Alertmanager
+  # delivers to EVERY entry in one receiver) was measured with a control arm in
+  # plan 29-03: 2 delivered / 1 per address, against a one-entry control at 1 / 0.
+  #
+  # WHY NOT IN THE BASE. Production must not have a capture sink: a second copy of
+  # every real alert sitting in an unauthenticated in-cluster mailbox is an
+  # information-disclosure surface with no operational value there. Base therefore
+  # leaves both keys EMPTY, and render.sh omits the entry entirely rather than
+  # blanking it.
+  #
+  # THE RELAY IS A FORWARD REFERENCE, DELIBERATELY. `mailhog:1025` is the Service
+  # plan 29-09 adds at k8s/staging/mailhog.yaml (D-13, staging-only, ClusterIP on
+  # 1025 and 8025). Naming a Service before its manifest lands is this file's
+  # existing house style — redis.host, rabbitmq.host and keycloak.admin.base-url
+  # all do it — and it is checked at deploy time, not render time. Until 29-09
+  # lands, staging's Alertmanager renders a second sink whose relay does not
+  # resolve: alerts still reach Gmail (the entries are independent), the capture
+  # leg logs a send failure, and NOTHING is deployed before plan 29-11 anyway.
+  #
+  # THE SINK ADDRESS IS ALSO `L3_SINK_TO`. It is a config key rather than a
+  # literal in a workflow so the render and the gate read ONE declaration. Its
+  # partner `L3_HUMAN_TO` is read out of the alertmanager-smtp Secret at gate-run
+  # time — the owner's inbox is not a value this repository holds. A
+  # two-destination receiver with either undeclared is VOID by design (L-3b), so
+  # this cannot be forgotten silently.
+  alerting.secondary.smtp.smarthost: "mailhog:1025"
+  alerting.secondary.smtp.to: "alerts-sink@jtoye-staging.local"
+
+  # --- D-19: Grafana's own origin in staging ----------------------------------
+  # DERIVED FROM THIS OVERLAY, never inherited from the base's production value,
+  # for the same reason the notification and Stripe origins above are: Grafana
+  # builds every absolute link from GF_SERVER_ROOT_URL, so an inherited base value
+  # would make a staging dashboard hand out production links. The Ingress, the TLS
+  # SAN and the DNS record for this host arrive in plan 29-08 — in that order, and
+  # INV-6 fails the build if a rule ever names a Service that is not in the same
+  # render.
+  grafana.root-url: "https://grafana-staging.olajay.co.uk"
