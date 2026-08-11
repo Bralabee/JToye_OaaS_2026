@@ -3,7 +3,7 @@ phase: 29-deployable-staging-with-its-own-monitoring
 plan: 10
 subsystem: infra
 tags: [azure, aks, cilium, postgresql, redis, dns, cost, secrets, provisioning]
-status: CHECKPOINT — Task 1 COMPLETE (estate fully provisioned); Task 2 blocked on operator credentials; Task 3 records absent at the authoritative NS
+status: CHECKPOINT (2nd) — Task 1 COMPLETE; Task 2 credentials still empty (verified against a working control); Task 3 zone holds zero A records — edits landing in a different zone
 
 # Dependency graph
 requires:
@@ -181,6 +181,13 @@ ten-line stanza, leaving **valid YAML**: the tree still rendered, app-config sti
 egress rule fell back to `6379`, and INV-7 returned **`rc=1`** — the right verdict for the right
 reason. Restore verified by `git hash-object`; clean asserted last, golden re-checked.
 
+**3. My leading DNS theory was also wrong, and I tested it rather than repeating it.**
+§7.2 named a doubled name (`api-staging.olajay.co.uk.olajay.co.uk`) as the likeliest cause. On the
+second attempt I queried those doubled names directly: all four `NXDOMAIN`. Falsified. The real
+finding came from a probe I had not thought to run — the zone holds **no A records at all**, for any
+name, while serving Zoho MX and SPF TXT quite happily. Guessing a cause twice and testing it twice
+cost four `dig` calls; asserting it once would have sent the owner to fix the wrong thing.
+
 **2. My DNS diagnosis was wrong, and a better instrument overturned it.**
 When the four names did not resolve, I wrote that the likely cause was the zone's 3600 s
 negative-cache TTL masking correctly-created records — "created but not yet visible". A recursive
@@ -213,6 +220,21 @@ waiting instead of checking.
 **A positive control failed and was replaced rather than dropped.** `olajay.co.uk` (apex) was probed as a DNS control and returned empty — it has no apex A record. Had it been the only control, every empty staging answer would have been discarded as "resolver broken". `one.one.one.one` resolves on both resolvers and is the valid control.
 
 **Base-env Python is blocked on this host** (same guard 29-01 hit); `jq` and `awk` were used for the price arithmetic instead.
+
+## Round 2: both "it's fixed" reports were checked, and both were still open
+
+The owner reported DNS fixed and secrets filled. Both were re-measured rather than taken on trust,
+and both were still outstanding — reported here precisely because "the owner says it's done" is the
+easiest possible place to stop measuring.
+
+| Reported | Re-measured | How the negative was made trustworthy |
+|---|---|---|
+| DNS records re-entered and saved | all four still `aa`-NXDOMAIN | control (`NS olajay.co.uk`) returns NOERROR + 4 answers from the same server |
+| Seven secrets filled | `populated=0 empty=7` | a filled scratch copy reports `7 of 7`, so the checker can see values; mtime + byte size identical to creation, so the file was never edited |
+
+Neither result is a criticism of the operator — the DNS probe in particular shows the edits are
+going somewhere real, just not to the zone being served. What matters is that neither was recorded
+as done on the strength of the report.
 
 ## A pattern worth naming: three constraints that bind before their documented date
 
@@ -261,11 +283,15 @@ None in code. What has **not** happened:
 **Task 1 is COMPLETE.** The estate exists and the provisioning script runs clean end-to-end at
 `rc=0`. Two blockers remain, both operator-only. Details in `29-PROVISIONING-EVIDENCE.md` §7.2, §9.
 
-1. **Task 2 is blocked ENTIRELY, and that is measured rather than assumed.** `scripts/staging-secrets.sh` runs its 23-name value preflight at STEP 3 (lines 223–280), **before** the `case "$MODE"` dispatch and **not** gated by it — so `--roles-only` and even read-only `--verify-roles-only` refuse until all 23 variables are present. Seven are operator-only. A template now exists at `~/.jtoye/staging-operator.env` (0600, outside the repo) with those seven names and a comment each; measured `populated=0 empty=7`.
-2. **Task 3: the four A records are absent from the live zone**, confirmed at the authoritative nameserver (`NXDOMAIN` with `aa`, against a control that returns data). This is not propagation. The three causes worth checking, in order: unsaved/unpublished in the panel; created in a Netlify zone that is not the delegated NS1 one; or the name entered with the domain doubled (`api-staging.olajay.co.uk.olajay.co.uk`), which is the most common single mistake here and produces exactly this symptom.
+1. **Task 2 is blocked ENTIRELY, and that is measured rather than assumed.** `scripts/staging-secrets.sh` runs its 23-name value preflight at STEP 3 (lines 223–280), **before** the `case "$MODE"` dispatch and **not** gated by it — so `--roles-only` and even read-only `--verify-roles-only` refuse until all 23 variables are present. Seven are operator-only, and after the values were reported filled they measured **`populated=0 empty=7`** again. That negative was falsified first: a filled scratch copy reports `7 of 7`, so the checker is not blind; and the file's mtime (`00:11:09`) and size (1766 B) are byte-identical to creation, so it was never edited. No other `*.env` under `$HOME` was modified either.
+2. **Task 3: the four A records are absent, and the cause is now diagnosed.** The zone that actually serves `olajay.co.uk` — delegation confirmed at the `.co.uk` registry — holds **zero A records anywhere**: not the four staging names, not their doubled variants (that theory was tested and falsified), not `www`/`mail`/`staging`/`test`, and the apex returns NODATA for A. It does serve Zoho MX and an SPF TXT. So the edits are reaching a different zone from the one being served.
 
-**Re-check command for Task 3** — one query, owes nothing to propagation:
+**Re-check for Task 3** — one query, owes nothing to propagation:
 `dig @dns1.p05.nsone.net A api-staging.olajay.co.uk` (expect `20.58.10.18`).
+
+**Discriminator for finding the right zone, no tooling needed:** the serving zone contains the Zoho
+MX records (`mx.zoho.eu`, `mx2.zoho.eu`, `mx3.zoho.eu`) and `v=spf1 include:zoho.eu ~all`. A panel
+that does not show those is the wrong zone, and records added there will never take effect.
 
 **Second, independent Task 2 blocker:** the Postgres firewall admits only the AKS egress IP, so
 `psql` from this host is refused. The role bootstrap must run from inside the cluster, or a

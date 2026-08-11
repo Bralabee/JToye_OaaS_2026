@@ -783,6 +783,68 @@ plausible causes, in the order worth checking:
 `dig @dns1.p05.nsone.net A <name>` is the check to re-run — it answers in one query and owes nothing
 to propagation.
 
+### 7.3 Second attempt: still absent — and now DIAGNOSED (2026-08-11T05:12Z)
+
+The owner re-entered and saved the records. Re-measured: **all four still `aa`-NXDOMAIN**, control
+still `NOERROR` with 4 answers. Four further probes were run to find out *why* rather than report the
+same negative twice.
+
+**PROBE 1 — the delegation is not in doubt.** Asked the `.co.uk` registry itself:
+
+```
+$ dig @dns1.nic.uk NS olajay.co.uk
+olajay.co.uk.  172800  IN  NS  dns1.p05.nsone.net.   (and dns2, dns3, dns4)
+```
+
+The parent zone delegates to exactly the servers being queried. There is no second delegation and no
+ambiguity about which nameservers are authoritative.
+
+**PROBE 2 — the doubled-name hypothesis is FALSIFIED.** It was my leading theory in §7.2, and it is
+wrong:
+
+```
+api-staging.olajay.co.uk.olajay.co.uk       status=NXDOMAIN
+app-staging.olajay.co.uk.olajay.co.uk       status=NXDOMAIN
+auth-staging.olajay.co.uk.olajay.co.uk      status=NXDOMAIN
+grafana-staging.olajay.co.uk.olajay.co.uk   status=NXDOMAIN
+```
+
+**PROBE 3 — no partial publish.** All four nameservers agree (`NXDOMAIN` on each), so this is not one
+server lagging behind its peers.
+
+**PROBE 4 — the decisive one. This zone contains NO A RECORDS AT ALL.**
+
+```
+www.olajay.co.uk       NXDOMAIN        api-staging      NXDOMAIN
+mail.olajay.co.uk      NXDOMAIN        app-staging      NXDOMAIN
+staging.olajay.co.uk   NXDOMAIN        auth-staging     NXDOMAIN
+test.olajay.co.uk      NXDOMAIN        grafana-staging  NXDOMAIN
+olajay.co.uk (apex)    NOERROR, no answer   <- NODATA: the name exists, but has no A
+
+apex MX  : 10 mx.zoho.eu.  20 mx2.zoho.eu.  50 mx3.zoho.eu.
+apex TXT : "v=spf1 include:zoho.eu ~all"  "zoho-verification=zb83135536.zmverify.zoho.eu"
+```
+
+The zone is real, live and configured — it serves Zoho mail — but it holds **zero A records
+anywhere**. Corroborating: the SOA serial reads `1634401895` on all four nameservers and is
+**unchanged across three readings spanning ~8 hours** (29-01 at 2026-08-10T21:14Z, this plan at
+23:26Z, and now 05:12Z). That serial is a 2021 timestamp. Treated as corroboration rather than proof,
+since some providers do not bump the serial on every edit — **PROBE 4 is the conclusive part.**
+
+**Conclusion: the edits are not reaching the zone that actually serves this domain.** That is a
+different failure from "the records are wrong", and it is why re-entering them produced no change.
+The two live candidates:
+
+1. **A duplicate Netlify DNS zone.** Netlify can hold more than one DNS zone for the same domain name
+   while only one is active; records added to the inactive one serve nothing.
+2. **Edits at the registrar instead of at Netlify.** Delegation points at NS1, so registrar-side
+   records are simply never consulted.
+
+**A discriminator the owner can use in one glance, without any tooling:** the zone that is actually
+serving contains the **Zoho MX records** (`mx.zoho.eu`, `mx2.zoho.eu`, `mx3.zoho.eu`) and the
+**`v=spf1 include:zoho.eu ~all`** TXT record. If the panel on screen does **not** show those, it is
+the wrong zone — and adding records there will never take effect.
+
 ---
 
 ## 8. Status against the plan's success criteria
@@ -890,6 +952,29 @@ boolean only, never a value, and never a length that could narrow a secret**:
 
 populated=0  empty=7  of 7        (measured 2026-08-11T00:12Z)
 ```
+
+**Re-measured 2026-08-11T05:13Z after the values were reported filled: still `populated=0 empty=7`.**
+That is a negative result, so the instrument was falsified before the result was trusted:
+
+| Arm | Setup | Result |
+|---|---|---|
+| A (control) | a scratch **copy** with all seven keys filled | **`populated = 7 of 7`** — the checker is not blind |
+| B (real) | the real file, untouched | `populated = 0 of 7` |
+
+Two independent facts agree with arm B, neither of which depends on the parser:
+
+```
+mtime : 2026-08-11 00:11:09.047957407 +0100     <- the moment this plan CREATED the template
+size  : 1766 bytes                              <- byte-identical to what was written
+```
+
+**The file has not been modified since it was created.** A search for any other `*.env` under `$HOME`
+(depth 2) modified after 00:12 returned nothing, and the repository's own `.env` was last touched
+2026-08-10 09:49 — hours before the template existed. So the values did not land in a different file
+either.
+
+Task 2 therefore did not start. All seven names are deficient (empty); **no value is recorded here,
+only the fact of absence.**
 
 Two notes the template itself carries, because both are common failure modes:
 - The Gmail value must be a **16-character app password**, not the account password — Gmail rejects
