@@ -63,3 +63,42 @@ stated reason has gone out of date, and the entry's own text asks for the revisi
 to happen "as ONE change with DPLY-03". Recorded rather than edited because
 rewriting another gate's allowlist reason is not this plan's change, and a wrong
 reason attached to a right entry is a documentation defect, not a live one.
+
+---
+
+## DEF-29-3 — the local overlay renders a Keycloak that cannot start there
+
+- **Found during:** plan 29-08, Task 1
+- **Owner:** whoever next edits `scripts/k8s-local-secrets.sh`
+
+D-02 adds a Keycloak Deployment/Service/NetworkPolicy to `k8s/base`, so
+`k8s/local` renders one too. `scripts/k8s-local-secrets.sh` predates the workload
+and does not create the `db-username` / `db-password` keys on the
+`keycloak-credentials` Secret, so the pod stops at `CreateContainerConfigError`
+naming the missing key.
+
+**IT CANNOT SIMPLY BE REMOVED FROM THE LOCAL RENDER, and that is not an oversight.**
+LOC-2 in `k8s/scripts/check-render-invariants.sh` compares COUNTS: every Deployment
+the BASE renders must appear in the local render at `replicas: 1`. A `$patch: delete`
+would drop the local count below base's and FAIL that invariant — which is LOC-2
+doing its job, since the class it exists to catch is a local render silently
+ceasing to cover what base ships. Verified after this plan's change:
+`LOC-2 OK (replicas x9/9 ...)`.
+
+**Nothing that worked locally broke.** The local login path has never gone through
+an in-cluster Service: LOC-1 asserts, per key by name, that `keycloak.issuer.uri`,
+`keycloak.public.issuer.uri` and `keycloak.admin.base-url` all point at the COMPOSE
+Keycloak on `host.minikube.internal:8085`, and they still do. LOC-5 independently
+asserts that no local Ingress routes to a Service named `keycloak`, so the pod can
+take no traffic even if it did start.
+
+**The failure is loud, not silent** — a named missing Secret key at container
+creation, not a running server quietly serving a realm nobody meant to create.
+
+**What closing it requires, as ONE change:** the two Secret keys in
+`scripts/k8s-local-secrets.sh`, AND a decision about which database the local
+Keycloak uses. The compose Keycloak already owns the `keycloak` database on the
+compose Postgres (`docker-compose.full-stack.yml` healthcheck asserts it exists),
+so pointing an in-cluster local Keycloak at the same database would give two
+servers one schema — which is why the answer is a decision and not a default, and
+why this plan recorded it instead of guessing.
