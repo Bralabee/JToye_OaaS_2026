@@ -9,6 +9,19 @@ namespace: jtoye-staging
 resources:
   - ../base
   - namespace.yaml
+  # STAGING-ONLY APPLICATION-EMAIL CAPTURE (D-13, plan 29-09). Deliberately NOT a
+  # base resource: an application-email black hole in production would silently
+  # swallow real vendor mail. The file's own header carries the full reasoning and
+  # the two-directional assertion (present in this render, ABSENT from
+  # k8s/production's) that keeps the asymmetry honest.
+  - mailhog.yaml
+  # THE CERTIFICATE ISSUERS (T-29-08-04, plan 29-09). k8s/base/ingress.yaml has
+  # named `letsencrypt-prod` in an annotation since before this phase while
+  # NOTHING in this repository defined it — the object lived only in a heredoc in
+  # k8s/DEPLOYMENT.md. Both issuers ship here so plan 29-11's promotion is a
+  # one-key config change; cluster-scoped, hence one definition and hence this
+  # overlay rather than base. See the file header.
+  - cluster-issuer.yaml
 
 # Staging-specific labels.
 # D-17 (Phase 26): the explicit `fields:` list mirrors k8s/base/kustomization.yaml —
@@ -139,6 +152,35 @@ replacements:
           name: jtoye-sse-ingress
         fieldPaths:
           - metadata.annotations.cert-manager\.io/cluster-issuer
+  # The ACME registration contact (plan 29-09). BOTH issuers, from ONE key: they
+  # identify the same operator, and two addresses across two issuers would mean
+  # the production expiry warnings arrive somewhere the staging ones do not.
+  #
+  # NO `\.` ESCAPE IS NEEDED IN THE fieldPath TARGETS here — `spec.acme.email` is
+  # a genuine three-segment path. The SOURCE key does need one, because
+  # `cert-manager.acme-email` is a single ConfigMap key CONTAINING a dot, and
+  # kustomize splits an unescaped fieldPath on dots. Getting that backwards is a
+  # silent no-op, not an error: kustomize would look for `data.cert-manager` and
+  # find nothing.
+  #
+  # STAGING-ONLY, because the issuers are staging-only resources. There is
+  # deliberately no matching pass in k8s/base or k8s/production — a replacement
+  # whose target does not exist in the render is a build error, not a no-op.
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.cert-manager\.acme-email
+    targets:
+      - select:
+          kind: ClusterIssuer
+          name: letsencrypt-staging
+        fieldPaths:
+          - spec.acme.email
+      - select:
+          kind: ClusterIssuer
+          name: letsencrypt-prod
+        fieldPaths:
+          - spec.acme.email
   - source:
       kind: ConfigMap
       name: app-config

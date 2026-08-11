@@ -415,9 +415,23 @@ ALLOW_UNRESOLVED_INGRESS_BACKEND=()
 # a duplicate FAILS, and a STALE entry — one whose Service is not in fact
 # published anywhere — FAILS, so it cannot rot into a standing excuse.
 # ---------------------------------------------------------------------------
+# MAILHOG JOINS THE LIST (D-13, plan 29-09), and it is the sharpest entry of the
+# three. Prometheus and Alertmanager leak metrics and a mute button; Mailhog's
+# unauthenticated HTTP API serves the CAPTURED CONTENT of every application email
+# staging sends — customer names, delivery addresses, order contents, unsubscribe
+# tokens. The compose stack learned this at first hand (#441: an all-interfaces
+# bind published dev-tenant mail to the local network with no credential, which is
+# why docker-compose.full-stack.yml pins both its ports to loopback). Publishing
+# it through the ingress would be that same defect with a public hostname and a
+# valid certificate on it.
+#
+# It is a STAGING-ONLY Service, so on three of four targets this entry can never
+# match. That is not a reason to leave it out: the list is checked against Ingress
+# BACKENDS, and an Ingress rule can be added in any overlay at all.
 NEVER_PUBLISHED_BACKENDS=(
   'prometheus'
   'alertmanager'
+  'mailhog'
 )
 ALLOW_PUBLISHED_MONITORING_BACKEND=()
 
