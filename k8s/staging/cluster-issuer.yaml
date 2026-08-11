@@ -4,11 +4,13 @@
 # =============================================================================
 # WHAT WAS MISSING, AND FOR HOW LONG
 #
-#   `k8s/base/ingress.yaml:8` has carried
+#   `k8s/base/ingress.yaml:32` has carried
 #   `cert-manager.io/cluster-issuer: "letsencrypt-prod"` since long before this
-#   phase, and NOTHING IN THIS REPOSITORY DEFINED THAT ISSUER. The annotation
-#   named an object that existed only in a `kubectl apply -f -` heredoc inside
-#   `k8s/DEPLOYMENT.md:73-88` — documentation, not a manifest, applied by hand or
+#   phase — as an authored literal until plan 29-08 routed it through app-config,
+#   and as that replacement's base default since — and NOTHING IN THIS REPOSITORY
+#   DEFINED THAT ISSUER. The annotation named an object that existed only in a
+#   `kubectl apply -f -` heredoc inside `k8s/DEPLOYMENT.md:73-88` —
+#   documentation, not a manifest, applied by hand or
 #   not at all. On a cluster where it was never applied, cert-manager logs
 #   `ClusterIssuer.cert-manager.io "letsencrypt-prod" not found`, no Certificate
 #   is created, the Ingress serves the default self-signed certificate, and every

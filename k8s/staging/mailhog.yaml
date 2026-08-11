@@ -32,7 +32,7 @@
 #   fix was not a side channel: `alerting.secondary.smtp.*` adds a SECOND
 #   `email_configs` entry to the SAME Alertmanager receiver, so the message the
 #   gate can read is the message the owner got — same route, same grouping, same
-#   template. `k8s/staging/configmap-patch.yaml:215` has named `mailhog:1025` as a
+#   template. `k8s/staging/configmap-patch.yaml:281` has named `mailhog:1025` as a
 #   forward reference since that plan. This file is what makes it resolve, and the
 #   8025 HTTP API below is the surface L-3 inspects.
 #

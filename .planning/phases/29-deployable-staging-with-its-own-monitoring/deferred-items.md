@@ -180,3 +180,67 @@ along on a plausible-looking commit.
 `POST /api/v1/admin/tenants/{id}/keycloak/deprovision` fails to resolve its host
 the first time an operator enables the feature in staging — long after the change
 that made it wrong.
+
+---
+
+## DEF-29-6 — `SMTP_STARTTLS` has never reached JavaMail: the property name is misspelt
+
+- **Found during:** plan 29-09, Task 2, while deciding the staging value for a sink that speaks no TLS
+- **Owner:** whoever next edits `core-java/src/main/resources/application.yml`'s mail block
+
+**The measurement.** `core-java/src/main/resources/application.yml:159-164`:
+
+```yaml
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:false}
+          starttls:
+            enabled: ${SMTP_STARTTLS:true}
+```
+
+Spring Boot passes everything under `spring.mail.properties.*` into the JavaMail
+`Properties` **verbatim**, so this sets a property literally named
+`mail.smtp.starttls.enabled`. JavaMail reads `mail.smtp.starttls.enable` — no
+trailing "d". The two adjacent keys make the contrast visible: `auth` is spelt
+correctly and IS read; `starttls.enabled` is not a JavaMail property at all.
+
+**The consequence.** STARTTLS has been effectively **off in every environment**
+since this block was written, regardless of what the ConfigMap said — including
+the SES path Phase 22 shipped, where `smtp.starttls: "true"` in
+`k8s/base/configmap.yaml` reads as an assurance it does not provide.
+
+**Why it is not fixed here.** It is an application-configuration defect on the
+production email path, not a manifest one, and correcting the spelling *changes
+behaviour* — the first connection to a relay that requires STARTTLS would start
+negotiating it, and one that does not offer it would start failing. That belongs
+in a change that can exercise the SES path, which this plan cannot.
+
+**What 29-09 did instead.** Set `smtp.starttls: "false"` in the staging patch, so
+the declaration matches reality now AND stays correct at the moment the spelling
+is fixed: staging points at MailHog, which advertises no STARTTLS, so a stale
+`"true"` would be the value that breaks first.
+
+---
+
+## DEF-29-7 — twelve horizon rows still cite a stale line number
+
+- **Found during:** plan 29-09, Task 3
+- **Owner:** whoever next runs `bash scripts/check-dependency-horizons.sh --refresh`
+
+Twelve `NOTE <id>: pin not at <file>:<line>; found at line(s) N (run --refresh)`
+advisories, unchanged in kind since before this phase. They are **NOTE class,
+advisory, exit 0** — H-5's hard failure is "the pin is on no non-comment line at
+all", which is `site-unresolvable=0`. The pin is found in every case; only the
+recorded line has drifted as the files grew.
+
+Plan 29-09 corrected **two** of the fourteen that existed at its start (`rabbitmq`
+`:149 -> :240`, `mailhog` `:526 -> :702`), because it was editing those rows
+anyway. It deliberately did **not** run `--refresh`, which would have rewritten
+ten unrelated rows into this plan's commit — the change would look like a
+horizons change and read as a line-number sweep, and a reviewer would have to
+separate them by hand.
+
+**How it will surface if nobody acts:** it will not, beyond twelve advisory lines
+on every run. The risk is habituation — a reader who scrolls past twelve NOTEs
+routinely is the reader who scrolls past the thirteenth that means something.
