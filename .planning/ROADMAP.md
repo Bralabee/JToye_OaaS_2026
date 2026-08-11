@@ -342,7 +342,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 26. Local-K8s Overlay + Verified Breakage Fixes | v2.3 | 9/9 | Complete    | 2026-07-26 |
 | 27. Operational Maturity | v2.3 | 7/7 | Complete    | 2026-07-29 |
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
-| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 5/16 | In Progress | — |
+| 29. Deployable Staging, With Its Own Monitoring | v2.3 | 6/16 | In Progress | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
 | 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
@@ -536,7 +536,7 @@ and hosting-target decisions; DPLY-04 additionally blocked on **ADR-0002 sign-of
 were settled in the 2026-08-10 discussion** (`29-CONTEXT.md`): hosting = AKS in `jtoye-rg` (D-01),
 domain = `olajay.co.uk` (D-05), ADR-0002 owner-signed as proposed (D-09).
 **Requirements**: DPLY-01, DPLY-02, DPLY-03, DPLY-04, DPLY-05
-**Plans:** 5/16 plans executed
+**Plans:** 7/16 plans executed
 **Success Criteria** (what must be TRUE):
 
   1. Staging serves a **real Keycloak vendor login through the ingress to a dashboard**, over a
@@ -595,8 +595,8 @@ the same commit as the edit that caused it.
 
 **Waves 3-6** *(the manifests, serialised on the goldens; 29-10 runs in parallel on the cloud side)*
 
-- [ ] 29-06-PLAN.md (Wave 3) — Prometheus + both exporters in k8s, reproducing the compose job names verbatim so both gates run unchanged; "one corpus" (D-16) becomes executable as `check-alert-corpus-parity.sh` because kustomize cannot read a generator file outside its root
-- [ ] 29-10-PLAN.md (Wave 3, parallel) — the estate created and each property READ BACK: the enforcing dataplane from `az aks show`, **PostgreSQL 16** (Blocker C — BYPASSRLS is impossible on PG≤15, so `jtoye_backup` cannot exist and the dump captures zero rows), `uuid-ossp` on `azure.extensions` before the first Flyway run, node allocatable MEASURED (assumption A2), and four DNS A records. `autonomous: false`
+- [x] 29-06-PLAN.md (Wave 3) — Prometheus + both exporters in k8s, reproducing the compose job names verbatim so both gates run unchanged; "one corpus" (D-16) becomes executable as `check-alert-corpus-parity.sh` because kustomize cannot read a generator file outside its root
+- [x] 29-10-PLAN.md (Wave 3, parallel) — the estate created and each property READ BACK: the enforcing dataplane from `az aks show`, **PostgreSQL 16** (Blocker C — BYPASSRLS is impossible on PG≤15, so `jtoye_backup` cannot exist and the dump captures zero rows), `uuid-ossp` on `azure.extensions` before the first Flyway run, node allocatable MEASURED (assumption A2), and four DNS A records. `autonomous: false`
 - [ ] 29-07-PLAN.md (Wave 4) — Alertmanager (template rendered at pod start; one receiver, two sinks) + Grafana; the `50-observability.yaml` placeholder replaced with its displacement named; a new render invariant with an EMPTY allowlist making an Ingress on Prometheus or Alertmanager a CI failure (D-19)
 - [ ] 29-08-PLAN.md (Wave 5) — in-cluster Keycloak (D-02/#296), executing `k8s/base/ingress.yaml`'s own removal note: host rule and TLS SAN come back TOGETHER with the Service, in that order, because all four SANs share ONE ACME order. Realm `redirectUris`/`webOrigins` parameterised so no environment inherits `"*"`; staging gains `X-Robots-Tag: noindex`
 - [ ] 29-09-PLAN.md (Wave 6) — RabbitmqCluster with STOMP and an explicit image pin (which is what resolves the `rabbitmq-k8s` `pin: unknown` row before its 2026-10-26 expiry), staging-only Mailhog asserted ABSENT from production, both ClusterIssuers, and a dated horizon row per new artefact including the retired-ingress-controller acceptance

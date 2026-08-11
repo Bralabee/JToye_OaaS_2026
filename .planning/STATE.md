@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 29 executing — waves 1-2 complete (5/16 merged, gates green), wave 3 dispatched (29-06 monitoring, 29-10 provisioning checkpoint)
-last_updated: "2026-08-10T22:35:00.000Z"
+stopped_at: Phase 29 executing — 6/16 complete + 29-10 PARTIAL (estate LIVE, Task 1 done; Task 2 secrets PARKED by owner, Task 3 DNS re-verify in flight); wave 4 dispatched (29-07)
+last_updated: "2026-08-11T00:45:00.000Z"
 last_activity: 2026-08-10
 progress:
   total_phases: 14
@@ -26,7 +26,17 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 ## Current Position
 
 Phase: 29
-Plan: 5 of 16 (wave 2 complete 2026-08-10: 29-04 NetPol egress rules per-datastore + INV-7 ipBlock
+Plan: 6 of 16 + 29-10 PARTIAL (wave 3, 2026-08-11: 29-06 k8s Prometheus + exporters + one-alert-corpus
+gate; 29-10 Task 1 COMPLETE and merged — staging estate LIVE: AKS jtoye-staging-aks [cilium dataplane
++ policy], PG Flexible Server 16, Managed Redis Balanced_B0 port 10000 [Azure Cache retired TODAY,
+owner approved AMR B0; 6380→10000 swept across 13 files], static IP 20.58.10.18, snackpass at 0
+replicas, £139.15/mo vs £150 ceiling. ⚠ 29-10 SUMMARY exists but plan is PARTIAL — do not trust
+has_summary. Task 2 secrets PARKED by owner [~/.jtoye/staging-operator.env 0/7 filled — blocks
+29-12/29-13]; Task 3 DNS: served zone had ZERO A records, owner edits were landing in a wrong/dup
+zone [discriminator: the real zone shows Zoho MX]; re-verify in flight. DB admin cred lives ONLY in
+~/.jtoye/staging-admin.env — owner asked to move it to password manager. OSSCluster-vs-standalone-
+Lettuce risk: 29-11 must prove a cache round-trip.)
+(wave 2 complete 2026-08-10: 29-04 NetPol egress rules per-datastore + INV-7 ipBlock
 arm [was measurably blind, recorded before fixed] + connection-budget gate with control; 29-05 three
 provisioning scripts ~1.9k lines, zero cloud mutation proven 10→10, EXIT-trap exit-code rewrite
 found+fixed, jtoye_app managed-server bootstrap added [STEP 4a]. ⚠ ambient az default on this host
