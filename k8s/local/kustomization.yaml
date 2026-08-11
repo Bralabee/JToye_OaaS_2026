@@ -214,6 +214,16 @@ replacements:
         fieldPaths:
           - spec.egress.1.ports.0.port
           - spec.egress.4.ports.0.port
+      # The monitoring exporters (plan 29-07), repeated here for the same measured
+      # reason as everything above it. This overlay patches db.port to 5433, so
+      # the postgres-exporter would otherwise be permitted 5432 while dialling
+      # 5433 — the #271 shape, in the one overlay that actually uses the
+      # flexibility #271 was about.
+      - select:
+          kind: NetworkPolicy
+          name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -229,6 +239,11 @@ replacements:
           name: pg-backup-allow
         fieldPaths:
           - spec.egress.4.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
   - source:
       kind: ConfigMap
       name: app-config
@@ -239,6 +254,11 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.5.ports.0.port
+      - select:
+          kind: NetworkPolicy
+          name: redis-exporter-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -249,3 +269,8 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.5.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: redis-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr

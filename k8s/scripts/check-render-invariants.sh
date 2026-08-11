@@ -211,6 +211,42 @@
 #               render turns that into a CI failure instead. IPv4 only; anything
 #               else exits 2 rather than being skipped.
 #
+#   INV-8  D-19 / Security Domain V4, RENDER level, EVERY target. No Ingress in
+#          any render may route to a Service named `prometheus` or `alertmanager`.
+#
+#          WHY IT IS A GATE AND NOT A CONVENTION. Both have NO authentication of
+#          their own. A reachable Prometheus hands over every series this platform
+#          emits — request paths, queue names, tenant-shaped cardinality. A
+#          reachable Alertmanager is worse than a leak: its UI CREATES SILENCES,
+#          so anyone who finds the hostname holds a mute button for the platform's
+#          entire alerting surface, and the failure is INVISIBLE by construction
+#          (a silenced alert looks exactly like an alert that never fired).
+#          D-19 gives a public hostname to GRAFANA ALONE, which has a login.
+#
+#          KEYED ON THE BACKEND SERVICE, NOT THE HOSTNAME, deliberately: an
+#          Ingress is dangerous because of what it ROUTES TO, and a rule can
+#          publish any hostname at all — including one that reads as internal.
+#
+#          THE ALLOWLIST IS EMPTY AND IS MEANT TO STAY EMPTY. It exists so the
+#          gate has the same hygiene as INV-6's (blank reason FAILS, duplicate
+#          FAILS, stale entry FAILS, and an entry naming a Service that is not on
+#          the never-publish list FAILS because it would govern nothing) rather
+#          than because an exemption is anticipated. The supported ways to reach
+#          these two are `kubectl port-forward` and an authenticating proxy.
+#
+#          RUNS ON k8s/local TOO, unlike INV-4. A laptop cluster with a published
+#          Alertmanager is still a mute button, and the local overlay's `rules:`
+#          replacement is precisely the mechanism that hides such a rule from a
+#          base-only assertion — the lesson INV-6's own header records in the
+#          opposite direction.
+#
+#          ITS PARSE GUARD IS ITS OWN. INV-8 re-extracts the Ingress backend
+#          records into its own file and asserts a non-zero count with its own
+#          message, rather than leaning on INV-6's guard: an assertion whose
+#          fail-closed guard belongs to a DIFFERENT assertion cannot be shown to
+#          fail on its own, and "found no Ingress backends" must never read as
+#          "nothing is published".
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -356,6 +392,35 @@ LOCAL_ONLY_TARGETS=(
 # ---------------------------------------------------------------------------
 ALLOW_UNRESOLVED_INGRESS_BACKEND=()
 
+# ---------------------------------------------------------------------------
+# INV-8 (D-19 / Security Domain V4, plan 29-07): the monitoring workloads that
+# must NEVER be published.
+#
+# Prometheus and Alertmanager have NO authentication of their own. Anything that
+# reaches Prometheus reads every series this platform emits — request paths,
+# queue names, tenant-shaped cardinality. Anything that reaches Alertmanager can
+# CREATE SILENCES, i.e. hold a mute button for the platform's entire alerting
+# surface. D-19 therefore gives a public hostname to GRAFANA ALONE, which has a
+# login; the other two stay ClusterIP and are reached by port-forward.
+#
+# That was a convention, and a convention is a review question. This makes it a
+# CI failure with a name on it. The list is deliberately the SERVICE NAMES rather
+# than the hostnames: an Ingress is dangerous because of what it ROUTES TO, and a
+# rule can publish any hostname at all.
+#
+# THE ALLOWLIST IS EMPTY AND SHOULD STAY EMPTY. There is no "we exposed
+# Prometheus temporarily" that is not a decision to re-take deliberately: the
+# right move is a port-forward, or an authenticating proxy in front of it, both
+# of which leave this list empty. Same hygiene as INV-6's: a blank reason FAILS,
+# a duplicate FAILS, and a STALE entry — one whose Service is not in fact
+# published anywhere — FAILS, so it cannot rot into a standing excuse.
+# ---------------------------------------------------------------------------
+NEVER_PUBLISHED_BACKENDS=(
+  'prometheus'
+  'alertmanager'
+)
+ALLOW_PUBLISHED_MONITORING_BACKEND=()
+
 # The live-verified Postgres SUPERUSER role name. `jtoye` is a superuser and
 # `jtoye_app` is NOSUPERUSER (both confirmed against the running dev Postgres in
 # 26-RESEARCH.md § Live Facts). Only the superuser is a defect in a recipe.
@@ -422,11 +487,39 @@ INFRA_NAMESPACE_LABEL="jtoye-infrastructure"
 # Adding an out-of-cluster egress rule to a policy MUST be accompanied by adding
 # it here. Same intended friction as the map above, for the same reason.
 # ---------------------------------------------------------------------------
+# PLAN 29-07 ADDS THREE MONITORING POLICIES TO THIS MAP, and the gate FIRED on all
+# four targets before they were added — the intended friction working unprompted:
+#   FAIL … NetworkPolicy 'alertmanager-allow' renders an ipBlock egress rule but
+#          has no entry in NETPOL_IPBLOCK_EXPECTED.
+# (same for postgres-exporter-allow and redis-exporter-allow). Recorded because it
+# is a real, unsolicited demonstration that arm (b) can fail.
+#
+# __SMTP_PORT__ IS A DIFFERENT KIND OF SUBSTITUTION FROM THE OTHER FOUR, and the
+# difference is the point. The other four are also applied to the manifest by a
+# kustomize `replacements:` block, so the gate is confirming a rewrite. This one
+# is NOT: app-config `alerting.smtp.smarthost` is a `host:port` string and
+# kustomize cannot split it, so the NetworkPolicy port is authored. Deriving the
+# EXPECTED value from the smarthost's port suffix is therefore the only thing that
+# couples them at all — move the relay to a submission port on 465 or 2525 and this
+# arm FAILS by name until the policy moves with it. Without it, the two would drift
+# silently and Alertmanager would be denied its own relay under an enforcing CNI:
+# every alert queued, retried and dropped, with the UI showing them as firing.
 declare -A NETPOL_IPBLOCK_EXPECTED=(
   [core-java-allow]="0.0.0.0/0:443 __DB_CIDR__:__DB_PORT__ __REDIS_CIDR__:__REDIS_PORT__"
   [pg-backup-allow]="0.0.0.0/0:443 __DB_CIDR__:__DB_PORT__"
   [frontend-allow]="0.0.0.0/0:443"
   [edge-go-allow]="0.0.0.0/0:443"
+  # DPLY-03 / plan 29-07. Each exporter reaches the SAME managed datastore
+  # core-java does, so each carries exactly the pair core-java carries — and
+  # NOTHING ELSE. In particular neither has a 0.0.0.0/0:443 rule: an exporter has
+  # no business on the public internet, and the absence is asserted here rather
+  # than merely intended.
+  [postgres-exporter-allow]="__DB_CIDR__:__DB_PORT__"
+  [redis-exporter-allow]="__REDIS_CIDR__:__REDIS_PORT__"
+  # The SMTP relay, and only the SMTP relay. No 443 — see the paragraph above for
+  # why the port is derived from the smarthost rather than replaced into the
+  # manifest.
+  [alertmanager-allow]="0.0.0.0/0:__SMTP_PORT__"
 )
 
 command -v kubectl > /dev/null \
@@ -857,6 +950,39 @@ if (( ${#ALLOW_UNRESOLVED_INGRESS_BACKEND[@]} > 0 )); then
     done
 fi
 
+# ---------------------------------------------------------------------------
+# INV-8 allowlist parse + hygiene. Same three rules as INV-6's, evaluated the
+# same way: malformed / blank-reason / duplicate here, STALE after the per-target
+# loop once it is known which entries were actually needed.
+# ---------------------------------------------------------------------------
+declare -A ALLOW_PUBLISHED_REASON=()
+declare -A ALLOW_PUBLISHED_USED=()
+if (( ${#ALLOW_PUBLISHED_MONITORING_BACKEND[@]} > 0 )); then
+    for entry in "${ALLOW_PUBLISHED_MONITORING_BACKEND[@]}"; do
+        svc="${entry%%|*}"
+        reason="${entry#*|}"
+        if [[ -z "$svc" || "$svc" == "$entry" ]]; then
+            fail "INV-8 allowlist: entry '$entry' is malformed — the required shape is '<service-name>|<reason>'."
+        fi
+        if [[ -z "${reason//[[:space:]]/}" ]]; then
+            fail "INV-8 allowlist: entry '$svc' has a blank reason. Publishing an unauthenticated monitoring surface is a decision, and a decision with no stated reason is indistinguishable from an accident."
+        fi
+        if [[ -n "${ALLOW_PUBLISHED_REASON[$svc]:-}" ]]; then
+            fail "INV-8 allowlist: duplicate entry '$svc'."
+        fi
+        ALLOW_PUBLISHED_REASON["$svc"]="$reason"
+    done
+fi
+# An entry naming something that is not on the never-publish list governs nothing
+# and would read as coverage. Fail rather than ignore.
+for svc in "${!ALLOW_PUBLISHED_REASON[@]}"; do
+    _known=0
+    for _n in "${NEVER_PUBLISHED_BACKENDS[@]}"; do
+        [[ "$svc" == "$_n" ]] && _known=1
+    done
+    (( _known == 1 )) || fail "INV-8 allowlist: entry '$svc' is not on NEVER_PUBLISHED_BACKENDS, so it exempts nothing. Either add it to that list or remove the entry."
+done
+
 for dir in "${TARGETS[@]}"; do
     rel="${dir#"$REPO_ROOT"/}"
     render="$TMP/${rel//\//_}.yaml"
@@ -1031,6 +1157,57 @@ for dir in "${TARGETS[@]}"; do
         fi
     fi
 
+    # ---------------- INV-8 ----------------
+    # D-19: no Ingress in ANY render may route to a Service that has no
+    # authentication of its own. Runs for every target, including k8s/local — a
+    # laptop cluster with a published Alertmanager is still a mute button, and the
+    # local overlay's `rules:` replacement is exactly the mechanism that would hide
+    # such a rule from a base-only assertion (the INV-6 lesson).
+    #
+    # ITS OWN EXTRACTION AND ITS OWN GUARDS, deliberately, rather than reusing the
+    # arrays INV-6 just built: an assertion whose fail-closed guard belongs to a
+    # different assertion cannot be shown to fail on its own.
+    awk -F'\t' '$1 == "ING"' "$TMP/ingress.tsv" > "$TMP/published.tsv"
+    pub_count=$(wc -l < "$TMP/published.tsv")
+    (( pub_count > 0 )) || parse_fail "[$rel] INV-8 found 0 Ingress backend references in the render, so it examined nothing and would report a clean run over any tree at all. This platform ships two Ingresses in every target; zero means the Ingress shape changed or the parser is blind. 'Found nothing' is never 'nothing is published' — fix the parser, do not delete the invariant."
+
+    inv8_bad=0
+    inv8_allowed=0
+    while IFS=$'\t' read -r _tag ing host backend; do
+        for never in "${NEVER_PUBLISHED_BACKENDS[@]}"; do
+            [[ "$backend" == "$never" ]] || continue
+            if [[ -n "${ALLOW_PUBLISHED_REASON[$backend]:-}" ]]; then
+                ALLOW_PUBLISHED_USED["$backend"]=1
+                (( ++inv8_allowed ))
+                echo "  INFO [$rel] INV-8: backend Service '$backend' (host '$host', Ingress '$ing') is ALLOWLISTED: ${ALLOW_PUBLISHED_REASON[$backend]}"
+                continue
+            fi
+            echo "  FAIL [$rel] INV-8: Ingress '$ing' publishes host '$host' and routes it to Service '$backend', which must never be published." >&2
+            inv8_bad=1
+        done
+    done < "$TMP/published.tsv"
+
+    if (( inv8_bad != 0 )); then
+        echo "        D-19 / Security Domain V4. Prometheus and Alertmanager have NO authentication" >&2
+        echo "        of their own. A reachable Prometheus hands over every series this platform" >&2
+        echo "        emits; a reachable Alertmanager lets anyone CREATE SILENCES, i.e. mute the" >&2
+        echo "        platform's entire alerting surface from a browser." >&2
+        echo "        GRAFANA is the one monitoring surface that may be published, because it has a" >&2
+        echo "        login. For the other two use a port-forward:" >&2
+        echo "            kubectl -n <ns> port-forward svc/prometheus 9090:9090" >&2
+        echo "            kubectl -n <ns> port-forward svc/alertmanager 9093:9093" >&2
+        echo "        or put an authenticating proxy in front and publish THAT Service. If this is" >&2
+        echo "        genuinely deliberate, add an entry to ALLOW_PUBLISHED_MONITORING_BACKEND WITH a" >&2
+        echo "        reason — the list is empty today and that is the correct state." >&2
+        FAILED=1
+        inv8_msg="FAIL"
+    else
+        inv8_msg="OK ($pub_count backend ref(s) scanned, 0 publish an unauthenticated monitoring Service)"
+        if (( inv8_allowed > 0 )); then
+            inv8_msg="OK ($pub_count backend ref(s) scanned, $inv8_allowed allowlisted)"
+        fi
+    fi
+
     # ---------------- INV-7 ----------------
     # Issue #271: the Postgres egress allowance must follow the RENDERED
     # app-config db.port, in every target, in both policies.
@@ -1050,7 +1227,11 @@ for dir in "${TARGETS[@]}"; do
 
     awk "$NETPOL_INFRA_AWK" "$render" > "$TMP/netpol.tsv"
     pol_seen=$(awk -F'\t' '$1 == "POL" { print $2 }' "$TMP/netpol.tsv" | sort -u | wc -l)
-    (( pol_seen > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicy documents in the render. This platform ships six; zero means the parser is blind and every port assertion below would pass vacuously. Fix the parser, do not delete the invariant."
+    # The count in this message is DELIBERATELY not asserted — it is orientation
+    # for whoever reads the failure, and the assertion is `> 0`. Writing an exact
+    # expected count here would be a second place to update every time a policy is
+    # added, and the thing being guarded against is a BLIND PARSER, not a miscount.
+    (( pol_seen > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicy documents in the render. This platform ships twelve (five app-tier + seven observability, plan 29-07 — counted off the render, not remembered); zero means the parser is blind and every port assertion below would pass vacuously. Fix the parser, do not delete the invariant."
 
     inv7_bad=0
     inv7_checked=0
@@ -1113,9 +1294,24 @@ for dir in "${TARGETS[@]}"; do
         [[ "$_c" =~ $CIDR4_RE ]] || parse_fail "[$rel] INV-7: app-config egress CIDR '$_c' is not an IPv4 CIDR. This arm evaluates IPv4 only and does not skip what it cannot evaluate."
     done
 
+    # __SMTP_PORT__ (plan 29-07): derived from the PORT SUFFIX of app-config
+    # `alerting.smtp.smarthost`, which is the single declaration of the alert
+    # relay. Unlike db.port / redis.port there is no kustomize replacement to
+    # confirm — kustomize cannot split a `host:port` string — so this derivation IS
+    # the only coupling between the relay the config names and the port the
+    # NetworkPolicy permits.
+    smtp_smarthost=$(awk -F'\t' '$1 == "alerting.smtp.smarthost" { v = $2; gsub(/^["\047]|["\047]$/, "", v); print v; found = 1 } END { if (!found) print "" }' "$TMP/cfg.tsv")
+    if [[ -z "$smtp_smarthost" ]]; then
+        parse_fail "[$rel] INV-7 found no app-config key 'alerting.smtp.smarthost' in the render. It is the RENDER-TIME declaration of the alert relay and the source of the expected SMTP egress port; without it the alertmanager-allow comparison has nothing to compare against and would pass vacuously — restore the key, do not delete the invariant."
+    fi
+    smtp_port="${smtp_smarthost##*:}"
+    if [[ "$smtp_port" == "$smtp_smarthost" || ! "$smtp_port" =~ ^[0-9]+$ ]]; then
+        parse_fail "[$rel] INV-7: app-config 'alerting.smtp.smarthost' is '$smtp_smarthost', from which no numeric port could be read. Alertmanager needs an explicit host:port smarthost, and this arm needs that port to know what egress to expect — a smarthost with no port is a relay nothing can reach and an assertion with nothing to assert."
+    fi
+
     awk "$NETPOL_IPBLOCK_AWK" "$render" > "$TMP/netpol-ip.tsv"
     ippol_seen=$(awk -F'\t' '$1 == "IPPOL" { print $2 }' "$TMP/netpol-ip.tsv" | sort -u | wc -l)
-    (( ippol_seen > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicies with an ipBlock egress rule in the render. This platform ships four; zero means the ipBlock parser is blind and every out-of-cluster assertion below would pass vacuously. Fix the parser, do not delete the invariant."
+    (( ippol_seen > 0 )) || parse_fail "[$rel] INV-7 found 0 NetworkPolicies with an ipBlock egress rule in the render. This platform ships seven (four app-tier + both exporters + alertmanager, plan 29-07); zero means the ipBlock parser is blind and every out-of-cluster assertion below would pass vacuously. Fix the parser, do not delete the invariant."
     # NOT `awk … | grep -q .`: under `set -o pipefail` grep exits at the first
     # match, the writer takes SIGPIPE, and pipefail promotes it to 141 — so the
     # guard would fire on the CLEAN case and stay silent on the broken one. It
@@ -1159,11 +1355,13 @@ for dir in "${TARGETS[@]}"; do
         ip_expected_raw="${ip_expected_raw//__REDIS_PORT__/$redis_port}"
         ip_expected_raw="${ip_expected_raw//__DB_CIDR__/$db_cidr}"
         ip_expected_raw="${ip_expected_raw//__REDIS_CIDR__/$redis_cidr}"
+        ip_expected_raw="${ip_expected_raw//__SMTP_PORT__/$smtp_port}"
         ip_expected=$(printf '%s\n' $ip_expected_raw | sort | tr '\n' ' ')
         (( ++inv7_ip_checked ))
         if [[ "$ip_actual" != "$ip_expected" ]]; then
             echo "  FAIL [$rel] INV-7: NetworkPolicy '$pol' allows ipBlock egress [${ip_actual% }]; expected [${ip_expected% }]" >&2
-            echo "        (app-config db.port=$db_port redis.port=$redis_port db.egress-cidr=$db_cidr redis.egress-cidr=$redis_cidr)." >&2
+            echo "        (app-config db.port=$db_port redis.port=$redis_port db.egress-cidr=$db_cidr redis.egress-cidr=$redis_cidr" >&2
+            echo "         alerting.smtp.smarthost=$smtp_smarthost -> smtp port $smtp_port)." >&2
             inv7_bad=1
         fi
     done
@@ -1220,10 +1418,11 @@ for dir in "${TARGETS[@]}"; do
     fi
 
     if [[ "$inv1_msg" == FAIL* || "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
-          || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg" >&2
+          || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
+          || "$inv8_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg"
     fi
 done
 echo
@@ -1236,6 +1435,20 @@ if (( ${#ALLOW_INGRESS_REASON[@]} > 0 )); then
     for svc in "${!ALLOW_INGRESS_REASON[@]}"; do
         if [[ -z "${ALLOW_INGRESS_USED[$svc]:-}" ]]; then
             echo "FAIL: INV-6 allowlist: STALE entry '$svc' — every target's render now resolves that backend (or no Ingress references it at all), so the exemption is unnecessary. Remove the entry rather than leaving a standing excuse for a defect that is already fixed." >&2
+            FAILED=1
+        fi
+    done
+fi
+
+# ---------------------------------------------------------------------------
+# INV-8 allowlist STALE rule. Same reasoning, and if anything it matters more
+# here: an unused exemption for publishing an unauthenticated monitoring surface
+# is a standing permission slip for the exact thing the invariant forbids.
+# ---------------------------------------------------------------------------
+if (( ${#ALLOW_PUBLISHED_REASON[@]} > 0 )); then
+    for svc in "${!ALLOW_PUBLISHED_REASON[@]}"; do
+        if [[ -z "${ALLOW_PUBLISHED_USED[$svc]:-}" ]]; then
+            echo "FAIL: INV-8 allowlist: STALE entry '$svc' — no Ingress in any target publishes that Service, so the exemption grants nothing and is a standing permission slip for exposing it later without a second thought. Remove the entry." >&2
             FAILED=1
         fi
     done
@@ -1627,4 +1840,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7 hold across ${#TARGETS[@]} kustomize target(s); $LOCAL_SECTION."
+echo "PASS: INV-1..INV-8 hold across ${#TARGETS[@]} kustomize target(s); $LOCAL_SECTION."

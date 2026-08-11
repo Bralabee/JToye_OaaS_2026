@@ -245,6 +245,17 @@ replacements:
         fieldPaths:
           - spec.egress.1.ports.0.port
           - spec.egress.4.ports.0.port
+      # THE MONITORING EXPORTERS JOIN THE SAME MECHANISM (plan 29-07). Each dials
+      # the SAME managed server as core-java, so each needs the same derived port,
+      # and each has exactly ONE out-of-cluster rule at `spec.egress.1` (index 0 is
+      # DNS). A literal here would leave pg_up / redis_up reporting on whichever
+      # port was true when the file was written — a green light for a datastore
+      # nothing uses, which is worse than a red one.
+      - select:
+          kind: NetworkPolicy
+          name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -260,6 +271,11 @@ replacements:
           name: pg-backup-allow
         fieldPaths:
           - spec.egress.4.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
   - source:
       kind: ConfigMap
       name: app-config
@@ -270,6 +286,11 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.5.ports.0.port
+      - select:
+          kind: NetworkPolicy
+          name: redis-exporter-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -280,3 +301,8 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.5.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: redis-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr

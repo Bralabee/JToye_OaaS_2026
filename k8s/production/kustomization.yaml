@@ -100,6 +100,18 @@ replacements:
         fieldPaths:
           - spec.egress.1.ports.0.port
           - spec.egress.4.ports.0.port
+      # The monitoring exporters (plan 29-07), repeated here for the same measured
+      # reason as everything above it. Production patches neither port TODAY, so
+      # this pass is currently a no-op — and it is written anyway for exactly the
+      # reason the db.port half above was: the day production moves to a managed
+      # server on a non-default port, adding the key to configmap-patch.yaml is
+      # the whole change, instead of a one-line ConfigMap edit that leaves four
+      # NetworkPolicies behind.
+      - select:
+          kind: NetworkPolicy
+          name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -115,6 +127,11 @@ replacements:
           name: pg-backup-allow
         fieldPaths:
           - spec.egress.4.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
   - source:
       kind: ConfigMap
       name: app-config
@@ -125,6 +142,11 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.5.ports.0.port
+      - select:
+          kind: NetworkPolicy
+          name: redis-exporter-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -135,3 +157,8 @@ replacements:
           name: core-java-allow
         fieldPaths:
           - spec.egress.5.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: redis-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
