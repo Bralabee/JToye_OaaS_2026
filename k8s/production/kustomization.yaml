@@ -83,6 +83,28 @@ replicas:
 # until plan 29-10 moved staging to Azure Managed Redis on 2026-08-10), and that
 # is where plans 29-04 and 29-10 ran the fail-direction arm.
 replacements:
+  # T-29-08-04 (plan 29-08) — the cert-manager ClusterIssuer. Production does NOT
+  # patch this key, so this pass is a no-op today and the production render is
+  # byte-identical with or without it. It is written anyway, for the reason the
+  # whole block below is: the day production's cutover (Phase 32) needs to prove
+  # the issuance path before spending production ACME quota, moving the issuer is
+  # one key in configmap-patch.yaml — instead of a base manifest edit that also
+  # changes staging.
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.cert-manager\.cluster-issuer
+    targets:
+      - select:
+          kind: Ingress
+          name: jtoye-ingress
+        fieldPaths:
+          - metadata.annotations.cert-manager\.io/cluster-issuer
+      - select:
+          kind: Ingress
+          name: jtoye-sse-ingress
+        fieldPaths:
+          - metadata.annotations.cert-manager\.io/cluster-issuer
   - source:
       kind: ConfigMap
       name: app-config
@@ -112,6 +134,13 @@ replacements:
           name: postgres-exporter-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+      # Keycloak (plan 29-08) joins on the same terms: its own database on the
+      # SAME managed server, one out-of-cluster rule at spec.egress.1.
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -130,6 +159,11 @@ replacements:
       - select:
           kind: NetworkPolicy
           name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
         fieldPaths:
           - spec.egress.1.to.0.ipBlock.cidr
   - source:

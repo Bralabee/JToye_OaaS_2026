@@ -520,6 +520,21 @@ declare -A NETPOL_IPBLOCK_EXPECTED=(
   # why the port is derived from the smarthost rather than replaced into the
   # manifest.
   [alertmanager-allow]="0.0.0.0/0:__SMTP_PORT__"
+  # DPLY-01 / D-02 / plan 29-08. Keycloak reaches the SAME managed Postgres
+  # core-java does — its OWN database on that server — so it carries the same
+  # derived pair and NOTHING ELSE. The absence of a 0.0.0.0/0:443 rule is the
+  # assertion that matters here and it is asserted rather than intended: an
+  # identity provider with general internet egress is an SSRF surface reachable
+  # from an unauthenticated public endpoint, and this realm configures no external
+  # identity provider and no outbound webhook that would need one. Adding one
+  # later must add it here in the same change.
+  #
+  # THE FRICTION FIRED, unprompted, before this entry existed — recorded because
+  # it is a real demonstration that arm (b) can fail:
+  #   FAIL [k8s/base] INV-7: NetworkPolicy 'keycloak-allow' renders an ipBlock
+  #        egress rule but has no entry in NETPOL_IPBLOCK_EXPECTED.
+  # on all four targets.
+  [keycloak-allow]="__DB_CIDR__:__DB_PORT__"
 )
 
 command -v kubectl > /dev/null \

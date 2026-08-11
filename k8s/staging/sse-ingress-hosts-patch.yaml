@@ -5,6 +5,22 @@
 #
 # The SSE Ingress publishes only the API host; it shares the staging TLS secret with
 # the main Ingress, exactly as base shares one secret between its two Ingresses.
+#
+# THE TWO NEW HOSTS OF PLAN 29-08 ARE DELIBERATELY NOT HERE, and the decision is
+# recorded rather than left as an omission. `auth-staging` and `grafana-staging`
+# are added to jtoye-ingress ONLY, because this Ingress exists for exactly one
+# thing: the long-lived Server-Sent Events path, which needs streaming timeouts
+# and buffering off — per-Ingress nginx annotations that are wrong for an ordinary
+# request/response backend. Keycloak's authorization endpoint and Grafana's UI are
+# ordinary request/response surfaces; publishing them here would give them a 1-hour
+# read timeout and no proxy buffering, for no gain.
+#
+# THE TLS SIDE NEEDS NO CHANGE EITHER, and that is the part worth stating: this
+# Ingress and jtoye-ingress name the SAME `jtoye-staging-tls` Secret, so the
+# certificate cert-manager issues for it already covers all four SANs. The
+# `X-Robots-Tag` staging patch is likewise jtoye-ingress-only — see
+# ingress-annotations-patch.yaml for why an event stream is not an indexable
+# surface.
 - op: replace
   path: /metadata/annotations/nginx.ingress.kubernetes.io~1cors-allow-origin
   value: "https://app-staging.olajay.co.uk"

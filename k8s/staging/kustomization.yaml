@@ -77,6 +77,13 @@ patches:
     target:
       kind: Ingress
       name: jtoye-sse-ingress
+  # T-29-08-03 / D-08 (plan 29-08): staging tells crawlers not to index it. A
+  # STRATEGIC MERGE, unlike the two JSON6902 patches above, and the difference is
+  # deliberate — `metadata.annotations` IS a map with merge semantics, so this adds
+  # a key without touching the base's six security headers. The rules list has no
+  # merge key, which is why the host patches cannot use the same mechanism. See
+  # ingress-annotations-patch.yaml for why the annotation is `server-snippet`.
+  - path: ingress-annotations-patch.yaml
 
 # Staging replicas (reduced for cost savings)
 replicas:
@@ -109,6 +116,29 @@ replicas:
 # that leaves the NetworkPolicy behind and CrashLoops every replica under an
 # enforcing CNI.
 replacements:
+  # T-29-08-04 (plan 29-08) — the cert-manager ClusterIssuer, repeated here for
+  # the same measured reason as everything below it, and THIS is the overlay
+  # where it is real rather than anticipatory: staging patches
+  # `cert-manager.cluster-issuer` to `letsencrypt-staging`, so without this pass
+  # the staging render would carry the BASE `letsencrypt-prod` and the very first
+  # HTTP-01 attempt — against four hostnames that do not resolve yet — would burn
+  # production quota on an order that cannot succeed. Both Ingresses, because they
+  # name the same certificate Secret.
+  - source:
+      kind: ConfigMap
+      name: app-config
+      fieldPath: data.cert-manager\.cluster-issuer
+    targets:
+      - select:
+          kind: Ingress
+          name: jtoye-ingress
+        fieldPaths:
+          - metadata.annotations.cert-manager\.io/cluster-issuer
+      - select:
+          kind: Ingress
+          name: jtoye-sse-ingress
+        fieldPaths:
+          - metadata.annotations.cert-manager\.io/cluster-issuer
   - source:
       kind: ConfigMap
       name: app-config
@@ -137,6 +167,17 @@ replacements:
           name: postgres-exporter-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+      # Keycloak (plan 29-08). Staging is where this one is REAL rather than
+      # anticipatory: D-02 runs the identity provider in-cluster here, against its
+      # own database on the managed Flexible Server, under the enforcing Cilium
+      # dataplane. A missed pass means the pod is permitted the BASE 5432 while
+      # dialling whatever staging declares — the #271 trap on the one workload
+      # whose failure stops every login.
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -155,6 +196,11 @@ replacements:
       - select:
           kind: NetworkPolicy
           name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
         fieldPaths:
           - spec.egress.1.to.0.ipBlock.cidr
   - source:

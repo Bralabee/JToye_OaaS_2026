@@ -12,13 +12,24 @@ This directory contains the Keycloak realm configuration for the `jtoye-dev` rea
 ## Files
 
 - **realm-export.json**: Complete realm configuration including:
-  - Clients: `core-api`, `frontend`
+  - Clients: `account`, `account-console`, `admin-cli`, `broker`, `core-api`, `edge-api`,
+    `integration-catalog-ro`, `integration-orders-rw`, `realm-management`,
+    `security-admin-console` — **ten**, read off `realm-export.template.json` on 2026-08-11,
+    not remembered
   - Groups: `tenant-a`, `tenant-b` with tenant_id attributes
   - Users: Pre-configured test users with tenant assignments
   - Protocol mappers: tenant_id claim injection into JWT
   - Realm settings: Token lifespans, security policies
 
-## Realm Configuration Details
+## This directory is the DEVELOPER realm. The CLUSTER realm lives under `k8s/`.
+
+Since plan 29-08 (D-02) Keycloak also runs **in-cluster**, and its realm is
+`k8s/base/keycloak/realm-import-configmap.yaml` — a separate artifact, deliberately, with the
+reason written in that file's header. In short: the two files **must** differ (this one carries
+loopback redirect URIs and seed users, both of which are wrong or unsourceable in a cluster), so
+the byte-parity mechanism used for the alert corpus is unavailable and the relationship is
+*derivation*, stated, rather than copying. The cluster realm's redirect URIs, web origins and realm
+name come from `app-config` per environment; its render **refuses** a wildcard web origin outright.
 
 ### Realm: `jtoye-dev`
 
@@ -31,14 +42,40 @@ This directory contains the Keycloak realm configuration for the `jtoye-dev` rea
    - Direct Access Grants: enabled
    - Valid Redirect URIs: `http://localhost:9090/*`
 
-2. **frontend**
-   - Client ID: `frontend`
-   - Access Type: public
-   - Direct Access Grants: enabled
-   - Valid Redirect URIs:
-     - `http://localhost:3000/*`
-     - `http://localhost:3000/api/auth/callback/keycloak`
-   - Web Origins: `http://localhost:3000`
+   - Web Origins: rendered at import from `${CORE_API_WEB_ORIGINS}` (plan 29-08). It used to be
+     the literal `"*"`; a wildcard origin on a **confidential** browser-flow client lets any site
+     a developer visits make credentialed cross-origin calls to the IdP as this client. The value
+     is now exactly the origins of this client's own redirect URIs, supplied by
+     `docker-compose.full-stack.yml`.
+
+2. **~~frontend~~ — THIS CLIENT DOES NOT EXIST. Correction, 2026-08-11 (plan 29-08).**
+
+   This section previously documented a public client with Client ID `frontend`, redirect URIs
+   `http://localhost:3000/*` and `http://localhost:3000/api/auth/callback/keycloak`, and web
+   origin `http://localhost:3000`. **No such client is in any realm this repository ships**, and
+   there is no evidence one ever was — the realm exports in version control have never contained
+   it. The entry was documentation of an intention, and it outlived being read as one.
+
+   The measurement, re-run here rather than quoted (`rg -uu`, so `.gitignore` cannot hide a file):
+
+   ```
+   rg -uu --count-matches --include-zero '"clientId" : "frontend"' realm-export.template.json  -> 0
+   rg -uu --count-matches --include-zero '"clientId" : "core-api"' realm-export.template.json  -> 1
+   ```
+
+   The second line is a **positive control**, not decoration: an already-zero grep is a statement
+   about the *pattern* until something proves that pattern can match at all.
+
+   **What this cost.** `k8s/base/configmap.yaml` carried `keycloak.client-id: "frontend"` — a
+   value copied from a `frontend-deployment.yaml` hardcode, cross-checked against *this file*
+   rather than against the realm. Every environment that inherited it started its OIDC flow
+   against a client that does not exist, and no gate could see it: the render is valid, the key
+   exists, the value is a non-empty string. It is observable only at the authorize request. Plan
+   29-02 fixed staging, plan 26-08 had already fixed the local overlay, and plan 29-08 fixed the
+   base (and therefore production) in the same change as this correction.
+
+   **The client the frontend actually authenticates as is `core-api`** — the confidential
+   browser-flow client above, which is also what `.env`'s `KEYCLOAK_CLIENT_ID` names.
 
 ### Groups & Tenant Mapping
 
@@ -331,7 +368,10 @@ The `tenant_id` claim is used by the backend for multi-tenant data isolation via
 ## Version History
 
 - **v0.7.0** (2025-12-31): Initial realm export to version control
-  - 2 clients configured (core-api, frontend)
+  - 2 clients configured (core-api, **frontend — as RECORDED at the time; see the correction
+    under "Clients" above. The `frontend` client is not present in any committed realm export,
+    so this line is kept as the dated record it is and must not be read as a description of the
+    realm**)
   - 3 test users with tenant assignments
   - Protocol mappers for tenant_id injection
   - Development-ready configuration

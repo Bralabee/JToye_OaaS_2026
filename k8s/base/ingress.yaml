@@ -5,6 +5,30 @@ metadata:
   name: jtoye-ingress
   annotations:
     # TLS Configuration
+    #
+    # THIS VALUE IS NOT AUTHORED ANY MORE (plan 29-08 / T-29-08-04). It is
+    # overwritten at render time from app-config `cert-manager.cluster-issuer` by
+    # the `replacements:` block in k8s/base/kustomization.yaml AND in the staging
+    # and production kustomizations — a base replacement does not re-run against
+    # an overlay's patched ConfigMap, a fact plans 29-04 and 29-10 each measured.
+    # The literal below is the base default you get if a replacement is ever
+    # removed, and it is byte-identical to what this line has always said, so the
+    # production render is unchanged. Change app-config, never this line.
+    #
+    # WHY IT HAD TO STOP BEING A LITERAL: all the SANs on this Ingress share ONE
+    # certificate Secret and are issued as a SINGLE ACME order, so one failed
+    # HTTP-01 challenge fails the whole order (see the `tls:` note below). Let's
+    # Encrypt's PRODUCTION endpoint charges each failure against a weekly
+    # duplicate-certificate quota that then blocks the retry — so a rehearsal
+    # environment whose DNS does not resolve yet must issue against the STAGING
+    # ACME endpoint first. With the issuer hardcoded here, that was a base
+    # manifest edit; it is now one key in an overlay's configmap-patch.yaml.
+    #
+    # k8s/local removes this annotation entirely (LOC-4: no cert-manager runs
+    # locally), which is why the local overlay deliberately carries NO
+    # replacement pass for it — kustomize applies an overlay's patches BEFORE its
+    # replacements, so a local pass would look for a field its own patch had just
+    # deleted.
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
@@ -59,6 +83,18 @@ spec:
   # Keep this list in lockstep with `rules:` below: a host belongs here only if a
   # rule routes it to a Service that exists in the render. CI asserts the
   # backend half of that (INV-6 in k8s/scripts/check-render-invariants.sh).
+  #
+  # 2026-08-11 (plan 29-08) — THE CONDITION ABOVE BECAME TRUE, AND THE SAN CAME
+  # BACK IN THE STAGING OVERLAY, NOT HERE. D-02 puts Keycloak in the cluster, so
+  # a Service named `keycloak` now exists in every render and the removal note
+  # under `rules:` has been executed. It was executed in k8s/staging, because the
+  # constraint that removed it in the first place is about DNS, and only staging
+  # has any: D-08 keeps every PRODUCTION hostname deliberately unresolvable until
+  # Phase 32 decides cutover. Adding `auth.olajay.co.uk` to THIS list today would
+  # re-create exactly the defect the note describes — a SAN whose HTTP-01
+  # challenge cannot be answered, inside a shared order, stalling issuance for
+  # api and app as well. Production's host rule and SAN arrive with production's
+  # DNS records, in that order, in Phase 32.
   tls:
   - hosts:
     - api.olajay.co.uk
@@ -86,6 +122,30 @@ spec:
   # before them. Recorded as a dated deferred item in
   # .planning/phases/26-local-k8s-overlay-verified-breakage-fixes/deferred-items.md
   # so the displaced intent is not lost.
+  #
+  # ### EXECUTED 2026-08-11 — plan 29-08 (DPLY-01 / D-02 / #296) ###
+  #
+  # The condition became true and the instruction was followed in the order it
+  # specifies. `k8s/base/keycloak/` now ships the Deployment, the ClusterIP
+  # Service on 8080 and its NetworkPolicy; the host rule and the TLS SAN were
+  # added AFTER them, in the SAME change, in `k8s/staging/ingress-hosts-patch.yaml`.
+  # INV-6 is the mechanism that made the ordering enforceable rather than
+  # advisory: it fails the build the moment a rule names a Service the render
+  # does not contain.
+  #
+  # THE PARAGRAPH ABOVE IS NOW HISTORICAL IN ONE RESPECT AND STILL LIVE IN
+  # ANOTHER, and the difference matters. Its premise — "Keycloak is an EXTERNAL
+  # MANAGED identity provider in staging and production" — is FALSE as of D-02
+  # for staging; there is no external Keycloak anywhere, which is what
+  # .planning/ISSUE-DISPOSITION.md's superseded note assumed there was. But its
+  # RULE is untouched and is why the rule was added to the overlay and not here:
+  # a controller must not claim a hostname whose DNS does not point at it, and
+  # production's four names are deliberately unresolvable until Phase 32 (D-08).
+  #
+  # The staging rules for auth-staging and grafana-staging are `op: add` in that
+  # overlay, appended after the existing indices, precisely so the `op: replace`
+  # paths that address rules[0] (api) and rules[1] (app) BY POSITION keep
+  # addressing them.
   rules:
   - host: api.olajay.co.uk
     http:

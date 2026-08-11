@@ -182,6 +182,7 @@ data:
   alerting.smtp.smarthost: smtp.gmail.com:587
   api.internal.url: http://core-java:9090
   api.url: https://api-staging.olajay.co.uk
+  cert-manager.cluster-issuer: letsencrypt-staging
   cors.allowed-origins: https://app-staging.olajay.co.uk
   db.egress-cidr: 0.0.0.0/0
   db.max-connections: "429"
@@ -194,8 +195,13 @@ data:
   keycloak.admin.enabled: "false"
   keycloak.admin.realms: jtoye-staging
   keycloak.client-id: core-api
+  keycloak.db.name: keycloak
+  keycloak.hostname: auth-staging.olajay.co.uk
   keycloak.issuer.uri: https://auth-staging.olajay.co.uk/realms/jtoye-staging
   keycloak.public.issuer.uri: https://auth-staging.olajay.co.uk/realms/jtoye-staging
+  keycloak.realm.name: jtoye-staging
+  keycloak.realm.redirect-uris: https://app-staging.olajay.co.uk/*
+  keycloak.realm.web-origins: https://app-staging.olajay.co.uk
   log.level: DEBUG
   log.path: /var/log/jtoye
   media.outbox.backoff.base.ms: "5000"
@@ -423,6 +429,239 @@ metadata:
     component: monitoring
     environment: staging
   name: grafana-provisioning
+  namespace: jtoye-staging
+---
+apiVersion: v1
+data:
+  realm.json.tmpl: |
+    {
+      "realm" : "__REALM_NAME__",
+      "enabled" : true,
+      "sslRequired" : "external",
+      "defaultSignatureAlgorithm" : "RS256",
+      "registrationAllowed" : false,
+      "registrationEmailAsUsername" : false,
+      "rememberMe" : false,
+      "verifyEmail" : false,
+      "loginWithEmailAllowed" : true,
+      "duplicateEmailsAllowed" : false,
+      "resetPasswordAllowed" : false,
+      "editUsernameAllowed" : false,
+      "bruteForceProtected" : true,
+      "permanentLockout" : false,
+      "maxFailureWaitSeconds" : 900,
+      "minimumQuickLoginWaitSeconds" : 60,
+      "waitIncrementSeconds" : 60,
+      "quickLoginCheckMilliSeconds" : 1000,
+      "maxDeltaTimeSeconds" : 43200,
+      "failureFactor" : 30,
+      "passwordPolicy" : "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername",
+      "accessTokenLifespan" : 300,
+      "accessTokenLifespanForImplicitFlow" : 300,
+      "ssoSessionIdleTimeout" : 1800,
+      "ssoSessionMaxLifespan" : 7200,
+      "accessCodeLifespan" : 60,
+      "accessCodeLifespanUserAction" : 300,
+      "accessCodeLifespanLogin" : 1800,
+      "clientScopes" : [ {
+        "name" : "catalog:read",
+        "description" : "Read-only access to the product catalog surface (issue #206 [AI-4]). Emitted into the token scope claim; the resource server maps it to SCOPE_catalog:read.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      }, {
+        "name" : "catalog:write",
+        "description" : "Write access to the product catalog surface (issue #206 [AI-4]). Emitted into the token scope claim; the resource server maps it to SCOPE_catalog:write, which gates all nine ProductController mutations.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      }, {
+        "name" : "orders:read",
+        "description" : "Reserved taxonomy scope for the [AI-1] MCP auth model (#203). DEFINED to seed the capability taxonomy; NOT granted to any client and NOT enforced in this slice.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      }, {
+        "name" : "orders:write",
+        "description" : "Enforced (Phase 25 [AI-02]): gates POST /api/v1/orders via @PreAuthorize(hasAuthority('SCOPE_orders:write')). Emitted into the token scope claim; the resource server maps it to SCOPE_orders:write.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      }, {
+        "name" : "customers:read",
+        "description" : "Reserved taxonomy scope for the [AI-02] MCP auth model (Phase 25). DEFINED for taxonomy symmetry with catalog:*/orders:*; NOT granted to any client and NOT enforced in this slice.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      }, {
+        "name" : "customers:write",
+        "description" : "Enforced (Phase 25 [AI-02]): gates POST /api/v1/customers via @PreAuthorize(hasAuthority('SCOPE_customers:write')). Emitted into the token scope claim; the resource server maps it to SCOPE_customers:write.",
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "include.in.token.scope" : "true",
+          "display.on.consent.screen" : "false"
+        },
+        "protocolMappers" : [ ]
+      } ],
+      "clients" : [ {
+        "clientId" : "core-api",
+        "enabled" : true,
+        "surrogateAuthRequired" : false,
+        "alwaysDisplayInConsole" : false,
+        "clientAuthenticatorType" : "client-secret",
+        "secret" : "__CORE_API_CLIENT_SECRET__",
+        "redirectUris" : [ "__CORE_API_REDIRECT_URI__" ],
+        "webOrigins" : [ "__CORE_API_WEB_ORIGIN__" ],
+        "notBefore" : 0,
+        "bearerOnly" : false,
+        "consentRequired" : false,
+        "standardFlowEnabled" : true,
+        "implicitFlowEnabled" : false,
+        "directAccessGrantsEnabled" : true,
+        "serviceAccountsEnabled" : true,
+        "publicClient" : false,
+        "frontchannelLogout" : false,
+        "protocol" : "openid-connect",
+        "attributes" : {
+          "post.logout.redirect.uris" : "__CORE_API_REDIRECT_URI__"
+        },
+        "authenticationFlowBindingOverrides" : { },
+        "fullScopeAllowed" : true,
+        "nodeReRegistrationTimeout" : -1,
+        "protocolMappers" : [ {
+          "name" : "tenant-id-mapper",
+          "protocol" : "openid-connect",
+          "protocolMapper" : "oidc-usermodel-attribute-mapper",
+          "consentRequired" : false,
+          "config" : {
+            "userinfo.token.claim" : "true",
+            "user.attribute" : "tenant_id",
+            "id.token.claim" : "true",
+            "access.token.claim" : "true",
+            "claim.name" : "tenant_id",
+            "jsonType.label" : "String"
+          }
+        }, {
+          "name" : "core-api-audience-mapper",
+          "protocol" : "openid-connect",
+          "protocolMapper" : "oidc-audience-mapper",
+          "consentRequired" : false,
+          "config" : {
+            "included.client.audience" : "core-api",
+            "access.token.claim" : "true",
+            "id.token.claim" : "false",
+            "introspection.token.claim" : "true"
+          }
+        } ],
+        "defaultClientScopes" : [ "web-origins", "acr", "roles", "profile", "email", "catalog:read", "catalog:write", "orders:write", "customers:write" ],
+        "optionalClientScopes" : [ "address", "phone", "offline_access", "microprofile-jwt" ]
+      } ]
+    }
+  render.sh: |
+    #!/bin/bash
+    # Renders the realm import from the template beside it, then hands the result
+    # to the import directory the server reads at startup.
+    #
+    # NEVER add `set -x`: the client secret passes through this script and would
+    # land in pod logs.
+    set -euo pipefail
+
+    TEMPLATE=/etc/keycloak/tmpl/realm.json.tmpl
+    RENDERED=/opt/keycloak/data/import/realm.json
+
+    fatal() { echo "FATAL: $*" >&2; exit 1; }
+
+    [ -f "$TEMPLATE" ] || fatal "realm template not found at $TEMPLATE"
+
+    # Every input is checked BY NAME. An empty value here does not produce an
+    # error later — it produces a realm that imports cleanly and cannot be logged
+    # into: an empty redirect URI rejects every authorization request, an empty
+    # web origin blocks every cross-origin call, and an empty client secret makes
+    # a confidential client unauthenticatable. All four look identical in the
+    # server log, which is why each is named separately.
+    [ -n "${KC_REALM_NAME:-}" ] \
+      || fatal "KC_REALM_NAME is empty (app-config keycloak.realm.name) — the realm name is the tail of the issuer URI every token is validated against"
+    [ -n "${KC_REALM_REDIRECT_URI:-}" ] \
+      || fatal "KC_REALM_REDIRECT_URI is empty (app-config keycloak.realm.redirect-uris) — a client with no redirect URI rejects every authorization request"
+    [ -n "${KC_REALM_WEB_ORIGIN:-}" ] \
+      || fatal "KC_REALM_WEB_ORIGIN is empty (app-config keycloak.realm.web-origins) — refusing to import; an empty origin list is not the same as the wildcard it replaced, but it is equally unusable"
+    [ -n "${KC_CORE_API_CLIENT_SECRET:-}" ] \
+      || fatal "KC_CORE_API_CLIENT_SECRET is empty (secret keycloak-credentials, key frontend-client-secret) — a confidential client with no secret cannot authenticate anyone"
+
+    # T-29-08-01, asserted on the INPUT rather than trusted. A wildcard origin on
+    # a confidential browser-flow client lets any site a vendor visits read
+    # cross-origin responses from the identity provider. The dev realm carries one
+    # by history; no environment rendered from this file may inherit it, and an
+    # operator who patches the app-config key to a wildcard gets a refusal rather
+    # than a silently permissive realm.
+    case "$KC_REALM_WEB_ORIGIN" in
+      '*'|'+') fatal "KC_REALM_WEB_ORIGIN is '$KC_REALM_WEB_ORIGIN' — a wildcard web origin is exactly the threat this realm is parameterised to close (T-29-08-01). Set app-config keycloak.realm.web-origins to this environment's own origin." ;;
+    esac
+
+    mkdir -p "$(dirname "$RENDERED")"
+
+    # sed, and the delimiter is '|' so a URL's slashes need no escaping. The
+    # placeholder syntax is __NAME__ precisely so Keycloak's own ${...} tokens
+    # are not candidates for substitution and survive untouched.
+    sed \
+      -e "s|__REALM_NAME__|${KC_REALM_NAME}|g" \
+      -e "s|__CORE_API_REDIRECT_URI__|${KC_REALM_REDIRECT_URI}|g" \
+      -e "s|__CORE_API_WEB_ORIGIN__|${KC_REALM_WEB_ORIGIN}|g" \
+      -e "s|__CORE_API_CLIENT_SECRET__|${KC_CORE_API_CLIENT_SECRET}|g" \
+      "$TEMPLATE" > "$RENDERED"
+
+    # THE RESIDUE GUARD. This is the positive form of the trap the compose render
+    # comment describes: there, an unlisted name survives as a literal token and
+    # the server treats it as a value. Here the render REFUSES. A new placeholder
+    # added to the template without a matching substitution above fails the pod at
+    # Init, by name, instead of importing a realm whose client id is a token.
+    if grep -q '__[A-Z0-9_]\{1,\}__' "$RENDERED"; then
+      echo "FATAL: unrendered placeholder(s) remain in $RENDERED:" >&2
+      grep -o '__[A-Z0-9_]\{1,\}__' "$RENDERED" | sort -u >&2
+      exit 1
+    fi
+
+    # Structural validation before the server ever reads it. An initContainer that
+    # exits non-zero blocks the pod, so a malformed realm is a visible
+    # Init:CrashLoopBackOff rather than a running server with no realm — which is
+    # the failure the A7 control arm showed is otherwise SILENT.
+    if command -v python3 > /dev/null 2>&1; then
+      python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$RENDERED" \
+        || fatal "the rendered realm at $RENDERED is not valid JSON"
+      echo "keycloak realm render: JSON validated with python3"
+    else
+      echo "keycloak realm render: WARNING - no python3 in this image, JSON validity is UNVERIFIED at render time" >&2
+    fi
+
+    echo "keycloak realm render: wrote realm '${KC_REALM_NAME}' to $RENDERED"
+kind: ConfigMap
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: keycloak
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: identity
+    environment: staging
+  name: keycloak-realm-import
   namespace: jtoye-staging
 ---
 apiVersion: v1
@@ -1374,6 +1613,34 @@ spec:
     targetPort: 3000
   selector:
     app: grafana
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app: keycloak
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: identity
+    environment: staging
+  name: keycloak
+  namespace: jtoye-staging
+spec:
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: keycloak
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
@@ -2493,6 +2760,233 @@ metadata:
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
   labels:
+    app: keycloak
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: jtoye-platform
+    component: identity
+    environment: staging
+  name: keycloak
+  namespace: jtoye-staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: jtoye-platform
+      environment: staging
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+        documentation: https://github.com/jtoye/oaas-platform
+        maintainer: jtoye-devops-team
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8080"
+        prometheus.io/scrape: "true"
+      labels:
+        app: keycloak
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: jtoye-platform
+        component: identity
+        environment: staging
+        version: v1
+    spec:
+      containers:
+      - args:
+        - start
+        - --import-realm
+        env:
+        - name: KEYCLOAK_ADMIN
+          valueFrom:
+            secretKeyRef:
+              key: admin-username
+              name: keycloak-credentials
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: admin-password
+              name: keycloak-credentials
+        - name: KC_DB
+          value: postgres
+        - name: KC_DB_URL_HOST
+          valueFrom:
+            secretKeyRef:
+              key: host
+              name: postgres-credentials
+        - name: KC_DB_URL_PORT
+          valueFrom:
+            secretKeyRef:
+              key: port
+              name: postgres-credentials
+        - name: KC_DB_URL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.db.name
+              name: app-config
+        - name: KC_DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: db-username
+              name: keycloak-credentials
+        - name: KC_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: db-password
+              name: keycloak-credentials
+        - name: DB_SSL_MODE
+          valueFrom:
+            configMapKeyRef:
+              key: db.ssl-mode
+              name: app-config
+        - name: KC_DB_URL_PROPERTIES
+          value: ?sslmode=$(DB_SSL_MODE)
+        - name: KC_DB_POOL_MAX_SIZE
+          value: "20"
+        - name: KC_HEALTH_ENABLED
+          value: "true"
+        - name: KC_METRICS_ENABLED
+          value: "true"
+        - name: KC_HOSTNAME
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.hostname
+              name: app-config
+        - name: KC_HOSTNAME_STRICT
+          value: "true"
+        - name: KC_HTTP_ENABLED
+          value: "true"
+        - name: KC_PROXY_HEADERS
+          value: xforwarded
+        - name: JAVA_OPTS
+          value: -Xms512m -Xmx1024m
+        image: quay.io/keycloak/keycloak:24.0.5
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health/live
+            port: 8080
+          periodSeconds: 15
+          timeoutSeconds: 5
+        name: keycloak
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health/ready
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1536Mi
+          requests:
+            cpu: 250m
+            memory: 1536Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /health/started
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 3
+        volumeMounts:
+        - mountPath: /opt/keycloak/data/import
+          name: realm-import
+          readOnly: true
+      initContainers:
+      - command:
+        - /bin/bash
+        - /etc/keycloak/render/render.sh
+        env:
+        - name: KC_REALM_NAME
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.realm.name
+              name: app-config
+        - name: KC_REALM_REDIRECT_URI
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.realm.redirect-uris
+              name: app-config
+        - name: KC_REALM_WEB_ORIGIN
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.realm.web-origins
+              name: app-config
+        - name: KC_CORE_API_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: frontend-client-secret
+              name: keycloak-credentials
+        image: quay.io/keycloak/keycloak:24.0.5
+        imagePullPolicy: IfNotPresent
+        name: render-realm
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /etc/keycloak/tmpl
+          name: realm-tmpl
+          readOnly: true
+        - mountPath: /etc/keycloak/render
+          name: realm-render
+          readOnly: true
+        - mountPath: /opt/keycloak/data/import
+          name: realm-import
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      volumes:
+      - configMap:
+          items:
+          - key: realm.json.tmpl
+            path: realm.json.tmpl
+          name: keycloak-realm-import
+        name: realm-tmpl
+      - configMap:
+          items:
+          - key: render.sh
+            path: render.sh
+          name: keycloak-realm-import
+        name: realm-render
+      - emptyDir: {}
+        name: realm-import
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
     app: postgres-exporter
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/part-of: jtoye-platform
@@ -3082,7 +3576,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-staging
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
@@ -3110,6 +3604,8 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/server-snippet: |
+      more_set_headers "X-Robots-Tag: noindex, nofollow";
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
   labels:
     app.kubernetes.io/managed-by: kustomize
@@ -3140,17 +3636,39 @@ spec:
               number: 3000
         path: /
         pathType: Prefix
+  - host: auth-staging.olajay.co.uk
+    http:
+      paths:
+      - backend:
+          service:
+            name: keycloak
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
+  - host: grafana-staging.olajay.co.uk
+    http:
+      paths:
+      - backend:
+          service:
+            name: grafana
+            port:
+              number: 3000
+        path: /
+        pathType: Prefix
   tls:
   - hosts:
     - api-staging.olajay.co.uk
     - app-staging.olajay.co.uk
+    - auth-staging.olajay.co.uk
+    - grafana-staging.olajay.co.uk
     secretName: jtoye-staging-tls
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-staging
     deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
     documentation: https://github.com/jtoye/oaas-platform
     maintainer: jtoye-devops-team
@@ -3635,6 +4153,74 @@ metadata:
   labels:
     app.kubernetes.io/component: networkpolicy
     app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: keycloak-allow
+    app.kubernetes.io/part-of: jtoye-platform
+    environment: staging
+  name: keycloak-allow
+  namespace: jtoye-staging
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 5432
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - port: 8080
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 8080
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: core-java
+    ports:
+    - port: 8080
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: keycloak
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    deployment.timestamp: REPLACE_WITH_DEPLOYMENT_TIMESTAMP
+    documentation: https://github.com/jtoye/oaas-platform
+    maintainer: jtoye-devops-team
+  labels:
+    app.kubernetes.io/component: networkpolicy
+    app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: pg-backup-allow
     app.kubernetes.io/part-of: jtoye-platform
     environment: staging
@@ -3820,6 +4406,13 @@ spec:
     - podSelector:
         matchLabels:
           app: alertmanager
+  - ports:
+    - port: 8080
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: keycloak
   ingress:
   - from:
     - podSelector:

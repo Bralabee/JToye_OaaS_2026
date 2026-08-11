@@ -224,6 +224,17 @@ replacements:
           name: postgres-exporter-allow
         fieldPaths:
           - spec.egress.1.ports.0.port
+      # Keycloak (plan 29-08). Local does not USE the in-cluster Keycloak — the
+      # LOC-1 shims send every OIDC call to the compose one — but the workload is
+      # rendered here because LOC-2 requires it (see k8s/local/configmap-patch.yaml
+      # for the full note). Its egress pass is written anyway: a policy whose
+      # derived port is silently missing in one overlay is how the #271 trap
+      # returns, and a no-op pass costs nothing.
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
+        fieldPaths:
+          - spec.egress.1.ports.0.port
   - source:
       kind: ConfigMap
       name: app-config
@@ -242,6 +253,11 @@ replacements:
       - select:
           kind: NetworkPolicy
           name: postgres-exporter-allow
+        fieldPaths:
+          - spec.egress.1.to.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: keycloak-allow
         fieldPaths:
           - spec.egress.1.to.0.ipBlock.cidr
   - source:

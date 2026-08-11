@@ -1,0 +1,65 @@
+# Staging must not appear in search results (T-29-08-03 / D-08, plan 29-08).
+#
+# THIS IS A POSITIVE REQUIREMENT, NOT HYGIENE. D-08's rule for this phase is that
+# "nothing may look live before it is", and that applies to crawlers as much as to
+# humans: `app-staging.olajay.co.uk` serves the real vendor UI against real seeded
+# rows, on a hostname that is about to become publicly resolvable. Indexed, it
+# competes with the production origin for the platform's own brand terms and
+# invites strangers to a rehearsal environment.
+#
+# It is also why the SEO cross-cutting contract is recorded **N/A** for phase 29
+# rather than silently dropped. The contract asks public surfaces to be
+# discoverable; this surface must not be. Recording N/A without this annotation
+# would be an unearned exemption — the annotation is what makes the N/A true.
+#
+# ---------------------------------------------------------------------------
+# WHY `server-snippet` AND NOT `configuration-snippet`
+#
+# k8s/base/ingress.yaml already carries a `configuration-snippet` setting six
+# security headers. kustomize cannot APPEND to a scalar, so adding X-Robots-Tag to
+# that annotation would mean restating all six here — a second copy of the
+# platform's security headers, in a staging-only file, with nothing to keep the
+# two in step. The first edit to the base list would silently apply to production
+# and not to staging.
+#
+# `server-snippet` is a DIFFERENT annotation that nginx injects into the `server`
+# block rather than the `location` block, so the two compose instead of colliding:
+# base's six headers keep applying, and this one adds a seventh, for every
+# location this Ingress serves. Zero duplication, and no shared line to drift.
+#
+# ---------------------------------------------------------------------------
+# THE COUPLING TO PLAN 29-05, STATED RATHER THAN ASSUMED
+#
+# Snippet annotations only reach a browser if the controller allows them.
+# ingress-nginx classifies BOTH `configuration-snippet` and `server-snippet` at
+# risk level Critical, so `allow-snippet-annotations: "true"` is necessary and NOT
+# sufficient — `annotations-risk-level` must also be raised, which is 29-05's
+# finding and lives with the dated CVE-2021-25742 acceptance in that plan's
+# bootstrap. This annotation is in the same risk class as the one the base already
+# depends on, so it adds no new controller configuration and no new acceptance.
+#
+# THE MANIFEST SHOWING A HEADER AND A BROWSER RECEIVING IT ARE DIFFERENT CLAIMS.
+# This file proves only the first. The served-response proof — a real request to
+# the real host, reading the real `X-Robots-Tag` off the wire — is plan 29-11's,
+# and this plan explicitly does NOT treat the manifest as evidence of the header.
+#
+# ---------------------------------------------------------------------------
+# ONE INGRESS, NOT BOTH, AND WHY
+#
+# `jtoye-sse-ingress` is deliberately NOT patched. It serves exactly one path —
+# the long-lived Server-Sent Events stream on the api host — which is not a
+# document, returns `text/event-stream`, requires an Authorization header, and
+# never terminates. There is nothing there for a crawler to index, and every
+# indexable staging surface (the vendor UI on app-staging, and everything the api
+# host serves under `/`) is on THIS Ingress.
+#
+# `noindex, nofollow`, not bare `noindex`: nofollow also stops a crawler that
+# reaches one staging page from walking the rest of the environment through its
+# own links.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jtoye-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/server-snippet: |
+      more_set_headers "X-Robots-Tag: noindex, nofollow";

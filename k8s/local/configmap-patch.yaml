@@ -97,6 +97,46 @@ data:
   keycloak.admin.base-url: "http://host.minikube.internal:8085"
   keycloak.admin.realms: "jtoye-dev"
 
+  # --- THE IN-CLUSTER KEYCLOAK WORKLOAD, AND WHY LOCAL RENDERS ONE IT DOES NOT
+  #     USE (plan 29-08). READ THIS BEFORE "FIXING" IT.
+  #
+  # D-02 adds a Keycloak Deployment/Service/NetworkPolicy to k8s/base, so this
+  # overlay renders one too — and it MUST. LOC-2 in
+  # k8s/scripts/check-render-invariants.sh compares COUNTS: every Deployment the
+  # BASE renders must appear in the local render at `replicas: 1`. Removing
+  # Keycloak here with a `$patch: delete` would drop the local Deployment count
+  # below base's and FAIL that invariant — which is LOC-2 doing its job, because
+  # the thing it exists to catch is a local render that silently stops covering
+  # what base ships.
+  #
+  # THE LOCAL RUNTIME IS UNCHANGED AND STILL CORRECT: the three shims above send
+  # every OIDC call to the COMPOSE Keycloak on host.minikube.internal:8085, which
+  # is what LOC-1 asserts per key by name. Nothing in the local login path went
+  # through an in-cluster Service before this plan and nothing does now.
+  #
+  # THE IN-CLUSTER POD WILL NOT START LOCALLY, AND THAT IS A LOUD FAILURE RATHER
+  # THAN A SILENT ONE. scripts/k8s-local-secrets.sh does not create the
+  # `db-username` / `db-password` keys on the keycloak-credentials Secret (it
+  # predates this workload), so the pod stops at CreateContainerConfigError
+  # naming the missing key. It cannot half-work, it cannot serve a realm nobody
+  # meant to create, and it cannot take traffic — LOC-5 asserts that no local
+  # Ingress routes to a Service named `keycloak`. Making it start locally means
+  # adding those two keys to that script AND deciding which database it uses;
+  # that is a local-overlay decision, recorded in this phase's deferred-items.md
+  # rather than guessed at here.
+  #
+  # The three values below exist so the RENDER is coherent — a local render that
+  # named the production auth hostname would be exactly the leak LOC-5 scans for,
+  # one domain migration from now.
+  keycloak.hostname: "host.minikube.internal"
+  keycloak.realm.name: "jtoye-dev"
+  keycloak.db.name: "keycloak"
+  # Derived from frontend.url below, exactly as every other overlay derives them
+  # from its own. NOT a wildcard even here: the realm render refuses `*`/`+`
+  # outright, and a local exemption would be the one place the habit could form.
+  keycloak.realm.redirect-uris: "http://app.jtoye.local/*"
+  keycloak.realm.web-origins: "http://app.jtoye.local"
+
   # --- Ingress hosts (D-12) --------------------------------------------------
   # The two `.local` hosts served by the minikube ingress addon, resolved via
   # /etc/hosts entries pointing at `minikube -p jtoye ip`. This is the one deploy
