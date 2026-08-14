@@ -315,6 +315,34 @@ captured counts are recorded), see `k8s/LOCAL.md` § "Backup rehearsal" and its 
 **L4**. The BYPASSRLS role is bootstrapped there by `scripts/k8s-local-secrets.sh`, which invokes
 `infra/backups/create-backup-role.sql` rather than restating the role's privileges.
 
+#### The recipe is scripted for the MANAGED staging server — and has not been run
+
+`scripts/staging-pitr-drill.sh` automates both arms above against the managed staging
+database, and adds the arm neither this runbook nor `scripts/restore-drill.sh` covers: a
+**provider point-in-time restore**. It expects arm A's `pg_dump` to exit **non-zero** (see
+"One correction to the mechanism" below — that is the measured behaviour of this database,
+not a failure), runs the pipeline's own size floor over the partial artifact it leaves, and
+restores to a **timestamp** because the Burstable tier has no on-demand backup.
+
+Three things about it are worth knowing before running it:
+
+- **It creates a second billable server.** Azure PITR never restores in place. The script
+  installs a cleanup trap *before* the restore is requested, with the restored server's name
+  derived first, so an interrupted run still deletes it.
+- **It refuses to run without an explicit `--subscription`**, and refuses named subscriptions
+  on a refusal list. The ambient `az` default on the maintainer's host is employer
+  infrastructure.
+- **It re-applies the source's single firewall rule**, because PITR does not copy them and an
+  unreachable restored server otherwise reads as a failed restore.
+
+> **It has NOT been run against staging.** It was authored while the Azure estate was
+> deliberately stopped, and only its structure has been exercised — a dry-run harness proving
+> the guards refuse what they claim to refuse and that the cleanup trap still fires when a
+> stage fails. No restore has happened, no counts have been captured, and no RPO or RTO has
+> been measured on the managed server. **Recording that result belongs to plan 29-13**, in a
+> dated section like the local-cluster one above; do not treat the script's existence as
+> evidence that staging is recoverable.
+
 ### In-cluster result — local minikube (2026-07-25, Phase 26 / plan 26-07)
 
 The first execution of this CronJob **inside a real Kubernetes cluster**. Namespace

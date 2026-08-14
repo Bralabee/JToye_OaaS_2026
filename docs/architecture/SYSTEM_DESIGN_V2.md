@@ -887,15 +887,66 @@ The diagram below is the **TARGET** architecture, kept for planning purposes:
 │                                                             │
 │  Connection Pooling: PgBouncer (Transaction mode)          │
 │  Failover: Patroni + etcd (automatic promotion)            │
-│  Backup: WAL-G to S3 (PITR, 30-day retention)             │
+│  Backup: SUPERSEDED by ADR-0002 — see correction below     │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> **SECOND CORRECTION (2026-08-15) — the backup direction above is superseded,
+> and this is a different correction from the first one.**
+>
+> The **first** correction was PR #197 (`docs/CHANGELOG.md:2183`), which relabelled
+> this whole section **TARGET** because the document was asserting disaster-recovery
+> capabilities that did not exist. That fixed a *false claim*. It is done, and this
+> note is not a rediscovery of it.
+>
+> What was still wrong afterwards is narrower and real: the TARGET diagram continued
+> to name **WAL-G to S3** as the backup direction, and that direction is no longer
+> the plan. **ADR-0002 is Accepted (2026-08-10)** and chose managed Azure Database
+> for PostgreSQL Flexible Server; the ADR says so itself under Consequences — "no
+> WAL-G/Patroni engineering in-cluster", and "§3.2's Patroni/PgBouncer TARGET diagram
+> is superseded if this ADR is accepted". A superseded direction left standing in a
+> planning diagram is indistinguishable from a current one, so it is named here
+> rather than silently deleted.
+>
+> **The decided direction, in two lines of defence:**
+>
+> 1. **Azure Flexible Server automated backups + point-in-time restore** — the first
+>    line, and the one that actually closes #101's PITR criterion with configuration
+>    rather than a Patroni estate.
+> 2. **The `pg-backup-cronjob` logical dump to AWS S3 (eu-west-2)** — retained
+>    deliberately as the provider-independent second line. It is not redundant with
+>    (1): a provider-side restore cannot help if the subscription itself is the thing
+>    that is lost, and the logical dump is restorable anywhere.
+>
+> **Managed-server specifics a reader will otherwise be surprised by**, all of which
+> shape the restore runbook (`docs/runbooks/backups.md`) and the drill script:
+>
+> - **PITR always creates a NEW server.** It never restores in place, so a restore is
+>   also a second billable resource that somebody has to delete.
+> - **Server parameters are not applied** to the restored server.
+> - **Firewall rules are NOT copied.** A restored server is typically unreachable
+>   until they are re-applied — which reads as a failed restore when the data is
+>   in fact intact.
+> - **No public/private access crossover**: a restore cannot change the access mode.
+> - **Burstable tiers have no on-demand backup**, so a drill must restore to a
+>   *timestamp* inside the retention window rather than to a backup taken on demand.
+>   Staging is `Standard_B2s` with 7-day retention.
+>
+> **Not yet exercised.** No PITR restore has been performed against staging. The
+> drill is scripted (`scripts/staging-pitr-drill.sh`) but unrun; the evidence is owed
+> to plan 29-13. Nothing above should be read as a rehearsed capability.
 
 **Key Decisions (TARGET — not yet implemented, see #101 / ADR-0002):**
 - **Synchronous replication** to 1 replica (zero data loss)
 - **Asynchronous replication** to 2nd replica (performance)
 - **PgBouncer** in transaction mode (connection pooling)
 - **Patroni** for automatic failover (< 30s RTO)
+- ~~**WAL-G to S3** for PITR~~ — **SUPERSEDED by ADR-0002 (Accepted 2026-08-10)**:
+  PITR comes from the managed provider (Azure Flexible Server automated backups),
+  with the existing logical-dump CronJob to S3 kept as the provider-independent
+  second line. The three rows above it remain TARGET-only and are equally
+  superseded for the *managed* path — they describe self-hosted HA, which ADR-0002
+  declined; they are kept here because the HA question itself (#101) is still open.
 
 ### 3.3 Caching Strategy
 
