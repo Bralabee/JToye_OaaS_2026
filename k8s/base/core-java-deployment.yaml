@@ -57,6 +57,16 @@ spec:
         # endpoints (health probes + /actuator/prometheus) in the prod profile.
         # Deliberately NOT added to the Service/Ingress below, so metrics + probe
         # surface stay off the public network.
+        #
+        # AMENDED 2026-08-14 (DEF-29-1): 9091 IS now on the Service below. The
+        # clause above is kept because its REASON still holds and is what the
+        # amendment had to preserve — the metrics + probe surface still takes no
+        # public traffic. What changed is only the mechanism: the Ingress names its
+        # backend port explicitly (ingress.yaml:159, `number: 9090`), so a second
+        # ClusterIP port publishes nothing, while `core-java-scrape-allow` keeps
+        # pod-level 9091 restricted to `app: prometheus`. What forced the change is
+        # that the Prometheus scrape target is `core-java:9091` — a Service DNS
+        # name — so with 9091 off the Service the scrape could never connect at all.
         - containerPort: 9091
           name: management
           protocol: TCP
@@ -694,6 +704,29 @@ spec:
     targetPort: 9090
     protocol: TCP
     name: http
+  # DEF-29-1 (2026-08-14): the management port needs a Service name because
+  # prometheus-config.yaml scrapes the STATIC target `core-java:9091`, which is a
+  # Service DNS name and therefore resolves to this ClusterIP. Without this entry
+  # the ClusterIP has no 9091, the connection is refused, and `up{job="core-java"}`
+  # sits at 0 with the ServiceDown rules firing permanently against a healthy app.
+  #
+  # THIS PUBLISHES NOTHING, and that is checked rather than asserted: the Ingress
+  # names its backend port explicitly (k8s/base/ingress.yaml:159, `number: 9090`),
+  # and a ClusterIP port is cluster-internal by definition. Pod-level 9091 ingress
+  # stays restricted to `app: prometheus` by `core-java-scrape-allow`
+  # (k8s/base/networkpolicies/50-observability.yaml). INV-9 in
+  # k8s/scripts/check-render-invariants.sh now enforces the target<->Service
+  # agreement so this cannot silently regress.
+  #
+  # NOT kubernetes_sd_config: 29-06 avoided pod discovery because
+  # check-alert-liveness.sh VOIDs on any job name it does not recognise, and the
+  # static targets are what keep the eight job names fixed. The cost of that
+  # choice is recorded as DEF-29-8 (one ClusterIP in front of 2 staging / 3
+  # production replicas, with `instance` relabelled to a constant).
+  - port: 9091
+    targetPort: 9091
+    protocol: TCP
+    name: management
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

@@ -1330,9 +1330,30 @@ data:
       # (evidence: .planning/phases/27-observability-hardening/baselines/B-1.txt, B-7.txt).
       # The lesson is "do not carry another runtime's literal", not "never write a port".
       #
-      # 9091 is deliberately NOT on the core-java Service, so this scrape reaches the
-      # POD network directly; k8s/base/networkpolicies/20-core-java.yaml already
-      # carries the Prometheus-scrape ingress rule for it.
+      # CORRECTED 2026-08-14 (DEF-29-1). The previous note here read: "9091 is
+      # deliberately NOT on the core-java Service, so this scrape reaches the POD
+      # network directly". That was FALSE the day it was written, independent of any
+      # later change: `core-java:9091` below is a SERVICE DNS NAME, so it resolves to
+      # the ClusterIP and a static target cannot address a pod IP. The two halves of
+      # that sentence contradicted each other, and the consequence was not cosmetic —
+      # the Service had no 9091, so the scrape was refused and `up{job="core-java"}`
+      # would have been 0 on first deploy with the ServiceDown rules firing against a
+      # healthy app. The Service now exposes 9091 (k8s/base/core-java-deployment.yaml),
+      # which is what makes this target resolvable.
+      #
+      # KNOWN COST, recorded as DEF-29-8 rather than shipped silently: a ClusterIP
+      # load-balances PER CONNECTION across 2 staging / 3 production core-java
+      # replicas, while relabel_configs below pins `instance` to the constant
+      # 'core-java'. So this is ONE series whose counters jump between unrelated pods,
+      # and rate() over them is unsound. It is still strictly better than a refused
+      # connection with no data at all. Closing it needs a headless Service plus
+      # dns_sd_configs — which keeps the eight job names fixed but drops the constant
+      # `instance`, touching every alert's labels and the alert-corpus parity gate.
+      #
+      # NetworkPolicy is a separate layer and needs no change: it governs pod
+      # IP:port, and `core-java-scrape-allow` in
+      # k8s/base/networkpolicies/50-observability.yaml already permits
+      # `app: prometheus` -> 9091.
       - job_name: 'core-java'
         metrics_path: '/actuator/prometheus'
         static_configs:
@@ -1530,6 +1551,10 @@ spec:
     port: 9090
     protocol: TCP
     targetPort: 9090
+  - name: management
+    port: 9091
+    protocol: TCP
+    targetPort: 9091
   selector:
     app: core-java
     app.kubernetes.io/managed-by: kustomize

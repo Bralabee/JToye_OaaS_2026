@@ -247,6 +247,36 @@
 #          fail on its own, and "found no Ingress backends" must never read as
 #          "nothing is published".
 #
+#   INV-9  DEF-29-1, RENDER level, EVERY target. Every static Prometheus scrape
+#          target that names a Service THIS RENDER CREATES must name a port that
+#          Service actually exposes.
+#
+#          WHY IT IS A GATE. The defect it pins shipped and survived eight green
+#          static gates: prometheus-config.yaml scraped `core-java:9091` while the
+#          core-java Service exposed 9090 only. A static target of the form
+#          `<host>:<port>` is a SERVICE DNS NAME, so it resolves to the ClusterIP
+#          and can only reach a port the SERVICE exposes — a containerPort alone
+#          reaches nothing. Nothing else could catch it: the YAML is valid, the
+#          NetworkPolicy correctly permitted prometheus -> 9091 because that layer
+#          governs pod IP:port (a different address entirely), and the file
+#          carried a comment asserting the scrape "reaches the POD network
+#          directly", which a Service-name target cannot do. First deploy would
+#          have shown `up{job="core-java"} == 0` and the ServiceDown rules firing
+#          permanently against a healthy application — a monitoring defect that
+#          reads as an application outage.
+#
+#          SKIPS ARE PRINTED, NOT SILENT. A target naming a host this render does
+#          not create (jtoye-rabbitmq — the RabbitMQ operator builds that Service
+#          from the CR at apply time) is genuinely out of scope here, but a
+#          silently shrinking denominator is how an invariant stops covering
+#          things without anyone noticing. Each skip names itself and its reason.
+#
+#          ITS VACUITY GUARD IS THE CHECKED COUNT, not the target count. Zero
+#          Service ports FAILS, zero targets FAILS, and — the one that matters —
+#          resolving targets but CHECKING none of them (every host skipped) FAILS
+#          too, because that state is indistinguishable from a pass while
+#          asserting nothing.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -917,6 +947,75 @@ function flush(  i, kind, l, inegress) {
 END { flush() }
 '
 
+# --- awk: INV-9 — the two halves of "a scrape target can actually connect".
+#
+#     Output records:
+#       SVCPORT <TAB> <service name> <TAB> <port>   (one per port on a Service)
+#       TARGET  <TAB> <host> <TAB> <port> <TAB> <render line>
+#
+#     ITS OWN EXTRACTION, deliberately, rather than reusing the SVC records
+#     INV-6 already emits: INV-6 needs only Service NAMES, INV-9 needs names AND
+#     ports, and an assertion whose fail-closed guard belongs to a different
+#     assertion cannot be shown to fail on its own (the INV-8 precedent).
+#
+#     Services are document-scoped for the same alphabetical-key reason as
+#     everything else here: kustomize sorts map keys, so a `ports:` block can
+#     precede its own document's `kind:` line and a "last kind seen" scan
+#     mis-attributes it. `inports` is armed only by a 2-space `  ports:` (the
+#     Service spec's own ports list) and disarmed by the next 2-space key, so a
+#     `ports:` nested inside a container spec cannot leak in.
+#
+#     Scrape targets are NOT document-scoped, and that is not an oversight: the
+#     Prometheus config is a ConfigMap whose value is one YAML STRING BLOCK, so
+#     the `targets:` lines belong to no rendered document of their own. They are
+#     matched wherever they appear and the vacuity guard below (checked > 0) is
+#     what stops that breadth from becoming blindness.
+#
+#     The token scrub is `[^A-Za-z0-9._:-]` — strip everything a host:port cannot
+#     contain — rather than a quote class, so it needs no embedded single quote
+#     inside this single-quoted shell string and cannot be broken by one.
+SCRAPE_TARGET_AWK='
+function meta_name(  i, v) {
+    for (i = 1; i <= n; i++)
+        if (buf[i] ~ /^  name: /) { v = buf[i]; sub(/^  name:[[:space:]]*/, "", v); return v }
+    return "(unnamed)"
+}
+function flush(  i, kind, nm, inports, l, p) {
+    if (n == 0) return
+    kind = ""
+    for (i = 1; i <= n; i++)
+        if (buf[i] ~ /^kind: /) { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
+    if (kind == "Service") {
+        nm = meta_name(); inports = 0
+        for (i = 1; i <= n; i++) {
+            l = buf[i]
+            if (l ~ /^  ports:[[:space:]]*$/) { inports = 1; continue }
+            if (l ~ /^  [a-zA-Z]/) { inports = 0 }
+            if (inports && l ~ /^[[:space:]]*-?[[:space:]]*port:[[:space:]]*[0-9]+[[:space:]]*$/) {
+                p = l; sub(/^.*port:[[:space:]]*/, "", p); sub(/[[:space:]]*$/, "", p)
+                printf "SVCPORT\t%s\t%s\n", nm, p
+            }
+        }
+    }
+    n = 0; delete buf
+}
+/^[[:space:]]*-?[[:space:]]*targets:[[:space:]]*\[/ {
+    t = $0; sub(/^[^[]*\[/, "", t); sub(/\].*$/, "", t)
+    ntok = split(t, tok, ",")
+    for (j = 1; j <= ntok; j++) {
+        gsub(/[^A-Za-z0-9._:-]/, "", tok[j])
+        if (tok[j] ~ /^[A-Za-z0-9._-]+:[0-9]+$/) {
+            h = tok[j];  sub(/:[0-9]+$/, "", h)
+            pt = tok[j]; sub(/^.*:/, "", pt)
+            printf "TARGET\t%s\t%s\t%d\n", h, pt, NR
+        }
+    }
+}
+/^---[[:space:]]*$/ { flush(); next }
+{ buf[++n] = $0 }
+END { flush() }
+'
+
 # ---------------------------------------------------------------------------
 # IPv4 CIDR containment, for INV-7's `except:`-within-`cidr` assertion.
 #
@@ -1464,12 +1563,79 @@ for dir in "${TARGETS[@]}"; do
         inv7_msg="OK ($inv7_checked infra policy/policies db.port=$db_port; $inv7_ip_checked ipBlock policy/policies redis.port=$redis_port, $inv7_except_checked except entry/entries contained)"
     fi
 
+    # ---------------- INV-9 ----------------
+    # DEF-29-1: every static scrape target that names a RENDERED Service must
+    # name a port that Service actually exposes.
+    #
+    # The defect it pins shipped for real and no other gate could see it:
+    # prometheus-config.yaml scraped `core-java:9091` while the core-java Service
+    # exposed 9090 ONLY, so the target resolved to a ClusterIP with no such port
+    # and the connection was refused. Every static gate was green — the manifest
+    # is valid YAML, the NetworkPolicy correctly permitted prometheus -> 9091 (it
+    # governs pod IP:port, a DIFFERENT layer), the file even carried a comment
+    # asserting the scrape "reaches the POD network directly", which a static
+    # target of a Service DNS name cannot do. The failure mode is silent until
+    # first deploy and then reads as an application outage:
+    # `up{job="core-java"} == 0` with the ServiceDown rules firing permanently
+    # against a healthy app.
+    awk "$SCRAPE_TARGET_AWK" "$render" > "$TMP/scrape.tsv"
+    awk -F'\t' '$1 == "SVCPORT" { print $2 }' "$TMP/scrape.tsv" | sort -u > "$TMP/svcnames.txt"
+    awk -F'\t' '$1 == "TARGET"'  "$TMP/scrape.tsv" > "$TMP/targets.tsv"
+
+    inv9_svcports=$(awk -F'\t' '$1 == "SVCPORT"' "$TMP/scrape.tsv" | wc -l)
+    inv9_targets=$(wc -l < "$TMP/targets.tsv")
+    (( inv9_svcports > 0 )) || parse_fail "[$rel] INV-9 found 0 Service ports in the render. Either every Service lost its ports (a far bigger problem) or the port parser is blind — in which case every target would be reported as naming a port its Service does not expose, or, if the target parse is equally blind, nothing would be checked at all. Fix the parser, do not delete the invariant."
+    (( inv9_targets > 0 )) || parse_fail "[$rel] INV-9 found 0 static scrape targets in the render. This platform ships nine (eight jobs, one of which lists the broker twice) in every target's Prometheus ConfigMap; zero means the scrape-config shape changed or the parser is blind, and the assertion would report a clean run over any tree at all. Fix the parser, do not delete the invariant."
+
+    inv9_bad=0
+    inv9_checked=0
+    inv9_skipped=0
+    while IFS=$'\t' read -r _tag thost tport tline; do
+        # A target naming something this render does not create is out of scope
+        # here rather than a finding: jtoye-rabbitmq is the RabbitMQ operator's
+        # Service, created from the CR at apply time, so it is legitimately
+        # absent from a kustomize render. SKIPs are PRINTED, never silent — an
+        # invariant that quietly stops covering things is the shape this file
+        # exists to refuse.
+        if ! grep -qxF "$thost" "$TMP/svcnames.txt"; then
+            echo "  SKIP [$rel] INV-9: target '$thost:$tport' (render line $tline) names no Service in this render — not created by kustomize (e.g. an operator-managed Service), so its ports cannot be checked here."
+            (( ++inv9_skipped ))
+            continue
+        fi
+        (( ++inv9_checked ))
+        if ! awk -F'\t' -v h="$thost" -v p="$tport" \
+             '$1 == "SVCPORT" && $2 == h && $3 == p { found = 1 } END { exit !found }' "$TMP/scrape.tsv"; then
+            echo "  FAIL [$rel] INV-9: scrape target '$thost:$tport' (render line $tline) names Service '$thost', which does NOT expose port $tport." >&2
+            echo "        Ports '$thost' does expose: $(awk -F'\t' -v h="$thost" '$1 == "SVCPORT" && $2 == h { printf "%s ", $3 }' "$TMP/scrape.tsv")" >&2
+            inv9_bad=1
+        fi
+    done < "$TMP/targets.tsv"
+
+    (( inv9_checked > 0 )) || parse_fail "[$rel] INV-9 resolved $inv9_targets target(s) but CHECKED none of them: every host was skipped as 'not a rendered Service'. That is indistinguishable from a pass while asserting nothing. Either the Service-name extraction is blind or the scrape config now targets only external hosts — investigate, do not delete the invariant."
+
+    if (( inv9_bad != 0 )); then
+        echo "        A static target of the form <host>:<port> is a SERVICE DNS NAME: it resolves" >&2
+        echo "        to the ClusterIP, so it can only ever reach a port the SERVICE exposes. A" >&2
+        echo "        containerPort alone is not enough and a permissive NetworkPolicy does not" >&2
+        echo "        help — that layer governs pod IP:port and is not what the connection is" >&2
+        echo "        addressed to. Fix by adding the port to the Service (a ClusterIP port is" >&2
+        echo "        cluster-internal and publishes nothing, provided the Ingress names its" >&2
+        echo "        backend port explicitly), or by correcting the target to a port that is" >&2
+        echo "        already exposed. Do NOT 'fix' it by switching to pod discovery without" >&2
+        echo "        reading check-alert-liveness.sh first: it VOIDs on any job name it does not" >&2
+        echo "        recognise, which is why these targets are static." >&2
+        FAILED=1
+        inv9_msg="FAIL"
+    else
+        inv9_msg="OK ($inv9_checked target(s) -> exposed Service port, $inv9_skipped skipped, $inv9_svcports Service port(s) seen)"
+    fi
+
     if [[ "$inv1_msg" == FAIL* || "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
-          || "$inv8_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg" >&2
+          || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg"
     fi
 done
 echo
@@ -1887,4 +2053,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-8 hold across ${#TARGETS[@]} kustomize target(s); $LOCAL_SECTION."
+echo "PASS: INV-1..INV-9 hold across ${#TARGETS[@]} kustomize target(s); $LOCAL_SECTION."
