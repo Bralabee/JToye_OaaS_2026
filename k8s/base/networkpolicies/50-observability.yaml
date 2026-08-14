@@ -621,4 +621,15 @@ spec:
 #     ClusterIP port (which does not publish it: the Ingress names its backend
 #     port explicitly). Recorded in this phase's deferred-items.md with the
 #     measurement; it is 29-06's file, not this plan's.
+#     PAID, 2026-08-14 by quick task 260814-u4t (DEF-29-1). The `core-java`
+#     Service now carries a second ClusterIP port 9091/`management`
+#     (core-java-deployment.yaml, beside the existing 9090 entry — the
+#     containerPort block this bullet cited as :56-62 has since moved to :56-72).
+#     Nothing in THIS file changed and nothing needed to: `core-java-scrape-allow`
+#     above was already correct, exactly as the bullet said. The prediction held
+#     in both directions — the Ingress still names `number: 9090` so the new port
+#     publishes nothing, and the golden diff was asserted to contain no `number:`
+#     line. INV-9 in k8s/scripts/check-render-invariants.sh now enforces the
+#     scrape-target <-> Service-port agreement permanently, so the gap this bullet
+#     described cannot silently reopen.
 # =============================================================================
