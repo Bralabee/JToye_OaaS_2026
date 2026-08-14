@@ -191,7 +191,7 @@ data:
   frontend.url: https://app.olajay.co.uk
   grafana.root-url: https://grafana.olajay.co.uk
   jwt.expected-audience: core-api
-  keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
+  keycloak.admin.base-url: http://keycloak:8080
   keycloak.admin.enabled: "false"
   keycloak.admin.realms: jtoye-prod
   keycloak.client-id: core-api

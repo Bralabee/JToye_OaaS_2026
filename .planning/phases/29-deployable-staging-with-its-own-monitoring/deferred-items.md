@@ -79,6 +79,32 @@ healthy application.
 
 ## DEF-29-2 — `check-env-contract.sh`'s EDGE_MANAGEMENT_PORT reason is now stale
 
+**RESOLVED 2026-08-15 — commit daff54f0** (quick task 260815-00i, Lane B). Only
+the stated reason was rewritten; the entry stays, its `EDGE_MANAGEMENT_PORT|` key
+prefix is byte-identical, the compose half (#550, `EDGE_GO_METRICS_PORT`) is
+untouched, and the closing "Do not 'fix' this entry by supplying the variable on
+its own" sentence is retained verbatim. Still one line, so line 186 did not move.
+
+The three clauses were re-measured on the tree rather than paraphrased from this
+entry, and all three are false: `k8s/base/kustomization.yaml` renders
+`monitoring/prometheus-deployment.yaml`; a Deployment named `prometheus` is
+present in both rendered goldens; and that Prometheus scrapes job `edge-go` at
+the static target `edge-go:8080` on `/metrics`
+(`k8s/base/monitoring/prometheus-config.yaml:221-231`) — the same port the
+`prometheus.io/scrape`/`port`/`path` annotations at
+`k8s/base/edge-go-deployment.yaml:26-28` advertise.
+
+**The replacement reason is STRONGER for the same conclusion, not weaker.** It
+used to be "there is no scraper to break"; it is now "the edge serves `/metrics`
+on exactly ONE of its two ports, so supplying this variable would move `/metrics`
+off 8080 and turn a scrape that NOW EXISTS into a permanently-DOWN target".
+
+**The entry was proven load-bearing rather than asserted to be.** Deleting it and
+re-running the gate produced rc=1 with `DIRECTION (b) VIOLATION [edge-go] — env
+read by edge-go that no manifest supplies: EDGE_MANAGEMENT_PORT`. Restored and
+verified by content hash (`41e4c26c`, worktree == HEAD blob), not by
+`git diff --stat`.
+
 - **Found during:** plan 29-07, Task 1, while checking the gate was unaffected
 - **Owner:** whoever next edits that allowlist
 
@@ -218,6 +244,48 @@ platform reports a *messaging* failure caused by a *secret-shape* omission.
 
 ## DEF-29-5 — `keycloak.admin.base-url` in the base ConfigMap still names the `jtoye-infrastructure` namespace
 
+**RESOLVED 2026-08-15 — commit daff54f0** (quick task 260815-00i, Lane B).
+`k8s/base/configmap.yaml:16` is now `"http://keycloak:8080"`.
+
+**THE DECISION — the same-namespace short name, NOT an FQDN — with its reason,
+because this is a choice and not a default.** The target namespace is owned by
+each overlay and never by the base (`k8s/base/kustomization.yaml:5-8`, which
+records why: a base shipping every environment namespace collapses each overlay's
+`namespace:` transformer into an ID conflict). So **no single FQDN can be correct
+for both staging and production** — an FQDN would have to be patched per overlay
+for no gain, while `keycloak` resolves correctly in every overlay by definition.
+
+The Service it names is real and rendered by this repository: name `keycloak`,
+`type: ClusterIP`, port `8080`
+(`k8s/base/keycloak/keycloak-deployment.yaml:412-435`). That file's own contract
+comment at `:421` already asserted *"app-config keycloak.admin.base-url points at
+keycloak:8080"* — a claim that was FALSE the day it was written and is true as of
+this commit.
+
+**Behaviour, stated rather than assumed:** `keycloak.admin.enabled` is `"false"`
+in the base ConfigMap, so the value is inert until an operator enables
+deprovisioning (#102). This changes what happens the FIRST time it is enabled —
+from "host does not resolve" to "the in-cluster Keycloak". `k8s/local` overrides
+the key at `k8s/local/configmap-patch.yaml:97`
+(`http://host.minikube.internal:8085`), so the local render is untouched and LOC-1
+still asserts that by key name (`LOC-1 OK (8 keys shimmed by name, 9 render
+occurrence(s))`).
+
+**`redis.host` (line 262) was deliberately NOT touched** and is still correct as
+this entry recorded — a same-shaped edit on an adjacent line is exactly the
+ride-along regression this entry warned about.
+
+**The edit is value-only, no line added or removed**, because `k8s/LOCAL.md:536`
+now cites `k8s/base/configmap.yaml:364` and a new comment line above would have
+silently broken the citation repaired earlier in the same lane.
+
+**Goldens regenerated** after a named `--snapshot pre-29B` baseline.
+`git diff --numstat k8s/goldens` reported exactly `1 1` per golden — counted over
+the WHOLE file rather than by a positional scan, because `kubectl kustomize` sorts
+map keys alphabetically and a source-order scan has been defeated by that here
+before. Falsified by reverting the value and re-rendering: rc=1, `DRIFTED` for
+staging AND production. Restored and verified by content hash (`0177d8d6`).
+
 - **Found during:** plan 29-09, Task 1, while sweeping app-config for infra-namespace addresses
 - **Owner:** whoever next edits `k8s/base/configmap.yaml`'s identity block (29-08's surface)
 
@@ -292,6 +360,52 @@ is fixed: staging points at MailHog, which advertises no STARTTLS, so a stale
 ---
 
 ## DEF-29-7 — twelve horizon rows still cite a stale line number
+
+**RESOLVED 2026-08-15 — commit bc671e18** (quick task 260815-00i, Lane B).
+`pin-not-at-site` 12 → 0; `site-unresolvable` stays 0; `H-2/H-3 violations=0`
+and `active-exemptions=5` unchanged.
+
+**NO EOL DATE MOVED, and that assertion was shown able to fail before it was
+trusted.** This is the half of the item that mattered: `--refresh` is not a
+line-number sweep — its writer also rewrites `eol_date` from
+`catalogue(slug, cycle)`, reading JSON fetched LIVE from `endoflife.date` moments
+earlier in the same run, so a real support horizon can move inside a diff that
+looks purely clerical. So the expected diff was **pre-declared in writing before
+the refresh ran**: the exact set of twelve site strings, plus the assertion of
+zero `eol_date` changes.
+
+Result: 24 changed content lines = 12 pairs, every one a `sites:` entry, every one
+matching the pre-declared table, with no unexpected line.
+
+The `eol_date` measurement, both directions:
+
+| Direction | Command | Result |
+|---|---|---|
+| **fail (control)** | same pattern against a deliberate fixture holding one `-` and one `+` `eol_date` line | **2** |
+| pass (real) | `grep -c '^[+-][[:space:]]*eol_date:'` over the actual diff | **0** |
+
+A bare 0 is the exact shape this repo distrusts, which is why the control was run
+first. Cross-checked by a second method that does not involve the diff at all: all
+**17** `eol_date` values re-read from the file are byte-identical to the 17
+captured before the run, at the same line numbers.
+
+Each of the twelve new lines was read back and carries its row's pin on a
+non-comment line. Two rows whose pin matches more than once, so neither reads as a
+miss later:
+
+- `go-ci-setup` matches at `ci-cd.yaml:52`, `:667` and `:928`. The row declares
+  TWO sites; `:928` is a third occurrence it does not declare. That is fine — H-5
+  checks DECLARED sites and does not require every occurrence to be declared.
+- `minio-mc` matches at `:584` and `:594`. `:584` is the `image:` line and is the
+  one chosen. **Correction to the record:** `:594` is not a comment — it is
+  `MINIO_MC_IMAGE_REF`, a live env var echoing the same reference. The conclusion
+  is unchanged; the description is.
+
+Falsified in both directions: moving one corrected site off by one line produced
+`pin-not-at-site=1` naming `postgres`, and pointing the gate at a non-existent API
+base produced **rc=2 VOID** naming the slug and the HTTP status — so a network
+outage can never silently green this gate. Both restores verified by content hash
+(`03bb6ea5`).
 
 - **Found during:** plan 29-09, Task 3
 - **Owner:** whoever next runs `bash scripts/check-dependency-horizons.sh --refresh`
@@ -416,6 +530,13 @@ confidential client with a secret nobody holds is worse than an absent one, whic
 is exactly why `k8s/base/keycloak/realm-import-configmap.yaml:62-69` omits them
 on purpose and says so.
 
+**BLOCKING CONDITION CLEARED as of commit b5f13841** (quick task 260815-00i, Lane
+B): `check-doc-citations.sh` is rc=0, so the "already red -> record instead" rule
+no longer applies and the four doc sites may now be corrected in place. Left
+un-actioned here deliberately — the doc half and the three-client realm decision
+are one change with their own content choices, and folding them into a
+citation-repair lane would re-entangle exactly what that rule keeps apart.
+
 ---
 
 ## DEF-29-10 — the sealed-secrets runbook's key table omits `default_user.conf` on the production path
@@ -439,6 +560,11 @@ alone, when `keycloak-deployment.yaml` reads four of its keys.
 **Why it is not fixed here.** Same reason as DEF-29-9: `check-doc-citations.sh`
 was already red at this lane's baseline, and the pre-committed rule was to record
 rather than edit doc sites in that state.
+
+**BLOCKING CONDITION CLEARED as of commit b5f13841** (quick task 260815-00i, Lane
+B): `check-doc-citations.sh` is rc=0, so the runbook's key table may now be
+corrected in place. Left un-actioned here deliberately — the three wrong rows are
+one runbook change with its own content decisions, not a citation repair.
 
 **Checked and found CORRECT, so nobody re-opens it:**
 `scripts/k8s-local-secrets.sh` also creates `rabbitmq-credentials` and needs no

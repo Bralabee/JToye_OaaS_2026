@@ -2,6 +2,29 @@
 
 ## DI-28-01 — `check-doc-citations.sh` rc=1: phase citation-line-drift (must fix before the phase PR merges)
 
+**RESOLVED 2026-08-15 — commit b5f13841** (quick task 260815-00i, Phase 29 Lane B).
+`bash scripts/check-doc-citations.sh` is rc=0 with `violations 0`,
+`verified 73`, `uncheckable 7`.
+
+**The count had grown from 6 to 13 by the time it was fixed**, and that is the
+point of the entry rather than a discrepancy in it: Phase 29 kept editing the same
+cited source files, so the drift this item recorded went on widening. All six
+citations tabled below are a strict subset of the thirteen repaired. The other
+seven were `STACK.md:181-183`, `INTEGRATIONS.md:53`, `INTEGRATIONS.md:64`,
+`LOCAL.md:536` and `LOCAL.md:1495`.
+
+Repaired by re-pointing each citation at the line its content moved to — never by
+dropping the line number, and never by touching the gate. Every new site was
+verified TWICE: the gate went green, AND the newly-cited line was read back and
+confirmed to be the definition site the claim describes, because C-3 only certifies
+that a strong token appears somewhere on the cited line and a wide or incidental
+citation can satisfy that while the reader still lands nowhere useful.
+
+**The fail direction was shown, so the rc=0 is not vacuous:** corrupting one
+repaired citation gave rc=1 naming `STACK.md:181` specifically, and pointing the
+scanner at a non-existent doc set gave rc=2 VOID (`ZERO documents discovered`).
+The restore was verified by content hash (`0953e20f`), not by `git diff --stat`.
+
 **Discovered by:** plan 28-11 (phase finisher), during the close-out gate sweep, 2026-08-10.
 **Owner:** the plans that edited the cited source files — **28-07** (`core-java/src/main/resources/application.yml`,
 `docker-compose.full-stack.yml`) and **28-09** (`docker-compose.full-stack.yml`). NOT 28-11: none of
