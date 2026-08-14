@@ -1129,6 +1129,26 @@ jobs:
     environment:
       name: staging
       url: https://app-staging.olajay.co.uk
+    # DPLY-04. This workflow has NO workflow-level `permissions:` block; five jobs carry
+    # their own (162/246/653/850/972) and this one carried none, which means it inherited
+    # the repository default. Adding the block here therefore does two things at once, both
+    # in the correct direction: it ENABLES OIDC (without `id-token: write` no token is
+    # issued and `azure/login` fails), and it TIGHTENS this job to exactly what it needs.
+    #
+    # The scope is the point. Granting `id-token: write` at WORKFLOW level would hand every
+    # job in this file the ability to mint an Azure-trusted token, including jobs that run
+    # third-party actions over PR-authored code. It is granted here and nowhere else.
+    #
+    #   contents: read  — checkout
+    #   id-token: write — mint the OIDC token azure/login exchanges for an Azure token
+    #   packages: read  — check-deploy-digest-parity.sh resolves the EXPECTED digests from
+    #                     GHCR at deploy time. It cannot take them from build-and-push job
+    #                     outputs: that job is a MATRIX and matrix outputs are
+    #                     last-writer-wins, so three parallel legs leave exactly one value.
+    permissions:
+      contents: read
+      id-token: write
+      packages: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1204,10 +1224,43 @@ jobs:
           fi
           echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/staging app-config api.url ($RENDER_API_URL)"
 
-      - name: Configure kubeconfig
+      # DPLY-04: the long-lived kubeconfig is gone. It was a STANDING cluster-admin-capable
+      # credential sitting in a repository secret — readable by every workflow in the repo,
+      # never rotated, and valid until someone remembered to revoke it. It is replaced by an
+      # Entra federated identity credential: no client secret exists at all, and the token
+      # azure/login receives is short-lived and minted per run.
+      #
+      # The federated credential's subject is EXACT-MATCH with no wildcards
+      # (`repo:<owner>/<repo>:environment:staging`, issuer
+      # https://token.actions.githubusercontent.com, audience api://AzureADTokenExchange).
+      # That is why this job keeps `environment: staging` above — the subject is built from
+      # it, and a run without that environment produces a subject the credential does not
+      # match, so the login fails closed rather than authenticating as something else.
+      # The registered values live in 29-PROVISIONING-EVIDENCE.md §2.4; they are referenced
+      # here as secrets and never contained in this file.
+      #
+      # STILL OWED (plan 29-15, operator action): DELETING the now-unused staging kubeconfig
+      # repository secret. Removing the reference stops it being USED; it does not remove the
+      # credential from the repo, so until an operator deletes it the standing credential
+      # still exists. The secret's exact name is recorded in the lane's OWED note
+      # (.planning/phases/29-.../29-LANE-C-OFFLINE-AUTHORED.md) rather than here, because a
+      # check that asserts "this workflow no longer references that secret" is satisfied by
+      # prose naming it — a rule that must spell the token it forbids fires on its own
+      # definition, and this file is exactly where that check looks.
+      - name: Azure login (federated OIDC — no long-lived credential)
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+          set -euo pipefail
+          az aks get-credentials \
+            --resource-group jtoye-rg \
+            --name jtoye-staging-aks \
+            --overwrite-existing
 
       - name: Pin full-sha images + deploy staging overlay
         run: |
@@ -1282,6 +1335,43 @@ jobs:
           fi
           chmod +x ./scripts/check-networkpolicy-enforcement.sh
           ./scripts/check-networkpolicy-enforcement.sh --context "$CTX" --namespace jtoye-staging
+
+      # RUNTIME PARITY, KUBERNETES HALF. Phase 26 shipped a runtime missing its own
+      # application.yml change and three merged UI PRs, past four green gates, and a human
+      # caught it by eye. Everything above this step is green whether the running code is
+      # this commit or months stale: the render assertion checks the YAML's TAG, the rollout
+      # status checks readiness, the health check checks that something is listening.
+      #
+      # Only the DIGEST distinguishes them. scripts/check-runtime-freshness.sh is the
+      # COMPOSE half of this doctrine and has no cluster concept — pointed here it could
+      # only ever VOID — so this is the half that covers a deploy.
+      #
+      # Runs AFTER the rollout waits (there is nothing to read before pods exist) and BEFORE
+      # the rollback step, which must remain last. Both exit 1 (wrong image running) and
+      # exit 2 (could not evaluate) fail the job, for the same reason as DPLY-05 above: an
+      # unevaluatable parity claim is not a passing one, and a step that exits 0 on an empty
+      # result measures nothing.
+      # The expected digests are resolved from GHCR, which is private, so the runner needs a
+      # registry credential. GITHUB_TOKEN with the job-scoped `packages: read` above is the
+      # least-privilege form: it is per-run, cannot push, and expires with the job.
+      - name: Log in to GHCR (read-only, to resolve expected digests)
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assert the running images are the ones built for this commit
+        run: |
+          set -euo pipefail
+          CTX="$(kubectl config current-context)"
+          if [ -z "$CTX" ]; then
+            echo "FATAL: no current kube context after az aks get-credentials — refusing to guess." >&2
+            exit 2
+          fi
+          chmod +x ./scripts/check-deploy-digest-parity.sh
+          ./scripts/check-deploy-digest-parity.sh \
+            --context "$CTX" --namespace jtoye-staging --sha "${{ github.sha }}"
 
       - name: Rollback on failure
         if: failure()
