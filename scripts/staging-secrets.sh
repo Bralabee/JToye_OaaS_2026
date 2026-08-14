@@ -474,9 +474,50 @@ apply_secret redis-credentials \
 # STOMP has its own credential keys so the relay login can be rotated
 # independently of the AMQP pool user; they default to the AMQP pair, which is
 # what the operator-managed broker actually accepts.
+#
+# DEF-29-4 — THE THREE-WAY SPLIT, AND WHY THE STANZA IS BUILT ONCE.
+#
+#   This one Secret is read by TWO consumers that share NO key:
+#     - the RabbitMQ cluster-operator reads ONLY `default_user.conf`. Under
+#       `secretBackend.externalSecret` (k8s/base/rabbitmq-cluster.yaml) it
+#       projects EXACTLY that one key — read at the pinned tag v2.22.3,
+#       internal/resource/statefulset.go:958-983 — and mounts it at
+#       /etc/rabbitmq/conf.d/11-default_user.conf. It is what defines the
+#       broker's default user.
+#     - core-java reads ONLY `username` / `password`
+#       (k8s/base/core-java-deployment.yaml, RABBITMQ_USER / RABBITMQ_PASSWORD).
+#
+#   If those two disagree, the broker's default user is not the identity the
+#   application is injected with, and EVERY AMQP and STOMP connection is refused
+#   with ACCESS_REFUSED — on a cluster where the CR reports Ready, the pod passes
+#   its probes, the NetworkPolicy permits the traffic and every static gate is
+#   green. The platform reports a MESSAGING failure caused by a SECRET-SHAPE
+#   omission, which is the most expensive kind of wrong place to look.
+#
+#   So the stanza is generated ONCE, here, from the SAME shell variables the flat
+#   keys below use. Generating the pair twice — or hand-typing it into the ini
+#   text — is precisely the divergence this exists to prevent, so the agreement
+#   has to be STRUCTURAL rather than clerical. printf, not echo: the value is
+#   newline-bearing and must survive argv intact.
+#
+#   THE TRAILING SENTINEL IS LOAD-BEARING, NOT A TYPO. `$(...)` strips ALL
+#   trailing newlines from its output, so the obvious spelling of this — a plain
+#   `$(printf '...\n')` — silently yields a conf file with NO final newline (55
+#   bytes where the operator's own format is 56; measured, not assumed, via
+#   `kubectl create secret --dry-run=client -o json` and a byte count of the
+#   decoded value). The two lines are still separated, so the mismatch is
+#   invisible to an eyeball and to a line-by-line comparison. Appending a
+#   sentinel character and stripping it with ${var%x} is what preserves the byte
+#   the shell would otherwise eat, so the value matches the format RabbitMQ's
+#   line-oriented conf parser is handed by the operator itself.
+RABBITMQ_DEFAULT_USER_CONF="$(printf 'default_user = %s\ndefault_pass = %s\n.' \
+  "$RABBITMQ_USER" "$RABBITMQ_PASSWORD")"
+RABBITMQ_DEFAULT_USER_CONF="${RABBITMQ_DEFAULT_USER_CONF%.}"
+
 apply_secret rabbitmq-credentials \
   "--from-literal=username=$RABBITMQ_USER" \
   "--from-literal=password=$RABBITMQ_PASSWORD" \
+  "--from-literal=default_user.conf=$RABBITMQ_DEFAULT_USER_CONF" \
   "--from-literal=stomp-login=${STOMP_CLIENT_LOGIN:-$RABBITMQ_USER}" \
   "--from-literal=stomp-passcode=${STOMP_CLIENT_PASSCODE:-$RABBITMQ_PASSWORD}"
 
@@ -580,7 +621,7 @@ for s in "${CREATED[@]}"; do
   case "$s" in
     postgres-credentials)     echo "  - $s: host, port, database, username, password, runtime-username, runtime-password, backup-username, backup-password" ;;
     redis-credentials)        echo "  - $s: password" ;;
-    rabbitmq-credentials)     echo "  - $s: username, password, stomp-login, stomp-passcode" ;;
+    rabbitmq-credentials)     echo "  - $s: username, password, default_user.conf (operator-only), stomp-login, stomp-passcode" ;;
     keycloak-credentials)     echo "  - $s: admin-username, admin-password, frontend-client-secret, db-username, db-password" ;;
     nextauth-secret)          echo "  - $s: secret" ;;
     s3-media-credentials)     echo "  - $s: access-key, secret-key" ;;
