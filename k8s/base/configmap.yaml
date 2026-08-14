@@ -13,7 +13,7 @@ data:
   # keycloak-credentials Secret (admin-password) via the deployment. realms is
   # per-env (overlays patch it): base tracks the prod realm.
   keycloak.admin.enabled: "false"
-  keycloak.admin.base-url: "http://keycloak.jtoye-infrastructure.svc.cluster.local:8080"
+  keycloak.admin.base-url: "http://keycloak:8080"
   keycloak.admin.realms: "jtoye-prod"
 
   # ===========================================================================
