@@ -524,6 +524,42 @@ apply_secret rabbitmq-credentials \
 # db-username/db-password: Keycloak runs IN-CLUSTER in staging (D-02) against its
 # OWN database on the same managed server. It reuses the owner role because it
 # creates and migrates its own schema in that database.
+#
+# NO CLIENT-SECRET KEY IS MISSING HERE. MEASURED 2026-08-14, recorded so the next
+# reader does not re-open this from a paraphrase.
+#
+#   The question that keeps being asked is whether this Secret needs "a second
+#   client-secret key". It does not, and the phrasing is a compression of
+#   something else. 29-08-SUMMARY's onward bullet says `edge-api`,
+#   `integration-catalog-ro` and `integration-orders-rw` "need a secret key each"
+#   — THREE clients, not one key — and those are clients that do not exist in the
+#   cluster realm at all yet (deliberately: see the reason block in
+#   k8s/base/keycloak/realm-import-configmap.yaml, a confidential client with a
+#   secret nobody holds is worse than an absent one).
+#
+#   The full manifest consumer map of `keycloak-credentials`, from every
+#   secretKeyRef in the tree (rg -uu, goldens and worktrees excluded):
+#     admin-username          <- core-java-deployment.yaml:250, keycloak-deployment.yaml:230
+#     admin-password          <- core-java-deployment.yaml:255, keycloak-deployment.yaml:235
+#     db-username             <- keycloak-deployment.yaml:271
+#     db-password             <- keycloak-deployment.yaml:276
+#     frontend-client-secret  <- frontend-deployment.yaml:186 AND keycloak-deployment.yaml:186
+#   Five distinct keys read; five created below. The set matches exactly.
+#
+#   `frontend-client-secret` HAS TWO CONSUMERS AND THEY MUST HOLD THE SAME VALUE.
+#   The frontend authenticates AS the `core-api` client, and keycloak-deployment
+#   feeds the same key into KC_CORE_API_CLIENT_SECRET for the realm render. The
+#   key NAME predates 29-02's finding that no `frontend` client has ever existed;
+#   it is misleading, not wrong, and renaming it is a coordinated change across
+#   both Deployments, this script and the realm render — not a tidy-up.
+#
+#   `core-api-client-secret` is named in FOUR docs (k8s/DEPLOYMENT.md:147,
+#   k8s/QUICK_START.md:228, k8s/base/secrets-template.yaml.example:127,
+#   docs/runbooks/sealed-secrets.md:38) and read by NOTHING: `key:
+#   core-api-client-secret` returns zero hits while the identical pattern shape
+#   for `key: frontend-client-secret` returns two, so the absence is real and not
+#   an artefact of the search. Creating it would manufacture an unconsumed key
+#   and a standing invitation to rotate a value nothing reads. Filed as DEF-29-9.
 apply_secret keycloak-credentials \
   "--from-literal=admin-username=$KEYCLOAK_ADMIN" \
   "--from-literal=admin-password=$KEYCLOAK_ADMIN_PASSWORD" \
