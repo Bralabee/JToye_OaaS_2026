@@ -577,3 +577,46 @@ says "what the compose broker actually accepts".
 **How it will surface if nobody acts:** the first production broker rollout that
 follows the runbook rather than the bootstrap script fails closed, and the
 symptom points at messaging rather than at a secret shape.
+
+---
+
+## DEF-29-11 — two pre-existing `grep -q` guards in `ci-cd.yaml` are the fail-OPEN shape
+
+**Found:** 2026-08-15, quick task `260815-00p` (Phase 29 Lane C), while asserting that
+this lane's own workflow additions introduced no new occurrence of the pattern.
+
+**Measured.** `ci-cd.yaml` contains exactly **two** occurrences, both pre-existing and
+both unchanged by that lane (baseline 2, after 2, delta **0**):
+
+- `.github/workflows/ci-cd.yaml:1277` — deploy-staging premortem render assertion
+- `.github/workflows/ci-cd.yaml:1469` — deploy-production premortem render assertion
+
+Both read `if ! echo "$RENDERED" | grep -q "ghcr.io/bralabee/jtoye-${svc}:${SHA}"; then`.
+
+**Why it matters.** These steps run under `set -euo pipefail`. When the pattern MATCHES,
+grep exits at the first hit, the writer (`echo`) takes SIGPIPE, and `pipefail` promotes
+the pipeline's status to **141** — so the `!` inverts and the guard fires on the SUCCESS
+case. It is input-size dependent, which is why it hides in small-input testing, and this
+repo has already had a real guard fail OPEN through exactly this shape.
+
+**Honest caveat on severity.** `$RENDERED` here is a single small variable and `echo` may
+well complete its write before grep exits, so this may never have misfired in practice.
+That is luck, not a design, and it is not a property anyone should have to re-derive.
+
+**Why it is NOT fixed here.** Strict scope boundary: this lane's remit was the credential
+swap and the digest gate. Both lines sit inside steps the plan explicitly required to be
+left **byte-unchanged** (`deploy-production` was proven byte-identical by hash as an
+acceptance criterion), so touching them would have broken a criterion this lane had to
+satisfy. Fixing one and not the other would also be worse than fixing neither.
+
+**The fix, when someone takes it.** Replace both with a here-string, which has no pipe and
+therefore no SIGPIPE:
+
+    if ! grep -q "ghcr.io/bralabee/jtoye-${svc}:${SHA}" <<<"$RENDERED"; then
+
+**How it will surface if nobody acts:** a deploy whose overlay pins the images CORRECTLY
+fails the premortem guard with "rendered staging overlay does not pin …", pointing at
+kustomize when the fault is in the guard. The opposite direction — a genuinely wrong pin
+passing — is not reachable through this mechanism, so this is a false-RED risk rather than
+a false-GREEN one. That is the less dangerous half, which is why it is deferred rather
+than escalated.
