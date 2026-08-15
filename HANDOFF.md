@@ -1,7 +1,122 @@
-# HANDOFF — Phase 29 paused at the wave-7 boundary
+# HANDOFF — Phase 29 still paused at wave-7; three OFFLINE lanes shipped around the block
 
-**Written 2026-08-11 (housekeeping). This section supersedes the Phase 28 block below for anything
+**Written 2026-08-15 (housekeeping). This section supersedes the 2026-08-11 block below for anything
 concerning current execution state; everything below it is retained as history.**
+
+**Branch:** `phase-29-research` — **20 commits ahead of `origin/phase-29-research` (UNPUSHED)**,
+95 ahead of `origin/main`, 0 behind either. Tree clean.
+**Authoritative state:** `.planning/STATE.md` (this file is the summary; STATE.md wins on conflict).
+
+EXPECT 39 x rc=0 — the repo's gate-script count at 29-16 close-out (H-1's denominator:
+`ls scripts/check-*.sh scripts/docs-freshness.sh`). It moved 38 -> 39 on 2026-08-15 when Lane C
+added `scripts/check-deploy-digest-parity.sh`; both anchors in this file moved with it.
+
+## The block is UNCHANGED, and was re-measured — do not re-derive it from prose
+
+Phase 29 is still paused at the wave-7 boundary on the same two OWNER actions. Re-measured
+2026-08-15, not copied forward:
+
+| Blocker | Measurement | Result |
+|---|---|---|
+| DNS | `dig +short @dns1.p05.nsone.net A <name>.olajay.co.uk` x4 | **no answer for all four** |
+| Secrets | populated keys in `~/.jtoye/staging-operator.env` | **0 populated / 7 keys** |
+
+Every remaining plan traces through 29-11 (first deploy), which depends on 29-10 Tasks 2-3, which
+depend on those two. **No remaining Phase 29 plan can be COMPLETED without the owner.** What was
+done instead is everything that does not need them.
+
+## Shipped 2026-08-14/15 — three offline lanes, all merged to `phase-29-research`
+
+- **Lane A** (`260814-u4t`) — DEF-29-1: the `core-java` Service exposed 9090 only while Prometheus
+  scrapes `core-java:9091`, so `up{job="core-java"}` would have been 0 on first deploy with
+  ServiceDown firing permanently at a healthy app. Second ClusterIP port added; written up once as
+  permanent **INV-9** in `check-render-invariants.sh`. DEF-29-4: `rabbitmq-credentials` now carries
+  `default_user.conf` generated ONCE from the same variables as the flat keys (divergence =
+  `ACCESS_REFUSED` on every AMQP/STOMP connection with all static gates green). A falsification arm
+  caught a defect inside that fix: `$(printf '...\n')` strips the trailing newline, so the conf was
+  one byte short of the operator's format — invisible to any line-by-line comparison.
+- **Lane B** (`260815-00i`) — **`check-doc-citations` rc=1 -> rc=0** (13 C-3 violations repaired, 0
+  remaining, 73 citations across 8 docs). It is CI-wired, so this was the last offline item blocking
+  the phase PR from merging once DNS lands. Also DEF-29-7 (12 drifted horizon sites, **zero
+  `eol_date` moved** — `--refresh` re-fetches live EOL dates, so that had to be proven, not assumed),
+  DEF-29-2, DEF-29-5.
+- **Lane C** (`260815-00p`) — `scripts/staging-pitr-drill.sh` (450 lines, EXIT trap installed BEFORE
+  the restore is requested) and the federated `azure/login` deploy path with
+  `scripts/check-deploy-digest-parity.sh`. **Every green in this lane is STRUCTURAL** — no cluster,
+  Azure resource or database was contacted.
+
+## Failed approaches and traps paid for this session (do not repeat)
+
+- **The PITR drill's subscription guard could not fire.** Its deny-list held
+  `c483d353-0000-0000-0000-000000000000` and `sipbihs2`, substring-matched. Measured against
+  `az account list`: the employer is `8d1c4578-4129-40d5-a6be-fd24d96b7959` ("Prod - HS2 Ltd") and
+  `sipbihs2` is their AKS CLUSTER name, never a subscription — so neither entry could match the thing
+  the guard existed to stop. Replaying the old logic against the employer id: **blocks=0, it failed
+  OPEN**. The zero-padded string was the OWNER's own prefix mistaken for the employer's, so
+  "correcting" it to the bare prefix `c483d353` would have refused the CORRECT target and still not
+  the employer. Fixed to an exact-match ALLOW-list (`c62ceb31`), proven three ways under
+  `PITR_DRILL_DRY_RUN=1`.
+- **Test the guard with `PITR_DRILL_DRY_RUN=1`, never a fabricated subscription id.** The dry-run
+  mode makes no cloud and no database call. A made-up id is not on any list, so it proves nothing and
+  still reaches `az`.
+- **An executor's uncommitted STATE.md and SUMMARY.md live only in its worktree** and are destroyed
+  by `git worktree remove --force`. Rescue both by content BEFORE removing, and verify with
+  `git hash-object` on each side.
+- **`--not --remotes` is not "ahead of main".** `git log origin/main..HEAD` said 95 while only 20
+  commits were genuinely unpushed, because `origin/phase-29-research` exists at `3bea9893`. An
+  earlier session-report conflated the two and overstated the backup risk.
+
+## Environment state
+
+- **The Azure staging estate is PARKED** (owner decision, days-long pause). Verified by reading the
+  state back, not by the submit rc: `jtoye-staging-aks` **Stopped**, `snackpass-pg` **Stopped**.
+  `jtoye-staging-pg` and `jtoye-staging-redis` deliberately left `Ready`.
+  **Azure auto-restarts a stopped Flexible Server after 7 days** — `snackpass-pg` needs re-stopping
+  on/after **2026-08-21** or it silently resumes billing.
+- **Obligation O-1 is HALF answered and the other half is VOID.** All six snackpass container apps
+  are `minReplicas=0` (declared side, measured). The cost-meter side failed all five backoff attempts
+  on HTTP 429, so there is **no month-to-date figure** — VOID, never "zero". The `minReplicas=0`
+  declaration is NOT a substitute: it was true the whole time `snackpass-pg` sat billing as `Ready`.
+- Parked worktree `.claude/worktrees/agent-acedd037d6b3648d0` (branch
+  `worktree-agent-acedd037d6b3648d0`, tip `459f5d37`, an ancestor of HEAD) — 29-10's executor
+  context. **Do NOT delete; do NOT push.** It resumes 29-10 Tasks 2/3.
+- Gates: all offline gates green including `check-doc-citations` rc=0. Go clean (`gofmt`, `vet`,
+  `build`, `mod tidy` no drift, all 5 packages pass `-race`). `actionlint` clean and shown able to
+  fail. `check-infra-exposure` is rc=0 from the MAIN checkout and rc=2 from a worktree — the compose
+  project-name trap, not a defect.
+- **`shellcheck` is NOT installed and no CI job runs it.** ~39 shell gate scripts have no linting
+  anywhere. 29-13's own verify line would abort at rc=127. Recorded as VOID, never as a pass.
+
+## Resume instructions
+
+1. **When the owner returns**, the two parked items are unchanged: add the four A records
+   (`api-staging` / `app-staging` / `auth-staging` / `grafana-staging` -> `20.58.10.18`) in the
+   Netlify zone whose panel shows the **Zoho MX records**, and fill all seven values in
+   `~/.jtoye/staging-operator.env`. Instant proof:
+   `dig +short @dns1.p05.nsone.net A api-staging.olajay.co.uk` -> `20.58.10.18`. All four SANs share
+   ONE ACME order, so TLS issues for none until every name resolves. Then restart the estate
+   (`az aks start`) — restoring a runtime after source changed is a code-changing event, so rebuild
+   and verify parity rather than assuming.
+2. Then resume 29-10's executor (parked worktree above) for Tasks 2-3, then wave 7 (29-11), then
+   wave 8 (29-12/13/14/15), then 29-16 close-out. **29-14 needs no authoring** — its script already
+   exists at 349 lines; only its cluster evidence is outstanding.
+3. **Owed proofs, explicitly NOT claimed by Lane C:** a real two-arm PITR restore, and a green
+   staging deploy run with digest parity. Both need the live cluster.
+4. **Lane D is queued and needs nothing from the owner:** DEF-29-6 (`mail.smtp.starttls.enabled` —
+   JavaMail reads `starttls.enable`, so STARTTLS has been off in EVERY environment since Phase 22;
+   analysed 2026-08-15 as safe to fix, because staging/local/compose all already declare `"false"`
+   and the only `"true"` is base/production pointing at AWS SES:587, which REQUIRES STARTTLS — so the
+   fix repairs that path rather than breaking it, and `smtp.auth` is `"false"` everywhere so the
+   channel is inert), then #587 (webhook 127-second loss window) and #627 (revoked STOMP subscriber,
+   same class as the fixed #281 — author and review must be different agents).
+5. Changelog: Phase 29's `[Unreleased]` entry is still owed at ship/PR time (heading gets "(#NNN)"
+   when the PR exists) — 29-16/gsd-ship owns it. On conflict keep THIS repo's entry; "take theirs"
+   silently deletes it and no gate catches that until after merge.
+
+---
+
+**Written 2026-08-11 (housekeeping). Superseded by the 2026-08-15 section above; retained as
+history.**
 
 **Written:** 2026-08-11 (housekeeping) · **Branch:** `phase-29-research` (0 behind origin/main) ·
 **Authoritative state:** `.planning/STATE.md` (this file is the summary; STATE.md wins on conflict)
