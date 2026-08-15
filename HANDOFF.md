@@ -9,8 +9,12 @@ concerning current execution state; everything below it is retained as history.*
 Gate expectation for phase close-out (not yet a measurement — several gates need the staging
 cluster and can only VOID from this host today):
 
-EXPECT 38 x rc=0 — the repo's gate-script count (H-1's denominator; `check-gate-enforcement.sh`
-reports 37 because it counts differently), at 29-16 close-out.
+EXPECT 39 x rc=0 — the repo's gate-script count (H-1's denominator; `check-gate-enforcement.sh`
+reports 38 because it counts differently), at 29-16 close-out.
+(38 -> 39: quick 260815-00p Lane C added `scripts/check-deploy-digest-parity.sh`, the
+Kubernetes half of the runtime-parity doctrine, wired into ci-cd.yaml deploy-staging.
+`scripts/staging-pitr-drill.sh` was added in the same lane and deliberately does NOT count:
+it is not a `check-*.sh`, so neither this denominator nor `check-gate-enforcement.sh` sees it.)
 
 ## Goal and progress
 
@@ -2785,11 +2789,16 @@ for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   esac
   bash "$g" "$@" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 38 x rc=0. A VOID (2) is not a pass. (34 -> 36: phase 28 added
+# EXPECT 39 x rc=0. A VOID (2) is not a pass. (34 -> 36: phase 28 added
 #   check-media-content-types.sh (plan 28-03, media Content-Type allowlist) and
 #   check-pentest-triage.sh (plan 28-05, the eleven-finding disposition record.
 #   36 -> 38: phase 29 added check-networkpolicy-enforcement.sh (plan 29-03) and
-#   check-alert-corpus-parity.sh (plan 29-06)).
+#   check-alert-corpus-parity.sh (plan 29-06).
+#   38 -> 39: quick 260815-00p Lane C added check-deploy-digest-parity.sh, the
+#   Kubernetes half of the runtime-parity doctrine (the compose half is
+#   check-runtime-freshness.sh, which can only VOID against a cluster). The same
+#   lane added scripts/staging-pitr-drill.sh, which does NOT move this number: it
+#   is not a check-*.sh and is invisible to this glob by design).
 #   32 -> 34: plan 33-05 added
 #   check-live-shop-coordinates.sh, proving the seeded coordinates exist on the
 #   LIVE database, and plan 33-06 added check-openapi-snapshot-fresh.sh, diffing

@@ -448,6 +448,62 @@ against **its own** build inputs. edge-go's image legitimately predates the phas
 because zero Go files changed in it, and the gate passes it. Comparing every image
 against the repo's newest commit would flag edge-go forever.
 
+### Which half of the doctrine each instrument covers
+
+The pair above is the **compose half**. That is not a limitation to work around; it
+is what those scripts are. `check-runtime-freshness.sh` reads `.Metadata.LastTagTime`
+off local Docker images and compares a running *container's* image ID against a
+*tag's*. It has no cluster concept at all — no namespace, no pod, no kubelet — so
+pointed at Kubernetes it can only ever exit **2 (VOID)**.
+
+**A VOID from it is never a pass, and must never be recorded as one.** That is the
+precise shape this doctrine exists to prevent: an instrument that cannot see the
+thing, reporting silence, read as agreement. It is also why the compose half is
+deliberately *not* wired into per-PR CI (a hosted runner has no running stack, so it
+could only ever be VOID there) and is declared in
+`scripts/gates/gate-enforcement.conf` instead.
+
+`check-deploy-digest-parity.sh` is the **Kubernetes half**. It runs inside the
+`deploy-staging` job, after the rollout waits and before the rollback step, and asks
+the same question in the only terms a cluster can answer it: for each of core-java,
+edge-go and frontend, is the image digest the kubelet actually pulled one of the
+digests published for this commit's tag?
+
+| Half | Instrument | Answers | Where it runs |
+|------|-----------|---------|----------------|
+| Compose | `check-runtime-freshness.sh` | Is the running *container* built from this tree? | Developer host + `.githooks/post-merge`. VOID on a CI runner. |
+| Tree | `check-branch-behind-base.sh` | Does this branch contain everything already on its base? | CI **and** locally. |
+| Kubernetes | `check-deploy-digest-parity.sh` | Are the running *pods* the images built for this commit? | `deploy-staging`, after the rollout waits. |
+
+Three properties of the Kubernetes half are worth stating plainly, because each one
+is a deliberate choice rather than an accident:
+
+- **It asserts SET MEMBERSHIP, not equality.** core-java and edge-go are built
+  `linux/amd64,linux/arm64`, so the tag resolves to a manifest-list (OCI index)
+  digest while a node may report the platform-specific manifest digest for the
+  architecture it pulled. Which one AKS/containerd reports is not measurable without
+  a live cluster, so the expected set is the index digest **plus** each platform
+  manifest digest. This is knowingly the weaker of the two correct forms; narrowing
+  it to a single measured digest is owed to plan 29-15 on the first real deploy.
+  Narrowing it speculatively would red every correct deploy, and a gate that cries
+  wolf gets deleted.
+- **It resolves the expected digests from the registry, not from job outputs.**
+  `build-and-push` is a matrix job and GitHub Actions matrix outputs are
+  last-writer-wins, so three parallel legs leave exactly one value. Per-service
+  digests cannot be plumbed through outputs at all. That is why the job carries
+  `packages: read`.
+- **It fails closed.** An unreadable digest, an empty actual set, an empty expected
+  set, or zero services discovered are all exit 2, and exit 2 fails the job. A step
+  that exits 0 on an empty result measures nothing.
+
+> **The Kubernetes half has never run.** It was authored offline while the staging
+> estate was deliberately stopped, and its comparison logic was exercised only
+> against fabricated digest fixtures (matching, mismatched, empty, and zero-service
+> arms). No deployed image has been checked by it, and no `deploy-staging` run has
+> ever executed it. A green `bash -n` and four passing fixture arms are evidence
+> about the script and about nothing else. The first real execution is owed to plan
+> 29-15.
+
 ### The gate now runs itself — `.githooks/post-merge`
 
 The gate above was correct and nobody invoked it. Measured on 2026-07-30: **#380**
