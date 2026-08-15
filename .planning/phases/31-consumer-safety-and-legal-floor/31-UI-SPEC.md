@@ -1,7 +1,7 @@
 ---
 phase: 31
 slug: consumer-safety-and-legal-floor
-status: draft
+status: approved
 shadcn_initialized: true
 preset: "not applicable — shadcn was initialised long before this phase (frontend/components.json: style=new-york, baseColor=slate, cssVariables=true, rsc=true). No preset string exists and none is introduced here."
 created: 2026-08-15
@@ -687,11 +687,43 @@ an intervening command reports the wrong command's status.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-08-15
+
+Signed off by `gsd-ui-checker` after **two revision rounds**. The checker has no `Write` tool, so
+these boxes are ticked by the orchestrator on its behalf — the authoritative verdicts are the
+checker's, recorded here.
+
+⚠ Note for anyone reading this block in future: the "PASS" labels are part of the template and are
+present whether or not the box is ticked. **The box and the Approval line are the signal; the word
+"PASS" is not.** This file sat with all six lines reading "PASS" while the real verdict was BLOCKED.
+
+**Revision history (kept, because what failed is the useful part):**
+1. **Round 1 — BLOCKED, Dimension 4.** The declared base scale was 4 sizes (14/16/20/28px) but the
+   S4 KDS "ALLERGENS" label was specified at 18px — a fifth size, contradicting the spec's own
+   "the whole phase fits inside this" claim. Resolved **upward** to the existing 20px Heading
+   (not down to 16px): the label is glanced at 0.6–1.5 m through steam with gloved hands, so
+   shrinking it to satisfy a document-consistency rule would have traded a real legibility
+   property for a formal one.
+2. **Round 2 — BLOCKED, Dimension 4 again.** The round-1 fix was applied to the Typography
+   per-surface override (line 135) but **not** to the S4 Surface Contracts table (line 352), which
+   still carried `18px/600` as a live clause. Two places specify the same value; only one was
+   edited. Fixed, then verified two-arm: `18px/[0-9]{3}` returns 0 on the real file and 1 on a copy
+   with the value reinjected at line 352 — so the check can fail, and fails in the right place.
+3. **Round 3 — APPROVED 6/6.** Swept the *class* rather than the instance: S1, S2, S3 and S5
+   contract tables checked against the Typography overrides for the same duplicate-spec drift,
+   plus a whole-document sweep of every `NNpx/NNN` pair and every Tailwind `text-*` utility.
+   Exactly four sizes and two weights document-wide.
+
+**One correction landed in passing.** Re-deriving the viewing-distance claim at the new size exposed
+an arithmetic error in the original draft: it asserted an 18px glyph at 1.5 m subtends what "6–7px
+does at 40 cm", but 18 × (40/150) = **4.8px**. The 6–7px figure corresponds to a ~50–60 cm reading
+distance, not 40 cm. Nobody flagged it; it surfaced only because the fix forced a recomputation.
+That is the argument for stating assumptions numerically — "large enough to read at distance" cannot
+be checked, and this one was wrong.

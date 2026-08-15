@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: ready_to_plan
-stopped_at: "Phase 31 context gathered (31-CONTEXT.md) — ready to plan. Opened as a PARALLEL front while Phase 29 stays paused at its wave-7 boundary on two owner actions (staging DNS + 7 secrets), re-measured 2026-08-15: 4x no-answer, 0/7 populated. Phase 31 depends on nothing structural and gates Phase 32."
+stopped_at: "Phase 31 UI-SPEC APPROVED 6/6 (31-UI-SPEC.md, 2 revision rounds) on top of 31-CONTEXT.md — ready to plan. NEXT COMMAND: /gsd-plan-phase 31 — but it WILL hit the Nyquist gate: nyquist_validation and research are both enabled while --skip-research leaves no RESEARCH.md, so no VALIDATION.md can be derived. Choose there: re-run with --research, disable nyquist, or accept Dimension-8 failure. Opened as a PARALLEL front while Phase 29 stays paused at its wave-7 boundary on two owner actions (staging DNS + 7 secrets), re-measured 2026-08-15: 4x dig no-answer, 0/7 populated. Phase 31 depends on nothing structural and gates Phase 32."
 last_updated: 2026-08-15T20:06:40.000Z
 last_activity: 2026-08-15
 progress:
