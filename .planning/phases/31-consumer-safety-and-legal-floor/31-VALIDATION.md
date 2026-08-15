@@ -1,8 +1,8 @@
 ---
 phase: 31
 slug: consumer-safety-and-legal-floor
-status: draft
-nyquist_compliant: false
+status: planned
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-08-15
 ---
@@ -151,11 +151,47 @@ This is a hard constraint on wave sequencing, not a style preference.
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies — **verified by `gsd-plan-checker`**, 18/18 plans valid
+- [ ] Sampling continuity: no 3 consecutive tasks without automated verify — *not independently verified; do not tick without measuring*
+- [x] Wave 0 covers all MISSING references — **verified**: every Wave-0 item below is delivered by a Wave-1 plan (`contrast-literals.test.ts`→31-02, `allergen-table-parity.test.ts`→31-04, `consent.test.ts`→31-16, `public-a11y.spec.ts`→31-18, `check-retention-enforcement.sh`→31-06)
+- [ ] No watch-mode flags — *not independently verified*
+- [ ] Feedback latency < 30s — *estimated, not measured end-to-end*
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** plans verified 2026-08-15 (`gsd-plan-checker`, 1 blocker found and fixed — see below).
+Execution not yet started.
+
+### Why `wave_0_complete` stays `false`
+
+The Wave-0 *items* are all accounted for — each is delivered by a Wave-1 plan, which is why
+`nyquist_compliant` is now `true`. But none of them **exists on disk yet**: they are planned, not
+built. `wave_0_complete` flips to `true` only when Wave 1 has executed and those files are present
+and green. Setting it true now would assert infrastructure that is not there — the same shape as a
+gate that passes because it measured nothing.
+
+### Unticked boxes are unticked on purpose
+
+Three boxes above are deliberately left unticked because nobody measured them. The plan-checker
+verified plan validity and Wave-0 coverage; it did not measure sampling continuity, watch-mode flags,
+or real feedback latency. Ticking them to make the block look complete is the exact failure this
+project's UI-SPEC sign-off block already demonstrates — six lines reading "PASS" beside unticked
+boxes while the real verdict was BLOCKED.
+
+### Blocker found and fixed during plan-checking (2026-08-15)
+
+`31-14` Task 2's `<automated>` limb hardcoded `test "$out" -ge 8` for autocomplete tokens, but the
+checkout form has **7** `<input>` elements plus one `<textarea>` (`notes`, which takes no autocomplete
+token). RESEARCH's "8" counted the textarea. A faithful implementation would have produced 7 tokens
+and the gate would have exited 1, reporting **A11Y-08 as unclosed when it was closed** — a criterion
+that fails on a *correct* tree.
+
+Replaced with the relative comparison the task's own `acceptance_criteria` already described
+(`tokens == inputs`), guarded by a floor of `inputs >= 7`. Falsified three ways before acceptance:
+
+| Arm | inputs / tokens | Result |
+|---|---|---|
+| current tree | 7 / 0 | fails correctly |
+| simulated correct implementation | 7 / 7 | passes correctly |
+| empty file (vacuity control) | 0 / 0 | **floor refuses it** — `tokens == inputs` is TRUE here, so the bare comparison alone would have passed vacuously |
+
+The third arm is why the floor is there and not decoration.

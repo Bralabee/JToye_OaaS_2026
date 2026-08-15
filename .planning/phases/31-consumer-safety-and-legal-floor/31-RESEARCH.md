@@ -1097,7 +1097,25 @@ Phase 31 is not a rename, but it changes published claims and may add schema, so
 
 ---
 
-## Open Questions
+## Open Questions (ALL RESOLVED — see resolution map below)
+
+> **Resolved 2026-08-15 during planning.** Every question here was carried into a plan and decided
+> there with reasoning recorded. Nothing in this section is still open; it is retained because the
+> *reasoning that led to the question* is what makes each resolution checkable.
+>
+> | # | Question | Resolved in | Resolution |
+> |---|----------|-------------|------------|
+> | 1 | Is D-05's consent store server-side? | **31-16** | **Client-only, no table, no migration.** No relation can serve a pre-identity anonymous visitor — V54's tables are `tenant_id NOT NULL` + `recipient NOT NULL`. |
+> | 2 | Snapshot vs live-join for the order allergen mask | **31-10** | **Snapshot** (V63 + `order_items_aud`). A post-order vendor edit would otherwise silently rewrite what the customer acknowledged. |
+> | 3 | Are `/legal/*` pages inside the axe gate? | **31-18** | **Yes** — explicitly scanned. |
+> | 4 | A11Y-08 — fix or declare as an exception? | **31-14** | **Fixed, not excepted.** A zero-violation gate shipping beside an unlisted 1.3.5 failure would make 31-13's conformance statement false. |
+> | 5 | Registered office / DSAR contact values | **31-08** | **Blocking `checkpoint:human-verify`** — including whether a residential address may lawfully be published at all. |
+>
+> ⚠ **One measurement in this section is wrong and was corrected during plan-checking:** the
+> checkout autocomplete count is **7**, not 8. The file has seven `<input>` elements plus one
+> `<textarea>` (`notes`), which takes no autocomplete token. The "8" counted the textarea. The
+> corrected count is recorded in `31-14-PLAN.md`; treat any "eight inputs" phrasing below as
+> superseded.
 
 1. **Does D-05's "consent store" mean server-side to the owner?**
    - **Known:** a client-only store is the correct tier, and no table can serve a pre-identity anonymous visitor (Q1, measured).
