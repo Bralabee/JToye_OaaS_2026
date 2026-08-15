@@ -120,13 +120,19 @@ two of them. `font-bold` (700) is permitted **only** where it already exists on 
 extended (the checkout CTA, the KDS ticket print sheet) — extending a surface is not licence to
 restyle it.
 
+**700 is barred outright from every component this phase introduces.** "Permitted" above is a
+grandfather clause for those two named legacy surfaces, not a licence. No new S1–S5 component —
+`CookieNotice`, the dormant consent banner, the legal/privacy/cookies/retention pages, the checkout
+allergen block and its acknowledgement control, `OrderAllergenBanner`, the per-item KDS badge, or
+the conformance statement — may use weight 700. New components use 400 and 600 only.
+
 ### Per-surface overrides
 
 | Surface | Override | Reason |
 |---------|----------|--------|
 | **S2 legal pages** | Body is **16px at 1.625**, prose column capped at **68ch** (`max-w-[68ch]`). | `/legal` today renders its body at `text-sm` (14px) inside `max-w-3xl` (768px ≈ 90 characters) — fine for a 4-line disclosure, wrong for a multi-screen privacy notice. This is an **uplift on the new pages**; the existing `/legal` index body may stay 14px or move to 16px, but it must not shrink. |
 | **S2 retention table** | Table text **14px/1.4**; header cells 14px/600. Table region may widen to `max-w-4xl`. | A 4-column table inside a 68ch column forces a scrollbar at desktop widths for no reason. |
-| **S4 KDS banner** | **"ALLERGENS" label 18px/600 uppercase, tracking 0.08em; allergen list 16px/600.** Per-item badge **14px/600**. | Viewing-distance contract, below. |
+| **S4 KDS banner** | **"ALLERGENS" label 20px/600 uppercase, tracking 0.08em** (`text-xl font-semibold uppercase tracking-[0.08em]` — the base Heading size, no new step); allergen list 16px/600. Per-item badge **14px/600**. | Viewing-distance contract, below. Was 18px in the first draft: that introduced a fifth size and contradicted the 4-size scale above. Resolved **upward** to the existing 20px Heading rather than down to 16px, because this label is glanced at 0.6–1.5 m and shrinking it to fix a scale violation would trade a document-consistency problem for a legibility one. |
 | **S4 item list** | Items move from the current inline 12px comma-joined `<span>` run (`app/dashboard/kitchen/page.tsx:876-884`) to a `<ul>` at **14px**, one item per row. | A 12px inline run cannot carry a per-item badge legibly, and D-04 requires staff to know *which* item. The "3 items" summary line above it **stays** — this is additive. |
 | **S1 cookie notice** | Body 14px/1.5, action labels 14px/600. | It is chrome, not content; it must not compete with the page's own `<h1>`. |
 
@@ -139,8 +145,15 @@ The KDS is **not** read on a phone at 30 cm. The sizes above assume:
 - a kitchen: glare, steam, and **gloved fingers** (which is why the 44px minimum is not negotiable here);
 - the reader may be **colour-fatigued or colour-blind** — which is why no allergen signal is ever carried by colour alone (§ Accessibility).
 
-At 1.5 m an 18px glyph subtends roughly what 6–7px does at 40 cm — legible for a short uppercase
-label, not for a sentence. Hence: **short uppercase label + short list**, never prose, in the banner.
+Angular size scales as height ÷ distance, so a glyph of height `H` at 1.5 m subtends the same angle
+as `H × (d ÷ 150)` at `d` cm. At the contracted **20px**, that is **8px at 60 cm** (20 × 60/150) —
+legible for a short uppercase label, not for a sentence. Hence: **short uppercase label + short
+list**, never prose, in the banner.
+
+> The first draft stated "an 18px glyph subtends roughly what 6–7px does at **40 cm**". The ratio
+> was mis-stated: 18 × (40/150) is **4.8px**, not 6–7px. The 6–7px figure actually corresponds to a
+> ~50–60 cm reading distance, not 40 cm. Corrected here rather than carried forward, because the
+> whole point of stating the assumption is that a later reviewer can check it.
 
 ---
 
