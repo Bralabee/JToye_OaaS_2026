@@ -144,9 +144,22 @@ RESTORE_TIME="${PITR_RESTORE_TIME:-}"
 READY_DEADLINE="${PITR_READY_DEADLINE:-1800}"
 MIN_BACKUP_BYTES="${MIN_BACKUP_BYTES:-1000}"   # mirrors infra/backups/k8s-backup.sh:36
 MIN_ROWS="${PITR_MIN_ROWS:-1}"
-# Subscriptions this script refuses to touch even when named explicitly. The operator's
-# ambient default is the EMPLOYER's; naming one here is a second, independent brake.
-FORBIDDEN_SUBSCRIPTIONS="${PITR_FORBIDDEN_SUBSCRIPTIONS:-c483d353-0000-0000-0000-000000000000 sipbihs2}"
+# The ONE subscription this script is permitted to touch. This is an ALLOW-list and it
+# fails CLOSED: anything not named here is refused, including a subscription that does not
+# exist yet. Naming the target explicitly on the command line is NOT sufficient — intent is
+# not a safety mechanism, and this drill creates a billable PostgreSQL Flexible Server.
+#
+# IT WAS A DENY-LIST UNTIL 2026-08-15 AND IT COULD NOT FIRE. Measured against
+# `az account list`: the entries were `c483d353-0000-0000-0000-000000000000` and `sipbihs2`,
+# matched as substrings. The employer's subscription is `8d1c4578-4129-40d5-a6be-fd24d96b7959`
+# ("Prod - HS2 Ltd") and `sipbihs2` is their AKS CLUSTER name, never a subscription id — so
+# NEITHER entry could ever match the thing the guard existed to stop, and passing the
+# employer's id sailed straight through. The zero-padded string was the OWNER's own prefix
+# (`c483d353-5f61-4587-a790-addb9ab5fb94`, "JToye Digital Production") mistaken for the
+# employer's, so "correcting" it to the bare prefix `c483d353` would have refused the CORRECT
+# target and still never refused the employer. A deny-list here is unfixable in principle:
+# it can only ever enumerate the hazards someone thought of.
+ALLOWED_SUBSCRIPTIONS="${PITR_ALLOWED_SUBSCRIPTIONS:-c483d353-5f61-4587-a790-addb9ab5fb94}"
 
 # ---- offline falsification harness ----------------------------------------------------
 DRY_RUN="${PITR_DRILL_DRY_RUN:-0}"
@@ -186,15 +199,19 @@ fi
          $0 --subscription <subscription-id> --resource-group $RESOURCE_GROUP
        An unnamed subscription is VOID, never clean."
 
-for forbidden in $FORBIDDEN_SUBSCRIPTIONS; do
-  case "$SUBSCRIPTION" in
-    *"$forbidden"*)
-      void "subscription '$SUBSCRIPTION' is on the refusal list (PITR_FORBIDDEN_SUBSCRIPTIONS).
-       That subscription is EMPLOYER infrastructure and this drill creates a billable
-       PostgreSQL Flexible Server. Naming it explicitly does not make it safe — intent is
-       not a safety mechanism." ;;
-  esac
+# EXACT match, never a substring: a prefix match would accept any subscription that merely
+# begins with an allowed id, and it is what made the previous deny-list's zero-padded entry
+# look plausible. An empty allow-list refuses everything, which is the correct failure mode
+# for a guard on a billable resource — never an accidental "allow all".
+sub_allowed=0
+for allowed in $ALLOWED_SUBSCRIPTIONS; do
+  [ "$SUBSCRIPTION" = "$allowed" ] && { sub_allowed=1; break; }
 done
+[ "$sub_allowed" -eq 1 ] || void "subscription '$SUBSCRIPTION' is not on the allow-list (PITR_ALLOWED_SUBSCRIPTIONS).
+       This drill CREATES A BILLABLE PostgreSQL Flexible Server, so it runs only against a
+       subscription named in advance. Naming one on the command line does not make it safe —
+       intent is not a safety mechanism. Allowed: '$ALLOWED_SUBSCRIPTIONS'.
+       If this is a genuinely new target, add it to PITR_ALLOWED_SUBSCRIPTIONS deliberately."
 
 # Tool resolution is deliberately INSIDE the non-dry-run branch. A dry run must be
 # structurally incapable of reaching a real `az`, which means it must also not DEPEND on
