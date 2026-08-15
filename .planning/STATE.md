@@ -3,10 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: ready_to_plan
-stopped_at: Phase 28 complete (11/11) — ready to discuss Phase 33
-last_updated: 2026-08-10T09:47:48.313Z
-last_activity: 2026-08-10
+stopped_at: "Phase 31 context gathered (31-CONTEXT.md) — ready to plan. Opened as a PARALLEL front while Phase 29 stays paused at its wave-7 boundary on two owner actions (staging DNS + 7 secrets), re-measured 2026-08-15: 4x no-answer, 0/7 populated. Phase 31 depends on nothing structural and gates Phase 32."
+last_updated: 2026-08-15T20:06:40.000Z
+last_activity: 2026-08-15
 progress:
+  # ⚠ THESE COUNTERS ARE CORRUPT ON THIS BRANCH and are deliberately left untouched here.
+  # completed_plans (78) EXCEEDS total_plans (77), which is impossible — the signature of
+  # `gsd-sdk query state.record-session`, which is NOT inert mid-plan. The authoritative
+  # figures live on `phase-29-research` (total_plans: 93, completed_plans: 78). Repair them
+  # there or at merge, not on this parallel branch, or the fix will be reverted by the conflict.
   total_phases: 14
   completed_phases: 8
   total_plans: 77
@@ -27,6 +32,15 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 Phase: 33
 Plan: Not started
+
+> **⚠ SUPERSEDED 2026-08-15 — do not resume from the `Phase: 33` line above.** This body is
+> `main`'s copy and is five days stale. **Phase 33 SHIPPED 2026-08-09** (PR #620 + #623). Since
+> then Phase 28 merged and **Phase 29 reached 9/16 and PAUSED** at its wave-7 boundary on two
+> owner actions — staging DNS and seven secrets — both re-measured 2026-08-15 as still unmet
+> (4x `dig` no-answer; `0/7` populated in `~/.jtoye/staging-operator.env`). The authoritative
+> body lives on branch `phase-29-research`; this branch carries only Phase 31's parallel work.
+> **Current position on THIS branch: Phase 31, context gathered, ready to plan.**
+
 *(The `Plan: 1 of 8` line that stood here on 2026-08-09 was wrong and is deleted — it was written by
 one of the two verbs named below and would have sent a fresh session back to the start of a phase
 that is seven eighths done. The rest of that same uncommitted rewrite — `stopped_at`,
