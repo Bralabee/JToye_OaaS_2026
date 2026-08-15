@@ -349,7 +349,7 @@ Order-level **banner** AND per-item **badge**. Attaches to the existing order ca
 |----------|----------|
 | Banner position | Inside `CardHeader`, **directly under the order number row**, above the customer name. It must be visible without scrolling the card. |
 | Banner treatment | **Solid `bg-amber-800` fill with white text** (7.09:1). Solid fill, not a tint — a tint does not carry at 1.5 m. Full card width, `rounded-md`, `px-3 py-2`. |
-| Banner content | `AlertTriangle` icon + **"ALLERGENS"** (18px/600, uppercase, tracking 0.08em) + the **complete** allergen list at 16px/600. The banner never truncates — it is the place the full set is guaranteed to appear. |
+| Banner content | `AlertTriangle` icon + **"ALLERGENS"** (20px/600, uppercase, tracking 0.08em — matches the Typography per-surface override exactly; the base Heading size, no fifth step) + the **complete** allergen list at 16px/600. The banner never truncates — it is the place the full set is guaranteed to appear. |
 | Reconciliation line (D-03) | A second line inside the banner, prefixed **"CHECK:"**, naming the item and the undeclared allergen the ingredients text mentions. Distinct wording, not a distinct colour. |
 | Per-item badge | On the item row, after the name: amber-800 text on amber-50, `border-amber-700`, 14px/600. Shows up to **3** allergen names, then `+N`. Truncation is safe **only** because the banner above carries the full set. |
 | Item list restructure | The current inline comma-joined 12px `<span>` run (`page.tsx:876-884`) becomes a `<ul>` with one `<li>` per item at 14px, quantity first. The `"{n} items"` summary line above it **stays** — additive, per the Incremental Betterment Doctrine. |
