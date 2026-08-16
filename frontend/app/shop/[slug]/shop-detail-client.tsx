@@ -579,13 +579,13 @@ export function ShopDetailClient({
               <span className="text-slate-600">
                 Delivery {formatPrice(shop.deliveryFeePennies)}
                 {shop.freeDeliveryThresholdPennies && (
-                  <span className="text-emerald-600 font-medium ml-1">
+                  <span className="text-emerald-700 font-medium ml-1">
                     Free over {formatPrice(shop.freeDeliveryThresholdPennies)}
                   </span>
                 )}
               </span>
             ) : (
-              <span className="text-emerald-600 font-medium">Free delivery</span>
+              <span className="text-emerald-700 font-medium">Free delivery</span>
             )}
           </div>
 
@@ -697,7 +697,15 @@ export function ShopDetailClient({
       {categories.length > 1 && (
         <div className="sticky top-14 z-40 bg-white border-b border-cream-100 shadow-sm">
           <div className="mx-auto max-w-4xl px-4 sm:px-6">
-            <nav className="flex gap-1 overflow-x-auto py-2 scrollbar-hide -mx-4 px-4">
+            {/* Named, and named DIFFERENTLY from the storefront header nav that
+                is also on this page (components/storefront/storefront-nav.tsx).
+                `landmark-unique` fires on two same-role landmarks sharing a
+                name, so "Navigation" on both would satisfy the letter of the
+                rule and leave the ambiguity untouched (31-02 / LGL-02). */}
+            <nav
+              aria-label="Menu categories"
+              className="flex gap-1 overflow-x-auto py-2 scrollbar-hide -mx-4 px-4"
+            >
               {categories.map((cat) => (
                 <button
                   key={cat}
