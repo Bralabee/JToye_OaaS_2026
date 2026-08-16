@@ -274,6 +274,13 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
     fireEvent.change(screen.getByLabelText(/address line 1/i), { target: { value: "12 Coldharbour Lane" } })
     fireEvent.change(screen.getByLabelText(/town/i), { target: { value: "London" } })
     fireEvent.change(screen.getByLabelText(/postcode/i), { target: { value: "SW9 8LF" } })
+
+    // Phase 31-14 (D-02): an order can no longer be placed without acknowledging the allergen
+    // information. This is a deliberate change to the submit contract, so this pre-existing test
+    // gains the acknowledgement step; what it asserts (the COD wording) is unchanged.
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /I have read the allergen information/i })
+    )
     fireEvent.click(screen.getByRole("button", { name: /place order/i }))
 
     // A customer who chose Delivery must NOT be told to pay on collection.
