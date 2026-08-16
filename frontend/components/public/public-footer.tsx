@@ -81,15 +81,27 @@ export function PublicFooter() {
   return (
     <footer className="bg-oxblood text-cream">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-        {/* Three tracks ALWAYS, even when the third is empty. Collapsing to
-            sm:grid-cols-2 was tried first and looked tidier in a static
-            screenshot, but the session resolves after first paint, so the
-            operator column disappears live — and with two tracks the "For
-            customers" column slides ~200px right as it goes. Keeping the track
-            count fixed means the two surviving columns do not move at all. A
-            little empty space on the right costs nothing; a footer that
-            reflows under the reader's eyes on every load does. */}
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
+        {/* A FIXED track count per breakpoint, never one derived from session
+            state. Collapsing the tracks when the operator column hides was
+            tried first and looked tidier in a static screenshot, but the
+            session resolves after first paint, so the operator column
+            disappears live — and as the track count drops the "For customers"
+            column slides ~200px right as it goes. A little empty space on the
+            right costs nothing; a footer that reflows under the reader's eyes
+            on every load does.
+
+            The count moved from three to four when the Legal column was added
+            (LGL-01). The invariant is unchanged and is now carried by DOM ORDER
+            instead: the CONDITIONAL column must be LAST, because grid auto-flow
+            pulls every later item forward when it unmounts. Legal therefore
+            sits third, ahead of "For operators" — put it fourth and it would
+            jump a whole track the moment a customer's session resolved, which
+            is the exact defect this layout was shaped to avoid.
+
+            2 tracks at sm rather than 4: four columns inside a 640px viewport
+            leaves ~124px each, and "Cookie and browser-storage policy" is not a
+            124px label. 2x2 there, one row at lg. */}
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {/* Brand */}
           <div className="space-y-3">
             <Link
@@ -151,7 +163,78 @@ export function PublicFooter() {
             </ul>
           </div>
 
-          {/* For operators */}
+          {/* Legal (LGL-01).
+
+              THIS COLUMN IS THE WHOLE OF THE REACHABILITY FIX. Five policy
+              pages were published across this phase and nothing in the app
+              linked to any of them: the only in-app link to /legal anywhere was
+              components/platform/company-legal.tsx, which renders on platform
+              surfaces only. A policy nobody can reach is not published.
+
+              One column here covers EVERY public route including the tenant
+              storefront, because app/shop/layout.tsx renders this same footer
+              over the whole /shop/** subtree. That measurement is why the
+              separately-planned StorefrontLegalStrip was never built.
+
+              Real <Link>s, which render real <a href>: a JS-only nav does not
+              satisfy LGL-01 and is not crawlable.
+
+              LABELS ARE THE CANONICAL ONES, NOT FOOTER-SHORTENED. Each matches
+              the destination page's own title and the labels the policy pages
+              already use for each other (app/legal/retention/page.tsx:321-350).
+              Two labels for one href is the shape #382 took.
+
+              POLICY LINKS ONLY. No CompanyLegalLine, no registered office, no
+              company identity — lib/company.ts:9-12 keeps the platform
+              operator's trading disclosure off tenant storefronts, and this
+              footer renders on every one of them. */}
+          <div className="space-y-3">
+            <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-gold">
+              Legal
+            </h2>
+            <ul className="space-y-2 text-sm">
+              <li>
+                <Link href="/legal" className="text-cream/85 transition-colors hover:text-white">
+                  Legal &amp; company information
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/legal/privacy"
+                  className="text-cream/85 transition-colors hover:text-white"
+                >
+                  Privacy notice
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/legal/cookies"
+                  className="text-cream/85 transition-colors hover:text-white"
+                >
+                  Cookie and browser-storage policy
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/legal/retention"
+                  className="text-cream/85 transition-colors hover:text-white"
+                >
+                  Data retention schedule
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/legal/accessibility"
+                  className="text-cream/85 transition-colors hover:text-white"
+                >
+                  Accessibility statement
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* For operators — KEEP LAST. This is the only conditionally-rendered
+              column; anything placed after it shifts a track when it unmounts. */}
           {showOperatorColumn && (
             <div className="space-y-3">
               <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-gold">
