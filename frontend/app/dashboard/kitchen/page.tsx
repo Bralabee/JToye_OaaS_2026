@@ -26,6 +26,8 @@ import {
   KdsOtherShopNotice,
 } from "@/components/dashboard/kitchen/kds-board-scope"
 import { useKitchenPrint } from "@/components/dashboard/kitchen/use-kitchen-print"
+import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
+import { ItemAllergenBadge } from "@/components/dashboard/kitchen/item-allergen-badge"
 import {
   Card,
   CardContent,
@@ -850,7 +852,14 @@ export default function KitchenPage() {
                   <Card
                     className={`border-2 ${ageBorderClass(order.createdAt)} transition-colors`}
                   >
-                    <CardHeader className="pb-3">
+                    {/* 31-15: `data-testid` is not decoration here. The allergen banner's
+                        contract is POSITIONAL — inside this header, under the order
+                        number, above the customer name — and a test that can only ask
+                        "is the banner somewhere on the card" would pass with it at the
+                        bottom, which on a wall screen is the same as absent. This is the
+                        hook that lets the position be asserted, so a future card
+                        refactor learns what it must not break. */}
+                    <CardHeader className="pb-3" data-testid="kds-card-header">
                       <div className="flex items-start justify-between gap-2">
                         <CardTitle className="min-w-0 truncate text-lg font-semibold">
                           {order.orderNumber || `#${order.id.substring(0, 6)}`}
@@ -862,6 +871,21 @@ export default function KitchenPage() {
                           </Badge>
                         )}
                       </div>
+
+                      {/* 31-15 (LGL-03 / D-04): the order's allergen picture, read
+                          straight off the server's write-time snapshot. NOTHING is
+                          aggregated client-side — the point of the snapshot is that the
+                          kitchen and the checkout see ONE answer, the one the customer
+                          acknowledged, and a second derivation here would be a second
+                          answer waiting to disagree.
+
+                          Directly under the order number so it is visible without
+                          scrolling the card; the component itself decides between the
+                          declared set, the "not recorded" strip and rendering nothing. */}
+                      <OrderAllergenBanner
+                        allergenNames={order.allergenNames}
+                        allergenFlags={order.allergenFlags}
+                      />
                     </CardHeader>
                     <CardContent className="space-y-3">
                       {/* Customer name */}
@@ -869,18 +893,39 @@ export default function KitchenPage() {
                         {order.customerName || "Walk-in"}
                       </div>
     
-                      {/* Items */}
+                      {/* Items.
+
+                          31-15: this was an inline comma-joined 12px <span> run carrying
+                          quantity and name only. It is now a <ul> at 14px, one row per
+                          item, because a 12px inline run cannot carry a per-item allergen
+                          badge legibly at the 0.6-1.5 m this display is read from — and
+                          D-04 needs the cook to know not just that the order contains
+                          sesame but WHICH of the dishes has it.
+
+                          THE "{n} items" SUMMARY ABOVE STAYS. This is additive: the
+                          summary is a preserved good (it is the one line that answers
+                          "how big is this ticket" at a glance) and the list is new
+                          capacity, not a replacement for it. */}
                       <div className="text-sm text-slate-600">
                         <span className="font-medium">{itemSummary}</span>
                         {order.items && order.items.length > 0 && (
-                          <div className="mt-1 text-xs text-slate-500">
+                          <ul
+                            data-testid="kds-item-list"
+                            className="mt-1 space-y-1 text-sm text-slate-600"
+                          >
                             {order.items.map((item, i) => (
-                              <span key={item.id || i}>
-                                {i > 0 && ", "}
-                                {item.quantity}x {item.productName}
-                              </span>
+                              <li
+                                key={item.id || i}
+                                className="flex flex-wrap items-center gap-x-1.5 gap-y-1"
+                              >
+                                <span className="font-medium">{item.quantity}x</span>
+                                <span>{item.productName}</span>
+                                {/* Truncates at 3 names + "+N". Safe ONLY because the
+                                    banner in the header above carries the full set. */}
+                                <ItemAllergenBadge allergenNames={item.allergenNames} />
+                              </li>
                             ))}
-                          </div>
+                          </ul>
                         )}
                       </div>
     
