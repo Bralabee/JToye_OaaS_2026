@@ -715,5 +715,19 @@ resilience4j:
         wait-duration: 5s
 
 cleanup:
+  # Consumed by ScheduledCleanupService — a daily 03:00 UTC job that deletes DRAFT
+  # orders past this cutoff. Published as R-1 in docs/retention-manifest.json and
+  # gated by scripts/check-retention-enforcement.sh, which asserts BOTH that this
+  # key holds the published value AND that a consumer actually reads it.
+  #
+  # A sibling key for orphaned product images was removed from this block on
+  # 2026-08-16 (plan 31-06). It declared a 7-day deletion that nothing performed:
+  # verified two-arm with an identically shaped live control — zero Java consumers
+  # (rc=1, empty) against stale-draft-hours returning a hit under identical flags,
+  # globs and directory (rc=0). A config key promising a deletion nobody performs is
+  # exactly the drift the retention gate exists to catch, and leaving it here invited
+  # someone to publish it as a retention period later. The removed key is recorded by
+  # name under .deliberately_unpublished in docs/retention-manifest.json; it is NOT
+  # named here, because a grep asserting it is gone from this file cannot distinguish
+  # a real occurrence from a comment mentioning it.
   stale-draft-hours: ${CLEANUP_STALE_DRAFT_HOURS:24}
-  orphaned-image-days: ${CLEANUP_ORPHANED_IMAGE_DAYS:7}
