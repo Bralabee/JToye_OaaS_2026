@@ -4104,6 +4104,30 @@
         },
         "type" : "object"
       },
+      "VerificationRequest" : {
+        "description" : "The single-use token delivered to the subject's email address.",
+        "properties" : {
+          "token" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "VerificationResponse" : {
+        "description" : "Outcome of a verification attempt. Carries no address and no request reference.",
+        "properties" : {
+          "detail" : {
+            "description" : "Human-readable explanation.",
+            "type" : "string"
+          },
+          "status" : {
+            "description" : "One of verified, already_verified, invalid.",
+            "example" : "verified",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "WebhookDeliveryView" : {
         "properties" : {
           "attemptCount" : {
@@ -8753,6 +8777,79 @@
           }
         },
         "summary" : "Lodge a data-subject request",
+        "tags" : [
+          "Data Subject Requests"
+        ]
+      }
+    },
+    "/api/v1/public/gdpr/dsar/verify" : {
+      "get" : {
+        "description" : "Confirms control of the email address a request was lodged against, using the single-use token emailed to that address. Until this succeeds the request is never actioned — an unverified erasure request would be a destructive action anybody could aim at anybody else. Send the token as a JSON body (preferred — it keeps the token out of the request line and so out of every access log) or as a query parameter, which is what a link in an email must do because a GET has no body. Unknown, malformed and expired tokens all answer 'invalid', revealing nothing.",
+        "operationId" : "verifyViaLink",
+        "parameters" : [
+          {
+            "description" : "The single-use token from the verification email.",
+            "in" : "query",
+            "name" : "token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/VerificationResponse"
+                }
+              }
+            },
+            "description" : "Always. The body carries the outcome; a refusal is not an error."
+          }
+        },
+        "summary" : "Confirm a data-subject request (emailed link)",
+        "tags" : [
+          "Data Subject Requests"
+        ]
+      },
+      "post" : {
+        "description" : "Confirms control of the email address a request was lodged against, using the single-use token emailed to that address. Until this succeeds the request is never actioned — an unverified erasure request would be a destructive action anybody could aim at anybody else. Send the token as a JSON body (preferred — it keeps the token out of the request line and so out of every access log) or as a query parameter, which is what a link in an email must do because a GET has no body. Unknown, malformed and expired tokens all answer 'invalid', revealing nothing.",
+        "operationId" : "verify",
+        "parameters" : [
+          {
+            "description" : "Fallback for callers that only have the emailed link.",
+            "in" : "query",
+            "name" : "token",
+            "required" : false,
+            "schema" : {
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VerificationRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/VerificationResponse"
+                }
+              }
+            },
+            "description" : "Always. The body carries the outcome; a refusal is not an error."
+          }
+        },
+        "summary" : "Confirm a data-subject request",
         "tags" : [
           "Data Subject Requests"
         ]

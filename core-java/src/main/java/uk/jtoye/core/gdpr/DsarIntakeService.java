@@ -12,9 +12,6 @@ import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.gdpr.dto.DsarIntakeRequest;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.util.Base64;
@@ -109,6 +106,7 @@ public class DsarIntakeService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final DsarVerificationMailer verificationMailer;
 
     /**
      * How long a subject has to prove control of the address before the request lapses. Injected,
@@ -117,9 +115,11 @@ public class DsarIntakeService {
     @Value("${jtoye.gdpr.dsar.verification-ttl-hours:168}")
     private long verificationTtlHours;
 
-    public DsarIntakeService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public DsarIntakeService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+                             DsarVerificationMailer verificationMailer) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.verificationMailer = verificationMailer;
     }
 
     /**
@@ -132,14 +132,17 @@ public class DsarIntakeService {
      * @throws IdempotencyConflictException        the first request for this key is still in flight (409)
      */
     public DsarIntakeAck lodge(DsarIntakeRequest request, String idempotencyKey) {
-        String subjectDigest = sha256Hex(normaliseAddress(request.email()));
+        String subjectDigest = DsarSubjectDigest.of(request.email());
 
         // Hashed from the DIGEST, never from the readable address: this value is persisted, and a
         // payload fingerprint that could be reversed to an address would defeat the whole point of
         // storing only a digest in the first place.
         String requestHash = sha256Hex(subjectDigest + "|" + request.requestType().name());
 
-        String verificationTokenDigest = sha256Hex(freshVerificationToken());
+        // The readable token exists only on this stack and in the subject's mailbox. Only its
+        // digest is persisted — a readable token at rest is a bearer credential at rest.
+        String verificationToken = freshVerificationToken();
+        String verificationTokenDigest = sha256Hex(verificationToken);
         OffsetDateTime verificationExpiry = OffsetDateTime.now().plusHours(verificationTtlHours);
 
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
@@ -149,6 +152,7 @@ public class DsarIntakeService {
                     verificationTokenDigest, verificationExpiry,
                     null, requestHash, ACCEPTED, serialize(ACK));
             log.info("DSAR lodged: endpoint={} type={} keyed=false", ENDPOINT, request.requestType());
+            deliverVerification(request, verificationToken);
             return ACK;
         }
 
@@ -165,10 +169,39 @@ public class DsarIntakeService {
 
         if (inserted == 1) {
             log.info("DSAR lodged: endpoint={} type={} keyed=true", ENDPOINT, request.requestType());
+            deliverVerification(request, verificationToken);
             return ACK;
         }
 
         return replay(idempotencyKey, requestHash);
+    }
+
+    /**
+     * Send the token, and ONLY on a row that was genuinely inserted (plan 31-09).
+     *
+     * <h2>Why this does not undo the opacity above</h2>
+     *
+     * The mail goes to the address the caller named, unconditionally, with content that does not
+     * vary — no lookup happens here either, so there is still nothing for a response or a message to
+     * be derived from. An attacker who lodges a request against somebody else's address learns
+     * nothing: the token lands in the victim's mailbox, and the HTTP answer is the same constant it
+     * has always been.
+     *
+     * <h2>Why it is gated on the insert</h2>
+     *
+     * An {@code Idempotency-Key} replay must not mint a second live token, or a retried POST would
+     * quietly double the number of valid credentials pointing at one request. A replay returns the
+     * stored acknowledgement and sends nothing.
+     *
+     * <h2>Why a failure here does not fail the request</h2>
+     *
+     * The row is already committed. {@link DsarVerificationMailer} swallows mail errors, as every
+     * other mail path in this codebase does, so an SMTP outage leaves a recoverable state (the
+     * subject can lodge again and receive a fresh token) rather than a 500 over work that succeeded.
+     */
+    private void deliverVerification(DsarIntakeRequest request, String verificationToken) {
+        verificationMailer.sendVerification(
+                request.email(), verificationToken, request.requestType(), verificationTtlHours);
     }
 
     /**
@@ -210,9 +243,14 @@ public class DsarIntakeService {
      * The normalisation contract, in one place because two systems must agree on it: plan 31-09's
      * worker recomputes this digest over each tenant's customer rows, and a mismatch would make the
      * fan-out silently match nothing while every test stayed green.
+     *
+     * <p>31-09 moved the implementation into {@link DsarSubjectDigest} and this delegates to it.
+     * The move is the point: a written contract is a rule two files can drift away from, whereas a
+     * single shared implementation makes agreement STRUCTURAL. Nothing about the value changed —
+     * still trim, then lower-case under {@code Locale.ROOT}, then SHA-256 over UTF-8.
      */
     static String normaliseAddress(String email) {
-        return email.trim().toLowerCase(java.util.Locale.ROOT);
+        return DsarSubjectDigest.normalise(email);
     }
 
     /**
@@ -241,20 +279,12 @@ public class DsarIntakeService {
         }
     }
 
-    /** Lowercase hex SHA-256 — the same one-way digest {@code GdprService} uses for erasures. */
+    /**
+     * Lowercase hex SHA-256. Delegates to {@link DsarSubjectDigest} so the intake and 31-09's
+     * fan-out worker cannot drift apart — see {@link #normaliseAddress}.
+     */
     private static String sha256Hex(String input) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder(digest.length * 2);
-            for (byte b : digest) {
-                sb.append(Character.forDigit((b >> 4) & 0xF, 16));
-                sb.append(Character.forDigit(b & 0xF, 16));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
+        return DsarSubjectDigest.sha256Hex(input);
     }
 
     /**
