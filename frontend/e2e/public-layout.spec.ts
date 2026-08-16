@@ -407,3 +407,116 @@ test.describe("public surfaces — layout conformance", () => {
     }
   })
 })
+
+/**
+ * The published retention schedule at the CONTRACTED width (UI-SPEC S2a, LGL-01).
+ *
+ * WHY THIS LIVES HERE AND NEEDS NO STUB. `/legal/retention` is a static server
+ * page with no backend dependency at all — it does not even need the public-API
+ * stub the block above installs. That keeps this spec's stack-free property
+ * intact, which its header is emphatic about: the moment it needs a backend it
+ * stops running in CI and the blind spot comes back.
+ *
+ * WHY THE VIEWPORT IS SET EXPLICITLY. The `mobile` project is 390x844 and the
+ * contract names 375px. 390 passing is not evidence about 375 — the two differ
+ * by 15px, which is roughly the margin a fourth column lives or dies on. Setting
+ * it here also means both projects run this at the contracted width rather than
+ * one of them testing 1440.
+ *
+ * WHY A NON-VACUITY CONTROL COMES FIRST. A missing table has a `scrollWidth` of
+ * 0, and 0 <= clientWidth is trivially true, so the fit assertion PASSES over a
+ * page that failed to render. That is the same artefact class as an axe scan
+ * over an empty tree, and it is not hypothetical here: this file's own header
+ * records a sibling test that "passed vacuously over that same empty page".
+ */
+test.describe("legal retention schedule — 375px conformance", () => {
+  const RETENTION_PATH = "/legal/retention"
+  const REGION = "Data retention schedule"
+
+  async function openRetentionAt375(page: Page) {
+    await page.setViewportSize({ width: 375, height: 667 })
+    await page.goto(`${BASE}${RETENTION_PATH}`)
+    await page.waitForLoadState("domcontentloaded")
+    // Outlast React's streaming staging buffer (`<div id="S:n" hidden>`), which
+    // briefly holds a second copy of the server-rendered tree.
+    await page.waitForTimeout(1200)
+  }
+
+  test("the retention table fits 375px with no horizontal scrolling", async ({
+    page,
+  }) => {
+    await openRetentionAt375(page)
+
+    // ── NON-VACUITY CONTROL — asserted BEFORE the fit measurement ──
+    // Role-based, deliberately: the streaming staging buffer is `hidden`, so
+    // `getByRole` cannot see its duplicate copy while `getByTestId` can.
+    const table = page.getByRole("table")
+    await expect(
+      table,
+      "the retention table did not render — everything below would be measured " +
+        "over an empty page, where scrollWidth is 0 and the fit passes trivially"
+    ).toBeVisible()
+
+    const rowCount = await page.getByRole("row").count()
+    expect(rowCount, "table rows (header + body)").toBeGreaterThan(1)
+    expect(
+      await table.locator("caption").count(),
+      "table caption"
+    ).toBeGreaterThanOrEqual(1)
+
+    // ── THE FIT ──
+    const region = page.getByRole("region", { name: REGION })
+    await expect(region).toBeVisible()
+
+    const size = await region.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }))
+    // Guard the guard: a zero-width region would satisfy the comparison below
+    // for the wrong reason.
+    expect(size.clientWidth, "scroll region clientWidth").toBeGreaterThan(0)
+    expect(
+      size.scrollWidth,
+      `retention table overflows its region at 375px ` +
+        `(scrollWidth ${size.scrollWidth} > clientWidth ${size.clientWidth})`
+    ).toBeLessThanOrEqual(size.clientWidth)
+
+    // The document as a whole must not overflow either — a table that fits its
+    // own region while pushing the page wide is still a horizontal scrollbar.
+    expect(
+      await horizontalOverflow(page),
+      "document horizontal overflow (px) at 375px"
+    ).toBeLessThanOrEqual(1)
+  })
+
+  test("the retention schedule states enforcement in words, not colour", async ({
+    page,
+  }) => {
+    await openRetentionAt375(page)
+
+    const table = page.getByRole("table")
+    await expect(table).toBeVisible()
+
+    // Control first, for the same reason as above: zero rows would make the
+    // "every cell is one of these two words" assertion vacuously true.
+    const bodyRows = table.locator("tbody tr")
+    const count = await bodyRows.count()
+    expect(count, "published retention rows").toBeGreaterThan(1)
+
+    const words: string[] = []
+    for (let i = 0; i < count; i++) {
+      // The row header is a `th`, so the enforcement cell is the LAST `td`.
+      const cell = bodyRows.nth(i).locator("td").last()
+      words.push(((await cell.textContent()) ?? "").trim())
+    }
+
+    expect(words, "one enforcement word per published row").toHaveLength(count)
+    for (const word of words) {
+      expect(["Automated", "Operational"]).toContain(word)
+    }
+    // Both classes must actually appear: a page rendering only one of them would
+    // satisfy the loop above while having lost the distinction entirely.
+    expect(words).toContain("Automated")
+    expect(words).toContain("Operational")
+  })
+})

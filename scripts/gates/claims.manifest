@@ -63,3 +63,38 @@ rule	gradle	-	README.md	artifact-version sentence	artifact version \(`build\.gra
 # these MUST be addressed by jq path — a PCRE would match every dependency.
 rule	gradle	-	frontend/package-lock.json	lock root	jq:.version
 rule	gradle	-	frontend/package-lock.json	lock packages[""]	jq:.packages[""].version
+
+# ── retention periods: docs/retention-manifest.json -> the published schedule ──
+#
+# The manifest->prose half of D-08. 31-06 owns the other half
+# (scripts/check-retention-enforcement.sh, tree->manifest); this side asserts that
+# what /legal/retention PUBLISHES still equals what that gate measured.
+#
+# WHY THE PAGE CARRIES LITERAL NUMBERS AT ALL. Importing the manifest into the page
+# would make drift structurally impossible and was tried first; Turbopack refuses to
+# resolve modules outside the frontend project root, so the rows are a transcription.
+# These rules are therefore load-bearing rather than belt-and-braces.
+#
+# ANCHORED PER ROW, NOT ON ANY INTEGER. A rule of the form "find any integer on this
+# page" matches something regardless of what the sentence says: it satisfies M-1
+# while proving nothing. Each pattern below is anchored on its own category-named
+# constant and uses \K so the captured value is the bare period. The constants exist
+# precisely because grep -P is line-based and a category cannot otherwise reach a
+# period four lines below it.
+#
+# NO UNIT TRANSFORM EXISTS IN THE ENGINE (kind is only json|regex, shape only
+# int|semver). The manifest holds HUMAN units so these compare directly. R-3 is the
+# case that matters: its enforcement site stores 259200000 ms, that number lives ONLY
+# inside the manifest enforced_by block where 31-06 owns the conversion, and it must
+# never reach a rule here - an un-converted comparison would silently never match.
+#
+# ONLY FOUR OF THE TWELVE ROWS ARE GATED HERE, and that is a statement of coverage
+# rather than an omission: exactly four rows carry a claim_key because exactly four
+# publish an integer. The other eight publish prose ("Kept indefinitely"), which an
+# int-comparing engine cannot hold. They are gated instead by the field-by-field
+# comparison against the manifest in retention-table.a11y.test.tsx.
+source	retention	json	docs/retention-manifest.json	int
+rule	retention	draft_order_hours	frontend/app/legal/retention/page.tsx	R-1 abandoned checkouts	PERIOD_ABANDONED_CHECKOUTS = "\K[0-9]+(?= hours")
+rule	retention	webhook_delivery_days	frontend/app/legal/retention/page.tsx	R-2 webhook delivery records	PERIOD_WEBHOOK_DELIVERY_RECORDS = "\K[0-9]+(?= days")
+rule	retention	media_quarantine_hours	frontend/app/legal/retention/page.tsx	R-3 quarantined image uploads	PERIOD_QUARANTINED_IMAGE_UPLOADS = "\K[0-9]+(?= hours")
+rule	retention	customer_refresh_cookie_days	frontend/app/legal/retention/page.tsx	R-4 customer sign-in cookies	PERIOD_CUSTOMER_SIGN_IN_COOKIES = "\K[0-9]+(?= days")
