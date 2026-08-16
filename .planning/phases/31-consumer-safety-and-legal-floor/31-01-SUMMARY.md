@@ -396,6 +396,15 @@ Three things a later plan must not re-derive:
   `ResizeObserver` stub;
 - `docs/metrics.json` still owing a single post-merge regeneration (+3 blocks, +1 file, 2807 → 2810).
 
+## Self-Check: PASSED
+
+- All four created files present on disk.
+- All four commits present in `64d9f0ad..HEAD`: `040c597a`, `c67f9186`, `9b04b2df`, `04e9b9e0`.
+- `git status --short` empty — nothing uncommitted; every break-arm restore landed.
+- `git diff --diff-filter=D 64d9f0ad..HEAD` empty — no file was deleted by any commit.
+- Files changed by the whole plan are exactly the six intended: the five in scope plus this SUMMARY.
+  **`STATE.md` and `ROADMAP.md` are untouched**, as required for a parallel worktree agent.
+
 ---
 *Phase: 31-consumer-safety-and-legal-floor*
 *Completed: 2026-08-16*
