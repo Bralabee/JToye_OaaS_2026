@@ -1961,6 +1961,21 @@
         },
         "type" : "object"
       },
+      "OrderAllergenFlagDto" : {
+        "properties" : {
+          "allergenBit" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "allergenName" : {
+            "type" : "string"
+          },
+          "productName" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "OrderDetailDto" : {
         "properties" : {
           "addressCity" : {
@@ -1974,6 +1989,22 @@
           },
           "addressPostcode" : {
             "type" : "string"
+          },
+          "allergenFlags" : {
+            "items" : {
+              "$ref" : "#/components/schemas/OrderAllergenFlagDto"
+            },
+            "type" : "array"
+          },
+          "allergenMask" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "allergenNames" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
           },
           "createdAt" : {
             "format" : "date-time",
@@ -2210,6 +2241,16 @@
       },
       "OrderItemDto" : {
         "properties" : {
+          "allergenMask" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "allergenNames" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"

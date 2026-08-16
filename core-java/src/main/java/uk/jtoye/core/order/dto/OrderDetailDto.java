@@ -41,6 +41,25 @@ public class OrderDetailDto {
     private String addressCity;
     private String addressPostcode;
 
+    // ------------------------------------------------------------------
+    // LGL-03 / V63 — the order's allergen picture. This is the DTO the kitchen display actually
+    // consumes (fetchKitchenBoard / GET /orders/{id}/detail), so UI-SPEC S4's banner and the
+    // per-item badges are fed from here; OrderDto carries the same aggregate for list views.
+    //
+    // ALL THREE ARE NULL TOGETHER when the order is NOT RECORDED (it predates V63, or one of its
+    // lines does). "not recorded" and "nothing declared" (mask 0, empty names) are DIFFERENT
+    // statements, and S4 renders them differently: a genuinely allergen-free ticket shows no
+    // banner, and a pre-migration ticket must not be allowed to claim it is allergen-free.
+    // ------------------------------------------------------------------
+    private Integer allergenMask;
+    private List<String> allergenNames;
+
+    /**
+     * ADVISORY reconciliation lines ("CHECK: {item} — {allergen}"), carried beside the
+     * declaration and never merged into it. Empty (not null) when nothing was flagged.
+     */
+    private List<OrderAllergenFlagDto> allergenFlags;
+
     // Getters and Setters
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -107,4 +126,13 @@ public class OrderDetailDto {
 
     public String getAddressPostcode() { return addressPostcode; }
     public void setAddressPostcode(String addressPostcode) { this.addressPostcode = addressPostcode; }
+
+    public Integer getAllergenMask() { return allergenMask; }
+    public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
+
+    public List<String> getAllergenNames() { return allergenNames; }
+    public void setAllergenNames(List<String> allergenNames) { this.allergenNames = allergenNames; }
+
+    public List<OrderAllergenFlagDto> getAllergenFlags() { return allergenFlags; }
+    public void setAllergenFlags(List<OrderAllergenFlagDto> allergenFlags) { this.allergenFlags = allergenFlags; }
 }

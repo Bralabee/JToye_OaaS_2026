@@ -233,6 +233,29 @@ export interface OrderItem {
   unitPricePennies: number
   totalPricePennies: number
   createdAt: string
+  // Phase 31-10 (LGL-03 / V63): the WRITE-TIME allergen snapshot for this line — what the
+  // product declared when the order was placed, not what it declares today. D-04 needs the
+  // per-item set so the KDS badge can say WHICH item carries the allergen.
+  //
+  // null (or absent) means NOT RECORDED: the line predates V63. An empty `allergenNames` with
+  // `allergenMask === 0` means the vendor declared none of the 14. Those are DIFFERENT
+  // statements — do not write `allergenMask ?? 0` or `allergenNames ?? []`, which would make a
+  // historic order silently claim to be allergen-free.
+  allergenMask?: number | null
+  allergenNames?: string[] | null
+}
+
+// Phase 31-10 (LGL-03 / D-03): one ADVISORY reconciliation line. The product's ingredients text
+// emphasises an allergen its declared mask omits.
+//
+// NEVER render this as if it were a declared allergen. It is a text heuristic over the vendor's
+// own `**markup**`, carried BESIDE the declaration and never merged into it — S3 renders it as a
+// "Check" line, S4 as a "CHECK:" line inside the banner, both naming the product and the
+// allergen, both visually distinct from a declared chip by more than colour.
+export interface OrderAllergenFlag {
+  productName: string
+  allergenBit: number
+  allergenName: string
 }
 
 // How an order is fulfilled — mirrors backend uk.jtoye.core.order.FulfilmentType
@@ -267,6 +290,21 @@ export interface OrderDetail {
   addressLine2?: string | null
   addressCity?: string | null
   addressPostcode?: string | null
+  // Phase 31-10 (LGL-03 / V63): the order's allergen picture, rebuilt from the lines' write-time
+  // snapshot. This is the DTO the kitchen board consumes, so S4's banner reads these three.
+  //
+  // ALL THREE ARE null TOGETHER when the order is NOT RECORDED — it predates V63, or one of its
+  // lines does (a partial union would silently UNDER-state the set, which is the direction that
+  // injures someone). `allergenMask === 0` with empty `allergenNames` means the vendor declared
+  // none of the 14, which is NOT the same statement and must not render the same way: S4 shows no
+  // banner for a genuinely allergen-free ticket, and a pre-migration ticket must never be allowed
+  // to claim it is one.
+  //
+  // Deliberately absent from `Order` (the list type): the aggregate is derived from the lines,
+  // and the list endpoint does not load them — see the note on the backend OrderDto.
+  allergenMask?: number | null
+  allergenNames?: string[] | null
+  allergenFlags?: OrderAllergenFlag[] | null
 }
 
 export interface CreateOrderRequest {

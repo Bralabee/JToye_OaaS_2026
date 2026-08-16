@@ -171,6 +171,14 @@ public class OrderService {
             );
             item.setTenantId(tenantId);
             item.setProductName(product.getTitle());
+            // LGL-03 / V63: snapshot the allergen picture here too, not only on the storefront
+            // path. This is the vendor / API / MCP order-creation route, and an order created
+            // through it reaches exactly the same kitchen display. If only the storefront
+            // snapshotted, every order placed this way would arrive with NO allergen data at all
+            // and the KDS banner would correctly render nothing — under-declaration on the one
+            // surface that can injure someone, produced by an omission rather than a decision.
+            OrderAllergenSnapshot.capture(item, product.getTitle(),
+                    product.getAllergenMask(), product.getIngredientsText());
             order.addItem(item);
             lineRates.add(new VatCalculator.LineRate(
                     item.getTotalPricePennies(), product.getVatRate()));
