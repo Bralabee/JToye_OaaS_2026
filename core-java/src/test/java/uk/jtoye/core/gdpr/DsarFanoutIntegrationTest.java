@@ -50,6 +50,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
@@ -167,25 +168,33 @@ class DsarFanoutIntegrationTest {
         UUID a = seedTenant();
         UUID b = seedTenant();
         UUID c = seedTenant();
-        // The address is lodged in a DIFFERENT surface form from the one the customer rows hold.
-        // That is not decoration: it is the byte-identity proof. The intake normalises (trim +
-        // lower-case, UTF-8) before hashing, and the worker must reproduce that EXACTLY over
-        // customer rows or it matches nothing while every status assertion stays green.
-        String stored = "mixed.case+dsar-" + UUID.randomUUID() + "@example.com";
-        String lodgedAs = "  " + stored.toUpperCase(java.util.Locale.ROOT) + "  ";
-        seedCustomer(a, stored);
-        seedCustomer(b, stored);
+        // THREE surface forms of ONE address, and every difference is load-bearing. The digest
+        // contract has to hold on BOTH sides independently, and an earlier version of this fixture
+        // only exercised one of them: it seeded both customers already lower-cased, so hashing the
+        // stored value RAW produced the same digest — and the deliberate break arm that made the
+        // worker skip normalisation PASSED, certifying a divergence it could not see. Tenant A now
+        // stores a MIXED-CASE address (nothing lower-cases customers.email; a vendor typing a
+        // customer in is enough), which exercises the WORKER's normalisation; tenant B keeps the
+        // already-normalised form. Lodging in a third form exercises the INTAKE's.
+        String canonical = "mixed.case+dsar-" + UUID.randomUUID() + "@example.com";
+        String storedInA = canonical.toUpperCase(java.util.Locale.ROOT);
+        String lodgedAs = "  " + canonical.toUpperCase(java.util.Locale.ROOT) + "  ";
+        seedCustomer(a, storedInA);
+        seedCustomer(b, canonical);
         seedCustomer(c, "someone-else-" + UUID.randomUUID() + "@example.com");
 
         lodgeVerifiedErasure(lodgedAs, "203.0.113.31");
         worker.executeLodgedRequests();
 
-        assertThat(erasureRecordCount(a)).as("tenant A held the subject").isEqualTo(1);
+        assertThat(erasureRecordCount(a))
+                .as("tenant A held the subject under a MIXED-CASE address — this is the assertion "
+                        + "that proves the WORKER normalises, not just the intake")
+                .isEqualTo(1);
         assertThat(erasureRecordCount(b)).as("tenant B held the subject").isEqualTo(1);
         assertThat(erasureRecordCount(c)).as("tenant C never held the subject").isZero();
 
-        assertThat(customerCountWithEmail(a, stored)).isZero();
-        assertThat(customerCountWithEmail(b, stored)).isZero();
+        assertThat(customerCountWithEmail(a, storedInA)).isZero();
+        assertThat(customerCountWithEmail(b, canonical)).isZero();
 
         assertThat(requestStatus()).isEqualTo("COMPLETED");
         assertThat(completedAtIsSet()).isTrue();
@@ -311,6 +320,62 @@ class DsarFanoutIntegrationTest {
         // value in a finally, so this assertion is incapable of failing and is NOT evidence. The
         // executable form of "the wrap exists" is the source grep in the plan's <verify> block.
         assertThat(SystemPrincipal.isSystem()).isFalse();
+    }
+
+    /**
+     * The erasure genuinely executes INSIDE a declared system scope — observed from within the call
+     * rather than inferred from the source.
+     *
+     * <h2>Why this test was added after a break arm, and what that arm measured</h2>
+     *
+     * The plan asked what happens if the {@code SystemPrincipal.asSystem} wrap is removed, and
+     * predicted the shop-scope gate would refuse the work. <b>It does not.</b> Measured: with the
+     * wrap deleted, all nine behavioural tests in this class still passed and only the source scan
+     * fired. Nothing on {@code GdprService.eraseCustomerData}'s path — customer, order, review,
+     * storage and directory repositories — reaches {@code ShopAccessService}, so today the
+     * declaration is UNEXERCISED and the live tenancy control is {@code TenantContext} plus the
+     * pinned GUC (break arm a2 reds the erasure count to zero, which is what load-bearing looks
+     * like).
+     *
+     * <p>That does not make the wrap decoration to be deleted, and the distinction matters: #283
+     * INVERTED the old rule under which a thread with no {@code Authentication} was trusted by
+     * default. Under the current gate an undeclared background thread is DENIED, so the first gated
+     * call added anywhere beneath this erasure — a shop-scoped media delete, an onboarding check —
+     * fails closed the moment it appears. The declaration is what makes that future call work, and
+     * it is also the sentence D-17 rests on: this is a background entry point and it says so.
+     *
+     * <p>So rather than report a passing behavioural criterion that could not fail, the claim is
+     * strengthened here from "the wrap is in the file" to "the wrap is in effect at the call site",
+     * which is falsifiable: removing it reds this test on the flag, not only on a grep. Verified by
+     * re-running the arm against this test (arm c2).
+     */
+    @Test
+    void theErasureRunsInsideADeclaredSystemScope() throws Exception {
+        UUID a = seedTenant();
+        String email = "declared-system-" + UUID.randomUUID() + "@example.com";
+        seedCustomer(a, email);
+
+        AtomicBoolean declaredInside = new AtomicBoolean(false);
+        doAnswer(invocation -> {
+            declaredInside.set(SystemPrincipal.isSystem());
+            return invocation.callRealMethod();
+        }).when(gdprService).eraseSubjectByDigest(eq(a), anyString());
+
+        assertThat(SystemPrincipal.isSystem())
+                .as("CONTROL: the test thread must NOT be in a system scope, or the observation "
+                        + "below would be true whatever the worker did")
+                .isFalse();
+
+        lodgeVerifiedErasure(email, "203.0.113.38");
+        worker.executeLodgedRequests();
+
+        // NON-VACUITY: the observation is only evidence if the observed call actually happened.
+        verify(gdprService).eraseSubjectByDigest(eq(a), anyString());
+        assertThat(declaredInside.get())
+                .as("the per-tenant erasure must run inside SystemPrincipal.asSystem — this is the "
+                        + "one production declaration D-17 permits, and the reason a request thread "
+                        + "never needs one")
+                .isTrue();
     }
 
     // ---- D-17: the human path does not cross tenants; the worker does ---------------------------
