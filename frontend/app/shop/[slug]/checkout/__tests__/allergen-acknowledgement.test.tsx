@@ -275,7 +275,15 @@ describe("checkout: submitting WITHOUT the acknowledgement is refused (T-31-14-0
     expect(ackCheckbox()).not.toBeChecked()
     fireEvent.click(submitButton())
 
-    // THE load-bearing assertion.
+    // THE load-bearing assertion, and it is deliberately FIRST.
+    //
+    // `publicApiClient.post` is reached synchronously inside the submit handler (it is the first
+    // statement after the guard), so if the gate were unwired this fails here on the very next
+    // line. Asserting the alert first instead would fail on the MISSING ALERT in the break
+    // direction — a true failure, but about the wrong thing: the run would never reach the
+    // question "was an order created?", which is the one that matters.
+    expect(mockedPost).not.toHaveBeenCalled()
+
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(ALLERGEN_ACK_ERROR_COPY)
     })
