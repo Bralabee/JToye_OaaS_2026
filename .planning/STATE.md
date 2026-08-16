@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
-status: ready_to_plan
-stopped_at: "Phase 31 UI-SPEC APPROVED 6/6 (31-UI-SPEC.md, 2 revision rounds) on top of 31-CONTEXT.md — ready to plan. NEXT COMMAND: /gsd-plan-phase 31 — but it WILL hit the Nyquist gate: nyquist_validation and research are both enabled while --skip-research leaves no RESEARCH.md, so no VALIDATION.md can be derived. Choose there: re-run with --research, disable nyquist, or accept Dimension-8 failure. Opened as a PARALLEL front while Phase 29 stays paused at its wave-7 boundary on two owner actions (staging DNS + 7 secrets), re-measured 2026-08-15: 4x dig no-answer, 0/7 populated. Phase 31 depends on nothing structural and gates Phase 32."
-last_updated: 2026-08-15T20:06:40.000Z
-last_activity: 2026-08-15
+status: executing
+stopped_at: "Phase 31 EXECUTING — 18 plans across 5 waves, all planned, plan-check blockers cleared (4070b351, 44adc1ab), 0/18 SUMMARY.md present at wave-1 dispatch. Wave 1 = 31-01..07 (31-01 is autonomous:false — human package-legitimacy gate on 4 npm packages tagged [ASSUMED] because slopcheck could not run under block-base-python). Wave 2 = 08,09,10 · Wave 3 = 11..16 · Wave 4 = 17 · Wave 5 = 18. Intra-wave files_modified overlap = 0 in every wave, detector proven able to fire (control arm = 1), so worktree-parallel dispatch is safe. NOTE: this block is HAND-EDITED — `state.begin-phase` and `state.record-session` are BANNED in this repo (they rewrite stopped_at, destroy last_activity, and recompute the progress: counters on the wrong denominator; reverted once already on 2026-08-08). The corrupt progress: counters below stay untouched on this branch by design. Phase 29 remains paused at its wave-7 boundary on two owner actions (staging DNS + 7 secrets), unchanged."
+last_updated: 2026-08-16T00:00:00.000Z
+last_activity: 2026-08-16
 progress:
   # ⚠ THESE COUNTERS ARE CORRUPT ON THIS BRANCH and are deliberately left untouched here.
   # completed_plans (78) EXCEEDS total_plans (77), which is impossible — the signature of
