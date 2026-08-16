@@ -28,6 +28,22 @@ layout.buildDirectory.set(file("build-local"))
 // on the line Boot 3.5.16 already manages — 4.2.x would be an unrequested jump.
 extra["netty.version"] = "4.1.136.Final"
 
+// Same shape, same reason, different family. Spring Boot 3.5.16's BOM pins
+// httpcore5 to 5.3.6, and that pin DOWNGRADES what the AWS SDK asks for:
+// software.amazon.awssdk:apache5-client:2.50.2 requests httpcore5 5.4.3 and
+// httpclient5 5.6.2, and dependencyInsight shows "5.4.3 -> 5.3.6 (selected by
+// rule)". So the vulnerable version is not something we or the SDK chose — it
+// is Boot's managed version winning over a newer request.
+//
+// 5.4.3 is the exact fixed version for the Trivy image-gate findings
+// CVE-2026-54399 (httpcore5) and CVE-2026-54428 (httpcore5-h2), both HIGH and
+// both marked fixable. The two artifacts are released together from one
+// project, so moving the property moves both and cannot leave them out of
+// step. 5.5-beta2 is also listed as fixed and is deliberately NOT taken: a
+// beta is not a version to put in an image over a HIGH that a stable release
+// already closes.
+extra["httpcore5.version"] = "5.4.3"
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
