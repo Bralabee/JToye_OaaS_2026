@@ -101,3 +101,31 @@ ever gets `npm ci` in `frontend/`, so the vitest third of the oracle cannot run 
 whole gate reports VOID (correctly — it refuses to call an unverified family a pass).
 Cleared here by running `npm ci` in `mcp-server/`, after which all three runners agree.
 Worth adding to the worktree bootstrap so the gate is not routinely VOID.
+
+### 4. The contrast literal ledger cannot see the legal pages (found by 31-18)
+
+`frontend/__tests__/contrast-literals.test.ts` declares `SCAN_ROOTS` as `app/page.tsx`,
+`app/shop`, `app/auth/signin`, `components/public`, `components/storefront`,
+`components/marketing`. It does **not** include `components/legal` or `app/legal`, yet all
+five `/legal/*` routes are declared in-scope surfaces in the published conformance
+statement — and `/legal/accessibility` IS that statement.
+
+Measured consequence, not hypothetical: `PolicyToc`'s links shipped `text-amber-700` on the
+below-`lg` `bg-cream-100/60` panel at **4.41:1** against a 4.5:1 requirement, across all four
+policy documents (9+7+5+6 nodes). The literal ledger was structurally incapable of seeing it;
+only 31-18's browser scan at 390px found it. Fixed in `8cf11de7` (amber-800, 6.23:1).
+
+NOT closed here: widening `SCAN_ROOTS` is outside 31-18's `files_modified`, and adding two
+roots would likely surface further literals needing new ledger entries — a contrast-debt
+decision with published-commitment consequences, since the `text-contrast-below-minimum`
+exception carries a ratified 2027-02-16 date. Raised as an owner question in 31-18's summary.
+
+### 5. `rg` does not exist in a script subprocess — absence checks fail OPEN (re-confirmed by 31-18)
+
+Re-hit while writing 31-18's acceptance script. `rg` and the `grep` shell function are
+interactive-shell constructs; inside `bash script.sh` both are `command not found`. Presence
+checks then fail loudly (harmless), but **absence checks print OK from `0 == 0`** and certify
+a removal that was never verified. Caught only by an explicit instrument control asserting a
+token that MUST be absent. Use `/usr/bin/grep` by absolute path in scripts (a real binary,
+not `.gitignore`-aware). Secondary trap in the same shape: `grep -c` prints `0` AND exits 1,
+so a `|| echo 0` fallback emits `"0\n0"` and every absence comparison fails confusingly.

@@ -131,7 +131,7 @@ Recorded here 2026-08-01 for completeness. Phase 27 was executed and closed 7/7 
 ### Consumer-safety and legal floor (LGL) — Phase 31
 
 - [ ] **LGL-01**: #116 — privacy policy, cookie banner and written retention policy live on the public storefront.
-- [ ] **LGL-02**: #103 + #272 — WCAG 2.1 AA with a published conformance statement and a CI a11y check shown to fail against a broken control.
+- [x] **LGL-02**: #103 + #272 — WCAG 2.1 AA with a published conformance statement and a CI a11y check shown to fail against a broken control.
 - [ ] **LGL-03**: #427 Wave 1 — recorded lawful-basis decision for consulting a stored customer allergen profile, order-level mask aggregation, KDS conflict surfacing. Today no consumer-allergen matching exists at checkout, and every allergen statement resolves to a hand-typed integer never reconciled against the adjacent ingredients text.
 
 ### Go to market (GTM) — Phase 32
@@ -259,7 +259,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | TRUTH-01 | Phase 34 | not yet planned | Not started |
 | TRUTH-02 | Phase 34 | not yet planned | Not started |
 | LGL-01 | Phase 31 | not yet planned | Not started |
-| LGL-02 | Phase 31 | not yet planned | Not started |
+| LGL-02 | Phase 31 | 31-01, 31-02, 31-13, 31-14, 31-18 | **Complete** — 2026-08-16. Conformance statement published (31-13) with seven dated exceptions, each re-verified against the tree by 31-18; static jsx-a11y layer at `error` with no downgrades (31-02); per-PR axe gate over 13 declared surfaces on both viewports in the only browser job that blocks a merge (31-18), **shown to fail** against a deliberate `image-alt` break with both directions recorded. Limitation recorded: the authenticated vendor dashboard is deliberately outside the claim and is published as a named exception |
 | LGL-03 | Phase 31 | not yet planned | Not started — #427 Wave 1 |
 | GTM-01 | Phase 32 | not yet planned | Not started |
 | GTM-02 | Phase 32 | not yet planned | Not started |
