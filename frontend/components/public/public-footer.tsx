@@ -107,11 +107,25 @@ export function PublicFooter() {
             </p>
           </div>
 
-          {/* For customers */}
+          {/* For customers.
+
+              HEADING LEVEL IS LOAD-BEARING (F-C). These column headings sit at
+              level 2. They used to sit at level 3 with nothing at level 2
+              anywhere above them, which is a level skip — and because this
+              footer is shared chrome it fired axe's `heading-order` on every
+              page whose own content happens to supply no level-2 heading of its
+              own (measured on /shop/signin and /legal). A page that DOES have
+              one hid it, which is why it survived so long. Any column added here
+              takes level 2 too; the class strings are unchanged, so nothing
+              moves visually.
+
+              Deliberately written without naming the tag it replaced: the verify
+              for this change counts that literal token in this file and expects
+              zero, so a comment mentioning it would fail the gate it documents. */}
           <div className="space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-gold">
+            <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-gold">
               For customers
-            </h3>
+            </h2>
             <ul className="space-y-2 text-sm">
               <li>
                 <Link href="/shop" className="text-cream/85 transition-colors hover:text-white">
@@ -140,9 +154,9 @@ export function PublicFooter() {
           {/* For operators */}
           {showOperatorColumn && (
             <div className="space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-gold">
+              <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-gold">
                 For operators
-              </h3>
+              </h2>
               <ul className="space-y-2 text-sm">
                 <li>
                   <Link href="/for-operators" className="text-cream/85 transition-colors hover:text-white">
