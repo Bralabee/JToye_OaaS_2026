@@ -326,6 +326,12 @@ the anonymous write path — is already in the plan's `<threat_model>` register 
 | `e1783625` | `feat(31-05)`: public DSAR intake — opaque, rate-limited, idempotent (GREEN) |
 | `ae6c5836` | `chore(31-05)`: regenerate docs/metrics.json for V62 and the new tests |
 
+## Self-Check: PASSED
+
+All 9 created files are tracked in git (`git ls-files`), all 6 commit hashes resolve
+(`git log --oneline --all` matched 6 of 6), and the working tree is clean. `STATE.md` and
+`ROADMAP.md` were not modified — the orchestrator owns those writes after the wave completes.
+
 ## TDD Gate Compliance
 
 Task 2 was declared `tdd="true"` and the gate sequence is present and in order: RED (`6cc38d21`,
