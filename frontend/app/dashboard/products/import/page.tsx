@@ -154,8 +154,15 @@ function CsvImportTab() {
           <CardTitle className="text-base">Step 2: Upload your filled CSV</CardTitle>
         </CardHeader>
         <CardContent>
-          <div
-            className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer
+          {/* A real <button>, not a <div onClick> (31-02 / LGL-02). The drop
+              zone was mouse-only: not tabbable, not activatable by Enter or
+              Space, and announced as nothing. A native button gets all three
+              for free and needs no ARIA. Layout is unchanged — `w-full block`
+              reproduces the <div>'s box. */}
+          <button
+            type="button"
+            disabled={uploading}
+            className={`block w-full border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer
               ${uploading ? "border-blue-300 bg-blue-50" : "border-slate-300 hover:border-blue-400 hover:bg-blue-50/50"}`}
             onClick={() => !uploading && fileRef.current?.click()}
           >
@@ -171,7 +178,7 @@ function CsvImportTab() {
                 <span className="text-xs text-slate-600">UTF-8 encoded, comma-separated</span>
               </div>
             )}
-          </div>
+          </button>
           <input
             ref={fileRef}
             type="file"
@@ -263,9 +270,13 @@ function PhotoImportTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Drop zone */}
-          <div
-            className="border-2 border-dashed border-violet-300 rounded-xl p-8 text-center transition-colors cursor-pointer hover:border-violet-400 hover:bg-violet-50/50"
+          {/* Drop zone — a real <button> for the same reason as the CSV zone
+              above (31-02 / LGL-02). Drag-and-drop is a pointer-only
+              enhancement layered on top; the click/Enter/Space path through the
+              hidden file input is the one every user has. */}
+          <button
+            type="button"
+            className="block w-full border-2 border-dashed border-violet-300 rounded-xl p-8 text-center transition-colors cursor-pointer hover:border-violet-400 hover:bg-violet-50/50"
             onClick={() => fileRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
@@ -278,7 +289,7 @@ function PhotoImportTab() {
               <span className="text-sm text-slate-600">Drop food photos here or click to select</span>
               <span className="text-xs text-slate-600">JPEG, PNG, WebP — select multiple at once</span>
             </div>
-          </div>
+          </button>
           <input
             ref={fileRef}
             type="file"
