@@ -348,6 +348,41 @@ describe("cookie policy — framing and honesty", () => {
   })
 })
 
+describe("cookie policy — the prose actually reads as prose", () => {
+  it("loses no space where an inline element meets the text after it", () => {
+    const { main } = renderPolicy()
+
+    // A TOOLCHAIN BUG THIS PAGE TRIPPED, FOUND BY READING RENDERED OUTPUT.
+    // Measured with a four-arm control: when the JSXText node FOLLOWING an
+    // inline element contains an HTML entity anywhere in it — `&apos;`, several
+    // words later — the transform drops that node's LEADING space, and the
+    // words run together in the delivered HTML:
+    //
+    //   inline element, no entity in the following text   -> space kept
+    //   inline element, `&apos;` later in the same text   -> SPACE LOST
+    //   `&apos;` only BEFORE the inline element           -> space kept
+    //   explicit {" "} at the boundary, entity present    -> space kept
+    //
+    // It shipped "js.stripe.comso your card details", "<shop>there is one
+    // item" and "Clearing site datain your browser" — invisible in source
+    // review, because the source has the space. This project's own
+    // react/no-unescaped-entities rule REQUIRES `&apos;` in JSX text, so the
+    // trap is reachable from any paragraph on any page. The fix is an explicit
+    // {" "} at the boundary; this test is what stops it coming back.
+    const containers = Array.from(main.querySelectorAll("p, li, h2, h3, td, th"))
+    expect(containers.length).toBeGreaterThan(20)
+
+    const runTogether: string[] = []
+    for (const el of containers) {
+      const hits = el.innerHTML.match(
+        /<\/(?:code|span|a|strong|em|b|i)>[A-Za-z]\w*/g
+      )
+      if (hits) runTogether.push(...hits)
+    }
+    expect(runTogether).toEqual([])
+  })
+})
+
 describe("cookie policy — document structure and metadata", () => {
   it("carries one h1 and at least four h2 sections with stable ids", () => {
     const { main } = renderPolicy()

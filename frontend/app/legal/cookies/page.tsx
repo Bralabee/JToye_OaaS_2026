@@ -351,8 +351,9 @@ export default function CookiePolicyPage() {
           rows={LOCAL_ROWS}
         />
         <p>
-          Where a name ends in <code>&lt;shop&gt;</code> there is one item per
-          shop, and the shop&apos;s short name is on the end — so a basket at a
+          Where a name ends in <code>&lt;shop&gt;</code>{" "}
+          there is one item per shop, and the shop&apos;s short name is on the
+          end — so a basket at a
           shop called <code>rosies</code> is stored as{" "}
           <code>jtoye-cart-rosies</code>.
         </p>
@@ -400,8 +401,9 @@ export default function CookiePolicyPage() {
         </h3>
         <p>
           When you reach the payment step of a checkout, we load Stripe&apos;s
-          payment form from <code>js.stripe.com</code> so your card details go
-          directly to Stripe and never pass through J&apos;Toye. Stripe sets its
+          payment form from <code>js.stripe.com</code>{" "}
+          so your card details go directly to Stripe and never pass through
+          J&apos;Toye. Stripe sets its
           own cookies in your browser to process the payment and to detect fraud.
         </p>
         <p>
@@ -491,8 +493,9 @@ export default function CookiePolicyPage() {
             email address.
           </li>
           <li>
-            <span className="font-semibold">Clearing site data</span> in your
-            browser&apos;s settings removes everything on this page, including the
+            <span className="font-semibold">Clearing site data</span>{" "}
+            in your browser&apos;s settings removes everything on this page,
+            including the
             checkout email address. In most browsers this is under privacy
             settings, as &quot;cookies and site data&quot;. You can also delete
             individual items from the storage section of your browser&apos;s

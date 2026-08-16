@@ -360,6 +360,35 @@ describe("privacy notice — presentation contract", () => {
   })
 })
 
+describe("privacy notice — the prose actually reads as prose", () => {
+  it("loses no space where an inline element meets the text after it", () => {
+    const { main } = renderNotice()
+
+    // See the twin of this test on the cookie policy for the measured
+    // mechanism. Short version: when the JSXText FOLLOWING an inline element
+    // contains an HTML entity anywhere in it, the transform drops that node's
+    // leading space and the words run together in the delivered HTML. The
+    // source still shows a space, so review cannot catch it.
+    //
+    // This notice is denser in inline emphasis than any other page in the
+    // phase — the reproduced Article 26 essence is almost entirely bolded
+    // clauses inside sentences — so it is the page with the most boundaries to
+    // get wrong, and a published essence with words fused together is a poor
+    // advertisement for a document a regulator reads.
+    const containers = Array.from(main.querySelectorAll("p, li, h2, h3"))
+    expect(containers.length).toBeGreaterThan(20)
+
+    const runTogether: string[] = []
+    for (const el of containers) {
+      const hits = el.innerHTML.match(
+        /<\/(?:code|span|a|strong|em|b|i)>[A-Za-z]\w*/g
+      )
+      if (hits) runTogether.push(...hits)
+    }
+    expect(runTogether).toEqual([])
+  })
+})
+
 describe("privacy notice — metadata", () => {
   it("declares its own canonical, title and description", () => {
     expect(metadata.alternates?.canonical).toBe("/legal/privacy")
