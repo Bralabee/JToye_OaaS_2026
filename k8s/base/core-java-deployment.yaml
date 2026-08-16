@@ -448,6 +448,17 @@ spec:
             configMapKeyRef:
               name: app-config
               key: notification.unsubscribe.base-url
+        # Phase 31 (LGL-01): the link a data subject clicks to verify a DSAR.
+        # Its application.yml default is http://localhost:8080/... — outside a
+        # laptop that link is DEAD, and it fails SILENTLY: the email sends, the
+        # subject clicks, nothing verifies, and UK GDPR's one-month clock keeps
+        # running. Supplied per environment rather than allowlisted for exactly
+        # that reason. Same shape as the two notification origins above.
+        - name: DSAR_VERIFY_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: gdpr.dsar.verify-base-url
         # OPTIONAL Secret (notification-credentials). The application.yml
         # default for this signing secret is the EMPTY STRING — i.e. an HMAC
         # over an empty key, which is forgeable. Wiring it here makes the real

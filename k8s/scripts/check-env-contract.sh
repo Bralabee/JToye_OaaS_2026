@@ -217,8 +217,13 @@ ALLOW_FE_B=(
   'NEXT_PUBLIC_COMPANY_LEGAL_NAME|Reviewed omission: frontend/lib/company.ts:38 falls back to a committed default. These four company-identity values are footer copy, not configuration a cluster needs to resolve.'
   'NEXT_PUBLIC_COMPANY_NUMBER|Reviewed omission: frontend/lib/company.ts:39 falls back to a committed default. See NEXT_PUBLIC_COMPANY_LEGAL_NAME.'
   'NEXT_PUBLIC_COMPANY_REGISTRATION|Reviewed omission: frontend/lib/company.ts:41 falls back to a committed default. See NEXT_PUBLIC_COMPANY_LEGAL_NAME.'
-  'NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE|Reviewed omission: frontend/lib/company.ts:42 falls back to "" and the renderer omits the line entirely. See NEXT_PUBLIC_COMPANY_LEGAL_NAME.'
 )
+# NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE was removed from this allowlist by phase 31
+# (plan 31-08). It is no longer a reviewed omission: the value is now declared as a
+# build ARG in frontend/Dockerfile and supplied through the enforced build-arg
+# channel, so the gate can see it by rule and an allowlist entry would only hide
+# whether that channel still works. The gate itself flagged the entry as STALE the
+# first time this branch reached CI.
 
 # Bare words and hostnames that are only ever correct on a developer laptop.
 LOCAL_ONLY_WORDS=(

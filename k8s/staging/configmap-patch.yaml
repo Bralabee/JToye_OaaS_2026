@@ -46,6 +46,7 @@ data:
   # D-19: unsubscribe + email open/click tracking links in staging notifications.
   notification.email.tracking-base-url: "https://app-staging.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app-staging.olajay.co.uk"
+  gdpr.dsar.verify-base-url: "https://api-staging.olajay.co.uk/api/v1/public/gdpr/dsar/verify"
 
   # D-19: where Stripe returns a vendor after Connect onboarding. Paths match the
   # application.yml defaults; only the origin is staging-specific.

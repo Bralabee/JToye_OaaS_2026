@@ -52,6 +52,7 @@ data:
   # the recipient's own machine.
   notification.email.tracking-base-url: "https://app.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app.olajay.co.uk"
+  gdpr.dsar.verify-base-url: "https://api.olajay.co.uk/api/v1/public/gdpr/dsar/verify"
 
   # D-19: a vendor finishing Stripe Connect onboarding was being returned to a
   # loopback dev origin, stranding MARKETPLACE payout setup at the last step.
