@@ -125,7 +125,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
                 </span>
               ))}
               {tags.length > 3 && (
-                <span className="text-xs text-slate-400">+{tags.length - 3}</span>
+                <span className="text-xs text-slate-600">+{tags.length - 3}</span>
               )}
             </div>
           )}
@@ -163,7 +163,7 @@ function ShopCard({ shop }: { shop: PublicShop }) {
               <span className="text-emerald-700 font-medium">Free delivery</span>
             )}
             {shop.deliveryInfo && (
-              <span className="text-slate-400 truncate">{shop.deliveryInfo}</span>
+              <span className="text-slate-600 truncate">{shop.deliveryInfo}</span>
             )}
           </div>
         </div>
