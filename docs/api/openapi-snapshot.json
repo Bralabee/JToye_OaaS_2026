@@ -1213,6 +1213,51 @@
         },
         "type" : "object"
       },
+      "DsarIntakeAck" : {
+        "description" : "Opaque acknowledgement. Identical for every accepted request — it carries no reference and reveals nothing about whether data is held.",
+        "properties" : {
+          "acknowledgementWindowDays" : {
+            "description" : "Days within which the request will be answered.",
+            "example" : 30,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "detail" : {
+            "description" : "Human-readable acknowledgement.",
+            "type" : "string"
+          },
+          "status" : {
+            "description" : "Always 'received'.",
+            "example" : "received",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "DsarIntakeRequest" : {
+        "description" : "A data-subject request lodged from the public internet (UK GDPR Articles 15/17).",
+        "properties" : {
+          "email" : {
+            "description" : "The email address the request concerns. Stored only as a one-way SHA-256 digest; the readable address is never persisted.",
+            "example" : "someone@example.com",
+            "maxLength" : 254,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "requestType" : {
+            "description" : "ACCESS for Articles 15/20 (a copy of the data held), ERASURE for Article 17 (deletion).",
+            "enum" : [
+              "ACCESS",
+              "ERASURE"
+            ],
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "requestType"
+        ],
+        "type" : "object"
+      },
       "Environment" : {
         "properties" : {
           "activeProfiles" : {
@@ -8629,6 +8674,90 @@
         ]
       }
     },
+    "/api/v1/public/gdpr/dsar" : {
+      "post" : {
+        "description" : "Records a UK GDPR Article 15/17 request against an email address. Always returns 202 with an identical, opaque body — the response never indicates whether any tenant holds the address. The address itself is stored only as a one-way SHA-256 digest. Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original response and never queues a second request.",
+        "operationId" : "lodge",
+        "parameters" : [
+          {
+            "description" : "Client-supplied key; same key replays the original response, never duplicates.",
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : false,
+            "schema" : {
+              "maxLength" : 64,
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DsarIntakeRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "202" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DsarIntakeAck"
+                }
+              }
+            },
+            "description" : "Request recorded (always, when valid)"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Malformed or missing request body"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "A request with this Idempotency-Key is in flight"
+          },
+          "422" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Idempotency-Key reused with a different payload"
+          },
+          "429" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Too many requests from this client"
+          }
+        },
+        "summary" : "Lodge a data-subject request",
+        "tags" : [
+          "Data Subject Requests"
+        ]
+      }
+    },
     "/api/v1/public/orders" : {
       "get" : {
         "description" : "Paginated orders for a customer by email address, most recent first. The 'verify' parameter (a recent order number for this customer) is mandatory — without it the request is rejected to prevent email-based enumeration.",
@@ -11218,6 +11347,10 @@
     {
       "description" : "Customer relationship management endpoints",
       "name" : "Customers"
+    },
+    {
+      "description" : "Anonymous, cross-tenant UK GDPR data-subject request intake. No credential required; responses are deliberately opaque.",
+      "name" : "Data Subject Requests"
     },
     {
       "description" : "Financial transaction management endpoints (audit-compliant)",

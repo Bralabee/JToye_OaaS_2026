@@ -3,8 +3,10 @@ package uk.jtoye.core.common;
 import com.stripe.exception.StripeException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
@@ -20,6 +22,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import uk.jtoye.core.exception.DsarRateLimitExceededException;
 import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
@@ -558,6 +561,32 @@ public class GlobalExceptionHandler {
         problem.setType(URI.create("https://jtoye.uk/errors/concurrent-modification"));
         problem.setProperty("code", "concurrent-modification");
         return problem;
+    }
+
+    /**
+     * Phase 31 (LGL-01 / T-31-05-02) — the public DSAR intake's own client-IP bucket refused a
+     * request. 429 with a type DELIBERATELY DISTINCT from the platform limiter's
+     * {@code .../errors/rate-limited}: that one is a throughput control, this one bounds an
+     * <em>unverified erasure request</em>, which is a destructive action any anonymous caller can
+     * aim at anybody else. A machine client can tell the two apart without parsing prose.
+     *
+     * <p>Returns a {@link ResponseEntity} rather than a bare {@link ProblemDetail} so the RFC 6585
+     * {@code Retry-After} header travels with it, matching what {@code RateLimitInterceptor}
+     * already sends on the platform 429. {@code retryAfterSeconds} is also carried as a typed
+     * number in the body, because a wait available only inside an English sentence is one the
+     * frontend has to mine out with a regex (the #409/#410 defect).
+     */
+    @ExceptionHandler(DsarRateLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleDsarRateLimitExceeded(DsarRateLimitExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+        problem.setTitle("Too Many Data Subject Requests");
+        problem.setType(URI.create("https://jtoye.uk/errors/dsar-rate-limited"));
+        problem.setProperty("code", "DSAR_RATE_LIMITED");
+        problem.setProperty("retryAfterSeconds", ex.getRetryAfterSeconds());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
+                .body(problem);
     }
 
     @ExceptionHandler(Exception.class)
