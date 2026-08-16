@@ -19,7 +19,7 @@ import { PublicFooter } from "@/components/public/public-footer"
  * every automated pass.
  *
  * The markup is copied VERBATIM from `components/marketing/operator-pitch.tsx:70`
- * — same classes, same `bg-oxblood`, same `focus:not-sr-only` reveal. Three
+ * — same classes, same oxblood pill, same reveal-on-focus behaviour. Three
  * copies of this pattern already existed and two had already drifted apart; a
  * fourth variant would be the drift, not the fix.
  *
@@ -28,11 +28,17 @@ import { PublicFooter } from "@/components/public/public-footer"
  *  - it is the FIRST link in document order. A skip link rendered after the
  *    header is decoration — it is unreachable by the very keystroke it exists
  *    for, and a presence-only test cannot tell the two apart.
- *  - it targets `<main id="main">`. The id is the whole mechanism; without it the
- *    href resolves to nothing and the link silently does nothing.
+ *  - it targets the main landmark by id. The id is the whole mechanism; without
+ *    it the href resolves to nothing and the link silently does nothing.
  *
- * A plain `<a href>` needs no client boundary, so the server-component property
+ * A plain anchor needs no client boundary, so the server-component property
  * above is untouched.
+ *
+ * The tokens the verify counts — the target id, the href, the focus class — are
+ * therefore described in words up here and written out exactly once below.
+ * Measured, not assumed: while breaking the sibling /auth/signin page on purpose,
+ * a `grep` limb passed on a page whose landmark had been deleted, because the
+ * file's own comment still spelled the tag out. Prose counts.
  */
 export function PublicShell({ children }: { children: React.ReactNode }) {
   return (
