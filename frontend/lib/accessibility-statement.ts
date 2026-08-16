@@ -104,7 +104,18 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
   level: "AA",
   claim: "partial",
 
-  preparedOn: "2026-08-15",
+  // Moved 2026-08-15 -> 2026-08-16 by plan 31-18: this is the date the FINAL
+  // audit's evidence was captured, against the built tree, by the axe gate in
+  // `e2e/public-a11y.spec.ts` running over all thirteen declared surfaces on
+  // both viewports. Not the date the file was edited — the distinction is the
+  // whole reason this field is declared rather than written into a sentence.
+  //
+  // WHAT THAT AUDIT CHANGED HERE: nothing but this date. Every one of the seven
+  // exceptions below was re-verified against the tree and every one still holds
+  // (see the plan's summary for the per-entry evidence). One violation WAS found
+  // — amber-700 at 4.41:1 on the policy pages' mobile TOC panel — and it was
+  // fixed rather than published, so it never became an eighth entry.
+  preparedOn: "2026-08-16",
   lastReviewedOn: "2026-08-16",
   nextReviewDue: "2027-02-16",
 
