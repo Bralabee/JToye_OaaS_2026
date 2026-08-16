@@ -623,7 +623,16 @@ function OrdersPageInner() {
                           // and use the full detail panel. The inline detail
                           // Dialog below is kept for v2.2 per 17-CONTEXT
                           // (deferred deprecation — frontend cleanup TBD).
-                          onClick={() => router.push(`/dashboard/orders/${order.id}`)}
+                          onClick={(e) => {
+                            // A click that started inside the actions cell is a
+                            // button press, not a request to open the order.
+                            if (
+                              (e.target as HTMLElement).closest("[data-row-actions]")
+                            ) {
+                              return
+                            }
+                            router.push(`/dashboard/orders/${order.id}`)
+                          }}
                         >
                           <TableCell className="font-mono text-xs">
                             {/* QA-council FIX-5 (L1): customers quote the ORD-…
@@ -662,7 +671,16 @@ function OrdersPageInner() {
                             })}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                            {/* `data-row-actions`, not an onClick shield. The
+                                shield was `onClick={e => e.stopPropagation()}`
+                                on a plain <div> — a `no-static-element-interactions`
+                                defect whose whole job was to suppress an
+                                ancestor. The row's own handler now declines to
+                                navigate when the click originated inside this
+                                container, which is the same rule expressed once,
+                                at the element that owns the decision
+                                (31-02 / LGL-02). */}
+                            <div className="flex justify-end gap-2" data-row-actions>
                               {transitions.map((transition) => {
                                 const TransitionIcon = transition.icon
                                 return (

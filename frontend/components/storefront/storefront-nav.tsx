@@ -46,7 +46,14 @@ export function StorefrontNav() {
     )
 
   return (
-    <nav className="flex items-center gap-3 sm:gap-4 text-sm">
+    // `aria-label` is what makes this landmark DISTINGUISHABLE, not merely
+    // named (31-02 / LGL-02). `landmark-unique` fires on ambiguity: /shop/[slug]
+    // renders this header nav AND the sticky category strip, and two <nav>s that
+    // are both called "Navigation" satisfy a naive fix while leaving a screen
+    // reader's landmark list exactly as useless as it was. These three storefront
+    // navs therefore carry three DIFFERENT names — see the strip in
+    // app/shop/[slug]/shop-detail-client.tsx and the sheet below.
+    <nav aria-label="Storefront" className="flex items-center gap-3 sm:gap-4 text-sm">
       {/* Desktop links (>=sm) — destination parity with the shared PublicHeader,
           now PERSONA-GATED (#458).
 
@@ -194,7 +201,10 @@ export function StorefrontNav() {
               <X className="h-5 w-5" />
             </SheetClose>
           </div>
-          <nav className="flex flex-col p-2">
+          {/* Distinct from the header nav above: while the sheet is open BOTH
+              are in the accessibility tree, which is precisely the `landmark-unique`
+              condition. */}
+          <nav aria-label="Storefront menu" className="flex flex-col p-2">
             <SheetClose asChild>
               <Link href="/shop" className={mobileLink(pathname === "/shop")}>
                 Shops

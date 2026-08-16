@@ -66,10 +66,16 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
 
   return (
     <>
-      <article
-        className="group relative bg-white rounded-xl border border-cream-100 overflow-hidden transition-all hover:shadow-md hover:border-amber-200 cursor-pointer active:scale-[0.99]"
-        onClick={() => setModalOpen(true)}
-      >
+      {/* No `onClick` on the <article> itself. The stretched trigger button at
+          the bottom of this card (#446, see its comment) already covers the
+          whole surface and calls `stopPropagation()`, and the two `z-10`
+          controls shield themselves — so an article-level handler could never
+          fire on any path, while costing a real keyboard defect:
+          `jsx-a11y/click-events-have-key-events` +
+          `no-noninteractive-element-interactions` (31-02 / LGL-02). Mouse
+          behaviour is byte-for-byte what it was; the trigger is what opens the
+          modal, as the e2e dialog spec already asserts. */}
+      <article className="group relative bg-white rounded-xl border border-cream-100 overflow-hidden transition-all hover:shadow-md hover:border-amber-200 cursor-pointer active:scale-[0.99]">
         <div className="flex gap-0">
           {/* Content */}
           <div className="flex-1 p-3 sm:p-4 min-w-0">
@@ -135,7 +141,14 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
                   Add
                 </button>
               ) : (
-                <div className="relative z-10 inline-flex items-center gap-0 rounded-full bg-amber-500 text-amber-ink" onClick={(e) => e.stopPropagation()}>
+                // The `onClick={e => e.stopPropagation()}` shield that used to
+                // sit here existed ONLY to keep a +/- tap from bubbling to the
+                // <article>'s own onClick. That handler is gone (see the note
+                // above the <article>), so the shield now guards nothing and is
+                // itself a `no-static-element-interactions` defect. `relative
+                // z-10` stays — it is what keeps these controls hit-testable
+                // ABOVE the stretched trigger button, and is load-bearing.
+                <div className="relative z-10 inline-flex items-center gap-0 rounded-full bg-amber-500 text-amber-ink">
                   <button
                     onClick={() => updateQuantity(product.id, quantity - 1)}
                     className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all"
@@ -566,13 +579,13 @@ export function ShopDetailClient({
               <span className="text-slate-600">
                 Delivery {formatPrice(shop.deliveryFeePennies)}
                 {shop.freeDeliveryThresholdPennies && (
-                  <span className="text-emerald-600 font-medium ml-1">
+                  <span className="text-emerald-700 font-medium ml-1">
                     Free over {formatPrice(shop.freeDeliveryThresholdPennies)}
                   </span>
                 )}
               </span>
             ) : (
-              <span className="text-emerald-600 font-medium">Free delivery</span>
+              <span className="text-emerald-700 font-medium">Free delivery</span>
             )}
           </div>
 
@@ -684,7 +697,15 @@ export function ShopDetailClient({
       {categories.length > 1 && (
         <div className="sticky top-14 z-40 bg-white border-b border-cream-100 shadow-sm">
           <div className="mx-auto max-w-4xl px-4 sm:px-6">
-            <nav className="flex gap-1 overflow-x-auto py-2 scrollbar-hide -mx-4 px-4">
+            {/* Named, and named DIFFERENTLY from the storefront header nav that
+                is also on this page (components/storefront/storefront-nav.tsx).
+                `landmark-unique` fires on two same-role landmarks sharing a
+                name, so "Navigation" on both would satisfy the letter of the
+                rule and leave the ambiguity untouched (31-02 / LGL-02). */}
+            <nav
+              aria-label="Menu categories"
+              className="flex gap-1 overflow-x-auto py-2 scrollbar-hide -mx-4 px-4"
+            >
               {categories.map((cat) => (
                 <button
                   key={cat}

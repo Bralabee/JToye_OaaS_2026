@@ -447,8 +447,16 @@ export function ImageUploader({
         <label className="text-sm font-medium text-slate-700">{label}</label>
       )}
 
+      {/* The drop target keeps ONLY the drag handlers. Its `onClick` moved to a
+          stretched <button> rendered last inside it (31-02 / LGL-02) — the same
+          idiom the storefront dish card uses (#446), and for the same reason:
+          `role="button"` on this wrapper would make the "Remove" control inside
+          it presentational, trading one a11y defect for another. `group` is on
+          this element now so the "Click to replace" veil still lights up when
+          the pointer is over the stretched button, which is a sibling of the
+          veil rather than its ancestor. */}
       <div
-        className={`relative ${aspectClass} w-full rounded-lg border-2 border-dashed transition-colors overflow-hidden ${
+        className={`group relative ${aspectClass} w-full rounded-lg border-2 border-dashed transition-colors overflow-hidden ${
           dragOver
             ? "border-blue-400 bg-blue-50"
             : displayUrl
@@ -461,7 +469,6 @@ export function ImageUploader({
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => !uploading && !processing && fileInputRef.current?.click()}
       >
         {/* Current or preview image */}
         {displayUrl ? (
@@ -474,7 +481,7 @@ export function ImageUploader({
             />
             {/* Overlay with replace action */}
             {!uploading && (
-              <div className="absolute inset-0 bg-black/0 hover:bg-black/40 transition-colors flex items-center justify-center group">
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
                 <span className="text-white text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
                   Click to replace
                 </span>
@@ -527,11 +534,28 @@ export function ImageUploader({
               e.stopPropagation()
               handleRemove()
             }}
-            className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-sm transition-colors"
+            aria-label="Remove image"
+            className="absolute top-2 right-2 z-20 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-sm transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
         )}
+
+        {/* Stretched picker trigger. Rendered LAST so it stacks over the
+            (positioned) preview image and the veil; `z-10` keeps it under the
+            `z-20` Remove control, which must stay independently clickable. It
+            has no box of its own, so the layout is unchanged. */}
+        <button
+          type="button"
+          disabled={disabled || uploading || processing}
+          onClick={() => !uploading && !processing && fileInputRef.current?.click()}
+          className="absolute inset-0 z-10 h-full w-full cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        >
+          <span className="sr-only">
+            {displayUrl ? "Replace image" : "Upload an image"}
+            {label ? ` for ${label}` : ""}
+          </span>
+        </button>
       </div>
 
       {/* Hidden file input */}
