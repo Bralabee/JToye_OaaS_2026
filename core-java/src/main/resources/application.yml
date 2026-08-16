@@ -188,6 +188,34 @@ jtoye:
     # EMPTY default = fail-closed: every non-UUID-subject token is denied by default.
     # Comma-separated list, e.g. ACCESS_MACHINE_CLIENT_IDS=mcp-server,batch-worker.
     machine-client-ids: ${ACCESS_MACHINE_CLIENT_IDS:}
+  # Phase 31 (LGL-01, D-16/D-17) — the consumer data-subject-request desk. Config KEYS, not
+  # secrets. 31-05 owns the intake, 31-09 the verification gate and the background fan-out.
+  gdpr:
+    dsar:
+      # How often the fan-out worker sweeps for verified requests. Deliberately unhurried: the
+      # statutory window is 30 days, the queue is empty almost all of the time, and each sweep
+      # walks every tenant. Every DsarFanoutWorker @Scheduled interval is a fixedDelayString with
+      # an inline default (the webhook.delivery.retention-interval-ms shape) so the worker still
+      # runs when this key is absent — a legal-floor job must not be switched off by omission.
+      fanout-interval-ms: ${DSAR_FANOUT_INTERVAL_MS:300000}
+      # Requests claimed per sweep. Bounds one sweep's work; the leftovers are simply claimed by
+      # the next one, because the claim is ordered oldest-first and a backlog drains in the order
+      # it was lodged.
+      claim-batch-size: ${DSAR_CLAIM_BATCH_SIZE:25}
+      # Attempts before a partially-failed request is parked as FAILED. Without a cap a
+      # permanently broken tenant would re-claim the same request forever, and the failure would
+      # stay invisible; with one it becomes a loud, countable state.
+      max-process-attempts: ${DSAR_MAX_PROCESS_ATTEMPTS:5}
+      # How long a subject has to confirm control of the address. Seven days: long enough to
+      # survive a weekend and a spam folder, short enough that a live bearer token is not left
+      # lying in a mailbox indefinitely. Read by DsarIntakeService when stamping the expiry, and
+      # quoted verbatim to the subject by DsarVerificationMailer, so the promise and the column
+      # cannot disagree.
+      verification-ttl-hours: ${DSAR_VERIFICATION_TTL_HOURS:168}
+      # Where the emailed confirmation link points. Config-injected and NEVER derived from the
+      # request: a link built from an attacker-supplied Host header would redirect a live,
+      # single-use bearer token to a collector of their choosing.
+      verify-base-url: ${DSAR_VERIFY_BASE_URL:http://localhost:8080/api/v1/public/gdpr/dsar/verify}
   security:
     jwt:
       expected-audience: ${JWT_EXPECTED_AUDIENCE:core-api}

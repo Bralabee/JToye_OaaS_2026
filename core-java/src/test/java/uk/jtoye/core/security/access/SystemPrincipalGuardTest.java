@@ -335,10 +335,19 @@ class SystemPrincipalGuardTest {
                         + "read nothing and pass vacuously", java.nio.file.Path.of("").toAbsolutePath())
                 .isTrue();
 
+        // Plan 31-09 EXTENDS this list rather than leaving its new files uncovered. The
+        // verification endpoint is the second public request surface on the DSAR path, and it is
+        // the one that decides whether a request becomes actionable — the most tempting place in
+        // the phase to reach for a declaration. The fan-out worker is deliberately NOT here: it is
+        // the background entry point that legitimately declares, and asserting its ABSENCE would
+        // invert the rule. The plan's own <verify> block greps that file for the wrap's PRESENCE.
         List<String> intakePath = List.of(
                 "uk/jtoye/core/gdpr/DsarIntakeController.java",
                 "uk/jtoye/core/gdpr/DsarIntakeService.java",
-                "uk/jtoye/core/gdpr/DsarIntakeRateLimiter.java");
+                "uk/jtoye/core/gdpr/DsarIntakeRateLimiter.java",
+                "uk/jtoye/core/gdpr/DsarVerificationController.java",
+                "uk/jtoye/core/gdpr/DsarVerificationService.java",
+                "uk/jtoye/core/gdpr/DsarVerificationMailer.java");
 
         int scanned = 0;
         for (String relative : intakePath) {

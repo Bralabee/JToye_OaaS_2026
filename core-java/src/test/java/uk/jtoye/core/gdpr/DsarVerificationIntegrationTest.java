@@ -287,34 +287,33 @@ class DsarVerificationIntegrationTest {
         return id;
     }
 
-    /** Seeds with the tenant GUC pinned inside the transaction so it works under FORCE RLS too. */
+    /**
+     * This class runs as the container's bootstrap SUPERUSER, which bypasses even FORCE row-level
+     * security — so the reads below carry an EXPLICIT {@code tenant_id} predicate rather than
+     * relying on a pinned GUC that would have no effect. That is deliberate and it is not a gap:
+     * this class is about the VERIFICATION GATE, and proving RLS is
+     * {@code DsarFanoutIntegrationTest}'s job, which downgrades the role with
+     * {@code ALTER ROLE ... NOSUPERUSER} and precedes every zero-row assertion with a positive
+     * control. Leaning on a pin here would have been worse than useless: an unscoped
+     * {@code SELECT COUNT(*) FROM erasure_records} under a superuser counts EVERY tenant's rows,
+     * and the first version of this file failed exactly that way — one test's erasure record was
+     * counted by a later test and read as "an unverified request was actioned".
+     */
     private void seedCustomer(UUID tenantId, String email) {
-        new TransactionTemplate(txManager).executeWithoutResult(s -> {
-            pin(tenantId);
-            jdbc.update("INSERT INTO customers (id, tenant_id, name, email) VALUES (?, ?, ?, ?)",
-                    UUID.randomUUID(), tenantId, "Seeded Subject", email);
-        });
+        jdbc.update("INSERT INTO customers (id, tenant_id, name, email) VALUES (?, ?, ?, ?)",
+                UUID.randomUUID(), tenantId, "Seeded Subject", email);
     }
 
     private long erasureRecordCount(UUID tenantId) {
-        Long n = new TransactionTemplate(txManager).execute(s -> {
-            pin(tenantId);
-            return jdbc.queryForObject("SELECT COUNT(*) FROM erasure_records", Long.class);
-        });
+        Long n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM erasure_records WHERE tenant_id = ?", Long.class, tenantId);
         return n == null ? 0 : n;
     }
 
     private boolean customerEmailStillPresent(UUID tenantId, String email) {
-        Long n = new TransactionTemplate(txManager).execute(s -> {
-            pin(tenantId);
-            return jdbc.queryForObject("SELECT COUNT(*) FROM customers WHERE email = ?",
-                    Long.class, email);
-        });
+        Long n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM customers WHERE tenant_id = ? AND email = ?",
+                Long.class, tenantId, email);
         return n != null && n > 0;
-    }
-
-    private void pin(UUID tenantId) {
-        jdbc.queryForObject("SELECT set_config('app.current_tenant_id', ?, true)",
-                String.class, tenantId.toString());
     }
 }

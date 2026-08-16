@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,6 +32,27 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
      * Find customer by phone (tenant-scoped).
      */
     Optional<Customer> findByPhone(String phone);
+
+    /**
+     * Every customer id + email for ONE tenant — the projection the DSAR fan-out matches subject
+     * digests against (Phase 31, plan 31-09).
+     *
+     * <p><b>The {@code tenant_id} predicate is explicit and mandatory.</b> RLS already scopes this
+     * table under FORCE row-level security, and the fan-out worker pins the GUC before every call;
+     * the predicate is defence in depth, and it is also the property that makes this method safe to
+     * read at a glance. The worker's cross-tenant reach comes from ITERATING tenants, never from a
+     * query that ignores the wall — a repository method without this predicate would be exactly the
+     * hole D-17's design exists to avoid.
+     *
+     * <p>A projection rather than whole entities: this loads two columns, is never used to mutate,
+     * and keeps the digest comparison in Java where there is exactly ONE normalisation
+     * implementation ({@code DsarSubjectDigest} records why the SQL equivalent is not equivalent).
+     *
+     * @return rows of {@code [UUID id, String email]}
+     */
+    @Query(value = "SELECT id, email FROM customers WHERE tenant_id = :tenantId",
+            nativeQuery = true)
+    List<Object[]> findIdAndEmailByTenantId(@Param("tenantId") UUID tenantId);
 
     /**
      * GDPR Article-17 scrub of pre-erasure PII from the append-only {@code customers_aud}

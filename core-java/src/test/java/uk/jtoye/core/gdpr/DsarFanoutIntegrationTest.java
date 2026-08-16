@@ -1,6 +1,9 @@
 package uk.jtoye.core.gdpr;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import org.hibernate.Session;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -28,6 +31,10 @@ import uk.jtoye.core.security.access.SystemPrincipal;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -125,6 +132,7 @@ class DsarFanoutIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private DsarFanoutWorker worker;
     @Autowired private PlatformTransactionManager txManager;
+    @PersistenceContext private EntityManager entityManager;
 
     @SpyBean private DsarVerificationMailer mailer;
     @SpyBean private GdprService gdprService;
@@ -356,7 +364,117 @@ class DsarFanoutIntegrationTest {
                 .isZero();
     }
 
+    /**
+     * The measurement behind {@code DsarSubjectDigest}'s "why the match is computed in Java"
+     * decision — recorded rather than assumed, and asserting DISAGREEMENT rather than agreement.
+     *
+     * <p>The tempting alternative is a server-side
+     * {@code encode(sha256(convert_to(lower(btrim(email)), 'UTF8')), 'hex')}, which needs no
+     * extension and would push the match into the database. It is rejected because it is not the
+     * same function: {@link String#trim()} strips every character {@code <= U+0020} while
+     * {@code btrim} strips spaces only. This test proves that on the real engine — if a future
+     * Postgres made them equivalent, this test reds and the trade can be revisited on evidence.
+     *
+     * <p>The ASCII control is the non-vacuity half: for an ordinary address the two forms MUST
+     * agree, or the disagreement below would be a fact about a broken query rather than about the
+     * normalisation.
+     */
+    @Test
+    void theSqlSideDigestIsNotEquivalentToThisOne() {
+        String plain = "Plain.Address@Example.COM";
+        assertThat(sqlDigestOf(plain))
+                .as("NON-VACUITY: for an ordinary address the two forms must agree, or the "
+                        + "divergence asserted below would be about a malformed query")
+                .isEqualTo(DsarSubjectDigest.of(plain));
+
+        // A tab is whitespace to Java and not to btrim. An address pasted out of a spreadsheet or
+        // a mail client routinely carries one.
+        String tabbed = "\tPlain.Address@Example.COM\t";
+        assertThat(sqlDigestOf(tabbed))
+                .as("MEASURED DIVERGENCE: String.trim() strips U+0009, btrim does not — so a "
+                        + "server-side match would silently miss this subject entirely")
+                .isNotEqualTo(DsarSubjectDigest.of(tabbed));
+        assertThat(DsarSubjectDigest.of(tabbed))
+                .as("...while the Java form folds it to the same subject as the plain address, "
+                        + "which is the behaviour a data subject is entitled to")
+                .isEqualTo(DsarSubjectDigest.of(plain));
+    }
+
+    /**
+     * The structural contract, as an executable assertion rather than a grep in a summary.
+     *
+     * <h2>The plan's own criterion could not pass, and was replaced rather than reported satisfied</h2>
+     *
+     * 31-09 specified {@code grep -cF '@Transactional' DsarFanoutWorker.java} equal to ZERO. Run
+     * literally against the correct tree it returns <b>2</b> — both hits are the class javadoc
+     * explaining <em>why</em> the annotation is absent. That is a named vacuous shape in this
+     * project's standards ("a doc rule that must name the token it forbids", and "an expected-0 that
+     * is 1 on the CORRECT tree"): the criterion fires on a clean implementation and the only ways to
+     * satisfy it are to delete the warning or to lie about the count.
+     *
+     * <p>So it is replaced with a strictly stronger form — no NON-COMMENT line may carry the
+     * annotation — which still reds on a real {@code @Transactional} and no longer reds on the
+     * comment that forbids it. Both directions are recorded in the plan summary.
+     *
+     * <h2>Non-vacuity</h2>
+     *
+     * A comment-stripping scan that strips everything reports "clean" over any file at all. So the
+     * same scan is run over {@code GdprService}, which genuinely carries the annotation, and must
+     * find it. An empty result there means the instrument is broken, not that the code is right.
+     */
+    @Test
+    void theWorkerCarriesNoTransactionalAnnotationAndKeepsItsFourLoadBearingConstructs()
+            throws java.io.IOException {
+        List<String> workerCode = codeLinesOf("uk/jtoye/core/gdpr/DsarFanoutWorker.java");
+        assertThat(workerCode)
+                .as("NON-VACUITY: the scan read no code lines, so any verdict below is about the "
+                        + "scan rather than about the worker")
+                .isNotEmpty();
+
+        assertThat(workerCode.stream().filter(l -> l.contains("@Transactional")).toList())
+                .as("a @Transactional private method is bypassed by Spring self-invocation, so no "
+                        + "transaction starts, the tenant GUC is never pinned, and under FORCE RLS "
+                        + "the work silently matches zero rows and reports success")
+                .isEmpty();
+
+        // POSITIVE CONTROL for the emptiness above.
+        assertThat(codeLinesOf("uk/jtoye/core/gdpr/GdprService.java").stream()
+                .filter(l -> l.contains("@Transactional")).count())
+                .as("the same scan must find the annotation where it genuinely exists")
+                .isPositive();
+
+        // The four constructs the design rests on, asserted on CODE lines for the same reason.
+        for (String required : List.of("TransactionTemplate", "set_config", "TenantContext.clear",
+                "SystemPrincipal.asSystem")) {
+            assertThat(workerCode.stream().anyMatch(l -> l.contains(required)))
+                    .as("DsarFanoutWorker no longer contains %s in executable code", required)
+                    .isTrue();
+        }
+    }
+
     // ---- helpers -------------------------------------------------------------------------------
+
+    /** Source lines with whole-line comments removed — javadoc, block and line comments alike. */
+    private List<String> codeLinesOf(String relativePath) throws java.io.IOException {
+        java.nio.file.Path root = java.nio.file.Path.of("src", "main", "java");
+        if (!java.nio.file.Files.isDirectory(root)) {
+            root = java.nio.file.Path.of("core-java", "src", "main", "java");
+        }
+        java.nio.file.Path file = root.resolve(relativePath);
+        assertThat(java.nio.file.Files.isRegularFile(file))
+                .as("%s is missing — a scan that reads nothing proves nothing", relativePath)
+                .isTrue();
+        return java.nio.file.Files.readAllLines(file).stream()
+                .map(String::strip)
+                .filter(l -> !l.startsWith("*") && !l.startsWith("//") && !l.startsWith("/*"))
+                .toList();
+    }
+
+    private String sqlDigestOf(String email) {
+        return jdbc.queryForObject(
+                "SELECT encode(sha256(convert_to(lower(btrim(?)), 'UTF8')), 'hex')",
+                String.class, email);
+    }
 
     private static void await(CountDownLatch latch) {
         try {
@@ -399,47 +517,78 @@ class DsarFanoutIntegrationTest {
 
     private UUID seedCustomer(UUID tenantId, String email) {
         UUID id = UUID.randomUUID();
-        new TransactionTemplate(txManager).executeWithoutResult(s -> {
-            pin(tenantId);
-            jdbc.update("INSERT INTO customers (id, tenant_id, name, email) VALUES (?, ?, ?, ?)",
-                    id, tenantId, "Seeded Subject", email);
-        });
+        pinnedUpdate(tenantId, "INSERT INTO customers (id, tenant_id, name, email) VALUES (?, ?, ?, ?)",
+                id, tenantId, "Seeded Subject", email);
         return id;
     }
 
     private long erasureRecordCount(UUID tenantId) {
-        return scoped(tenantId, () ->
-                jdbc.queryForObject("SELECT COUNT(*) FROM erasure_records", Long.class));
+        return pinnedCount(tenantId, "SELECT COUNT(*) FROM erasure_records");
     }
 
     private long customerCount(UUID tenantId) {
-        return scoped(tenantId, () ->
-                jdbc.queryForObject("SELECT COUNT(*) FROM customers", Long.class));
+        return pinnedCount(tenantId, "SELECT COUNT(*) FROM customers");
     }
 
     private long customerCountWithEmail(UUID tenantId, String email) {
-        return scoped(tenantId, () ->
-                jdbc.queryForObject("SELECT COUNT(*) FROM customers WHERE email = ?",
-                        Long.class, email));
+        return pinnedCount(tenantId, "SELECT COUNT(*) FROM customers WHERE email = ?", email);
     }
 
     private long customerCountOfOtherTenant(UUID pinned, UUID other) {
-        return scoped(pinned, () ->
-                jdbc.queryForObject("SELECT COUNT(*) FROM customers WHERE tenant_id = ?",
-                        Long.class, other));
+        return pinnedCount(pinned, "SELECT COUNT(*) FROM customers WHERE tenant_id = ?", other);
     }
 
-    private long scoped(UUID tenantId, java.util.function.Supplier<Long> body) {
-        Long n = new TransactionTemplate(txManager).execute(s -> {
-            pin(tenantId);
-            return body.get();
-        });
+    /**
+     * Run one statement with the tenant GUC pinned, ON THE SAME CONNECTION.
+     *
+     * <p><b>Measured, not stylistic.</b> The obvious shape —
+     * {@code TransactionTemplate.execute(s -> { jdbcTemplate.execute("SELECT set_config(...)"); jdbcTemplate.update(...); })}
+     * — was written first and FAILED with
+     * {@code new row violates row-level security policy for table "customers"}. Under a
+     * {@code JpaTransactionManager} the {@code JdbcTemplate} may take a connection that is still in
+     * autocommit, and {@code set_config(..., true)} is TRANSACTION-local: in autocommit each
+     * statement is its own transaction, so the pin is reverted before the next statement runs.
+     * Going through {@code Session.doWork} takes the Hibernate transaction's own connection, which
+     * is the same connection {@code TenantSetLocalAspect} and {@code DsarFanoutWorker.pinTenantGuc}
+     * use in production.
+     */
+    private void pinnedUpdate(UUID tenantId, String sql, Object... params) {
+        new TransactionTemplate(txManager).executeWithoutResult(s ->
+                entityManager.unwrap(Session.class).doWork(connection -> {
+                    pinOn(connection, tenantId);
+                    try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                        bind(ps, params);
+                        ps.executeUpdate();
+                    }
+                }));
+    }
+
+    private long pinnedCount(UUID tenantId, String sql, Object... params) {
+        Long n = new TransactionTemplate(txManager).execute(s ->
+                entityManager.unwrap(Session.class).doReturningWork(connection -> {
+                    pinOn(connection, tenantId);
+                    try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                        bind(ps, params);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            return rs.next() ? rs.getLong(1) : 0L;
+                        }
+                    }
+                }));
         return n == null ? 0 : n;
     }
 
-    private void pin(UUID tenantId) {
-        jdbc.queryForObject("SELECT set_config('app.current_tenant_id', ?, true)",
-                String.class, tenantId.toString());
+    private static void pinOn(Connection connection, UUID tenantId) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT set_config('app.current_tenant_id', ?, true)")) {
+            ps.setString(1, tenantId.toString());
+            ps.execute();
+        }
+    }
+
+    private static void bind(PreparedStatement ps, Object... params) throws SQLException {
+        for (int i = 0; i < params.length; i++) {
+            ps.setObject(i + 1, params[i]);
+        }
     }
 
     private String requestStatus() {
