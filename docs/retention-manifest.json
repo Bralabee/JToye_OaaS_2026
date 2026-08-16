@@ -1,0 +1,233 @@
+{
+  "_comment": "Machine-readable source of truth for every retention period J'Toye publishes (LGL-01 / D-07). Each row was read out of its enforcement site on the date below, not carried forward from a prior document. Two gates close the loop: scripts/check-retention-enforcement.sh asserts tree -> manifest (every Automated row names a site that exists, holds the declared value converted to the published unit, and has a consumer that actually reads it), and scripts/gates/claims.manifest asserts manifest -> published prose. The flat integer keys below exist so the claim-gate engine can read them: its json source does a top-level has($k) lookup, which errors on a bare array. The full rows live under .rows.",
+  "_schema": "top-level flat integer claim keys + .rows[] + .deliberately_unpublished[]",
+  "_last_measured": "2026-08-16",
+  "_legal_status": "Every lawful-basis statement here is a legal position and needs adviser confirmation before it is relied upon. The periods themselves are measurements and are gated. No statutory retention figure is published as a number anywhere in this file - see R-9.",
+
+  "draft_order_hours": 24,
+  "webhook_delivery_days": 30,
+  "media_quarantine_hours": 72,
+  "customer_refresh_cookie_days": 30,
+
+  "rows": [
+    {
+      "id": "R-1",
+      "category": "Abandoned checkouts",
+      "detail": "An order you started but never paid for, including the name, email and phone number typed into the checkout form.",
+      "period_value": 24,
+      "period_unit": "hours",
+      "period_display": "24 hours",
+      "lawful_basis": "Legitimate interests (UK GDPR Art. 6(1)(f)) - holding an in-progress basket long enough for you to come back and finish it, then deleting it.",
+      "enforcement": "Automated",
+      "claim_key": "draft_order_hours",
+      "enforced_by": {
+        "path": "core-java/src/main/resources/application.yml",
+        "key": "stale-draft-hours",
+        "kind": "yaml-env-default",
+        "unit": "hours",
+        "consumer": {
+          "path": "core-java/src/main/java/uk/jtoye/core/config/ScheduledCleanupService.java",
+          "must_contain": "cleanup.stale-draft-hours"
+        }
+      },
+      "note": "Deleted, not anonymised. A daily 03:00 UTC job removes every DRAFT order past the cutoff, one transaction per tenant."
+    },
+    {
+      "id": "R-2",
+      "category": "Webhook delivery records",
+      "detail": "The log of each outbound webhook a vendor's integration was sent, including the delivery attempt history.",
+      "period_value": 30,
+      "period_unit": "days",
+      "period_display": "30 days",
+      "lawful_basis": "Legitimate interests (UK GDPR Art. 6(1)(f)) - letting a vendor debug a failed integration delivery, bounded so the log does not become an open-ended store.",
+      "enforcement": "Automated",
+      "claim_key": "webhook_delivery_days",
+      "enforced_by": {
+        "path": "core-java/src/main/resources/application.yml",
+        "key": "retention-days",
+        "kind": "yaml-env-default",
+        "unit": "days",
+        "consumer": {
+          "path": "core-java/src/main/java/uk/jtoye/core/webhook/WebhookRetentionCleanup.java",
+          "must_contain": "getRetentionDays"
+        }
+      },
+      "note": "Scoped to webhook_delivery ONLY. The same job deliberately never touches suppression or opt-in rows - see R-6."
+    },
+    {
+      "id": "R-3",
+      "category": "Quarantined image uploads",
+      "detail": "The raw bytes of an image a vendor uploaded, held in quarantine while the pipeline validates and re-encodes it. Only the validated derivative is kept afterwards; the raw upload is reclaimed.",
+      "period_value": 72,
+      "period_unit": "hours",
+      "period_display": "72 hours",
+      "lawful_basis": "Legitimate interests (UK GDPR Art. 6(1)(f)) - a declared horizon that lets a vendor's upload survive a broker outage instead of being destroyed as a 15-minute accident, while still bounding how long unvalidated bytes sit on the origin.",
+      "enforcement": "Automated",
+      "claim_key": "media_quarantine_hours",
+      "enforced_by": {
+        "path": "core-java/src/main/resources/application.yml",
+        "key": "quarantine-retention-ms",
+        "kind": "yaml-env-default",
+        "unit": "milliseconds",
+        "consumer": {
+          "path": "core-java/src/main/java/uk/jtoye/core/media/MediaQuarantineRetentionSweep.java",
+          "must_contain": "getQuarantineRetentionMs"
+        }
+      },
+      "note": "The site stores 259200000 milliseconds; the published period is 72 hours. The unit conversion is owned by scripts/check-retention-enforcement.sh because the claim-gate engine has no unit transform, so an un-converted comparison would silently never match."
+    },
+    {
+      "id": "R-4",
+      "category": "Customer sign-in cookies",
+      "detail": "The jtoye-customer-refresh and jtoye-customer-id cookies that keep you signed in to a shop between visits.",
+      "period_value": 30,
+      "period_unit": "days",
+      "period_display": "30 days",
+      "lawful_basis": "Strictly necessary (PECR reg. 6(4)) - these cookies exist only to deliver the sign-in you asked for; no consent is required and none is sought.",
+      "enforcement": "Automated",
+      "claim_key": "customer_refresh_cookie_days",
+      "enforced_by": {
+        "path": "frontend/lib/customer-auth-cookies.ts",
+        "key": "REFRESH_MAX_AGE",
+        "kind": "ts-const-expr",
+        "unit": "seconds",
+        "consumer": {
+          "path": "frontend/app/api/customer-auth/session/route.ts",
+          "must_contain": "REFRESH_MAX_AGE"
+        }
+      },
+      "note": "Browser-enforced by Max-Age. This is a cap: the effective limit can be shorter, because the identity provider's own session idle and maximum lifespans also apply."
+    },
+    {
+      "id": "R-5",
+      "category": "Customer access cookie",
+      "detail": "The short-lived jtoye-customer-access cookie carrying the access token for the current request.",
+      "period_value": "idp-controlled",
+      "period_unit": "",
+      "period_display": "The short sign-in session length set by our identity provider, renewed automatically while you stay signed in",
+      "lawful_basis": "Strictly necessary (PECR reg. 6(4)) - required to deliver the signed-in session you asked for.",
+      "enforcement": "Operational",
+      "claim_key": null,
+      "enforced_by": null,
+      "note": "Enforced, but the number is not ours. The cookie's Max-Age is derived from the identity provider realm's access-token lifespan, which lives in the IdP and not in this repository. Publishing it as a hard number, or gating it against a value this repo does not own, would become a false statement the first time the realm changes - so it is described and deliberately NOT gated."
+    },
+    {
+      "id": "R-6",
+      "category": "Marketing opt-outs and opt-ins",
+      "detail": "The record that you unsubscribed from a category, or that you opted in to marketing.",
+      "period_value": "indefinite",
+      "period_unit": "",
+      "period_display": "Kept indefinitely - deliberately never deleted",
+      "lawful_basis": "Legal obligation and legitimate interests (UK GDPR Art. 6(1)(c) and 6(1)(f)) - an opt-out that expired would resurrect a suppressed recipient, so honouring it permanently is the obligation, not an option.",
+      "enforcement": "Automated",
+      "claim_key": null,
+      "enforced_by": {
+        "path": "core-java/src/main/java/uk/jtoye/core/webhook/WebhookRetentionCleanup.java",
+        "key": "deliberately NEVER time-pruned",
+        "kind": "negative-assertion",
+        "unit": "none",
+        "consumer": {
+          "path": "core-java/src/main/resources/db/migration/V54__notification_consent.sql",
+          "must_contain": "there is deliberately no"
+        }
+      },
+      "note": "Published as an Automated NEGATIVE: the gate asserts that no prune, purge or delete path exists against notification_suppression or marketing_opt_in, and carries a positive control proving the same scan shape does find the prune path that exists for webhook_delivery. V54's header states it directly: 'A GDPR/PECR opt-out must NOT expire, so - unlike webhook_delivery - there is deliberately no retention window / prune job on suppression (threat T-22-02-04).' Both tables are bounded by their UNIQUE key instead of by time."
+    },
+    {
+      "id": "R-7",
+      "category": "Your personal details on completed orders",
+      "detail": "Your name, email, phone and delivery address as they appear on orders, customer records and reviews.",
+      "period_value": "on-request",
+      "period_unit": "",
+      "period_display": "Removed on request - there is no automatic timer",
+      "lawful_basis": "Right to erasure (UK GDPR Art. 17), applied by anonymising rather than deleting so the vendor's financial record stays intact.",
+      "enforcement": "Operational",
+      "claim_key": null,
+      "enforced_by": null,
+      "note": "Executed by the shipped erasure path in uk.jtoye.core.gdpr, which anonymises rather than deletes and writes a PII-free proof row. Marked Operational because it runs when a request is made, not on a schedule a gate could read a period out of."
+    },
+    {
+      "id": "R-8",
+      "category": "Audit history",
+      "detail": "The append-only history of changes to records, used to answer who changed what and when.",
+      "period_value": "indefinite",
+      "period_unit": "",
+      "period_display": "Kept indefinitely",
+      "lawful_basis": "Legitimate interests (UK GDPR Art. 6(1)(f)) - integrity, dispute resolution and security investigation. Personal data inside this history is scrubbed when an erasure request is honoured (R-7).",
+      "enforcement": "Operational",
+      "claim_key": null,
+      "enforced_by": null,
+      "note": "No deletion path exists anywhere for audit history. The Article-17 scrub edits it in place rather than removing rows."
+    },
+    {
+      "id": "R-9",
+      "category": "Order and payment records",
+      "detail": "Completed orders and the financial transactions recorded against them.",
+      "period_value": "statutory",
+      "period_unit": "",
+      "period_display": "For as long as the law requires",
+      "lawful_basis": "Legal obligation (UK GDPR Art. 6(1)(c)) - tax and accounting record-keeping.",
+      "enforcement": "Operational",
+      "claim_key": null,
+      "enforced_by": null,
+      "note": "NO NUMBER IS PUBLISHED HERE ON PURPOSE. A statutory figure would be a legal position, not a measurement, and this repository enforces no deletion path for these records at all. Publishing a specific number of years without adviser confirmation would put an unverified claim in a legally operative document."
+    },
+    {
+      "id": "R-11",
+      "category": "Order-tracking email in your browser",
+      "detail": "The email address you type to look up an order, kept in your browser's session storage so the page does not ask again while you are on it.",
+      "period_value": "session",
+      "period_unit": "",
+      "period_display": "Cleared when you close the tab",
+      "lawful_basis": "Strictly necessary (PECR reg. 6(4)) - it exists only to deliver the order lookup you asked for, and never reaches our servers as a stored record.",
+      "enforcement": "Automated",
+      "claim_key": null,
+      "enforced_by": {
+        "path": "frontend/app/shop/orders/orders-client.tsx",
+        "key": "sessionStorage.setItem(\"jtoye-track-email\"",
+        "kind": "literal",
+        "unit": "none",
+        "consumer": {
+          "path": "frontend/app/shop/[slug]/orders/[orderNumber]/page.tsx",
+          "must_contain": "jtoye-track-email"
+        }
+      },
+      "note": "Browser-enforced by sessionStorage semantics, which is exactly why it is gateable: if this were ever changed to localStorage the published claim would become false, and the anchored literal assertion fires."
+    },
+    {
+      "id": "R-12",
+      "category": "Saved checkout email in your browser",
+      "detail": "The email address you last used at a shop's checkout, kept in your browser's local storage so it can be filled in for you next time.",
+      "period_value": "until-cleared",
+      "period_unit": "",
+      "period_display": "Until you clear your browser's site data",
+      "lawful_basis": "Strictly necessary (PECR reg. 6(4)) - it is a convenience within the checkout you asked for, stays on your device, and is never read by us as a stored record.",
+      "enforcement": "Operational",
+      "claim_key": null,
+      "enforced_by": null,
+      "note": "Local storage has no expiry, so there is nothing on our side that deletes it: you control it. Marked Operational rather than Automated for exactly that reason - claiming an automated period here would be false."
+    },
+    {
+      "id": "R-13",
+      "category": "Guest order history in your browser",
+      "detail": "The list of orders you placed as a guest, kept in your browser's local storage so you can find them again without an account.",
+      "period_value": "until-cleared",
+      "period_unit": "",
+      "period_display": "Until you clear your browser's site data",
+      "lawful_basis": "Strictly necessary (PECR reg. 6(4)) - it is what lets a guest find the order they just placed, and it stays on your device.",
+      "enforcement": "Operational",
+      "claim_key": null,
+      "enforced_by": null,
+      "note": "Same shape as R-12: no expiry exists on our side, so no automated period may be claimed."
+    }
+  ],
+
+  "deliberately_unpublished": [
+    {
+      "id": "R-10",
+      "category": "Orphaned product images",
+      "reason": "The configuration key cleanup.orphaned-image-days declared a 7-day deletion that NOTHING performed. Verified two-arm on 2026-08-16 with an identically shaped live control: the key had zero Java consumers (rc=1, empty) while the control key cleanup.stale-draft-hours returned a hit under identical flags, globs and directory (rc=0). Publishing it would have put a false statement in a legally operative document, and leaving it in configuration invited someone to publish it later - so the key was deleted from application.yml and from .planning/codebase/INTEGRATIONS.md rather than published.",
+      "removed_on": "2026-08-16"
+    }
+  ]
+}
