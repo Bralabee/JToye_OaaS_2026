@@ -316,9 +316,14 @@ jobs:
           NEXTAUTH_URL: http://localhost:3000
           NEXTAUTH_SECRET: ci-placeholder-not-a-real-secret # gitleaks:allow
 
-      - name: Run public-surface layout conformance (mobile + desktop)
+      # Two gates, one browser start. `public-a11y.spec.ts` is the per-PR WCAG
+      # 2.1 AA scan (LGL-02): this job is the ONLY browser job triggered by both
+      # `push` and `pull_request`, so it is the only place an accessibility
+      # violation can actually block a merge — e2e-nightly.yml is schedule +
+      # workflow_dispatch only and can report after the fact at best.
+      - name: Run public-surface layout + accessibility conformance (mobile + desktop)
         if: github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true'
-        run: npx playwright test e2e/public-layout.spec.ts
+        run: npx playwright test e2e/public-layout.spec.ts e2e/public-a11y.spec.ts
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000

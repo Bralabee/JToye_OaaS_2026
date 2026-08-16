@@ -35,96 +35,23 @@
  * this spec exists to prevent (a 4:3 frame silently adopting its image's ratio).
  */
 import { test, expect, type Page, type BrowserContext } from "@playwright/test"
+/**
+ * The fixtures and the two storefront helpers moved to `helpers/public-surface.ts`
+ * in plan 31-18 so `public-a11y.spec.ts` could REUSE them rather than grow a
+ * second definition of "did this storefront actually load". They are unchanged
+ * apart from navigating relatively (Playwright resolves against the config's
+ * baseURL) instead of against a locally declared BASE.
+ */
+import {
+  PORTRAIT,
+  LANDSCAPE,
+  ULTRAWIDE,
+  stubPublicApi,
+  resolveStorefrontPath,
+  openStorefront,
+} from "./helpers/public-surface"
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000"
-
-/** SVG data URIs give exact, readable intrinsic dimensions and need no assets. */
-function svg(width: number, height: number, fill: string): string {
-  const raw = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${fill}"/></svg>`
-  return `data:image/svg+xml;base64,${Buffer.from(raw).toString("base64")}`
-}
-
-const PORTRAIT = svg(900, 1200, "%23c2410c") // the shape that broke the modal
-const LANDSCAPE = svg(858, 645, "%230f766e")
-const ULTRAWIDE = svg(1200, 400, "%237c2d12")
-
-const SHOP = {
-  id: "shop-1",
-  slug: "test-kitchen",
-  name: "Test Kitchen",
-  description: "Fixture kitchen",
-  address: "1 Test Road, London SE15 1AA",
-  tags: "Nigerian, Grill, Halal",
-  logoUrl: LANDSCAPE,
-  bannerUrl: ULTRAWIDE,
-  openingHours: null,
-  minimumOrderPennies: 1000,
-  deliveryFeePennies: 299,
-  freeDeliveryThresholdPennies: 3000,
-  deliveryInfo: "30-40 min",
-  published: true,
-}
-
-const PRODUCTS = [
-  { id: "p-1", title: "Portrait Dish", imageUrl: PORTRAIT },
-  { id: "p-2", title: "Landscape Dish", imageUrl: LANDSCAPE },
-  { id: "p-3", title: "Ultrawide Dish", imageUrl: ULTRAWIDE },
-].map((p) => ({
-  ...p,
-  description: `${p.title} — fixture`,
-  imageUrls: [p.imageUrl],
-  ingredientsText: "fixture ingredients",
-  allergenMask: 0,
-  pricePennies: 950,
-  category: "Mains",
-  dietaryTags: null,
-  preparationTimeMinutes: 10,
-  featured: false,
-  inStock: true,
-}))
-
-/** Serve the whole public API from fixtures — no backend, no DB, no Keycloak. */
-async function stubPublicApi(context: BrowserContext) {
-  await context.route("**/public/**", async (route) => {
-    const url = new URL(route.request().url())
-    const p = url.pathname
-    const json = (body: unknown) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(body),
-      })
-
-    if (p.endsWith("/public/shops")) {
-      return json({
-        content: [SHOP],
-        totalElements: 1,
-        totalPages: 1,
-        size: 12,
-        number: 0,
-        first: true,
-        last: true,
-      })
-    }
-    // ProductsByCategory — a map keyed by category, NOT a flat array.
-    if (p.endsWith("/products")) return json({ Mains: PRODUCTS })
-    if (p.endsWith("/reviews")) {
-      return json({
-        content: [],
-        totalElements: 0,
-        totalPages: 0,
-        size: 5,
-        number: 0,
-        first: true,
-        last: true,
-      })
-    }
-    if (p.endsWith("/promotions") || p.endsWith("/announcements")) return json([])
-    if (p.endsWith("/config")) return json({})
-    if (p.includes("/public/shops/")) return json(SHOP)
-    return json({})
-  })
-}
 
 /**
  * GENERIC ASPECT CONFORMANCE.
@@ -239,68 +166,6 @@ const LEGAL_ROUTES = [
  * distinctness alone is not enough and this constant exists.
  */
 const ROOT_DEFAULT_TITLE = "J'Toye OaaS - Multi-Tenant Order Management"
-
-/**
- * A storefront that EXISTS in whatever environment this spec is pointed at.
- *
- * Stack-free (the CI gate): the Next server's fetch to core is refused, so
- * `loadShopDetail` defers, the client island fetches, the browser stub answers,
- * and this resolves to the fixture `/shop/test-kitchen`.
- *
- * Against a live stack (nightly, local :3000): the server answers
- * authoritatively and this resolves to a real seeded slug. Either way the page
- * under test is one that actually renders dish cards — which is the property
- * these tests need, and the property a hardcoded fixture slug silently lost.
- */
-async function resolveStorefrontPath(page: Page): Promise<string> {
-  await page.goto(`${BASE}/shop`)
-  await page.waitForLoadState("domcontentloaded")
-
-  // A shop CARD, not merely a link under /shop/. `/shop/` also hosts `signin`,
-  // `auth` and `orders`, and the storefront nav's "Sign in" button is an
-  // `a[href^="/shop/"]` sitting above the grid — picking it navigated to
-  // `/shop/signin` and produced exactly the empty page this helper guards
-  // against. `has: article` is the structural definition of a card
-  // (`shop-discovery-client.tsx` wraps each `<article>` in its `<Link>`), so it
-  // cannot drift into matching a nav control.
-  const link = page
-    .locator('a[href^="/shop/"]:visible')
-    .filter({ has: page.locator("article") })
-    .first()
-  await expect(
-    link,
-    "the shop directory listed no storefront to open — neither the fixture stub " +
-      "nor a live backend produced one"
-  ).toBeVisible({ timeout: 15_000 })
-
-  const href = await link.getAttribute("href")
-  expect(href, "storefront link href").toBeTruthy()
-  return href as string
-}
-
-/**
- * Open a storefront and REFUSE to continue silently if it has no dish cards.
- *
- * The regression this exists to make loud: when the fixture slug started
- * 404ing, `locator("article").click()` simply waited out the full 60s test
- * timeout with a call log that said nothing about why. An empty page also
- * satisfies every invariant below it (no fixed-ratio boxes, no images, no
- * overflow, an `<h1>` present), so the sibling layout test passed VACUOUSLY over
- * the same not-found page for as long as the modal test hung.
- */
-async function openStorefront(page: Page, path: string): Promise<void> {
-  await page.goto(`${BASE}${path}`)
-  await page.waitForLoadState("domcontentloaded")
-  // Also outlasts the React streaming buffer (`<div id="S:n" hidden>`), whose
-  // duplicate copy of the server-rendered tree is briefly in the DOM.
-  await page.waitForTimeout(1200)
-
-  await expect(
-    page.locator("article:visible").first(),
-    `${path} rendered no dish cards — the storefront did not load, so anything ` +
-      `asserted past this point would be asserted over an empty page`
-  ).toBeVisible({ timeout: 15_000 })
-}
 
 /**
  * Force three DIFFERENT intrinsic image ratios onto the first three dish cards.
