@@ -378,22 +378,58 @@ describe("The printed ticket", () => {
  * printing" would be an unfalsifiable claim backed by a screen render.
  */
 describe("The print stylesheet", () => {
-  const css = fs.readFileSync(path.join(__dirname, "..", "..", "..", "globals.css"), "utf8")
+  const raw = fs.readFileSync(path.join(__dirname, "..", "..", "..", "globals.css"), "utf8")
 
-  /** The body of the `@media print` block, by brace counting — not by regex. */
-  const printBlock = (() => {
-    const start = css.indexOf("@media print")
-    if (start < 0) throw new Error("no @media print block in globals.css")
-    const open = css.indexOf("{", start)
-    let depth = 0
-    for (let j = open; j < css.length; j++) {
-      if (css[j] === "{") depth++
-      else if (css[j] === "}") {
-        depth--
-        if (depth === 0) return css.slice(open + 1, j)
+  // COMMENTS ARE STRIPPED FIRST, and that is not tidiness. The first version of this
+  // parser located "@media print" with a plain indexOf and landed on the phrase inside
+  // the file's own explanatory comment ("the frontend had ZERO `@media print` outside a
+  // marketing document"), 25 lines above the real at-rule. Brace counting from there
+  // extracted `display: none;` — a confidently wrong block that failed every assertion
+  // for a reason that had nothing to do with the CSS. Same shape as a doc rule firing on
+  // its own definition.
+  const css = raw.replace(/\/\*[\s\S]*?\*\//g, "")
+
+  /** Every `@media print` block body in the file, by brace counting — not by regex. */
+  function printBlocks(): string[] {
+    const blocks: string[] = []
+    let from = 0
+    for (;;) {
+      const start = css.indexOf("@media print", from)
+      if (start < 0) return blocks
+      const open = css.indexOf("{", start)
+      let depth = 0
+      let end = -1
+      for (let j = open; j < css.length; j++) {
+        if (css[j] === "{") depth++
+        else if (css[j] === "}") {
+          depth--
+          if (depth === 0) {
+            end = j
+            break
+          }
+        }
       }
+      if (end < 0) throw new Error("unterminated @media print block in globals.css")
+      blocks.push(css.slice(open + 1, end))
+      from = end
     }
-    throw new Error("unterminated @media print block")
+  }
+
+  /**
+   * The KDS ticket's print block, chosen BY IDENTITY rather than by being first. If the
+   * file ever grows a second `@media print` this still picks the right one, and if it
+   * loses the `#kds-print-root` guard this throws instead of silently measuring nothing.
+   */
+  const printBlock = (() => {
+    const all = printBlocks()
+    if (all.length === 0) throw new Error("no @media print block in globals.css")
+    const mine = all.filter((b) => b.includes("#kds-print-root"))
+    if (mine.length !== 1) {
+      throw new Error(
+        `expected exactly one @media print block scoped to #kds-print-root, found ${mine.length}`
+      )
+    }
+    return mine[0]
   })()
 
   /** The declarations of one rule inside the print block. */

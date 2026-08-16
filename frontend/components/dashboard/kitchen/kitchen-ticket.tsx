@@ -17,6 +17,12 @@ import type { OrderDetail } from "@/types/api"
  * history: the money questions are answered on /dashboard/orders, and every glyph
  * that is not needed at the pass is one more to read past.
  *
+ * IT DOES CARRY ALLERGENS (31-15, LGL-03). That is not a contradiction of the line
+ * above: the ticket is where the warning is ACTED on, by someone holding the food, and
+ * a warning that lives only on the board is lost the moment the ticket is torn off. It
+ * is carried in the only two things monochrome can carry — a border and uppercase
+ * words — never in a fill colour.
+ *
  * WIDTH. The column is 72mm, which is the printable width of a standard 80mm thermal
  * roll, and which also prints sanely on A4 (a narrow column, wasted margin, entirely
  * legible). A dedicated thermal driver story can follow — #105 says as much — without
@@ -84,12 +90,62 @@ export function KitchenTicket({
         </div>
       </dl>
 
+      {/* ALLERGENS (31-15, LGL-03 / D-04).
+          ABOVE the items on purpose: it qualifies every line beneath it, and the top of
+          a 72mm roll is what gets read first when the ticket is torn off.
+
+          THE SCREEN BANNER CANNOT COME WITH IT. On the display the warning rides a solid
+          amber-800 fill; a thermal printer has no amber, so that fill arrives as an
+          indistinct grey box — decoration, not a warning. What monochrome CAN carry is a
+          heavy border and uppercase words, so that is what the print stylesheet gives
+          this block. The WORDS are the signal; the border only helps the eye find them.
+
+          Three states, exactly as on screen and for the same reason (see
+          order-allergen-banner.tsx): `null` cannot be allowed to print as the same
+          silence that means "the vendor declared none", because on a torn-off ticket
+          there is no board left to qualify it. */}
+      {order.allergenNames == null ? (
+        <div className="kds-ticket__allergens kds-ticket__allergens--unrecorded">
+          <span>ALLERGENS NOT RECORDED</span>
+          <p>No allergen data was recorded for this order.</p>
+        </div>
+      ) : order.allergenNames.length > 0 || (order.allergenFlags?.length ?? 0) > 0 ? (
+        <div className="kds-ticket__allergens">
+          <span>ALLERGENS</span>
+          <p>
+            {order.allergenNames.length > 0
+              ? order.allergenNames.join(", ")
+              : "None declared"}
+          </p>
+          {/* Advisory, never merged into the declaration above — a text heuristic must
+              not rewrite a vendor's legal statement, on paper least of all. */}
+          {(order.allergenFlags ?? []).map((flag) => (
+            <p
+              key={`${flag.productName}-${flag.allergenBit}`}
+              className="kds-ticket__allergens-check"
+            >
+              CHECK: {flag.productName} &mdash; ingredients mention {flag.allergenName}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
       <ul className="kds-ticket__items">
         {order.items && order.items.length > 0 ? (
           order.items.map((item, i) => (
             <li key={item.id || i}>
               <span className="kds-ticket__qty">{item.quantity}&times;</span>
-              <span className="kds-ticket__name">{item.productName}</span>
+              <span className="kds-ticket__name">
+                {item.productName}
+                {/* Per LINE, because the block above says what is in the ORDER and the
+                    cook is holding ONE dish. Rendered inside the name column so the
+                    quantity stays alone in its fixed 10mm gutter. */}
+                {item.allergenNames && item.allergenNames.length > 0 ? (
+                  <span className="kds-ticket__item-allergens">
+                    Allergens: {item.allergenNames.join(", ")}
+                  </span>
+                ) : null}
+              </span>
             </li>
           ))
         ) : (
