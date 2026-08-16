@@ -326,6 +326,26 @@ None — no external service configuration required.
 - **Later plans that fix a ledgered site must delete its ledger line**, or the "no stale entry" assertion reds. That is the designed forcing function; it is documented in the test file's header.
 - **Blocker for nobody.** `lint` rc=0, `jest` 100 suites / 955 tests, `next build` clean, `docs-freshness` + `check-doc-metrics` both rc=0.
 
+## Self-Check: PASSED
+
+Files asserted present on disk (`ls -l`, not `git show`):
+
+```
+frontend/eslint.config.mjs                                            8281 bytes
+frontend/__tests__/contrast-literals.test.ts                         20950 bytes
+.planning/phases/31-consumer-safety-and-legal-floor/31-02-SUMMARY.md 26760 bytes
+```
+
+Commits asserted to resolve (`git cat-file -t`, which fails on a fabricated hash
+rather than printing nothing):
+
+```
+ca59e2c8 -> commit    1ae673e2 -> commit    4c9513bb -> commit    19f0d053 -> commit
+```
+
+`git status --short` is empty at hand-back: every break arm was restored, and
+nothing this plan produced is left uncommitted in the worktree.
+
 ---
 *Phase: 31-consumer-safety-and-legal-floor*
 *Completed: 2026-08-16*
