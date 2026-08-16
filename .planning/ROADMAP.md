@@ -344,7 +344,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
-| 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
+| 31. Consumer-Safety and Legal Floor | v2.3 | 7/18 | In Progress | — |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
@@ -664,13 +664,13 @@ questionnaire.
 Plans:
 **Wave 1** *(7 parallel — no dependencies, no shared files)*
 
-- [ ] 31-01-PLAN.md (Wave 1) — Dependency gate: human legitimacy verdict on the four `[ASSUMED]` packages (slopcheck could not run), then install `@axe-core/playwright@4.13.0` + `axe-core@4.13.0` + `jest-axe@10.0.0` + `shadcn add checkbox` at 24px, and a permanent two-arm proof that jest-axe can fail
-- [ ] 31-02-PLAN.md (Wave 1, parallel) — Static a11y layers: expand `jsx-a11y` beyond the 6 rules `next/core-web-vitals` enables (zero packages, zero CI minutes, catches the placeholder-as-label class axe accepts) + a Tailwind-literal contrast test recomputed from source + F-A (`text-emerald-600` 3.76:1 → emerald-700) + F-B (two unlabelled `<nav>` landmarks)
-- [ ] 31-03-PLAN.md (Wave 1, parallel) — Public shell remediation: skip link in `PublicShell` (A11Y-06, axe cannot see it) + footer column headings `<h3>`→`<h2>` (F-C) + `/auth/signin` gains `main`/`h1`/its own title (F-D — 7 of the 15 measured nodes on one route)
-- [ ] 31-04-PLAN.md (Wave 1, parallel) — `AllergenCatalog` (the 14 UK FSA bits, absent from Java since 2026-07-30) + span-text→allergen-bit resolution + `OrderAllergenAggregator` (union + reconciliation flag) + cross-language parity test. Closes the QA council's A11Y-02 CRITICAL
-- [ ] 31-05-PLAN.md (Wave 1, parallel) — DSAR intake: V62 `dsar_request` (non-tenant-scoped, exempted BY ADDITION with justification), public rate-limited endpoint returning an **opaque 202** regardless of match, Idempotency-Key, and the guard asserting a request thread never enters `asSystem`
-- [ ] 31-06-PLAN.md (Wave 1, parallel) — `docs/retention-manifest.json` + `scripts/check-retention-enforcement.sh` **and its `ci-cd.yaml` step in ONE commit** (the gate-enforcement double bind is rc=1 one way and rc=2 the other) + delete `cleanup.orphaned-image-days`, which has zero consumers
-- [ ] 31-07-PLAN.md (Wave 1, parallel) — `docs/legal/article-26-arrangement.md` with a publishable **essence** section (D-18) + dated D-01 extension of the existing `article-9-allergen-basis.md`, extended and never contradicted
+- [x] 31-01-PLAN.md (Wave 1) — Dependency gate: human legitimacy verdict on the four `[ASSUMED]` packages (slopcheck could not run), then install `@axe-core/playwright@4.13.0` + `axe-core@4.13.0` + `jest-axe@10.0.0` + `shadcn add checkbox` at 24px, and a permanent two-arm proof that jest-axe can fail
+- [x] 31-02-PLAN.md (Wave 1, parallel) — Static a11y layers: expand `jsx-a11y` beyond the 6 rules `next/core-web-vitals` enables (zero packages, zero CI minutes, catches the placeholder-as-label class axe accepts) + a Tailwind-literal contrast test recomputed from source + F-A (`text-emerald-600` 3.76:1 → emerald-700) + F-B (two unlabelled `<nav>` landmarks)
+- [x] 31-03-PLAN.md (Wave 1, parallel) — Public shell remediation: skip link in `PublicShell` (A11Y-06, axe cannot see it) + footer column headings `<h3>`→`<h2>` (F-C) + `/auth/signin` gains `main`/`h1`/its own title (F-D — 7 of the 15 measured nodes on one route)
+- [x] 31-04-PLAN.md (Wave 1, parallel) — `AllergenCatalog` (the 14 UK FSA bits, absent from Java since 2026-07-30) + span-text→allergen-bit resolution + `OrderAllergenAggregator` (union + reconciliation flag) + cross-language parity test. Closes the QA council's A11Y-02 CRITICAL
+- [x] 31-05-PLAN.md (Wave 1, parallel) — DSAR intake: V62 `dsar_request` (non-tenant-scoped, exempted BY ADDITION with justification), public rate-limited endpoint returning an **opaque 202** regardless of match, Idempotency-Key, and the guard asserting a request thread never enters `asSystem`
+- [x] 31-06-PLAN.md (Wave 1, parallel) — `docs/retention-manifest.json` + `scripts/check-retention-enforcement.sh` **and its `ci-cd.yaml` step in ONE commit** (the gate-enforcement double bind is rc=1 one way and rc=2 the other) + delete `cleanup.orphaned-image-days`, which has zero consumers
+- [x] 31-07-PLAN.md (Wave 1, parallel) — `docs/legal/article-26-arrangement.md` with a publishable **essence** section (D-18) + dated D-01 extension of the existing `article-9-allergen-basis.md`, extended and never contradicted
 
 **Wave 2** *(blocked on Wave 1)*
 
