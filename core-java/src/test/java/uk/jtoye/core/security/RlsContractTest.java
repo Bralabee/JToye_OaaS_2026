@@ -332,6 +332,64 @@ class RlsContractTest {
     }
 
     /**
+     * LGL-01 (Phase 31 / plan 31-05, V62) sentinel: {@code dsar_request}'s EXEMPT_TABLES
+     * justification says the table "CANNOT have" a {@code tenant_id}. This makes that claim
+     * EXECUTABLE, and it exists because the obvious break arm cannot fail.
+     *
+     * <p><strong>The measurement that forced this method.</strong> The exemption is keyed by
+     * TABLE NAME, so adding a {@code tenant_id} column to V62 leaves
+     * {@link #everyPublicTableHasRlsAndForce} green — the table is skipped before any column is
+     * looked at. Run as a deliberate break arm, that is exactly what happened: the sweep passed
+     * with a tenant-dimensioned table sitting inside an exemption whose written reason had just
+     * become false. A justification no test can contradict is decoration, so the criterion is
+     * replaced here with a stronger one rather than reported as satisfied.
+     *
+     * <p><strong>Why the premise matters and is not pedantry.</strong> If a future edit gives this
+     * table a tenant dimension, the exemption stops being "there is no predicate to write" and
+     * starts being "there is a tenant-scoped table with RLS switched off" — the precise failure
+     * this whole class exists to catch, wearing an exemption it inherited from a different design.
+     * The right response to that edit is to REMOVE the exemption and add the policy, not to update
+     * the comment.
+     *
+     * <p><strong>Non-vacuity.</strong> "No column named tenant_id" is also satisfied by a table
+     * that does not exist, by a mistyped catalog name, and by a namespace filter that matches
+     * nothing. So the column count is asserted {@code > 0} FIRST: the walk must be shown able to
+     * see this table's columns before its failure to see one of them means anything.
+     */
+    @Test
+    void dsarRequestHasNoTenantDimension() {
+        List<String> columns = jdbc.queryForList(
+                "SELECT a.attname " +
+                        "FROM pg_attribute a " +
+                        "JOIN pg_class c ON c.oid = a.attrelid " +
+                        "WHERE c.relname = 'dsar_request' " +
+                        "  AND c.relkind = 'r' " +
+                        "  AND c.relnamespace = 'public'::regnamespace " +
+                        "  AND a.attnum > 0 " +
+                        "  AND NOT a.attisdropped " +
+                        "ORDER BY a.attnum",
+                String.class);
+
+        assertThat(columns)
+                .as("NON-VACUITY CONTROL: the catalog walk found NO columns on public.dsar_request, " +
+                        "so the 'no tenant_id' result below would be evidence about this QUERY, not " +
+                        "about the table — a missing table, a mistyped catalog name or a namespace " +
+                        "filter that matches nothing all satisfy it. V62 must have applied.")
+                .isNotEmpty();
+
+        assertThat(columns)
+                .as("public.dsar_request has grown a tenant dimension, which makes its " +
+                        "RlsContractTest.EXEMPT_TABLES justification FALSE. That justification is " +
+                        "'with no tenant_id there is no predicate to write, so a FORCE'd policy would " +
+                        "return zero rows to the worker that must read them'. Once the column exists " +
+                        "the predicate exists, and an exemption is no longer defensible: REMOVE the " +
+                        "dsar_request entry from EXEMPT_TABLES and add ENABLE + FORCE ROW LEVEL " +
+                        "SECURITY plus a tenant policy through the safe current_tenant_id() helper. " +
+                        "Do NOT edit the comment to match. Columns seen: %s", columns)
+                .doesNotContain("tenant_id");
+    }
+
+    /**
      * AUDIT-W0-04 sentinel: ensure no policy in the database still references
      * the buggy GUC name {@code app.tenant_id} (replaced by V35 with the
      * canonical {@code app.current_tenant_id}). This guards against a future
