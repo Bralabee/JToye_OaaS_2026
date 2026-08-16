@@ -23,7 +23,7 @@
  * over a policy page that rendered no content whatsoever. A structural
  * assertion over an empty document passes, and passes silently.
  */
-import { render, screen, within } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import PrivacyNoticePage, { metadata } from "@/app/legal/privacy/page"
 import { getCustomerSession } from "@/lib/customer-auth"
