@@ -188,3 +188,11 @@ e2e-artifacts/
 # untracked files. Ignore the worktree root ONLY — `.claude/skills/` is a
 # supported location for tracked project skills and must stay visible.
 .claude/worktrees/
+
+# Scanner tool scratch (`.ua/` — config.json, fingerprints.json, intermediate/
+# scan-result.json). Written into a module directory by tooling, not by the Go
+# build, so `go clean` does not remove it and it reappears on every scan. Ignored
+# rather than deleted: it is a cache, and the harm is only that it shows up
+# untracked where a blanket `git add` would sweep 1.2 MB of tool state into a
+# commit. Anchored to any depth because it lands beside whichever module ran.
+.ua/
