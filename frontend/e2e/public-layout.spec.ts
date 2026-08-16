@@ -208,9 +208,37 @@ const PUBLIC_ROUTES = [
   "/for-operators",
   "/track",
   "/legal",
+  "/legal/privacy",
+  "/legal/cookies",
+  "/legal/retention",
+  "/legal/accessibility",
   "/business-model-guide",
   "/competitive",
 ]
+
+/**
+ * The published policy set (LGL-01), in the order a reader meets it.
+ *
+ * Every one is a static server page with no backend dependency, which is what
+ * lets the assertions below stay inside this spec's stack-free contract.
+ */
+const LEGAL_ROUTES = [
+  "/legal",
+  "/legal/privacy",
+  "/legal/cookies",
+  "/legal/retention",
+  "/legal/accessibility",
+] as const
+
+/**
+ * The root layout's fallback title (app/layout.tsx:21).
+ *
+ * A page that forgot to export metadata inherits this and is INDISTINGUISHABLE
+ * from one that set a title, until you compare against the default by name. Five
+ * pages all inheriting it would also be perfectly "consistent" — which is why
+ * distinctness alone is not enough and this constant exists.
+ */
+const ROOT_DEFAULT_TITLE = "J'Toye OaaS - Multi-Tenant Order Management"
 
 /**
  * A storefront that EXISTS in whatever environment this spec is pointed at.
@@ -518,5 +546,229 @@ test.describe("legal retention schedule — 375px conformance", () => {
     // satisfy the loop above while having lost the distinction entirely.
     expect(words).toContain("Automated")
     expect(words).toContain("Operational")
+  })
+})
+
+/**
+ * THE POLICY SET IS REACHABLE AND DISCOVERABLE (LGL-01, plan 31-17).
+ *
+ * Needs no stub, for the same reason as the retention block above: all five
+ * routes are static server pages. The spec's stack-free contract is intact.
+ *
+ * WHAT THESE THREE TESTS ADD THAT NO PER-PAGE TEST CAN.
+ * A unit test renders one page and can prove that page has a title. It cannot
+ * prove the five titles DIFFER from each other, and duplicate titles across a
+ * document set is the exact SEO defect #447/F-H9-SEOMETA found on /shop (4/4
+ * cells agreeing on one title). Uniqueness is a property of the SET.
+ */
+test.describe("published policy set — metadata, reachability and contact", () => {
+  interface PageMeta {
+    route: string
+    title: string
+    description: string
+    canonical: string
+  }
+
+  test("every legal route returns 200 with a unique, non-default title, a unique description and its own canonical", async ({
+    page,
+  }) => {
+    const seen: PageMeta[] = []
+
+    for (const route of LEGAL_ROUTES) {
+      const response = await page.goto(`${BASE}${route}`)
+      expect(response, `${route} produced no response`).not.toBeNull()
+      expect(response?.status(), `${route} HTTP status`).toBe(200)
+      await page.waitForLoadState("domcontentloaded")
+
+      seen.push({
+        route,
+        title: (await page.title()).trim(),
+        description: (
+          (await page
+            .locator('meta[name="description"]')
+            .first()
+            .getAttribute("content")) ?? ""
+        ).trim(),
+        canonical: (
+          (await page.locator('link[rel="canonical"]').first().getAttribute("href")) ?? ""
+        ).trim(),
+      })
+    }
+
+    // ── NON-VACUITY CONTROL, before any distinctness claim ──
+    // FIVE EMPTY STRINGS ARE EQUAL, so an unpopulated set fails distinctness
+    // rather than passing it — but an unpopulated set is also not the failure
+    // anyone would diagnose from "expected 5 unique, got 1". Naming emptiness
+    // and the inherited default explicitly is what makes the diagnosis land on
+    // the right defect.
+    for (const s of seen) {
+      expect(s.title, `${s.route} <title> is empty`).not.toBe("")
+      expect(
+        s.title,
+        `${s.route} still carries the ROOT DEFAULT title — it exports no metadata of its own`
+      ).not.toBe(ROOT_DEFAULT_TITLE)
+      expect(s.description, `${s.route} meta description is empty`).not.toBe("")
+      expect(s.canonical, `${s.route} has no canonical link`).not.toBe("")
+    }
+
+    // ── DISTINCTNESS ACROSS THE SET ──
+    const titles = seen.map((s) => s.title)
+    const descriptions = seen.map((s) => s.description)
+    expect(
+      new Set(titles).size,
+      `two policy pages share a <title>: ${JSON.stringify(titles)}`
+    ).toBe(LEGAL_ROUTES.length)
+    expect(
+      new Set(descriptions).size,
+      `two policy pages share a meta description: ${JSON.stringify(descriptions)}`
+    ).toBe(LEGAL_ROUTES.length)
+
+    // ── EACH CANONICAL POINTS AT ITS OWN PATH ──
+    // Resolved against BASE so this holds whether Next emitted an absolute URL
+    // (metadataBase resolved) or a root-relative one (metadataBase undefined,
+    // which is the deliberate outcome when no origin can be trusted).
+    for (const s of seen) {
+      const path = new URL(s.canonical, BASE).pathname.replace(/(.)\/$/, "$1")
+      expect(path, `${s.route} canonical points elsewhere (${s.canonical})`).toBe(s.route)
+    }
+  })
+
+  /**
+   * F14 — the reachability claim, asserted on a STOREFRONT and not only on `/`.
+   *
+   * This is the test the deleted StorefrontLegalStrip was going to exist for.
+   * The premise that `/shop/**` has no footer was measured FALSE:
+   * app/shop/layout.tsx renders the same <PublicFooter/> over the whole subtree,
+   * so the Legal column reaches a tenant storefront for free. That is a claim
+   * about a real rendered page, so it is proven on one — a landing-page-only
+   * assertion would pass identically whether the claim held or not.
+   */
+  async function footerLegalHrefs(page: Page): Promise<string[]> {
+    // Outlast React's streaming staging buffer (`<div id="S:n" hidden>`), whose
+    // duplicate copy of the tree would double every count below.
+    await page.waitForTimeout(1200)
+
+    const footer = page.getByRole("contentinfo")
+    await expect(
+      footer,
+      "no contentinfo landmark — everything below would be asserted over a page with no footer"
+    ).toBeVisible()
+
+    // NON-VACUITY CONTROL: a known pre-existing footer link. An empty or
+    // failed-to-render footer satisfies nothing here, so the absence of a legal
+    // link cannot be confused with the absence of a footer.
+    await expect(
+      footer.locator('a[href="/shop"]'),
+      "the footer rendered without its pre-existing 'Browse shops' link"
+    ).toHaveCount(1)
+
+    return footer.locator("a").evaluateAll((as) =>
+      as.map((a) => a.getAttribute("href") ?? "").filter((h) => h.startsWith("/legal"))
+    )
+  }
+
+  test("all five policy pages are reachable from the footer on the landing page AND on a tenant storefront", async ({
+    page,
+    context,
+  }) => {
+    await stubPublicApi(context)
+
+    // ── the landing page ──
+    await page.goto(`${BASE}/`)
+    await page.waitForLoadState("domcontentloaded")
+    const landing = await footerLegalHrefs(page)
+    for (const route of LEGAL_ROUTES) {
+      expect(landing, `/ footer does not link ${route}`).toContain(route)
+    }
+
+    // ── a tenant storefront, resolved rather than hardcoded ──
+    // The fixture slug 404s the moment a real backend is reachable, and an
+    // empty not-found page satisfies a footer assertion just as well as a real
+    // storefront does. openStorefront() refuses to continue past that.
+    const path = await resolveStorefrontPath(page)
+    await openStorefront(page, path)
+    const storefront = await footerLegalHrefs(page)
+    for (const route of LEGAL_ROUTES) {
+      expect(storefront, `${path} footer does not link ${route} — a tenant storefront cannot reach the policy`).toContain(
+        route
+      )
+    }
+
+    // ── and following each one actually arrives somewhere ──
+    // A link is not reachability if its destination 404s.
+    for (const route of LEGAL_ROUTES) {
+      const response = await page.goto(`${BASE}${route}`)
+      expect(response?.status(), `${route} followed from the storefront footer`).toBe(200)
+      // Guard the guard: a 200 that renders an empty document is not a policy.
+      await expect(page.locator("h1").first()).toBeVisible()
+    }
+  })
+
+  /**
+   * F15 — the accessibility statement publishes a contact, and it resolves.
+   *
+   * The statement degrades in two configurations and BOTH are legitimate, so
+   * this test branches rather than assuming one. What it will not do is pass
+   * over an absent contact: the fallback branch asserts the documented fallback
+   * by following it, and 31-13's arm 2c proved an empty `mailto:` is the failure
+   * mode that looks live and goes nowhere.
+   */
+  test("the accessibility statement's feedback contact resolves", async ({ page }) => {
+    await page.goto(`${BASE}/legal/accessibility`)
+    await page.waitForLoadState("domcontentloaded")
+    await page.waitForTimeout(1200)
+
+    // Scoped to the section by its accessible name (PolicySection renders
+    // `<section aria-labelledby>`), so the EASS/EHRC links in the separate
+    // "Enforcement procedure" section below cannot satisfy this by accident.
+    const section = page.getByRole("region", { name: "Feedback and contact" })
+    await expect(
+      section,
+      "the 'Feedback and contact' section did not render — a contact assertion over a missing section is vacuous"
+    ).toBeVisible()
+
+    const hrefs = await section
+      .locator("a")
+      .evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""))
+
+    // NON-VACUITY: the section must offer at least one route. A section of pure
+    // prose with no way to reach anyone is the defect, not a passing state.
+    expect(hrefs.length, "the feedback section offers no contact route at all").toBeGreaterThan(0)
+
+    const mailtos = hrefs.filter((h) => h.startsWith("mailto:"))
+    const internal = hrefs.filter((h) => h.startsWith("/"))
+
+    if (mailtos.length > 0) {
+      // CONFIGURED: a real published address.
+      for (const href of mailtos) {
+        const address = href.slice("mailto:".length).split("?")[0].trim()
+        expect(address, `empty mailto: — a link that looks live and goes nowhere (${href})`).not.toBe(
+          ""
+        )
+        expect(address, `published contact address is not an address (${href})`).toContain("@")
+      }
+    } else {
+      // UNCONFIGURED: the documented fallback. 31-13 chose to name the routes
+      // that DO exist rather than emit an empty link, and this is the branch CI
+      // takes, since NEXT_PUBLIC_DATA_PROTECTION_EMAIL is a build arg that is
+      // unset in a stack-free run. Recorded rather than silently passed over.
+      expect(
+        internal.length,
+        "no contact address is configured AND the documented fallback routes are missing — the statement publishes no way to reach anyone"
+      ).toBeGreaterThan(0)
+      // An empty mailto must never be emitted in EITHER configuration.
+      expect(hrefs.filter((h) => h === "mailto:" || h === "mailto:@")).toHaveLength(0)
+    }
+
+    // Every internal route the section offers must actually resolve, in both
+    // configurations. This is the half that fires when a contact is pointed at
+    // a path that does not exist.
+    for (const href of internal) {
+      const response = await page.request.get(`${BASE}${href}`)
+      expect(
+        response.status(),
+        `the feedback section links ${href}, which does not resolve`
+      ).toBe(200)
+    }
   })
 })
