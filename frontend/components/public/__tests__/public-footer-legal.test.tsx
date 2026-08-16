@@ -69,8 +69,17 @@ const SIGNED_IN = {
   expiresAt: Math.floor(Date.now() / 1000) + 300,
 }
 
-/** Every published policy route, with the label the rest of the app uses for it. */
-const LEGAL_ROUTES: ReadonlyArray<{ href: string; label: RegExp }> = [
+/**
+ * Every published policy route, with the label the rest of the app uses for it.
+ *
+ * A PLAIN ARRAY LITERAL BOUND TO A BARE NAME, deliberately. scripts/
+ * count-test-blocks.mjs resolves an `.each` table only when it is an array
+ * literal declared in the same file, and it FAILS CLOSED otherwise rather than
+ * miscounting. `it.each([...LEGAL_ROUTES])` — a spread — is not resolvable, and
+ * it left the static count 4 short of what jest executed (1226 vs 1230), which
+ * check-test-count-oracle.sh caught.
+ */
+const LEGAL_ROUTES: Array<{ href: string; label: RegExp }> = [
   { href: "/legal", label: /^legal & company information$/i },
   { href: "/legal/privacy", label: /^privacy notice$/i },
   { href: "/legal/cookies", label: /^cookie and browser-storage policy$/i },
@@ -118,18 +127,23 @@ describe("PublicFooter Legal column — the five policy pages are reachable (LGL
 
   // Asserted one route at a time, not as a set: a grouped assertion reports
   // "expected 5, got 4" and leaves you to work out which one went.
-  for (const { href, label } of LEGAL_ROUTES) {
-    it(`links ${href} with a crawlable anchor`, () => {
-      const { container } = render(<PublicFooter />)
-      expectFooterActuallyRendered()
+  //
+  // `it.each`, NOT `it(` inside a for-loop. A loop is ONE declaration site and N
+  // executed tests, and this repo counts both: scripts/docs-freshness.sh counts
+  // sites, scripts/check-test-count-oracle.sh counts what jest ran, and both are
+  // required checks — so a loop makes docs/metrics.json unsatisfiable and
+  // docs-freshness exits 2 (VOID) rather than guessing. `it.each` is counted
+  // identically by both halves. Found by the gate, not by review.
+  it.each(LEGAL_ROUTES)("links $href with a crawlable anchor", ({ href, label }) => {
+    const { container } = render(<PublicFooter />)
+    expectFooterActuallyRendered()
 
-      expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href)
+    expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href)
 
-      // A real <a href>, not a button or a click handler. LGL-01 is about a
-      // crawler, and a crawler does not run onClick.
-      expect(container.querySelector(`a[href="${href}"]`)).toBeInTheDocument()
-    })
-  }
+    // A real <a href>, not a button or a click handler. LGL-01 is about a
+    // crawler, and a crawler does not run onClick.
+    expect(container.querySelector(`a[href="${href}"]`)).toBeInTheDocument()
+  })
 
   it("emits every legal link in the FIRST render, before the session resolves", () => {
     // No await, session deliberately never settles: this is the render a
@@ -176,13 +190,16 @@ describe("PublicFooter OGL attribution survives the Legal column", () => {
   // scripts/check-geo-attribution.sh reads this component for them. That gate
   // exits 2 when it cannot find the footer, and a VOID reads exactly like a
   // missing footer — so the lines are pinned here too, in the rendered output.
-  for (const line of ["Ordnance Survey data", "Royal Mail data", "National Statistics data"]) {
-    it(`still renders the "${line}" attribution`, () => {
+  //
+  // `it.each` for the same counting reason as above.
+  it.each(["Ordnance Survey data", "Royal Mail data", "National Statistics data"])(
+    'still renders the "%s" attribution',
+    (line) => {
       render(<PublicFooter />)
       const footer = expectFooterActuallyRendered()
       expect(footer.textContent).toContain(line)
-    })
-  }
+    }
+  )
 })
 
 describe("PublicFooter carries NO platform trading disclosure (T-31-17-02)", () => {
