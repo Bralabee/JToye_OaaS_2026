@@ -227,6 +227,13 @@ None.
 - **31-18** owns the re-measurement. Expected direction of travel: `landmark-one-main`, `page-has-heading-one` and `region:5` gone from `/auth/signin`, `heading-order` gone from `/shop/signin` and `/legal`. A11Y-06 is closed at source and will not appear in its count either way.
 - The storefront shell (`app/shop/layout.tsx`) still has no skip link — UI-SPEC names both shells and this plan's scope was `PublicShell`.
 
+## Self-Check: PASSED
+
+All 6 claimed source/test files exist on disk; all 5 claimed commits resolve
+(`git cat-file -e`). The commit range `64d9f0ad..HEAD` touches 11 files and
+neither `.planning/STATE.md` nor `.planning/ROADMAP.md` is among them, nor any
+of the 9 files owned by the parallel plans 31-01 and 31-02. Working tree clean.
+
 ---
 *Phase: 31-consumer-safety-and-legal-floor*
 *Completed: 2026-08-16*
