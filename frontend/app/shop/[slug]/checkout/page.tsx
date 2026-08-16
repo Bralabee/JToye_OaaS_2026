@@ -1,17 +1,21 @@
 "use client"
 
-import { use, useState, useCallback, useEffect, useRef } from "react"
+import { use, useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle, Bike, Store, Banknote } from "lucide-react"
 import { loadStripe } from "@stripe/stripe-js"
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
 import { useCart } from "@/components/storefront/cart-provider"
+// The refusal copy lives in the panel, which owns its own `role="alert"` region — the page sets
+// only the errored flag, so there is one source for the legally-operative string.
+import { OrderAllergenPanel } from "@/components/storefront/order-allergen-panel"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { describeOrderError } from "@/lib/order-error"
 import publicApiClient from "@/lib/public-api-client"
-import { PublicShop } from "@/types/storefront"
+import { getAllergenNames } from "@/types/api"
+import { PublicShop, PublicProduct } from "@/types/storefront"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
@@ -50,6 +54,58 @@ export function previewDeliveryFeePennies(
     return 0
   }
   return base
+}
+
+/**
+ * Index the storefront's product catalogue by id, defensively.
+ *
+ * Returns `null` — meaning NOT RECORDED, never "nothing declared" — when the payload is missing,
+ * malformed, or yields no usable product. That distinction is the whole point: an allergen panel
+ * that says "the kitchen declared none of the 14" because a fetch failed is stating something the
+ * kitchen never said, and that is the direction that injures someone.
+ */
+export function indexProductsById(data: unknown): Map<string, PublicProduct> | null {
+  if (!data || typeof data !== "object") return null
+  const index = new Map<string, PublicProduct>()
+  for (const group of Object.values(data as Record<string, unknown>)) {
+    if (!Array.isArray(group)) continue
+    for (const candidate of group) {
+      if (
+        candidate &&
+        typeof candidate === "object" &&
+        typeof (candidate as PublicProduct).id === "string" &&
+        typeof (candidate as PublicProduct).allergenMask === "number"
+      ) {
+        index.set((candidate as PublicProduct).id, candidate as PublicProduct)
+      }
+    }
+  }
+  return index.size > 0 ? index : null
+}
+
+/**
+ * The basket's DECLARED allergen union, in words.
+ *
+ * `null` (NOT RECORDED) whenever ANY line cannot be resolved to a product with a declared mask —
+ * a partial union would silently UNDER-state the set, and under-stating is the dangerous
+ * direction. Only a fully resolved basket yields a positive statement.
+ *
+ * The mask -> names decode goes through `getAllergenNames` (types/api.ts), whose table is held
+ * identical to the Java `AllergenCatalog` by `__tests__/allergen-table-parity.test.ts`. That gate
+ * is why decoding here cannot drift from what the kitchen display will show for the same integer.
+ */
+export function basketAllergenNames(
+  items: { productId: string }[],
+  productIndex: Map<string, PublicProduct> | null
+): string[] | null {
+  if (!productIndex || items.length === 0) return null
+  let mask = 0
+  for (const item of items) {
+    const product = productIndex.get(item.productId)
+    if (!product || typeof product.allergenMask !== "number") return null
+    mask |= product.allergenMask
+  }
+  return getAllergenNames(mask)
 }
 
 interface OrderConfirmation {
@@ -213,6 +269,58 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     postcode?: string
   }>({})
 
+  // A11Y-07: a refused submit must move focus to the control that refused, not merely paint it
+  // red. These refs are the only focus-management precedent in the app besides the dish modal's
+  // focus-return (product-detail-modal.tsx:117).
+  const address1Ref = useRef<HTMLInputElement>(null)
+  const cityRef = useRef<HTMLInputElement>(null)
+  const postcodeRef = useRef<HTMLInputElement>(null)
+  const ackCheckboxRef = useRef<HTMLButtonElement>(null)
+
+  // D-02: the pre-submit allergen acknowledgement. Held per ORDER INTENT — see the basket-change
+  // reset below. NOT pre-checked, and deliberately NOT wired into the submit button's `disabled`.
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [ackError, setAckError] = useState(false)
+
+  // The storefront catalogue, so the panel can state the basket's DECLARED set before the order
+  // exists. 31-10's snapshot lives on the ORDER, which by construction is not created yet at this
+  // point — its SUMMARY records that this panel's data comes from the basket and that the DTO
+  // shapes are the shape to match.
+  const [productIndex, setProductIndex] = useState<Map<string, PublicProduct> | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    publicApiClient
+      .get(`/public/shops/${slug}/products`)
+      .then((res) => {
+        if (!cancelled) setProductIndex(indexProductsById(res.data))
+      })
+      .catch(() => {
+        // Leave the index null: the panel then reads NOT RECORDED rather than claiming the
+        // kitchen declared nothing.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [slug])
+
+  const declaredAllergenNames = useMemo(
+    () => basketAllergenNames(items, productIndex),
+    [items, productIndex]
+  )
+
+  /**
+   * A stable signature of the order intent. Changing the basket produces a different one, which
+   * resets the acknowledgement — acknowledging one basket must not silently carry to another.
+   */
+  const basketSignature = useMemo(
+    () => items.map((i) => `${i.productId}:${i.quantity}`).join("|"),
+    [items]
+  )
+  useEffect(() => {
+    setAcknowledged(false)
+    setAckError(false)
+  }, [basketSignature])
+
   // Fetch the shop so the fee breakdown can be shown BEFORE payment. Provides
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
   // failure degrades gracefully to a £0 preview (server stays authoritative).
@@ -289,10 +397,31 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       }
       if (Object.keys(errs).length > 0) {
         setFieldErrors(errs)
+        // A11Y-07: move focus to the FIRST invalid field, in visual order. The guarded shape
+        // (`isConnected` before `focus()`) follows product-detail-modal.tsx:117.
+        const firstInvalid = errs.address1
+          ? address1Ref.current
+          : errs.city
+            ? cityRef.current
+            : postcodeRef.current
+        if (firstInvalid && firstInvalid.isConnected) firstInvalid.focus()
         return
       }
     }
     setFieldErrors({})
+
+    // D-02 — THE ALLERGEN GATE. Refused BEFORE any network call: an error rendered alongside a
+    // created order is the dangerous outcome, because the kitchen is already cooking while the
+    // customer is being told off. The button deliberately stays ENABLED (see the note at the
+    // submit button) so a touch user gets feedback rather than a dead press.
+    if (!acknowledged) {
+      setAckError(true)
+      if (ackCheckboxRef.current && ackCheckboxRef.current.isConnected) {
+        ackCheckboxRef.current.focus()
+      }
+      return
+    }
+    setAckError(false)
     setSubmitting(true)
 
     try {
@@ -421,7 +550,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         </div>
 
         {codConfirmation.allergenWarnings.length > 0 && (
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mb-6">
+          <div className="rounded-xl bg-amber-50 border border-amber-600 p-4 mb-6">
             <h3 className="text-sm font-semibold text-amber-800 mb-2">Allergen warnings</h3>
             <ul className="space-y-1">
               {codConfirmation.allergenWarnings.map((warning, i) => (
@@ -460,6 +589,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             // DELIVERY to COLLECTION) creates a fresh order instead of being
             // silently matched to the previous one by the server.
             idempotencyKeyRef.current = crypto.randomUUID()
+            // D-02: the acknowledgement is per order intent, and rotating the key above starts a
+            // new one. Acknowledging the previous basket must not carry silently into this one.
+            setAcknowledged(false)
+            setAckError(false)
             setPaymentState(null)
           }}
           className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-700 transition-colors mb-4"
@@ -521,7 +654,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         </div>
 
         {paymentState.allergenWarnings.length > 0 && (
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mb-4">
+          <div className="rounded-xl bg-amber-50 border border-amber-600 p-4 mb-4">
             <h3 className="text-sm font-semibold text-amber-800 mb-2">Allergen warnings</h3>
             <ul className="space-y-1">
               {paymentState.allergenWarnings.map((warning, i) => (
@@ -635,14 +768,18 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               <label htmlFor="address1" className="block text-xs font-medium text-slate-600">Address line 1 *</label>
               <input
                 id="address1"
+                ref={address1Ref}
                 type="text"
+                autoComplete="address-line1"
                 value={address1}
                 onChange={(e) => setAddress1(e.target.value)}
                 placeholder="e.g., 12 Coldharbour Lane"
+                aria-invalid={fieldErrors.address1 ? "true" : undefined}
+                aria-describedby={fieldErrors.address1 ? "address1-error" : undefined}
                 className={`${inputBase} ${fieldErrors.address1 ? "border-red-300" : "border-cream-100"}`}
               />
               {fieldErrors.address1 && (
-                <p className="text-xs text-red-600">{fieldErrors.address1}</p>
+                <p id="address1-error" className="text-xs text-red-600">{fieldErrors.address1}</p>
               )}
             </div>
 
@@ -651,6 +788,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               <input
                 id="address2"
                 type="text"
+                autoComplete="address-line2"
                 value={address2}
                 onChange={(e) => setAddress2(e.target.value)}
                 placeholder="Flat, building, etc."
@@ -662,14 +800,18 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               <label htmlFor="city" className="block text-xs font-medium text-slate-600">Town / city *</label>
               <input
                 id="city"
+                ref={cityRef}
                 type="text"
+                autoComplete="address-level2"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
                 placeholder="e.g., London"
+                aria-invalid={fieldErrors.city ? "true" : undefined}
+                aria-describedby={fieldErrors.city ? "city-error" : undefined}
                 className={`${inputBase} ${fieldErrors.city ? "border-red-300" : "border-cream-100"}`}
               />
               {fieldErrors.city && (
-                <p className="text-xs text-red-600">{fieldErrors.city}</p>
+                <p id="city-error" className="text-xs text-red-600">{fieldErrors.city}</p>
               )}
             </div>
 
@@ -677,15 +819,19 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               <label htmlFor="postcode" className="block text-xs font-medium text-slate-600">Postcode *</label>
               <input
                 id="postcode"
+                ref={postcodeRef}
                 type="text"
+                autoComplete="postal-code"
                 value={postcode}
                 onChange={(e) => setPostcode(e.target.value)}
                 onBlur={() => setPostcode((p) => p.trim().toUpperCase())}
                 placeholder="e.g., SW9 8LF"
+                aria-invalid={fieldErrors.postcode ? "true" : undefined}
+                aria-describedby={fieldErrors.postcode ? "postcode-error" : undefined}
                 className={`${inputBase} ${fieldErrors.postcode ? "border-red-300" : "border-cream-100"}`}
               />
               {fieldErrors.postcode && (
-                <p className="text-xs text-red-600">{fieldErrors.postcode}</p>
+                <p id="postcode-error" className="text-xs text-red-600">{fieldErrors.postcode}</p>
               )}
             </div>
           </div>
@@ -700,6 +846,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             <input
               id="name"
               type="text"
+              autoComplete="name"
               required
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
@@ -713,6 +860,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             <input
               id="email"
               type="email"
+              autoComplete="email"
               required
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
@@ -726,6 +874,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             <input
               id="phone"
               type="tel"
+              autoComplete="tel"
               required
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
@@ -824,9 +973,36 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           </div>
         )}
 
-        {/* Error */}
+        {/* D-02 — the pre-submit allergen block. Deliberately the LAST thing read before
+            committing: after "How you'll pay", immediately above the submit run. Not in the order
+            summary, not collapsed, not behind a disclosure.
+
+            `declaredAllergenNames` is null (NOT RECORDED) whenever the basket cannot be fully
+            resolved. `allergenFlags` is null rather than []: the advisory reconciliation flags are
+            computed by the SERVER (OrderAllergenAggregator, 31-04) against a ~150-term synonym
+            list, and re-implementing that heuristic in TypeScript would create a second, ungated
+            copy of a safety rule. Passing [] here would assert "nothing flagged", which this
+            surface cannot substantiate. See 31-14-SUMMARY.md. */}
+        <OrderAllergenPanel
+          vendorName={shop?.name ?? "this kitchen"}
+          allergenNames={declaredAllergenNames}
+          allergenFlags={null}
+          acknowledged={acknowledged}
+          onAcknowledgedChange={(next) => {
+            setAcknowledged(next)
+            if (next) setAckError(false)
+          }}
+          errored={ackError}
+          errorId="allergen-ack-error"
+          checkboxRef={ackCheckboxRef}
+        />
+
+        {/* Error — A11Y-07: announced, not merely painted. Was a plain <div>. */}
         {error && (
-          <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
+          <div
+            role="alert"
+            className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700"
+          >
             {error}
           </div>
         )}
@@ -839,7 +1015,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           </p>
         )}
 
-        {/* Submit */}
+        {/* Submit.
+
+            ⚠ THE ACKNOWLEDGEMENT IS DELIBERATELY NOT IN THIS `disabled` EXPRESSION. `belowMinimum`
+            belongs here because it has a permanent explanatory hint rendered directly above. An
+            acknowledgement gate has no such hint, and a disabled button on a touch device gives NO
+            feedback at all when pressed — the user learns nothing. The gate instead REFUSES in the
+            submit handler and announces the refusal, which is both accessible and legally stronger:
+            the refusal is evidence the gate fired. */}
         <button
           type="submit"
           disabled={submitting || belowMinimum}

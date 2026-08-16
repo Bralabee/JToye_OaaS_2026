@@ -113,6 +113,23 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Radix Checkbox renders a hidden native `BubbleInput` when it is inside a <form>, so that form
+// semantics and validation work on a real input rather than on the styled button. That input sizes
+// itself with `@radix-ui/react-use-size`, which constructs a ResizeObserver — an API jsdom does not
+// implement at all. Without this stub the checkout's acknowledgement checkbox throws
+// "ResizeObserver is not defined" during layout effects and the WHOLE page fails to render, which
+// reads in the output as every checkout assertion failing rather than as one missing browser API.
+//
+// Stubbed here rather than per file for the same reason as the pointer-capture block above: the
+// primitive is shared, and a per-file polyfill leaves the next consumer to rediscover it.
+if (typeof globalThis !== 'undefined' && typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
+
 // Mock environment variables
 process.env.NEXT_PUBLIC_API_URL = 'http://localhost:8080/api'
 process.env.NEXTAUTH_URL = 'http://localhost:3000'
