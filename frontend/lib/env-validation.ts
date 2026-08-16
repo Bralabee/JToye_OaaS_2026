@@ -26,6 +26,21 @@ interface EnvVars {
   NEXT_PUBLIC_SUPPORT_URL: string;
   NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS: string;
 
+  // Controller contact detail for the published legal surfaces (LGL-01, phase 31).
+  // UK GDPR Art. 13(1)(a)-(b) requires the controller's identity AND contact details
+  // in a privacy notice, so these are not cosmetic — but they are business facts that
+  // vary by deployment (white-label operators are a different entity entirely), so
+  // they are config rather than literals. NEXT_PUBLIC_* and therefore BUILD args:
+  // a value supplied only at runtime inlines as the empty string.
+  //
+  // Classified OPTIONAL for the same reason as the support pair above and NOT because
+  // they are unimportant: `resolveControllerContact()` in lib/company.ts drops the
+  // whole block when nothing is configured, so an absence renders an honest page and
+  // earns an operator warning — never a blank line where an address belongs, and
+  // never a boot failure.
+  NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE: string;
+  NEXT_PUBLIC_DATA_PROTECTION_EMAIL: string;
+
   // Shop-list paging (#282). How many shops `fetchMyShops()` asks for per request
   // while it pages the caller's full list. A tuning knob that varies with the
   // deployment's shop-per-tenant profile, so it is config, not a literal
@@ -68,6 +83,8 @@ const optionalEnvVars: (keyof EnvVars)[] = [
   'NEXT_PUBLIC_SUPPORT_EMAIL',
   'NEXT_PUBLIC_SUPPORT_URL',
   'NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS',
+  'NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE',
+  'NEXT_PUBLIC_DATA_PROTECTION_EMAIL',
 ];
 
 /**
