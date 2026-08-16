@@ -404,8 +404,45 @@ It is a wave-level action, not a defect in this plan.
 
 ## Self-Check: PASSED
 
-Verified after writing this summary — see the block below the frontmatter's completion for the
-command output.
+Run after writing this summary. Real output:
+
+```
+=== files ===
+FOUND: core-java/src/main/java/uk/jtoye/core/product/AllergenCatalog.java
+FOUND: core-java/src/main/java/uk/jtoye/core/order/OrderAllergenAggregator.java
+FOUND: core-java/src/test/java/uk/jtoye/core/product/AllergenCatalogTest.java
+FOUND: core-java/src/test/java/uk/jtoye/core/order/OrderAllergenAggregatorTest.java
+FOUND: frontend/__tests__/allergen-table-parity.test.ts
+FOUND: docs/metrics.json
+FOUND: .planning/phases/31-consumer-safety-and-legal-floor/31-04-SUMMARY.md
+=== commits ===
+FOUND: 27571aed  test(31-04): failing tests for the Java allergen catalogue and cross-language parity
+FOUND: 4b29e106  feat(31-04): AllergenCatalog — the 14 UK FSA bits and span-text bit resolution
+FOUND: ce82d0a9  test(31-04): failing tests for order-level allergen aggregation and reconciliation
+FOUND: c80a58e0  feat(31-04): OrderAllergenAggregator — declared union plus an advisory reconciliation flag
+FOUND: f079c924  chore(31-04): regenerate docs/metrics.json for the two new test files
+FOUND: 26df779a  docs(31-04): complete the allergen catalogue and order aggregation plan
+=== files-not-claimed-modified must be untouched vs base ===
+UNTOUCHED: core-java/src/main/java/uk/jtoye/core/product/ProductLabelService.java
+UNTOUCHED: core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontService.java
+UNTOUCHED: .planning/STATE.md
+UNTOUCHED: .planning/ROADMAP.md
+=== vacuity control for the untouched check ===
+total files changed vs base: 7
+=== no deletions across the plan ===
+deleted files: 0
+=== TDD gate order ===
+27571aed test(31-04): failing tests for the Java allergen catalogue and cross-language parity
+4b29e106 feat(31-04): AllergenCatalog — the 14 UK FSA bits and span-text bit resolution
+ce82d0a9 test(31-04): failing tests for order-level allergen aggregation and reconciliation
+c80a58e0 feat(31-04): OrderAllergenAggregator — declared union plus an advisory reconciliation flag
+SELF-CHECK: PASSED
+```
+
+The `UNTOUCHED` lines carry a vacuity control (`total files changed vs base: 7`) because
+`git diff --name-only <base> HEAD -- <path> | wc -l` returns 0 both when a file is untouched and
+when the diff instrument is broken. Seven changed files is the correct count for this plan: five
+created, `docs/metrics.json` modified, and this summary.
 
 ---
 *Phase: 31-consumer-safety-and-legal-floor*
