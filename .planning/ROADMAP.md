@@ -674,26 +674,26 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 31-08-PLAN.md (Wave 2, deps 31-01) — `PolicyPage` + `PolicyToc` shell, `/legal` becomes an index, and the **controller contact checkpoint**: `NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE` is set nowhere and Art. 13(1)(a) requires it. Wired through all three build-arg sites with a fallback that omits rather than renders blank
-- [ ] 31-09-PLAN.md (Wave 2, deps 31-05) — `DsarFanoutWorker`: the FIRST production `asSystem` caller, cloned from `WebhookRetentionCleanup` — one transaction per tenant, GUC pinned inside each, per-tenant error isolation. Proven under FORCE RLS with the NOSUPERUSER downgrade and a positive control
-- [ ] 31-10-PLAN.md (Wave 2, deps 31-04) — **Snapshot, not live join** (resolved open question): V63 `order_items` allergen columns + `order_items_aud` mirrors, write-time capture beside the existing `productName` snapshot, DTO exposure. A post-order vendor edit can no longer rewrite what the customer acknowledged
+- [x] 31-08-PLAN.md (Wave 2, deps 31-01) — `PolicyPage` + `PolicyToc` shell, `/legal` becomes an index, and the **controller contact checkpoint**: `NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE` is set nowhere and Art. 13(1)(a) requires it. Wired through all three build-arg sites with a fallback that omits rather than renders blank
+- [x] 31-09-PLAN.md (Wave 2, deps 31-05) — `DsarFanoutWorker`: the FIRST production `asSystem` caller, cloned from `WebhookRetentionCleanup` — one transaction per tenant, GUC pinned inside each, per-tenant error isolation. Proven under FORCE RLS with the NOSUPERUSER downgrade and a positive control
+- [x] 31-10-PLAN.md (Wave 2, deps 31-04) — **Snapshot, not live join** (resolved open question): V63 `order_items` allergen columns + `order_items_aud` mirrors, write-time capture beside the existing `productName` snapshot, DTO exposure. A post-order vendor edit can no longer rewrite what the customer acknowledged
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 31-11-PLAN.md (Wave 3, deps 31-07/31-08) — `/legal/privacy` (layered notice, Article 26 essence, allergen position consistent with the determination) + `/legal/cookies` (exhaustive over 4 cookie families, 8 localStorage and 2 sessionStorage keys — two of which hold an email address)
-- [ ] 31-12-PLAN.md (Wave 3, deps 31-06/31-08) — `/legal/retention` + `RetentionTable` that **fits at 375px** (both existing table treatments in the tree violate the contract) + `claims.manifest` rows — half of D-08 with **no new script**, and M-1 makes deleting a sentence a FAILURE
-- [ ] 31-13-PLAN.md (Wave 3, deps 31-02/31-03/31-08) — `/legal/accessibility`: **partial** conformance, dated, every exception carrying a remediation date, driven by a declared constant so a past `nextReviewDue` reds the build
-- [ ] 31-14-PLAN.md (Wave 3, deps 31-01/31-10) — Checkout allergen panel + acknowledgement: refuse (do not disable), announce via `role="alert"`, move focus, `aria-invalid` + `aria-describedby` — all three have zero precedent in this codebase. **A11Y-08 fixed here** (8 `autocomplete` tokens, a WCAG AA failure axe cannot see)
-- [ ] 31-15-PLAN.md (Wave 3, deps 31-10) — KDS: order-level banner (solid amber-800, never truncated, 20px uppercase for a 0.6–1.5 m glance) + per-item badge (3 then `+N`) + `<ul>` item list + the allergen block on the **monochrome print sheet**, where the warning is actually acted on
-- [ ] 31-16-PLAN.md (Wave 3, deps 31-01/31-08) — Cookie notice + **client-only** consent store (resolved: no table, no migration — a pre-identity visitor cannot be keyed in a tenant-scoped RLS table) proven with a **fixture category** in both directions, plus zero-CLS measured against the recorded 0.1793 baseline
+- [x] 31-11-PLAN.md (Wave 3, deps 31-07/31-08) — `/legal/privacy` (layered notice, Article 26 essence, allergen position consistent with the determination) + `/legal/cookies` (exhaustive over 4 cookie families, 8 localStorage and 2 sessionStorage keys — two of which hold an email address)
+- [x] 31-12-PLAN.md (Wave 3, deps 31-06/31-08) — `/legal/retention` + `RetentionTable` that **fits at 375px** (both existing table treatments in the tree violate the contract) + `claims.manifest` rows — half of D-08 with **no new script**, and M-1 makes deleting a sentence a FAILURE
+- [x] 31-13-PLAN.md (Wave 3, deps 31-02/31-03/31-08) — `/legal/accessibility`: **partial** conformance, dated, every exception carrying a remediation date, driven by a declared constant so a past `nextReviewDue` reds the build
+- [x] 31-14-PLAN.md (Wave 3, deps 31-01/31-10) — Checkout allergen panel + acknowledgement: refuse (do not disable), announce via `role="alert"`, move focus, `aria-invalid` + `aria-describedby` — all three have zero precedent in this codebase. **A11Y-08 fixed here** (8 `autocomplete` tokens, a WCAG AA failure axe cannot see)
+- [x] 31-15-PLAN.md (Wave 3, deps 31-10) — KDS: order-level banner (solid amber-800, never truncated, 20px uppercase for a 0.6–1.5 m glance) + per-item badge (3 then `+N`) + `<ul>` item list + the allergen block on the **monochrome print sheet**, where the warning is actually acted on
+- [x] 31-16-PLAN.md (Wave 3, deps 31-01/31-08) — Cookie notice + **client-only** consent store (resolved: no table, no migration — a pre-identity visitor cannot be keyed in a tenant-scoped RLS table) proven with a **fixture category** in both directions, plus zero-CLS measured against the recorded 0.1793 baseline
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 31-17-PLAN.md (Wave 4, deps 31-11/31-12/31-13/31-16) — Legal column in `PublicFooter` + sitemap + per-PR browser proof that all five routes resolve with unique metadata and are reachable **from a tenant storefront**. `StorefrontLegalStrip` deliberately NOT built: `app/shop/layout.tsx:73` already renders `PublicFooter` over `/shop/**`
+- [x] 31-17-PLAN.md (Wave 4, deps 31-11/31-12/31-13/31-16) — Legal column in `PublicFooter` + sitemap + per-PR browser proof that all five routes resolve with unique metadata and are reachable **from a tenant storefront**. `StorefrontLegalStrip` deliberately NOT built: `app/shop/layout.tsx:73` already renders `PublicFooter` over `/shop/**`
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 31-18-PLAN.md (Wave 5, deps 31-02/31-03/31-13/31-14/31-15/31-17) — `e2e/public-a11y.spec.ts` in the `frontend-e2e` job (the only browser job that blocks a PR) with a non-vacuity control before every scan, the modal **opened** and the checkout **seeded**; the break arm run and both directions recorded; statement reconciled against the final audit; `docs/metrics.json` regenerated and the prose in CLAUDE.md/AGENTS.md/README.md corrected
+- [x] 31-18-PLAN.md (Wave 5, deps 31-02/31-03/31-13/31-14/31-15/31-17) — `e2e/public-a11y.spec.ts` in the `frontend-e2e` job (the only browser job that blocks a PR) with a non-vacuity control before every scan, the modal **opened** and the checkout **seeded**; the break arm run and both directions recorded; statement reconciled against the final audit; `docs/metrics.json` regenerated and the prose in CLAUDE.md/AGENTS.md/README.md corrected
 
 **UI hint**: yes (consent banner, policy pages, a11y remediation across the storefront)
 
