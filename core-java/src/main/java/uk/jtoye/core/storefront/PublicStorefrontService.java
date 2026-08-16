@@ -18,6 +18,7 @@ import uk.jtoye.core.geo.GeoBounds;
 import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
+import uk.jtoye.core.order.OrderAllergenSnapshot;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
 import uk.jtoye.core.order.OrderRepository;
@@ -787,6 +788,15 @@ public class PublicStorefrontService {
                 // authoritative) so OrderItem.productName never persists its
                 // "Unknown Product" default onto the kitchen display / order detail.
                 item.setProductName(product.getTitle());
+                // LGL-03 / V63: the allergen mask is snapshotted for the SAME reason the title
+                // is, at the same moment. A vendor who edits a product's allergen data after this
+                // order is placed must not be able to change what the customer is recorded as
+                // having acknowledged, or what the kitchen ticket shows. Under a read-time join
+                // back to Product they would: the customer acknowledges set A, the kitchen sees
+                // set B, and no record of A survives anywhere. The advisory reconciliation flags
+                // are stored beside the declaration, never folded into it.
+                OrderAllergenSnapshot.capture(item, product.getTitle(),
+                        product.getAllergenMask(), product.getIngredientsText());
                 order.addItem(item);
                 lineRates.add(new VatCalculator.LineRate(
                         item.getTotalPricePennies(), product.getVatRate()));

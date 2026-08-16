@@ -42,6 +42,28 @@ public class OrderItem {
     @Column(name = "total_price_pennies", nullable = false)
     private Long totalPricePennies;
 
+    /**
+     * LGL-03 / V63 — the product's DECLARED UK FSA 14-bit allergen mask, snapshotted when the
+     * order was placed. {@code null} means NOT RECORDED (the row predates V63); {@code 0} means
+     * the vendor declared none of the 14. Those are different statements and nothing downstream
+     * may collapse them — see {@link OrderAllergenSnapshot}.
+     *
+     * <p>A boxed {@code Integer}, not an {@code int}, precisely so the "not recorded" state has a
+     * representation. Do not give this column a database DEFAULT.
+     */
+    @Column(name = "allergen_mask")
+    private Integer allergenMask;
+
+    /**
+     * LGL-03 / V63 — the ADVISORY reconciliation result for this line: the bits the product's
+     * emphasised ingredients text names but its declared mask omits
+     * ({@link OrderAllergenAggregator}). Structurally separate from {@link #allergenMask} and
+     * never OR-ed into it: a text heuristic must not rewrite a vendor's legally operative
+     * declaration. {@code null} means not recorded; {@code 0} means nothing was flagged.
+     */
+    @Column(name = "allergen_flag_mask")
+    private Integer allergenFlagMask;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -123,6 +145,22 @@ public class OrderItem {
 
     public void setTotalPricePennies(Long totalPricePennies) {
         this.totalPricePennies = totalPricePennies;
+    }
+
+    public Integer getAllergenMask() {
+        return allergenMask;
+    }
+
+    public void setAllergenMask(Integer allergenMask) {
+        this.allergenMask = allergenMask;
+    }
+
+    public Integer getAllergenFlagMask() {
+        return allergenFlagMask;
+    }
+
+    public void setAllergenFlagMask(Integer allergenFlagMask) {
+        this.allergenFlagMask = allergenFlagMask;
     }
 
     public OffsetDateTime getCreatedAt() {
