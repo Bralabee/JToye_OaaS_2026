@@ -196,23 +196,23 @@ describe("resilience — the failure modes that never appear in a happy-path tes
     }
   })
 
-  it("returns safe defaults during SSR and attempts no write", () => {
-    const originalWindow = global.window
-    // @ts-expect-error — deliberately simulating a server render
-    delete global.window
-    try {
-      expect(readNoticeAck()).toBeNull()
-      // A server render must NOT paint the notice: it has no way to know whether
-      // this visitor already dismissed it, and painting then removing is a flash.
-      expect(shouldShowCookieNotice()).toBe(false)
-      expect(() => acknowledgeCookieNotice()).not.toThrow()
-      expect(isAllowed("never-registered-anywhere")).toBe(false)
-    } finally {
-      global.window = originalWindow
-    }
-    // The write attempted during SSR must not have landed.
-    expect(window.localStorage.getItem(COOKIE_NOTICE_ACK_KEY)).toBeNull()
-  })
+  // THE SSR CASE LIVES IN `consent.ssr.test.ts`, NOT HERE — and the reason is a
+  // measured instrument defect worth recording.
+  //
+  // The usual idiom for faking a server render, `delete global.window`, is a
+  // NO-OP in this project's jsdom: the `window` property is defined
+  // `configurable: false`, so `delete` returns false and `typeof window` stays
+  // `"object"`. Probed directly rather than assumed.
+  //
+  // The dangerous part is not that it fails — it is that it MOSTLY PASSES. Of
+  // the four assertions such a test would make, three (`readNoticeAck()` is
+  // null, an unknown category is not allowed, acknowledging does not throw) are
+  // true with `window` present too, so the suite reads green while proving
+  // nothing about SSR. Only `shouldShowCookieNotice()` discriminates, and it is
+  // exactly the one that failed and exposed the no-op.
+  //
+  // A `@jest-environment node` file (the repo's established idiom, 11 existing
+  // files) gives a real absence of `window` instead of a simulated one.
 })
 
 describe("change notification", () => {
