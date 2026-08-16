@@ -9,7 +9,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card"
 import { CompanyLegalLine } from "@/components/platform/company-legal"
 
@@ -27,71 +26,117 @@ import { CompanyLegalLine } from "@/components/platform/company-legal"
  * is why the copy says so plainly and the cross-link below is not optional
  * decoration. It used to be reachable from the public header's unqualified
  * "Sign in" CTA, so shoppers arrived here by default.
+ *
+ * LANDMARKS AND HEADING (F-D, LGL-02)
+ * -----------------------------------
+ * This page used to be a bare `<div className="min-h-screen flex …">` with no
+ * landmark and no page heading of any level, and it was the single worst
+ * accessibility surface measured on 2026-08-15: 7 of the 15 remaining axe nodes
+ * across all declared surfaces were on this one page — `landmark-one-main:1`,
+ * `page-has-heading-one:1`, `region:5`. The five `region` nodes were simply its
+ * content: every element on the page sat outside any landmark, because there
+ * were no landmarks.
+ *
+ * What was added, and deliberately nothing else:
+ *  - a skip link, first in the DOM, class string copied verbatim from
+ *    `components/marketing/operator-pitch.tsx:70` — the same one PublicShell
+ *    uses, so the two public entry points behave identically under the keyboard.
+ *  - a `<main id="main">` wrapping BOTH the card and the legal line. Wrapping
+ *    only the card would have left the legal line outside a landmark and simply
+ *    moved a `region` node rather than closing it.
+ *  - the card's title promoted to the page's single level-1 heading. `CardTitle`
+ *    is a shared shadcn primitive that renders at level 3 and is used on dozens
+ *    of surfaces, so it is NOT re-tagged here; the heading is written out with
+ *    the identical resolved classes instead, and the visible text is unchanged.
+ *
+ * IT IS DELIBERATELY *NOT* WRAPPED IN `PublicShell`. PublicShell renders
+ * PublicHeader, whose sign-in CTA points at this very page — a header offering a
+ * link to the page you are already on is the navigation defect this page's own
+ * history is made of. It gets the same landmark markup, not the same chrome.
+ *
+ * The page title comes from the sibling `layout.tsx`: a `"use client"` module
+ * cannot export `metadata`, and without that layout this page served the root
+ * default, which named neither the page nor the persona.
  */
 export default function SignInPage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-cream via-white to-cream-100 p-4">
-      <Card className="w-full max-w-md border-cream-100 shadow-xl">
-        <CardHeader className="space-y-4 text-center pb-6">
-          <Link
-            href="/"
-            aria-label="J'Toye home"
-            className="mx-auto flex w-fit items-center gap-2 text-xl font-semibold tracking-tight text-oxblood"
-          >
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-oxblood text-base font-bold text-white">
-              J
-            </span>
-            <span>J&apos;Toye</span>
-          </Link>
-          <CardTitle className="text-2xl font-bold text-oxblood">
-            Vendor sign in
-          </CardTitle>
-          <CardDescription className="text-base text-slate-600">
-            For kitchen operators and staff — manage your shop, orders and
-            fulfilment.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            onClick={() => signIn("keycloak", { callbackUrl: "/dashboard" })}
-            className="w-full h-12 rounded-full bg-oxblood text-base font-semibold text-white hover:bg-oxblood-700"
-            size="lg"
-          >
-            Sign in with Keycloak
-          </Button>
-          <p className="text-center text-xs text-slate-500">
-            Secure authentication via Keycloak OIDC
-          </p>
-          {/* The persona cross-link. A shopper who reaches this page cannot sign in
-              here at all — their account lives in a different realm — and without a
-              visible route out, the failure is silent and unexplained. */}
-          <p className="rounded-lg bg-cream/60 px-3 py-2.5 text-center text-sm text-slate-600">
-            Ordering food?{" "}
-            <Link
-              href="/shop/signin"
-              className="font-semibold text-oxblood underline-offset-4 hover:underline"
-            >
-              Customer sign in
-            </Link>
-          </p>
-          <div className="flex items-center justify-center gap-6 border-t border-cream-100 pt-4 text-sm">
+      <a href="#main" className="sr-only z-50 rounded-full bg-oxblood px-4 py-3 text-sm font-bold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4">Skip to main content</a>
+      <main id="main" className="flex w-full flex-col items-center">
+        <Card className="w-full max-w-md border-cream-100 shadow-xl">
+          <CardHeader className="space-y-4 text-center pb-6">
             <Link
               href="/"
-              className="inline-flex items-center gap-1 text-slate-600 transition-colors hover:text-slate-900"
+              aria-label="J'Toye home"
+              className="mx-auto flex w-fit items-center gap-2 text-xl font-semibold tracking-tight text-oxblood"
             >
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              Back to J&apos;Toye
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-oxblood text-base font-bold text-white">
+                J
+              </span>
+              <span>J&apos;Toye</span>
             </Link>
-            <Link
-              href="/shop"
-              className="font-medium text-amber-700 transition-colors hover:text-amber-800"
+            {/* The page's one level-1 heading. Written out rather than routed
+                through CardTitle: that primitive renders at level 3 and is
+                shared with dozens of other surfaces, so re-tagging it to fix one
+                page would change every card in the product. The class list is
+                the exact resolved output of the CardTitle it replaces
+                (`text-2xl font-semibold leading-none tracking-tight` merged with
+                the `text-2xl font-bold text-oxblood` override), so this is a
+                semantic change with no visual one. */}
+            <h1 className="text-2xl font-bold leading-none tracking-tight text-oxblood">
+              Vendor sign in
+            </h1>
+            <CardDescription className="text-base text-slate-600">
+              For kitchen operators and staff — manage your shop, orders and
+              fulfilment.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button
+              onClick={() => signIn("keycloak", { callbackUrl: "/dashboard" })}
+              className="w-full h-12 rounded-full bg-oxblood text-base font-semibold text-white hover:bg-oxblood-700"
+              size="lg"
             >
-              Browse kitchens
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
-      <CompanyLegalLine className="mt-6 max-w-md text-center" />
+              Sign in with Keycloak
+            </Button>
+            <p className="text-center text-xs text-slate-500">
+              Secure authentication via Keycloak OIDC
+            </p>
+            {/* The persona cross-link. A shopper who reaches this page cannot
+                sign in here at all — their account lives in a different realm —
+                and without a visible route out, the failure is silent and
+                unexplained. */}
+            <p className="rounded-lg bg-cream/60 px-3 py-2.5 text-center text-sm text-slate-600">
+              Ordering food?{" "}
+              <Link
+                href="/shop/signin"
+                className="font-semibold text-oxblood underline-offset-4 hover:underline"
+              >
+                Customer sign in
+              </Link>
+            </p>
+            <div className="flex items-center justify-center gap-6 border-t border-cream-100 pt-4 text-sm">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-1 text-slate-600 transition-colors hover:text-slate-900"
+              >
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                Back to J&apos;Toye
+              </Link>
+              <Link
+                href="/shop"
+                className="font-medium text-amber-700 transition-colors hover:text-amber-800"
+              >
+                Browse kitchens
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+        {/* Inside the landmark, not beside it. Left outside, this is one of the
+            five `region` nodes measured on this page — a trading disclosure that
+            a screen-reader user browsing by landmark never reaches. */}
+        <CompanyLegalLine className="mt-6 max-w-md text-center" />
+      </main>
     </div>
   )
 }
