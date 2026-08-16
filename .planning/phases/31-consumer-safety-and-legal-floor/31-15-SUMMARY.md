@@ -268,6 +268,10 @@ A related, narrower question if the answer to (1) is "no": nothing in this plan 
 - S4 is complete and independent of the other wave-3 surfaces. 31-14 (checkout, S3) renders the same server snapshot from the same DTO, so the two surfaces agree by construction rather than by coincidence.
 - 31-18 must **not** add `/dashboard/kitchen` to its declared axe surface list; the a11y properties here are build-time quality, not gate scope.
 
+## Self-Check: PASSED
+
+All five claimed files exist on disk; all six commits (`4b381b49`, `20ec88bd`, `cf9e4f39`, `6c14b5e9`, `863db33f`, `33d7b534`) resolve in `git log 0d1834c2..HEAD`; working tree clean. `frontend/types/api.ts` untouched, confirmed by its absence from the diff.
+
 ---
 *Phase: 31-consumer-safety-and-legal-floor*
 *Completed: 2026-08-16*
