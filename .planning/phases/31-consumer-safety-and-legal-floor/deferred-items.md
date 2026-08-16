@@ -64,3 +64,40 @@ el.innerHTML.match(/<\/(?:code|span|a|strong|em|b|i)>[A-Za-z]\w*/g)
 
 A repo-wide version of that assertion would be the right home for this, but it belongs
 to whoever owns those marketing surfaces rather than to this phase.
+
+---
+
+## From 31-17 (Legal column reachability)
+
+### 1. Three pre-existing `tsc --noEmit` errors, none in files this plan touched
+
+`npm run build` is rc=0 (it does not typecheck these test files), but `npx tsc --noEmit`
+in `frontend/` is rc=2 on the clean base `2e9a51fe`, before and after this plan:
+
+| File | Error |
+|---|---|
+| `__tests__/shop/server-seeded-islands.test.tsx:100` | TS2739: fixture missing `first`, `last` from `PageResponse<PublicShop>` |
+| `components/dashboard/__tests__/dashboard-shell.test.tsx:154` | TS2503: cannot find namespace `JSX` |
+| `lib/__tests__/structured-data.test.ts:91` | TS2352: unsound cast to `Record<string, never>` |
+
+Verified out of scope by `git diff --name-only 2e9a51fe`, which lists only this plan's
+four files. Left alone under the scope boundary. Worth noting that **no CI gate runs
+`tsc --noEmit` across test files**, which is why these have survived — `npm run build`
+typechecks app code only.
+
+### 2. `/track` is in `sitemap.ts` while `robots.ts` disallows it
+
+`app/sitemap.ts` lists `/track` in `STATIC_ROUTES`; `app/robots.ts` has `Disallow: /track`.
+Advertising a URL in the sitemap and forbidding it in robots.txt is contradictory guidance
+to a crawler. Pre-existing, unrelated to the legal routes, and `sitemap.ts` is only
+partly this plan's file — the five `/legal` entries added here are correctly NOT
+disallowed (verified against the SERVED `/robots.txt`, not just the source).
+Belongs to whoever owns the `/track` surface.
+
+### 3. `check-test-count-oracle.sh` VOIDs in a fresh worktree
+
+`--- vitest -> rc=2  VOID: mcp-server/node_modules is absent`. A fresh GSD worktree only
+ever gets `npm ci` in `frontend/`, so the vitest third of the oracle cannot run and the
+whole gate reports VOID (correctly — it refuses to call an unverified family a pass).
+Cleared here by running `npm ci` in `mcp-server/`, after which all three runners agree.
+Worth adding to the worktree bootstrap so the gate is not routinely VOID.
