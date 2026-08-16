@@ -157,6 +157,12 @@ const LOCAL_ROWS: readonly StorageRow[] = [
     lifetime: "Until you clear your browser storage.",
   },
   {
+    name: "jtoye-cookie-consent-choices",
+    purpose:
+      "Your choices about optional storage categories, kept separately from the record above so that dismissing a notice is never treated as consent. We register no optional categories today, so nothing is written to it at present.",
+    lifetime: "Until you clear your browser storage.",
+  },
+  {
     name: "shopContext",
     purpose:
       "Which shop a vendor's dashboard is currently filtered to. Dashboard only.",

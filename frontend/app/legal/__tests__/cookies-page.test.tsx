@@ -62,6 +62,7 @@ const LOCAL_STORAGE_KEYS = [
   "jtoye-customer-expires-at",
   "jtoye-guest-orders",
   "jtoye-cookie-notice-ack",
+  "jtoye-cookie-consent-choices",
   "shopContext",
   "theme",
   "kds-muted",
