@@ -25,6 +25,8 @@
  * from a naive query, so querying the value cannot tell the two apart; querying
  * the TERM can.
  */
+import fs from "node:fs"
+import path from "node:path"
 import { render, screen } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import {
@@ -182,6 +184,80 @@ describe("resolveControllerContact — CONFIGURED", () => {
     expect(screen.getByText("Data protection contact")).toBeInTheDocument()
     expect(container.textContent).not.toContain("Registered office")
     expect(container.querySelectorAll("dt")).toHaveLength(1)
+  })
+})
+
+/**
+ * The `.env.example` declarations, asserted on their RESOLVED VALUE.
+ *
+ * WHY PRESENCE IS THE WRONG QUESTION. `VAR=  # explain yourself here` is a line
+ * that LOOKS unset and IS NOT: an unquoted dotenv value runs to end-of-line, so
+ * both `set -a; source` and `docker compose --env-file` resolve that variable to
+ * the literal string "# explain yourself here". Every is-configured guard in the
+ * repo then reads TRUE, the value gets baked into the browser bundle, and a
+ * privacy notice publishes a comment as a postal address. A grep for the
+ * variable name passes on exactly that line, which is why this parses instead.
+ *
+ * The parser deliberately implements the PERMISSIVE reading — everything after
+ * the first `=` is the value, no inline-comment stripping — because that is the
+ * reading the tools which actually consume this file use, and a guard should
+ * model the consumer that can hurt you rather than the most forgiving one.
+ */
+function readEnvExample(): string {
+  // frontend/lib/__tests__ -> repo root
+  return fs.readFileSync(
+    path.resolve(__dirname, "../../../.env.example"),
+    "utf8"
+  )
+}
+
+/** Raw right-hand side of an assignment, or null when the key is absent. */
+function rawEnvValue(contents: string, key: string): string | null {
+  for (const line of contents.split("\n")) {
+    if (line.startsWith(`${key}=`)) return line.slice(key.length + 1)
+  }
+  return null
+}
+
+describe(".env.example declares the controller contact by VALUE, not by presence", () => {
+  it("finds both keys at all — the control for every assertion below", () => {
+    const contents = readEnvExample()
+    // Without this, a typo'd key name makes every "is not a comment" assertion
+    // below trivially true against a null, and the suite goes green over a file
+    // that declares nothing.
+    expect(rawEnvValue(contents, "NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE")).not.toBeNull()
+    expect(rawEnvValue(contents, "NEXT_PUBLIC_DATA_PROTECTION_EMAIL")).not.toBeNull()
+  })
+
+  it("resolves the data-protection contact to a real address", () => {
+    const raw = rawEnvValue(readEnvExample(), "NEXT_PUBLIC_DATA_PROTECTION_EMAIL")
+    expect(raw).toBe("privacy@olajay.co.uk")
+    // Belt and braces on the trap specifically: no `#` anywhere in the resolved
+    // value, so it cannot be a comment that a laxer parser would have stripped.
+    expect(raw).not.toContain("#")
+    expect(raw).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+  })
+
+  it("resolves the registered office to genuinely EMPTY, not to a comment", () => {
+    const raw = rawEnvValue(readEnvExample(), "NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE")
+    // The owner declined to publish an address. "Declined" must mean the empty
+    // string — an explanatory comment parked on the assignment line would make
+    // this variable CONFIGURED, and the notice would publish that comment.
+    expect(raw).toBe("")
+  })
+
+  it("BREAK DIRECTION: the parser catches the comment-as-value shape", () => {
+    // The assertions above are all expected-empty or expected-exact, which is
+    // the shape that can silently be incapable of failing. Prove the instrument
+    // fires against the defect it exists for, in-suite, on every future run.
+    const broken = "NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=  # fill this in later\n"
+    const raw = rawEnvValue(broken, "NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE")
+
+    expect(raw).not.toBe("")
+    expect(raw).toContain("#")
+    // And the consequence, stated as an assertion rather than as prose: a
+    // truthiness guard reads this as configured.
+    expect(Boolean(raw)).toBe(true)
   })
 })
 
