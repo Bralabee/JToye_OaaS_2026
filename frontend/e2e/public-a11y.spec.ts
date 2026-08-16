@@ -19,12 +19,21 @@
  * this gate was being written, and both are now permanent tests rather than
  * anecdotes:
  *
- *   - `/shop/[slug]/checkout` WITH AN EMPTY BASKET renders a four-element stub
- *     ("Nothing to checkout") with no `<h1>` and no form at all. Scanning that
- *     is not scanning checkout. The basket is therefore SEEDED before the scan.
+ *   - `/shop/[slug]/checkout` WITH AN EMPTY BASKET renders a stub reading
+ *     "Nothing to checkout" — MEASURED on this tree: 8 elements inside `<main>`,
+ *     0 `<h1>`, 0 `<form>`, 0 `<input>` — and axe reports **0 violations / 22
+ *     passes** over it. Scanning that is not scanning checkout. The basket is
+ *     therefore SEEDED before the scan.
  *   - The dish detail panel is a MODAL, not a route. Navigating to `/shop/[slug]`
- *     and scanning reproduces the artefact exactly — the dialog is simply not in
- *     the DOM. It is therefore OPENED before the scan.
+ *     and scanning reproduces the artefact exactly: `[role="dialog"]` count 0,
+ *     and axe reports **0 violations / 23 passes** — a clean bill of health for
+ *     a dialog that is not in the DOM. It is therefore OPENED before the scan.
+ *
+ * Both artefacts report a PERFECT ZERO, which is the entire argument: the
+ * output of a scan over nothing is indistinguishable from the output of a scan
+ * over a clean page. (RESEARCH recorded one moderate violation on the unseeded
+ * checkout; re-measured here it is zero. The markup moved. The number quoted
+ * above is the one this plan actually measured, not the one it inherited.)
  *
  * So every scan in this file is guarded, and the guard is STRUCTURAL rather than
  * a convention: `scanSurface()` asserts its controls and only then constructs an
@@ -243,11 +252,13 @@ test.describe("public surfaces — WCAG 2.1 AA", () => {
   /**
    * CHECKOUT — SEEDED, BECAUSE THE EMPTY STATE IS NOT CHECKOUT.
    *
-   * `items.length === 0` renders a four-element "Nothing to checkout" stub with
-   * no `<h1>` and no form (page.tsx:369-373). The real `<h1>Checkout</h1>` and
-   * the entire address/contact form live behind `items.length > 0`
-   * (page.tsx:728). Measured this session: scanning the unseeded page reports
-   * one moderate violation and nothing else, over four elements.
+   * `items.length === 0` renders a "Nothing to checkout" stub — 8 elements, no
+   * `<h1>`, no `<form>`, no `<input>` (page.tsx:369-373). The real
+   * `<h1>Checkout</h1>` and the entire address/contact form live behind
+   * `items.length > 0` (page.tsx:728). Measured on this tree: scanning the
+   * unseeded page reports 0 violations over 22 passes — a flawless result for a
+   * page containing none of the surface being claimed, and in particular none
+   * of the seven autofill tokens and error-announcement wiring 31-14 shipped.
    */
   test("checkout has no WCAG 2.1 AA violations (with a seeded basket)", async ({
     page,
