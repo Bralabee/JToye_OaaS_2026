@@ -130,7 +130,35 @@ class RlsContractTest {
             // every caller and silently disable locality platform-wide while every
             // test stayed green. Note this is exempted BY ADDITION, per the standing
             // instruction above; the schema-walk assertion itself is untouched.
-            "postcode_centroid"
+            "postcode_centroid",
+
+            // V62 (Phase 31 / plan 31-05, D-16/D-17): the platform-level UK-GDPR
+            // data-subject-request intake queue. It holds a request type, a few
+            // timestamps, an opaque acknowledgement body and a one-way SHA-256 digest
+            // of the subject's address — no readable personal data and, critically, no
+            // tenant_id, because it CANNOT have one: an anonymous data subject lodges
+            // the request from the public internet before any tenant is known (no JWT,
+            // no TenantContext, no app.current_tenant_id on the connection), and the
+            // whole purpose of the row is to be actioned across EVERY tenant. Articles
+            // 15 and 17 give the subject one right against the controller, not one per
+            // vendor they happened to buy from; splitting the row per tenant at intake
+            // would require the intake to already know the answer the background sweep
+            // exists to discover.
+            //
+            // Adding RLS here would not be "safer" — it would silently DISABLE the DSAR
+            // path. With no tenant_id there is no predicate to write, so a FORCE'd policy
+            // would return zero rows to the very worker (plan 31-09) that must read them:
+            // the intake would keep returning 202, the queue would keep filling, nothing
+            // would ever be actioned, and every test would stay green because a dead table
+            // is indistinguishable from an empty one — the exact liveness failure mode
+            // everyRlsEnabledTableHasAtLeastOnePolicy below was added to catch. The tenant
+            // wall is not weakened by this: the reach that touches tenant data belongs to
+            // the background worker, which gets it by iterating tenants and pinning the
+            // GUC one at a time, under FORCE RLS exactly like every other caller.
+            //
+            // Exempted BY ADDITION, per the standing instruction above; the schema-walk
+            // assertion itself is untouched.
+            "dsar_request"
     );
 
     /**
