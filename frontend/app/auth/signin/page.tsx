@@ -41,9 +41,9 @@ import { CompanyLegalLine } from "@/components/platform/company-legal"
  *  - a skip link, first in the DOM, class string copied verbatim from
  *    `components/marketing/operator-pitch.tsx:70` — the same one PublicShell
  *    uses, so the two public entry points behave identically under the keyboard.
- *  - a `<main id="main">` wrapping BOTH the card and the legal line. Wrapping
- *    only the card would have left the legal line outside a landmark and simply
- *    moved a `region` node rather than closing it.
+ *  - a main landmark, carrying the skip link's target id, wrapping BOTH the card
+ *    and the legal line. Wrapping only the card would have left the legal line
+ *    outside a landmark and simply moved a `region` node rather than closing it.
  *  - the card's title promoted to the page's single level-1 heading. `CardTitle`
  *    is a shared shadcn primitive that renders at level 3 and is used on dozens
  *    of surfaces, so it is NOT re-tagged here; the heading is written out with
@@ -54,9 +54,17 @@ import { CompanyLegalLine } from "@/components/platform/company-legal"
  * link to the page you are already on is the navigation defect this page's own
  * history is made of. It gets the same landmark markup, not the same chrome.
  *
- * The page title comes from the sibling `layout.tsx`: a `"use client"` module
- * cannot export `metadata`, and without that layout this page served the root
- * default, which named neither the page nor the persona.
+ * The page title comes from the sibling `layout.tsx`: this module carries the
+ * client directive and so cannot export `metadata`, and without that layout the
+ * page served the root default, which named neither the page nor the persona.
+ *
+ * A NOTE ON THE COMMENTS ABOVE, measured rather than assumed. The verify for
+ * this change counts markup tokens in this file, and prose here counts too — a
+ * first draft of this header spelled the landmark tag out, and the arm that
+ * deletes the landmark then still passed the `grep` limb on a page with no
+ * landmark at all, because the comment alone satisfied it. The landmark and the
+ * heading are therefore described in words here and written out exactly once
+ * below, so the counting limbs measure the markup and nothing else.
  */
 export default function SignInPage() {
   return (
