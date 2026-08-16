@@ -569,6 +569,27 @@ test.describe("published policy set — metadata, reachability and contact", () 
     canonical: string
   }
 
+  /**
+   * Read an attribute, treating "the tag is not there" as the empty string.
+   *
+   * THE COUNT CHECK IS NOT DEFENSIVE PADDING — WITHOUT IT THIS TEST CANNOT
+   * REPORT ITS OWN DEFECT. `locator.getAttribute()` WAITS for a match, so on a
+   * page whose `<meta name="description">` is absent it blocks for the full
+   * 60s test timeout and the run fails with "locator.getAttribute: Test timeout
+   * exceeded" — which names neither the route nor the missing tag. Measured, by
+   * blanking a page's description and watching exactly that happen: the test
+   * did go red, but for a reason no maintainer could act on, and the explicit
+   * non-emptiness assertion below never ran at all.
+   *
+   * Next omits the tag entirely for an empty description rather than emitting
+   * an empty one, so "absent" is the shape this failure actually takes.
+   */
+  async function attr(page: Page, selector: string, name: string): Promise<string> {
+    const loc = page.locator(selector)
+    if ((await loc.count()) === 0) return ""
+    return ((await loc.first().getAttribute(name)) ?? "").trim()
+  }
+
   test("every legal route returns 200 with a unique, non-default title, a unique description and its own canonical", async ({
     page,
   }) => {
@@ -583,15 +604,8 @@ test.describe("published policy set — metadata, reachability and contact", () 
       seen.push({
         route,
         title: (await page.title()).trim(),
-        description: (
-          (await page
-            .locator('meta[name="description"]')
-            .first()
-            .getAttribute("content")) ?? ""
-        ).trim(),
-        canonical: (
-          (await page.locator('link[rel="canonical"]').first().getAttribute("href")) ?? ""
-        ).trim(),
+        description: await attr(page, 'meta[name="description"]', "content"),
+        canonical: await attr(page, 'link[rel="canonical"]', "href"),
       })
     }
 
