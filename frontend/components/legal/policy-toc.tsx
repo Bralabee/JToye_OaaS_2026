@@ -130,9 +130,29 @@ export function PolicyToc({
         <ul className="mt-2 space-y-1 border-l border-oxblood/15 lg:mt-3">
           {sections.map((section) => (
             <li key={section.id}>
+              {/*
+                amber-800, NOT amber-700, and the difference is measured rather
+                than aesthetic (plan 31-18's final audit).
+
+                Below `lg` this nav sits on the `bg-cream-100/60` panel above,
+                which composites to #f7efe7. `text-amber-700` (#b45309) on that
+                is **4.41:1** — short of the 4.5:1 WCAG 1.4.3 minimum for 14px
+                normal-weight text, on all four policy documents, x5..x9 nodes
+                each. It PASSED on desktop, where `lg:bg-transparent` drops the
+                panel and the links sit on the page background instead. A
+                desktop-only scan reports this surface clean, which is exactly
+                why the gate runs both viewports.
+
+                amber-800 (#92400e) measures 6.23:1 on the same panel. Fixed
+                here rather than published as an exception: it is a one-token
+                change inside this component, it moves NO design token in
+                globals.css, and `contrast-tokens.test.ts` stays 8/8 untouched.
+                The hover step moves to amber-900 so the hover state stays a
+                visible change rather than becoming a no-op.
+              */}
               <a
                 href={`#${section.id}`}
-                className="flex min-h-11 items-center border-l-2 border-transparent px-3 text-sm leading-snug text-amber-700 hover:border-amber-700 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex min-h-11 items-center border-l-2 border-transparent px-3 text-sm leading-snug text-amber-800 hover:border-amber-700 hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 {section.label}
               </a>
