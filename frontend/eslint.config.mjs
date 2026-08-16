@@ -98,6 +98,18 @@ const config = [
       "jsx-a11y/label-has-associated-control": ["error", { depth: 3 }],
       "jsx-a11y/media-has-caption": "error",
       "jsx-a11y/mouse-events-have-key-events": "error",
+      // `jsx-a11y/control-has-associated-label` is DELIBERATELY NOT ENABLED,
+      // and the reason is measured rather than assumed. It is the only rule in
+      // the plugin aimed at "this control's sole accessible name is its
+      // placeholder", so it was tried with `input`/`textarea` removed from
+      // `ignoreElements` — the shape that would make that defect red the build.
+      // Result: 30 errors, and among them `app/shop/shop-discovery-client.tsx:390`,
+      // an input that IS correctly named by `<label htmlFor="shop-search">` eight
+      // lines above it. The rule does not follow an htmlFor/id association across
+      // siblings, so it cannot tell a correctly labelled control from an
+      // unlabelled one. Enabling it would not be a stricter gate, it would be a
+      // gate that is wrong 30 times; the honest record is here rather than an
+      // `off` entry that reads like an oversight.
       "jsx-a11y/no-access-key": "error",
       "jsx-a11y/no-autofocus": "error",
       "jsx-a11y/no-distracting-elements": "error",
