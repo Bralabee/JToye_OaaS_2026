@@ -28,6 +28,26 @@ public class OrderDto {
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 
+    // ------------------------------------------------------------------
+    // LGL-03 / V63 — the order-level allergen aggregate is deliberately NOT on this DTO. It is
+    // on OrderDetailDto, which is what both declared consumers read: the kitchen board
+    // (OrderService.getKitchenBoard, which already batch-fetches the lines) and
+    // GET /orders/{id}/detail. See OrderDetailDto for the fields and their null semantics.
+    //
+    // WHY NOT HERE, MEASURED RATHER THAN ASSUMED. OrderDto is the LIST view and carries no items
+    // by design. The aggregate is derived from the lines, so populating it here means loading the
+    // very collection this DTO exists to avoid. Probed on Testcontainers Postgres with Hibernate
+    // statistics: after orderRepository.findAll(PageRequest), the items collection is
+    // NOT initialised, and touching it for 7 orders cost 7 additional prepared statements —
+    // exactly one SELECT per row, on four paged endpoints. That is the same 1+N shape #564 was
+    // written to remove from the kitchen board.
+    //
+    // The "just emit null on the list path" escape is worse, not cheaper: null on these fields
+    // means NOT RECORDED, so a list that simply did not load the lines would be indistinguishable
+    // from an order whose allergens were never recorded — precisely the collapse this plan
+    // forbids. Absent is honest; a fabricated null is not.
+    // ------------------------------------------------------------------
+
     // Getters and Setters
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }

@@ -15,6 +15,9 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import uk.jtoye.core.order.dto.OrderAllergenFlagDto;
+import uk.jtoye.core.order.dto.OrderDetailDto;
+import uk.jtoye.core.order.dto.OrderItemDto;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storefront.PublicStorefrontService;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
@@ -22,6 +25,7 @@ import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -84,6 +88,7 @@ class OrderAllergenSnapshotIntegrationTest {
     }
 
     @Autowired PublicStorefrontService publicStorefrontService;
+    @Autowired OrderService orderService;
     @Autowired JdbcTemplate jdbcTemplate;
 
     /** Dedicated tenant so this class cannot collide with the phase-13/14/85 slug + SKU fixtures. */
@@ -258,21 +263,123 @@ class OrderAllergenSnapshotIntegrationTest {
                 .isEqualTo(MILK);
     }
 
+    // ------------------------------------------------------------------
+    // 7. The DTO carries the aggregate, the flags and the per-item mask
+    // ------------------------------------------------------------------
+    @Test
+    void theOrderDtoCarriesTheAggregateTheFlagsAndThePerItemMask() {
+        // Two lines: one declaring {Gluten}, one declaring nothing but emphasising **milk**.
+        UUID declaring = seedProduct("SKU-3110-DTO-A", GLUTEN, "wheat flour, water");
+        UUID misdeclaring = seedProduct("SKU-3110-DTO-B", 0, "flour, **milk**, sugar");
+
+        UUID orderId = placeGuestOrder(declaring, misdeclaring);
+        OrderDetailDto dto = loadDetail(orderId);
+
+        assertThat(dto.getAllergenMask())
+                .as("the order-level aggregate is the UNION of the lines' declared masks")
+                .isEqualTo(GLUTEN);
+        assertThat(dto.getAllergenNames())
+                .as("names are resolved server-side so the checkout and the KDS cannot disagree on wording")
+                .containsExactly("Gluten");
+
+        // The advisory flag is carried BESIDE the declaration, never inside it. Reconciliation is
+        // per line against that line's OWN mask, so the correctly-declaring product does not
+        // excuse the mis-declaring one.
+        assertThat(dto.getAllergenFlags()).hasSize(1);
+        OrderAllergenFlagDto flag = dto.getAllergenFlags().get(0);
+        assertThat(flag.productName()).isEqualTo("Product SKU-3110-DTO-B");
+        assertThat(flag.allergenName()).isEqualTo("Milk");
+        assertThat(dto.getAllergenNames())
+                .as("THE DANGEROUS DIRECTION: a flag never widens the declared set")
+                .doesNotContain("Milk");
+
+        // D-04: a single aggregate tells kitchen staff nothing actionable — the per-item mask is
+        // what lets the badge say WHICH item carries the allergen.
+        assertThat(dto.getItems()).hasSize(2);
+        OrderItemDto declaringLine = dto.getItems().stream()
+                .filter(i -> "Product SKU-3110-DTO-A".equals(i.productName())).findFirst().orElseThrow();
+        OrderItemDto misdeclaringLine = dto.getItems().stream()
+                .filter(i -> "Product SKU-3110-DTO-B".equals(i.productName())).findFirst().orElseThrow();
+
+        assertThat(declaringLine.allergenMask()).isEqualTo(GLUTEN);
+        assertThat(declaringLine.allergenNames()).containsExactly("Gluten");
+        assertThat(misdeclaringLine.allergenMask()).isEqualTo(0);
+        assertThat(misdeclaringLine.allergenNames())
+                .as("nothing declared is an EMPTY list, not null — the badge renders an honest empty state")
+                .isNotNull()
+                .isEmpty();
+    }
+
+    // ------------------------------------------------------------------
+    // 8. Two fixtures, because "not recorded" and "nothing declared" must not serialise alike
+    // ------------------------------------------------------------------
+    @Test
+    void notRecordedIsDistinguishableFromNothingDeclaredOnTheDto() {
+        // Fixture A — a live order whose vendor declared none of the 14.
+        UUID nothingDeclared = seedProduct("SKU-3110-NONE", 0, "water, salt");
+        OrderDetailDto declaredNone = loadDetail(placeGuestOrder(nothingDeclared));
+
+        // Fixture B — the same order shape, with its snapshot cleared to simulate a pre-V63 row.
+        UUID historicProduct = seedProduct("SKU-3110-OLD", GLUTEN, "wheat flour");
+        UUID historicOrderId = placeGuestOrder(historicProduct);
+        int cleared = jdbcTemplate.update(
+                "UPDATE order_items SET allergen_mask = NULL, allergen_flag_mask = NULL WHERE order_id = ?",
+                historicOrderId);
+        assertThat(cleared).as("the simulated pre-V63 row must actually have been written").isEqualTo(1);
+        OrderDetailDto notRecorded = loadDetail(historicOrderId);
+
+        assertThat(declaredNone.getAllergenMask())
+                .as("'the vendor declared none of the 14' is the VALUE 0")
+                .isEqualTo(0);
+        assertThat(declaredNone.getAllergenNames()).isNotNull().isEmpty();
+        assertThat(declaredNone.getAllergenFlags()).isNotNull().isEmpty();
+
+        assertThat(notRecorded.getAllergenMask())
+                .as("'we have no record of what this customer was shown' is null, and must NOT read as 0")
+                .isNull();
+        assertThat(notRecorded.getAllergenNames()).isNull();
+        assertThat(notRecorded.getAllergenFlags()).isNull();
+
+        assertThat(notRecorded.getItems().get(0).allergenMask()).isNull();
+        assertThat(notRecorded.getItems().get(0).allergenNames()).isNull();
+
+        // The pair, stated as one comparison: if a future change collapsed the two states, these
+        // two fixtures would serialise identically and the checkout could not choose between the
+        // honest empty-state copy and saying nothing.
+        assertThat(notRecorded.getAllergenMask())
+                .as("the two states are different values, not two spellings of the same one")
+                .isNotEqualTo(declaredNone.getAllergenMask());
+    }
+
     // ==================================================================
     // Helpers
     // ==================================================================
 
-    private UUID placeGuestOrder(UUID productId) {
-        GuestOrderItemRequest item = new GuestOrderItemRequest();
-        item.setProductId(productId);
-        item.setQuantity(1);
+    /** Loads the DTO through the real service + MapStruct mapper, not by hand-building it. */
+    private OrderDetailDto loadDetail(UUID orderId) {
+        TenantContext.set(TENANT_ID);
+        try {
+            return orderService.getOrderDetailById(orderId).orElseThrow();
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private UUID placeGuestOrder(UUID... productIds) {
+        List<GuestOrderItemRequest> items = new ArrayList<>();
+        for (UUID productId : productIds) {
+            GuestOrderItemRequest item = new GuestOrderItemRequest();
+            item.setProductId(productId);
+            item.setQuantity(1);
+            items.add(item);
+        }
 
         GuestOrderRequest request = new GuestOrderRequest();
         request.setCustomerName("Guest Buyer");
         request.setCustomerEmail("guest-3110@example.com");
         request.setCustomerPhone("+447700900310");
         request.setIdempotencyKey("p3110-" + UUID.randomUUID());
-        request.setItems(List.of(item));
+        request.setItems(items);
         // COLLECTION: this class is fulfilment-agnostic and COLLECTION needs no UK address.
         request.setFulfilmentType("COLLECTION");
 
