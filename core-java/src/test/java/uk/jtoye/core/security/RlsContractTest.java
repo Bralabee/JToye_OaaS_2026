@@ -130,7 +130,35 @@ class RlsContractTest {
             // every caller and silently disable locality platform-wide while every
             // test stayed green. Note this is exempted BY ADDITION, per the standing
             // instruction above; the schema-walk assertion itself is untouched.
-            "postcode_centroid"
+            "postcode_centroid",
+
+            // V62 (Phase 31 / plan 31-05, D-16/D-17): the platform-level UK-GDPR
+            // data-subject-request intake queue. It holds a request type, a few
+            // timestamps, an opaque acknowledgement body and a one-way SHA-256 digest
+            // of the subject's address — no readable personal data and, critically, no
+            // tenant_id, because it CANNOT have one: an anonymous data subject lodges
+            // the request from the public internet before any tenant is known (no JWT,
+            // no TenantContext, no app.current_tenant_id on the connection), and the
+            // whole purpose of the row is to be actioned across EVERY tenant. Articles
+            // 15 and 17 give the subject one right against the controller, not one per
+            // vendor they happened to buy from; splitting the row per tenant at intake
+            // would require the intake to already know the answer the background sweep
+            // exists to discover.
+            //
+            // Adding RLS here would not be "safer" — it would silently DISABLE the DSAR
+            // path. With no tenant_id there is no predicate to write, so a FORCE'd policy
+            // would return zero rows to the very worker (plan 31-09) that must read them:
+            // the intake would keep returning 202, the queue would keep filling, nothing
+            // would ever be actioned, and every test would stay green because a dead table
+            // is indistinguishable from an empty one — the exact liveness failure mode
+            // everyRlsEnabledTableHasAtLeastOnePolicy below was added to catch. The tenant
+            // wall is not weakened by this: the reach that touches tenant data belongs to
+            // the background worker, which gets it by iterating tenants and pinning the
+            // GUC one at a time, under FORCE RLS exactly like every other caller.
+            //
+            // Exempted BY ADDITION, per the standing instruction above; the schema-walk
+            // assertion itself is untouched.
+            "dsar_request"
     );
 
     /**
@@ -301,6 +329,64 @@ class RlsContractTest {
                     .isNotNull()
                     .isEqualTo(true);
         }
+    }
+
+    /**
+     * LGL-01 (Phase 31 / plan 31-05, V62) sentinel: {@code dsar_request}'s EXEMPT_TABLES
+     * justification says the table "CANNOT have" a {@code tenant_id}. This makes that claim
+     * EXECUTABLE, and it exists because the obvious break arm cannot fail.
+     *
+     * <p><strong>The measurement that forced this method.</strong> The exemption is keyed by
+     * TABLE NAME, so adding a {@code tenant_id} column to V62 leaves
+     * {@link #everyPublicTableHasRlsAndForce} green — the table is skipped before any column is
+     * looked at. Run as a deliberate break arm, that is exactly what happened: the sweep passed
+     * with a tenant-dimensioned table sitting inside an exemption whose written reason had just
+     * become false. A justification no test can contradict is decoration, so the criterion is
+     * replaced here with a stronger one rather than reported as satisfied.
+     *
+     * <p><strong>Why the premise matters and is not pedantry.</strong> If a future edit gives this
+     * table a tenant dimension, the exemption stops being "there is no predicate to write" and
+     * starts being "there is a tenant-scoped table with RLS switched off" — the precise failure
+     * this whole class exists to catch, wearing an exemption it inherited from a different design.
+     * The right response to that edit is to REMOVE the exemption and add the policy, not to update
+     * the comment.
+     *
+     * <p><strong>Non-vacuity.</strong> "No column named tenant_id" is also satisfied by a table
+     * that does not exist, by a mistyped catalog name, and by a namespace filter that matches
+     * nothing. So the column count is asserted {@code > 0} FIRST: the walk must be shown able to
+     * see this table's columns before its failure to see one of them means anything.
+     */
+    @Test
+    void dsarRequestHasNoTenantDimension() {
+        List<String> columns = jdbc.queryForList(
+                "SELECT a.attname " +
+                        "FROM pg_attribute a " +
+                        "JOIN pg_class c ON c.oid = a.attrelid " +
+                        "WHERE c.relname = 'dsar_request' " +
+                        "  AND c.relkind = 'r' " +
+                        "  AND c.relnamespace = 'public'::regnamespace " +
+                        "  AND a.attnum > 0 " +
+                        "  AND NOT a.attisdropped " +
+                        "ORDER BY a.attnum",
+                String.class);
+
+        assertThat(columns)
+                .as("NON-VACUITY CONTROL: the catalog walk found NO columns on public.dsar_request, " +
+                        "so the 'no tenant_id' result below would be evidence about this QUERY, not " +
+                        "about the table — a missing table, a mistyped catalog name or a namespace " +
+                        "filter that matches nothing all satisfy it. V62 must have applied.")
+                .isNotEmpty();
+
+        assertThat(columns)
+                .as("public.dsar_request has grown a tenant dimension, which makes its " +
+                        "RlsContractTest.EXEMPT_TABLES justification FALSE. That justification is " +
+                        "'with no tenant_id there is no predicate to write, so a FORCE'd policy would " +
+                        "return zero rows to the worker that must read them'. Once the column exists " +
+                        "the predicate exists, and an exemption is no longer defensible: REMOVE the " +
+                        "dsar_request entry from EXEMPT_TABLES and add ENABLE + FORCE ROW LEVEL " +
+                        "SECURITY plus a tenant policy through the safe current_tenant_id() helper. " +
+                        "Do NOT edit the comment to match. Columns seen: %s", columns)
+                .doesNotContain("tenant_id");
     }
 
     /**
