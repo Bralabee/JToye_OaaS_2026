@@ -252,6 +252,55 @@ public class GdprService {
     }
 
     /**
+     * Erase every customer in ONE tenant whose address matches a DSAR subject digest
+     * (Phase 31, plan 31-09 — {@link DsarFanoutWorker}'s per-tenant unit of work).
+     *
+     * <p><b>This is a lookup, not a second erasure routine.</b> The erasure itself is
+     * {@link #eraseCustomerData(UUID)} above, unchanged and unbypassed — which matters because
+     * V42's tenant-scoped UPDATE policies on {@code orders_aud}/{@code customers_aud} were written
+     * for exactly that routine, and a parallel implementation would diverge from the policies that
+     * permit its audit scrub. All this method adds is the step {@code eraseCustomerData} cannot do:
+     * it is keyed by {@code customerId}, and a data subject arrives as a hash.
+     *
+     * <p><b>Why a scan rather than an indexed lookup.</b> The plaintext address is never stored on
+     * {@code dsar_request} (V62), so there is nothing to pass to {@code findByEmail} — matching is
+     * digest to digest. The comparison is performed in Java through {@link DsarSubjectDigest}, the
+     * single implementation the public intake also uses, so agreement between the two sides is
+     * structural rather than a written rule two files can drift away from. The alternative — a
+     * server-side {@code encode(sha256(convert_to(lower(btrim(email)), 'UTF8')), 'hex')} — was
+     * rejected on measurement, not taste: {@code btrim} and {@code String.trim()} strip different
+     * character sets, and {@code lower()} follows the database collation while
+     * {@code toLowerCase(Locale.ROOT)} does not. A divergence there matches NOTHING and reports
+     * success, which is the failure mode the whole DSAR path is built to avoid.
+     *
+     * <p><b>Tenant scoping.</b> The projection carries an explicit {@code tenant_id} predicate AND
+     * runs under FORCE row-level security with the GUC pinned by the caller. The fan-out's reach
+     * comes from iterating tenants, never from a query that ignores the wall.
+     *
+     * @param tenantId           the tenant currently pinned by the caller
+     * @param subjectEmailSha256 the subject digest from {@code dsar_request}
+     * @return how many customers were erased in this tenant — usually 0 or 1, since
+     *         {@code uq_customers_tenant_email} makes an address unique per tenant
+     */
+    public int eraseSubjectByDigest(UUID tenantId, String subjectEmailSha256) {
+        int erased = 0;
+        for (Object[] row : customerRepository.findIdAndEmailByTenantId(tenantId)) {
+            String email = (String) row[1];
+            if (email == null || !DsarSubjectDigest.of(email).equals(subjectEmailSha256)) {
+                continue;
+            }
+            eraseCustomerData((UUID) row[0]);
+            erased++;
+        }
+        if (erased > 0) {
+            // The subject digest is one-way and the tenant id is not personal data; neither the
+            // address nor any name is logged.
+            log.info("DSAR fan-out erased {} customer(s) for tenant {}", erased, tenantId);
+        }
+        return erased;
+    }
+
+    /**
      * Resolve the acting principal for the durable record; falls back to "system"
      * when no authentication is present (e.g. an internal/batch invocation).
      */

@@ -1,15 +1,15 @@
 {
-  "java_test_methods": 1633,
-  "java_test_files": 264,
-  "java_controllers": 23,
-  "schema_version": 61,
+  "java_test_methods": 1713,
+  "java_test_files": 270,
+  "java_controllers": 25,
+  "schema_version": 63,
   "go_test_funcs": 81,
   "go_test_files": 11,
-  "jest_blocks": 944,
-  "jest_files": 99,
-  "playwright_blocks": 101,
-  "playwright_specs": 20,
+  "jest_blocks": 1230,
+  "jest_files": 120,
+  "playwright_blocks": 113,
+  "playwright_specs": 22,
   "mcp_test_blocks": 48,
   "mcp_test_files": 8,
-  "total_logical_invocations": 2807
+  "total_logical_invocations": 3185
 }

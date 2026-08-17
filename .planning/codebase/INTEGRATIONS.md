@@ -6,7 +6,7 @@
 
 **Payment Processing:**
 - Stripe — Online card payments + COD fallback
-  - SDK: `com.stripe:stripe-java:33.2.0` (`core-java/build.gradle.kts:87`)
+  - SDK: `com.stripe:stripe-java:33.2.0` (`core-java/build.gradle.kts:103`)
   - Frontend: `@stripe/react-stripe-js` 6.8.0, `@stripe/stripe-js` 9.12.0 (`frontend/package.json:27-28`)
   - Implementation: `core-java/src/main/java/uk/jtoye/core/payment/` (PaymentService, webhook controller)
   - Auth: `STRIPE_API_KEY` (sk_test_/sk_live_), `STRIPE_WEBHOOK_SECRET` (whsec_), `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
@@ -19,7 +19,7 @@
   - Endpoint: `OLLAMA_URL` (default `http://ollama:11434`)
   - Model: `OLLAMA_MODEL` (default `gemma3:12b`, pulled by `ollama-init` sidecar)
   - Implementation: `core-java/src/main/java/uk/jtoye/core/ai/` via Spring `WebClient` (WebFlux)
-  - GPU: NVIDIA device reservation in `driver: nvidia` in `docker-compose.full-stack.yml:647-651`
+  - GPU: NVIDIA device reservation in `driver: nvidia` in `docker-compose.full-stack.yml:663-667`
   - Failure mode: Resilience4j circuit breaker (50% threshold, 60s wait, max 2 retries)
   - Fallback: Switch to Anthropic Claude via `AI_PROVIDER=anthropic`
 - Anthropic Claude — Cloud vision alternative
@@ -45,7 +45,7 @@
   - Credentials: `S3_ACCESS_KEY`, `S3_SECRET_KEY` (default `minioadmin`/`minioadmin`)
   - Bucket: `S3_BUCKET` (`jtoye-images`), anonymous GetObject-only policy (#626) applied by `minio-init` sidecar (`docker-compose.full-stack.yml:554-570`)
   - Public URL: `S3_PUBLIC_URL`
-  - SDK: AWS SDK v2 BOM → `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:60-61`). Version is claimed once, in STACK.md, which the version gate checks.
+  - SDK: AWS SDK v2 BOM → `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:76-77`). Version is claimed once, in STACK.md, which the version gate checks.
   - Implementation: `core-java/src/main/java/uk/jtoye/core/storage/`
   - Constraints: max 5MB, allowed types `image/jpeg|png|webp|gif`
 
@@ -68,7 +68,7 @@
   - `rabbitmq_stomp` — **new in v2.1**, port 61613, backs Spring STOMP broker relay
 - Ports: 5672 (AMQP), 15672 (mgmt UI), 61613 (STOMP)
 - Auth: `RABBITMQ_USER` / `RABBITMQ_PASSWORD` (also reused as STOMP client/system login)
-- Java client: `spring-boot-starter-amqp` (`core-java/build.gradle.kts:47`)
+- Java client: `spring-boot-starter-amqp` (`core-java/build.gradle.kts:63`)
 - Use cases:
   - Order event publishing (`OrderEventPublisher`)
   - Email/notification async dispatch
@@ -81,7 +81,7 @@
   - `in-memory` (default) — SimpleBroker for single-replica dev
   - `relay` — `StompBrokerRelay` pointing at RabbitMQ port 61613 (required for horizontal scaling so all core-java replicas share KDS broadcasts)
 - JWT auth at STOMP CONNECT frame via `TenantChannelInterceptor` + `JwtHandshakeInterceptor`
-- Browser client: `@stomp/stompjs` 7.3.0 (`frontend/package.json:26`)
+- Browser client: `@stomp/stompjs` 7.3.0 (`frontend/package.json:27`)
 
 ## Authentication & Identity
 
@@ -94,7 +94,7 @@
   - Health/metrics exposed (`KC_HEALTH_ENABLED=true`, `KC_METRICS_ENABLED=true`)
 
 **Backend (Spring Security):**
-- `spring-boot-starter-oauth2-resource-server` (`core-java/build.gradle.kts:36`)
+- `spring-boot-starter-oauth2-resource-server` (`core-java/build.gradle.kts:52`)
 - Config: `core-java/src/main/java/uk/jtoye/core/security/` (`SecurityConfig`, `JwtTenantFilter`, `TenantContext`)
 - Token validation: JWT signature + issuer check against Keycloak JWKS
 - Tenant extraction from JWT claim → `TenantContext` ThreadLocal → RLS `set_config` per request
@@ -127,7 +127,7 @@
 - Toggles: `NOTIFICATION_EMAIL_ENABLED`, tracking pixel via `NOTIFICATION_EMAIL_TRACKING_BASE_URL`, sender `NOTIFICATION_EMAIL_FROM`
 
 **Mailhog (dev SMTP sink):**
-- `mailhog/mailhog:v1.0.1` (`docker-compose.full-stack.yml:673`)
+- `mailhog/mailhog:v1.0.1` (`docker-compose.full-stack.yml:689`)
 - SMTP at 1025, Web UI at 8025, no auth, no TLS — captures all outbound mail
 
 **Alertmanager email routing (new in v2.1 / phase 9):**
@@ -172,7 +172,7 @@
 - `/actuator/info`
 
 **Distributed Tracing:**
-- Micrometer Tracing with Brave bridge → Zipkin reporter (`micrometer-tracing-bridge-brave` in `core-java/build.gradle.kts:80`)
+- Micrometer Tracing with Brave bridge → Zipkin reporter (`micrometer-tracing-bridge-brave` in `core-java/build.gradle.kts:96`)
 - Endpoint: `ZIPKIN_ENDPOINT` (default `http://localhost:9411/api/v2/spans`)
 - Sampling: `TRACING_PROBABILITY=0.1`
 - Log correlation: `%X{traceId}`, `%X{spanId}` MDC fields
@@ -265,7 +265,7 @@
 - Notifications: `NOTIFICATION_EMAIL_ENABLED`, `NOTIFICATION_EMAIL_FROM`, `NOTIFICATION_EMAIL_TRACKING_BASE_URL`
 - Observability: `LOG_LEVEL`, `SQL_LOG_LEVEL`, `SECURITY_LOG_LEVEL`, `TRACING_PROBABILITY`, `ZIPKIN_ENDPOINT`
 - Rate limiting: `RATE_LIMIT_ENABLED`, `RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_BURST`
-- Cleanup jobs: `CLEANUP_STALE_DRAFT_HOURS`, `CLEANUP_ORPHANED_IMAGE_DAYS`
+- Cleanup jobs: `CLEANUP_STALE_DRAFT_HOURS`
 
 **Secrets Location:**
 - `.env` (repo root, gitignored)

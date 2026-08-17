@@ -3,6 +3,7 @@ import { Work_Sans } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { MotionProvider } from "@/components/motion-provider";
+import { CookieNotice } from "@/components/public/cookie-notice";
 
 // Work Sans — the parent brand typeface (jtoyedigital.co.uk). App-wide for brand
 // coherence; a clean geometric sans, near drop-in for the prior Inter.
@@ -40,6 +41,11 @@ export default function RootLayout({
       <body className={workSans.className}>
         <MotionProvider>
           <Providers>{children}</Providers>
+          {/* Root layout, not PublicShell: /shop/[slug] does not use the shell
+              and still needs the notice. Inside MotionProvider because the
+              notice uses `m.` (LazyMotion strict), outside Providers because it
+              needs no session or query context. */}
+          <CookieNotice />
         </MotionProvider>
       </body>
     </html>

@@ -2702,7 +2702,11 @@ for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   esac
   bash "$g" "$@" >/dev/null 2>&1; rc=$?; printf '%-34s rc=%s\n' "$(basename "$g" .sh)" "$rc"
 done
-# EXPECT 36 x rc=0. A VOID (2) is not a pass. (34 -> 36: phase 28 added
+# EXPECT 37 x rc=0. A VOID (2) is not a pass. (36 -> 37: phase 31 plan 31-06 added
+#   check-retention-enforcement.sh, asserting the tree against
+#   docs/retention-manifest.json; the manifest-to-prose half needed no new script
+#   and rides on the existing claims.manifest engine instead.
+#   34 -> 36: phase 28 added
 #   check-media-content-types.sh (plan 28-03, media Content-Type allowlist) and
 #   check-pentest-triage.sh (plan 28-05, the eleven-finding disposition record).
 #   32 -> 34: plan 33-05 added

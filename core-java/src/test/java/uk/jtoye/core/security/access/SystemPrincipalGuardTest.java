@@ -295,6 +295,93 @@ class SystemPrincipalGuardTest {
                 .doesNotThrowAnyException();
     }
 
+    // ---- Arm 4: the D-17 DSAR boundary — a request path that must NEVER declare -------
+
+    /**
+     * Phase 31 (LGL-01 / D-17, threat T-31-05-03): the public DSAR intake path never declares
+     * system authority. {@code ShopAccessService}'s rule — a request thread never enters
+     * {@link SystemPrincipal#asSystem}; only background entry points do — is what reconciles a
+     * single cross-tenant data-subject-request desk with a project that has twice refused a
+     * cross-tenant operator identity. No human ever holds that reach; only plan 31-09's scheduled
+     * worker does. This makes the rule executable for the one path where breaking it would be
+     * both tempting and catastrophic.
+     *
+     * <p><b>Why this arm is a SOURCE scan, and why that is not a retreat from behaviour.</b> The
+     * runtime probe is genuinely weak here, and the reason is in {@code SystemPrincipal}'s own
+     * contract: {@code asSystem} RESTORES the prior value in a {@code finally}, so once the call
+     * returns the thread looks byte-for-byte identical whether or not it declared. Any assertion
+     * taken before or after the intake therefore passes in both worlds — it is incapable of
+     * failing, which is the shape this project refuses to count as evidence. Observing from
+     * inside is possible at exactly one point (a spy at the service boundary, which
+     * {@code DsarIntakeIntegrationTest.theIntakeRequestThreadNeverDeclaresSystemAuthority} does
+     * hold, driving a real HTTP request), but a declaration added INSIDE the service body would
+     * slip past it. The scan has no such blind spot: it fails on a declaration anywhere on the
+     * intake path, which is the property D-17 actually asks for. The two arms are complements —
+     * runtime for "the live path does not declare", source for "no part of it can".
+     *
+     * <p><b>Non-vacuity.</b> A source scan that reads no files is trivially satisfied, and a
+     * renamed or moved class would produce exactly that. So each file is asserted to exist and to
+     * be non-empty BEFORE its contents are judged, and the scan is asserted to have covered every
+     * expected file — "found nothing" is never "found nothing wrong".
+     */
+    @Test
+    void theDsarIntakePathNeverDeclaresSystemAuthority() throws java.io.IOException {
+        java.nio.file.Path root = java.nio.file.Path.of("src", "main", "java");
+        if (!java.nio.file.Files.isDirectory(root)) {
+            root = java.nio.file.Path.of("core-java", "src", "main", "java");
+        }
+        assertThat(java.nio.file.Files.isDirectory(root))
+                .as("cannot locate the core-java main source root from %s — the scan below would "
+                        + "read nothing and pass vacuously", java.nio.file.Path.of("").toAbsolutePath())
+                .isTrue();
+
+        // Plan 31-09 EXTENDS this list rather than leaving its new files uncovered. The
+        // verification endpoint is the second public request surface on the DSAR path, and it is
+        // the one that decides whether a request becomes actionable — the most tempting place in
+        // the phase to reach for a declaration. The fan-out worker is deliberately NOT here: it is
+        // the background entry point that legitimately declares, and asserting its ABSENCE would
+        // invert the rule. The plan's own <verify> block greps that file for the wrap's PRESENCE.
+        List<String> intakePath = List.of(
+                "uk/jtoye/core/gdpr/DsarIntakeController.java",
+                "uk/jtoye/core/gdpr/DsarIntakeService.java",
+                "uk/jtoye/core/gdpr/DsarIntakeRateLimiter.java",
+                "uk/jtoye/core/gdpr/DsarVerificationController.java",
+                "uk/jtoye/core/gdpr/DsarVerificationService.java",
+                "uk/jtoye/core/gdpr/DsarVerificationMailer.java");
+
+        int scanned = 0;
+        for (String relative : intakePath) {
+            java.nio.file.Path file = root.resolve(relative);
+            assertThat(java.nio.file.Files.isRegularFile(file))
+                    .as("%s is missing. If the DSAR intake moved, update this list — otherwise the "
+                            + "guard silently stops covering the path it was written for.", relative)
+                    .isTrue();
+
+            String source = java.nio.file.Files.readString(file);
+            assertThat(source)
+                    .as("%s is empty, so scanning it proves nothing", relative)
+                    .isNotBlank();
+
+            assertThat(source)
+                    .as("%s declares system authority on the DSAR INTAKE path. That path is a "
+                            + "REQUEST thread, and ShopAccessService records the rule it must obey: "
+                            + "only background entry points declare. D-17 depends on it — the whole "
+                            + "reason one cross-tenant DSAR desk is acceptable is that no human "
+                            + "path ever gains cross-tenant reach; only the scheduled fan-out "
+                            + "worker does, one pinned tenant at a time. If this file genuinely "
+                            + "needs a gated call, that is a design change, not a declaration to "
+                            + "add here.", relative)
+                    .doesNotContain("SystemPrincipal.asSystem");
+            scanned++;
+        }
+
+        assertThat(scanned)
+                .as("NON-VACUITY: the scan covered %d of %d intake files. A zero or partial count "
+                        + "makes the 'no declaration found' result evidence about this loop, not "
+                        + "about the code.", scanned, intakePath.size())
+                .isEqualTo(intakePath.size());
+    }
+
     // ---- helpers ---------------------------------------------------------------------
 
     private UUID seedProduct() {

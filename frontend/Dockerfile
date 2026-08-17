@@ -68,6 +68,21 @@ ENV NEXT_PUBLIC_SUPPORT_URL=${NEXT_PUBLIC_SUPPORT_URL}
 ARG NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS
 ENV NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS}
 
+# Phase 31 (LGL-01): controller contact detail for the published legal pages.
+# NEXT_PUBLIC_* and therefore inlined by `next build` below — without these two
+# lines the compose build.args entries are accepted and then silently discarded,
+# because an arg the Dockerfile never declares is not in the build environment at
+# all. That is the whole reason this value has to be declared in three places and
+# not two; it was measured by deleting one of these lines and rebuilding.
+#
+# Deliberately NOT added to the CR-02 fail-fast gate below: the code degrades
+# honestly when they are absent (resolveControllerContact() omits the block), so a
+# missing address must not be able to stop an image being produced.
+ARG NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE
+ENV NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE}
+ARG NEXT_PUBLIC_DATA_PROTECTION_EMAIL
+ENV NEXT_PUBLIC_DATA_PROTECTION_EMAIL=${NEXT_PUBLIC_DATA_PROTECTION_EMAIL}
+
 # ---------------------------------------------------------------------------
 # CR-02 fail-fast gate. Runs BEFORE `next build`, because once next build has run
 # the empty value is already inlined and no later check can undo it.
@@ -81,6 +96,10 @@ ENV NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_D
 #                       _ONBOARDING_REVIEW_SLA_DAYS  (resolveSupportChannel()
 #                       degrades to plain copy, so absence is a soft misconfig —
 #                       deliberately NOT gated here, per WR-03 of the Phase 21 review)
+#                    -> NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE /
+#                       _DATA_PROTECTION_EMAIL (phase 31 / LGL-01;
+#                       resolveControllerContact() omits the contact block, so the
+#                       same soft-misconfig classification applies)
 #
 # NEXT_PUBLIC_KEYCLOAK_URL is deliberately NOT listed and deliberately has no
 # ARG/ENV line: leaving it absent at build time is what keeps it RUNTIME-resolvable

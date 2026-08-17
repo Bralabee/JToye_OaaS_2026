@@ -434,6 +434,22 @@ services:
         NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-support@olajay.co.uk}
         NEXT_PUBLIC_SUPPORT_URL: ${NEXT_PUBLIC_SUPPORT_URL:-https://help.olajay.co.uk/onboarding}
         NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS: ${NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS:-2}
+        # Phase 31 (LGL-01): controller contact detail for the published legal pages.
+        # They belong HERE under build.args and not under the `environment:` block
+        # further down — NEXT_PUBLIC_* is inlined into the browser bundle by
+        # `next build`, so a runtime value arrives far too late and the page ships
+        # with an empty string baked in.
+        #
+        # The two differ on purpose. The registered office has NO dev default: the
+        # owner declined to publish an address for now, and a plausible-looking fake
+        # on a legal page is worse than an absent one, because the omission is
+        # visible and a fabrication is not. resolveControllerContact() drops the
+        # block while it is empty, so the page stays honest either way.
+        NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE: ${NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE:-}
+        # The data-protection contact DOES get a default, matching the support pair
+        # above: it is a dedicated address rather than the shared support queue,
+        # because a data-subject request carries a one-month statutory clock.
+        NEXT_PUBLIC_DATA_PROTECTION_EMAIL: ${NEXT_PUBLIC_DATA_PROTECTION_EMAIL:-privacy@olajay.co.uk}
     container_name: jtoye-frontend
     restart: unless-stopped
     environment:

@@ -32,7 +32,12 @@ CardHeader.displayName = "CardHeader"
 const CardTitle = React.forwardRef<
   HTMLParagraphElement,
   React.HTMLAttributes<HTMLHeadingElement>
->(({ className, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => (
+  // `children` is destructured and rendered EXPLICITLY rather than arriving via
+  // `{...props}`: `jsx-a11y/heading-has-content` is a static rule and cannot see
+  // through a spread, so a spread-only <h3 /> reads to it as an empty heading.
+  // Identical output, and the rule now genuinely guards every CardTitle call
+  // site instead of being permanently red on the primitive (31-02 / LGL-02).
   <h3
     ref={ref}
     className={cn(
@@ -40,7 +45,9 @@ const CardTitle = React.forwardRef<
       className
     )}
     {...props}
-  />
+  >
+    {children}
+  </h3>
 ))
 CardTitle.displayName = "CardTitle"
 

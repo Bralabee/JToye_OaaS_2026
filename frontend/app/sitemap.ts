@@ -85,6 +85,25 @@ const STATIC_ROUTES: Array<{
   { path: "/for-operators", changeFrequency: "monthly", priority: 0.8 },
   { path: "/business-model-guide", changeFrequency: "monthly", priority: 0.5 },
   { path: "/track", changeFrequency: "monthly", priority: 0.4 },
+  // The published policy set (LGL-01). None of these was here, so a crawler
+  // reaching the sitemap was told about five pages fewer than the site has.
+  //
+  // THEY ARE IN THE SITEMAP AND NOT DISALLOWED, WHICH WAS CHECKED RATHER THAN
+  // ASSUMED: `app/robots.ts`'s DISALLOW list is /api/, /auth/, /dashboard,
+  // /shop/orders, /shop/signin, /shop/auth/, /shop/*/cart, /shop/*/checkout,
+  // /shop/*/orders/, /track and /unsubscribe. No /legal prefix appears in it,
+  // so no robots change is needed. (Note /track IS disallowed while sitting in
+  // this list — a pre-existing inconsistency, left alone: it is not this
+  // plan's file to reconcile and is recorded in the summary instead.)
+  //
+  // Priority sits at 0.3: these pages must be indexable and findable, but they
+  // must not outrank a storefront, which is what the product actually sells.
+  // `yearly` because a policy that changed weekly would be a different problem.
+  { path: "/legal", changeFrequency: "yearly", priority: 0.3 },
+  { path: "/legal/privacy", changeFrequency: "yearly", priority: 0.3 },
+  { path: "/legal/cookies", changeFrequency: "yearly", priority: 0.3 },
+  { path: "/legal/retention", changeFrequency: "yearly", priority: 0.3 },
+  { path: "/legal/accessibility", changeFrequency: "yearly", priority: 0.3 },
 ]
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

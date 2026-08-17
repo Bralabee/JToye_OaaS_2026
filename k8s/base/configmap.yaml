@@ -267,6 +267,7 @@ data:
   # SOURCE: the existing frontend.url key above (overlays patch per env).
   notification.email.tracking-base-url: "https://app.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app.olajay.co.uk"
+  gdpr.dsar.verify-base-url: "https://api.olajay.co.uk/api/v1/public/gdpr/dsar/verify"
 
   # --- D-19 Stripe Connect return origins (production-affecting) -------------
   # Same defect class: a vendor completing Stripe Connect onboarding was

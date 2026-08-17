@@ -51,7 +51,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [x] **Phase 28: Security Triage + the Dev/Prod Boundary** — The 11 findings in the untracked Strix pentest backlog triaged into the tracker or formally accepted; the dev-only tenant-header path no longer advertised or reachable under `prod`; the local stack stops publishing infrastructure to `0.0.0.0` (completed 2026-08-10)
 - [ ] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today
 - [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock
-- [ ] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice
+- [x] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice (completed 2026-08-17)
 - [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
 
 ## Phase Details
@@ -344,7 +344,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 28. Security Triage + the Dev/Prod Boundary | v2.3 | 11/11 | Complete    | 2026-08-10 |
 | 29. Deployable Staging, With Its Own Monitoring | v2.3 | 0/? | Not started | — |
 | 30. The Money Path, Executed | v2.3 | 0/? | Not started | — |
-| 31. Consumer-Safety and Legal Floor | v2.3 | 0/? | Not started | — |
+| 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
@@ -658,6 +658,42 @@ questionnaire.
      `frontend/components/storefront/product-detail-modal.tsx:65` and **never reconciled** against
      the ingredients text in the adjacent column. This is the one item on the list that can injure
      someone. (LGL-03)
+
+**Plans**: 18 plans (5 waves)
+
+Plans:
+**Wave 1** *(7 parallel — no dependencies, no shared files)*
+
+- [x] 31-01-PLAN.md (Wave 1) — Dependency gate: human legitimacy verdict on the four `[ASSUMED]` packages (slopcheck could not run), then install `@axe-core/playwright@4.13.0` + `axe-core@4.13.0` + `jest-axe@10.0.0` + `shadcn add checkbox` at 24px, and a permanent two-arm proof that jest-axe can fail
+- [x] 31-02-PLAN.md (Wave 1, parallel) — Static a11y layers: expand `jsx-a11y` beyond the 6 rules `next/core-web-vitals` enables (zero packages, zero CI minutes, catches the placeholder-as-label class axe accepts) + a Tailwind-literal contrast test recomputed from source + F-A (`text-emerald-600` 3.76:1 → emerald-700) + F-B (two unlabelled `<nav>` landmarks)
+- [x] 31-03-PLAN.md (Wave 1, parallel) — Public shell remediation: skip link in `PublicShell` (A11Y-06, axe cannot see it) + footer column headings `<h3>`→`<h2>` (F-C) + `/auth/signin` gains `main`/`h1`/its own title (F-D — 7 of the 15 measured nodes on one route)
+- [x] 31-04-PLAN.md (Wave 1, parallel) — `AllergenCatalog` (the 14 UK FSA bits, absent from Java since 2026-07-30) + span-text→allergen-bit resolution + `OrderAllergenAggregator` (union + reconciliation flag) + cross-language parity test. Closes the QA council's A11Y-02 CRITICAL
+- [x] 31-05-PLAN.md (Wave 1, parallel) — DSAR intake: V62 `dsar_request` (non-tenant-scoped, exempted BY ADDITION with justification), public rate-limited endpoint returning an **opaque 202** regardless of match, Idempotency-Key, and the guard asserting a request thread never enters `asSystem`
+- [x] 31-06-PLAN.md (Wave 1, parallel) — `docs/retention-manifest.json` + `scripts/check-retention-enforcement.sh` **and its `ci-cd.yaml` step in ONE commit** (the gate-enforcement double bind is rc=1 one way and rc=2 the other) + delete `cleanup.orphaned-image-days`, which has zero consumers
+- [x] 31-07-PLAN.md (Wave 1, parallel) — `docs/legal/article-26-arrangement.md` with a publishable **essence** section (D-18) + dated D-01 extension of the existing `article-9-allergen-basis.md`, extended and never contradicted
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 31-08-PLAN.md (Wave 2, deps 31-01) — `PolicyPage` + `PolicyToc` shell, `/legal` becomes an index, and the **controller contact checkpoint**: `NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE` is set nowhere and Art. 13(1)(a) requires it. Wired through all three build-arg sites with a fallback that omits rather than renders blank
+- [x] 31-09-PLAN.md (Wave 2, deps 31-05) — `DsarFanoutWorker`: the FIRST production `asSystem` caller, cloned from `WebhookRetentionCleanup` — one transaction per tenant, GUC pinned inside each, per-tenant error isolation. Proven under FORCE RLS with the NOSUPERUSER downgrade and a positive control
+- [x] 31-10-PLAN.md (Wave 2, deps 31-04) — **Snapshot, not live join** (resolved open question): V63 `order_items` allergen columns + `order_items_aud` mirrors, write-time capture beside the existing `productName` snapshot, DTO exposure. A post-order vendor edit can no longer rewrite what the customer acknowledged
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 31-11-PLAN.md (Wave 3, deps 31-07/31-08) — `/legal/privacy` (layered notice, Article 26 essence, allergen position consistent with the determination) + `/legal/cookies` (exhaustive over 4 cookie families, 8 localStorage and 2 sessionStorage keys — two of which hold an email address)
+- [x] 31-12-PLAN.md (Wave 3, deps 31-06/31-08) — `/legal/retention` + `RetentionTable` that **fits at 375px** (both existing table treatments in the tree violate the contract) + `claims.manifest` rows — half of D-08 with **no new script**, and M-1 makes deleting a sentence a FAILURE
+- [x] 31-13-PLAN.md (Wave 3, deps 31-02/31-03/31-08) — `/legal/accessibility`: **partial** conformance, dated, every exception carrying a remediation date, driven by a declared constant so a past `nextReviewDue` reds the build
+- [x] 31-14-PLAN.md (Wave 3, deps 31-01/31-10) — Checkout allergen panel + acknowledgement: refuse (do not disable), announce via `role="alert"`, move focus, `aria-invalid` + `aria-describedby` — all three have zero precedent in this codebase. **A11Y-08 fixed here** (8 `autocomplete` tokens, a WCAG AA failure axe cannot see)
+- [x] 31-15-PLAN.md (Wave 3, deps 31-10) — KDS: order-level banner (solid amber-800, never truncated, 20px uppercase for a 0.6–1.5 m glance) + per-item badge (3 then `+N`) + `<ul>` item list + the allergen block on the **monochrome print sheet**, where the warning is actually acted on
+- [x] 31-16-PLAN.md (Wave 3, deps 31-01/31-08) — Cookie notice + **client-only** consent store (resolved: no table, no migration — a pre-identity visitor cannot be keyed in a tenant-scoped RLS table) proven with a **fixture category** in both directions, plus zero-CLS measured against the recorded 0.1793 baseline
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [x] 31-17-PLAN.md (Wave 4, deps 31-11/31-12/31-13/31-16) — Legal column in `PublicFooter` + sitemap + per-PR browser proof that all five routes resolve with unique metadata and are reachable **from a tenant storefront**. `StorefrontLegalStrip` deliberately NOT built: `app/shop/layout.tsx:73` already renders `PublicFooter` over `/shop/**`
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [x] 31-18-PLAN.md (Wave 5, deps 31-02/31-03/31-13/31-14/31-15/31-17) — `e2e/public-a11y.spec.ts` in the `frontend-e2e` job (the only browser job that blocks a PR) with a non-vacuity control before every scan, the modal **opened** and the checkout **seeded**; the break arm run and both directions recorded; statement reconciled against the final audit; `docs/metrics.json` regenerated and the prose in CLAUDE.md/AGENTS.md/README.md corrected
 
 **UI hint**: yes (consent banner, policy pages, a11y remediation across the storefront)
 

@@ -316,9 +316,14 @@ jobs:
           NEXTAUTH_URL: http://localhost:3000
           NEXTAUTH_SECRET: ci-placeholder-not-a-real-secret # gitleaks:allow
 
-      - name: Run public-surface layout conformance (mobile + desktop)
+      # Two gates, one browser start. `public-a11y.spec.ts` is the per-PR WCAG
+      # 2.1 AA scan (LGL-02): this job is the ONLY browser job triggered by both
+      # `push` and `pull_request`, so it is the only place an accessibility
+      # violation can actually block a merge — e2e-nightly.yml is schedule +
+      # workflow_dispatch only and can report after the fact at best.
+      - name: Run public-surface layout + accessibility conformance (mobile + desktop)
         if: github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true'
-        run: npx playwright test e2e/public-layout.spec.ts
+        run: npx playwright test e2e/public-layout.spec.ts e2e/public-a11y.spec.ts
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000
@@ -687,6 +692,34 @@ jobs:
         run: |
           chmod +x ./scripts/check-no-create-extension.sh
           ./scripts/check-no-create-extension.sh
+
+      # Plan 31-06 (LGL-01, D-08). docs/retention-manifest.json is the source of truth for a
+      # LEGALLY OPERATIVE document — the published per-category retention schedule. A period
+      # that quietly diverges from what the system does is a false statement in a document a
+      # regulator or a procurement questionnaire will rely on, not a stale doc.
+      #
+      # The case that motivated it is measured: cleanup.orphaned-image-days sat in
+      # application.yml with a plausible 7-day value and ZERO consumers (two-arm verified
+      # against a live control). So this gate asserts a CONSUMER, not merely a config key —
+      # a gate that only checked "the key exists at the declared value" would have passed on
+      # it. It also owns the ms-to-hours conversion the claim-gate engine cannot do, so 72
+      # hours and 259200000 ms actually compare instead of silently never matching.
+      #
+      # Static by construction: it reads JSON, YAML, Java and TypeScript out of the checkout,
+      # touches no database and makes no network call, so it says the same thing on a hosted
+      # runner as it does locally. It therefore belongs here and must NEVER get a
+      # scripts/gates/gate-enforcement.conf entry — that table's bar is "a hosted runner does
+      # not have the thing this inspects", which is false for a file in the checkout, and
+      # check-gate-enforcement.sh would reject such an entry as a stale exemption anyway.
+      #
+      # This step and the script it names MUST stay in the same commit as each other: an
+      # unwired check-*.sh reds check-gate-enforcement.sh at rc=1, and a conf entry naming a
+      # not-yet-existing script VOIDs it at rc=2 — opposite directions, so no two-commit
+      # ordering is green at both points.
+      - name: Assert every published retention period is actually enforced (31-06 LGL-01)
+        run: |
+          chmod +x ./scripts/check-retention-enforcement.sh
+          ./scripts/check-retention-enforcement.sh
 
       # Plan 28-05 (SEC-02). The eleven findings of the 2026-07-31 grey-box run are
       # dispositioned in docs/security/PENTEST-TRIAGE.md. That document was chosen over

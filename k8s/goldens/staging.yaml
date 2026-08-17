@@ -15,6 +15,7 @@ data:
   cors.allowed-origins: https://app-staging.olajay.co.uk
   db.port: "5432"
   frontend.url: https://app-staging.olajay.co.uk
+  gdpr.dsar.verify-base-url: https://api-staging.olajay.co.uk/api/v1/public/gdpr/dsar/verify
   jwt.expected-audience: core-api
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
   keycloak.admin.enabled: "false"
@@ -484,6 +485,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: notification.unsubscribe.base-url
+              name: app-config
+        - name: DSAR_VERIFY_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              key: gdpr.dsar.verify-base-url
               name: app-config
         - name: NOTIFICATION_UNSUBSCRIBE_SECRET
           valueFrom:
