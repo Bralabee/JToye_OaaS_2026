@@ -20,7 +20,7 @@ and this session proved it again (see "The instrument lied four times").
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
-git log --oneline -3                          # expect 9387b3bf, c911cd02, cabf484e
+git log --oneline -3                          # expect 44cacbaf, 9387b3bf, c911cd02
 
 # Gates. EXPECT 37 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
@@ -34,7 +34,7 @@ done
 
 | | |
 |---|---|
-| `main` HEAD | `9387b3bf` — `chore(deps): bump awssdk bom to 2.51.4… (#638)` |
+| `main` HEAD | `44cacbaf` — `docs(handoff): record the dependabot triage outcome (#639)` |
 | Phase 31 | `42ac6dc3` — `feat(31): consumer safety and the legal floor (#633)`, 18/18 plans |
 | Working tree | clean, no worktrees in use |
 | Schema head | **V63**, matching the live dev database |
@@ -82,13 +82,20 @@ Runtime parity is **FRESH 4/4** and was proven by identity and content after the
 
 - both rebuilt containers hold the **newly-tagged image IDs** (`match=YES`) — that is what
   distinguishes a rebuild from a restart;
-- `httpcore5-5.4.3.jar` read from **inside** `/app/app.jar`, with `5.4.2` absent as a negative
-  control (a filesystem `find` would have returned a misleading 0);
+- **The httpcore5 CVE fix was re-verified in the running jar after the 2026-08-18 core-java
+  rebuild** (awssdk 2.51.4, #638). Read from **inside** `/app/app.jar`: `httpcore5-5.4.3.jar` and
+  `httpcore5-h2-5.4.3.jar` present, exactly one version each, and the VULNERABLE `5.3.6` absent
+  (0 occurrences, with a positive control finding 5.4.3 twice so the zero is about the jar and not
+  about the pattern). This override is LOAD-BEARING and worth re-checking after any Boot or SDK
+  bump: `apache5-client:2.51.4` requests `httpclient5 5.6.2`, Boot 3.5.16 downgrades that to 5.5.2,
+  which requests `httpcore5-h2 5.3.6` — only `extra["httpcore5.version"]` forces 5.4.3. A Gradle
+  `dependencyInsight` report states the BUILD intent; only reading the archive proves what ships;
 - the contrast fix present in the built `app_shop_shop-discovery-client_tsx_*.js` chunk, while the
   old pattern survives only in the unrelated `dashboard-shell` chunk;
-- a **real order placed through the rebuilt stack** (`ORD-00000000-20260817-91108CE7`) came back
-  `allergen_mask=1`, against **572 historic NULL** lines — the V63 write-time snapshot working on
-  the live API path, and the deliberate no-backfill decision visible in production data.
+- a **real order placed through the rebuilt stack** (`ORD-00000000-20260818-FE412C58`) came back
+  `allergen_mask=1`. Measured 2026-08-18: **572 NULL / 5 populated** — the V63 write-time snapshot
+  working on the live API path, and the deliberate no-backfill decision visible in production data.
+  The NULL count does not move; only new orders add to the populated side.
 
 If you rebuild `core-java`, **`check-alert-metrics.sh` will go red** — the counter dies on restart.
 Run `scripts/seed-order-metric.sh`; do not investigate it. Observed rc=1 then rc=0 this session.
