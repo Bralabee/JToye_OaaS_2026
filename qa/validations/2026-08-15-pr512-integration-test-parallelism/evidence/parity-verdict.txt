@@ -1,0 +1,4 @@
+parity_rc=0
+A: tests=562 skipped=1 failures=0 errors=0 suites=127   (/home/sanmi/IdeaProjects/JToye_OaaS_2026/.qa-council/20260815-173801/evidence/serial-test-results)
+B: tests=562 skipped=1 failures=0 errors=0 suites=127   (/home/sanmi/IdeaProjects/JToye_OaaS_2026/.qa-council/20260815-173801/evidence/parallel-test-results)
+PARITY OK, 0 failures, 0 OOM

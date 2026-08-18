@@ -14,3 +14,9 @@ Update **only** when an improvement is proven (raise the baseline) or a retireme
 
 ## Provenance
 Seeded by QA-council run `20260713-152124` on branch `feature/ux-mobile-nav-rsc-fixes`. See that run's `QA-COUNCIL-REPORT.md` (under the gitignored `.qa-council/`) for the full evidence, including the correction of a rate-limit measurement artifact in the brixton census.
+
+## Validations of record
+
+`validations/` holds committed QA-council audit outcomes for specific claims or merged changes, so an audit's evidence survives outside the git-excluded `.qa-council/` run dirs. Each entry is one dated directory with a README verdict, the run's report, and its key evidence.
+
+- [2026-08-15 — PR #512 integrationTest parallel forks](validations/2026-08-15-pr512-integration-test-parallelism/README.md) — gains and validity **validated** (local 2.70×, CI −32%, exact arm parity); one Low docs-drift finding deferred with note.
