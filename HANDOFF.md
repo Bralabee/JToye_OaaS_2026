@@ -20,7 +20,7 @@ and this session proved it again (see "The instrument lied four times").
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
-git log --oneline -3                                # expect 59dddb37, 662464c7, 42ac6dc3
+git log --oneline -3                          # expect 9387b3bf, c911cd02, cabf484e
 
 # Gates. EXPECT 37 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
@@ -34,7 +34,7 @@ done
 
 | | |
 |---|---|
-| `main` HEAD | `59dddb37` — `docs(handoff): Phase 31 shipped… (#636)`; STATE fix `662464c7` (#635) |
+| `main` HEAD | `9387b3bf` — `chore(deps): bump awssdk bom to 2.51.4… (#638)` |
 | Phase 31 | `42ac6dc3` — `feat(31): consumer safety and the legal floor (#633)`, 18/18 plans |
 | Working tree | clean, no worktrees in use |
 | Schema head | **V63**, matching the live dev database |
@@ -121,12 +121,12 @@ artifact. Do not simply rebase-and-merge these:
 
 | PR | Bump | Behind | Failing step | Verdict |
 |---|---|---|---|---|
-| **#606 OPEN** | node 24-alpine to 25-alpine | 85 | support-horizon gate | **Close it.** endoflife.date says node 25 is `lts: false` with EOL **2026-06-01**, already passed; node 24 is LTS to 2028-04-30. The gate is correct |
+| **#606 CLOSED** | node 24-alpine to 25-alpine | 85 | support-horizon gate | **Closed 2026-08-18.** endoflife.date says node 25 is `lts: false` with EOL **2026-06-01**, already passed; node 24 is LTS to 2028-04-30. The gate is correct |
 | **#605 OPEN** | springdoc 2.8.6 to 3.1.0 (MAJOR) | 85 | OpenAPI spec regeneration | Real break — the spec cannot be generated, so the app likely does not boot. Needs real work |
 | **#631 OPEN** | frontend npm, 10 updates | 4 | Build frontend + TypeScript validation | Real break across the frontend build. Needs real work |
 
-**#604** (awssdk 2.50.2 to 2.51.4) was superseded: the bump plus its doc updates ship on branch
-`chore/awssdk-2.51.4` instead, because dependabot force-pushes its own branches and would discard
+**#604 CLOSED** (awssdk 2.50.2 to 2.51.4) was superseded by **#638**, merged as `9387b3bf`; the
+bump shipped with its doc updates on our own branch because dependabot force-pushes its own branches and would discard
 the doc commit. Its failure was `scripts/check-doc-versions.sh` — dependabot cannot know to edit
 `CLAUDE.md`, `AGENTS.md` and `.planning/codebase/STACK.md`, which each pin the version in prose.
 **Any future SDK bump carries the same four-site requirement.**
