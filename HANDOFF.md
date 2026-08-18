@@ -20,7 +20,7 @@ and this session proved it again (see "The instrument lied four times").
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
-git log --oneline -3                          # expect 44cacbaf, 9387b3bf, c911cd02
+git log --oneline -3                    # newest = the PR #640 merge, or later work since
 
 # Gates. EXPECT 37 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
@@ -34,12 +34,22 @@ done
 
 | | |
 |---|---|
-| `main` HEAD | `44cacbaf` — `docs(handoff): record the dependabot triage outcome (#639)` |
+| `main` HEAD | tip of `main` at or after the **PR #640** merge — deliberately NOT a sha, see below |
 | Phase 31 | `42ac6dc3` — `feat(31): consumer safety and the legal floor (#633)`, 18/18 plans |
 | Working tree | clean, no worktrees in use |
 | Schema head | **V63**, matching the live dev database |
 | Test manifest | **3185** logical invocations (Java 1713/270 files, Jest 1230/120, Playwright 113/22, Go 81/11, MCP 48/8) — `docs/metrics.json` |
 | Gate sweep 2026-08-18 | **36 PASS, 0 FAIL, 1 VOID** across all 37 gate scripts |
+
+> **Why the HEAD row names a PR and not a sha — do not "helpfully" put one back.** A document that
+> records its own repository's HEAD cannot be correct at rest: writing the sha IS a commit, so the
+> act of correcting it falsifies it. Measured on 2026-08-18 — the row was updated to `44cacbaf`,
+> and merging that update made `main` `b17bef59`, stale again in one step. Chasing it costs a PR
+> and a CI run per commit of staleness and never converges. `check-handoff-contract` reaches the
+> same conclusion from the other side: H-3 allows a budget of **3** commits rather than demanding
+> exactness. The PR number is stable, tells a reader what work the file describes, and the resume
+> block already says to `git pull`. The OTHER shas in this file are historical facts — "Phase 31
+> merged as `42ac6dc3`" is true forever — and are fine to keep.
 
 The single VOID is **`check-e2e-skip-budget.sh`** — the documented once-per-merge staleness
 detector. It is re-earned by running the Playwright suite against the live runtime, needs no code
