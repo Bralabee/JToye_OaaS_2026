@@ -131,7 +131,8 @@ Phase 34, or the open-PR backlog below.
 
 ### Open PRs — triaged 2026-08-18
 
-**#634 OPEN** — QA validation ledger for PR #512. Not dependabot; unreviewed.
+**#634** (QA validation ledger for PR #512) MERGED 2026-08-18. **#605** and **#631** below are the
+only PRs still open.
 
 The dependabot backlog was triaged and every failure is REAL — none is a flake or a stale-base
 artifact. Do not simply rebase-and-merge these:
