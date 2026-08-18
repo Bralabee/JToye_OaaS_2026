@@ -30,7 +30,7 @@ extra["netty.version"] = "4.1.136.Final"
 
 // Same shape, same reason, different family. Spring Boot 3.5.16's BOM pins
 // httpcore5 to 5.3.6, and that pin DOWNGRADES what the AWS SDK asks for:
-// software.amazon.awssdk:apache5-client:2.50.2 requests httpcore5 5.4.3 and
+// software.amazon.awssdk:apache5-client:2.51.4 requests httpcore5 5.4.3 and
 // httpclient5 5.6.2, and dependencyInsight shows "5.4.3 -> 5.3.6 (selected by
 // rule)". So the vulnerable version is not something we or the SDK chose — it
 // is Boot's managed version winning over a newer request.
@@ -73,7 +73,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
     // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod)
-    implementation(platform("software.amazon.awssdk:bom:2.50.2"))
+    implementation(platform("software.amazon.awssdk:bom:2.51.4"))
     implementation("software.amazon.awssdk:s3")
 
     // Phase 24 (IMG-02) — WebP transcode + image normalize pipeline.

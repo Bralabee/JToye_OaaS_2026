@@ -112,10 +112,24 @@ the conflict.
 If the owner has not cleared those, the available work is: Phase 30 (The Money Path), Phase 32,
 Phase 34, or the open-PR backlog below.
 
-### Open PRs
+### Open PRs — triaged 2026-08-18
 
-**#634 OPEN** (QA validation ledger for PR #512), **#632 OPEN** and **#631 OPEN** (dependabot
-groups), plus #606, #605, #604 (dependabot). None blocks anything.
+**#634 OPEN** — QA validation ledger for PR #512. Not dependabot; unreviewed.
+
+The dependabot backlog was triaged and every failure is REAL — none is a flake or a stale-base
+artifact. Do not simply rebase-and-merge these:
+
+| PR | Bump | Behind | Failing step | Verdict |
+|---|---|---|---|---|
+| **#606 OPEN** | node 24-alpine to 25-alpine | 85 | support-horizon gate | **Close it.** endoflife.date says node 25 is `lts: false` with EOL **2026-06-01**, already passed; node 24 is LTS to 2028-04-30. The gate is correct |
+| **#605 OPEN** | springdoc 2.8.6 to 3.1.0 (MAJOR) | 85 | OpenAPI spec regeneration | Real break — the spec cannot be generated, so the app likely does not boot. Needs real work |
+| **#631 OPEN** | frontend npm, 10 updates | 4 | Build frontend + TypeScript validation | Real break across the frontend build. Needs real work |
+
+**#604** (awssdk 2.50.2 to 2.51.4) was superseded: the bump plus its doc updates ship on branch
+`chore/awssdk-2.51.4` instead, because dependabot force-pushes its own branches and would discard
+the doc commit. Its failure was `scripts/check-doc-versions.sh` — dependabot cannot know to edit
+`CLAUDE.md`, `AGENTS.md` and `.planning/codebase/STACK.md`, which each pin the version in prose.
+**Any future SDK bump carries the same four-site requirement.**
 
 ### Owner-facing, unresolved — carried from Phase 31
 
