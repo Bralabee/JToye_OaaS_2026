@@ -131,17 +131,27 @@ Phase 34, or the open-PR backlog below.
 
 ### Open PRs — triaged 2026-08-18
 
-**#634** (QA validation ledger for PR #512) MERGED 2026-08-18. **#605** and **#631** below are the
-only PRs still open.
+**NO PULL REQUESTS ARE OPEN** as of 2026-08-18. #634 merged; #604, #606, #605 and #631 were closed
+after triage. The dependabot backlog is empty, and dependabot will re-propose #605/#631 in some
+form on its next run.
 
-The dependabot backlog was triaged and every failure is REAL — none is a flake or a stale-base
-artifact. Do not simply rebase-and-merge these:
+**ONE OUTSTANDING SECURITY ITEM WAS DEFERRED WITH #631, and it did not go away with the PR:**
+`next` 16.3.0 updates vendored lodash to 4.17.23 to fix **CVE-2025-13465**. That fix is NOT applied
+on `main`. It was declined only because the 16.2.12 to 16.3.0 minor bump breaks `Build frontend` and
+the TypeScript validation step — tractable work, not a rewrite, since all ten updates in that group
+were minor/patch with no majors. **Severity is UNVERIFIED and must be established first**: Dependabot
+alerts are DISABLED on this repository (the API returns 403), so neither the score nor whether the
+vendored-lodash path is reachable from this app could be checked. That determines the urgency.
+
+The dependabot backlog was triaged 2026-08-18 and every failure was REAL — none a flake, none a
+stale-base artifact. All four were closed with the reasoning in their PR comments. If dependabot
+re-proposes any of them, this is why they were declined; do not simply rebase-and-merge:
 
 | PR | Bump | Behind | Failing step | Verdict |
 |---|---|---|---|---|
 | **#606 CLOSED** | node 24-alpine to 25-alpine | 85 | support-horizon gate | **Closed 2026-08-18.** endoflife.date says node 25 is `lts: false` with EOL **2026-06-01**, already passed; node 24 is LTS to 2028-04-30. The gate is correct |
-| **#605 OPEN** | springdoc 2.8.6 to 3.1.0 (MAJOR) | 85 | OpenAPI spec regeneration | Real break — the spec cannot be generated, so the app likely does not boot. Needs real work |
-| **#631 OPEN** | frontend npm, 10 updates | 4 | Build frontend + TypeScript validation | Real break across the frontend build. Needs real work |
+| **#605 CLOSED** | springdoc 2.8.6 to 3.1.0 (MAJOR) | 85 | OpenAPI spec regeneration | Real break — the spec cannot be generated, so the app likely does not boot. Needs real work |
+| **#631 CLOSED** | frontend npm, 10 updates | 4 | Build frontend + TypeScript validation | Real break across the frontend build. Needs real work |
 
 **#604 CLOSED** (awssdk 2.50.2 to 2.51.4) was superseded by **#638**, merged as `9387b3bf`; the
 bump shipped with its doc updates on our own branch because dependabot force-pushes its own branches and would discard
