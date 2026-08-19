@@ -136,12 +136,41 @@ after triage. The dependabot backlog is empty, and dependabot will re-propose #6
 form on its next run.
 
 **ONE OUTSTANDING SECURITY ITEM WAS DEFERRED WITH #631, and it did not go away with the PR:**
-`next` 16.3.0 updates vendored lodash to 4.17.23 to fix **CVE-2025-13465**. That fix is NOT applied
-on `main`. It was declined only because the 16.2.12 to 16.3.0 minor bump breaks `Build frontend` and
-the TypeScript validation step — tractable work, not a rewrite, since all ten updates in that group
-were minor/patch with no majors. **Severity is UNVERIFIED and must be established first**: Dependabot
-alerts are DISABLED on this repository (the API returns 403), so neither the score nor whether the
-vendored-lodash path is reachable from this app could be checked. That determines the urgency.
+`next` 16.3.0 updates vendored lodash to 4.17.23 to fix **CVE-2025-13465** (GHSA-xxjr-mmjv-4gpg,
+prototype pollution in lodash `_.unset` / `_.omit`; lodash 4.0.0-4.17.22 affected, fixed 4.17.23).
+That fix is NOT applied on `main` — the tree still runs `next` 16.2.12.
+
+**ASSESSED 2026-08-19: MEDIUM, LOW REACHABILITY, NOT URGENT.** Fix it when the `next` 16.3.0
+migration is done; do not interrupt roadmap work for it.
+
+**Severity — the scorers genuinely disagree, and only on ONE field.** NVD (primary) **5.3 MEDIUM**
+(`A:N`), GitHub **6.5 medium** (`A:L`), lodash vendor CVSS 4.0 **6.9 MEDIUM** (exploit maturity
+PROOF_OF_CONCEPT), Red Hat **8.2 HIGH** (`A:H`). All four agree on `AV:N/AC:L/PR:N/UI:N` and
+Integrity: Low; the whole 5.3-to-8.2 spread is the disputed availability impact. The advisory text
+itself says the flaw permits DELETION of properties but not overwriting their behaviour, which
+favours the lower reading. Do not quote 8.2 as "the" score, and do not quote 5.3 either — quote
+the range and the reason for it.
+
+**Reachability — three independent constraints, measured on the installed tree:** (a) our own code
+never imports lodash nor calls `_.unset`/`_.omit` (positive-controlled: the same search saw 81
+`use client` files); (b) the only lodash-family package in `frontend/package-lock.json` is
+`lodash.merge`, which is NOT in the advisory scope (`lodash`, `lodash-amd`, `lodash-es`,
+`lodash.unset`); (c) the vulnerable internals live ONLY in two vendored Next bundles —
+`next/dist/compiled/babel-packages/packages-bundle.js` (build-time only) and
+`next/dist/compiled/jsonwebtoken/index.js` (library-internal) — and the attack needs an
+ATTACKER-CONTROLLED path argument, while both callers pass fixed internal keys.
+
+**A SEARCH-SCOPE FALSE NEGATIVE HAPPENED HERE — do not repeat it.** The first reachability check
+was scoped to `next/dist/compiled/lodash.curry/` and returned **0** for `baseUnset`, `basePickBy`
+and `customOmitClone`, which read as "the vulnerable code is not present at all". It is present —
+just in two OTHER bundles. Widening the search to `next/dist` found all three. `lodash.curry` is a
+single-function micro-package and was never going to carry `_.unset`. An empty result is evidence
+about the SCOPE you chose, not about the code. Also note `node_modules` is gitignored, so a bare
+`rg` there silently returns nothing: use `rg -uu`.
+
+**What was NOT established:** no obvious path, which is not the same as no path. A full proof would
+trace `jsonwebtoken`'s internal `_.omit` callers. That was stopped deliberately — the answer does not
+change the priority.
 
 The dependabot backlog was triaged 2026-08-18 and every failure was REAL — none a flake, none a
 stale-base artifact. All four were closed with the reasoning in their PR comments. If dependabot
