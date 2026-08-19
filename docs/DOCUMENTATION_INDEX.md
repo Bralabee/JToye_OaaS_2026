@@ -34,11 +34,25 @@ enforced by the `docs-freshness` CI gate)
 
 ---
 
-## Architecture & Decisions
+## Product & Architecture
+
+> **Start here for the current state.** The five documents below were produced by a two-round
+> supervised codebase tour (2026-08-19) and describe the system **as it runs today**, every claim
+> measured against the tree. `SYSTEM_DESIGN_V2.md` is target-state/aspirational by contrast.
 
 | Document | Covers |
 |---|---|
-| [architecture/SYSTEM_DESIGN_V2.md](architecture/SYSTEM_DESIGN_V2.md) | Canonical system design — §1 is the authoritative comms topology (REST/JSON + AMQP + STOMP) |
+| [PRD.md](PRD.md) | Product requirements — personas, surfaces, compliance wedge, GTM posture, what it does NOT do yet (current-state, measured) |
+| [architecture/ESSENTIAL_ARCHITECTURE.md](architecture/ESSENTIAL_ARCHITECTURE.md) | The one read for a new engineer — the five things you must not get wrong |
+| [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | Current-state system architecture, layer by layer (companion to the PRD) |
+| [HOW_IT_WORKS.md](HOW_IT_WORKS.md) | End-to-end runtime walkthrough — a request's life, the money path, async, GDPR, verification |
+| [FAILURE_MODES.md](FAILURE_MODES.md) | What is likely to break and the edge cases — hazard map, incl. live untracked findings |
+
+### Architecture & Decisions (reference)
+
+| Document | Covers |
+|---|---|
+| [architecture/SYSTEM_DESIGN_V2.md](architecture/SYSTEM_DESIGN_V2.md) | **Target-state** system design (aspirational — k6/OTel/scaling); §1 is the authoritative comms topology (REST/JSON + AMQP + STOMP) |
 | [architecture/API_REFERENCE.md](architecture/API_REFERENCE.md) | REST API reference |
 | [architecture/SECURITY_ARCHITECTURE.md](architecture/SECURITY_ARCHITECTURE.md) | Auth model, RLS/tenant isolation, threat surface |
 | [architecture/VENDOR_ONBOARDING_STATE_MODEL.md](architecture/VENDOR_ONBOARDING_STATE_MODEL.md) | The onboarding state machine — sole writer of `Shop.published` |
