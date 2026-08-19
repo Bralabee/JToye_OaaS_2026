@@ -2,7 +2,7 @@
 
 **Generated 2026-08-18. This is now the ONLY block in this file, and it describes current state.**
 **Re-measure every figure here before quoting it forward** — that is the standing rule of this file,
-and this session proved it again (see "The instrument lied four times").
+and this session proved it again (see "The instrument lied five times").
 
 > **History moved out on 2026-08-18.** This file had grown to 3035 lines across five stacked session
 > blocks; only the top one described anything current, and the four below it each opened with a
@@ -211,7 +211,7 @@ the doc commit. Its failure was `scripts/check-doc-versions.sh` — dependabot c
 Phase 31's own deferred register is `.planning/phases/31-consumer-safety-and-legal-floor/deferred-items.md`
 (DEF-31-11-01 plus five items from 31-17/31-18).
 
-## The instrument lied four times — read this before trusting any check
+## The instrument lied five times — read this before trusting any check
 
 Every one of these produced a *confident wrong answer*, not an error. This is the most transferable
 thing this session produced.
@@ -230,11 +230,36 @@ thing this session produced.
    simply do not render with current seed data. "0 occurrences of the bad pattern" is byte-identical
    to "fixed" and to "never rendered". Reading the built chunk out of the container settled it.
    This is the same shape as 31-18's own finding that a scan over nothing looks like a flawless page.
-4. **`git log --first-parent` is the only reason the changelog gate survived the merge.** The
+4. **`mergeStateStatus=UNKNOWN` means ALREADY MERGED, not "still computing".** On PR #641 it was
+   read as "GitHub has not finished calculating", polled three times, and only caught when an
+   independent check errored with `fatal: Not a valid object name origin/<branch>` — the branch was
+   gone because another session had merged it. Worse, the conflict count printed beside that error
+   read `0`, which was VACUOUS: `git merge-tree` had FAILED, so the grep counted nothing. **An empty
+   result and a failed command look identical if you only read the number.** Before merging, check
+   the PR is still `OPEN`.
+
+5. **`git log --first-parent` is the only reason the changelog gate survived the merge.** The
    branch carried **44 `feat`/`fix` commits, none citing a PR**. Had `check-changelog-contract.sh`
    scanned all commits, a merge commit would have redded `main` with 44 uncited subjects. It scans
    first-parent, so `main` sees one commit. **Squash with an explicit subject ending `(#NNN)` is the
    only safe merge method here** — rebase strips the citation and voids the gate.
+
+### Where the durable learnings live — READ THEM BEFORE RE-DERIVING THEM
+
+Cross-session learnings are NOT in this file. They are in the per-project memory at
+`~/.claude/projects/-home-sanmi-IdeaProjects-JToye-OaaS-2026/memory/`, indexed by `MEMORY.md`
+(124 entries). A selective snapshot is versioned in the `Bralabee/dotfiles` repo under
+`claude/projects/.../memory/` — 9 of the 124 as of 2026-08-19, via dotfiles PR #106. The memory
+directory itself is NOT a git repo; the files are plain files on disk.
+
+This session added `project_phase_31`, `trap_doc_recording_own_head_sha` and
+`trap_gh_checks_polling_semantics`, and extended `trap_grep_pattern_shape_false_negative` (a new
+SCOPE axis), `trap_rebase_merge_voids_changelog_gate` and `env_gotchas_local_stack`.
+
+**The lesson that cost the most was one already recorded.** `trap_handoff_residue_count_stale`
+already said "#429's preamble refuses to quote HEAD SHAs for exactly this reason" — and the HEAD-row
+sha problem was still re-derived across three PRs before anyone noticed. Search the memory index
+before concluding something is new.
 
 ### Writing in this file is itself gated
 
@@ -248,3 +273,10 @@ thing this session produced.
 - **H-2** — a claim opts in by CAPITALISING its state word: `#116 CLOSED` is checked against the
   forge, `#116 is closed` is narrative and is not. Do not capitalise a state you have not verified.
 - **H-3** — this document must stay within **3** merged commits of the base branch.
+
+**THIS FILE WENT STALE FIVE TIMES ON 2026-08-18 ALONE**, four of them within an hour of being
+written, and one caused by a DIFFERENT session merging #634. The cause is structural, not
+carelessness: H-2 claims mirror forge state, and any PR merge by ANYONE falsifies them. H-2 caught
+every one within minutes and named the PR — that is the design working. What it can NEVER see is
+shas, prose and runtime facts, which drifted silently every single time. So: after editing forge
+state, re-run the gate; and re-read the prose by eye, because nothing else will.
