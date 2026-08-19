@@ -298,7 +298,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Depends on: PostgreSQL JDBC driver, Flyway for schema migration
 - Used by: Service layer exclusively
 - Purpose: Multi-tenant data storage with RLS enforcement and audit trails
-- Location: Schema defined in `core-java/src/main/resources/db/migration/` (32 Flyway migrations)
+- Location: Schema defined in `core-java/src/main/resources/db/migration/` (63 Flyway migrations, V1 through V63)
 - Contains: Tables (shops, products, orders, customers, financial_transactions, reviews, etc.), RLS policies per table, audit tables via Envers
 - Depends on: JDBC driver, Java code for policy setup
 - Used by: Core Java service layer via JPA, trigger functions for audit events
@@ -321,11 +321,11 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Examples: `OrderStateMachineConfig`, `OrderStateMachineService`
 - Pattern: States (OrderStatus enum: DRAFT, PENDING, CONFIRMED, PREPARING, READY, COMPLETED, CANCELLED), Events (OrderEvent enum), Transitions defined in StateMachineConfigurerAdapter.
 - Purpose: Prevent cross-tenant cache key collisions
-- Examples: `TenantAwareCacheKeyGenerator` (no source file found, but used in CacheConfig)
+- Examples: `TenantAwareCacheKeyGenerator` (`core-java/src/main/java/uk/jtoye/core/config/TenantAwareCacheKeyGenerator.java`, wired in `CacheConfig`)
 - Pattern: Bean implementing KeyGenerator, reads TenantContext.get() and appends to cache key.
 - Purpose: Protect edge from Core outages with fallback degradation
 - Examples: `edge-go/internal/core/client.go` with Resilience4j fallback (Spring side) or Gin middleware (Go side)
-- Pattern: HTTP client with timeout + retry logic, falls back to cached response or returns 503.
+- Pattern: HTTP client with timeout + retry logic. On the edge (Go) the breaker has NO fallback — breaker-open or a transport error returns 502 (the frontend/mcp bypass the edge entirely). On the Spring side, Resilience4j guards the outbound Stripe call.
 ## Entry Points
 - Location: `core-java/src/main/java/uk/jtoye/core/CoreApplication.java`
 - Triggers: Spring Boot application start (`SpringApplication.run()`)
@@ -335,7 +335,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Responsibilities: Redirect authenticated users to /dashboard, redirect unauthenticated to /auth/signin
 - Location: `edge-go/cmd/edge/main.go`
 - Triggers: Docker container startup or direct binary execution
-- Responsibilities: Initialize Gin router, attach JWT middleware, rate limiter, route /health, /sync/batch, /orders, /whatsapp to Core API with circuit breaker
+- Responsibilities: Initialize Gin router, attach JWT middleware, rate limiter, serve /health, /ready, /openapi.json + /docs, an HMAC-signed WhatsApp webhook, and the ONE JWT-proxied business route POST /api/v1/sync/batch, to Core API with a sony/gobreaker circuit breaker (no fallback; breaker-open returns 502). The frontend and mcp-server call Core directly and do NOT traverse the edge
 - `ShopController` (`/shops`): GET, POST, PUT, DELETE, search, image upload
 - `ProductController` (`/products`): CRUD with filtering, full-text search, image gallery
 - `OrderController` (`/orders`): CRUD, state transitions, SSE for real-time updates
@@ -350,7 +350,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - `IllegalStateException` (500): Thrown when TenantContext is not set (indicates security configuration error)
 - `ConstraintViolationException` (400): From @Valid on @RequestBody, automatic Spring conversion
 - `ValidationException` (400): From Jakarta Validation annotations
-- All exceptions caught by @ExceptionHandler methods, converted to ErrorResponse (timestamp, status, error, message, path), returned as JSON with appropriate HTTP status
+- All exceptions caught by @ExceptionHandler methods, converted by the @RestControllerAdvice GlobalExceptionHandler to RFC 7807 ProblemDetail responses, returned as application/problem+json with appropriate HTTP status
 ```json
 ```
 ## Cross-Cutting Concerns
@@ -511,9 +511,10 @@ here: this charter is emitted into that repo's own `AGENTS.md`, so a stale figur
    is how the two drift; import the shared schema.
 3. **Mobile is a first-class target.** v2.3 exists partly because the vendor dashboard was broken
    on mobile. Check at 375px before calling any layout done — but know that a narrow viewport is
-   not a device. The repo's `mobile` Playwright project sets `viewport` + `isMobile` and NOT
-   `hasTouch`, so it reports `pointer: fine` and `maxTouchPoints: 0` (measured 2026-08-02; a Pixel 7
-   profile reports `coarse` / `1`). Anything hover- or pointer-gated is therefore unexercised by it
+   not a device. The repo's `mobile` Playwright project sets `viewport` + `isMobile` AND
+   `hasTouch: true` (fixed in #503; guarded by `mobile-instrument-contract.spec.ts` +
+   `scripts/check-playwright-mobile-contract.sh`), so it reports `pointer: coarse` / `maxTouchPoints: 1`
+   and DOES exercise hover- and pointer-gated behaviour. A narrow viewport is still not a full device
    — assert `matchMedia` in the test, or emulate a real device profile, before believing a mobile
    pass.
 4. **Never put a tenant or shop id in client state as the source of truth.** The server decides
@@ -528,9 +529,9 @@ stage-specific, not interchangeable. Load **`frontend-craft-sequence`** before s
 reshaping a surface; it holds the running order and the anti-patterns. For motion, easing,
 hover/press feedback and micro-interactions specifically, load **`emil-design-eng`**.
 
-Two failure modes it exists to prevent, both observed on this app: `hover:` is NOT gated here
-(`future.hoverOnlyWhenSupported` is unset in `tailwind.config.ts`), so a bare `hover:` latches on
-tap and leaves an element stuck in its hover state after a touch; and a screenshot cannot verify
+Two failure modes it exists to prevent, both observed on this app: `hover:` IS gated here
+(`future.hoverOnlyWhenSupported: true` in `tailwind.config.ts`, #503), so a bare `hover:` compiles to
+`@media (hover:hover)` and no longer latches on tap (≈11 deliberate hand-written `[@media(hover:hover)_and_(pointer:fine)]` sites remain); and a screenshot cannot verify
 motion — a 200ms ease-out and a 900ms linear are the same PNG, so motion is checked by reading the
 code against `/review-animations`, never by looking at an image.
 
