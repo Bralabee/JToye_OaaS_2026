@@ -328,6 +328,52 @@ if [ -n "$VIOLATIONS" ]; then
   exit 1
 fi
 
-echo "PASS: image supply-chain contract intact (fail-fast, gate shape, dependabot coverage, scheduled-scan fidelity)."
+# --- X-6  REFERENCE NORMALISATION (added #658) -------------------------------
+#
+# Every image reference base-image-freshness.yml assembles must be routed through
+# its `lower_repo` helper, which lowercases the repository NAME and leaves the tag
+# or digest untouched.
+#
+# WHY THIS IS A SCRIPT AND NOT A COMMENT. From 2026-08-04 to 2026-08-24 that
+# workflow built `ghcr.io/${OWNER}/jtoye-<svc>:latest` with OWNER=`Bralabee`.
+# Registry paths must be lowercase, so the reference was invalid, every leg
+# tripped the VOID arm, and 21 consecutive scheduled runs — every run the workflow
+# had ever had — scanned nothing at all.
+#
+# X-5 WAS GREEN THROUGHOUT, and that is the lesson. The trivy flags and the action
+# pin were identical to ci-cd.yaml's gate the entire time, because the run never
+# reached trivy. A gate that asserts the QUESTION is right cannot notice that the
+# question was never ASKED. X-6 is the missing half.
+#
+# Break arm: drop the `lower_repo` wrapper from either REF= assignment, or delete
+# the helper, and this fires by line number.
+X6_FAIL=0
+
+if ! grep -qE '^[[:space:]]*lower_repo\(\)' "$FRESHNESS_WORKFLOW"; then
+	echo "FAIL: X-6 lower_repo() is no longer defined in $FRESHNESS_WORKFLOW" >&2
+	X6_FAIL=1
+fi
+
+X6_ASSIGNS="$(grep -nE '^[[:space:]]*REF=' "$FRESHNESS_WORKFLOW")" || X6_ASSIGNS=""
+[ -n "$X6_ASSIGNS" ] || void "X-6 found ZERO REF= assignments in $FRESHNESS_WORKFLOW — nothing was evaluated"
+
+X6_RAW="$(printf '%s\n' "$X6_ASSIGNS" | grep -vE 'REF="\$\(lower_repo ')" || X6_RAW=""
+if [ -n "$X6_RAW" ]; then
+	echo "FAIL: X-6 an image reference is assembled without lower_repo() in $FRESHNESS_WORKFLOW:" >&2
+	printf '%s\n' "$X6_RAW" | while IFS= read -r l; do
+		[ -n "$l" ] && echo "  - $l" >&2
+	done
+	X6_FAIL=1
+fi
+
+if [ "$X6_FAIL" -ne 0 ]; then
+	echo "" >&2
+	echo "github.repository_owner is mixed-case on this repo and a registry path must" >&2
+	echo "be lowercase. Route every REF= through lower_repo(), which lowercases the" >&2
+	echo "repository name and preserves the tag or digest." >&2
+	exit 1
+fi
+
+echo "PASS: image supply-chain contract intact (fail-fast, gate shape, dependabot coverage, scheduled-scan fidelity, reference normalisation)."
 echo "      NOTE: this asserts the MECHANISM, not today's CVEs. It says nothing about whether the images are clean."
 exit 0
