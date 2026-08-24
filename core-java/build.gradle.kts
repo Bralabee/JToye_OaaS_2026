@@ -111,7 +111,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
     // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod)
-    implementation(platform("software.amazon.awssdk:bom:2.51.4"))
+    implementation(platform("software.amazon.awssdk:bom:2.54.2"))
     implementation("software.amazon.awssdk:s3")
 
     // Phase 24 (IMG-02) — WebP transcode + image normalize pipeline.
@@ -138,7 +138,7 @@ dependencies {
     implementation("io.github.resilience4j:resilience4j-spring-boot3:2.4.0")
 
     // Stripe payment processing
-    implementation("com.stripe:stripe-java:33.2.0")
+    implementation("com.stripe:stripe-java:33.3.0")
 
     // PDF generation for allergen labels
     implementation("com.github.librepdf:openpdf:2.0.3")
