@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Two executable bits, and a defect that had been diagnosed and archived (#663) — 2026-08-24
+
+- **`awk … > new && mv new old` silently drops a file's executable bit.** Two scripts went
+  `100755 -> 100644` this session — `check-image-supply-chain.sh` (#658) and `sync-runtime.sh`
+  (#662) — and **nothing failed**, because `ci-cd.yaml` already runs
+  `chmod +x ./scripts/check-image-supply-chain.sh` immediately before executing it directly, and
+  every other call site uses `bash scripts/…`. A defensive line absorbed the regression it was
+  handed; the only visible trace was `mode change 100755 => 100644` in a merge diff. Both restored.
+  `check-media-content-types.sh` has been `100644` since Phase 28 and is deliberately left alone.
+- **No 38th gate for it.** The invariant is cosmetic where CI already chmods and humans use `bash`,
+  so it is recorded as a trap rather than gated — the cost of a gate should be paid by a defect it
+  could actually catch.
+- **CORRECTING #662: that defect was diagnosed on 2026-08-07 and archived.**
+  `docs/archive/HANDOFF-history-through-2026-08-17.md:673` recorded *"`sync-runtime.sh` rebuilds but
+  does not always recreate … both needed `docker compose up -d --force-recreate --no-deps <svc>`"*,
+  with the squash-merge re-date finding in the same bullet block. Both were correct and actionable,
+  and the script stayed broken for **17 days** because archiving the handoff moved the diagnosis
+  somewhere no gate reads and nobody re-reads. The archive's header warns its CLAIMS cannot be
+  trusted — true — but its DIAGNOSES were fine, and treating the whole file as untrustworthy is how
+  a live defect got buried. #658's reviewer found the same shape in `.planning/quick`. **Grep the
+  archive before concluding you have found something.**
+
 ### The runtime-sync script reported its own failure to repair (#662) — 2026-08-24
 
 - **`scripts/sync-runtime.sh` could not clear the drift it exists to clear.** Measured on the merge
