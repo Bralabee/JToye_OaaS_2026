@@ -6,7 +6,7 @@
 
 **Payment Processing:**
 - Stripe — Online card payments + COD fallback
-  - SDK: `com.stripe:stripe-java:33.2.0` (`core-java/build.gradle.kts:141`)
+  - SDK: `com.stripe:stripe-java:33.3.0` (`core-java/build.gradle.kts:141`)
   - Frontend: `@stripe/react-stripe-js` 6.8.0, `@stripe/stripe-js` 9.12.0 (`frontend/package.json:27-28`)
   - Implementation: `core-java/src/main/java/uk/jtoye/core/payment/` (PaymentService, webhook controller)
   - Auth: `STRIPE_API_KEY` (sk_test_/sk_live_), `STRIPE_WEBHOOK_SECRET` (whsec_), `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
