@@ -115,13 +115,20 @@ The `progress:` counters in `main`'s `.planning/STATE.md` remain knowingly corru
 
 If the owner has not cleared those, the highest-value available work is:
 
-1. **The six dependabot PRs, all with failing checks:** **#650 OPEN**, **#651 OPEN**, **#652 OPEN**,
-   **#653 OPEN**, **#654 OPEN**, **#655 OPEN** (opened 2026-08-21). The 2026-08-18 triage of the
-   previous batch found every failure was REAL — none a flake, none a stale-base artifact — so do
-   not rebase-and-merge without reading each one.
-2. **#659 OPEN** — `ci-cd.yaml` hardcodes the image owner in twelve places while deriving it in two.
-   Latent until a fork, org transfer or rename, at which point both deploy jobs fail with a
-   reference no rebuild can fix. Same class as #658, one layer down.
+1. **The dependabot batch opened 2026-08-21 — five of the six still open:** **#650 OPEN**,
+   **#651 OPEN**, **#652 OPEN**, **#654 OPEN**, **#655 OPEN**. **#653 CLOSED** (jest-axe 10→11)
+   merged 2026-08-24. The 2026-08-18 triage of the previous batch found every failure was REAL —
+   none a flake, none a stale-base artifact — so do not rebase-and-merge without reading each one.
+2. **#659 — fix in PR #664.** `ci-cd.yaml` hardcoded the image owner in twelve places while
+   deriving it in two; latent until a fork, org transfer or rename, at which point both deploy
+   jobs fail with a reference no rebuild can fix. Same class as #658, one layer down. **The two
+   sides of `kustomize edit set image` are NOT the same string** — the LHS is a selector into the
+   checked-in manifests, so deriving it from the owner too makes kustomize fall back silently to
+   the immutable 2.1.0 default. The fix reads the selector out of the overlay it must match and
+   derives only the published reference; `check-image-supply-chain.sh` X-7 keeps both halves
+   honest, including that `ci-cd.yaml` and `base-image-freshness.yml` still describe the same
+   image. Deliberately no capitalised state word here: this entry would otherwise falsify itself
+   the moment #664 merges and red H-2 on main for whoever opens the next PR.
 3. Then Phase 30 (The Money Path), Phase 32 or Phase 34.
 
 ### Dependabot: what the 2026-08-18 triage concluded, and why it still applies
