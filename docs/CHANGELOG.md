@@ -64,6 +64,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   releases. The unevidenced half of that sentence ("API-compatible") was dropped too — every other
   claim in that block carries a recorded fail direction and that one carried none. Comment-only and
   line-count neutral, so the `build.gradle.kts` citations #657 repaired do not shift again.
+- **And that minor bump was then evidenced at runtime, which it had not been.** `dependencyInsight`
+  states BUILD intent; only reading the archive proves what ships. Read from **inside** the running
+  `/app/app.jar` after a rebuild: `amqp-client-5.33.1.jar` present, with `5.25.0`, `5.22.0`,
+  `5.3.6` and `5.4.2` all at **0 occurrences** and `5.33.1`/`5.4.3`/`5.5.2` non-zero under the same
+  escaping, so the zeros are about the jar and not the pattern. (An unescaped `5.4.2` first returned
+  1 — a regex-shape artifact, not a finding.) The rebuilt runtime then connected to the real broker
+  (`CachingConnectionFactory - Created new connection: … amqp://jtoye@…:5672/`), a live order was
+  accepted `HTTP 201` (`ORD-00000000-20260824-65F85C2D`), and both outboxes hold **zero** `PENDING`
+  or `FAILED` rows. Eight minor releases of an AMQP client is exactly the distance at which a
+  runtime default moves without an API break; here, measurably, none did.
+- **Runtime parity restored and proven by identity, not by a verdict.** The comment-only edit to
+  `build.gradle.kts` is a build input, so `check-runtime-freshness` correctly went red. After
+  `up -d --build core-java`: image ID `f7e76d53…` → `89a31b0b…`, and the running container holds
+  the **new** ID — which is what a mere `start` or `restart` would fail. Gate sweep is now
+  **36 PASS / 0 FAIL / 1 VOID** of 37; the VOID is `check-e2e-skip-budget`, the documented
+  once-per-merge staleness detector. `check-alert-metrics` went red on the restart exactly as
+  predicted and `scripts/seed-order-metric.sh` cleared it — rc=1 then rc=0, both directions
+  recorded, series 0 → 1. That is restart behaviour, not a defect.
 - **Known and not fixed here:** in override mode the two non-`core-java` matrix legs exit 0 and
   render as `success` having scanned nothing, so a dispatch reads as three green checks when one
   image was examined. And `ci-cd.yaml` pins the owner as a lowercase literal in twelve places while
