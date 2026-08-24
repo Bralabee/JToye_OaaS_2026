@@ -1230,21 +1230,60 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
 
       - name: Pin full-sha images + deploy staging overlay
+        env:
+          IMAGE_OWNER: ${{ github.repository_owner }}
         run: |
+          set -euo pipefail
+          # WHY THE TWO SIDES OF `kustomize edit set image` ARE DERIVED DIFFERENTLY (#659).
+          #
+          #   LHS is a SELECTOR into the checked-in manifests. It has to equal the
+          #   `images[].name` key in k8s/staging/kustomization.yaml, which in turn
+          #   equals the `image:` value in k8s/base. Those are static YAML: a fork,
+          #   an org transfer or a rename does NOT rewrite them. Deriving the
+          #   selector from the owner would stop it matching, kustomize would fall
+          #   back to the immutable 2.1.0 default, and the premortem guard below
+          #   would FATAL. So it is read out of the file it must match.
+          #
+          #   RHS is a REGISTRY REFERENCE. It has to equal what build-and-push
+          #   actually published, which docker/metadata-action derives from
+          #   `github.repository_owner` and LOWERCASES — a GHCR path must be
+          #   lowercase and this owner is mixed-case (#658). So it is derived from
+          #   the owner, the same way the publish side derives it.
+          #
+          # Both sides used to be the same hardcoded owner literal, so the two
+          # halves disagreed the moment the owner changed: build-and-push published
+          # under the new owner while the deploy still selected and asserted the old
+          # one, and the guard fired against a reference no rebuild could produce.
+          # scripts/check-image-supply-chain.sh X-7 keeps this derived.
+          SELECTOR_BASE="$(awk '$1=="-" && $2=="name:" && $3 ~ /\/jtoye-core-java$/ { sub(/\/jtoye-core-java$/, "/jtoye", $3); print $3; exit }' k8s/staging/kustomization.yaml)"
+          if [ -z "$SELECTOR_BASE" ]; then
+            echo "FATAL: could not read the images[].name selector out of k8s/staging/kustomization.yaml." >&2
+            echo "       Without it this step would pin nothing at all, so it fails closed rather than guessing." >&2
+            exit 2
+          fi
+          IMAGE_PUBLISH_BASE="${REGISTRY}/${IMAGE_OWNER,,}/jtoye"
+          echo "selector ${SELECTOR_BASE}-<svc>  ->  published ${IMAGE_PUBLISH_BASE}-<svc>:${{ github.sha }}"
           (cd k8s/staging && kustomize edit set image \
-            ghcr.io/bralabee/jtoye-core-java=ghcr.io/bralabee/jtoye-core-java:${{ github.sha }} \
-            ghcr.io/bralabee/jtoye-edge-go=ghcr.io/bralabee/jtoye-edge-go:${{ github.sha }} \
-            ghcr.io/bralabee/jtoye-frontend=ghcr.io/bralabee/jtoye-frontend:${{ github.sha }})
+            "${SELECTOR_BASE}-core-java=${IMAGE_PUBLISH_BASE}-core-java:${{ github.sha }}" \
+            "${SELECTOR_BASE}-edge-go=${IMAGE_PUBLISH_BASE}-edge-go:${{ github.sha }}" \
+            "${SELECTOR_BASE}-frontend=${IMAGE_PUBLISH_BASE}-frontend:${{ github.sha }}")
           # Premortem guard: assert the RENDERED overlay actually pins :<sha> on
           # all three jtoye images BEFORE apply. A silent images[].name key
           # mismatch would fall back to the static 2.1.0 default and deploy the
           # wrong (or non-existent) image — fail loudly here instead.
+          #
+          # The match is a here-string, not `echo "$RENDERED" | grep -q`. This step
+          # runs under GitHub's default `bash -e -o pipefail`, where grep -q exits at
+          # the first hit, the writer takes SIGPIPE, and pipefail promotes that to
+          # 141 — so `if ! … | grep -q` fires on a MATCH. It is pipe-buffer-size
+          # dependent (the render is ~45 KB against a 64 KB buffer), which is exactly
+          # why it survives testing: it waits for the render to grow.
           RENDERED="$(kustomize build k8s/staging)"
           for svc in core-java edge-go frontend; do
-            if ! echo "$RENDERED" | grep -q "ghcr.io/bralabee/jtoye-${svc}:${{ github.sha }}"; then
-              echo "FATAL: rendered staging overlay does not pin ghcr.io/bralabee/jtoye-${svc}:${{ github.sha }}"
-              echo "Rendered jtoye image refs were:"
-              echo "$RENDERED" | grep -E "image: ghcr.io/bralabee/jtoye-" || true
+            if ! grep -q "${IMAGE_PUBLISH_BASE}-${svc}:${{ github.sha }}" <<< "$RENDERED"; then
+              echo "FATAL: rendered staging overlay does not pin ${IMAGE_PUBLISH_BASE}-${svc}:${{ github.sha }}" >&2
+              echo "Rendered jtoye image refs were:" >&2
+              grep -E "image: .*/jtoye-" <<< "$RENDERED" >&2 || true
               exit 1
             fi
           done
@@ -1354,21 +1393,39 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > $HOME/.kube/config
 
       - name: Pin full-sha images + deploy production overlay
+        env:
+          IMAGE_OWNER: ${{ github.repository_owner }}
         run: |
+          set -euo pipefail
+          # Same derivation as deploy-staging, and for the same reason (#659): the
+          # LHS is a SELECTOR that must match the checked-in `images[].name` key, so
+          # it is read out of the overlay; the RHS is the REFERENCE build-and-push
+          # published, so it is derived from the owner and lowercased. See the
+          # deploy-staging step above for the full argument.
+          SELECTOR_BASE="$(awk '$1=="-" && $2=="name:" && $3 ~ /\/jtoye-core-java$/ { sub(/\/jtoye-core-java$/, "/jtoye", $3); print $3; exit }' k8s/production/kustomization.yaml)"
+          if [ -z "$SELECTOR_BASE" ]; then
+            echo "FATAL: could not read the images[].name selector out of k8s/production/kustomization.yaml." >&2
+            echo "       Without it this step would pin nothing at all, so it fails closed rather than guessing." >&2
+            exit 2
+          fi
+          IMAGE_PUBLISH_BASE="${REGISTRY}/${IMAGE_OWNER,,}/jtoye"
+          echo "selector ${SELECTOR_BASE}-<svc>  ->  published ${IMAGE_PUBLISH_BASE}-<svc>:${{ github.sha }}"
           (cd k8s/production && kustomize edit set image \
-            ghcr.io/bralabee/jtoye-core-java=ghcr.io/bralabee/jtoye-core-java:${{ github.sha }} \
-            ghcr.io/bralabee/jtoye-edge-go=ghcr.io/bralabee/jtoye-edge-go:${{ github.sha }} \
-            ghcr.io/bralabee/jtoye-frontend=ghcr.io/bralabee/jtoye-frontend:${{ github.sha }})
+            "${SELECTOR_BASE}-core-java=${IMAGE_PUBLISH_BASE}-core-java:${{ github.sha }}" \
+            "${SELECTOR_BASE}-edge-go=${IMAGE_PUBLISH_BASE}-edge-go:${{ github.sha }}" \
+            "${SELECTOR_BASE}-frontend=${IMAGE_PUBLISH_BASE}-frontend:${{ github.sha }}")
           # Premortem guard: assert the RENDERED overlay actually pins :<sha> on
           # all three jtoye images BEFORE apply. A silent images[].name key
           # mismatch would fall back to the static 2.1.0 default and deploy the
-          # wrong (or non-existent) image — fail loudly here instead.
+          # wrong (or non-existent) image — fail loudly here instead. Here-string,
+          # not `echo … | grep -q`, for the pipefail/SIGPIPE reason spelled out in
+          # the deploy-staging step.
           RENDERED="$(kustomize build k8s/production)"
           for svc in core-java edge-go frontend; do
-            if ! echo "$RENDERED" | grep -q "ghcr.io/bralabee/jtoye-${svc}:${{ github.sha }}"; then
-              echo "FATAL: rendered production overlay does not pin ghcr.io/bralabee/jtoye-${svc}:${{ github.sha }}"
-              echo "Rendered jtoye image refs were:"
-              echo "$RENDERED" | grep -E "image: ghcr.io/bralabee/jtoye-" || true
+            if ! grep -q "${IMAGE_PUBLISH_BASE}-${svc}:${{ github.sha }}" <<< "$RENDERED"; then
+              echo "FATAL: rendered production overlay does not pin ${IMAGE_PUBLISH_BASE}-${svc}:${{ github.sha }}" >&2
+              echo "Rendered jtoye image refs were:" >&2
+              grep -E "image: .*/jtoye-" <<< "$RENDERED" >&2 || true
               exit 1
             fi
           done

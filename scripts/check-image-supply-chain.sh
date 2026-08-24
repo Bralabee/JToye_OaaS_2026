@@ -14,7 +14,10 @@
 #   of them is the kind of thing that is set once in a YAML file and then quietly
 #   regresses. This gate is those properties, executable.
 #
-# THE FIVE CROSS-REFERENCES
+# THE SEVEN CROSS-REFERENCES
+#
+#   X-6 and X-7 are summarised here and argued in full at their own blocks below,
+#   beside the code that enforces them.
 #
 #   X-1 BLAST RADIUS. build-and-push's matrix must declare `fail-fast: false`.
 #       Under the default, one leg's failure CANCELS the others: the two failed
@@ -61,6 +64,18 @@
 #       cannot be satisfied by anything in a PR's diff, so gating a PR on it
 #       would be the "correct but unsatisfiable from inside a PR" shape this repo
 #       has already been bitten by once.
+#
+#   X-6 REFERENCE NORMALISATION (#658). Every image reference base-image-freshness.yml
+#       assembles by hand must route through its `lower_repo` helper. A GHCR path
+#       must be lowercase and this repo's owner is mixed-case, so an unnormalised
+#       reference is INVALID and every scan leg VOIDs — which is what happened for
+#       21 consecutive runs while X-5 stayed green.
+#
+#   X-7 DEPLOY-REFERENCE DERIVATION (#659). ci-cd.yaml must name no image owner as
+#       a literal, and every step that pins images must derive a lowercased publish
+#       base from `github.repository_owner`. The workflow derived the owner in two
+#       places and hardcoded it in twelve, so a fork or a rename made the publish
+#       side and the deploy side disagree.
 #
 # WHAT THIS GATE DELIBERATELY DOES NOT DO
 #
@@ -374,6 +389,96 @@ if [ "$X6_FAIL" -ne 0 ]; then
 	exit 1
 fi
 
-echo "PASS: image supply-chain contract intact (fail-fast, gate shape, dependabot coverage, scheduled-scan fidelity, reference normalisation)."
+# --- X-7  DEPLOY-REFERENCE DERIVATION (added #659) ---------------------------
+#
+# ci-cd.yaml must never name the image OWNER as a literal. It derived the owner
+# from `github.repository_owner` in TWO places — `env.IMAGE_PREFIX` and the
+# metadata-action `images:` input — and then pinned it as a lowercase literal in
+# TWELVE others: both deploy jobs' `kustomize edit set image` lines and both
+# premortem greps. The two halves disagree the moment the owner changes. On a
+# fork, an org transfer or a rename, build-and-push publishes under the NEW owner
+# (metadata-action derives and lowercases it) while the deploy still selects and
+# asserts the OLD one, and the premortem guard fires FATAL against a reference no
+# rebuild can produce: the image exists, just not under that name.
+#
+# Same class as X-6 one layer down. X-6 covers base-image-freshness.yml only.
+#
+# WHY THE ASSERTION IS NOT "DERIVE BOTH SIDES". The two sides of `kustomize edit
+# set image` are not the same string and must not be derived the same way. The
+# LHS is a SELECTOR into the checked-in manifests — it has to equal the
+# `images[].name` key in k8s/<env>/kustomization.yaml, which a fork does not
+# rewrite — so it is read out of that file. The RHS is the REFERENCE that was
+# published, so it is derived from the owner and lowercased. Measured 2026-08-24
+# by rendering the staging overlay with owner `Acme-Fork`: selector-from-file
+# pins all three at ghcr.io/acme-fork/jtoye-<svc>:<sha>, while deriving the
+# SELECTOR from the owner too silently falls back to the immutable 2.1.0 default
+# and the premortem guard FATALs. So (a) below forbids the literal and (b)
+# requires the derivation; neither alone is the contract.
+#
+# Break arms, both run: restore an owner literal on either deploy line and (a)
+# fires by line number; delete an IMAGE_PUBLISH_BASE assignment and (b) fires on
+# the count.
+X7_FAIL=0
+
+# Discovery FIRST, so an empty result is VOID rather than a silent pass. This is
+# the set the assertions are about: if ci-cd.yaml stops pinning images at all,
+# the questions below are meaningless and this gate has to say so rather than
+# report clean.
+#
+# Comment lines are dropped FIRST, into a variable, and the counting is done
+# against that. Both halves of this were paid for while writing the gate:
+#
+#   - Counting the raw file returned 3 pinning steps against 2, because a comment
+#     in ci-cd.yaml explaining this very fix names the command in backticks. The
+#     gate counted the documentation of the thing as the thing. (Anchoring on the
+#     `(cd k8s/… && …)` shape instead was rejected — that couples the gate to one
+#     spelling of the step, so a harmless rewrite would read as a deleted deploy.)
+#   - Folding the filter into the pattern as a `^[[:space:]]*[^#[:space:]]` prefix
+#     then returned 0 derivations against 2, silently: ERE has no lookahead, so
+#     that prefix CONSUMES the `I` of `IMAGE_PUBLISH_BASE` and the rest of the
+#     pattern can never match it. It read as a real violation and it was not one.
+#     A filter that eats the token it is filtering for is worse than no filter.
+CI_CODE="$(grep -vE '^[[:space:]]*#' "$CI_WORKFLOW")" || CI_CODE=""
+[ -n "$CI_CODE" ] || void "X-7 stripping comments from $CI_WORKFLOW left NOTHING — the filter broke"
+
+X7_PINS="$(grep -cE 'kustomize edit set image' <<< "$CI_CODE")" || X7_PINS=0
+[ "$X7_PINS" -gt 0 ] || void "X-7 found ZERO 'kustomize edit set image' invocations in $CI_WORKFLOW — nothing was evaluated"
+
+# (a) No hardcoded owner in any registry path. Deliberately scanned over the WHOLE
+# file, comments included — a stale owner in a comment is how the next person
+# learns the wrong name — and that strict form is satisfiable, measured: the
+# workflow carries zero matches. The owner class is [A-Za-z0-9-] because GitHub
+# owners cannot contain a dot, which is what keeps this off the
+# `ghcr.io/.../jtoye-<svc>` PLACEHOLDER in the build-and-push comment. A rule that
+# fires on its own documentation is a rule people delete.
+X7_LITERALS="$(grep -nE 'ghcr\.io/[A-Za-z0-9-]+/jtoye' "$CI_WORKFLOW")" || X7_LITERALS=""
+if [ -n "$X7_LITERALS" ]; then
+	echo "FAIL: X-7 $CI_WORKFLOW hardcodes the image owner in a registry path:" >&2
+	printf '%s\n' "$X7_LITERALS" | while IFS= read -r l; do
+		[ -n "$l" ] && echo "  - $l" >&2
+	done
+	X7_FAIL=1
+fi
+
+# (b) Every pinning step derives a LOWERCASED publish base from the owner.
+X7_BASES="$(grep -cE 'IMAGE_PUBLISH_BASE=.*IMAGE_OWNER,,' <<< "$CI_CODE")" || X7_BASES=0
+if [ "$X7_BASES" -ne "$X7_PINS" ]; then
+	echo "FAIL: X-7 $CI_WORKFLOW has $X7_PINS image-pinning step(s) but $X7_BASES lowercased" >&2
+	echo "      IMAGE_PUBLISH_BASE derivation(s) — every step that pins images must build its" >&2
+	echo "      reference from \${IMAGE_OWNER,,}." >&2
+	X7_FAIL=1
+fi
+
+if [ "$X7_FAIL" -ne 0 ]; then
+	echo "" >&2
+	echo "The two sides of \`kustomize edit set image\` are NOT the same string. Read the LHS" >&2
+	echo "selector out of k8s/<env>/kustomization.yaml, which is what it has to match; derive" >&2
+	echo "the RHS reference from github.repository_owner and lowercase it, which is what" >&2
+	echo "build-and-push published. Hardcoding either one makes the two disagree on a fork or" >&2
+	echo "a rename, and no rebuild can fix a name that was never pushed." >&2
+	exit 1
+fi
+
+echo "PASS: image supply-chain contract intact (fail-fast, gate shape, dependabot coverage, scheduled-scan fidelity, reference normalisation, deploy-reference derivation)."
 echo "      NOTE: this asserts the MECHANISM, not today's CVEs. It says nothing about whether the images are clean."
 exit 0
