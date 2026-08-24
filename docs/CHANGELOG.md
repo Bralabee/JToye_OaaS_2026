@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A push to `main` is now refused locally, and the docs stop telling you to break the hook system (#656) — 2026-08-24
+
+- **This repo had no pre-push gate at all.** The global dispatcher has always delegated to a
+  repo-local `.githooks/<name>`, but only `post-merge` existed here, so every push went
+  unchecked. `.githooks/pre-push` now blocks three things, each fast and offline: a direct
+  push to the base branch, a branch behind its base, and gitleaks over the pushed commit
+  range. Nothing compiles or starts a container — the build, Testcontainers, typecheck and
+  E2E stay in CI, which already owns them.
+- **P-1 is asserted on the remote ref, not the local branch name**, so `git push HEAD:main`
+  from a feature branch is caught too. `block-main-branch.sh` enforced this rule only for the
+  Claude Code Bash tool; a push typed into a terminal was gated nowhere.
+- **P-3 is the one check that cannot be left to CI.** `gitleaks.yml` runs after the push, and
+  this repo is public, so the secret is compromised the instant it lands — a red job is then a
+  notification, not a gate. A missing gitleaks binary is a loud SKIP, never a silent pass.
+- **The selftest caught two silent-pass fixtures before any of it was trusted.** The first
+  planted the documented AWS example key, which gitleaks 8.30.1 allowlists by default, so the
+  arm passed while detecting nothing; the second used a 38-character token where the rule
+  wants 36. The fixture is now generated at runtime — a matchable literal in that file would
+  make this repo's own `gitleaks.yml` fail on the hook that exists to catch secrets — and both
+  directions are asserted. The battery was itself proven able to go red.
+- **Code review is advisory here, not a gate**, deliberately. An LLM reviewer is a finder: its
+  fail direction is not reproducible, so the same diff can pass one run and flag the next, and
+  a check that cannot be demonstrated failing on demand is not a gate.
+- **`scripts/pre-commit-gitleaks.sh` told you to run `git config core.hooksPath scripts`**,
+  which `install-hooks.sh` already documents as harmful — a repo-level `core.hooksPath`
+  replaces the global dispatcher directory, silently disabling `prepare-commit-msg` and now
+  `pre-push`. The obvious correction does not work either: measured, the dispatcher set holds
+  no `pre-commit`, so a committed `.githooks/pre-commit` would be skipped in silence. The
+  header now says that outright rather than offering a second instruction that does nothing.
+- **The GSD quality gates are in force for this project** — fifteen were off. GSD reads every
+  setting as `config-get KEY || echo "false"`, so a key absent from `.planning/config.json`
+  falls through to the workflow's inline default, never to `~/.gsd/defaults.json`; a break arm
+  confirmed the global file reaches neither entry point. Enables TDD mode, ASVS level 2
+  security verification blocking on medium, deep code review, drift auto-remap, the decision
+  coverage gate and global learnings, and injects a `proof-standards` skill into the GSD
+  executor, verifier, code-reviewer and planner agents.
+
 ### Phase 31 — consumer safety and the legal floor — 2026-08-16 (#633)
 
 Eighteen plans across five waves. Publishes the consumer-facing legal surface, puts the order's
