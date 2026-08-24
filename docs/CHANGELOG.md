@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pre-push`. The obvious correction does not work either: measured, the dispatcher set holds
   no `pre-commit`, so a committed `.githooks/pre-commit` would be skipped in silence. The
   header now says that outright rather than offering a second instruction that does nothing.
+- **`golang.org/x/mod` in `edge-go` moved 0.37.0 → 0.40.0**, closing CVE-2026-56864 and
+  CVE-2026-56865 (both HIGH, both fixable): a malicious GOSUMDB could serve arbitrary module
+  content, and a malicious GOPROXY could forge sumdb responses. The Trivy gate had been red on
+  `main` since 2026-08-19 over exactly these two, so the required Security Scan check was
+  blocking every merge — this was not introduced here, it was in the way. Bumping the one
+  module pulled `x/crypto`, `x/net`, `x/text` and `x/tools` forward transitively; all five are
+  indirect. `go build`, `go vet` and `go test ./...` all clean afterwards.
 - **The GSD quality gates are in force for this project** — fifteen were off. GSD reads every
   setting as `config-get KEY || echo "false"`, so a key absent from `.planning/config.json`
   falls through to the workflow's inline default, never to `~/.gsd/defaults.json`; a break arm
