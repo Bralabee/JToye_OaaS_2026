@@ -120,6 +120,27 @@ jobs:
           OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
+
+          # Lowercase the repository NAME of an image reference and leave the tag
+          # or digest untouched. A registry path must be lowercase; a TAG may
+          # legally carry uppercase, so folding the whole string would corrupt a
+          # valid reference. The split point is the last ':' AFTER the last '/' —
+          # that qualifier is what separates a tag from a registry PORT, so
+          # `host:5000/ns/img` is not mangled.
+          lower_repo() {
+            local ref="$1" head rest last
+            if [ "${ref}" != "${ref#*@}" ]; then      # digest form: no tag to keep
+              head="${ref%%@*}"; rest="@${ref#*@}"
+            else
+              last="${ref##*/}"
+              case "${last}" in
+                *:*) head="${ref%:*}"; rest=":${ref##*:}" ;;
+                *)   head="${ref}";    rest="" ;;
+              esac
+            fi
+            printf '%s%s' "${head,,}" "${rest}"
+          }
+
           if [ -n "${OVERRIDE:-}" ]; then
             # Only the first matrix leg does the work in override mode, so a
             # single dispatch does not scan the same ref three times.
@@ -129,33 +150,50 @@ jobs:
               echo "Override supplied; this leg is a no-op (leg core-java runs it)."
               exit 0
             fi
-            REF="${OVERRIDE}"
+            REF="$(lower_repo "${OVERRIDE}")"
           else
-            # GHCR repository names MUST be lowercase, and this repo's owner is
-            # mixed-case (`Bralabee`) — so the reference assembled here was invalid
-            # and NOTHING WAS EVER SCANNED. ci-cd.yaml never hit this because
-            # docker/metadata-action lowercases the image name for you; only a
-            # reference built by hand, as this one is, has to do it itself.
-            #
-            # Measured 2026-08-24, both directions:
-            #   docker manifest inspect ghcr.io/Bralabee/jtoye-edge-go:latest
-            #     -> rc=1  "invalid reference format: repository name ... must be lowercase"
-            #   docker manifest inspect ghcr.io/bralabee/jtoye-edge-go:latest
-            #     -> rc=0  a real OCI index; likewise core-java and frontend
-            #
-            # Every scheduled run from 2026-08-17 through 2026-08-24 tripped the
-            # VOID arm below on exactly this. The VOID arm was RIGHT — it refused
-            # to call an unresolvable image clean — but the scan never ran once,
-            # so eight days of "this workflow is red" carried no CVE information
-            # at all in either direction.
-            #
-            # Only the OWNER is lowercased, deliberately not the whole reference:
-            # an explicit image_ref override may legitimately carry an uppercase
-            # TAG (only the repository NAME must be lowercase), so folding the
-            # override through tr would corrupt a valid reference.
-            OWNER_LC="$(printf '%s' "${OWNER}" | tr '[:upper:]' '[:lower:]')"
-            REF="ghcr.io/${OWNER_LC}/jtoye-${SERVICE}:latest"
+            REF="$(lower_repo "ghcr.io/${OWNER}/jtoye-${SERVICE}:latest")"
           fi
+
+          # WHY BOTH PATHS ARE NORMALISED, AND WHY THIS FUNCTION EXISTS AT ALL.
+          #
+          # GHCR repository names must be lowercase, and this repo's owner is
+          # mixed-case (`Bralabee`). ci-cd.yaml never hit this because
+          # docker/metadata-action lowercases the image name for you; only a
+          # reference built by hand, as this one is, has to do it itself.
+          #
+          # The scheduled path was the visible half. The DISPATCH path is the
+          # other one and it fails identically: the image_ref input's own
+          # description offers `ghcr.io/owner/jtoye-frontend:main-abc1234` as the
+          # example, and GitHub displays this owner as `Bralabee` everywhere a
+          # maintainer would copy it from. Normalising only the scheduled path
+          # would have left "the observation path a PR author otherwise does not
+          # have" — this workflow's stated purpose — broken for the same reason.
+          #
+          # Measured 2026-08-24, both directions:
+          #   ghcr.io/Bralabee/jtoye-edge-go:latest -> rc=1
+          #     "invalid reference format: repository name ... must be lowercase"
+          #   ghcr.io/bralabee/jtoye-edge-go:latest -> rc=0, a real OCI index
+          #
+          # See docs/CHANGELOG.md (#658) for the run history this comes from; the
+          # figures are kept in ONE place there rather than restated here.
+
+          # $GITHUB_OUTPUT is a line-oriented key=value file, and REF can come
+          # from the attacker-reachable `image_ref` dispatch input — the REST API
+          # accepts newlines in a `type: string` input even though the UI field is
+          # single-line. A multi-line value injects further keys, and a second
+          # `skip=true` line wins the duplicate-key race: the login, the VOID arm
+          # and Trivy would ALL be skipped and the job would report success having
+          # scanned nothing. That is precisely the fail-open the header block
+          # forbids. Rejected rather than escaped — there is no legitimate
+          # multi-line image reference to preserve.
+          ctrl=$(printf '%s' "${REF}" | tr -cd '\n\r' | wc -c)
+          if [ "${ctrl}" -ne 0 ]; then
+            echo "VOID: image reference contains a newline or carriage return." >&2
+            echo "      Refusing to write it to \$GITHUB_OUTPUT — nothing scanned." >&2
+            exit 2
+          fi
+
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "image_ref=${REF}" >> "$GITHUB_OUTPUT"
           echo "Will scan: ${REF}"
@@ -174,6 +212,7 @@ jobs:
       # line. Fails the leg — an image we cannot inspect is not an image we have
       # any evidence about.
       - name: Assert the image exists before scanning (VOID arm)
+        id: manifest
         if: steps.ref.outputs.skip == 'false'
         env:
           IMAGE_REF: ${{ steps.ref.outputs.image_ref }}
@@ -245,18 +284,26 @@ jobs:
           # the writer takes SIGPIPE, pipefail promotes it to 141) and this guard
           # would fail OPEN, filing a duplicate every single morning.
           lrc=0
+          # stderr goes to its OWN file, never into `existing`. With `2>&1` folded
+          # in, a gh that exits 0 while printing anything to stderr — an upgrade
+          # notice, a deprecation or rate-limit warning — puts that TEXT into
+          # `existing`. Non-empty then selects the "refresh" branch below and the
+          # step runs `gh issue comment "<warning text>"`, which fails under set -e
+          # and the CVE finding is never reported at all. That is the one path
+          # whose stated priority is that a silently unreported CVE is the worst
+          # outcome, so it must not depend on gh keeping stderr quiet.
+          errf="$(mktemp)"
           existing=$(gh issue list --state open --limit 100 \
                        --json number,title \
-                       --jq ".[] | select(.title == \"${TITLE}\") | .number" 2>&1) || lrc=$?
+                       --jq ".[] | select(.title == \"${TITLE}\") | .number" 2>"${errf}") || lrc=$?
           if [ "${lrc}" -ne 0 ]; then
             # Say so out loud rather than treating "could not look" as "none
             # found". The create below then files a possible duplicate, which is
             # the right way round: a duplicate issue is recoverable, a silently
             # unreported CVE is not.
             echo "WARN: could not list open issues (rc=${lrc}); de-duplication is DISABLED for this run." >&2
-            echo "${existing}" >&2
+            cat "${errf}" >&2
             existing=""
-          fi
 
           # The heredoc body is indented to the SAME column as the `run: |` block
           # scalar. YAML strips that common indentation, so the shell receives the
@@ -336,6 +383,93 @@ jobs:
             gh issue create --title "${TITLE}" --body-file "${body_file}" \
               --label ci --label security || {
               # A missing label must not swallow the report.
+              echo "Label-qualified create failed; retrying without labels." >&2
+              gh issue create --title "${TITLE}" --body-file "${body_file}"
+            }
+          fi
+
+      # THE OTHER HALF OF THE REPORT PATH, and the reason this workflow's own
+      # blindness went unreported for its entire life.
+      #
+      # The step above is gated on the SCAN failing. When the run is VOID —
+      # unresolvable reference, registry unreachable, image never published — the
+      # scan is SKIPPED, so that condition is false, nothing is filed, and the
+      # only signal is a red run in a scheduled workflow that is deliberately not
+      # a required check and appears on no PR.
+      #
+      # Measured 2026-08-24: 21 consecutive scheduled failures, 2026-08-04 through
+      # 2026-08-24 — every run this workflow has ever had — filed ZERO issues and
+      # sent zero notifications. The malformed reference was eventually found by a
+      # human reading run history, which is not a detection path.
+      #
+      # "Could not check" already exits non-zero here; what was missing was that
+      # it also has to SAY SO somewhere a person looks. Deliberately a SEPARATE
+      # issue title from the findings one: "we scanned and found CVEs" and "we
+      # could not scan at all" are different problems with different triage, and
+      # collapsing them would let a VOID hide inside a findings thread.
+      - name: Report that the scan was VOID
+        if: >-
+          failure()
+          && (steps.ref.outcome == 'failure' || steps.manifest.outcome == 'failure')
+          && (github.event_name == 'schedule' || inputs.open_issue)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_REF: ${{ steps.ref.outputs.image_ref }}
+          SERVICE: ${{ matrix.service }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="Base-image scan is VOID (nothing scanned): jtoye-${SERVICE}"
+
+          # Same de-duplication shape as the findings step, including keeping
+          # stderr out of the value that becomes an issue number.
+          lrc=0
+          errf="$(mktemp)"
+          existing=$(gh issue list --state open --limit 100 \
+                       --json number,title \
+                       --jq ".[] | select(.title == \"${TITLE}\") | .number" 2>"${errf}") || lrc=$?
+          if [ "${lrc}" -ne 0 ]; then
+            echo "WARN: could not list open issues (rc=${lrc}); de-duplication is DISABLED for this run." >&2
+            cat "${errf}" >&2
+            existing=""
+          fi
+
+          body_file="$(mktemp)"
+          cat > "${body_file}" <<'EOF'
+          The daily base-image scan **could not scan anything**. This is not a
+          clean result and it is not a CVE finding — it means the workflow
+          produced no evidence in either direction.
+
+          A VOID is usually one of:
+
+          1. **A malformed image reference.** The reference is assembled from
+             `github.repository_owner`, which is mixed-case on this repo; registry
+             paths must be lowercase. This exact defect kept the workflow blind
+             from 2026-08-04 to 2026-08-24 and is guarded by `X-6` in
+             `scripts/check-image-supply-chain.sh`.
+          2. **The image was never published.** Check that `build-and-push` ran on
+             the default branch and that the `:latest` tag exists.
+          3. **The registry is unreachable or the token cannot read it.** Check the
+             `packages: read` permission and ghcr.io status.
+
+          Do not close this by re-running until it goes green — a VOID that clears
+          on a retry was still a day with no scan. Close it when the reference
+          resolves and the Trivy step actually runs.
+
+          EOF
+          {
+            echo "**Image reference the run tried to scan:** \`${IMAGE_REF:-<not resolved>}\`"
+            echo ""
+            echo "**Run:** ${RUN_URL}"
+          } >> "${body_file}"
+
+          if [ -n "${existing}" ]; then
+            num="${existing%%$'\n'*}"
+            gh issue comment "${num}" --body-file "${body_file}"
+            echo "Refreshed existing VOID issue #${num}."
+          else
+            gh issue create --title "${TITLE}" --body-file "${body_file}" \
+              --label ci --label security || {
               echo "Label-qualified create failed; retrying without labels." >&2
               gh issue create --title "${TITLE}" --body-file "${body_file}"
             }
