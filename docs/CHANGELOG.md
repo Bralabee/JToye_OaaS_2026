@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The amqp-client CVE pin was setting a Spring Boot property that does not exist (#657) — 2026-08-24
+
+- **The 6 amqp-client CVEs were being closed two ways at once, and only one of them worked.**
+  `extra["rabbitmq-amqp-client.version"]` sets a key nothing reads —
+  `spring-boot-dependencies-3.5.16.pom:174` declares it as `rabbit-amqp-client.version`. The
+  near-miss changed nothing while looking exactly like the mechanism that closed the CVEs.
+- **The explicit `implementation("com.rabbitmq:amqp-client:5.33.1")` was masking it.** Measured
+  with `dependencyInsight`, both directions run: misspelled property with the pin removed
+  resolves **5.25.0** (vulnerable); corrected property with the pin removed resolves 5.33.1. Two
+  mechanisms, one silently inert and the working one covering for it, is exactly why the typo was
+  invisible — so the property is corrected and the redundant direct dependency is gone rather
+  than kept as a second belt.
+- **The Trivy gate is the enforcement, not this line.** If a future Spring Boot renames the key
+  again the version silently reverts; `ci-cd.yaml` fails the build on fixable HIGH/CRITICAL and is
+  a required check.
+- **18 line-number citations in `.planning/codebase/STACK.md` and `INTEGRATIONS.md` were repaired**
+  — they cite `core-java/build.gradle.kts` by line and every edit to that file shifts them.
+  Recomputed from the gate's own FAIL output by token match, and confirmed against a clean
+  worktree that the 18 were the line shift rather than pre-existing drift.
+- Verified: 1136 unit tests and 604 integration tests, 0 failures. Two measurement traps caught in
+  the process — a first unit-test aggregate reporting 3 failures that were 2025-12-27 files in the
+  stale `core-java/build/` rather than `build-local`, and an integration run whose reported
+  "exit code 0" was `tail`'s rather than gradle's, masking a `BUILD FAILED`.
+
 ### A push to `main` is now refused locally, and the docs stop telling you to break the hook system (#656) — 2026-08-24
 
 - **This repo had no pre-push gate at all.** The global dispatcher has always delegated to a
