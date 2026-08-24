@@ -415,9 +415,9 @@ fi
 # and the premortem guard FATALs. So (a) below forbids the literal and (b)
 # requires the derivation; neither alone is the contract.
 #
-# Break arms, both run: restore an owner literal on either deploy line and (a)
+# Break arms, all run: restore an owner literal on either deploy line and (a)
 # fires by line number; delete an IMAGE_PUBLISH_BASE assignment and (b) fires on
-# the count.
+# the count; change either workflow's image prefix and (c) fires on the mismatch.
 X7_FAIL=0
 
 # Discovery FIRST, so an empty result is VOID rather than a silent pass. This is
@@ -468,6 +468,44 @@ if [ "$X7_BASES" -ne "$X7_PINS" ]; then
 	echo "      reference from \${IMAGE_OWNER,,}." >&2
 	X7_FAIL=1
 fi
+
+# (c) The two workflows must agree on the base they build. (a) and (b) each keep
+# ONE file honest against the registry; neither says the two files still describe
+# the same image. They reach it by different mechanisms on purpose — the freshness
+# workflow normalises an arbitrary reference (it accepts a dispatch input that may
+# carry a tag, a digest or a registry port, hence `lower_repo`), while the deploy
+# lowercases a bare owner segment — so the thing to assert is the VALUE they
+# produce, not the spelling they use to produce it. Comparing spellings would
+# couple both files to one phrasing and make a harmless rewrite read as drift.
+CI_REGISTRY="$(awk '/^[[:space:]]*REGISTRY:/ { print $2; exit }' "$CI_WORKFLOW")"
+CI_PREFIX="$(awk -F'/' '/^[[:space:]]*IMAGE_PREFIX:/ { gsub(/[[:space:]]/,"",$NF); print $NF; exit }' "$CI_WORKFLOW")"
+FR_PREFIX="$(awk -F'/' '/lower_repo "ghcr\.io\// { split($3, a, "-"); print a[1]; exit }' "$FRESHNESS_WORKFLOW")"
+[ -n "$CI_REGISTRY" ] && [ -n "$CI_PREFIX" ] && [ -n "$FR_PREFIX" ] || \
+	void "X-7(c) could not extract registry/prefix (ci='$CI_REGISTRY'/'$CI_PREFIX' freshness='$FR_PREFIX') — the extraction broke, so nothing was compared"
+
+if [ "$CI_PREFIX" != "$FR_PREFIX" ]; then
+	echo "FAIL: X-7 the two workflows build DIFFERENT image bases:" >&2
+	echo "        $CI_WORKFLOW        -> $CI_REGISTRY/<owner>/$CI_PREFIX-<svc>" >&2
+	echo "        $FRESHNESS_WORKFLOW -> ghcr.io/<owner>/$FR_PREFIX-<svc>" >&2
+	echo "      The scheduled scan would then be reporting on images the pipeline does not push." >&2
+	X7_FAIL=1
+fi
+
+if [ "$CI_REGISTRY" != "ghcr.io" ]; then
+	echo "FAIL: X-7 $CI_WORKFLOW publishes to '$CI_REGISTRY' but $FRESHNESS_WORKFLOW hardcodes ghcr.io." >&2
+	X7_FAIL=1
+fi
+
+# Both must take the owner from the SAME source. Either one pinning a literal
+# owner is already caught by (a) for ci-cd.yaml; this is the freshness half.
+for pair in "$CI_WORKFLOW|^[[:space:]]*IMAGE_PREFIX:.*github\.repository_owner" \
+            "$FRESHNESS_WORKFLOW|OWNER:.*github\.repository_owner"; do
+	f="${pair%%|*}"; pat="${pair#*|}"
+	if ! grep -qE "$pat" "$f"; then
+		echo "FAIL: X-7 $f no longer sources the image owner from github.repository_owner." >&2
+		X7_FAIL=1
+	fi
+done
 
 if [ "$X7_FAIL" -ne 0 ]; then
 	echo "" >&2
