@@ -164,7 +164,7 @@ callers pass fixed internal keys. Fix it when the `next` 16.3.0 migration happen
 Phase 31's own deferred register is `.planning/phases/31-consumer-safety-and-legal-floor/deferred-items.md`
 (DEF-31-11-01 plus five items from 31-17/31-18).
 
-## Three more instrument failures, 2026-08-24 — one of them in the prescribed remedy
+## Four more instrument failures, 2026-08-24 — one in the prescribed remedy, one already archived
 
 These are additions to the 2026-08-18 list below, not replacements. All three produced a
 *confident wrong answer*, not an error.
@@ -190,7 +190,29 @@ These are additions to the 2026-08-18 list below, not replacements. All three pr
    the lesson: not a claim that a command is insufficient, but a repair script reporting its own
    failure to repair.
 
-2. **The truncating filter, walked into while fixing a blind detector.**
+
+   **CORRECTION, and the more useful finding: this was already diagnosed on 2026-08-07 and
+   archived.** `docs/archive/HANDOFF-history-through-2026-08-17.md` line 673 reads, verbatim:
+   *"`sync-runtime.sh` rebuilds but does not always recreate. It left both `frontend` and
+   `core-java` on their previous image IDs; the gate correctly said `[container-not-recreated]` and
+   both needed `docker compose up -d --force-recreate --no-deps <svc>`."* The squash-merge re-date
+   finding sits in the same bullet block (*"Any PR touching a build input costs a rebuild AFTER
+   merge"*). Both were correct, both were actionable, and the script stayed broken for 17 days —
+   because archiving the handoff moved the diagnosis somewhere no gate reads and nobody re-reads.
+   **The archive's own header warns that its CLAIMS cannot be trusted; its DIAGNOSES were fine.**
+   Before concluding you have found something in this repo, grep the archive: #658's reviewer found
+   the same shape there (`.planning/quick` had recorded "metadata-action lowercases owner" a month
+   before that workflow was written).
+2. **`awk … > new && mv new old` silently drops a file's executable bit**, and a defensive `chmod`
+   in CI hid it. Two scripts went `100755 -> 100644` this way this session:
+   `check-image-supply-chain.sh` (in #658) and `sync-runtime.sh` (in #662). Nothing failed, because
+   `ci-cd.yaml` already runs `chmod +x ./scripts/check-image-supply-chain.sh` immediately before
+   executing it directly, and every other call site uses `bash scripts/…`. So the regression was
+   invisible in both directions: CI compensated, and the humans use `bash`. It surfaced only in a
+   merge diff line — `mode change 100755 => 100644`. Prefer editing in place (`sed -i`), or restore
+   the bit with `git update-index --chmod=+x` and CHECK THE MERGE DIFF for mode changes.
+
+3. **The truncating filter, walked into while fixing a blind detector.**
    `gh run list --workflow X --limit 8` was used to establish *how long* a workflow had been
    failing, and answered "eight days". `--limit 100` returns **21** rows, all failure, back to the
    day the workflow landed. A bounded stream cannot answer a question about the EXTENT of
@@ -198,7 +220,7 @@ These are additions to the 2026-08-18 list below, not replacements. All three pr
    message, a changelog entry and a PR body before code review caught it. This trap was already
    recorded in this repo, which is the point.
 
-3. **`gh pr view --json statusCheckRollup` lags the job it reports.** The Testcontainers job
+4. **`gh pr view --json statusCheckRollup` lags the job it reports.** The Testcontainers job
    completed `success` at 16:01:26Z while the PR rollup still showed it `PENDING` for minutes
    afterwards, across repeated polls. A poll loop that only reads the rollup will sit past a
    finished run. Read the JOB (`gh run view <id> --json jobs`) when the answer matters; the rollup
