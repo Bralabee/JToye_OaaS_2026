@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The daily base-image scan had never scanned anything (#658) — 2026-08-24
+
+- **Eight consecutive scheduled runs failed on a malformed image reference, not on a CVE.**
+  `base-image-freshness.yml` assembles `ghcr.io/${OWNER}/jtoye-${SERVICE}:latest` by hand from
+  `github.repository_owner`, which is `Bralabee`. GHCR repository names must be lowercase, so
+  every matrix leg tripped the VOID arm before reaching Trivy — 2026-08-17 through 2026-08-24.
+- **The VOID arm was right; the workflow was still blind.** It correctly refused to report an
+  unresolvable image as clean. The consequence is that the scan produced **no CVE information in
+  either direction** for eight days, on images that are published, public and resolvable.
+- **`ci-cd.yaml` never hit this** because `docker/metadata-action` lowercases the image name for
+  you — which is also why the images genuinely exist at `ghcr.io/bralabee/jtoye-<svc>:latest`, and
+  why that file's deploy jobs refer to them in hardcoded lowercase. Only a reference built by hand
+  had to do it itself.
+- Measured both directions, all three services: `ghcr.io/Bralabee/...` → rc=1
+  `invalid reference format: repository name ... must be lowercase`; `ghcr.io/bralabee/...` → rc=0,
+  a real OCI index. **Only the owner is lowercased**, deliberately not the whole reference — an
+  explicit `image_ref` override may legitimately carry an uppercase TAG.
+- `scripts/check-image-supply-chain.sh` bracketed clean → break → clean: a flush-left line
+  terminating the `run: |` block scalar drives it to **rc=2 VOID**, restore verified by
+  `git hash-object`. The trivy step's inputs are untouched, so the workflow still asks the gate's
+  exact question.
+- **Also: the amqp-client pin is a MINOR bump, not a patch-level one.** #657's comment described
+  `5.25.0 -> 5.33.1` as "a patch-level upgrade within the same minor line"; it is eight minor
+  releases. Comment-only and line-count neutral, so the `build.gradle.kts` citations that same PR
+  repaired do not shift again.
+- **Not fixed here:** nobody was told for eight days. That is the same shape as #647 and belongs
+  with it.
+
 ### The amqp-client CVE pin was setting a Spring Boot property that does not exist (#657) — 2026-08-24
 
 - **The 6 amqp-client CVEs were being closed two ways at once, and only one of them worked.**
