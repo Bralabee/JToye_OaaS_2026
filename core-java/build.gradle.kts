@@ -55,9 +55,9 @@ extra["httpcore5.version"] = "5.4.3"
 //   CVE-2026-63336 (MEDIUM): TrustEverythingTrustManager MITM vulnerability
 //   CVE-2026-61634 (LOW): Frame size validation bypass
 //
-// 5.33.1 is the exact fixed version addressing all 6 CVEs. This is a patch-level
-// upgrade (5.25.0 → 5.33.1) within the same minor line, maintaining API compatibility
-// while closing the security issues.
+// 5.33.1 is the exact fixed version addressing all 6 CVEs. It is a MINOR bump
+// (5.25.0 -> 5.33.1), NOT a patch-level one: eight minor releases, across which
+// runtime DEFAULTS can move even where the compiled API does not. See #658.
 //
 // THE PROPERTY NAME IS LOAD-BEARING AND EASY TO GET WRONG. It must match the key the
 // Spring Boot BOM actually declares — `rabbit-amqp-client.version`, defined at line 174
