@@ -27,16 +27,49 @@
     "discuss_mode": "discuss",
     "skip_discuss": false,
     "code_review": true,
-    "code_review_depth": "standard",
-    "_auto_chain_active": false
+    "code_review_depth": "deep",
+    "_auto_chain_active": false,
+    "tdd_mode": true,
+    "security_enforcement": true,
+    "security_asvs_level": 2,
+    "security_block_on": "medium",
+    "drift_action": "auto-remap",
+    "context_coverage_gate": true
   },
   "hooks": {
     "context_warnings": true
   },
   "project_code": null,
   "phase_naming": "sequential",
-  "agent_skills": {},
+  "agent_skills": {
+    "gsd-executor": [
+      ".claude/skills/proof-standards"
+    ],
+    "gsd-verifier": [
+      ".claude/skills/proof-standards"
+    ],
+    "gsd-code-reviewer": [
+      ".claude/skills/proof-standards"
+    ],
+    "gsd-planner": [
+      ".claude/skills/proof-standards"
+    ],
+    "gsd-ui-researcher": [
+      ".claude/skills/proof-standards",
+      "global:frontend-craft-sequence"
+    ],
+    "gsd-ui-auditor": [
+      ".claude/skills/proof-standards",
+      "global:frontend-craft-sequence"
+    ]
+  },
   "mode": "yolo",
   "granularity": "fine",
-  "context_window": 1000000
+  "context_window": 1000000,
+  "features": {
+    "global_learnings": true
+  },
+  "executor": {
+    "stall_threshold_minutes": 5
+  }
 }
