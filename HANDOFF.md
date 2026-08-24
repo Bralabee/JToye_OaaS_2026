@@ -1,17 +1,14 @@
-# Handoff: Phase 31 SHIPPED — nothing in flight, Phase 29 blocked on the owner
+# Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-18. This is now the ONLY block in this file, and it describes current state.**
-**Re-measure every figure here before quoting it forward** — that is the standing rule of this file,
-and this session proved it again (see "The instrument lied five times").
+**Generated 2026-08-24, replacing the 2026-08-18 block.** This is the only live block in this file.
+**Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
+the 2026-08-24 session broke it once itself (see "The truncating filter", below).
 
-> **History moved out on 2026-08-18.** This file had grown to 3035 lines across five stacked session
-> blocks; only the top one described anything current, and the four below it each opened with a
-> `git checkout` of a branch that had already merged and been deleted. They are archived **verbatim
-> and unedited** at **`docs/archive/HANDOFF-history-through-2026-08-17.md`** — Phase 28 close-out,
-> Phase 33 shipped, and two process-forensics sessions. Nothing was discarded: they carry measured
-> break-arm results and trap mechanisms recorded nowhere else. Note that the archive is **not**
-> covered by `scripts/check-handoff-contract.sh`, which reads this file only — so its stale claims
-> can neither red the build nor be trusted.
+> **History moved out on 2026-08-18.** Five stacked session blocks are archived verbatim at
+> **`docs/archive/HANDOFF-history-through-2026-08-17.md`** — Phase 28 close-out, Phase 33 shipped,
+> and two process-forensics sessions. They carry measured break-arm results and trap mechanisms
+> recorded nowhere else. The archive is **not** covered by `scripts/check-handoff-contract.sh`,
+> which reads this file only — so its stale claims can neither red the build nor be trusted.
 
 ## Resume here
 
@@ -20,13 +17,12 @@ and this session proved it again (see "The instrument lied five times").
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
-git log --oneline -3                    # newest = the PR #640 merge, or later work since
 
 # Gates. EXPECT 37 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
-# 2026-08-18 actual: 36 clean, plus check-e2e-skip-budget VOID — the documented
+# 2026-08-24 actual: 36 clean, plus check-e2e-skip-budget VOID — the documented
 # once-per-merge staleness detector, re-earned by running Playwright on the live stack.
 # If check-alert-metrics is the only rc=1 after a core-java rebuild, its standing
 # remedy is: bash scripts/seed-order-metric.sh   (restart zeroes the counter)
@@ -34,48 +30,41 @@ done
 
 | | |
 |---|---|
-| `main` HEAD | tip of `main` at or after the **PR #640** merge — deliberately NOT a sha, see below |
+| `main` HEAD | tip of `main` at or after the **PR #658** merge — deliberately NOT a sha, see below |
 | Phase 31 | `42ac6dc3` — `feat(31): consumer safety and the legal floor (#633)`, 18/18 plans |
 | Working tree | clean, no worktrees in use |
 | Schema head | **V63**, matching the live dev database |
 | Test manifest | **3185** logical invocations (Java 1713/270 files, Jest 1230/120, Playwright 113/22, Go 81/11, MCP 48/8) — `docs/metrics.json` |
-| Gate sweep 2026-08-18 | **36 PASS, 0 FAIL, 1 VOID** across all 37 gate scripts |
+| Gate sweep 2026-08-24 | **36 PASS, 0 FAIL, 1 VOID** across all 37 gate scripts |
 
 > **Why the HEAD row names a PR and not a sha — do not "helpfully" put one back.** A document that
 > records its own repository's HEAD cannot be correct at rest: writing the sha IS a commit, so the
-> act of correcting it falsifies it. Measured on 2026-08-18 — the row was updated to `44cacbaf`,
-> and merging that update made `main` `b17bef59`, stale again in one step. Chasing it costs a PR
-> and a CI run per commit of staleness and never converges. `check-handoff-contract` reaches the
-> same conclusion from the other side: H-3 allows a budget of **3** commits rather than demanding
-> exactness. The PR number is stable, tells a reader what work the file describes, and the resume
-> block already says to `git pull`. The OTHER shas in this file are historical facts — "Phase 31
-> merged as `42ac6dc3`" is true forever — and are fine to keep.
+> act of correcting it falsifies it. Measured 2026-08-18 — the row was set to `44cacbaf`, and
+> merging that update made `main` `b17bef59`, stale again in one step. `check-handoff-contract`
+> reaches the same conclusion from the other side: H-3 allows a budget of **3** commits rather than
+> demanding exactness. The OTHER shas in this file are historical facts and are fine to keep.
 
-The single VOID is **`check-e2e-skip-budget.sh`** — the documented once-per-merge staleness
-detector. It is re-earned by running the Playwright suite against the live runtime, needs no code
-change, and was in exactly this state at Phase 28's close-out too. A VOID is **not** a pass; it is
-also not a defect here.
+### What shipped 2026-08-24
 
-### What shipped this session
+- **#657 CLOSED** — the amqp-client CVE pin was setting `rabbitmq-amqp-client.version`, a key
+  nothing reads. The Boot BOM declares `rabbit-amqp-client.version`. A redundant direct
+  `implementation()` pin was forcing the right version anyway, which is exactly why the typo was
+  invisible. Property corrected, direct pin removed.
+- **#658 CLOSED** — `base-image-freshness.yml` **had never scanned anything, in its entire life.**
+  It assembled `ghcr.io/${OWNER}/...` from `github.repository_owner` = `Bralabee`; GHCR repository
+  names must be lowercase, so every leg tripped the VOID arm before reaching Trivy. Present in the
+  workflow's first commit (`e705d38f`, #520, 2026-08-04). **21 consecutive scheduled runs, all
+  failure, zero successes ever.** Fixed on both the scheduled and the dispatch path, plus a
+  `$GITHUB_OUTPUT` injection, the missing VOID report arm, a `gh` stderr fold, and `X-6` in
+  `check-image-supply-chain.sh` so a revert fails loudly.
+- **#659 OPEN** — filed, not fixed: `ci-cd.yaml` hardcodes the image owner as a lowercase literal
+  in twelve places while deriving it from `github.repository_owner` in two. Same defect one layer
+  down; breaks both deploy jobs on a fork, transfer or rename.
 
-- **Phase 31 merged** (PR #633, squash). Closes **#116 CLOSED**, **#103 CLOSED**, **#272 CLOSED**.
-  Epic **#427 OPEN** — only its Wave 1 slice shipped. Post-merge CI on `main` concluded
-  **success**, zero failed jobs.
-- **ROADMAP reconciled** (`c4e1f497`): the top-level Phase 31 checkbox was unticked and the phase
-  table read `7/18 In Progress` although all 18 plan checkboxes were ticked and all 18 SUMMARYs
-  exist. **No gate script reads `ROADMAP.md`** — verified with a positive control — which is
-  precisely why it drifted. Hand-edited; `roadmap.update-plan-progress` is still banned here.
-- **STATE.md Current Position corrected** (PR #635, `662464c7`). It read `Phase: 33 / Plan: Not
-  started` under a note ending *"Current position on THIS branch: Phase 31, context gathered, ready
-  to plan"* — pointing a fresh session at the start of a finished phase. The `stopped_at` preamble
-  also still ordered three "STILL TO DO AT MERGE" items that were all discharged; each was verified
-  before being marked so. The pre-merge forensic record is retained verbatim below it.
-- **Local runtime rebuilt and proven by content**, not by a gate's verdict.
+## Environment state — measured 2026-08-24, not remembered
 
-## Environment state — measured 2026-08-18, not remembered
-
-All 11 compose services `running`. Runtime is **Docker Compose** (`docker-compose.full-stack.yml`),
-the canonical local dev/E2E runtime; do not start a local minikube alongside it (they share the dev DB).
+All compose services running. Runtime is **Docker Compose** (`docker-compose.full-stack.yml`), the
+canonical local dev/E2E runtime; do not start a local minikube alongside it (they share the dev DB).
 
 | Service | Host port | Probe |
 |---|---|---|
@@ -86,36 +75,20 @@ the canonical local dev/E2E runtime; do not start a local minikube alongside it 
 | postgres | — | schema head V63 |
 
 **`edge-go` is published on host `8089`, not `8080`.** A probe against `localhost:8080` returns
-`000` (no connection), which reads like a dead service and is not one. This cost time this session.
+`000`, which reads like a dead service and is not one.
 
-Runtime parity is **FRESH 4/4** and was proven by identity and content after the rebuild:
-
-- both rebuilt containers hold the **newly-tagged image IDs** (`match=YES`) — that is what
-  distinguishes a rebuild from a restart;
-- **The httpcore5 CVE fix was re-verified in the running jar after the 2026-08-18 core-java
-  rebuild** (awssdk 2.51.4, #638). Read from **inside** `/app/app.jar`: `httpcore5-5.4.3.jar` and
-  `httpcore5-h2-5.4.3.jar` present, exactly one version each, and the VULNERABLE `5.3.6` absent
-  (0 occurrences, with a positive control finding 5.4.3 twice so the zero is about the jar and not
-  about the pattern). This override is LOAD-BEARING and worth re-checking after any Boot or SDK
-  bump: `apache5-client:2.51.4` requests `httpclient5 5.6.2`, Boot 3.5.16 downgrades that to 5.5.2,
-  which requests `httpcore5-h2 5.3.6` — only `extra["httpcore5.version"]` forces 5.4.3. A Gradle
-  `dependencyInsight` report states the BUILD intent; only reading the archive proves what ships;
-- the contrast fix present in the built `app_shop_shop-discovery-client_tsx_*.js` chunk, while the
-  old pattern survives only in the unrelated `dashboard-shell` chunk;
-- a **real order placed through the rebuilt stack** (`ORD-00000000-20260818-FE412C58`) came back
-  `allergen_mask=1`. Measured 2026-08-18: **572 NULL / 5 populated** — the V63 write-time snapshot
-  working on the live API path, and the deliberate no-backfill decision visible in production data.
-  The NULL count does not move; only new orders add to the populated side.
-
-If you rebuild `core-java`, **`check-alert-metrics.sh` will go red** — the counter dies on restart.
-Run `scripts/seed-order-metric.sh`; do not investigate it. Observed rc=1 then rc=0 this session.
+`check-runtime-freshness` is **PASS, 4 of 4, 0 unverified**. core-java was rebuilt twice on
+2026-08-24 and its container recreated onto image `2218aa93…`; `amqp-client-5.33.1.jar` reads out
+of the running `/app/app.jar`, with `5.25.0`, `5.22.0`, `5.3.6` and `5.4.2` at **0 occurrences**
+under escaping that finds `5.33.1`/`5.4.3`/`5.5.2` — so the zeros are about the jar, not the
+pattern. The broker connects and both outboxes hold zero `PENDING` and zero `FAILED` rows.
 
 ## What to do next
 
-**The roadmap says Phase 29. Phase 29 cannot start.** It reached 9/16 and is PAUSED at its wave-7
-boundary on two owner actions, **re-measured 2026-08-18 and both still unmet**:
+**The roadmap says Phase 29. Phase 29 still cannot start.** It reached 9/16 and is PAUSED at its
+wave-7 boundary on two owner actions, **re-measured 2026-08-24 and both still unmet**:
 
-| Blocker | Measured 2026-08-18 |
+| Blocker | Measured 2026-08-24 |
 |---|---|
 | staging DNS | `dig +short` returns **no answer** for `staging.olajay.co.uk` and `api.staging.olajay.co.uk` |
 | operator secrets | **0 populated / 7 declared** in `~/.jtoye/staging-operator.env` |
@@ -123,71 +96,36 @@ boundary on two owner actions, **re-measured 2026-08-18 and both still unmet**:
 Neither is an engineering task. Phase 29's authoritative body — including the correct counters
 (`total_plans: 93`, `completed_plans: 78`) — lives on branch **`phase-29-research`**, not on `main`.
 The `progress:` counters in `main`'s `.planning/STATE.md` remain knowingly corrupt
-(`completed_plans` exceeds `total_plans`) and must be repaired **there**, or the fix is reverted by
-the conflict.
+(`completed_plans` exceeds `total_plans`) and must be repaired **there**.
 
-If the owner has not cleared those, the available work is: Phase 30 (The Money Path), Phase 32,
-Phase 34, or the open-PR backlog below.
+If the owner has not cleared those, the highest-value available work is:
 
-### Open PRs — triaged 2026-08-18
+1. **#647 OPEN — the nightly E2E has failed every night since Phase 28 with no alerting.** This is
+   the same shape #658 just fixed one instance of: a detector that is red and telling nobody. #658
+   gave `base-image-freshness` a VOID report arm; the nightly has no equivalent.
+2. **The six dependabot PRs, all with failing checks:** **#650 OPEN**, **#651 OPEN**, **#652 OPEN**,
+   **#653 OPEN**, **#654 OPEN**, **#655 OPEN** (opened 2026-08-21). The 2026-08-18 triage of the
+   previous batch found every failure was REAL — none a flake, none a stale-base artifact — so do
+   not rebase-and-merge without reading each one.
+3. **#659 OPEN** (ci-cd.yaml hardcoded owner), then Phase 30 (The Money Path), 32 or 34.
 
-**NO PULL REQUESTS ARE OPEN** as of 2026-08-18. #634 merged; #604, #606, #605 and #631 were closed
-after triage. The dependabot backlog is empty, and dependabot will re-propose #605/#631 in some
-form on its next run.
+### Dependabot: what the 2026-08-18 triage concluded, and why it still applies
 
-**ONE OUTSTANDING SECURITY ITEM WAS DEFERRED WITH #631, and it did not go away with the PR:**
-`next` 16.3.0 updates vendored lodash to 4.17.23 to fix **CVE-2025-13465** (GHSA-xxjr-mmjv-4gpg,
-prototype pollution in lodash `_.unset` / `_.omit`; lodash 4.0.0-4.17.22 affected, fixed 4.17.23).
-That fix is NOT applied on `main` — the tree still runs `next` 16.2.12.
+**#606 CLOSED** (node 24→25-alpine): endoflife.date says node 25 is `lts: false`, EOL **2026-06-01**,
+already passed; node 24 is LTS to 2028-04-30. The support-horizon gate is correct.
+**#605 CLOSED** (springdoc 2.8.6→3.1.0, MAJOR): the OpenAPI spec cannot be generated, so the app
+likely does not boot. Needs real work. **#631 CLOSED** (frontend npm, 10 updates): real break across
+the frontend build. **#604 CLOSED** (awssdk) was superseded by **#638 CLOSED**, merged as `9387b3bf`;
+its failure was `scripts/check-doc-versions.sh`, because dependabot cannot know to edit `CLAUDE.md`,
+`AGENTS.md` and `.planning/codebase/STACK.md`, which each pin the version in prose. **Any future SDK
+bump carries the same four-site requirement.**
 
-**ASSESSED 2026-08-19: MEDIUM, LOW REACHABILITY, NOT URGENT.** Fix it when the `next` 16.3.0
-migration is done; do not interrupt roadmap work for it.
-
-**Severity — the scorers genuinely disagree, and only on ONE field.** NVD (primary) **5.3 MEDIUM**
-(`A:N`), GitHub **6.5 medium** (`A:L`), lodash vendor CVSS 4.0 **6.9 MEDIUM** (exploit maturity
-PROOF_OF_CONCEPT), Red Hat **8.2 HIGH** (`A:H`). All four agree on `AV:N/AC:L/PR:N/UI:N` and
-Integrity: Low; the whole 5.3-to-8.2 spread is the disputed availability impact. The advisory text
-itself says the flaw permits DELETION of properties but not overwriting their behaviour, which
-favours the lower reading. Do not quote 8.2 as "the" score, and do not quote 5.3 either — quote
-the range and the reason for it.
-
-**Reachability — three independent constraints, measured on the installed tree:** (a) our own code
-never imports lodash nor calls `_.unset`/`_.omit` (positive-controlled: the same search saw 81
-`use client` files); (b) the only lodash-family package in `frontend/package-lock.json` is
-`lodash.merge`, which is NOT in the advisory scope (`lodash`, `lodash-amd`, `lodash-es`,
-`lodash.unset`); (c) the vulnerable internals live ONLY in two vendored Next bundles —
-`next/dist/compiled/babel-packages/packages-bundle.js` (build-time only) and
-`next/dist/compiled/jsonwebtoken/index.js` (library-internal) — and the attack needs an
-ATTACKER-CONTROLLED path argument, while both callers pass fixed internal keys.
-
-**A SEARCH-SCOPE FALSE NEGATIVE HAPPENED HERE — do not repeat it.** The first reachability check
-was scoped to `next/dist/compiled/lodash.curry/` and returned **0** for `baseUnset`, `basePickBy`
-and `customOmitClone`, which read as "the vulnerable code is not present at all". It is present —
-just in two OTHER bundles. Widening the search to `next/dist` found all three. `lodash.curry` is a
-single-function micro-package and was never going to carry `_.unset`. An empty result is evidence
-about the SCOPE you chose, not about the code. Also note `node_modules` is gitignored, so a bare
-`rg` there silently returns nothing: use `rg -uu`.
-
-**What was NOT established:** no obvious path, which is not the same as no path. A full proof would
-trace `jsonwebtoken`'s internal `_.omit` callers. That was stopped deliberately — the answer does not
-change the priority.
-
-The dependabot backlog was triaged 2026-08-18 and every failure was REAL — none a flake, none a
-stale-base artifact. All four were closed with the reasoning in their PR comments. If dependabot
-re-proposes any of them, this is why they were declined; do not simply rebase-and-merge:
-
-| PR | Bump | Behind | Failing step | Verdict |
-|---|---|---|---|---|
-| **#606 CLOSED** | node 24-alpine to 25-alpine | 85 | support-horizon gate | **Closed 2026-08-18.** endoflife.date says node 25 is `lts: false` with EOL **2026-06-01**, already passed; node 24 is LTS to 2028-04-30. The gate is correct |
-| **#605 CLOSED** | springdoc 2.8.6 to 3.1.0 (MAJOR) | 85 | OpenAPI spec regeneration | Real break — the spec cannot be generated, so the app likely does not boot. Needs real work |
-| **#631 CLOSED** | frontend npm, 10 updates | 4 | Build frontend + TypeScript validation | Real break across the frontend build. Needs real work |
-
-**#604 CLOSED** (awssdk 2.50.2 to 2.51.4) was superseded by **#638**, merged as `9387b3bf`; the
-bump shipped with its doc updates on our own branch because dependabot force-pushes its own branches and would discard
-the doc commit. Its failure was `scripts/check-doc-versions.sh` — dependabot cannot know to edit
-`CLAUDE.md`, `AGENTS.md` and `.planning/codebase/STACK.md`, which each pin the version in prose.
-**Any future SDK bump carries the same four-site requirement.**
-
+**One security item is still deferred:** `next` 16.3.0 updates vendored lodash to 4.17.23 for
+**CVE-2025-13465** (prototype pollution in `_.unset`/`_.omit`). Not applied — the tree runs `next`
+16.2.12. **Assessed 2026-08-19: MEDIUM, LOW reachability, not urgent.** Scorers disagree only on
+availability impact (NVD 5.3, GitHub 6.5, vendor 6.9, Red Hat 8.2) — quote the range, not one end.
+Our code never imports lodash; the vulnerable internals live only in two vendored Next bundles whose
+callers pass fixed internal keys. Fix it when the `next` 16.3.0 migration happens.
 ### Owner-facing, unresolved — carried from Phase 31
 
 1. **`privacy@olajay.co.uk` must exist and be MONITORED** before the `/legal` pages naming it are
@@ -210,6 +148,38 @@ the doc commit. Its failure was `scripts/check-doc-versions.sh` — dependabot c
 
 Phase 31's own deferred register is `.planning/phases/31-consumer-safety-and-legal-floor/deferred-items.md`
 (DEF-31-11-01 plus five items from 31-17/31-18).
+
+## Three more instrument failures, 2026-08-24 — one of them in the prescribed remedy
+
+These are additions to the 2026-08-18 list below, not replacements. All three produced a
+*confident wrong answer*, not an error.
+
+1. **`docker compose up -d --build <svc>` does NOT recreate the container when every layer is
+   CACHED — and that command is what `check-runtime-freshness.sh`'s own failure message tells you
+   to run.** Measured: after a rebuild whose inputs were byte-identical, buildx still exported a new
+   manifest digest (image `89a31b0b` → `5a41e87d` → `2218aa93`), while compose printed
+   `Container jtoye_oaas_2026-core-java-1 Running` and left the container on the OLD image for
+   seven minutes. The health check said `healthy` throughout — of the *stale* container. The gate
+   then correctly stayed red, pointing at a remedy that could not clear it.
+   **`docker compose up -d --force-recreate --no-deps <svc>` is what actually works.** The repo
+   already warns that `start` and `restart` do not rebuild; this extends it to the prescribed fix.
+   Note also that a squash-merge re-dates the commit, so `check-runtime-freshness` goes red on
+   merge even when the build inputs are byte-identical — verify with
+   `git diff <built-from> <merged> -- <build paths>` before assuming real drift.
+
+2. **The truncating filter, walked into while fixing a blind detector.**
+   `gh run list --workflow X --limit 8` was used to establish *how long* a workflow had been
+   failing, and answered "eight days". `--limit 100` returns **21** rows, all failure, back to the
+   day the workflow landed. A bounded stream cannot answer a question about the EXTENT of
+   something — that is the one thing it structurally cannot do. The wrong figure reached a commit
+   message, a changelog entry and a PR body before code review caught it. This trap was already
+   recorded in this repo, which is the point.
+
+3. **`gh pr view --json statusCheckRollup` lags the job it reports.** The Testcontainers job
+   completed `success` at 16:01:26Z while the PR rollup still showed it `PENDING` for minutes
+   afterwards, across repeated polls. A poll loop that only reads the rollup will sit past a
+   finished run. Read the JOB (`gh run view <id> --json jobs`) when the answer matters; the rollup
+   is a summary, not the source.
 
 ## The instrument lied five times — read this before trusting any check
 
