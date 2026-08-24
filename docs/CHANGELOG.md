@@ -42,6 +42,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arms run against a committed tree with restores verified by content: clean rc=0, owner
   literal rc=1, lowercase dropped rc=1, every pinning invocation removed rc=**2 (VOID)**,
   clean again rc=0.
+- **X-7(c) asserts the two workflows still describe the SAME image**, which is the other
+  half of the issue's ask and something neither X-6 nor X-7(a)/(b) said: those keep one
+  file honest against the registry, not against each other. The two are deliberately NOT
+  unified behind one shared helper — the freshness workflow normalises an arbitrary
+  dispatch input that may carry a tag, a digest or a registry port (hence `lower_repo`),
+  while the deploy lowercases a bare owner segment, and sharing a helper would put the
+  scheduled scan and the deploy path behind one file that can break both at once to save
+  one parameter expansion. So (c) compares the VALUE they produce — registry, image
+  prefix, and that both take the owner from `github.repository_owner` — not the spelling,
+  because comparing spellings would make a harmless rewrite read as drift. Five arms:
+  clean rc=0, prefix renamed rc=1, registry moved rc=1, owner source changed rc=1,
+  extraction broken rc=**2 (VOID)**, clean again rc=0. The VOID arm is the load-bearing
+  one — an extraction returning nothing must not compare two empty strings and report
+  agreement.
 - **X-7 caught two defects in ITSELF before it was trusted, and both read as real
   violations.** Counting the raw file returned **3** pinning steps against 2, because a
   comment naming the command in backticks was counted as an invocation — the gate counted
