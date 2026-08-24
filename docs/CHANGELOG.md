@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The nightly E2E was dark for 14 nights, on a grant nobody could make (#661) — 2026-08-24
+
+- **14 consecutive scheduled failures, 2026-08-11 to 2026-08-24, and not one Playwright test ran.**
+  `core-java` crash-looped roughly every 27 seconds on
+  `ERROR: permission denied for table postcode_centroid` / `STATEMENT: TRUNCATE postcode_centroid`,
+  from `PostcodeCentroidImporter.importIfNeeded`. Each restart reset the container's health clock,
+  so it never went healthy and compose aborted every service declaring
+  `depends_on: core-java: service_healthy`. Last green nightly: **2026-08-10**, where core-java was
+  healthy in 25 seconds.
+- **The cause is a privilege, not a timeout.** Since the SEC-04/#552 runtime-migrator split
+  (Phase 28, #630) the app connects as the DML-only `jtoye_runtime`, and **TRUNCATE is a distinct
+  privilege, not implied by DELETE**. `infra/db/init/00-create-db.sql` grants that role DML and
+  *cannot* name `postcode_centroid` — V61 creates it later, so at cluster-init there is nothing to
+  grant on. Its own comment therefore said to *"run `infra/db/create-runtime-role.sql` once after
+  the first migration"*. `e2e-nightly.yml` tears down with `down -v`, so every night began on a
+  fresh volume where nobody had. **A provisioning step only a human can perform is not
+  provisioning.** V64 moves the grant into the schema.
+- **It could not reproduce locally, and that is why it survived.** This machine's `jtoye_runtime`
+  was granted TRUNCATE out of band long ago, and `postcode_centroid` already holds 1,748,230 rows,
+  so `importIfNeeded` short-circuits on the row-count match and never reaches the TRUNCATE at all.
+- **A test asserting exactly this grant was green throughout.** `RuntimeRoleGrantContractTest`
+  checks `has_table_privilege(jtoye_runtime,'postcode_centroid','TRUNCATE')` — but its
+  `@BeforeEach` calls `provisionRuntimeRoleFromShippedSql`, *"the real thing: drive the SHIPPED
+  create-runtime-role.sql"*. It runs the operator script itself and then checks the grant that
+  script just made. **It certifies the script, not the deployment.** The new
+  `PostcodeTruncateGrantMigrationTest` creates both roles *before* Flyway — the only precondition a
+  real deployment offers, mirroring the init script including its `FOR ROLE` clause — and runs no
+  operator script at all.
+- **Reproduced and fixed in both directions** on a throwaway Postgres driving the real init script:
+  fresh-volume grants `DELETE,INSERT,SELECT,UPDATE` and `TRUNCATE` → rc=1 permission denied (the CI
+  error exactly), while `SELECT`/`DELETE` → rc=0, proving the role is otherwise fine; after V64 the
+  grant set gains `TRUNCATE` and the statement → rc=0. **The role is not widened** — TRUNCATE on
+  another table stays rc=1 denied — and re-running V64 is rc=0.
+- **The role guard is load-bearing, not dressing.** On a bare Postgres with no `jtoye_runtime`,
+  guarded V64 → rc=0 with a skip notice; the unguarded `GRANT` → rc=1 `role "jtoye_runtime" does
+  not exist`, which would red every Testcontainers test.
+- **Break arm, bracketed clean → break → clean:** delete V64 and
+  `migrationAloneGrantsTruncateOnPostcodeCentroidToRuntime` reds by name; restore hash-verified;
+  closing arm 3 tests / 0 failures. **The first restore ate the uncommitted workflow edits**
+  (`git checkout` restores from HEAD) and the closing clean arm is what caught it — steps 18 → 17.
+  That is the recorded trap, met again: commit before arming.
+- **Verified on the live stack, not just in a container:** real Flyway logged
+  `Migrating schema "public" to version "64"`, surfaced the migration's own
+  `V64: granted TRUNCATE on postcode_centroid to jtoye_runtime`, and
+  `has_table_privilege` reads `t`. Sweep 36 PASS / 0 FAIL / 1 VOID.
+- **The nightly now escalates instead of dumping logs into the run that already failed.** Its only
+  failure handling wrote container logs into that run, visible to someone already looking: 14
+  failures produced zero issues and zero notifications, and every merge in the window — Phase 31
+  (#633, 18 plans) included — landed with no full-suite E2E evidence on any tree. A scheduled
+  failure now files or refreshes one issue, carrying the two shell fixes #658 made to the same
+  pattern (stderr kept out of the value used as an issue NUMBER; parameter expansion instead of
+  `head -n 1`, which pipefail turns into a step-killing SIGPIPE).
+- **Known, not fixed here:** the failure dump runs `docker compose logs --tail 400`, so a
+  crash-looping container's FIRST error can be truncated out — the tail reads like a clean
+  shutdown. The new issue body says so in its triage list.
+
 ### The daily base-image scan had never scanned anything, in its whole life (#658) — 2026-08-24
 
 - **21 consecutive scheduled runs failed on a malformed image reference, not on a CVE — every run
