@@ -131,7 +131,30 @@ jobs:
             fi
             REF="${OVERRIDE}"
           else
-            REF="ghcr.io/${OWNER}/jtoye-${SERVICE}:latest"
+            # GHCR repository names MUST be lowercase, and this repo's owner is
+            # mixed-case (`Bralabee`) — so the reference assembled here was invalid
+            # and NOTHING WAS EVER SCANNED. ci-cd.yaml never hit this because
+            # docker/metadata-action lowercases the image name for you; only a
+            # reference built by hand, as this one is, has to do it itself.
+            #
+            # Measured 2026-08-24, both directions:
+            #   docker manifest inspect ghcr.io/Bralabee/jtoye-edge-go:latest
+            #     -> rc=1  "invalid reference format: repository name ... must be lowercase"
+            #   docker manifest inspect ghcr.io/bralabee/jtoye-edge-go:latest
+            #     -> rc=0  a real OCI index; likewise core-java and frontend
+            #
+            # Every scheduled run from 2026-08-17 through 2026-08-24 tripped the
+            # VOID arm below on exactly this. The VOID arm was RIGHT — it refused
+            # to call an unresolvable image clean — but the scan never ran once,
+            # so eight days of "this workflow is red" carried no CVE information
+            # at all in either direction.
+            #
+            # Only the OWNER is lowercased, deliberately not the whole reference:
+            # an explicit image_ref override may legitimately carry an uppercase
+            # TAG (only the repository NAME must be lowercase), so folding the
+            # override through tr would corrupt a valid reference.
+            OWNER_LC="$(printf '%s' "${OWNER}" | tr '[:upper:]' '[:lower:]')"
+            REF="ghcr.io/${OWNER_LC}/jtoye-${SERVICE}:latest"
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "image_ref=${REF}" >> "$GITHUB_OUTPUT"
