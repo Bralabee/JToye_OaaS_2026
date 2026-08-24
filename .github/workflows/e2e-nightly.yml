@@ -64,6 +64,12 @@ env:
 
 jobs:
   full-suite:
+    # Job-level, because the workflow default above is `contents: read` and the
+    # escalation-on-failure step below files an issue. Declared here rather than
+    # widening the workflow default, so only this job can write.
+    permissions:
+      contents: read
+      issues: write
     name: Full Playwright suite against a real stack
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -339,6 +345,94 @@ jobs:
         run: |
           docker compose -f "$COMPOSE_FILE" ps
           docker compose -f "$COMPOSE_FILE" logs --tail 400
+
+      # ESCALATION. Until this existed the nightly told nobody: its only failure
+      # handling dumped logs INTO the failed run, visible to someone already looking.
+      # Measured 2026-08-24: 14 consecutive scheduled failures, 2026-08-11 through
+      # 2026-08-24, produced zero issues and zero notifications. Every merge in that
+      # window — Phase 31 (#633, 18 plans) included — landed with no full-suite E2E
+      # evidence on any tree, and the cause (a missing TRUNCATE grant, #647) was found
+      # only because a human went looking at run history.
+      #
+      # Scheduled runs only. A workflow_dispatch is somebody watching the tab already,
+      # and filing an issue under them is noise, not signal.
+      - name: Escalate a failed nightly
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="Nightly E2E is failing — the full-suite lane is dark"
+
+          # De-duplicate on an EXACT title match, done in the shell rather than trusted
+          # from `gh issue list --search`, which is substring-ish. stderr goes to its own
+          # file and never into the value: gh can exit 0 while printing a warning, and
+          # folding that text into `existing` would make it non-empty, select the
+          # "refresh" branch, and run `gh issue comment "<warning text>"` — failing the
+          # step under set -e and losing the report entirely.
+          lrc=0
+          errf="$(mktemp)"
+          existing=$(gh issue list --state open --limit 100 \
+                       --json number,title \
+                       --jq ".[] | select(.title == \"${TITLE}\") | .number" 2>"${errf}") || lrc=$?
+          if [ "${lrc}" -ne 0 ]; then
+            echo "WARN: could not list open issues (rc=${lrc}); de-duplication DISABLED for this run." >&2
+            cat "${errf}" >&2
+            existing=""
+          fi
+
+          body_file="$(mktemp)"
+          cat > "${body_file}" <<'EOF'
+          The scheduled full-stack Playwright run failed. This lane is the project's
+          **only** full-suite E2E instrument, so while it is red **no merge has
+          full-suite evidence on any tree**.
+
+          ### Triage, in order
+
+          1. **Did the stack come up at all?** The common failure is that core-java
+             never becomes healthy, so Playwright never runs and no `report.json` is
+             produced. Check the `Wait for core-java and the frontend` step first — if
+             it timed out, this is a stack problem, not a test problem.
+          2. **Read the container logs in the `Dump stack logs on failure` step.** Note
+             it runs `docker compose logs --tail 400`, so a crash-looping container's
+             FIRST failure may be truncated out. If the tail looks like a clean
+             shutdown, look for a repeating error earlier.
+          3. **A fresh volume is not the developer's machine.** `Tear down` runs
+             `down -v`, so every night starts from an empty database and only
+             `infra/db/init/00-create-db.sql` has run. Anything requiring a manual
+             provisioning step will work locally and fail here every single night —
+             that was #647.
+          4. **If Playwright DID run**, the failure is a real test regression: pull the
+             uploaded report artifact and read the verdict from `report.json`.
+
+          ### Do not
+
+          Do not close this because a re-run went green without a code change — an
+          intermittent nightly is still a lane you cannot trust. Close it when you know
+          which change fixed it.
+
+          EOF
+          {
+            echo "**Run:** ${RUN_URL}"
+            echo ""
+            echo "**Commit:** \`${GITHUB_SHA}\`"
+          } >> "${body_file}"
+
+          if [ -n "${existing}" ]; then
+            # Parameter expansion, not `head -n 1`: head exits after the first line, the
+            # writer takes SIGPIPE, and pipefail promotes that to 141 — killing the step
+            # under set -e instead of filing the comment.
+            num="${existing%%$'\n'*}"
+            gh issue comment "${num}" --body-file "${body_file}"
+            echo "Refreshed existing issue #${num}."
+          else
+            gh issue create --title "${TITLE}" --body-file "${body_file}" \
+              --label ci --label P1 || {
+              echo "Label-qualified create failed; retrying without labels." >&2
+              gh issue create --title "${TITLE}" --body-file "${body_file}"
+            }
+          fi
 
       - name: Tear down
         if: always()
