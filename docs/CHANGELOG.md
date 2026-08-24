@@ -7,33 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### The daily base-image scan had never scanned anything (#658) — 2026-08-24
+### The daily base-image scan had never scanned anything, in its whole life (#658) — 2026-08-24
 
-- **Eight consecutive scheduled runs failed on a malformed image reference, not on a CVE.**
-  `base-image-freshness.yml` assembles `ghcr.io/${OWNER}/jtoye-${SERVICE}:latest` by hand from
-  `github.repository_owner`, which is `Bralabee`. GHCR repository names must be lowercase, so
-  every matrix leg tripped the VOID arm before reaching Trivy — 2026-08-17 through 2026-08-24.
+- **21 consecutive scheduled runs failed on a malformed image reference, not on a CVE — every run
+  the workflow has ever had.** `base-image-freshness.yml` assembles
+  `ghcr.io/${OWNER}/jtoye-${SERVICE}:latest` by hand from `github.repository_owner`, which is
+  `Bralabee`. GHCR repository names must be lowercase, so every leg tripped the VOID arm before
+  reaching Trivy. The defect was present in the workflow's **first commit** (`e705d38f`, #520,
+  2026-08-04 05:59); the first scheduled run, 07:09 that morning, failed, and so did all 20 after
+  it, through 2026-08-24.
+- **An earlier draft of this entry said "eight runs since 2026-08-17". That was wrong, and how it
+  was wrong is the point.** The figure came from `gh run list --limit 8` — a truncating filter used
+  to establish the extent of a window, which is the one thing a bounded stream cannot do. The real
+  window is `--limit 100`: 21 rows, all `failure`, zero successful scheduled runs ever. Corrected
+  here rather than left standing, because in this repo these entries *are* the evidence record.
 - **The VOID arm was right; the workflow was still blind.** It correctly refused to report an
   unresolvable image as clean. The consequence is that the scan produced **no CVE information in
-  either direction** for eight days, on images that are published, public and resolvable.
+  either direction for 20 days**, on images that were published, public and resolvable throughout.
 - **`ci-cd.yaml` never hit this** because `docker/metadata-action` lowercases the image name for
-  you — which is also why the images genuinely exist at `ghcr.io/bralabee/jtoye-<svc>:latest`, and
-  why that file's deploy jobs refer to them in hardcoded lowercase. Only a reference built by hand
-  had to do it itself.
-- Measured both directions, all three services: `ghcr.io/Bralabee/...` → rc=1
-  `invalid reference format: repository name ... must be lowercase`; `ghcr.io/bralabee/...` → rc=0,
-  a real OCI index. **Only the owner is lowercased**, deliberately not the whole reference — an
-  explicit `image_ref` override may legitimately carry an uppercase TAG.
-- `scripts/check-image-supply-chain.sh` bracketed clean → break → clean: a flush-left line
-  terminating the `run: |` block scalar drives it to **rc=2 VOID**, restore verified by
-  `git hash-object`. The trivy step's inputs are untouched, so the workflow still asks the gate's
-  exact question.
+  you. Only a reference built by hand had to do it itself.
+- **Both paths are normalised, not just the scheduled one.** The first fix lowercased only the
+  scheduled reference; the `workflow_dispatch` override was still passed through verbatim, so the
+  on-demand scan — this workflow's stated purpose — died on the identical VOID, and its own input
+  description offers `ghcr.io/owner/jtoye-frontend:main-abc1234` as the example to copy. A
+  `lower_repo` helper now lowercases the repository NAME and preserves the tag or digest: the split
+  point is the last `:` **after** the last `/`, so a registry port survives. Battery 8/8 — uppercase
+  tag, `host:5000/NS/Img:Tag`, `@sha256:` digest, already-lowercase all correct.
+- **A `$GITHUB_OUTPUT` injection is closed.** `REF` is written to a line-oriented key=value file and
+  can originate in the dispatch input, which the REST API accepts with newlines even though the UI
+  field is single-line. A second `skip=true` line wins the duplicate-key race and skips the login,
+  the VOID arm and Trivy alike — a green job that scanned nothing, the exact fail-open the header
+  block forbids. Rejected outright; no legitimate reference is multi-line.
+- **A VOID now tells someone, which is the actual harm.** The issue step is gated on the *scan*
+  failing, so a run that never reached Trivy filed nothing: 21 failures produced zero issues and
+  zero notifications, and the reference bug was found by a human reading run history. A separate
+  arm files a distinct "scan is VOID" issue — deliberately not the findings title, because "we
+  found CVEs" and "we could not look" need different triage.
+- **`gh` stderr is no longer folded into a value used as an issue number.** `existing=$(gh issue
+  list … 2>&1)` meant a gh that exits 0 while printing any warning put that text into `existing`,
+  selecting the "refresh" branch and running `gh issue comment "<warning text>"` — failing the step
+  under `set -e` in the one path whose stated priority is that a silently unreported CVE is the
+  worst outcome.
+- **`scripts/check-image-supply-chain.sh` gains X-6, and X-5 is why it was needed.** X-5 asserts the
+  Trivy flags match `ci-cd.yaml`'s gate — and they did, green, for all 21 blind days, because the
+  run never reached Trivy. *A gate that asserts the question is right cannot notice the question was
+  never asked.* X-6 requires `lower_repo` to exist and every `REF=` to route through it; zero `REF=`
+  assignments **VOID** rather than pass. Three break arms, bracketed clean → arms → clean, restores
+  hash-verified: revert one `REF=` → rc=1; rename the helper away → rc=1; delete every `REF=` →
+  rc=2 VOID.
+- **Proven end-to-end in CI, not just locally.** Dispatch on the branch: all three legs ran
+  Resolve → login → VOID arm → Trivy to success, `Will scan: ghcr.io/bralabee/jtoye-frontend:latest`
+  and `Manifest resolved` in the log. The published images carry no fixable CRITICAL/HIGH — the
+  first real answer this workflow has ever produced.
 - **Also: the amqp-client pin is a MINOR bump, not a patch-level one.** #657's comment described
   `5.25.0 -> 5.33.1` as "a patch-level upgrade within the same minor line"; it is eight minor
-  releases. Comment-only and line-count neutral, so the `build.gradle.kts` citations that same PR
-  repaired do not shift again.
-- **Not fixed here:** nobody was told for eight days. That is the same shape as #647 and belongs
-  with it.
+  releases. The unevidenced half of that sentence ("API-compatible") was dropped too — every other
+  claim in that block carries a recorded fail direction and that one carried none. Comment-only and
+  line-count neutral, so the `build.gradle.kts` citations #657 repaired do not shift again.
+- **Known and not fixed here:** in override mode the two non-`core-java` matrix legs exit 0 and
+  render as `success` having scanned nothing, so a dispatch reads as three green checks when one
+  image was examined. And `ci-cd.yaml` pins the owner as a lowercase literal in twelve places while
+  deriving it from `github.repository_owner` in two — the same defect one layer down, which would
+  break `kustomize edit set image` on a fork, transfer or rename.
 
 ### The amqp-client CVE pin was setting a Spring Boot property that does not exist (#657) — 2026-08-24
 
