@@ -79,9 +79,27 @@ ENV_ARGS=()
 
 # up -d --build, never start/restart: neither builds, and neither replaces a container
 # that is holding an older image ID.
-(cd "$REPO_ROOT" && docker compose -f "$COMPOSE_FILE" "${ENV_ARGS[@]}" up -d --build $DRIFTED)
+#
+# --force-recreate IS LOAD-BEARING, and this script is why we know. Measured
+# 2026-08-24 on the merge of #661: `up -d --build core-java` rebuilt the image
+# (3f5b80ed -> fc187d19) and compose printed `Container ... Running`, leaving the
+# container on the OLD image. This script's own re-check below then reported
+# `FAIL: drift REMAINS after rebuilding: core-java` and exited 1 -- telling the
+# operator to run the very command it had just run.
+#
+# The trigger is a fully CACHED build. When the build inputs are byte-identical --
+# which is the common case right after a SQUASH MERGE, since squashing re-dates the
+# commit without changing content -- every layer is CACHED, buildx still exports a
+# new manifest digest, and compose's own up-to-date check decides no recreation is
+# needed. So the image ID moves and the container's does not, which is precisely the
+# state the gate's `[image-not-rebuilt]` arm exists to catch.
+#
+# Forcing the recreate is safe here because this script only ever runs against
+# services the gate has ALREADY named as drifted, and a recreate of a drifted
+# service is the whole point of the call.
+(cd "$REPO_ROOT" && docker compose -f "$COMPOSE_FILE" "${ENV_ARGS[@]}" up -d --build --force-recreate $DRIFTED)
 BUILD_RC=$?
-[ "$BUILD_RC" -eq 0 ] || void "docker compose up -d --build exited $BUILD_RC — not re-checking parity over a failed build"
+[ "$BUILD_RC" -eq 0 ] || void "docker compose up -d --build --force-recreate exited $BUILD_RC — not re-checking parity over a failed build"
 
 echo
 echo "sync-runtime: re-asserting parity with the same gate"
