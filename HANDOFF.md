@@ -115,10 +115,29 @@ The `progress:` counters in `main`'s `.planning/STATE.md` remain knowingly corru
 
 If the owner has not cleared those, the highest-value available work is:
 
-1. **The six dependabot PRs, all with failing checks:** **#650 OPEN**, **#651 OPEN**, **#652 OPEN**,
-   **#653 OPEN**, **#654 OPEN**, **#655 OPEN** (opened 2026-08-21). The 2026-08-18 triage of the
-   previous batch found every failure was REAL — none a flake, none a stale-base artifact — so do
-   not rebase-and-merge without reading each one.
+1. **The dependabot batch opened 2026-08-21 — triaged 2026-08-24, and this batch DID contain
+   stale-base artifacts.** The 2026-08-18 note that "every failure was REAL — none a flake, none a
+   stale-base artifact" held for *that* batch and does **not** generalise. Five of these six were
+   blocked, wholly or partly, by `golang.org/x/mod` CVE-2026-56864/56865 sitting in their **base**,
+   closed on main by #656. Proof: **#652** changes nothing but a workflow file, yet its Security
+   Scan failed on a Go module CVE. Re-read each PR, but read the BASE as well as the diff.
+
+   - **#653 CLOSED** — jest-axe 10→11. Only failure was the base CVE; `@dependabot rebase` cleared
+     it (14 pass) and it merged as `ba33e554`. Major bump, but exercised by 22 `toHaveNoViolations`
+     assertions across 10 files plus the self-testing `axe-instrument.test.tsx`.
+   - **#650 OPEN** — superseded by **#665 OPEN**. Two of its three failures were stale-base
+     (Security Scan; and a doc-citation pointing at `build.gradle.kts:103`, which #657 moved to
+     `:141`). The real one is prose version pins, which dependabot structurally cannot edit — the
+     same reason #604 was superseded by #638. **Note the SEVENTH site:**
+     `.planning/codebase/INTEGRATIONS.md:9` carries the literal `com.stripe:stripe-java:<version>`
+     token, matched by `check-doc-citations.sh`, not by the four-doc version gate. Fix the six and
+     that one still reds.
+   - **#652 OPEN**, **#655 OPEN** — rebased, now 13 pass / 0 fail. **Deliberately held**: both edit
+     `.github/workflows/ci-cd.yaml`, which #664 rewrites in twelve places. Merge them after #664.
+   - **#654 OPEN** — framer-motion 12→13, a MAJOR. Run Tests and Frontend E2E pass; the remaining
+     failure is the same prose-pin class (4 sites). Given #605/#606 were closed for being majors,
+     this is an owner call, not a mechanical one.
+   - **#651 OPEN** — five failures including Run Tests and Frontend E2E. Real breakage, real work.
 2. **#659 OPEN** — `ci-cd.yaml` hardcodes the image owner in twelve places while deriving it in two.
    Latent until a fork, org transfer or rename, at which point both deploy jobs fail with a
    reference no rebuild can fix. Same class as #658, one layer down.
