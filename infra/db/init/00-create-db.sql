@@ -91,6 +91,16 @@ ALTER DEFAULT PRIVILEGES FOR ROLE jtoye_app IN SCHEMA public
 -- NOTE: TRUNCATE on postcode_centroid (PostcodeCentroidImporter.java:162) is NOT
 -- grantable here — that table is created later by Flyway (V61), so it does not yet
 -- exist at cluster-init time, and a table-named grant cannot forward-reference it.
--- A fresh volume only connects the app as jtoye_runtime once plan 28-08 wires the
--- live application; run infra/db/create-runtime-role.sql once after the first
--- migration to add the postcode_centroid TRUNCATE grant it names explicitly.
+-- It is granted by MIGRATION V64 instead, which runs as jtoye_app (the table owner)
+-- after V61 has created it. Do NOT add it to the ALTER DEFAULT PRIVILEGES above:
+-- that would give the DML-only application TRUNCATE on every table Flyway ever
+-- creates, tenant tables included, which is the whole thing the split prevents.
+--
+-- This used to read "run infra/db/create-runtime-role.sql once after the first
+-- migration". That manual step is what #647 was: e2e-nightly.yml tears down with
+-- `down -v`, so every night began on a fresh volume where nobody had run it, and
+-- core-java crash-looped on `permission denied for table postcode_centroid` for 14
+-- consecutive nights without executing a single Playwright test. A provisioning step
+-- that only a human can perform is not provisioning. create-runtime-role.sql keeps
+-- the grant for operators re-running it against an existing cluster; V64 is what
+-- makes a fresh deployment work unattended.
