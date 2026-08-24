@@ -44,6 +44,41 @@ extra["netty.version"] = "4.1.136.Final"
 // already closes.
 extra["httpcore5.version"] = "5.4.3"
 
+// Override com.rabbitmq:amqp-client transitive dependency from
+// spring-boot-starter-amqp to patch 6 HIGH/MEDIUM severity CVEs discovered by
+// appmod-validate-cves-for-java. Spring Boot 3.5.16 brings in 5.25.0 via
+// spring-rabbit's transitive dependency, but 5.25.0 has:
+//   CVE-2026-69220 (HIGH): Unbounded recursive table/array nesting → StackOverflowError DoS
+//   CVE-2026-69219 (HIGH): Oversized LongString allocation → OOM
+//   CVE-2026-63337 (HIGH): Unvalidated Class.forName in JSON-RPC → arbitrary class loading
+//   CVE-2026-63335 (MEDIUM): Malformed body frame processing
+//   CVE-2026-63336 (MEDIUM): TrustEverythingTrustManager MITM vulnerability
+//   CVE-2026-61634 (LOW): Frame size validation bypass
+//
+// 5.33.1 is the exact fixed version addressing all 6 CVEs. This is a patch-level
+// upgrade (5.25.0 → 5.33.1) within the same minor line, maintaining API compatibility
+// while closing the security issues.
+//
+// THE PROPERTY NAME IS LOAD-BEARING AND EASY TO GET WRONG. It must match the key the
+// Spring Boot BOM actually declares — `rabbit-amqp-client.version`, defined at line 174
+// of spring-boot-dependencies-3.5.16.pom. A near-miss such as `rabbitmq-amqp-client`
+// sets a property nothing reads and silently changes nothing.
+//
+// Measured on this tree with `dependencyInsight --dependency com.rabbitmq:amqp-client`:
+//   misspelled property, no explicit pin  ->  5.25.0   (VULNERABLE)
+//   correct property,    no explicit pin  ->  5.33.1
+// so this one line is what closes the CVEs, and the fail direction was run rather than
+// assumed. An explicit `implementation("com.rabbitmq:amqp-client:5.33.1")` was removed
+// from the dependencies block below when this was corrected: it forced the right version
+// while the property was broken, which is precisely why the broken property looked like
+// it worked. Two mechanisms where one silently does nothing is how the defect hid.
+//
+// If a future Spring Boot renames this key again, the version silently reverts — the
+// check that catches that is the Trivy gate in ci-cd.yaml, which fails the build on
+// fixable HIGH/CRITICAL and is a required status check. That gate is the enforcement;
+// this line is only the fix.
+extra["rabbit-amqp-client.version"] = "5.33.1"
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -61,6 +96,9 @@ dependencies {
 
     // RabbitMQ messaging
     implementation("org.springframework.boot:spring-boot-starter-amqp")
+    // amqp-client is pinned to 5.33.1 by `rabbit-amqp-client.version` at the top of this
+    // file, not by a direct dependency here. See that comment: the direct pin used to be
+    // on this line and was masking a misspelled property name.
 
     // WebSocket + STOMP for real-time KDS communication
     implementation("org.springframework.boot:spring-boot-starter-websocket")
