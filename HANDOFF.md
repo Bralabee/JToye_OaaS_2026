@@ -57,9 +57,10 @@ done
   failure, zero successes ever.** Fixed on both the scheduled and the dispatch path, plus a
   `$GITHUB_OUTPUT` injection, the missing VOID report arm, a `gh` stderr fold, and `X-6` in
   `check-image-supply-chain.sh` so a revert fails loudly.
-- **#659 OPEN** — filed, not fixed: `ci-cd.yaml` hardcodes the image owner as a lowercase literal
-  in twelve places while deriving it from `github.repository_owner` in two. Same defect one layer
-  down; breaks both deploy jobs on a fork, transfer or rename.
+- **#659 — fixed in PR #664**, having been filed-not-fixed on 2026-08-24 morning: `ci-cd.yaml`
+  hardcoded the image owner as a lowercase literal in twelve places while deriving it from
+  `github.repository_owner` in two. Same defect one layer down from #658; broke both deploy jobs
+  on a fork, transfer or rename.
 - **#661 CLOSED, and #647 CLOSED with it** — the nightly full-suite E2E had been dark for **14
   consecutive nights** (2026-08-11 to 2026-08-24) without executing one Playwright test. core-java
   crash-looped every ~27s on `permission denied for table postcode_centroid` / `TRUNCATE`, resetting
@@ -115,20 +116,48 @@ The `progress:` counters in `main`'s `.planning/STATE.md` remain knowingly corru
 
 If the owner has not cleared those, the highest-value available work is:
 
-1. **The dependabot batch opened 2026-08-21 — five of the six still open:** **#650 OPEN**,
-   **#651 OPEN**, **#652 OPEN**, **#654 OPEN**, **#655 OPEN**. **#653 CLOSED** (jest-axe 10→11)
-   merged 2026-08-24. The 2026-08-18 triage of the previous batch found every failure was REAL —
-   none a flake, none a stale-base artifact — so do not rebase-and-merge without reading each one.
-2. **#659 — fix in PR #664.** `ci-cd.yaml` hardcoded the image owner in twelve places while
-   deriving it in two; latent until a fork, org transfer or rename, at which point both deploy
-   jobs fail with a reference no rebuild can fix. Same class as #658, one layer down. **The two
-   sides of `kustomize edit set image` are NOT the same string** — the LHS is a selector into the
-   checked-in manifests, so deriving it from the owner too makes kustomize fall back silently to
-   the immutable 2.1.0 default. The fix reads the selector out of the overlay it must match and
-   derives only the published reference; `check-image-supply-chain.sh` X-7 keeps both halves
-   honest, including that `ci-cd.yaml` and `base-image-freshness.yml` still describe the same
-   image. Deliberately no capitalised state word here: this entry would otherwise falsify itself
-   the moment #664 merges and red H-2 on main for whoever opens the next PR.
+1. **The dependabot batch opened 2026-08-21 — triaged 2026-08-24, and this batch DID contain
+   stale-base artifacts.** The 2026-08-18 note that "every failure was REAL — none a flake, none a
+   stale-base artifact" held for *that* batch and does **not** generalise. Five of these six were
+   blocked, wholly or partly, by `golang.org/x/mod` CVE-2026-56864/56865 sitting in their **base**,
+   closed on main by #656. Proof: **#652** changes nothing but a workflow file, yet its Security
+   Scan failed on a Go module CVE. Re-read each PR, but read the BASE as well as the diff.
+
+   - **#653 CLOSED** — jest-axe 10→11. Only failure was the base CVE; `@dependabot rebase` cleared
+     it (14 pass) and it merged as `ba33e554`. Major bump, but exercised by 22 `toHaveNoViolations`
+     assertions across 10 files plus the self-testing `axe-instrument.test.tsx`.
+   - **#650 CLOSED** — superseded by **#665 CLOSED**, which merged as `9a0370e3` and auto-closed
+     it. Two of #650's three failures were stale-base (Security Scan; and a doc-citation pointing
+     at `build.gradle.kts:103`, which #657 moved to
+     `:141`). The real one is prose version pins, which dependabot structurally cannot edit — the
+     same reason #604 was superseded by #638. **Note the SEVENTH site:**
+     `.planning/codebase/INTEGRATIONS.md:9` carries the literal `com.stripe:stripe-java:<version>`
+     token, matched by `check-doc-citations.sh`, not by the four-doc version gate. Fix the six and
+     that one still reds.
+   - **#652 OPEN**, **#655 OPEN** — rebased, now 13 pass / 0 fail. **Deliberately held**: both edit
+     `.github/workflows/ci-cd.yaml`, which #664 rewrites in twelve places. Merge them after #664.
+   - **#654 OPEN** — framer-motion 12→13, a MAJOR. Run Tests and Frontend E2E pass; the remaining
+     failure is the same prose-pin class (4 sites). Given #605/#606 were closed for being majors,
+     this is an owner call, not a mechanical one.
+   - **#651 OPEN** — five failures including Run Tests and Frontend E2E. Real breakage, real work.
+2. **#659 — fix in PR #664**, and note item 1 holds **#652** and **#655** behind it because both
+   edit `ci-cd.yaml`. `ci-cd.yaml` hardcoded the image owner in twelve places while deriving it in
+   two; latent until a fork, org transfer or rename, at which point both deploy jobs fail with a
+   reference no rebuild can fix. **The two sides of `kustomize edit set image` are NOT the same
+   string** — the LHS is a selector into the checked-in manifests, so deriving it from the owner
+   too makes kustomize fall back silently to the immutable 2.1.0 default. The fix reads the
+   selector out of the overlay it must match and derives only the published reference; `X-7` in
+   `check-image-supply-chain.sh` keeps both halves honest, including that `ci-cd.yaml` and
+   `base-image-freshness.yml` still describe the same image.
+
+   **No capitalised state word in this entry, deliberately.** It would falsify itself the moment
+   #664 merges and closes #659, redding H-2 on `main` for whoever opens the next PR. That is not
+   hypothetical — the entry for #665 in item 1 above shipped claiming its own PR was still open,
+   which was false the instant it merged; corrected there. Note also that writing the capitalised
+   claim inside a quotation does not escape it: H-2 extracts on `#NNN … WORD` proximity, so
+   *illustrating* the bad claim re-creates it, and this paragraph is worded to avoid that. The
+   vocabulary is `(CLOSED|OPEN)` only, so `MERGED` parses as no claim at all and slips through
+   unchecked — it is not the safe way to record a merged PR.
 3. Then Phase 30 (The Money Path), Phase 32 or Phase 34.
 
 ### Dependabot: what the 2026-08-18 triage concluded, and why it still applies
