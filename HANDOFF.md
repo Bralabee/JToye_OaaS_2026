@@ -60,6 +60,21 @@ done
 - **#659 OPEN** — filed, not fixed: `ci-cd.yaml` hardcodes the image owner as a lowercase literal
   in twelve places while deriving it from `github.repository_owner` in two. Same defect one layer
   down; breaks both deploy jobs on a fork, transfer or rename.
+- **#661 CLOSED, and #647 CLOSED with it** — the nightly full-suite E2E had been dark for **14
+  consecutive nights** (2026-08-11 to 2026-08-24) without executing one Playwright test. core-java
+  crash-looped every ~27s on `permission denied for table postcode_centroid` / `TRUNCATE`, resetting
+  its health clock each time, so compose aborted every service depending on it. Since the SEC-04
+  runtime-migrator split the app connects as the DML-only `jtoye_runtime`, and TRUNCATE is a
+  DISTINCT privilege not implied by DELETE; the grant lived only in `create-runtime-role.sql`, a
+  MANUAL script, and the nightly's `down -v` meant nobody ever ran it. **V64** moves the grant into
+  the schema. The nightly now escalates a scheduled failure into an issue instead of dumping logs
+  into the run that already failed.
+- **Two blind spots kept it alive, and both are worth remembering.** It cannot reproduce locally —
+  this machine's role was granted TRUNCATE out of band and `postcode_centroid` already holds
+  1,748,230 rows, so the importer short-circuits before the TRUNCATE. And
+  `RuntimeRoleGrantContractTest` asserts *exactly this grant* and was green throughout, because its
+  `@BeforeEach` runs `create-runtime-role.sql` itself: **it certifies the script, not the
+  deployment.** `PostcodeTruncateGrantMigrationTest` is the falsifiable sibling.
 
 ## Environment state — measured 2026-08-24, not remembered
 
@@ -100,14 +115,14 @@ The `progress:` counters in `main`'s `.planning/STATE.md` remain knowingly corru
 
 If the owner has not cleared those, the highest-value available work is:
 
-1. **#647 OPEN — the nightly E2E has failed every night since Phase 28 with no alerting.** This is
-   the same shape #658 just fixed one instance of: a detector that is red and telling nobody. #658
-   gave `base-image-freshness` a VOID report arm; the nightly has no equivalent.
-2. **The six dependabot PRs, all with failing checks:** **#650 OPEN**, **#651 OPEN**, **#652 OPEN**,
+1. **The six dependabot PRs, all with failing checks:** **#650 OPEN**, **#651 OPEN**, **#652 OPEN**,
    **#653 OPEN**, **#654 OPEN**, **#655 OPEN** (opened 2026-08-21). The 2026-08-18 triage of the
    previous batch found every failure was REAL — none a flake, none a stale-base artifact — so do
    not rebase-and-merge without reading each one.
-3. **#659 OPEN** (ci-cd.yaml hardcoded owner), then Phase 30 (The Money Path), 32 or 34.
+2. **#659 OPEN** — `ci-cd.yaml` hardcodes the image owner in twelve places while deriving it in two.
+   Latent until a fork, org transfer or rename, at which point both deploy jobs fail with a
+   reference no rebuild can fix. Same class as #658, one layer down.
+3. Then Phase 30 (The Money Path), Phase 32 or Phase 34.
 
 ### Dependabot: what the 2026-08-18 triage concluded, and why it still applies
 
@@ -166,6 +181,14 @@ These are additions to the 2026-08-18 list below, not replacements. All three pr
    Note also that a squash-merge re-dates the commit, so `check-runtime-freshness` goes red on
    merge even when the build inputs are byte-identical — verify with
    `git diff <built-from> <merged> -- <build paths>` before assuming real drift.
+
+   **`scripts/sync-runtime.sh` carried the same defect, and proved it against itself.** Measured on
+   the merge of #661: the script ran `up -d --build core-java`, the image moved
+   `3f5b80ed -> fc187d19`, the container stayed on the old one, and the script's own re-check
+   printed `FAIL: drift REMAINS after rebuilding: core-java` and exited 1 — telling the operator to
+   run the command it had just run. It now passes `--force-recreate`. This is the strongest form of
+   the lesson: not a claim that a command is insufficient, but a repair script reporting its own
+   failure to repair.
 
 2. **The truncating filter, walked into while fixing a blind detector.**
    `gh run list --workflow X --limit 8` was used to establish *how long* a workflow had been

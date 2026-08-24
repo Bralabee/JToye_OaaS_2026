@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The runtime-sync script reported its own failure to repair (#662) — 2026-08-24
+
+- **`scripts/sync-runtime.sh` could not clear the drift it exists to clear.** Measured on the merge
+  of #661: it ran `up -d --build core-java`, the image moved `3f5b80ed -> fc187d19`, compose printed
+  `Container … Running`, and **the container stayed on the old image**. Its own re-check then
+  printed `FAIL: drift REMAINS after rebuilding: core-java` and exited 1 — telling the operator to
+  run the command it had just run.
+- **The trigger is a fully `CACHED` build, which is the common case right after a squash merge.**
+  Squashing re-dates the commit without changing content, so every layer is cached, buildx still
+  exports a new manifest digest, and compose's own up-to-date check decides no recreation is needed.
+  The image ID moves and the container's does not — exactly the state the gate's
+  `[image-not-rebuilt]` arm exists to catch. Fixed with `--force-recreate`, which is safe because
+  the script only ever runs against services the gate has **already** named as drifted.
+- **#660 recorded this from a manual reproduction; this is the stronger form** — not a claim that a
+  command is insufficient, but a repair script reporting its own failure to repair.
+- **`HANDOFF.md` refreshed, and H-2 is what caught it** — not the H-3 staleness budget (1 of 3) but
+  the content check: the file claimed **#647 OPEN** after #661 closed it, with 16 of 17 state claims
+  matching the forge. A claim opts into H-2 by CAPITALISING its state word, and that is the
+  mechanism working. Now 18 of 18.
+- Records the two blind spots behind #647: it cannot reproduce on a developer machine whose
+  `jtoye_runtime` was granted TRUNCATE out of band and whose `postcode_centroid` already holds
+  1,748,230 rows, and a test asserting the very same grant was green throughout because it runs
+  `create-runtime-role.sql` itself and then checks the grant that script just made.
+
 ### The nightly E2E was dark for 14 nights, on a grant nobody could make (#661) — 2026-08-24
 
 - **14 consecutive scheduled failures, 2026-08-11 to 2026-08-24, and not one Playwright test ran.**
