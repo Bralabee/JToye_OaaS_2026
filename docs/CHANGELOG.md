@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The deploy jobs named an owner the publish job would have stopped using (#664) — 2026-08-24
+
+- **`ci-cd.yaml` derived the image owner in two places and hardcoded it in twelve.**
+  `env.IMAGE_PREFIX` and the `docker/metadata-action` `images:` input both read
+  `github.repository_owner`; both deploy jobs' `kustomize edit set image` lines and both
+  premortem greps pinned the lowercase literal. On a fork, an org transfer or a rename
+  `build-and-push` publishes under the **new** owner while the deploy still selects and
+  asserts the **old** one — and the premortem guard then fires `FATAL` against a reference
+  no rebuild can produce, because the image exists, just not under that name. Recorded as
+  a known-and-not-fixed follow-up under #658; this closes it.
+- **THE TWO SIDES ARE NOT THE SAME STRING, and "replace every literal" is the wrong fix.**
+  `kustomize edit set image LHS=RHS` takes a SELECTOR on the left and a REFERENCE on the
+  right. The LHS must equal the `images[].name` key in `k8s/<env>/kustomization.yaml`,
+  which equals the `image:` value in `k8s/base` — static YAML a fork does **not** rewrite.
+  The RHS must equal what was published, which `docker/metadata-action` derives from the
+  owner and **lowercases**. Measured by rendering the staging overlay with owner
+  `Acme-Fork`, three arms: selector-from-file + derived reference pins all three at
+  `ghcr.io/acme-fork/jtoye-<svc>:<sha>` (rc=0); deriving the SELECTOR from the owner too
+  makes kustomize fall back **silently** to the immutable `2.1.0` default and the guard
+  FATALs listing the three stale refs (rc=1); rebuilt from a pristine overlay, rc=0 again.
+  So the selector is now read out of the file it must match (`awk`, exit 2 if the key is
+  absent) and the reference derived from the owner.
+- **A pipefail inversion in the same statements, fixed but NOT claimed as a live failure.**
+  The premortem match moves from `echo "$RENDERED" | grep -q` to a here-string. These steps
+  run under GitHub's default `bash -e -o pipefail`, where `grep -q` exits at the first hit,
+  the writer takes SIGPIPE, and pipefail promotes that to 141 — so `if ! … | grep -q` fires
+  on a MATCH. It is pipe-buffer-size dependent and the render measures **45,472 bytes**
+  against a 64 KB buffer, so it has not fired. It was waiting for the render to grow.
+- **`scripts/check-image-supply-chain.sh` gains X-7**, the same class as X-6 one layer
+  down: `ci-cd.yaml` must carry no hardcoded owner literal AND every image-pinning step
+  must derive a lowercased `IMAGE_PUBLISH_BASE` from the owner. Neither half alone is the
+  contract — (a) alone is satisfied by the naive fix the arms above show is broken. Four
+  arms run against a committed tree with restores verified by content: clean rc=0, owner
+  literal rc=1, lowercase dropped rc=1, every pinning invocation removed rc=**2 (VOID)**,
+  clean again rc=0.
+- **X-7(c) asserts the two workflows still describe the SAME image**, which is the other
+  half of the issue's ask and something neither X-6 nor X-7(a)/(b) said: those keep one
+  file honest against the registry, not against each other. The two are deliberately NOT
+  unified behind one shared helper — the freshness workflow normalises an arbitrary
+  dispatch input that may carry a tag, a digest or a registry port (hence `lower_repo`),
+  while the deploy lowercases a bare owner segment, and sharing a helper would put the
+  scheduled scan and the deploy path behind one file that can break both at once to save
+  one parameter expansion. So (c) compares the VALUE they produce — registry, image
+  prefix, and that both take the owner from `github.repository_owner` — not the spelling,
+  because comparing spellings would make a harmless rewrite read as drift. Five arms:
+  clean rc=0, prefix renamed rc=1, registry moved rc=1, owner source changed rc=1,
+  extraction broken rc=**2 (VOID)**, clean again rc=0. The VOID arm is the load-bearing
+  one — an extraction returning nothing must not compare two empty strings and report
+  agreement.
+- **X-7 caught two defects in ITSELF before it was trusted, and both read as real
+  violations.** Counting the raw file returned **3** pinning steps against 2, because a
+  comment naming the command in backticks was counted as an invocation — the gate counted
+  the documentation of the thing as the thing. Folding the comment filter into the pattern
+  as an `^[[:space:]]*[^#[:space:]]` prefix then returned **0** derivations against 2: ERE
+  has no lookahead, so that prefix CONSUMES the `I` of `IMAGE_PUBLISH_BASE` and the rest can
+  never match. A filter that eats the token it is filtering for is worse than no filter.
+  Comments are now stripped into a variable first and the counting done against that.
+- The script header's "THE FIVE CROSS-REFERENCES" is corrected to **seven**; X-6 (#658) had
+  been added below it without updating the count.
+
 ### Two executable bits, and a defect that had been diagnosed and archived (#663) — 2026-08-24
 
 - **`awk … > new && mv new old` silently drops a file's executable bit.** Two scripts went
