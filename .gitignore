@@ -129,6 +129,13 @@ SPRING_FRAMEWORK_UPGRADE_REPORT.md
 .idea/dataSources/
 .idea/db-forest-config.xml
 
+# IntelliJ's JS library index — regenerated whenever the IDE re-scans node_modules, so it
+# is per-workstation state, not project configuration. Same rationale as workspace.xml.
+# The .idea files this repo DOES track are the shared ones (go.imports.xml, gradle.xml,
+# vcs.xml); this is not one of them, and it has been showing up as untracked noise in
+# `git status` for the whole session.
+.idea/jsLibraryMappings.xml
+
 ### SWC Cache ###
 .swc/
 **/.swc/

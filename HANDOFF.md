@@ -35,7 +35,7 @@ done
 | Working tree | clean, no worktrees in use |
 | Schema head | **V63**, matching the live dev database |
 | Test manifest | **3185** logical invocations (Java 1713/270 files, Jest 1230/120, Playwright 113/22, Go 81/11, MCP 48/8) — `docs/metrics.json` |
-| Gate sweep 2026-08-24 | **36 PASS, 0 FAIL, 1 VOID** across all 37 gate scripts |
+| Gate sweep 2026-08-25 | **34 PASS, 2 FAIL, 1 VOID** across all 37 gate scripts — the two FAILs are `check-runtime-freshness` (local images behind main; see below) and, before this update, `check-handoff-contract`. The VOID is the documented once-per-merge `check-e2e-skip-budget` |
 
 > **Why the HEAD row names a PR and not a sha — do not "helpfully" put one back.** A document that
 > records its own repository's HEAD cannot be correct at rest: writing the sha IS a commit, so the
@@ -57,10 +57,38 @@ done
   failure, zero successes ever.** Fixed on both the scheduled and the dispatch path, plus a
   `$GITHUB_OUTPUT` injection, the missing VOID report arm, a `gh` stderr fold, and `X-6` in
   `check-image-supply-chain.sh` so a revert fails loudly.
-- **#659 — fixed in PR #664**, having been filed-not-fixed on 2026-08-24 morning: `ci-cd.yaml`
-  hardcoded the image owner as a lowercase literal in twelve places while deriving it from
-  `github.repository_owner` in two. Same defect one layer down from #658; broke both deploy jobs
-  on a fork, transfer or rename.
+- **#659 — fixed in PR #664** (`ec2f44f1`, merged 2026-08-25), having been filed-not-fixed the
+  previous morning: `ci-cd.yaml` hardcoded the image owner as a lowercase literal in twelve places
+  while deriving it from `github.repository_owner` in two. Same defect one layer down from #658;
+  broke both deploy jobs on a fork, transfer or rename. **The two sides of `kustomize edit set
+  image` are NOT the same string** — the LHS is a selector into the checked-in manifests, so
+  deriving it from the owner too makes kustomize fall back *silently* to the immutable 2.1.0
+  default. Proven by rendering the staging overlay under owner `Acme-Fork`: selector-from-file
+  pins correctly (rc=0), selector-also-derived FATALs (rc=1). `X-7` in
+  `check-image-supply-chain.sh` now holds all three halves — no owner literal, a lowercased
+  derivation per pinning step, and `ci-cd.yaml`/`base-image-freshness.yml` still describing the
+  same image. ⚠ **The reworked deploy steps have still never executed** — both deploy jobs are
+  `vars.DEPLOY_*_ENABLED`-gated and skipped on every run. The overlay render is the evidence.
+
+### What shipped 2026-08-25
+
+- **#652 CLOSED** (`f975f83b`) — codeql-action `upload-sarif` 4.37.6 → 4.37.8, both sites.
+- **#655 CLOSED** (`a6eecf70`) — docker/setup-buildx-action v3.12.0 → **v4.3.0, a MAJOR**, and the
+  verification is the point. The action sits at exactly one site, inside `build-and-push`, which is
+  gated `if: github.event_name == 'push' || 'release'` and **skips on every pull request** — so its
+  14 green PR checks were not weak evidence, they were *no* evidence, because the job that loads it
+  never ran. It was executed for real on a throwaway `phase-*` branch (whose push event does run
+  `build-and-push`): all three legs green, log confirming the v4.3.0 SHA was downloaded. The
+  post-merge tree was then verified **byte-identical** to that tested tree (`054cc1fc`), which is
+  why it merged 1-behind-base without a re-run — a rebase would only have re-run the 14 jobs that
+  cannot test buildx. Main has since built green twice more.
+- **Generalisable:** before trusting a green PR on a dependency bump, check whether any job that
+  ran actually **loads** the thing being bumped. Map the symbol to its enclosing job; if that job
+  is `push`-gated, a `phase-*` branch is the only way to exercise it pre-merge.
+- ⚠ **Left behind: nine GHCR tags** from that probe — versions `1169332429` (core-java),
+  `1169264525` (edge-go), `1169267851` (frontend), three tags each including the probe's full-sha
+  tag. Deleting them needs a `delete:packages` scope the working token does not carry
+  (`gh auth refresh -h github.com -s delete:packages,read:packages`). Nothing references them.
 - **#661 CLOSED, and #647 CLOSED with it** — the nightly full-suite E2E had been dark for **14
   consecutive nights** (2026-08-11 to 2026-08-24) without executing one Playwright test. core-java
   crash-looped every ~27s on `permission denied for table postcode_centroid` / `TRUNCATE`, resetting
@@ -93,11 +121,25 @@ canonical local dev/E2E runtime; do not start a local minikube alongside it (the
 **`edge-go` is published on host `8089`, not `8080`.** A probe against `localhost:8080` returns
 `000`, which reads like a dead service and is not one.
 
-`check-runtime-freshness` is **PASS, 4 of 4, 0 unverified**. core-java was rebuilt twice on
-2026-08-24 and its container recreated onto image `2218aa93…`; `amqp-client-5.33.1.jar` reads out
-of the running `/app/app.jar`, with `5.25.0`, `5.22.0`, `5.3.6` and `5.4.2` at **0 occurrences**
-under escaping that finds `5.33.1`/`5.4.3`/`5.5.2` — so the zeros are about the jar, not the
-pattern. The broker connects and both outboxes hold zero `PENDING` and zero `FAILED` rows.
+⚠ **`check-runtime-freshness` is FAIL as of 2026-08-25 — 2 of 4 built services are behind the
+tree**, and this is expected drift from merges, not a defect:
+
+| service | image tagged | newest build-input commit |
+|---|---|---|
+| core-java | 2026-08-24 20:49 | `9a0370e3` (#665, `core-java/build.gradle.kts`) 23:26 |
+| frontend  | 2026-08-17 19:57 | `ba33e554` (#653, `frontend/package.json`) 22:28 |
+
+Remedy is the documented one: `bash scripts/sync-runtime.sh` (which since #662 passes
+`--force-recreate`, because a fully CACHED rebuild moves the image ID while compose leaves the
+container on the old one). **Rebuild before running any E2E** — `check-e2e-skip-budget` is
+currently VOID ("report describes a DIFFERENT spec set than the tree"), and re-earning it against
+these stale containers would prove nothing.
+
+PRIOR, 2026-08-24, and still the record of what a clean runtime looked like: PASS 4 of 4, 0
+unverified. core-java rebuilt twice, container recreated onto image `2218aa93…`;
+`amqp-client-5.33.1.jar` read out of the running `/app/app.jar`, with `5.25.0`, `5.22.0`, `5.3.6`
+and `5.4.2` at **0 occurrences** under escaping that finds `5.33.1`/`5.4.3`/`5.5.2` — so the zeros
+were about the jar, not the pattern. Broker connected, both outboxes zero `PENDING`/`FAILED`.
 
 ## What to do next
 
@@ -134,31 +176,35 @@ If the owner has not cleared those, the highest-value available work is:
      `.planning/codebase/INTEGRATIONS.md:9` carries the literal `com.stripe:stripe-java:<version>`
      token, matched by `check-doc-citations.sh`, not by the four-doc version gate. Fix the six and
      that one still reds.
-   - **#652 OPEN**, **#655 OPEN** — rebased, now 13 pass / 0 fail. **Deliberately held**: both edit
-     `.github/workflows/ci-cd.yaml`, which #664 rewrites in twelve places. Merge them after #664.
+   - **#652 CLOSED**, **#655 CLOSED** — both merged 2026-08-25 after #664 landed, in that order
+     (`f975f83b`, `a6eecf70`). See "What shipped 2026-08-25" above for how #655 was verified;
+     the short version is that its 14 green PR checks were incapable of testing it.
    - **#654 OPEN** — framer-motion 12→13, a MAJOR. Run Tests and Frontend E2E pass; the remaining
      failure is the same prose-pin class (4 sites). Given #605/#606 were closed for being majors,
      this is an owner call, not a mechanical one.
    - **#651 OPEN** — five failures including Run Tests and Frontend E2E. Real breakage, real work.
-2. **#659 — fix in PR #664**, and note item 1 holds **#652** and **#655** behind it because both
-   edit `ci-cd.yaml`. `ci-cd.yaml` hardcoded the image owner in twelve places while deriving it in
-   two; latent until a fork, org transfer or rename, at which point both deploy jobs fail with a
-   reference no rebuild can fix. **The two sides of `kustomize edit set image` are NOT the same
-   string** — the LHS is a selector into the checked-in manifests, so deriving it from the owner
-   too makes kustomize fall back silently to the immutable 2.1.0 default. The fix reads the
-   selector out of the overlay it must match and derives only the published reference; `X-7` in
-   `check-image-supply-chain.sh` keeps both halves honest, including that `ci-cd.yaml` and
-   `base-image-freshness.yml` still describe the same image.
-
-   **No capitalised state word in this entry, deliberately.** It would falsify itself the moment
-   #664 merges and closes #659, redding H-2 on `main` for whoever opens the next PR. That is not
-   hypothetical — the entry for #665 in item 1 above shipped claiming its own PR was still open,
-   which was false the instant it merged; corrected there. Note also that writing the capitalised
-   claim inside a quotation does not escape it: H-2 extracts on `#NNN … WORD` proximity, so
-   *illustrating* the bad claim re-creates it, and this paragraph is worded to avoid that. The
-   vocabulary is `(CLOSED|OPEN)` only, so `MERGED` parses as no claim at all and slips through
-   unchecked — it is not the safe way to record a merged PR.
+2. **#654 and #651 are the two dependabot PRs left**, both needing real judgement rather than a
+   rebase — see item 1. Everything else in that batch is closed.
 3. Then Phase 30 (The Money Path), Phase 32 or Phase 34.
+
+### The H-2 self-falsification trap, learned twice on 2026-08-24/25
+
+Worth keeping because it cost two red gates in one day, in both directions.
+
+A HANDOFF entry that states its own PR's status **falsifies itself the moment that PR merges**, and
+reds H-2 on `main` for whoever opens the next PR. #665 shipped an entry claiming its own PR was
+still open; it was false within the hour. The #659/#664 entries here were deliberately written with
+**no capitalised state word** for exactly that reason, and survived their own merge untouched.
+
+Three mechanics that are not obvious until they bite:
+
+- **H-2's vocabulary is `(CLOSED|OPEN)` only.** `MERGED` parses as *no claim at all* and slips
+  through unchecked — it is not the safe way to record a merged PR, it is the way to record nothing.
+- **Quoting the bad claim re-creates it.** H-2 extracts on `#NNN … WORD` proximity with no notion of
+  quotation, so a sentence *illustrating* a false claim is scored as that claim. Writing this
+  section required wording it to avoid naming the pattern.
+- **Fix every stale claim in one pass, not one at a time.** Correcting #665 alone just moved the red
+  to #650, which had auto-closed as superseded. Cross-check the whole set against the forge.
 
 ### Dependabot: what the 2026-08-18 triage concluded, and why it still applies
 
