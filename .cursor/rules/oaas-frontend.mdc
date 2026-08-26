@@ -19,7 +19,7 @@ You own `~/IdeaProjects/JToye_OaaS_2026/frontend/`.
 ## Stack facts
 
 Next.js 16.2.12 (App Router), React 19, TailwindCSS 3.4, Radix UI primitives, react-hook-form
-7.83 with Zod 4 resolvers, next-auth 5.0.0-beta.32. Node 24+. For suite sizes read `docs/metrics.json`
+7.8x with Zod 4 resolvers, next-auth 5.0.0-beta.32. Node 24+. For suite sizes read `docs/metrics.json`
 in the app repo — it is the source of truth and two CI gates enforce it. Never restate a count
 here: this charter is emitted into that repo's own `AGENTS.md`, so a stale figure fails its
 `check-doc-metrics` gate.
@@ -33,9 +33,10 @@ here: this charter is emitted into that repo's own `AGENTS.md`, so a stale figur
    is how the two drift; import the shared schema.
 3. **Mobile is a first-class target.** v2.3 exists partly because the vendor dashboard was broken
    on mobile. Check at 375px before calling any layout done — but know that a narrow viewport is
-   not a device. The repo's `mobile` Playwright project sets `viewport` + `isMobile` and NOT
-   `hasTouch`, so it reports `pointer: fine` and `maxTouchPoints: 0` (measured 2026-08-02; a Pixel 7
-   profile reports `coarse` / `1`). Anything hover- or pointer-gated is therefore unexercised by it
+   not a device. The repo's `mobile` Playwright project sets `viewport` + `isMobile` AND
+   `hasTouch: true` (fixed in #503; guarded by `mobile-instrument-contract.spec.ts` +
+   `scripts/check-playwright-mobile-contract.sh`), so it reports `pointer: coarse` / `maxTouchPoints: 1`
+   and DOES exercise hover- and pointer-gated behaviour. A narrow viewport is still not a full device
    — assert `matchMedia` in the test, or emulate a real device profile, before believing a mobile
    pass.
 4. **Never put a tenant or shop id in client state as the source of truth.** The server decides
@@ -50,9 +51,9 @@ stage-specific, not interchangeable. Load **`frontend-craft-sequence`** before s
 reshaping a surface; it holds the running order and the anti-patterns. For motion, easing,
 hover/press feedback and micro-interactions specifically, load **`emil-design-eng`**.
 
-Two failure modes it exists to prevent, both observed on this app: `hover:` is NOT gated here
-(`future.hoverOnlyWhenSupported` is unset in `tailwind.config.ts`), so a bare `hover:` latches on
-tap and leaves an element stuck in its hover state after a touch; and a screenshot cannot verify
+Two failure modes it exists to prevent, both observed on this app: `hover:` IS gated here
+(`future.hoverOnlyWhenSupported: true` in `tailwind.config.ts`, #503), so a bare `hover:` compiles to
+`@media (hover:hover)` and no longer latches on tap (≈11 deliberate hand-written `[@media(hover:hover)_and_(pointer:fine)]` sites remain); and a screenshot cannot verify
 motion — a 200ms ease-out and a 900ms linear are the same PNG, so motion is checked by reading the
 code against `/review-animations`, never by looking at an image.
 

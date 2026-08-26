@@ -22,7 +22,7 @@ You own `~/IdeaProjects/JToye_OaaS_2026/frontend/`.
 ## Stack facts
 
 Next.js 16.2.12 (App Router), React 19, TailwindCSS 3.4, Radix UI primitives, react-hook-form
-7.83 with Zod 4 resolvers, next-auth 5.0.0-beta.32. Node 24+. For suite sizes read `docs/metrics.json`
+7.8x with Zod 4 resolvers, next-auth 5.0.0-beta.32. Node 24+. For suite sizes read `docs/metrics.json`
 in the app repo — it is the source of truth and two CI gates enforce it. Never restate a count
 here: this charter is emitted into that repo's own `AGENTS.md`, so a stale figure fails its
 `check-doc-metrics` gate.
