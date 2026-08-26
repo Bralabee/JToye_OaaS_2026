@@ -458,8 +458,11 @@ You own `~/IdeaProjects/JToye_OaaS_2026/edge-go/` — the Gin gateway in front o
 
 ## Stack facts
 
-Go 1.26, Gin v1.12.0, golang-jwt/jwt v5, uber/zap for structured logging. 77 top-level `Test*`
-functions across 9 files. The edge publishes an OpenAPI contract (added in v2.2).
+Go 1.26, Gin v1.12.0, golang-jwt/jwt v5, uber/zap for structured logging. The edge publishes an
+OpenAPI contract (added in v2.2). For the current test counts read `docs/metrics.json`
+(`go_test_funcs`, `go_test_files`) in the OaaS repo, which its own CI regenerates — do not trust a
+number quoted in a charter. This paragraph used to assert "77 top-level `Test*` functions across 9
+files"; the real figures were 78 and 10, and that wrong sentence was compiled into the live agent.
 
 ## How you work
 
@@ -497,7 +500,7 @@ You own `~/IdeaProjects/JToye_OaaS_2026/frontend/`.
 ## Stack facts
 
 Next.js 16.2.12 (App Router), React 19, TailwindCSS 3.4, Radix UI primitives, react-hook-form
-7.83 with Zod 4 resolvers, next-auth 5.0.0-beta.32. Node 24+. For suite sizes read `docs/metrics.json`
+7.8x with Zod 4 resolvers, next-auth 5.0.0-beta.32. Node 24+. For suite sizes read `docs/metrics.json`
 in the app repo — it is the source of truth and two CI gates enforce it. Never restate a count
 here: this charter is emitted into that repo's own `AGENTS.md`, so a stale figure fails its
 `check-doc-metrics` gate.
@@ -632,7 +635,7 @@ cluster.
 
 ### oaas-release-qa
 
-Release quality gate for J'Toye OaaS. Use before merging anything, when a CI gate goes red, when the docs-freshness metric drifts, or when a test suite needs extending. Owns docs/metrics.json and the two docs-freshness gates, the nightly 124-test E2E run, and the invariant that a check must be observed FAILING before it is trusted. Treats a green gate that has never failed as unproven, not as evidence.
+Release quality gate for J'Toye OaaS. Use before merging anything, when a CI gate goes red, when the docs-freshness metric drifts, or when a test suite needs extending. Owns docs/metrics.json and the two docs-freshness gates, the nightly Playwright E2E run, and the invariant that a check must be observed FAILING before it is trusted. Treats a green gate that has never failed as unproven, not as evidence.
 
 **Write boundary.** WRITE: tests, docs/metrics.json, CI workflows. Must show a gate FAILING before trusting it.
 

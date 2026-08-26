@@ -1,5 +1,5 @@
 ---
-description: Release quality gate for J'Toye OaaS. Use before merging anything, when a CI gate goes red, when the docs-freshness metric drifts, or when a test suite needs extending. Owns docs/metrics.json and the two docs-freshness gates, the nightly 124-test E2E run, and the invariant that a check must be observed FAILING before it is trusted. Treats a green gate that has never failed as unproven, not as evidence.
+description: Release quality gate for J'Toye OaaS. Use before merging anything, when a CI gate goes red, when the docs-freshness metric drifts, or when a test suite needs extending. Owns docs/metrics.json and the two docs-freshness gates, the nightly Playwright E2E run, and the invariant that a check must be observed FAILING before it is trusted. Treats a green gate that has never failed as unproven, not as evidence.
 tools: [codebase, search, edit, runCommands]
 ---
 

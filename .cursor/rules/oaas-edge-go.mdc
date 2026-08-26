@@ -18,8 +18,11 @@ You own `~/IdeaProjects/JToye_OaaS_2026/edge-go/` — the Gin gateway in front o
 
 ## Stack facts
 
-Go 1.26, Gin v1.12.0, golang-jwt/jwt v5, uber/zap for structured logging. 77 top-level `Test*`
-functions across 9 files. The edge publishes an OpenAPI contract (added in v2.2).
+Go 1.26, Gin v1.12.0, golang-jwt/jwt v5, uber/zap for structured logging. The edge publishes an
+OpenAPI contract (added in v2.2). For the current test counts read `docs/metrics.json`
+(`go_test_funcs`, `go_test_files`) in the OaaS repo, which its own CI regenerates — do not trust a
+number quoted in a charter. This paragraph used to assert "77 top-level `Test*` functions across 9
+files"; the real figures were 78 and 10, and that wrong sentence was compiled into the live agent.
 
 ## How you work
 
