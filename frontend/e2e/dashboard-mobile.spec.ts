@@ -21,6 +21,77 @@
  * everywhere (19-RESEARCH Pitfall 5) — deliberately NOT the idle-network wait.
  * The definitive human-visual pass is deferred to the whole-app UAT in plan
  * 19-09 against the rebuilt stack.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * #286, NARROWED — measured 2026-08-28 (plan 34-05)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * #286 asked for two things, and both are now answered — one of them not by this
+ * file at all. Every number below was RE-MEASURED on this tree rather than
+ * carried over from the issue or from 34-RESEARCH; where a figure matched, that
+ * is said explicitly.
+ *
+ * 1. THE `/dashboard/staff` CLICK-THROUGH IS ALREADY SATISFIED, LIVE — by
+ *    `e2e/dashboard-interface-corrections.spec.ts`, not by this spec. Measured
+ *    with `rg -uu -c`: **3** `vendorLogin` references (`:49` definition, `:108`,
+ *    `:201`) and **0** `context.route(` calls — real auth AND real data. The
+ *    zero was confirmed with `searchcheck 'context\.route\(' <that file>` (all
+ *    search paths agree, 0 files) and with a positive control on the same file
+ *    (`test(` -> 5, rc=0), because an unvalidated zero is a statement about the
+ *    search, not about the code. Both figures match 34-RESEARCH.
+ *
+ * 2. THE 375px HALF IS CLOSED BY THE LAST BLOCK IN THIS FILE — "Dashboard mobile
+ *    shell (375px) — the eleven-route sweep has no horizontal overflow" — which
+ *    drives all ELEVEN entries of `ROUTES` (/dashboard, /shops, /products,
+ *    /products/import, /orders, /orders/{id}, /customers, /finance, /marketing,
+ *    /kitchen, /onboarding) at a per-describe 375x812 pin. Before it, the 375px
+ *    coverage in this repo was ONE route (`/dashboard`, in the MOBL-01 block
+ *    below), so the issue's "375px" ask was met for 1/11 of the surface it
+ *    names. Enumeration went 13 -> 24 tests per project (+11 each) and both
+ *    projects are green. The new assertion was shown to FAIL before it was
+ *    trusted, and the first attempt COULD NOT: see that block's own docblock for
+ *    the measured reason (`window.innerWidth` grows with the content under
+ *    mobile emulation) and the fix.
+ *
+ * 3. THE `context.route(` STUBS STAY, DELIBERATELY — and they are #542's
+ *    complaint, not a #286 defect. Re-counted here rather than trusted: **9**
+ *    registrations, matching the nine the issue names — eight in `setupStubs`
+ *    at :338 :346 :351 :355 :359 :365 :371 :372, and the ninth (staff/me) in
+ *    the MOBL-01 block at :504.
+ *
+ *    THE COMMAND THAT COUNTS THEM CHANGED BECAUSE OF THIS PARAGRAPH, and saying
+ *    so is the point. Before this stanza existed,
+ *    `rg -uu -c 'context\.route\(' <this file>` printed 9. It now prints **11**,
+ *    because the prose above names the token twice — the "a rule that must name
+ *    what it measures" shape. The count that survives its own documentation is
+ *    `rg -uu -c '^\s*await context\.route\(' <this file>` -> **9** (rc=0), and
+ *    that is the figure asserted here. Anyone re-checking with the naive pattern
+ *    should expect 9 code registrations plus however many times the docblock
+ *    mentions it.
+ *
+ *    They exist so this dashboard surface can be driven
+ *    without depending on seeded tenant data, which is a different question from
+ *    SSR coverage. No raw-HTML assertion could cover these routes in any case:
+ *    all ELEVEN of their `page.tsx` files carry the `"use client"` directive as
+ *    their first statement (measured 11/11 by reading each file's first
+ *    non-empty line — NOT by grepping for the string, which also matches prose
+ *    in comments and is 34-RESEARCH's named anti-pattern). That
+ *    client-component classification is declared for the SSR gate in
+ *    `scripts/gates/ssr-routes.conf` (plan 34-07); that file does not exist on
+ *    this branch yet (`ls` -> No such file, rc=2) and 34-07 owns it.
+ *
+ * 4. THE PLAYWRIGHT MOBILE PROJECT STAYS AT 390x844
+ *    (`frontend/playwright.config.ts`), untouched. Moving it to 375 would
+ *    satisfy #286 in one line and silently move every other mobile spec, the
+ *    `mobile-instrument-contract.spec.ts` assertions and every mobile perf
+ *    baseline measured at 390 — trading a working, documented good for a new
+ *    one. The 375px coverage is therefore additive, pinned per-describe.
+ *    `check-playwright-mobile-contract.sh` still exits 0 and
+ *    `mobile-instrument-contract.spec.ts` is still green (2 passed).
+ *
+ * SO WHAT #286 STILL ASKS FOR: nothing in this file. What it no longer asks for:
+ * the 375px viewport coverage (point 2) and the staff click-through (point 1).
+ * What was never its to ask: the stubs (point 3, -> #542).
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test"
