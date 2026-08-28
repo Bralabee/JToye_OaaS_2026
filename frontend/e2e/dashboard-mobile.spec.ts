@@ -507,3 +507,81 @@ test.describe("Dashboard mobile shell (375px) — MOBL-01 + switcher regression"
     expect(stale!.select!.bottom).toBeLessThanOrEqual(56)
   })
 })
+
+/**
+ * #286's 375px half, for ALL ELEVEN routes — additive to the 390px sweep above.
+ *
+ * The block before this one is the only 375px coverage that existed, and it
+ * drives ONE route (`/dashboard`). The eleven-route sweep ran only at 390px. So
+ * the issue's "375px" ask was satisfied for 1/11 of the surface it names.
+ *
+ * WHY A NEW BLOCK RATHER THAN MOVING THE PROJECT VIEWPORT. Changing
+ * `playwright.config.ts`'s `mobile` project from 390x844 to 375 would satisfy
+ * #286 in one line — and silently move every other mobile spec, the
+ * `mobile-instrument-contract.spec.ts` assertions, and every mobile perf
+ * baseline that was measured at 390. That trades a working, documented good for
+ * a new one, which the Incremental Betterment Doctrine forbids. The viewport is
+ * therefore pinned HERE, per-describe, exactly as the two blocks above do —
+ * which is also what makes the block correct under BOTH Playwright projects: at
+ * the desktop project's 1440px the tab bar hides and the sidebar shows, so an
+ * unpinned viewport would be a false red there. `playwright.config.ts` is
+ * deliberately NOT touched by this block; `check-playwright-mobile-contract.sh`
+ * still guards its shape.
+ *
+ * WHY THE PRESENCE CONTROLS COME FIRST. `docScrollWidth <= innerWidth + 1` is
+ * satisfied *trivially* by an empty page, a redirect to /auth/signin, and a 404
+ * — nothing wide cannot overflow. That is the exact vacuous shape this file's
+ * sibling already documents (`dashboard-interface-corrections.spec.ts:15-20`:
+ * with the API refusing, the switcher falls back to a zero-grant state and the
+ * count reads 0 — "a pass on a page that is not working"). So each iteration
+ * asserts the shell is really rendered — the Primary nav, and the page `<h1>`
+ * where the route has one — BEFORE it measures geometry. Both directions were
+ * run: injecting a 1200px div turns the geometry assertion red, and pointing an
+ * iteration at a route that 404s turns the PRESENCE assertion red rather than
+ * letting the geometry one pass over a blank page.
+ *
+ * No `@desktop-only` / `@mobile-only` tag, deliberately: the 390px and 375px
+ * blocks above are enumerated by both projects by design, and consistency with
+ * them is worth more than halving the run.
+ */
+test.describe("Dashboard mobile shell (375px) — the eleven-route sweep has no horizontal overflow", () => {
+  test.use({ viewport: { width: 375, height: 812 }, isMobile: true })
+
+  test.beforeEach(async ({ context, page }) => {
+    // Same order as the 390px sweep: stub the API data first (no effect on the
+    // Keycloak login origin), then perform the real vendor sign-in so the
+    // server-side dashboard auth gate lets us through.
+    await setupStubs(context)
+    await vendorLogin(page)
+  })
+
+  for (const route of ROUTES) {
+    test(`${route.name} (${route.path}) has no horizontal overflow at 375px`, async ({ page }) => {
+      await page.goto(`${BASE}${route.path}`, { waitUntil: "domcontentloaded" })
+
+      // ---- PRESENCE CONTROL: the page is actually rendered ---------------------
+      // Without this, every assertion below passes on a blank page.
+      await expect(tabBarOf(page)).toBeVisible({ timeout: 10_000 })
+      if (route.titleHasH1) {
+        await expect(live(page).locator("main h1").first()).toBeVisible({
+          timeout: 10_000,
+        })
+      }
+
+      // ---- the measurement (same shape as the single-route block above) --------
+      const geom = await page.evaluate(() => ({
+        docScrollWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        mainWidth:
+          (document.querySelector("body > div:not([hidden]) main") as HTMLElement | null)
+            ?.clientWidth ?? 0,
+      }))
+      // No horizontal overflow (+1px tolerance for sub-pixel rounding).
+      expect(geom.docScrollWidth).toBeLessThanOrEqual(geom.viewportWidth + 1)
+      // …and the content column still spans (near) the full width — the sidebar
+      // steals nothing at 375px. A collapsed column would satisfy the overflow
+      // assertion while being unusable.
+      expect(geom.mainWidth).toBeGreaterThanOrEqual(300)
+    })
+  }
+})
