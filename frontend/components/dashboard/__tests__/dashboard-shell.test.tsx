@@ -5,6 +5,7 @@
  * the shell renders the passed children and the sidebar chrome.
  */
 
+import type { ReactElement } from "react"
 import { render, screen, within } from "@testing-library/react"
 import { usePathname } from "next/navigation"
 import { DashboardShell } from "../dashboard-shell"
@@ -151,7 +152,7 @@ describe("Sidebar navigation", () => {
 
   it("shows a 'Go live' link to /dashboard/onboarding", () => {
     const { Sidebar } = jest.requireActual("@/components/dashboard/sidebar") as {
-      Sidebar: () => JSX.Element
+      Sidebar: () => ReactElement
     }
     // The sidebar mounts a ShopSwitcher, which now reads the shared provider.
     render(

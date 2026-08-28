@@ -97,7 +97,15 @@ describe("/shop — server-seeded directory", () => {
     await act(async () => {
       render(
         <ShopDiscoveryClient
-          initial={{ content: [shop], totalPages: 1, totalElements: 1, number: 0, size: 12 }}
+          initial={{
+            content: [shop],
+            totalPages: 1,
+            totalElements: 1,
+            number: 0,
+            size: 12,
+            first: true,
+            last: true,
+          }}
           initialQuery=""
           initialInterpretation={{ kind: "text" }}
         />
