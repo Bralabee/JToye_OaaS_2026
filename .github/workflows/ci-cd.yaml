@@ -82,6 +82,38 @@ jobs:
           # OpenAPI freshness test can find it.
           PATH: ${{ env.PATH }}:/home/runner/go/bin
 
+      # Plan 34-08 (TRUTH-02, #110). The step ABOVE has written coverage.out for
+      # months and the upload step at the end of this job has archived it. Nothing
+      # read it: no `go tool cover`, no threshold, no consumer of any kind anywhere
+      # in the repository. Every edge-go package could have fallen to zero and this
+      # job would have stayed green, because producing a number and checking a
+      # number are two different acts and only the first was happening.
+      #
+      # No `working-directory:` deliberately — the gate resolves the repo root and
+      # the module directory itself, and cds into edge-go before invoking
+      # `go tool cover`, which MUST run inside the module (measured: from the repo
+      # root it exits non-zero with "go.mod file not found in current directory or
+      # any parent directory"). Giving the step a working-directory as well would
+      # put the same fact in two places.
+      #
+      # Shown to FAIL before being wired, then restored and verified by
+      # `git hash-object` (78870d8c…, identical before and after):
+      #   floor raised to 99.9 ......................... rc=1, naming 66.8 and 99.9
+      #   GO_COVERPROFILE at a path that does not exist  rc=2 VOID
+      #   an EMPTY profile ............................. rc=2 VOID
+      #   a profile of one junk line ................... rc=2 VOID
+      #   a mode line with zero data lines ............. rc=2 VOID
+      # The last two matter most. MEASURED with Go 1.26: `go tool cover -func` on an
+      # empty file AND on a mode-line-only file both exit 0 reporting
+      # "total: (statements) 0.0%". A gate that trusts rc and then trusts the total
+      # therefore turns a broken or skipped test run into a coverage regression,
+      # reporting an infrastructure failure as a code problem. The gate parses the
+      # profile structurally first and VOIDs instead. Clean tree: rc=0 at 66.8%.
+      - name: Enforce the edge-go coverage floor (#110)
+        run: |
+          chmod +x ./scripts/check-go-coverage.sh
+          ./scripts/check-go-coverage.sh
+
       - name: Validate edge-go OpenAPI spec (@seriousme/openapi-schema-validator)
         # ROADMAP DOC-01 success criterion #1: /openapi.json is a valid
         # OpenAPI spec per an openapi-spec-validator. We use
@@ -129,8 +161,29 @@ jobs:
       # --json --outputFile is here so the count oracle below can reuse THIS run
       # rather than executing the suite a second time. The human-readable reporter
       # output is unaffected.
+      #
+      # --coverage was added by plan 34-08 (TRUTH-02, #110) and the two flags
+      # deliberately coexist on ONE run. jest.config.js now declares a
+      # coverageThreshold, which Jest enforces itself inside this same execution —
+      # there is no separate gate script to wire, and no second suite run to pay
+      # for. Before this, the config had collectCoverageFrom and no threshold and
+      # this step passed no --coverage at all, so the frontend coverage number was
+      # never even PRODUCED in CI, let alone checked.
+      #
+      # The --json --outputFile pair MUST survive any edit to this line: the two
+      # oracle steps below read that report rather than re-running the suite, so
+      # dropping it does not just lose a file, it silently removes the only check
+      # that asks a RUNNER what docs/metrics.json claims. Verified locally after
+      # adding --coverage — the oracle read the coverage run's report and exited 0,
+      # so coverage collection does not change the report's shape.
+      #
+      # Shown to FAIL before being trusted: each of the four thresholds was raised
+      # above its measurement once and Jest went red naming that counter (e.g.
+      # 'coverage threshold for lines (90%) not met: 66.49%'), rc=1, while
+      # 'Tests: 1272 passed' — proving the threshold and not a test is what fires.
+      # Every arm restored and verified by `git hash-object` (dd133e72…).
       - name: Run frontend Jest tests
-        run: npm test -- --ci --watchAll=false --json --outputFile="$RUNNER_TEMP/jest-report.json"
+        run: npm test -- --ci --watchAll=false --coverage --json --outputFile="$RUNNER_TEMP/jest-report.json"
         working-directory: frontend
 
       # Issue #291. docs-freshness.sh asserts docs/metrics.json against the source
