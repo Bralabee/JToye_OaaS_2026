@@ -45,9 +45,10 @@
 #   MIN_TOTAL_PERCENT is a NO-REGRESSION GUARDRAIL. It says "coverage has not fallen",
 #   not "coverage is good enough". Raising it is a deliberate act that must come with its
 #   own fresh measurement recorded below. LOWERING IT TO MAKE A RED BUILD GREEN IS THE
-#   FAILURE MODE — the same one frontend/lib/perf-budgets.ts already warns about in this
-#   repo ("a budget edited to match reality is not a budget"). If this gate goes red, the
-#   answer is a test, not a smaller number.
+#   FAILURE MODE, and this repo has already written that down once — see
+#   frontend/e2e/perf-budgets.ts:64-70: "Raising a budget until the tree passes is how a
+#   budget stops meaning anything." If this gate goes red, the answer is a test, not a
+#   smaller number.
 #
 # MEASURED
 #
