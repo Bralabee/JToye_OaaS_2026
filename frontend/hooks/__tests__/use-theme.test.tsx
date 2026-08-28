@@ -14,18 +14,56 @@
  * suppressions and keep the bug.
  */
 
-import { MessageChannel as NodeMessageChannel } from "node:worker_threads"
+import { TextEncoder as NodeTextEncoder, TextDecoder as NodeTextDecoder } from "node:util"
 import { render, screen, act, fireEvent } from "@testing-library/react"
 import { useTheme } from "@/hooks/use-theme"
 
-// jsdom implements no MessageChannel, and `react-dom/server.browser` requires one
-// AT MODULE LOAD (measured: "ReferenceError: MessageChannel is not defined" from
-// react-dom-server.browser.development.js:8818, before a single test ran). Node's
-// worker_threads ships a spec-compliant one; install it here, and let the SSR case
-// import the server renderer dynamically so this assignment happens first.
-const globalWithChannel = globalThis as { MessageChannel?: unknown }
-if (typeof globalWithChannel.MessageChannel === "undefined") {
-  globalWithChannel.MessageChannel = NodeMessageChannel
+/* ---------------------------------------------------------------------------
+ * jsdom implements neither MessageChannel nor TextEncoder, and
+ * `react-dom/server.browser` requires BOTH at module load — measured, one after
+ * the other: "ReferenceError: MessageChannel is not defined"
+ * (react-dom-server.browser.development.js:8818) then "ReferenceError:
+ * TextEncoder is not defined" (:8835), each before the SSR case could run.
+ * Install them here, and let the SSR case import the server renderer
+ * DYNAMICALLY so these assignments land first.
+ *
+ * The channel is a LOCAL FAKE rather than node:worker_threads, and that is not
+ * a shortcut. React's server renderer builds one at module scope for its
+ * scheduler and assigns `port1.onmessage`, which RE-REFS a real MessagePort —
+ * so even `unref()`ing both ports in the constructor leaves a live handle
+ * holding Node's event loop open. Measured both ways: the real channel gave
+ * "Jest did not exit one second after the test run has completed" and then a
+ * hard rc=124 timeout, which in CI is a stuck job rather than a red one. A
+ * fake holds no OS handle, and `renderToString` is fully synchronous, so no
+ * message ever needs delivering.
+ * ------------------------------------------------------------------------- */
+class FakeMessagePort {
+  onmessage: ((event: { data: unknown }) => void) | null = null
+  postMessage(): void {}
+  close(): void {}
+  start(): void {}
+  addEventListener(): void {}
+  removeEventListener(): void {}
+}
+
+class FakeMessageChannel {
+  readonly port1 = new FakeMessagePort()
+  readonly port2 = new FakeMessagePort()
+}
+
+const missingGlobals = globalThis as {
+  MessageChannel?: unknown
+  TextEncoder?: unknown
+  TextDecoder?: unknown
+}
+if (typeof missingGlobals.MessageChannel === "undefined") {
+  missingGlobals.MessageChannel = FakeMessageChannel
+}
+if (typeof missingGlobals.TextEncoder === "undefined") {
+  missingGlobals.TextEncoder = NodeTextEncoder
+}
+if (typeof missingGlobals.TextDecoder === "undefined") {
+  missingGlobals.TextDecoder = NodeTextDecoder
 }
 
 const STORAGE_KEY = "theme"
