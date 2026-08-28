@@ -349,7 +349,7 @@ Status: Ready to plan
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-08-10
+Last activity: 2026-08-28 - Completed quick task 260828-msx: superseded dependabot #651 (PR #679)
 
 Progress: [██████████] 98%
 
@@ -591,6 +591,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260828-msx | Supersede dependabot #651 (closed unmerged by dependabot itself): land the 10-package frontend minor-and-patch bump incl. next 16.2.12→16.3.2 (meets the CVE-2025-13465 lodash-fix precondition — 4.17.23 figure is upstream's, unverified by content since Next strips version banners), fix the 3 PRE-EXISTING tsc errors invisible to `next build` (rc 1→0, both directions recorded), reconcile 13 gated doc-pin claims (the gate caught AGENTS.md:502, which the hand enumeration missed) plus the ungated Stripe pins in INTEGRATIONS.md that NO gate reads, and correct HANDOFF.md's falsified "#651 OPEN" claim. PR #679 | 2026-08-28 | 692daa90 | [260828-msx-supersede-dependabot-pr-651-frontend-min](./quick/260828-msx-supersede-dependabot-pr-651-frontend-min/) |
 | 260828-h0i | Unbreak the six failing nightly E2E tests (#666) — three instrument defects in storefront-flows.spec.ts, three tests x two projects; **the product was correct in all three**. Two ambiguous locators collided with Phase 31 copy ("Browse" ⊂ "browser"; the cookie notice's "remembering what is in your basket"). The third re-attributes what the 2026-08-25 handoff called "NOT YET ATTRIBUTED and the more serious": the **LGL-03 allergen gate** refuses the submit before any network call with the button left enabled, so the click was swallowed and no order row was ever created — meaning **no E2E had covered a successful order placement since Phase 31 merged**. Falsified clean→arms→clean, restores content-verified by git hash-object: arm 1 → 2 fail, arm 2 → 2 fail, arm 3 → 4 fail with the original CI symptom, closing arm 6/6 pass and **0→4 real orders** in the database carrying V63 allergen snapshots. Full spec 44/44. Also measured, not this task: compose maps core-java as the RANGE "9090-9091:9090" and Docker picked 9091 while the bundle bakes localhost:9090 — six further local failures, all cleared by a force-recreate with no code change | 2026-08-28 | 6b1df8a1 | [20260828-e2e-storefront-nightly-six](./quick/20260828-e2e-storefront-nightly-six/) |
 | 260809-ivz | Close UF-33-01 (33-SECURITY.md residual) — the rejected client coordinate is WARN-logged at integer degrees, never the raw pair; arm shown failing pre-fix, ShopServiceGeocodeTest 15/15 fresh post-fix | 2026-08-09 | a1e8ef64 | [260809-ivz-close-uf-33-01-coarsen-the-client-coordi](./quick/260809-ivz-close-uf-33-01-coarsen-the-client-coordi/) |
 | 260715-fcq | Reconcile stale docs to current state (milestone identity → v2.3; test count 1257→1401; schema V51→V56; incl. AGENTS.md mirror) | 2026-07-15 | aed0929 | [260715-fcq-reconcile-stale-project-docs-to-current-](./quick/260715-fcq-reconcile-stale-project-docs-to-current-/) |
