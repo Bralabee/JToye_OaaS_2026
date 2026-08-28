@@ -106,7 +106,7 @@
 #   34-08 applied to the Go and Jest thresholds).
 #
 #       counter        measured   floor   margin
-#       INSTRUCTION      88.06%      86    2.06 points
+#       INSTRUCTION      88.06%      85    3.06 points   (85, not 86 — see CI CALIBRATION)
 #       BRANCH           71.88%      69    2.88 points
 #       LINE             87.55%      85    2.55 points
 #       METHOD           87.53%      85    2.53 points
@@ -126,10 +126,35 @@
 #   not complete, these floors are LOCAL-ONLY and must be described that way rather
 #   than as calibrated.
 #
-#   CI CALIBRATION RESULT: NOT YET RUN. The floors above are LOCAL-ONLY as of this
-#   commit. Plan 34-09 Task 3 wires the gate into ci-cd.yaml and runs the pipeline on
-#   a push branch; this block is rewritten with the run id, its conclusion and the
-#   four CI-measured ratios at that point. Until it is, do not call these calibrated.
+#   CI CALIBRATION RESULT: DONE. GitHub Actions run 33219707778, branch
+#   phase-34-09-jacoco-calibration, job "Integration Tests (Testcontainers RLS)"
+#   (99010987759), 2026-08-28T23:57:15Z. Job conclusion SUCCESS, gate rc=0.
+#   Runner: nproc=4, so maxParallelForks resolved to 2 against 4 locally, and the
+#   suite took 42m56s against 22m25s here. The four ratios the gate printed there,
+#   beside the local ones:
+#
+#       counter        local     CI     delta   floor   CI margin
+#       INSTRUCTION    88.06   87.50    -0.56      85      2.50
+#       BRANCH         71.88   71.78    -0.10      69      2.78
+#       LINE           87.55   87.03    -0.52      85      2.03
+#       METHOD         87.53   87.05    -0.48      85      2.05
+#
+#   CI is LOWER on all four, by 0.10 to 0.56 of a point. RESEARCH assumption A2 —
+#   "a threshold just below today's local number will not flake in CI", rated MED —
+#   is therefore RETIRED BY MEASUREMENT rather than assumed away, and it was right to
+#   doubt: a floor set flush against the local figure would have had 0.56 of a point
+#   of headroom on INSTRUCTION.
+#
+#   The floors below are recalibrated on the CI figure with the SAME rule,
+#   floor(measurement) - 2. Only INSTRUCTION moved (86 -> 85); the other three were
+#   already at the CI-derived value. Every margin is now at least 2.03 points.
+#
+#   Two facts worth keeping. The UNIT half is IDENTICAL on both machines —
+#   62.55 / 51.03 / 62.12 / 65.01, to the hundredth — so the drift is entirely in the
+#   Testcontainers half, where the fork topology differs. And both runs report the
+#   same denominators (10989 lines), so the two machines analysed the same class set
+#   and 9621 vs 9564 covered lines is a real difference in what executed, not a
+#   different codebase.
 #
 # INPUT
 #   core-java/build-local/reports/jacoco/aggregate/jacocoAggregateReport.csv
@@ -172,7 +197,7 @@ set -uo pipefail
 # --- the floors ------------------------------------------------------------------
 # NO-REGRESSION GUARDRAILS, not targets. One rule: floor(measurement) - 2. Read the
 # MEASURED and "WHY FLOORS" sections above before editing any of them.
-MIN_INSTRUCTION_PERCENT=86
+MIN_INSTRUCTION_PERCENT=85
 MIN_BRANCH_PERCENT=69
 MIN_LINE_PERCENT=85
 MIN_METHOD_PERCENT=85
