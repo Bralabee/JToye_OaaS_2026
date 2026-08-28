@@ -99,9 +99,15 @@ shared meta-gate that could red the build for reasons unrelated to this plan.
 
 ---
 
-## From plan 34-07: docs/metrics.json is behind wave 1 (PRE-EXISTING, phase-level)
+## From plan 34-07: docs/metrics.json is behind wave 1 (PRE-EXISTING, ALREADY OWNED by 34-10)
 
 **Found:** 2026-08-28, running `scripts/docs-freshness.sh` as a side-check during 34-07.
+
+**Not a new finding — already decided.** `34-01-SUMMARY.md` records it as a key decision in
+terms: *"docs/metrics.json deliberately NOT regenerated — plan 34-10 is its single writer.
+This leaves the docs-freshness gate RED on the branch until 34-10 lands."* This entry adds
+only the measured numbers and confirms the red is not 34-07's, so a reader of this file does
+not re-diagnose it. **Do not fix it here or in 34-08/34-09: single-writer is the point.**
 
 `scripts/docs-freshness.sh` exits **1** on the wave-1-complete base (8285d6f5) and on every
 34-07 commit. It is NOT caused by 34-07: the only files this plan changed are
@@ -125,7 +131,7 @@ manifest), since the prose still quotes the 3188 line verbatim.
 sentence in CLAUDE.md, AGENTS.md and README.md to the regenerated figures. Never compute
 the new numbers arithmetically — the counter greps literal `it(` / `test(`.
 
-**Why it was not done here:** it is not 34-07's defect and not in its `files_modified`, and
-plans 34-08/34-09/34-10 are expected to add further spec blocks — regenerating now would
-be re-broken by the next plan. This belongs to whoever closes the phase, as a single pass
-after the last spec lands.
+**Why it was not done here:** it is not 34-07's defect, it is not in its `files_modified`,
+and 34-10 is the declared single writer of that manifest. Regenerating from any other plan
+would be re-broken by the next plan's specs and would take the single-writer property with
+it.
