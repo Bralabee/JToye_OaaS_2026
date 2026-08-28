@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The frontend image stopped building the moment next 16.3.x landed, and only the container could see it (#681) — 2026-08-28
+
+- **#679 widened `next build`'s type-check to the whole tsconfig program**, and every repo
+  checkout stayed green — PR checks, local builds, bare `tsc` all rc=0. The one context that
+  broke was the Docker image build: the compose build context is `./frontend`, and
+  `retention-table.a11y.test.tsx` imports the repo-root `docs/retention-manifest.json`, which
+  cannot exist inside that context. TS2307, rc=1, caught by the post-merge runtime-parity
+  re-sync — a defect class no PR gate could have seen, because every CI job runs in a full
+  checkout where the import resolves.
+- **The build scope is narrowed back to shipped code; the accidental coverage gain is kept.**
+  `next build` now checks via `tsconfig.build.json` (tests/e2e excluded), and a new bare
+  `tsc --noEmit` step in Run Tests becomes the ONLY gate type-checking the jest test files —
+  possible at all because jest-dom 7.x fixed the ~366 matcher-type errors that used to make a
+  bare tsc permanently red; the stale ci-cd.yaml comment recording that figure is corrected.
+- **Both directions proven**: the image build's rc=1 is on record pre-fix and rc=0 post-fix;
+  the new tsc step went rc=2 on a planted test-file error while `npm run build` stayed rc=0
+  with that same error present — the split behaves exactly as designed. Restore verified by
+  blob hash, closing arm clean.
+
 ### The Trivy daily-DB time-bomb fired again, and redded three main pipelines in one afternoon (#673) — 2026-08-28
 
 - **CVE-2026-14456** (OpenSSL QUIC-server DoS) landed in Trivy's daily vulnerability DB and the
