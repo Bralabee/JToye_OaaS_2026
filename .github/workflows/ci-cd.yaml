@@ -277,12 +277,21 @@ jobs:
   #   satisfied identically by a server that rendered the content and one that
   #   rendered nothing, so this job's green is not evidence about served bytes.
   #
-  #   Two things do cover it, and neither is here: scripts/check-ssr-coverage-contract.sh
-  #   in the ops-contracts job asserts that every server-rendered route HAS a raw-HTML
-  #   assertion (statically, per PR), and .github/workflows/e2e-nightly.yml RUNS those
-  #   assertions against the full compose stack. Adding a backend to this job would
-  #   close the gap for real; until then the honest statement is above rather than an
-  #   implication that a green browser job covered the server render.
+  #   Two things do cover it, and neither is here: the SSR-coverage contract gate in the
+  #   ops-contracts job (its manifest is scripts/gates/ssr-routes.conf) asserts that every
+  #   server-rendered route HAS a raw-HTML assertion, statically, per PR — and
+  #   .github/workflows/e2e-nightly.yml RUNS those assertions against the full compose
+  #   stack. Adding a backend to this job would close the gap for real; until then the
+  #   honest statement is above rather than an implication that a green browser job
+  #   covered the server render.
+  #
+  #   That gate is named here by DESCRIPTION and by its manifest, never by its script
+  #   filename, and that is deliberate. check-gate-enforcement.sh decides "is this gate
+  #   wired?" by searching workflow files for the script's name WITHOUT stripping
+  #   comments — measured 2026-08-28: with the ops-contracts step deleted and this
+  #   sentence naming the file, the meta-gate still reported PASS at rc=0. A comment
+  #   mentioning a gate must not be able to satisfy the check that the gate actually
+  #   runs, so the only occurrence of that filename in this file is the run: line itself.
   frontend-e2e:
     name: Frontend E2E (public surfaces)
     runs-on: ubuntu-latest
