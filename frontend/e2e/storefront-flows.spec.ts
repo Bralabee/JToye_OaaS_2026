@@ -85,7 +85,7 @@ async function placeOrder(page: Page, email: string, name = "E2E Test User") {
 
   await page.locator("text=View basket").click()
   await page.waitForLoadState("domcontentloaded")
-  await expect(page.locator("text=Your basket")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Your basket" })).toBeVisible()
 
   await page.locator("text=Proceed to checkout").click()
   await page.waitForLoadState("domcontentloaded")
@@ -102,6 +102,23 @@ async function placeOrder(page: Page, email: string, name = "E2E Test User") {
   // Definite fee breakdown is visible BEFORE payment.
   await expect(page.getByText("Subtotal")).toBeVisible()
   await expect(page.getByText("Total", { exact: true })).toBeVisible()
+
+  // LGL-03 (Phase 31): the checkout REFUSES to submit until the allergen set is
+  // acknowledged — `if (!acknowledged) { setAckError(true); return }` in
+  // app/shop/[slug]/checkout/page.tsx, BEFORE any network call. The submit button
+  // stays deliberately ENABLED, so without this tick the click is simply swallowed:
+  // no order row is created and the failure surfaces 15s later as a missing
+  // "Order confirmed!" heading, which reads like a broken checkout and is not one.
+  // The gate is present in ALL THREE panel states, so ticking it is unconditional.
+  // Radix renders button[role=checkbox] and its BubbleInput sibling is aria-hidden,
+  // so this role locator matches exactly one node — and .click() is required,
+  // because .check() wants a native input.
+  const allergenAck = page.getByRole("checkbox", {
+    name: /I have read the allergen information for this order\./i,
+  })
+  await expect(allergenAck).toBeVisible()
+  await allergenAck.click()
+  await expect(allergenAck).toBeChecked()
 
   await page.locator('button[type="submit"]:has-text("Place order")').click()
 
@@ -129,8 +146,16 @@ test.describe("Shop Discovery", () => {
     await expect(page.locator(`text=${SHOP_NAME}`)).toBeVisible()
     // Cuisine tag chip from the seeded shop's `tags`.
     await expect(page.locator("text=Nigerian").first()).toBeVisible()
-    // `text=Browse` is ambiguous (nav link + hero body copy) — scope to the nav link.
-    await expect(page.getByRole("link", { name: "Browse" })).toBeVisible()
+    // The card links to its own storefront. Asserted by HREF, not by link text: the
+    // card's <a> wraps the whole <article> and computes no stable accessible name.
+    // The previous `getByRole("link", {name:"Browse"})` matched TWO footer links —
+    // "Browse shops" and Phase 31's "Cookie and browser-storage policy", because
+    // "Browse" is a substring of "browser". Scoping it to the nav instead would not
+    // work either: the desktop nav has a "Shops" link where the MOBILE nav has only
+    // a hamburger, so a nav-scoped assertion passes on one project and fails on the
+    // other. An href assertion is unambiguous, viewport-stable, and is actually
+    // about the card this test is named for.
+    await expect(page.locator(`a[href="/shop/${SHOP_SLUG}"]`).first()).toBeVisible()
   })
 
   test("search filters shops", async ({ page }) => {
@@ -575,7 +600,7 @@ test.describe("Cart + Checkout", () => {
     // (not just the floating cart drawer).
     await page.goto(`${BASE}/shop/${SHOP_SLUG}/cart`)
     await page.waitForLoadState("domcontentloaded")
-    await expect(page.locator("text=Your basket")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Your basket" })).toBeVisible()
     await expect(page.locator("text=Proceed to checkout")).toBeVisible()
 
     await page.locator("text=Proceed to checkout").click()
@@ -612,6 +637,16 @@ test.describe("Cart + Checkout", () => {
       placeOrder,
       "Place order is disabled — basket is likely under the shop minimum"
     ).toBeEnabled({ timeout: 10_000 })
+    // LGL-03 (Phase 31): tick the allergen acknowledgement before submitting — the
+    // checkout refuses the submit without it, before any network call, while leaving
+    // the button enabled. See the fuller note in placeOrder() above.
+    const allergenAck = page.getByRole("checkbox", {
+      name: /I have read the allergen information for this order\./i,
+    })
+    await expect(allergenAck).toBeVisible()
+    await allergenAck.click()
+    await expect(allergenAck).toBeChecked()
+
     await placeOrder.click()
 
     // COD path (no Stripe keys in this env): the order confirms INLINE with the
