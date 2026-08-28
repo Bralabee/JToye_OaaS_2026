@@ -287,7 +287,7 @@ jobs:
           echo "  The Java coverage floor is enforced over the AGGREGATE of the unit suite and this"
           echo "  integration suite, because the unit suite alone covers 62.12% of lines where the two"
           echo "  together cover 87.55% (measured 2026-08-29). This job skipped its half, so no"
-          echo "  aggregate could be computed and none was. THIS JOB'"'"'S SUCCESS SAYS NOTHING ABOUT"
+          echo "  aggregate could be computed and none was. THIS JOB'S SUCCESS SAYS NOTHING ABOUT"
           echo "  COVERAGE — do not read it as a coverage result, and do not quote a number from it."
           echo "  Could not measure is not measured and fine."
 
