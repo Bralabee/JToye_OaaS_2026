@@ -100,17 +100,30 @@ jobs:
         run: npm run build
         working-directory: frontend
 
-      # The step above does NOT cover frontend/e2e. `next build` type-checks the
-      # pages/app graph, not every file in the tsconfig program — measured by
-      # planting `const broken: number = "..."` in a spec: `npm run build` exits 0
-      # and never mentions the file, while `tsc --noEmit` exits 2 with TS2322.
-      # Playwright transpiles specs without full checking either, so until this
-      # step existed a type error in a spec could reach main with every gate green.
+      # `next build` type-checks via tsconfig.build.json (next.config.mjs
+      # `typescript.tsconfigPath`), which deliberately excludes tests and e2e:
+      # the Docker image build context is ./frontend, and a test importing a
+      # repo-root file (docs/retention-manifest.json) can never resolve there
+      # (measured 2026-08-28: the image build failed at TS2307 on exactly that
+      # import under next 16.3.x, which widened the build check from the
+      # pages/app graph to the whole program). This step is therefore the ONLY
+      # gate that type-checks the jest test files — it runs bare `tsc --noEmit`
+      # over tsconfig.json (tests and e2e included) in a full repo checkout
+      # where the manifest exists. Its fail direction is on record: it exited 1
+      # naming 3 real test-file errors on the pre-#679 tree.
       #
-      # Scoped to tsconfig.e2e.json deliberately: a bare `tsc --noEmit` over the
-      # frontend is red at ~366 pre-existing jest-dom matcher errors that
-      # `next build` never checks, and a permanently red gate is an ignored one.
-      - name: Type-check the Playwright specs (nothing else does)
+      # Historical note: this step used to be impossible — a bare tsc was red at
+      # ~366 jest-dom matcher errors. @testing-library/jest-dom 7.x fixed its
+      # types; the program measured clean (rc=0, 0 errors) on 2026-08-28.
+      - name: Type-check the full frontend program (only gate covering jest test files)
+        run: npx tsc --noEmit
+        working-directory: frontend
+
+      # Redundant with the bare tsc above for e2e specs, kept deliberately: it
+      # pins the e2e files to their own tsconfig.e2e.json settings, and a
+      # second instrument with an independent config is cheap insurance against
+      # a future exclude quietly dropping the specs from the main program.
+      - name: Type-check the Playwright specs (scoped tsconfig.e2e.json)
         run: bash scripts/check-e2e-typecheck.sh
 
       # --json --outputFile is here so the count oracle below can reuse THIS run

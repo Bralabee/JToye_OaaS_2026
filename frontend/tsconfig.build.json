@@ -1,0 +1,25 @@
+{
+  "//": [
+    "Production-build type-check scope, consumed ONLY by `next build` via",
+    "next.config.mjs `typescript.tsconfigPath`. next 16.3.x widened the build",
+    "type-check from the pages/app graph to the WHOLE tsconfig program, which",
+    "broke the Docker image build: the compose build context is ./frontend, and",
+    "components/legal/__tests__/retention-table.a11y.test.tsx imports the",
+    "repo-root docs/retention-manifest.json, a file that cannot exist inside",
+    "that context. Measured 2026-08-28: `docker compose build frontend` failed",
+    "at TS2307 on that import while the same build passed on every repo",
+    "checkout. Excluding tests here restores the 16.2.12-equivalent build scope",
+    "(shipped code only) WITHOUT losing test type coverage: ci-cd.yaml runs a",
+    "bare `tsc --noEmit` over tsconfig.json (tests included) in the Run Tests",
+    "job, where the full repo exists. `exclude` REPLACES the base list rather",
+    "than merging, so node_modules must be restated."
+  ],
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "e2e/**"
+  ]
+}
