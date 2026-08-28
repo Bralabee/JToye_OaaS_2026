@@ -7,7 +7,7 @@
 # job) — bump all of them in lockstep. There is a fourth site the older wording
 # missed: the `golang` row in infra/dependency-horizons.yaml, whose `pin:` must
 # name this exact image or check-dependency-horizons.sh VOIDs on H-5 drift.
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /app
 
