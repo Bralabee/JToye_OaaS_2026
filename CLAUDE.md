@@ -22,7 +22,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 
 ## Languages
 - Java 21 - Core API (Spring Boot 3.5.16)
-- TypeScript 5 - Frontend (Next.js 16.2.12, React 19)
+- TypeScript 5 - Frontend (Next.js 16.3.2, React 19)
 - Go 1.26 - Edge API gateway (Gin)
 - SQL (PostgreSQL) - Database migrations via Flyway
 - YAML - Configuration management
@@ -49,9 +49,9 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation
 - Micrometer Prometheus - Metrics export
 - Micrometer Tracing (Brave/Zipkin) - Distributed tracing
-- Next.js 16.2.12 - React framework with file-based routing
+- Next.js 16.3.2 - React framework with file-based routing
 - React 19 - UI component library
-- React Hook Form 7.84.0 - Form state management
+- React Hook Form 7.85.0 - Form state management
 - Next-Auth 5.0.0-beta.32 - Authentication middleware
 - TailwindCSS 3.4.1 - Utility-first CSS framework
 - Radix UI - Headless component library
@@ -75,7 +75,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Hibernate ORM (via Spring Boot 3.5.16) - JPA implementation
 - Hibernate Envers - Audit history tracking
 - AWS SDK v2 (2.53.2) - S3 API for image storage
-- Stripe React/JS 6.8.0, 9.12.0 - Payment processing UI integration
+- Stripe React/JS 6.8.2, 9.14.0 - Payment processing UI integration
 - Axios 1.19.0 - HTTP client for API calls
 - Framer Motion 12.43.0 - Animation library
 - Recharts 3.10.1 - Charts and data visualization
@@ -137,7 +137,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - MinIO: latest
 - Go: 1.26-alpine
 - Node.js: 24+
-- Next.js: 16.2.12
+- Next.js: 16.3.2
 ## Performance Tuning
 - Connection pooling: HikariCP
 - Batch insert/update: Hibernate batch_size=20 (prod: 50)

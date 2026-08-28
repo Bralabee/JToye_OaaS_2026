@@ -92,7 +92,7 @@ describe("productNode", () => {
     origin: ORIGIN,
     shopUrl: `${ORIGIN}/shop/brixton-village-grill`,
     shopName: shop.name,
-  }) as Record<string, never> & { offers: Record<string, string> }
+  }) as Record<string, unknown> & { offers: Record<string, string> }
 
   it("is a Product with a GBP Offer priced in pounds, not pennies", () => {
     expect(node["@type"]).toBe("Product")
