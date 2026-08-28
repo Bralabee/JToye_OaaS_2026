@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The Trivy daily-DB time-bomb fired again, and redded three main pipelines in one afternoon (#673) — 2026-08-28
+
+- **CVE-2026-14456** (OpenSSL QUIC-server DoS) landed in Trivy's daily vulnerability DB and the
+  image gate failed `Build and Push Images (core-java)` on all three of the day's main pipelines —
+  including a **docs-only** commit, which is the proof this class needs no code change to fire.
+  Three HIGH findings, all one CVE: `libcrypto3`/`libssl3`/`openssl` 3.5.7-r0 in the Alpine 3.24.1
+  base; `app.jar` scanned clean.
+- **Named-package remedy, per the Dockerfile's own precedent**: `libcrypto3 libssl3 openssl`
+  appended to the existing `apk upgrade libexpat p11-kit p11-kit-trust` line — never a blanket
+  upgrade, which would silently move ~85 packages per rebuild. The fixed **3.5.8-r0** was confirmed
+  present in the v3.24 `main` repo and the upgrade proven to land it in a throwaway container
+  before the line was written.
+- **Verified on the real gate, not on PR checks**: the Trivy gate lives only in `build-and-push`,
+  which skips on pull requests — so the fix rode a `phase-*` branch whose push event runs it
+  (the #655 method). A PR's 14 green checks are structurally silent on this change.
+
 ### Six failing storefront E2E tests, and the checkout coverage they were hiding (#670) — 2026-08-28
 
 - **The nightly lane was red every night since 2026-08-18, and only half of that was the
