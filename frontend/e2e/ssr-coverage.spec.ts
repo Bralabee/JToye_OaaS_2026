@@ -36,8 +36,20 @@
  *
  *   B is the arm that proves the stub is alive. A and C bypass it entirely.
  *   Re-measured for this commit against the same stack: `/shop` served 54,263
- *   bytes with 1 `<h1` and 5 occurrences of "Brixton Village Grill"; the stub
- *   body is 61 bytes and carries neither.
+ *   bytes with 1 `<h1` and 5 occurrences of "Brixton Village Grill"; THIS file's
+ *   `STUB_HTML` is 71 bytes and carries neither. (The 61 in the research note is
+ *   its own shorter probe stub — the assertion message below prints
+ *   `STUB_HTML.length` at runtime rather than repeating either figure, so the
+ *   number in a failure can never be a stale copy of a different stub's.)
+ *
+ * BREAK ARM, EXECUTED 2026-08-28 — reading `page.content()` in place of
+ * `res.text()` in the loop below makes the block FAIL:
+ *
+ *   Error: request fixture was intercepted by context.route ... this run got 84
+ *   bytes.   expect(received).toBe(expected)   Expected: 0   Received: 1
+ *
+ * That failure is the proof the criterion asks for. The 84 bytes are the browser
+ * serialising the 71-byte stub with a `<head>` inserted.
  *
  * Block 2 — `/shop/orders` with NO cookies (`curl`, no browser):
  *
