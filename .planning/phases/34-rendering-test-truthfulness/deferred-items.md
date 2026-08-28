@@ -56,3 +56,76 @@ the arm shows green. Small, mechanical, and outside 34-05's `files_modified`.
 plan's files, and the MOBL-01 line is explicitly excluded by the plan's action text.
 Both are recorded in `dashboard-mobile.spec.ts`'s own docblock so the next reader of
 that file cannot miss it.
+
+---
+
+## From plan 34-07: check-gate-enforcement.sh cannot tell a `run:` line from prose
+
+**Found:** 2026-08-28, while running the wiring arm for the new SSR-coverage gate.
+
+**Measured, both directions.** `scripts/check-gate-enforcement.sh` decides "is this gate
+wired?" by searching `.github/workflows/*` for the script's filename, and it does **not**
+strip comments. With the `ops-contracts` step for `check-ssr-coverage-contract.sh` deleted
+and only a COMMENT in the `frontend-e2e` job naming the file, the meta-gate reported:
+
+```
+  gates     : 37
+  exempt    : 6 declared
+PASS: every gate either runs in CI or has a declared reason it cannot.
+rc=0
+```
+
+With the same step deleted and no comment naming the file, it correctly reported
+`FAIL: 1 gate(s) are referenced by no workflow`, rc=1.
+
+**Why this matters beyond one comment.** The workflow files are heavily commented and
+several comments name gates — `check-runtime-freshness.sh` is discussed at length in the
+`ops-contracts` header, and the retention and pentest steps both explain why they must
+never gain a `gate-enforcement.conf` entry. Any gate whose name appears in such a comment
+is exempt from the meta-gate's detection without anyone deciding that. It is the recorded
+"a gate satisfied by its own prose" class, in the one place that is supposed to catch it.
+
+**What 34-07 did instead:** removed the script's filename from its own comment, so the only
+occurrence in the workflow is the `run:` line. That fixes the instance, not the class.
+
+**What would close it:** strip `#` comments from each workflow file before the by-name
+search in `check-gate-enforcement.sh`, then re-measure every gate's wired/exempt verdict —
+a gate currently counted as wired only by a comment would flip to FAIL and needs a real
+step or a reasoned exemption. Run the corpus both directions before and after.
+
+**Why it was not done here:** `scripts/check-gate-enforcement.sh` is not in plan 34-07's
+`files_modified`, and the change re-classifies all 37 gates — an out-of-scope edit to a
+shared meta-gate that could red the build for reasons unrelated to this plan.
+
+---
+
+## From plan 34-07: docs/metrics.json is behind wave 1 (PRE-EXISTING, phase-level)
+
+**Found:** 2026-08-28, running `scripts/docs-freshness.sh` as a side-check during 34-07.
+
+`scripts/docs-freshness.sh` exits **1** on the wave-1-complete base (8285d6f5) and on every
+34-07 commit. It is NOT caused by 34-07: the only files this plan changed are
+`scripts/check-ssr-coverage-contract.sh`, `scripts/gates/ssr-routes.conf` and
+`.github/workflows/ci-cd.yaml`, none of which contains a test block.
+
+| metric | docs/metrics.json (committed) | tree measures now |
+|---|---:|---:|
+| jest_blocks | 1230 | 1272 |
+| jest_files | 120 | 124 |
+| playwright_blocks | 113 | 120 |
+| playwright_specs | 22 | 25 |
+| total_logical_invocations | 3188 | 3237 |
+
+The new specs and tests from plans 34-01 through 34-06 landed without the manifest being
+regenerated, so BOTH docs gates are currently red: `docs-freshness.sh` (tree → manifest)
+and, consequently, `check-doc-metrics.sh` (prose in CLAUDE.md / AGENTS.md / README.md →
+manifest), since the prose still quotes the 3188 line verbatim.
+
+**What would close it:** `scripts/docs-freshness.sh --write`, then update the prose
+sentence in CLAUDE.md, AGENTS.md and README.md to the regenerated figures. Never compute
+the new numbers arithmetically — the counter greps literal `it(` / `test(`.
+
+**Why it was not done here:** it is not 34-07's defect and not in its `files_modified`, and
+plans 34-08/34-09/34-10 are expected to add further spec blocks — regenerating now would
+be re-broken by the next plan. This belongs to whoever closes the phase, as a single pass
+after the last spec lands.
