@@ -271,9 +271,17 @@ If the owner has not cleared those, the highest-value available work is:
    - **#654 OPEN** — framer-motion 12→13, a MAJOR. Run Tests and Frontend E2E pass; the remaining
      failure is the same prose-pin class (4 sites). Given #605/#606 were closed for being majors,
      this is an owner call, not a mechanical one.
-   - **#651 OPEN** — five failures including Run Tests and Frontend E2E. Real breakage, real work.
-2. **#654 and #651 are the two dependabot PRs left**, both needing real judgement rather than a
-   rebase — see item 1. Everything else in that batch is closed.
+   - **#651 CLOSED** — closed unmerged by dependabot itself on 2026-08-28T15:25:33Z, with the
+     comment "Looks like these dependencies are updatable in another way, so this is no longer
+     needed". Not an operator decision. Of its five failures, two were stale-base and were already
+     clear; the rest were real work in two classes — three latent type errors that `next build`
+     structurally cannot see (it type-checks the pages/app graph, not the whole tsconfig program),
+     and the prose version pins dependabot structurally cannot edit, the same class that took #604
+     to #638 and #650 to #665. Superseded by branch `feature/deps-frontend-651-supersede`, which
+     lands the same 10-package bump with both classes fixed.
+2. **#654 is the last dependabot PR needing real judgement** rather than a rebase — see item 1 for
+   its state. #651 is no longer in that set; its disposition changed on 2026-08-28 and is recorded
+   above. Everything else in that batch is closed.
 3. Then Phase 30 (The Money Path), Phase 32 or Phase 34.
 
 ### The H-2 self-falsification trap, learned twice on 2026-08-24/25
@@ -306,9 +314,14 @@ its failure was `scripts/check-doc-versions.sh`, because dependabot cannot know 
 `AGENTS.md` and `.planning/codebase/STACK.md`, which each pin the version in prose. **Any future SDK
 bump carries the same four-site requirement.**
 
-**One security item is still deferred:** `next` 16.3.0 updates vendored lodash to 4.17.23 for
-**CVE-2025-13465** (prototype pollution in `_.unset`/`_.omit`). Not applied — the tree runs `next`
-16.2.12. **Assessed 2026-08-19: MEDIUM, LOW reachability, not urgent.** Scorers disagree only on
+**One security item was deferred and this branch discharges its precondition:** `next` 16.3.0
+updates vendored lodash to 4.17.23 for **CVE-2025-13465** (prototype pollution in
+`_.unset`/`_.omit`). The tree now declares `next` `^16.3.2` (lockfile resolves 16.3.3), so the
+16.3.0 migration this was waiting on has happened. **The 4.17.23 figure is upstream's, carried
+from the original advisory and NOT verified by content on this tree** — Next strips the version
+banner from its minified vendor bundles, so `4.17.21` being absent from `node_modules/next` is
+evidence about a missing string, not about the version that shipped.
+**Assessed 2026-08-19: MEDIUM, LOW reachability, not urgent.** Scorers disagree only on
 availability impact (NVD 5.3, GitHub 6.5, vendor 6.9, Red Hat 8.2) — quote the range, not one end.
 Our code never imports lodash; the vulnerable internals live only in two vendored Next bundles whose
 callers pass fixed internal keys. Fix it when the `next` 16.3.0 migration happens.

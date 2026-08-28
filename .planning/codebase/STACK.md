@@ -6,7 +6,7 @@
 
 **Primary:**
 - Java 21 - Core API (Spring Boot 3.5.16) — toolchain `JavaLanguageVersion` pinned in `core-java/build.gradle.kts:8-9`
-- TypeScript 5 - Frontend (Next.js 16.2.12, React 19); `typescript` pinned in `frontend/package.json:66`
+- TypeScript 5 - Frontend (Next.js 16.3.2, React 19); `typescript` pinned in `frontend/package.json:66`
 - Go 1.26 - Edge API gateway (Gin) — `go 1.26.0` in `edge-go/go.mod:3`
 
 **Secondary:**
@@ -55,9 +55,9 @@
 - Micrometer Tracing (`micrometer-tracing-bridge-brave`) + Zipkin Reporter - Distributed tracing (`core-java/build.gradle.kts:134`)
 
 **Frontend:**
-- Next.js 16.2.12 - React framework, file-based routing, standalone output
+- Next.js 16.3.2 - React framework, file-based routing, standalone output
 - React 19 + React DOM 19
-- React Hook Form 7.84.0 + @hookform/resolvers 5.2.2
+- React Hook Form 7.85.0 + @hookform/resolvers 5.9.1
 - Next-Auth 5.0.0-beta.32 - Keycloak OIDC session handling
 - TailwindCSS 3.4.1 + tailwind-merge 3.4.0 + tailwindcss-animate 1.0.7
 - Radix UI primitives (alert-dialog, dialog, dropdown-menu, label, select, slot, tabs, toast)
@@ -65,7 +65,7 @@
 - @stomp/stompjs 7.3.0 - Browser STOMP client for KDS WebSocket (added in v2.1)
 - Framer Motion 12.43.0 - Animations
 - Recharts 3.10.1 - Admin dashboard charts
-- date-fns 4.4.0, clsx 2.1.1, class-variance-authority 0.7.1, lucide-react 1.28.0
+- date-fns 4.4.0, clsx 2.1.1, class-variance-authority 0.7.1, lucide-react 1.33.0
 
 **Edge Gateway:**
 - Gin v1.12.0 - HTTP routing and middleware (`edge-go/go.mod:6`)
@@ -80,7 +80,7 @@
 - Testcontainers 1.21.4 (+ postgresql, junit-jupiter) - Dockerized integration tests, excluded by default, opt-in via `-PincludeIntegration` (`org.testcontainers:testcontainers`, `core-java/build.gradle.kts:185-186`)
 - H2 - Lightweight in-memory JPA tests
 - Jest 29.7.0 + jest-environment-jsdom 30.3.0 - JS test runner
-- @testing-library/react 16.3.0, @testing-library/jest-dom 6.1.5, @testing-library/user-event 14.5.1
+- @testing-library/react 16.3.0, @testing-library/jest-dom 7.0.1, @testing-library/user-event 14.6.5
 - @playwright/test 1.62.1 - E2E browser automation
 - Go `testing` stdlib + table-driven tests
 
@@ -185,7 +185,7 @@
 - prom/prometheus:v2.48.0 — `infra/monitoring/docker-compose.monitoring.yml:35`
 - grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:84`
 - prom/alertmanager:v0.27.0 — `infra/monitoring/docker-compose.monitoring.yml:115`
-- Next.js 16.2.12 — `frontend/package.json:37`
+- Next.js 16.3.2 — `frontend/package.json:37`
 - Go 1.26 (`go 1.26.0`) — `edge-go/go.mod:3`
 
 ## Test Suite
