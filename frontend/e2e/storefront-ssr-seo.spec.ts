@@ -26,48 +26,20 @@
  * cannot detect "all pages share one title", which is the actual defect.
  */
 
-import { test, expect, type APIRequestContext } from "@playwright/test"
+import { test, expect } from "@playwright/test"
+
+// The raw-HTML instrument lives in ONE module — `e2e/ssr-coverage.spec.ts`
+// asserts against the same functions, and two copies of "what did the server
+// actually serve" is the one thing this instrument cannot afford.
+import {
+  servedHtml,
+  countOf,
+  titleOf,
+  jsonLdNodes,
+  typesOf,
+} from "./helpers/served-html"
 
 const SHOP_SLUGS = ["brixton-village-grill", "mama-ades-kitchen"]
-
-/** The raw response body — no browser, no hydration, no waiting. */
-async function servedHtml(request: APIRequestContext, path: string): Promise<string> {
-  const res = await request.get(path)
-  expect(res.status(), `${path} should serve 200`).toBe(200)
-  return res.text()
-}
-
-function countOf(html: string, needle: string | RegExp): number {
-  const re =
-    typeof needle === "string"
-      ? new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")
-      : new RegExp(needle.source, needle.flags.includes("g") ? needle.flags : needle.flags + "g")
-  return (html.match(re) ?? []).length
-}
-
-function titleOf(html: string): string | null {
-  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/)
-  // Next escapes the apostrophe in "J'Toye" as &#x27;. Normalise so a title is
-  // compared as text rather than as an encoding.
-  return m ? m[1].replace(/&#x27;/g, "'").replace(/&amp;/g, "&").trim() : null
-}
-
-/** Every `<script type="application/ld+json">` payload, parsed. */
-function jsonLdNodes(html: string): unknown[] {
-  const blocks = [
-    ...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g),
-  ]
-  const nodes: unknown[] = []
-  for (const [, body] of blocks) {
-    const parsed: unknown = JSON.parse(body) // throws -> the block fails, which is correct
-    nodes.push(...(Array.isArray(parsed) ? parsed : [parsed]))
-  }
-  return nodes
-}
-
-function typesOf(nodes: unknown[]): string[] {
-  return nodes.map((n) => (n as { "@type"?: string })["@type"] ?? "(none)")
-}
 
 // The served bytes do not vary with viewport, so this half runs once rather than
 // being duplicated across both projects. `@desktop-only` EXCLUDES it from the
