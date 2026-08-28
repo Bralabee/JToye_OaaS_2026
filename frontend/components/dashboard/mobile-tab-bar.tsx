@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut, useSession } from "next-auth/react"
@@ -9,6 +9,7 @@ import { Menu, LogOut, Moon, Sun } from "lucide-react"
 // Single source of truth: the SAME navigation array the desktop sidebar renders.
 // Do NOT re-declare it here — both bars must never drift (see 19-UI-SPEC Surface D).
 import { navigation } from "@/components/dashboard/sidebar"
+import { useTheme } from "@/hooks/use-theme"
 import {
   Sheet,
   SheetClose,
@@ -56,21 +57,12 @@ export function MobileTabBar({ className }: { className?: string }) {
   const pathname = usePathname()
   const { data: session } = useSession()
   const [open, setOpen] = useState(false)
-  const [dark, setDark] = useState(false)
-
-  // Reflect whatever theme the sidebar established (it owns the on-mount class
-  // toggle); we only need the current value to label the toggle button.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe mount-time hydration; refactor tracked in issue #99 follow-up
-    setDark(document.documentElement.classList.contains("dark"))
-  }, [])
-
-  const toggleDark = () => {
-    const next = !dark
-    setDark(next)
-    document.documentElement.classList.toggle("dark", next)
-    localStorage.setItem("theme", next ? "dark" : "light")
-  }
+  // This bar no longer reads the theme out of the sidebar's DOM class, and the
+  // mount-ordering dependency that came with it is gone: both surfaces now
+  // subscribe to the SAME store (hooks/use-theme.ts), so a toggle on either one
+  // is observed by the other with no reload and regardless of which mounted
+  // first.
+  const { dark, toggle } = useTheme()
 
   const tabClass = (active: boolean) =>
     cn(
@@ -161,7 +153,7 @@ export function MobileTabBar({ className }: { className?: string }) {
             <Button
               variant="ghost"
               className="w-full justify-start gap-3 text-slate-700 dark:text-slate-200"
-              onClick={toggleDark}
+              onClick={toggle}
             >
               {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               {dark ? "Light Mode" : "Dark Mode"}
