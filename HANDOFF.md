@@ -35,7 +35,7 @@ done
 | Working tree | clean, no worktrees in use |
 | Schema head | **V63**, matching the live dev database |
 | Test manifest | **3185** logical invocations (Java 1713/270 files, Jest 1230/120, Playwright 113/22, Go 81/11, MCP 48/8) — `docs/metrics.json` |
-| Gate sweep 2026-08-25 | **34 PASS, 2 FAIL, 1 VOID** across all 37 gate scripts — the two FAILs are `check-runtime-freshness` (local images behind main; see below) and, before this update, `check-handoff-contract`. The VOID is the documented once-per-merge `check-e2e-skip-budget` |
+| Gate sweep 2026-08-25 | **36 PASS, 1 FAIL, 0 VOID** across all 37 gate scripts, measured after the runtime re-sync AND the E2E run. The one non-pass is `check-e2e-skip-budget` **FAIL** (65 skipped vs a budget of 8, plus an undeclared skip) — it was VOID until a completed run replaced the stale report, so this is a real answer rather than an unanswerable one. Progression that day: 34/2/1 → 36/0/1 → 36/1/0 |
 
 > **Why the HEAD row names a PR and not a sha — do not "helpfully" put one back.** A document that
 > records its own repository's HEAD cannot be correct at rest: writing the sha IS a commit, so the
@@ -121,25 +121,88 @@ canonical local dev/E2E runtime; do not start a local minikube alongside it (the
 **`edge-go` is published on host `8089`, not `8080`.** A probe against `localhost:8080` returns
 `000`, which reads like a dead service and is not one.
 
-⚠ **`check-runtime-freshness` is FAIL as of 2026-08-25 — 2 of 4 built services are behind the
-tree**, and this is expected drift from merges, not a defect:
+**`check-runtime-freshness` is PASS, 4 of 4, 0 unverified — re-synced 2026-08-25 22:15 UTC.**
+It had been FAIL, 2 of 4, from merge drift (core-java behind #665's `build.gradle.kts`, frontend
+behind #653's `package.json`). Cleared with `bash scripts/sync-runtime.sh`, rc=0.
 
-| service | image tagged | newest build-input commit |
+Verified **by identity, not by the script's verdict** — the container's image ID must move, not
+just the tag's, because a fully CACHED rebuild advances the tag while compose leaves the container
+on the old image (that is the `[image-not-rebuilt]` arm, and the reason #662 added
+`--force-recreate`):
+
+| service | before | after | container == tag |
+|---|---|---|---|
+| core-java | `fc187d1903fd` (08-24 20:49) | `eca36448263f` (08-25 22:15) | MATCH |
+| frontend  | `64d20e2f668b` (08-17 19:57) | `86ce3c5c4be9` (08-25 22:14) | MATCH |
+
+⚠ **A rebuild is not finished when the tag moves.** Mid-recreate, `docker compose ps -q frontend`
+returned EMPTY while the new tag already existed — a wait-loop watching only image IDs fires there
+and would hand the next step a stack with no frontend. Wait on the CONTAINER being up, not the tag.
+
+**`check-alert-metrics` fired its documented standing remedy, both directions recorded**: rc=1
+(`M-1 rule 'NoOrdersCreated' selector matches ZERO series`) → `bash scripts/seed-order-metric.sh`
+→ rc=0 (19 live rules / 25 selectors, 3 dormant). A core-java restart zeroes the counter; this is
+restart behaviour, not a defect, and it will recur after every rebuild.
+
+`bash scripts/seed-e2e-fixtures.sh` rc=0 — vendor-refund-flow's DRAFT test and storefront-flows'
+STFR-06 can assert non-vacuously again. **vendor-refund-flow's REFUND test stays skipped by
+design**: it needs real Stripe test-mode keys (`STRIPE_API_KEY`), not a fixture, so a skip there
+is expected and is not a coverage gap.
+
+### E2E run 2026-08-25 23:16–23:23 UTC, against the freshly-synced stack
+
+`cd frontend && PLAYWRIGHT_JSON_OUTPUT_NAME=e2e-artifacts/report.json npx playwright test --reporter=json,list`
+
+**195 passed · 6 failed · 65 skipped (6.6m), rc=1.** All 6 failures are **3 tests × 2 projects**
+(mobile + desktop), every one in `e2e/storefront-flows.spec.ts`. Two different root causes, and
+they must not be lumped together:
+
+**(a) 4 of 6 — INSTRUMENT defects, loose locators colliding with new legal copy.** Playwright named
+the colliding elements outright, so this is not inference:
+
+| test | locator | also matched |
 |---|---|---|
-| core-java | 2026-08-24 20:49 | `9a0370e3` (#665, `core-java/build.gradle.kts`) 23:26 |
-| frontend  | 2026-08-17 19:57 | `ba33e554` (#653, `frontend/package.json`) 22:28 |
+| `:125` shop card renders | `getByRole('link', {name:'Browse'})` | `<a href="/legal/cookies">Cookie and browser-storage policy</a>` — `browse` ⊂ `brows`**er** |
+| `:541` add items → checkout | `locator('text=Your basket')` | the cookie-policy paragraph (`We only use cookies and browser storage that are …`) |
 
-Remedy is the documented one: `bash scripts/sync-runtime.sh` (which since #662 passes
-`--force-recreate`, because a fully CACHED rebuild moves the image ID while compose leaves the
-container on the old one). **Rebuild before running any E2E** — `check-e2e-skip-budget` is
-currently VOID ("report describes a DIFFERENT spec set than the tree"), and re-earning it against
-these stale containers would prove nothing.
+Both are `strict mode violation … resolved to 2 elements`. The product is fine: `/shop` renders the
+shop name, the cuisine tag and the nav; the sibling test `search filters shops` uses the same route
+and PASSED. The fix is tighter locators (scope to the nav, or `exact: true`), not product work.
+⚠ The nav link is now **"Shops"**, not "Browse" — the `:125` comment ("scope to the nav link")
+describes a page that no longer exists.
 
-PRIOR, 2026-08-24, and still the record of what a clean runtime looked like: PASS 4 of 4, 0
-unverified. core-java rebuilt twice, container recreated onto image `2218aa93…`;
-`amqp-client-5.33.1.jar` read out of the running `/app/app.jar`, with `5.25.0`, `5.22.0`, `5.3.6`
-and `5.4.2` at **0 occurrences** under escaping that finds `5.33.1`/`5.4.3`/`5.5.2` — so the zeros
-were about the jar, not the pattern. Broker connected, both outboxes zero `PENDING`/`FAILED`.
+**(b) 2 of 6 — `:770` order confirmation email: NOT YET ATTRIBUTED, and it is the more serious.**
+`getByRole('heading', {name: 'Order confirmed!'})` → `element(s) not found` after 15s, and
+**no order was created**: the only rows in the window are `ORD-E2E-DRAFT-FIXTURE` (22:16:21, from
+`seed-e2e-fixtures.sh`) and `metric-seed@jtoye.local` (22:16:09, from `seed-order-metric.sh`) —
+both seeds, both predating the 23:16 run. No `email-<timestamp>@test.com` order exists. So the
+checkout did not complete server-side; this is not merely a UI assertion problem.
+
+- The heading itself is still in the source: `frontend/app/shop/[slug]/checkout/page.tsx:514`.
+- `placeOrder()` is called by **exactly one test**, so there is no passing sibling to cross-check
+  the checkout path against — worth fixing, since it makes every checkout failure a single point.
+- ⚠ **Ruled out, so nobody repeats it:** the "shop no longer offers delivery" hypothesis. `shops`
+  has **no** `delivery_available`/`collection_available` column (only `delivery_info`,
+  `minimum_order_pennies`, `delivery_fee_pennies`, `free_delivery_threshold_pennies`), so
+  fulfilment is not gated that way.
+- ⚠ **Method note:** a bare `count(*)` of recent orders returned **2** and reads as "checkout
+  works". It is not — both rows are seed artifacts. Read the ROWS, not the count.
+
+**`check-e2e-skip-budget` moved VOID → FAIL**, which is progress (a completed run replaced the
+stale report) but not a pass: `S-1 65 skipped exceeds the declared budget of 8`, plus `S-2` an
+undeclared skip in `dashboard-interface-corrections.spec.ts`. **Unresolved:** whether 65 is real
+budget drift or an artefact of running BOTH projects unfiltered — many specs are `@desktop-only`
+and skip on mobile by design. The budget of 8 was calibrated somewhere; establish against which
+project selection before either raising it or chasing 57 skips.
+
+**vendor-refund-flow's REFUND test stays skipped by design** — it needs real Stripe test-mode keys
+(`STRIPE_API_KEY`), not a fixture.
+
+PRIOR, 2026-08-24, the previous clean-runtime record: PASS 4 of 4, 0 unverified. core-java rebuilt
+twice, container recreated onto image `2218aa93…`; `amqp-client-5.33.1.jar` read out of the running
+`/app/app.jar`, with `5.25.0`, `5.22.0`, `5.3.6` and `5.4.2` at **0 occurrences** under escaping
+that finds `5.33.1`/`5.4.3`/`5.5.2` — so the zeros were about the jar, not the pattern. Broker
+connected, both outboxes zero `PENDING`/`FAILED`.
 
 ## What to do next
 
