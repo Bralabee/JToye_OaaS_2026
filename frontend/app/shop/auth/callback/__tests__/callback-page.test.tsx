@@ -150,11 +150,15 @@ describe("OAuth callback page — the exchange path is unchanged", () => {
 
   it("redirects to the validated return URL when a profile comes back", async () => {
     setSearchParams({ code: "auth-code-2", state: "state-2" })
+    // A real CustomerProfile, not a cast-through-`as` approximation: an
+    // incomplete literal type-checks under jest's babel transform (which strips
+    // types without checking them) and is caught only by `tsc --noEmit`.
     mockedHandleCallback.mockResolvedValue({
-      id: "cust-1",
+      sub: "cust-1",
       email: "shopper@example.com",
       name: "Shopper",
-    } as Awaited<ReturnType<typeof handleCallback>>)
+      emailVerified: true,
+    })
 
     render(<AuthCallbackPage />)
 
