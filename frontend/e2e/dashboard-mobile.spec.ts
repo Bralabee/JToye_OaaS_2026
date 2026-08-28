@@ -528,17 +528,41 @@ test.describe("Dashboard mobile shell (375px) — MOBL-01 + switcher regression"
  * deliberately NOT touched by this block; `check-playwright-mobile-contract.sh`
  * still guards its shape.
  *
- * WHY THE PRESENCE CONTROLS COME FIRST. `docScrollWidth <= innerWidth + 1` is
- * satisfied *trivially* by an empty page, a redirect to /auth/signin, and a 404
- * — nothing wide cannot overflow. That is the exact vacuous shape this file's
- * sibling already documents (`dashboard-interface-corrections.spec.ts:15-20`:
- * with the API refusing, the switcher falls back to a zero-grant state and the
- * count reads 0 — "a pass on a page that is not working"). So each iteration
- * asserts the shell is really rendered — the Primary nav, and the page `<h1>`
- * where the route has one — BEFORE it measures geometry. Both directions were
- * run: injecting a 1200px div turns the geometry assertion red, and pointing an
- * iteration at a route that 404s turns the PRESENCE assertion red rather than
- * letting the geometry one pass over a blank page.
+ * WHY THE PRESENCE CONTROLS COME FIRST. A no-overflow assertion is satisfied
+ * *trivially* by an empty page, a redirect to /auth/signin, and a 404 — nothing
+ * wide cannot overflow. That is the exact vacuous shape this file's sibling
+ * already documents (`dashboard-interface-corrections.spec.ts:15-20`: with the
+ * API refusing, the switcher falls back to a zero-grant state and the count
+ * reads 0 — "a pass on a page that is not working"). So each iteration asserts
+ * the shell is really rendered — the Primary nav, and the page `<h1>` where the
+ * route has one — BEFORE it measures geometry. Proven: pointing an iteration at
+ * a route that does not exist turns the PRESENCE assertion red rather than
+ * letting the geometry one pass over a page that is not the dashboard.
+ *
+ * WHY THIS COMPARES AGAINST `page.viewportSize()`, NOT `window.innerWidth` —
+ * MEASURED, and it is the reason this block does not simply copy the assertion
+ * from the block above. Under `isMobile: true` Chromium emulates a phone's
+ * LAYOUT VIEWPORT: when content is wider than the device width the page zooms
+ * out to fit, and `window.innerWidth` GROWS to match the content. So
+ * `docScrollWidth <= window.innerWidth + 1` compares a number against itself and
+ * **cannot fail**. Measured 2026-08-28 on /dashboard/kitchen by appending a
+ * deliberate 1200px-wide div before the read:
+ *
+ *   {"docScrollWidth":1200,"bodyScrollWidth":1200,"innerWidth":1200,
+ *    "htmlOverflowX":"visible","bodyOverflowX":"visible","injectedWidth":1200}
+ *
+ * — a 1200px overflow on a 375px phone, and the assertion PASSED (1 passed,
+ * rc=0). `page.viewportSize()!.width` is the width Playwright was configured
+ * with (375) and does not move, so the same injection now reads
+ * `expect(received).toBeLessThanOrEqual(expected)  expected: 376  received: 1200`.
+ * The widening of the layout viewport is itself the user-visible symptom (the
+ * page shrinks to fit), so it is asserted directly as well.
+ *
+ * NOTE for whoever touches the single-route 375px block above: its overflow
+ * line (`geom.docScrollWidth <= geom.viewportWidth + 1`) has this same vacuous
+ * shape and is left alone here only because it is out of this plan's scope. Its
+ * OTHER assertions — the 56px top-bar geometry and the escaping-element list —
+ * are genuinely falsifiable and were measured red on main.
  *
  * No `@desktop-only` / `@mobile-only` tag, deliberately: the 390px and 375px
  * blocks above are enumerated by both projects by design, and consistency with
@@ -568,16 +592,23 @@ test.describe("Dashboard mobile shell (375px) — the eleven-route sweep has no 
         })
       }
 
-      // ---- the measurement (same shape as the single-route block above) --------
+      // ---- the measurement -----------------------------------------------------
+      // The width Playwright was CONFIGURED with — a fixed 375 that no amount of
+      // page content can move. See the docblock: window.innerWidth can, which is
+      // what makes the innerWidth form of this assertion unfalsifiable.
+      const configuredWidth = page.viewportSize()!.width
       const geom = await page.evaluate(() => ({
         docScrollWidth: document.documentElement.scrollWidth,
-        viewportWidth: window.innerWidth,
+        layoutViewportWidth: window.innerWidth,
         mainWidth:
           (document.querySelector("body > div:not([hidden]) main") as HTMLElement | null)
             ?.clientWidth ?? 0,
       }))
       // No horizontal overflow (+1px tolerance for sub-pixel rounding).
-      expect(geom.docScrollWidth).toBeLessThanOrEqual(geom.viewportWidth + 1)
+      expect(geom.docScrollWidth).toBeLessThanOrEqual(configuredWidth + 1)
+      // The layout viewport did not widen — i.e. the phone did not zoom out to
+      // fit oversized content, which is what the user actually sees.
+      expect(geom.layoutViewportWidth).toBeLessThanOrEqual(configuredWidth + 1)
       // …and the content column still spans (near) the full width — the sidebar
       // steals nothing at 375px. A collapsed column would satisfy the overflow
       // assertion while being unusable.
