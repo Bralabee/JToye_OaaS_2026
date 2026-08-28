@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Six failing storefront E2E tests, and the checkout coverage they were hiding (#670) — 2026-08-28
+
+- **The nightly lane was red every night since 2026-08-18, and only half of that was the
+  stack.** V64 (#661) fixed the other half on 2026-08-25: the last three nights all build,
+  come up and reach Playwright. What remained was `total=266 passed=253 failed=6 skipped=7`
+  — **three tests x two projects**, all in `frontend/e2e/storefront-flows.spec.ts`, and all
+  three **instrument** defects. The product was correct in every case.
+- **Two were locators that Phase 31's own copy made ambiguous.** `getByRole("link",
+  {name:"Browse"})` matched both `"Browse shops"` and `"Cookie and browser-storage policy"`,
+  because `Browse` is a substring of `browser`; `text=Your basket` matched the cookie
+  notice's *"remembering what is in your basket"*. Scoping the first to the nav does **not**
+  fix it — the desktop nav has a `"Shops"` link where the mobile nav has only a hamburger,
+  so a nav-scoped assertion passes on one project and fails on the other. It now asserts the
+  card's own href, which is what the test is named for.
+- **The third re-attributes a failure the 2026-08-25 handoff had recorded as "NOT YET
+  ATTRIBUTED, and it is the more serious".** No order row was ever created, which reads as a
+  broken checkout. It is not: `app/shop/[slug]/checkout/page.tsx` refuses the submit until
+  the **LGL-03 allergen acknowledgement** is ticked, **before any network call**, leaving the
+  button deliberately enabled — so the click was silently swallowed and the failure surfaced
+  15s later as a missing `"Order confirmed!"` heading. The spec contained **zero**
+  occurrences of "allergen". The gate was doing exactly its job.
+- **`placeOrder()` has exactly one caller, so no E2E had covered a successful order
+  placement since Phase 31 merged on 2026-08-17.** That is the coverage this restores, and
+  the proof is by content rather than by a verdict: four real orders reached the database
+  during the closing clean arm, each line carrying its V63 `allergen_mask` snapshot.
+- **Falsified clean -> arms -> clean**, committed first so every restore target was a
+  committed state, restores verified by `git hash-object` and never by `diff --stat`. Arm 1
+  -> exactly 2 fail; arm 2 -> exactly 2 fail; arm 3 -> exactly 4 fail with the original CI
+  symptom; closing arm 6/6 pass. **Arm 2 is only half load-bearing and is recorded as such**
+  — it proves the fix at line 603, while at line 88 the ambiguous locator still passed. The
+  cookie notice mounts post-hydration behind a 200ms fade, so that site is a latent race
+  fixed as a hazard, not a collision proven to fire.
+- **Two things measured that are not in this diff.** `docker-compose.full-stack.yml` maps
+  core-java as the RANGE `"9090-9091:9090"` for replica scaling; Docker allocated **9091**
+  while the frontend bundle bakes `NEXT_PUBLIC_API_URL=http://localhost:9090` at build time,
+  so every browser-side call hit no listener while server-rendered pages still loaded — six
+  further tests failed locally and all six cleared on a `--force-recreate` **with no code
+  change**. And the skip budget is **not** drifting: the 65 seen on 2026-08-25 was not real
+  drift, a correctly-ported stack with fresh fixtures reports **8**, all declared. The first
+  run here reported **10** and named an undeclared skip only because every suite run places
+  orders and **22 had accumulated newer than `ORD-E2E-DRAFT-FIXTURE`**, pushing it off the
+  top-20 page that test reads — the suite displaces its own fixture on a non-fresh volume.
+
 ### The deploy jobs named an owner the publish job would have stopped using (#664) — 2026-08-24
 
 - **`ci-cd.yaml` derived the image owner in two places and hardcoded it in twelve.**
