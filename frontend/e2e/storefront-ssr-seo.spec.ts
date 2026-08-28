@@ -24,6 +24,25 @@
  *
  * The uniqueness block is asserted ACROSS routes on purpose: a single-page check
  * cannot detect "all pages share one title", which is the actual defect.
+ *
+ * RE-MEASURED 2026-08-28 (phase 34, plan 34-01) — the fail direction of this
+ * whole file, executed rather than assumed. Against a stack-free Next server
+ * (`next start -p 3105` with CORE_API_INTERNAL_URL unreachable, which is the
+ * per-PR CI condition), `PLAYWRIGHT_BASE_URL=http://localhost:3105 npx
+ * playwright test e2e/storefront-ssr-seo.spec.ts --project=desktop` exits rc=1
+ * with 13 of 17 red, opening on "the shop name must be an h1 in the served
+ * HTML — Expected: > 0, Received: 0"; the same command against the stacked
+ * :3000 exits rc=0, 17 passed. Served bytes on the two servers:
+ *
+ *   :3000 /shop 54,184 B, 5 occurrences of "Brixton Village Grill", 1 <h1
+ *   :3000 /shop/brixton-village-grill 90,951 B, 33 occurrences, 1 <h1
+ *   :3105 /shop 39,438 B, 0 occurrences, 1 <h1
+ *   :3105 /shop/brixton-village-grill 39,299 B, 0 occurrences, 0 <h1
+ *
+ * So these blocks are falsifiable and this suite is NOT covered by the
+ * stack-free CI job — it needs the live stack to mean anything. The raw-HTML
+ * helpers moved to `e2e/helpers/served-html.ts`; `e2e/ssr-coverage.spec.ts`
+ * carries the proof that a browser route stub cannot satisfy them.
  */
 
 import { test, expect } from "@playwright/test"

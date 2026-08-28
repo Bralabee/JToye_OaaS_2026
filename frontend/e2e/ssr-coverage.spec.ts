@@ -92,6 +92,55 @@
  * which is precisely the property the `<h1` control was for — and it is stronger
  * than the original, because it is a floor with a known source rather than a
  * bare presence check.
+ *
+ * ─── THE FAIL DIRECTION, EXECUTED ON THIS TREE, 2026-08-28 ────────────────────
+ *
+ * A criterion observed only passing may be incapable of failing, so both blocks
+ * were run against servers that break them. The probe server is a plain
+ * `next start` on port 3105 (a recorded measurement, never a runtime constant —
+ * nothing in this file resolves a URL itself) with `CORE_API_INTERNAL_URL`
+ * pointed at an unreachable port, which reproduces the stack-free CI condition:
+ * the SSR fetch is refused, `getJson` catches, the page DEFERS to the island,
+ * and the browser stub fills the DOM. Its PID was captured at start and the port
+ * was proven to REFUSE afterwards (`curl` rc=7, 0 listeners), so no orphan can
+ * make a later measurement lie.
+ *
+ *   server            route                          bytes   "Brixton Village Grill"  <h1
+ *   :3000 stacked     /shop                          54,184   5                        1
+ *   :3000 stacked     /shop/brixton-village-grill     90,951  33                        1
+ *   :3105 stack-free  /shop                          39,438   0                        1
+ *   :3105 stack-free  /shop/brixton-village-grill    39,299   0                        0
+ *
+ * BLOCK 1 fail arms — TWO, because it makes two claims:
+ *   (a) instrument:  reading `page.content()` instead of `res.text()`
+ *       -> "request fixture was intercepted by context.route ... this run got 84
+ *          bytes.  Expected: 0  Received: 1"
+ *   (b) content:     the same file, unmodified, against :3105
+ *       -> "request fixture carried 0 occurrences of a seeded shop name in
+ *          39444 bytes.  Expected: > 0  Received: 0"
+ *   The rows above make (b) honest: /shop still serves an `<h1` and 39 KB on the
+ *   stack-free server, so the 0 is about CONTENT and not a dead server. On the
+ *   slug page `<h1` is 0 as well, so THERE the liveness control is the byte
+ *   count alone — recorded rather than glossed, because the research note this
+ *   plan worked from reports `<h1` present in all four arms and on this tree it
+ *   is not.
+ *
+ * BLOCK 2 fail arm — and note it PASSES against :3105, correctly. The sign-in
+ * wall needs no backend, so a backend outage is not its fail direction; claiming
+ * the stack-free arm falsified it would have been a vacuous pass reported as
+ * evidence. Its real claim is that the wall is rendered BY THE SERVER, so the
+ * arm hands the anonymous case back to the island (`OrdersClient initial={null}`
+ * — the pre-#463 shape, where `signedOut` is false and `load` is null until an
+ * effect runs, so the server renders a SPINNER). Rebuilt and re-served:
+ *
+ *   armed     /shop/orders  28,365 bytes  "Sign in to continue"=0  <h2=3
+ *   -> "the wall's heading is not in the served bytes — /shop/orders is
+ *      client-rendering it again.  Expected: > 0  Received: 0"
+ *   restored  /shop/orders  30,960 bytes  "Sign in to continue"=2  <h2=4  -> green
+ *
+ *   The armed row is also where the `<h2` floor earned its keep: 3 chrome
+ *   headings survived a page whose wall had gone, so the 0 was demonstrably
+ *   about content.
  */
 import { test, expect, type APIRequestContext } from "@playwright/test"
 import { servedHtml, countOf } from "./helpers/served-html"
