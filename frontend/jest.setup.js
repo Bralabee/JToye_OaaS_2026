@@ -130,6 +130,26 @@ if (typeof globalThis !== 'undefined' && typeof globalThis.ResizeObserver === 'u
   }
 }
 
+// The customer session lives in a MODULE-LEVEL store (`lib/customer-session-store`,
+// plan 34-03) so `useSyncExternalStore` can read it synchronously and the three
+// public surfaces that show the session pill cannot disagree. Module state
+// outlives an individual `it` — jest resets the registry per FILE, not per test —
+// so without this every consumer test inherits the previous test's session.
+//
+// Measured while the store was introduced: three suites went red on it, including
+// `public-footer-persona.test.tsx:188`, which asserts the SYNCHRONOUS first paint
+// and whose entire premise is that no session has resolved yet. Fourteen further
+// suites render one of the three consumers and are one reordering away from the
+// same failure, which is why this is global rather than per-suite.
+//
+// `require` is INSIDE the hook deliberately. `setupFilesAfterEnv` runs BEFORE the
+// test file registers its `jest.mock('@/lib/customer-auth', …)` calls, so a
+// top-level import here would bind the store to the REAL auth module for every
+// suite and defeat their mocks. Requiring at hook-run time picks up the mock.
+beforeEach(() => {
+  require('@/lib/customer-session-store').__resetForTests()
+})
+
 // Mock environment variables
 process.env.NEXT_PUBLIC_API_URL = 'http://localhost:8080/api'
 process.env.NEXTAUTH_URL = 'http://localhost:3000'
