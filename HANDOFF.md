@@ -1,6 +1,6 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24, replacing the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution). Replaces the 2026-08-18 block.** This is the only live block in this file.
 **Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
 the 2026-08-24 session broke it once itself (see "The truncating filter", below).
 
@@ -105,6 +105,27 @@ done
   `@BeforeEach` runs `create-runtime-role.sql` itself: **it certifies the script, not the
   deployment.** `PostcodeTruncateGrantMigrationTest` is the falsifiable sibling.
 
+### What shipped 2026-08-28
+
+- **#666 CLOSED — the nightly lane is fixed, in two halves.** V64 (#661) had fixed the stack half;
+  the remaining `253 passed / 6 failed` were three instrument defects in
+  `frontend/e2e/storefront-flows.spec.ts`, fixed in **PR #670** (squash `7ac23442`). Details in the
+  E2E section above, now corrected in place. Falsified clean → arms → clean with restores verified
+  by `git hash-object`; the closing arm created **4 real orders** carrying V63 `allergen_mask`
+  snapshots — the first E2E-driven successful order placements since Phase 31 merged, because
+  `placeOrder()` has exactly one caller and the un-ticked LGL-03 gate had silently swallowed every
+  submit since 2026-08-17. Full suite on the live stack: **266 total / 258 passed / 8 skipped /
+  0 failed**; `check-e2e-skip-budget` PASS. **The confirming instrument is the next scheduled
+  nightly (~02:25 UTC)** — a red there re-files automatically via the escalation step.
+- **#671 OPEN — the compose port-range trap, filed with its full mechanism.** core-java publishes
+  `"9090-9091:9090"` while the frontend bundle bakes `localhost:9090`, AND Prometheus binds
+  `127.0.0.1:9091` from the separate monitoring compose project — so monitoring-down-after-reboot
+  frees 9091 for core-java, killing browser-side API calls and blocking Prometheus in one move.
+  Measured: six local-only test failures cleared by a `--force-recreate` with no code change.
+- The handoff PR **#668** and the fix PR both merged; local + remote branch cleanup done
+  (`chore/agents-md-resync`, `feature/deps-awssdk-stripe-bump`, `docs/system-tour-2026-08-19`
+  deleted against verified MERGED PR state; `phase-29-research` kept deliberately).
+
 ## Environment state — measured 2026-08-24, not remembered
 
 All compose services running. Runtime is **Docker Compose** (`docker-compose.full-stack.yml`), the
@@ -170,8 +191,9 @@ shop name, the cuisine tag and the nav; the sibling test `search filters shops` 
 and PASSED. The fix is tighter locators (scope to the nav, or `exact: true`), not product work.
 ⚠ The nav link is now **"Shops"**, not "Browse" — the `:125` comment ("scope to the nav link")
 describes a page that no longer exists.
+**Both (a) locators fixed in PR #670 (2026-08-28)**: the card asserted by its own href (nav-scoping fails on mobile, which has only a hamburger), the basket matched by heading role.
 
-**(b) 2 of 6 — `:770` order confirmation email: NOT YET ATTRIBUTED, and it is the more serious.**
+**(b) 2 of 6 — `:770` order confirmation email: ATTRIBUTED 2026-08-28, fixed in PR #670.** The LGL-03 allergen acknowledgement (Phase 31) refuses the submit BEFORE any network call, with the button left deliberately enabled — the spec never ticked it, so the click was silently swallowed and no order row was created. Not a broken checkout; the gate doing its job. The pre-attribution record below is kept because its method notes still hold:
 `getByRole('heading', {name: 'Order confirmed!'})` → `element(s) not found` after 15s, and
 **no order was created**: the only rows in the window are `ORD-E2E-DRAFT-FIXTURE` (22:16:21, from
 `seed-e2e-fixtures.sh`) and `metric-seed@jtoye.local` (22:16:09, from `seed-order-metric.sh`) —
@@ -190,10 +212,14 @@ checkout did not complete server-side; this is not merely a UI assertion problem
 
 **`check-e2e-skip-budget` moved VOID → FAIL**, which is progress (a completed run replaced the
 stale report) but not a pass: `S-1 65 skipped exceeds the declared budget of 8`, plus `S-2` an
-undeclared skip in `dashboard-interface-corrections.spec.ts`. **Unresolved:** whether 65 is real
-budget drift or an artefact of running BOTH projects unfiltered — many specs are `@desktop-only`
-and skip on mobile by design. The budget of 8 was calibrated somewhere; establish against which
-project selection before either raising it or chasing 57 skips.
+undeclared skip in `dashboard-interface-corrections.spec.ts`. **RESOLVED 2026-08-28: the 65 was
+not budget drift** — a correctly-ported stack with freshly-seeded fixtures reports **8 skips, all
+declared, gate PASS**, and the nightly independently reports 7. The 65 was the both-projects
+artefact suspected here, compounded by the port-range condition now filed as #671. One genuinely
+new mechanism surfaced: **the suite displaces its own DRAFT fixture on a non-fresh volume** (every
+run places orders; 22 accumulated newer than `ORD-E2E-DRAFT-FIXTURE`, pushing it off the top-20
+page its test reads, which skips the test undeclared) — re-run `scripts/seed-e2e-fixtures.sh`
+before trusting any local skip count.
 
 **vendor-refund-flow's REFUND test stays skipped by design** — it needs real Stripe test-mode keys
 (`STRIPE_API_KEY`), not a fixture.
