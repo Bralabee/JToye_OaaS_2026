@@ -44,8 +44,15 @@ FROM eclipse-temurin:21-jre-alpine
 # image non-reproducible and any future CVE regression untraceable. When the
 # Temurin base is respun with these fixes this line becomes a cheap no-op; drop
 # it only after confirming the base image ships >= the versions above.
+#
+# 2026-08-28, same gate, same remedy (base is now Alpine 3.24.1):
+#   libcrypto3/libssl3/openssl 3.5.7-r0 -> 3.5.8-r0  CVE-2026-14456 (OpenSSL
+#   QUIC-server DoS). Fix confirmed present in the v3.24 `main` repo and the
+#   upgrade proven to land 3.5.8-r0 in a throwaway container before this line
+#   was written. This was the Trivy daily-DB time-bomb: it redded three
+#   consecutive main pipelines (incl. a docs-only commit) with no code change.
 RUN apk add --no-cache curl libwebp-tools \
- && apk upgrade --no-cache libexpat p11-kit p11-kit-trust
+ && apk upgrade --no-cache libexpat p11-kit p11-kit-trust libcrypto3 libssl3 openssl
 
 WORKDIR /app
 
