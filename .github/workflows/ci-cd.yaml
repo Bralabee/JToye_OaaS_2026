@@ -253,6 +253,45 @@ jobs:
   #
   # KEEP IT STACK-FREE. The moment this spec needs a backend it stops running in
   # CI and the blind spot comes back.
+  #
+  # WHAT THIS JOB'S GREEN DOES AND DOES NOT COVER (34-07, #542 third criterion).
+  #
+  #   It runs a STACK-FREE `next start` with CORE_API_INTERNAL_URL unset, so every
+  #   server-side fetch in lib/storefront-server.ts falls through to an unreachable
+  #   origin, returns `defer`, and the client island's request is answered by the
+  #   spec's own browser stub. Measured 2026-08-28, stack-free versus the live stack:
+  #
+  #     server        route                        bytes   shop-name occurrences  <h1
+  #     stacked       /shop                       54,184                       5    1
+  #     stacked       /shop/brixton-village-grill 90,951                      33    1
+  #     stack-free    /shop                       39,438                       0    1
+  #     stack-free    /shop/brixton-village-grill 39,299                       0    1
+  #
+  #   The `<h1` control is present in all four, so the zeros are about the CONTENT,
+  #   not a dead server. The stack-free slug page returns 200 and not 404 — `defer`,
+  #   not `notfound` — which is exactly what lets the browser stub fill it.
+  #
+  #   COVERS: the public layout in the DOM, and the WCAG 2.1 AA scan, on mobile and
+  #   desktop. Those are real and they are the reason this job exists.
+  #   DOES NOT COVER: the server-render path of ANY route. A DOM assertion here is
+  #   satisfied identically by a server that rendered the content and one that
+  #   rendered nothing, so this job's green is not evidence about served bytes.
+  #
+  #   Two things do cover it, and neither is here: the SSR-coverage contract gate in the
+  #   ops-contracts job (its manifest is scripts/gates/ssr-routes.conf) asserts that every
+  #   server-rendered route HAS a raw-HTML assertion, statically, per PR — and
+  #   .github/workflows/e2e-nightly.yml RUNS those assertions against the full compose
+  #   stack. Adding a backend to this job would close the gap for real; until then the
+  #   honest statement is above rather than an implication that a green browser job
+  #   covered the server render.
+  #
+  #   That gate is named here by DESCRIPTION and by its manifest, never by its script
+  #   filename, and that is deliberate. check-gate-enforcement.sh decides "is this gate
+  #   wired?" by searching workflow files for the script's name WITHOUT stripping
+  #   comments — measured 2026-08-28: with the ops-contracts step deleted and this
+  #   sentence naming the file, the meta-gate still reported PASS at rc=0. A comment
+  #   mentioning a gate must not be able to satisfy the check that the gate actually
+  #   runs, so the only occurrence of that filename in this file is the run: line itself.
   frontend-e2e:
     name: Frontend E2E (public surfaces)
     runs-on: ubuntu-latest
@@ -857,6 +896,43 @@ jobs:
         run: |
           chmod +x ./scripts/check-no-measured-placeholders.sh
           ./scripts/check-no-measured-placeholders.sh
+
+      #   10b. Plan 34-07 (TRUTH-01, #542/#507). A route-interception stub answers a
+      #      browser navigation and cannot answer `request.get`, so the moment a route
+      #      becomes server-rendered, a spec whose only coverage is a stub goes on
+      #      passing while proving nothing about the server render. Nothing failed at the
+      #      moment of conversion, and nothing ever would have. This gate is that
+      #      failure: scripts/gates/ssr-routes.conf declares every frontend/app/**/page.tsx
+      #      as SSR, STATIC or CLIENT, and an undeclared page, a stale declaration, a
+      #      class that disagrees with the file, or an SSR entry whose raw-HTML assertion
+      #      has been deleted all go red in the change that caused them.
+      #
+      #      Static by construction: it reads page.tsx files, spec files and one conf out
+      #      of the checkout, runs no browser, no build and no server, and makes no
+      #      network call — so it says the same thing on a hosted runner as it does
+      #      locally. It therefore belongs here and must NEVER get a
+      #      scripts/gates/gate-enforcement.conf entry: that table's bar is "a hosted
+      #      runner does not have the thing this inspects", which is false for a file in
+      #      the checkout, and check-gate-enforcement.sh would reject the entry as a stale
+      #      exemption anyway. Wiring beats exempting whenever a real runtime is available.
+      #
+      #      This step and the script it names MUST stay in the same commit as each other,
+      #      for the reason recorded on the retention gate above.
+      #
+      #      SHOWN TO FAIL before being wired, then restored and verified by
+      #      `git hash-object`. A gate observed only passing is not evidence:
+      #        - R-1 undeclared page   : deleted the dashboard/staff CLIENT line   -> rc=1
+      #        - R-1 stale declaration : declared a page that does not exist       -> rc=1
+      #        - R-2b raw-HTML deleted : /shop/orders servedHtml( -> page.goto(    -> rc=1
+      #        - R-3 fixture missing   : moved app/track/page.tsx away             -> rc=2
+      #      Clean tree: rc=0, 38 discovered, 4 SSR / 13 STATIC / 21 CLIENT.
+      #      The R-2b arm is the load-bearing one: the spec still NAMED the route in a
+      #      test title, and the gate still went red, because the literal has to sit
+      #      inside the raw-HTML call and not merely somewhere in the file.
+      - name: Assert every server-rendered route has a raw-HTML assertion (34-07 #542)
+        run: |
+          chmod +x ./scripts/check-ssr-coverage-contract.sh
+          ./scripts/check-ssr-coverage-contract.sh
 
       #   11. The meta-gate, so the three steps above are the LAST time this is found by
       #      hand. It asserts that every scripts/check-*.sh either runs in a workflow or
