@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 35 plan 11 complete (the contract document + the phase's single docs/metrics.json regeneration; a counter defect that deadlocked two required gates found and fixed)
-last_updated: "2026-08-29T21:55:00.000Z"
-last_activity: 2026-08-29
+stopped_at: Phase 35 plan 12 complete (runtime parity proven by content after the delivered container was measured serving the pre-phase stylesheet; the filtered mobile CSS diff with a two-directional control; the pre-change arm 21/21 RED and 21/21 GREEN; T-35-13 and T-35-15 run rather than reasoned)
+last_updated: "2026-08-29T23:20:00.000Z"
+last_activity: 2026-08-30
 progress:
   total_phases: 14
   completed_phases: 10
   total_plans: 119
-  completed_plans: 117
+  completed_plans: 118
   percent: 98
 ---
 
@@ -25,8 +25,18 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 35 (horizontal-layout-contract) — IN PROGRESS, 11 of 13 plans complete
-Plan: 12 of 13 (next — 35-12, then 35-13 the owner gate)
+Phase: 35 (horizontal-layout-contract) — IN PROGRESS, 12 of 13 plans complete
+Plan: 13 of 13 (next — 35-13, the owner gate; it is a blocking `checkpoint:human-verify`)
+
+> **35-12 closed the phase's runtime-parity debt, and the debt was real.** The delivered Compose
+> frontend was serving the PRE-PHASE stylesheet — zero tier attributes on `/` and
+> `.container{max-width:1400px}` in the served CSS — so every measurement taken in this phase
+> before 35-12 described a local `next start`, not the delivered artefact. Rebuilt to 4/4 FRESH,
+> 0 unverified, and re-proved by reading the tier values out of the running container. **Two
+> things 35-13 should carry into the owner gate:** the eight before/after captures at 1920 and
+> 2560 under `frontend/e2e-artifacts/35-12/`, and the two open, deliberately-unabsorbed items —
+> the skip budget at **7/6 with one undeclared** (**#686**, unchanged by this phase) and the
+> `marketing-motion` flake attributed to pre-existing **#687**.
 
 > **COUNTER PROVENANCE, because these numbers were nearly written wrong.** The
 > `completed_plans` figure above was advanced BY HAND from 96 to 103 — the seven plans with a
