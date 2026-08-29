@@ -54,6 +54,7 @@ import { render, screen, waitFor, within } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import { usePathname } from "next/navigation"
 import { PublicFooter } from "@/components/public/public-footer"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { getCustomerSession } from "@/lib/customer-auth"
 
 jest.mock("@/lib/customer-auth", () => ({
@@ -89,6 +90,17 @@ const LEGAL_ROUTES: Array<{ href: string; label: RegExp }> = [
 
 /** The company number is a fixed business fact (lib/company.ts:41), not env. */
 const COMPANY_NUMBER = "16471464"
+
+/**
+ * The stock scale token this footer's rail carried before phase 35.
+ *
+ * Written out because its ABSENCE is the assertion. A rename that adds the tier
+ * class without removing this one leaves two caps on one element; they resolve
+ * by cascade to the same 1280px, so the half-done state is invisible to a
+ * rendered-width check and to review alike. Not a tier literal, so plan 35-10's
+ * single-occurrence gate is unaffected.
+ */
+const SHED_WIDTH_TOKEN = "max-w-7xl"
 
 beforeEach(() => {
   mockedPathname.mockReturnValue("/shop/test-kitchen")
@@ -247,6 +259,80 @@ describe("PublicFooter carries NO platform trading disclosure (T-31-17-02)", () 
     expect(text).not.toContain(COMPANY_NUMBER)
     expect(text).not.toMatch(/registered in/i)
     expect(text).not.toMatch(/companies house/i)
+  })
+})
+
+/**
+ * The Marketing width tier on the shared footer rail (ORCH-04, orchestrator
+ * decision 2026-08-29 — CONTEXT.md section 4b).
+ *
+ * The rendered width does not move: the Marketing tier is 1280px, exactly what
+ * the stock token it replaces produced. The declaration is what is new. It
+ * matters because this plan brings the landing page's four content bands to the
+ * SAME tier — PATTERNS F-2 measured the content sitting 128px inside its own
+ * chrome — and a shared, queryable tier is the only thing that makes that
+ * alignment a contract rather than a coincidence that survived by luck.
+ *
+ * Asserted on rendered output, never on the source, for the reason this file's
+ * header already gives: this component now MENTIONS the tier in a comment.
+ */
+describe("PublicFooter declares the Marketing width tier (ORCH-04)", () => {
+  /** Throws rather than returning null — see expectFooterActuallyRendered. */
+  function railOf(container: HTMLElement): HTMLElement {
+    const rail = container.querySelector<HTMLElement>("[data-width-tier]")
+    if (!rail) throw new Error("no element in the public footer declares a width tier")
+    return rail
+  }
+
+  it("declares the marketing tier on the rail that holds the columns", () => {
+    const { container } = render(<PublicFooter />)
+    expectFooterActuallyRendered()
+    const rail = railOf(container)
+
+    expect(rail.getAttribute("data-width-tier")).toBe("marketing")
+    // Proves this is THE RAIL: the Legal column it wraps is inside it.
+    expect(rail.querySelector('a[href="/legal/privacy"]')).not.toBeNull()
+  })
+
+  it("applies the Marketing tier class, imported from the vocabulary not restated", () => {
+    const { container } = render(<PublicFooter />)
+    expectFooterActuallyRendered()
+    expect(railOf(container).classList.contains(WIDTH_TIER_CLASS.marketing)).toBe(true)
+  })
+
+  it("no longer carries the stock scale token it was renamed from", () => {
+    const { container } = render(<PublicFooter />)
+    expectFooterActuallyRendered()
+    const rail = railOf(container)
+
+    // CONTROL first: the classList read works on this element, so the absence
+    // below is evidence about the token and not about the instrument.
+    expect(rail.classList.contains("mx-auto")).toBe(true)
+    expect(rail.classList.contains(SHED_WIDTH_TOKEN)).toBe(false)
+  })
+
+  it("keeps every padding class the rail already had", () => {
+    const { container } = render(<PublicFooter />)
+    expectFooterActuallyRendered()
+    const rail = railOf(container)
+
+    // Executable displaced-goods ledger: the cap token is the only thing this
+    // change may move. `py-12` is included because the footer rail carries its
+    // vertical rhythm on the same element as its width.
+    for (const preserved of ["mx-auto", "px-4", "sm:px-6", "lg:px-8", "py-12"]) {
+      expect(rail.classList.contains(preserved)).toBe(true)
+    }
+  })
+
+  it("declares the SAME tier the public header declares — they move together", () => {
+    const { container } = render(<PublicFooter />)
+    expectFooterActuallyRendered()
+
+    // The point of the whole change. Written as a comparison against the
+    // vocabulary rather than against the literal string "marketing", so a tier
+    // rename cannot leave the two rails agreeing with a stale value.
+    expect(railOf(container).classList.contains(WIDTH_TIER_CLASS.marketing)).toBe(true)
+    expect(WIDTH_TIER_CLASS.marketing).not.toBe("")
   })
 })
 
