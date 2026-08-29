@@ -120,6 +120,14 @@ expect_count jest       loops-inside-blocks.fixture.ts   3
 # Same file, opposite verdicts by family — see the jest arm further down. Playwright
 # counts a loop-declared test() because its oracle counts declaration sites.
 expect_count playwright loop-scope-by-family.fixture.ts  3
+# A TRAILING COMMA FOLLOWED BY A COMMENT. each-tables.fixture.ts already covers a
+# trailing comma, and it is full of comments, but never the two on the same row —
+# and the defect lived exactly in the combination, so both of those arms passed
+# while every commented table over-counted by one. Comments are now masked to
+# whitespace rather than to FILL, so the comma reads as a terminator again.
+# Fail direction, measured: this arm reads 13 against the pre-fix counter.
+expect_count jest       commented-each-table.fixture.ts  10
+expect_count vitest     commented-each-table.fixture.ts  10
 
 # ── VOID arms: refusing is the required behaviour ───────────────────────────
 expect_void jest void-unresolvable-each.fixture.ts "not a resolvable array literal"
