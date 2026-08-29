@@ -56,6 +56,7 @@ enforced by the `docs-freshness` CI gate)
 | [architecture/API_REFERENCE.md](architecture/API_REFERENCE.md) | REST API reference |
 | [architecture/SECURITY_ARCHITECTURE.md](architecture/SECURITY_ARCHITECTURE.md) | Auth model, RLS/tenant isolation, threat surface |
 | [architecture/VENDOR_ONBOARDING_STATE_MODEL.md](architecture/VENDOR_ONBOARDING_STATE_MODEL.md) | The onboarding state machine — sole writer of `Shop.published` |
+| [architecture/LAYOUT_WIDTH_CONTRACT.md](architecture/LAYOUT_WIDTH_CONTRACT.md) | The horizontal layout contract — four content-width tiers, the peer measurement behind each number, the ceiling rule, every exception, and what is (and is not) enforcing them. Machine-readable companion: `architecture/layout-tiers.tsv` |
 | [AI_CONTEXT.md](AI_CONTEXT.md) | System architecture summary for AI/agent context |
 
 ### Architecture Decision Records
