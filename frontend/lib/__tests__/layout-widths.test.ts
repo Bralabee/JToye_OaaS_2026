@@ -153,22 +153,70 @@ describe("layout-widths — loadable by all three of its loaders", () => {
   })
 })
 
+/**
+ * The docblock immediately preceding `export const <name>`, or "" if there is
+ * none.
+ *
+ * SCOPED ON PURPOSE, and the scope is the whole point. The first draft of the
+ * assertions below searched the WHOLE FILE for each peer number, and its fail
+ * arm did not fire: deleting "Stripe's own dashboard at 1690" from the shell
+ * docblock left the suite 12/12 green, because the module header happens to use
+ * the same figure in an unrelated sentence about what a drifting spec would
+ * measure. The check could fail in principle — deleting every mention would red
+ * it — but it was not testing what it claimed, and only running the fail
+ * direction exposed that. Reading each number's own docblock is what makes
+ * "this number carries its justification" an assertion about that number.
+ */
+function docblockFor(exportName: string): string {
+  const index = RAW_SOURCE.indexOf(`export const ${exportName}`)
+  if (index === -1) return ""
+  const preceding = RAW_SOURCE.slice(0, index)
+  const start = preceding.lastIndexOf("/**")
+  const end = preceding.lastIndexOf("*/")
+  if (start === -1 || end === -1 || end < start) return ""
+  return preceding.slice(start, end + 2)
+}
+
+/** The file header, i.e. the first docblock, before any export. */
+function moduleDocblock(): string {
+  const end = RAW_SOURCE.indexOf("*/")
+  return end === -1 ? "" : RAW_SOURCE.slice(0, end + 2)
+}
+
 describe("layout-widths — the justification travels with the number", () => {
-  it("records the peer measurement behind each tier", () => {
+  const PEERS = [
+    ["SHELL_MAX_PX", "1690"], // Stripe Dashboard --Chrome-maxWidth
+    ["DETAIL_MAX_PX", "1136"], // Linear's detail ladder
+    ["MARKETING_MAX_PX", "1264"], // Stripe marketing pages
+  ] as const
+
+  it.each(PEERS)("records the peer measurement in %s's own docblock", (name, peer) => {
     // ROADMAP Phase 35's root cause, verbatim: "No document in the repo declares
     // a width standard - the number came with the scaffold." A number whose
-    // justification is not written down is exactly the defect being fixed, so
-    // deleting the justification must red something.
-    expect(RAW_SOURCE).toContain("1690") // Stripe Dashboard  -> Shell
-    expect(RAW_SOURCE).toContain("1136") // Linear detail     -> Detail
-    expect(RAW_SOURCE).toContain("1264") // Stripe marketing  -> Marketing
+    // justification is not written down IS the defect being fixed, so deleting
+    // that justification has to red something.
+    expect(docblockFor(name)).toContain(peer)
   })
 
-  it("records the superseded shadcn container value it replaces", () => {
+  it("reads a docblock per export rather than the whole file", () => {
+    // NON-VACUITY CONTROL for the helper above. If `docblockFor` silently
+    // returned the entire source — the failure mode that made the first draft
+    // pass — every peer number would appear in every block and the assertions
+    // above would be back to grepping the file. These prove the blocks are
+    // genuinely separate.
+    const shell = docblockFor("SHELL_MAX_PX")
+    expect(shell.length).toBeGreaterThan(100)
+    expect(shell).not.toContain("1136")
+    expect(shell).not.toContain("1264")
+    expect(docblockFor("NO_SUCH_EXPORT")).toBe("")
+  })
+
+  it("records the superseded shadcn container value in the module header", () => {
     // Held next to the declared targets the same way perf-budgets.ts holds
     // LANDING_CLS_KNOWN_BASELINE next to CLS_BUDGET: the phase's before/after
     // comparison needs something to A/B against, and prose in a summary cannot
-    // be compared against by anything.
-    expect(RAW_SOURCE).toContain("1400")
+    // be compared against by anything. Scoped to the header for the same reason
+    // as above — the value's home is the "what this replaces" paragraph.
+    expect(moduleDocblock()).toContain("1400")
   })
 })
