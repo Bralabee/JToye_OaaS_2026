@@ -3,9 +3,10 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { MapPin, Search, Store, ChevronRight, Loader2, X } from "lucide-react"
+import { MapPin, Search, Store, ChevronRight, Loader2, X, AlertCircle } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
 import publicApiClient from "@/lib/public-api-client"
+import { describeLoadError } from "@/lib/human-error"
 import {
   isRateLimitError,
   getRetryDelayMs,
@@ -234,6 +235,12 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   // never the authoritative "No shops found" empty state.
   const [rateLimited, setRateLimited] = useState(false)
   const [retriesExhausted, setRetriesExhausted] = useState(false)
+  // A11Y-8: a genuine (non-429) failure must render an error panel, never the
+  // "No kitchens found" empty state — the ELSE branch below used to
+  // `setShops([])` and stop there, which is a false claim that the
+  // marketplace has nothing when the request merely failed.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [loadErrorMessage, setLoadErrorMessage] = useState("")
   const retryAttemptRef = useRef(0)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Latest fetch fn, so the retry timer always calls the current closure without
@@ -268,6 +275,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
       // A real (possibly empty) 200 clears the busy state and resets the budget.
       setRateLimited(false)
       setRetriesExhausted(false)
+      setLoadFailed(false)
       retryAttemptRef.current = 0
     } catch (err) {
       // A NON-ANSWER CARRIES NO CLAIM. A 429 or a genuine failure is not a
@@ -290,11 +298,18 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
           setRetriesExhausted(true)
         }
       } else {
-        // Genuine failure / empty — preserve the existing empty behaviour.
+        // A11Y-8: a genuine failure is NOT "zero shops" — `shops` still goes to
+        // `[]` (there is nothing safe to keep on screen from a stale response),
+        // but the results grid renders a load-error panel instead of falling
+        // through to "No kitchens found" (see `loadFailed` below).
         setShops([])
         setTotalElements(0)
         setRateLimited(false)
         setRetriesExhausted(false)
+        setLoadFailed(true)
+        setLoadErrorMessage(
+          describeLoadError(err, "Something went wrong loading kitchens.").message
+        )
       }
     } finally {
       setLoading(false)
@@ -474,7 +489,25 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
       )}
 
       {/* Results */}
-      {rateLimited ? (
+      {loadFailed ? (
+        // A11Y-8 (QA-council F2): a genuine fetch failure, keyed off a flag —
+        // never off `shops.length`, which is exactly how this used to read as
+        // "No kitchens found".
+        <div className="text-center py-16" role="alert" data-testid="discovery-load-error">
+          <AlertCircle className="mx-auto h-10 w-10 text-red-400" />
+          <h2 className="mt-4 text-base font-semibold text-oxblood">
+            Couldn&apos;t load kitchens
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">{loadErrorMessage}</p>
+          <button
+            type="button"
+            onClick={() => fetchShops()}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-5 py-2.5 text-sm font-bold text-amber-ink hover:-translate-y-0.5 active:scale-95 transition-all"
+          >
+            Try again
+          </button>
+        </div>
+      ) : rateLimited ? (
         // F-RATE (#88): busy/retrying state — NEVER the "No shops found" empty
         // state. Static copy only; the 429 body carries no useful detail.
         <div className="text-center py-16">

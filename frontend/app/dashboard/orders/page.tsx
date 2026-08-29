@@ -9,9 +9,11 @@ import * as z from "zod"
 import apiClient from "@/lib/api-client"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import { fetchAllProducts } from "@/lib/products-api"
+import { describeLoadError } from "@/lib/human-error"
 import { useToast } from "@/hooks/use-toast"
 import { useOrderEvents } from "@/hooks/use-order-events"
 import { useShopContext } from "@/hooks/use-shop-context"
+import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
 import {
   Card,
   CardContent,
@@ -254,6 +256,11 @@ function OrdersPageInner() {
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<OrderDetail | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [detailLoading, setDetailLoading] = useState(false)
+  // F2 (A11Y-2): a 429/network failure must render an error panel, never the
+  // "No orders yet" empty state — `fetchData`'s catch below deliberately does
+  // NOT reset `orders` to `[]`.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [loadErrorMessage, setLoadErrorMessage] = useState("")
   const { toast } = useToast()
 
   const {
@@ -314,13 +321,18 @@ function OrdersPageInner() {
       setOrders(ordersRes.data.content || [])
       setTotalPages(ordersRes.data.totalPages || 0)
       setTotalElements(ordersRes.data.totalElements || 0)
+      setLoadFailed(false)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to load orders"
+      const { message } = describeLoadError(error)
       toast({
         variant: "destructive",
         title: "Error loading data",
-        description: errorMessage,
+        description: message,
       })
+      // F2 (A11Y-2): `orders` is deliberately left untouched above — a false
+      // "No orders yet" empty state is worse than briefly stale rows.
+      setLoadFailed(true)
+      setLoadErrorMessage(message)
     } finally {
       setLoading(false)
     }
@@ -444,11 +456,13 @@ function OrdersPageInner() {
       if (currentPage === 0) fetchData()
       else setCurrentPage(0)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to create order"
+      // A11Y-2: was a raw axios string (e.g. "Request failed with status code
+      // 429") — describeLoadError resolves the same RFC 7807 detail/message
+      // shape the rest of the dashboard now reads.
       toast({
         variant: "destructive",
         title: "Error creating order",
-        description: errorMessage,
+        description: describeLoadError(error, "Failed to create order").message,
       })
     } finally {
       setSubmitting(false)
@@ -469,7 +483,13 @@ function OrdersPageInner() {
       })
       fetchData()
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : `Failed to ${actionName.toLowerCase()} order`
+      // A11Y-2: was a raw axios string for any HTTP failure with no readable
+      // body (e.g. "Request failed with status code 409" on an invalid
+      // transition) — same fix as onSubmit above.
+      const errorMessage = describeLoadError(
+        error,
+        `Failed to ${actionName.toLowerCase()} order`
+      ).message
       toast({
         variant: "destructive",
         title: `Error ${actionName.toLowerCase()} order`,
@@ -578,7 +598,13 @@ function OrdersPageInner() {
             </Select>
           </CardHeader>
           <CardContent>
-            {visibleOrders.filter(o => statusFilter === "ALL" || o.status === statusFilter).length === 0 ? (
+            {loadFailed ? (
+              <LoadErrorPanel
+                subject="orders"
+                message={loadErrorMessage}
+                onRetry={fetchData}
+              />
+            ) : visibleOrders.filter(o => statusFilter === "ALL" || o.status === statusFilter).length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <ShoppingCart className="mb-4 h-12 w-12 text-slate-300" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">

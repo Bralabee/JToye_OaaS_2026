@@ -7,8 +7,10 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import apiClient from "@/lib/api-client"
 import { fetchAllMyShops } from "@/lib/shops-api"
+import { describeLoadError } from "@/lib/human-error"
 import { useToast } from "@/hooks/use-toast"
 import { useShopContext } from "@/hooks/use-shop-context"
+import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
 import {
   Card,
   CardContent,
@@ -107,6 +109,11 @@ export default function ProductsPage() {
   const [selectedShopId, setSelectedShopId] = useState<string>("")
   const [trackInventory, setTrackInventory] = useState(false)
   const [quantityInStock, setQuantityInStock] = useState<number>(0)
+  // F2 (FEB-1): a 429/network failure must render an error panel, never the
+  // "No products yet" empty state — the catch blocks below deliberately do
+  // NOT reset `products` to `[]`, so this is keyed off list length nowhere.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [loadErrorMessage, setLoadErrorMessage] = useState("")
   const { toast } = useToast()
   // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
   const { contextShopId } = useShopContext()
@@ -189,6 +196,7 @@ export default function ProductsPage() {
       setProducts(response.data.content || [])
       setTotalPages(response.data.totalPages || 0)
       setTotalElements(response.data.totalElements || 0)
+      setLoadFailed(false)
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load products"
       toast({
@@ -196,6 +204,10 @@ export default function ProductsPage() {
         title: "Error loading products",
         description: errorMessage,
       })
+      // F2 (FEB-1): `products` is deliberately left untouched above — a false
+      // "No products yet" empty state is worse than briefly stale rows.
+      setLoadFailed(true)
+      setLoadErrorMessage(describeLoadError(error).message)
     } finally {
       setLoading(false)
     }
@@ -213,9 +225,18 @@ export default function ProductsPage() {
       setProducts(response.data || [])
       setTotalPages(1)
       setTotalElements(response.data?.length || 0)
-    } catch {
-      // Fall back to showing all products
+      setLoadFailed(false)
+    } catch (error: unknown) {
+      // F2 (FEB-1): this catch used to be fully silent, leaving whatever was on
+      // screen before the search with no indication the search itself failed.
+      setLoadFailed(true)
+      setLoadErrorMessage(describeLoadError(error).message)
     }
+  }
+
+  const retryLoad = () => {
+    if (searchQuery.length >= 2) searchProducts(searchQuery)
+    else fetchProducts()
   }
 
   const openCreateDialog = () => {
@@ -412,7 +433,13 @@ export default function ProductsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {products.length === 0 ? (
+            {loadFailed ? (
+              <LoadErrorPanel
+                subject="products"
+                message={loadErrorMessage}
+                onRetry={retryLoad}
+              />
+            ) : products.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Package className="mb-4 h-12 w-12 text-slate-300" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">
