@@ -68,6 +68,29 @@ jobs:
           DB_USER: jtoye
           DB_PASSWORD: password
 
+      # Plan 34-09 (TRUTH-02, #110). This file is HALF of the Java coverage
+      # measurement, and the other half is produced in a different job. `test` above
+      # EXCLUDES the testcontainers tag and `integrationTest` runs ONLY that tag, so
+      # neither job can compute the real number alone. Measured 2026-08-29 on a tree
+      # at this commit: this suite alone covers 62.12% of lines, the two together
+      # cover 87.55% — a 25.43-point gap, a quarter of the codebase. Publishing the
+      # first as "coverage" would be a false statement, so the integration job
+      # downloads this artifact and reports over both.
+      #
+      # if: always() so a failing unit suite still hands over whatever it executed.
+      # The downstream gate decides whether that is measurable and VOIDs if it is
+      # not — it never scores a partial or absent run as a coverage regression.
+      # if-no-files-found: error because a silently empty upload would surface far
+      # downstream as an opaque artifact error instead of here, at its source.
+      - name: Upload the unit suite's JaCoCo execution data
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: java-coverage-exec-unit
+          path: core-java/build-local/jacoco/test.exec
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Install swaggo/swag CLI (needed by edge-go OpenAPI freshness test)
         run: go install github.com/swaggo/swag/cmd/swag@v1.16.3
 
@@ -259,6 +282,14 @@ jobs:
           echo "  (core-java/**, build.gradle.kts, settings.gradle.kts, gradle.properties, gradle/**, gradlew, gradlew.bat, .github/workflows/ci-cd.yaml)"
           echo "so ./gradlew :core-java:integrationTest cannot be affected. This job reports SUCCESS on purpose"
           echo "so it stays a satisfiable required check. push/release runs always execute the full suite."
+          echo ""
+          echo "JAVA COVERAGE WAS NOT EVALUATED ON THIS RUN."
+          echo "  The Java coverage floor is enforced over the AGGREGATE of the unit suite and this"
+          echo "  integration suite, because the unit suite alone covers 62.12% of lines where the two"
+          echo "  together cover 87.55% (measured 2026-08-29). This job skipped its half, so no"
+          echo "  aggregate could be computed and none was. THIS JOB'S SUCCESS SAYS NOTHING ABOUT"
+          echo "  COVERAGE — do not read it as a coverage result, and do not quote a number from it."
+          echo "  Could not measure is not measured and fine."
 
       - name: Set up JDK 21
         if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
@@ -284,12 +315,81 @@ jobs:
         if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
         run: ./gradlew :core-java:integrationTest --no-daemon
 
+      # Plan 34-09 (TRUTH-02, #110). Java coverage is measured over BOTH suites and
+      # gated on the aggregate. The unit half arrives as an artifact from job `test`;
+      # this job holds the other half, so this is the only place in the pipeline where
+      # the real number can be computed at all.
+      #
+      # ALL THREE STEPS CARRY THE SAME `if:` AS THE SUITE ABOVE, AND THAT IS THE POINT.
+      # This job is path-filtered and reports SUCCESS while skipping, deliberately, so
+      # it stays a satisfiable required check. A coverage gate running unconditionally
+      # here would be wrong on exactly the runs that skip — it would have no aggregate
+      # to read and would either invent a number or red a PR that changed no Java. The
+      # guard keeps the gate where it can measure; the skip-notice step above states in
+      # words that coverage was not evaluated where it cannot. Do not "simplify" either
+      # away: together they are what stops this job's green being read as a coverage
+      # result.
+      #
+      # continue-on-error on the download, deliberately. The two jobs run in PARALLEL
+      # with no `needs:` between them, so in principle the artifact could be absent when
+      # this step runs. In practice it cannot: the download happens AFTER the ~25-45
+      # minute integration suite while job `test` finishes in ~12-18, and both are
+      # queued by the same trigger. If that ever inverts, the correct outcome is the
+      # gate's own VOID naming the missing suite, not an opaque "unable to find any
+      # artifacts" error — and under no ordering does a missing half produce a PASS.
+      - name: Download the unit suite's JaCoCo execution data
+        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: java-coverage-exec-unit
+          path: core-java/build-local/jacoco
+
+      # BOTH reports, not just the aggregate: the gate compares them, and an
+      # "aggregate" that merely equals the unit figure is a unit report wearing the
+      # wrong filename. Generating the unit-only one here costs nothing and re-runs no
+      # test — MEASURED with --dry-run on 2026-08-29, jacocoTestReport's whole task
+      # graph is compileJava -> processResources -> classes -> jacocoTestReport, with
+      # the `test` task absent from it entirely (the jacoco plugin wires the report to
+      # its test task with mustRunAfter, never dependsOn). It re-reports the downloaded
+      # .exec and nothing else.
+      - name: Generate the unit-only and aggregate JaCoCo reports
+        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        run: ./gradlew :core-java:jacocoTestReport :core-java:jacocoAggregateReport --no-daemon
+
+      # Shown to FAIL before being trusted, then restored and verified by
+      # `git hash-object` (82c8928e…, identical before and after every arm):
+      #   both floors raised to 99.9 ................... rc=1, four FAILs, real numbers
+      #   LINE floor alone raised to 99.9 .............. rc=1, "87.55% is BELOW 99.9%"
+      #   aggregate CSV at a path that does not exist .. rc=2 VOID
+      #   an EMPTY aggregate CSV ....................... rc=2 VOID
+      #   a HEADER-ONLY aggregate CSV .................. rc=2 VOID
+      #   a CSV whose header is not JaCoCo's ........... rc=2 VOID
+      #   the exec directory with no .exec in it ....... rc=2 VOID, naming the suite
+      #   an unknown argument .......................... rc=2 VOID
+      # The arm that justifies the design is the last one, and it is not any of the
+      # above. The aggregate report was REGENERATED from the unit .exec alone and both
+      # .exec files then put back, so every structural check passes and the CSV is a
+      # real, well-formed JaCoCo report — of the wrong thing. It reads 62.12% line, and
+      # a naive "60% line" floor would have PASSED it while publishing a figure wrong
+      # by a quarter of the codebase. The gate compares the aggregate against the
+      # unit-only report and exits 2 instead. Clean tree: rc=0 at 88.06 / 71.88 / 87.55
+      # / 87.53.
+      - name: Enforce the aggregate Java coverage floor (#110)
+        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        run: |
+          chmod +x ./scripts/check-jacoco-coverage.sh
+          ./scripts/check-jacoco-coverage.sh
+
       - name: Upload integration test results
         if: always() && (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true')
         uses: actions/upload-artifact@v7
         with:
           name: integration-test-results
-          path: core-java/build-local/reports/tests/integrationTest/
+          path: |
+            core-java/build-local/reports/tests/integrationTest/
+            core-java/build-local/reports/jacoco/aggregate/jacocoAggregateReport.csv
+            core-java/build-local/reports/jacoco/test/jacocoTestReport.csv
 
   # Job 1b2: Frontend browser gate for the PUBLIC surfaces.
   #
