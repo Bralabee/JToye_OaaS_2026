@@ -158,6 +158,11 @@ describe('Dashboard Page', () => {
       expect(screen.getByText('john@example.com')).toBeInTheDocument()
       expect(screen.getByText('£19.99')).toBeInTheDocument()
     })
+
+    // QA-council F3 / A11Y-1: PENDING badge is white text on bg-yellow-700,
+    // not the failing bg-yellow-500 (1.92:1 on white).
+    expect(screen.getByText('Pending')).toHaveClass('bg-yellow-700')
+    expect(screen.getByText('Pending')).not.toHaveClass('bg-yellow-500')
   })
 
   it('should make API calls to fetch dashboard data', async () => {

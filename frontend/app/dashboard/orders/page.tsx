@@ -89,7 +89,9 @@ const statusConfig: Record<
   PENDING: {
     label: "Pending",
     color: "text-yellow-700",
-    bgColor: "bg-yellow-500",
+    // bg-yellow-700, not -500: white text on -500 is 1.92:1 on white — fails
+    // AA (F3 / A11Y-1). -700 is 4.92:1.
+    bgColor: "bg-yellow-700",
     icon: Clock,
   },
   CONFIRMED: {

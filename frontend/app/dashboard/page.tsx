@@ -97,7 +97,10 @@ const statusConfig: Record<
   { label: string; color: string; chartColor: string; icon: React.ComponentType<{ className?: string }> }
 > = {
   DRAFT: { label: "Draft", color: "bg-gray-500", chartColor: "#6b7280", icon: Clock },
-  PENDING: { label: "Pending", color: "bg-yellow-500", chartColor: "#eab308", icon: Clock },
+  // bg-yellow-700, not -500: white text on -500 is 1.92:1 on white — fails AA
+  // (needs 4.5:1). -700 is 4.92:1 (F3 / A11Y-1). chartColor is UNCHANGED — a
+  // pie-chart fill has no AA text requirement, only the badge text does.
+  PENDING: { label: "Pending", color: "bg-yellow-700", chartColor: "#eab308", icon: Clock },
   CONFIRMED: { label: "Confirmed", color: "bg-blue-500", chartColor: CHART_COLORS.ember, icon: CheckCircle2 },
   PREPARING: { label: "Preparing", color: "bg-amber-500", chartColor: CHART_COLORS.amber, icon: Clock },
   READY: { label: "Ready", color: "bg-green-500", chartColor: "#22c55e", icon: CheckCircle2 },

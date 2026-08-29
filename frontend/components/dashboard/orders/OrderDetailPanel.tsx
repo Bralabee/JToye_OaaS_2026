@@ -52,7 +52,9 @@ type StatusUiConfig = {
 
 const STATUS_CONFIG: Record<OrderStatus, StatusUiConfig> = {
   DRAFT:     { label: "Draft",     bgColor: "bg-slate-500",   icon: Clock },
-  PENDING:   { label: "Pending",   bgColor: "bg-yellow-500",  icon: Clock },
+  // bg-yellow-700, not -500: white text on -500 is 1.92:1 on white — fails AA
+  // (F3 / A11Y-1). -700 is 4.92:1.
+  PENDING:   { label: "Pending",   bgColor: "bg-yellow-700",  icon: Clock },
   CONFIRMED: { label: "Confirmed", bgColor: "bg-blue-500",    icon: CheckCircle2 },
   PREPARING: { label: "Preparing", bgColor: "bg-amber-500",  icon: ChefHat },
   READY:     { label: "Ready",     bgColor: "bg-green-500",   icon: PackageIcon },

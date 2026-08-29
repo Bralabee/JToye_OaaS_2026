@@ -228,6 +228,15 @@ describe("OrderDetailPanel", () => {
     expect(screen.getByText(/Remaining:\s*£7\.00/)).toBeInTheDocument()
   })
 
+  it("QA-council F3 / A11Y-1: PENDING status badge is bg-yellow-700, not the failing bg-yellow-500", () => {
+    render(
+      <OrderDetailPanel order={makeOrder({ status: "PENDING", paymentStatus: "NONE" })} />
+    )
+    const badge = screen.getByText("Pending")
+    expect(badge).toHaveClass("bg-yellow-700")
+    expect(badge).not.toHaveClass("bg-yellow-500")
+  })
+
   it("renders failed refund failure_reason in the history row", () => {
     const refunds = [
       makeRefund({
