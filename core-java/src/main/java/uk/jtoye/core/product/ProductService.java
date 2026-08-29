@@ -3,6 +3,7 @@ package uk.jtoye.core.product;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -12,7 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import uk.jtoye.core.config.TenantCacheEvictor;
+import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.media.MediaAssetService;
 import uk.jtoye.core.media.ProductMedia;
 import uk.jtoye.core.media.ProductMediaRepository;
@@ -506,7 +509,23 @@ public class ProductService {
         storageService.delete(product.getImageUrl());
         product.getAdditionalImageUrls().forEach(storageService::delete);
 
-        productRepository.delete(product);
+        try {
+            productRepository.delete(product);
+            // QA-council cluster P2 (API-2/FE-4): flush HERE, inside this method's own
+            // try/catch, rather than letting the DELETE go at commit — mirrors the #486 lesson
+            // already applied in CustomerService.deleteCustomer. Without it a fk_order_items_product
+            // violation is raised after this method returns, outside any catch here, and reaches
+            // the client as an untyped 409 "Duplicate Entry" from the blanket
+            // DataIntegrityViolationException handler.
+            productRepository.flush();
+        } catch (DataIntegrityViolationException ex) {
+            if ("23503".equals(SqlStateExtractor.sqlState(ex).orElse(null))) {
+                throw new ResourceInUseException(
+                        "Product cannot be deleted: it is still referenced by an existing order",
+                        SqlStateExtractor.constraintName(ex).orElse(null));
+            }
+            throw ex;
+        }
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
         log.info("Deleted product {} with SKU '{}'", product.getId(), product.getSku());
