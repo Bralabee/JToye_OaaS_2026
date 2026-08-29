@@ -135,3 +135,383 @@ the new numbers arithmetically — the counter greps literal `it(` / `test(`.
 and 34-10 is the declared single writer of that manifest. Regenerating from any other plan
 would be re-broken by the next plan's specs and would take the single-writer property with
 it.
+
+---
+---
+
+# Phase 34 closeout register (plan 34-10)
+
+Everything this phase deliberately did NOT do, each with its reason, the measurement or
+quoted source behind it, and what would remove it. **An entry with no removal condition is
+a wish, not a deferral.** Entries above this line were written by the plans that found them
+and are not restated here.
+
+Measured 2026-08-29 on the assembled phase branch. Where an entry repeats a claim made in
+34-RESEARCH, the claim was **re-measured** rather than copied; where it rests on a research
+assumption that was never executed, it says so and names the assumption.
+
+---
+
+## D-34-10-01 — `middleware.ts` -> `proxy.ts` is OUT OF SCOPE
+
+**Class:** out of scope (belongs in its own issue).
+
+**Re-measured, not copied.**
+
+1. **Next 16.3.3 emits a build-time warning only.** The exact call site, read out of the
+   installed package rather than inferred from release notes:
+
+   ```
+   frontend/node_modules/next/dist/build/index.js:730
+     _log.warnOnce(`The "${MIDDLEWARE_FILENAME}" file convention is deprecated.
+                    Please use "${PROXY_FILENAME}" instead.` + ` To migrate automatically, run: npx @next/codemod@…`)
+   ```
+
+   `warnOnce` — not an error, not a build failure. `frontend/package.json` resolves to next
+   **16.3.3** (`node_modules/next/package.json:3`).
+
+2. **`frontend/middleware.ts` is a NextAuth wrapper.** Line 19 is
+   `export default auth((req) => {`, and the body mints the per-request CSP nonce
+   (`requestHeaders.set("x-nonce", nonce)`) that every SSR page's JSON-LD depends on (#89 /
+   SEC-02). Breaking it does not fail a test — it silently drops CSP nonces on every page.
+
+3. **`next-auth@5.0.0-beta.32` contains ZERO references to the proxy convention.**
+   `rg -uu -c 'proxy' frontend/node_modules/next-auth/package.json` -> **0**, with a
+   positive control on the same file (`next-auth` -> **2**) proving the search reaches it;
+   and a whole-package scan for the convention returned nothing, with a positive control
+   (`middleware` -> 5 files, including `middleware.d.ts`) proving that search direction
+   works too. An unvalidated zero is a statement about the search, not about the package.
+
+**A finding the plan did not anticipate, and the strongest reason of the four.** Next's own
+upgrade guide, shipped inside the package at
+`node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md:616`, states:
+
+> The `edge` runtime is **NOT** supported in `proxy`. The `proxy` runtime is `nodejs`, and
+> it cannot be configured.
+
+`frontend/middleware.ts` declares **no** `export const runtime`, so it runs on the
+middleware default — **edge**. The migration is therefore not a rename: it moves the CSP
+nonce minter from the edge runtime to nodejs, unconfigurably. That is a runtime change to
+the one file that gates every page's Content-Security-Policy, and it is not a closeout task.
+
+**The codemod was NOT run** — research assumption **A4**, explicitly labelled LOW confidence
+and "codemod was **not** run" in 34-RESEARCH:843. This entry does not claim otherwise.
+
+**REMOVE WHEN:** an issue is opened to migrate the convention, and it establishes (a) that
+the CSP nonce path behaves identically under the nodejs runtime, with the served
+`Content-Security-Policy` header read back off a real response, and (b) that NextAuth
+supports the `proxy` export in whatever version is then installed.
+
+---
+
+## D-34-10-02 — mcp-server test coverage is N/A, recorded rather than dropped
+
+**Class:** N/A (CLAUDE.md's roster rule — never silently drop a dimension).
+
+**Measured.** `rg -uu -c 'coverage' mcp-server/package.json` -> **0**, positive control
+`vitest` -> **3** on the same file. `mcp-server/node_modules/@vitest/coverage-v8` is
+**absent**. So mcp-server's 48 vitest blocks run with no coverage provider at all.
+
+**Why it was not added.** Three independent reasons, and the third is disqualifying on its own:
+
+1. **It is out of the issue's scope.** ROADMAP criterion 4 (`.planning/ROADMAP.md:901-903`)
+   narrows #110 to exactly three coverage tiers — "JaCoCo, the generated-but-unconsumed Go
+   coverage profile, and a Jest `coverageThreshold`". mcp-server is not among them.
+2. **It is a genuinely new npm dependency**, and this phase's supply-chain assertion is that
+   it added none: `git diff --name-only origin/main -- frontend/package.json
+   frontend/package-lock.json edge-go/go.mod edge-go/go.sum mcp-server/package.json` prints
+   nothing (positive control: the same pathspec form against `frontend/` returns 20+ files).
+3. **`@vitest/coverage-v8` could not be legitimacy-checked.** `slopcheck` was unavailable in
+   the research session — `pip install slopcheck` is blocked by this machine's
+   `block-base-python.py` with no bypass, by design (34-RESEARCH:223, :741). The package is
+   therefore `[ASSUMED]`, research assumption **A5**, "not verified on any registry"
+   (34-RESEARCH:844). Installing an unverified package to satisfy a coverage metric is the
+   exact trade this project's package-legitimacy rule exists to refuse.
+
+**REMOVE WHEN:** `@vitest/coverage-v8` (or whichever provider is chosen) passes a real
+legitimacy check on a machine where slopcheck runs, AND a decision is recorded to extend the
+coverage contract to a fourth tier. Adding it must go through `checkpoint:human-verify`.
+
+---
+
+## D-34-10-03 — the SSR fixture server is DEFERRED
+
+**Class:** deferred (the must shipped; this is the strictly-better version).
+
+**What shipped instead.** 34-07's manifest gate — `scripts/gates/ssr-routes.conf` plus
+`scripts/check-ssr-coverage-contract.sh` — which was the actual requirement, and 34-07's
+honest statement in the `frontend-e2e` job of what its stack-free green does and does not
+cover (#542's third acceptance criterion; 34-07-SUMMARY:14, :302, :327).
+
+**What is still missing.** The per-PR stack-free job has no real SSR coverage. It cannot
+have any: measured on the live stack, `/shop` serves **54,184 bytes with 5 occurrences of a
+shop's name**, versus **39,438 bytes and 0** with no backend (recorded in
+`scripts/gates/ssr-routes.conf`). Pointing `CORE_API_INTERNAL_URL` at a `node:http` fixture
+server fed from the existing `e2e/helpers/public-surface.ts` constants would give that job
+genuine server-render coverage without a stack.
+
+**Named as an assumption, because it is one.** Research assumption **A6**, MEDIUM confidence
+(34-RESEARCH:845): the env-var precedence and its runtime-lookup nature are **verified**,
+but a fixture server **was not built or run** — the `:3105` arm proved only the
+*unreachable-backend* case. This entry claims nothing stronger.
+
+**Its own security constraint, already recorded** (34-RESEARCH:821, :830): such a server must
+bind to `127.0.0.1`, start and stop within the Playwright run, and never be referenced from
+committed non-test config — `CORE_API_INTERNAL_URL` pointed at a fixture in a non-test
+environment would serve fixture data as real.
+
+**REMOVE WHEN:** the fixture server is built, the `frontend-e2e` job sets
+`CORE_API_INTERNAL_URL` at it, and a spec asserts server-rendered content from
+`request.get()` in that job — with the no-fixture arm shown to fail first.
+
+---
+
+## D-34-10-04 — ZERO #507 route conversions, and that is a finding, not an omission
+
+**Class:** measured decision (#507's own body: decide, do not convert reflexively).
+
+**The measurement that makes it a finding.** `scripts/gates/ssr-routes.conf` classifies all
+**38** routes: **4 SSR**, **13 STATIC**, **21 CLIENT** (counted from the file's own
+directives). The three highest-impact public routes — the landing page, the shop directory
+and the storefront — are **already server components with raw-HTML assertions**, so the
+conversions with the most reach were already done before this phase.
+
+Every remaining public client route depends on browser-only state. Re-verified on the tree
+rather than copied — all five are `"use client"` on line 1 (`head -1`), and:
+
+| Route | What a server cannot do | Verified |
+|---|---|---|
+| `shop/[slug]/cart` | basket lives in `localStorage` | `components/storefront/cart-provider.tsx:77` — `window.localStorage.getItem(cartStorageKey(slug))` |
+| `shop/[slug]/orders/[orderNumber]` | proves ownership with a checkout email from `localStorage` | 3 `localStorage` references in the page |
+| `shop/[slug]/checkout` | Stripe Elements mounts in the browser; card fields never touch our servers | deliberately interactive |
+| `shop/auth/callback` | exchanges a single-use `?code=` that arrives only in the browser | deliberately interactive |
+| `track` | pre-fills from `sessionStorage`, then polls | `app/track/page.tsx:109` — `sessionStorage.getItem("jtoye-track-email")` |
+
+`track` is the only partially-convertible one: its signed-in half could be server-rendered
+while the guest lookup form stays client.
+
+**The per-route reasons are NOT duplicated here.** They live in
+`scripts/gates/ssr-routes.conf`, which is gated by `scripts/check-ssr-coverage-contract.sh`
+— a reason copied into this file would drift silently, whereas one in the conf fails the
+build when it stops matching the page. This file points; the conf decides.
+
+**REMOVE WHEN:** a route's browser-only dependency is removed (e.g. the cart moves to a
+server-side session), at which point its `CLIENT` line becomes `SSR` and names its spec in
+the same change — the gate fires at the moment of conversion, which is the moment the
+coverage would otherwise be silently dropped.
+
+---
+
+## D-34-10-05 — the six E2E skips belong to #304 and #61, not to this phase
+
+**Class:** out of scope by #547's own body; both parent phases blocked on owner action.
+
+**Measured, from a report's own per-test annotations rather than by arithmetic** (nightly run
+33142364550, 2026-08-28T04:43:48Z, 266 results — recorded in
+`scripts/gates/e2e-skip-budget.conf`):
+
+| Spec | Skips | Owner | Why |
+|---|---:|---|---|
+| `stomp-relay.spec.ts` | 4 (2 tests x 2 projects) | **#304** (Phase 29) | needs the stack scaled to two core-java replicas (`RELAY_E2E=1` + `--scale core-java=2`) |
+| `vendor-refund-flow.spec.ts` | 2 (1 test x 2 projects) | **#61** (Phase 30) | issues a REAL partial refund; `STRIPE_API_KEY` is empty on the dev stack |
+|  | **6** | | |
+
+The refund skip is **deliberately not faked**: seeding `paymentStatus=CAPTURED` with an
+invented `payment_reference` would push the test past its skip and then fail at the Stripe
+call — worse than skipping, because it converts "nobody checked this" into a red herring.
+
+**What this phase DID do about skips** (34-06, so this entry is not mistaken for inaction):
+it removed the false `onboarding-blocked-flow` exemption — whose justification blamed an
+absent seeded shop, a cause the same nightly measures FALSE (the desktop arm passes in
+6746ms, which is only possible when that fixture IS present) — and lowered `MAX_SKIPS` from
+8 to the measured 6. At 8 the gate passed on 7 and would equally have passed on 6: it could
+not tell the three apart, so it could not fail for any real change in the skip set.
+
+**REMOVE WHEN:** a scaled-stack CI job exists (#304), and Stripe test-mode keys are
+provisioned for the dev/CI stack (#61). Each retirement DELETES its `ALLOW` and lowers
+`MAX_SKIPS` in the same change — the gate fails on an `ALLOW` that no longer matches
+anything, because a stale exemption is a lie about coverage.
+
+---
+
+## D-34-10-06 — #453 (who adjudicates onboarding `MANUAL_REVIEW`) is an unadjudicated PRODUCT decision
+
+**Class:** blocked on a decision nobody has made — not an engineering task.
+
+This is the standing consequence of the platform's deliberate architecture: there is **no
+cross-tenant operator identity** (refused twice, by design). A vendor whose onboarding lands
+in `MANUAL_REVIEW` is therefore waiting on a human role that does not exist in the system,
+and no amount of engineering in this phase can invent one — choosing who holds that role is
+a product and legal decision about liability for approving a food business.
+
+Writing code first would be the worse failure: it would force the answer by implementation,
+in exactly the area (vendor verification) where the platform's exposure is real.
+
+**REMOVE WHEN:** the owner decides who adjudicates `MANUAL_REVIEW` — a named role, with its
+authority and its audit trail — after which it becomes an ordinary engineering task.
+
+---
+
+## D-34-10-07 — #286 and #110 are NARROWED, not closed
+
+**Class:** partial closure, stated precisely so neither issue is read as finished.
+
+### #286 — narrowed by 34-05
+
+**Closed:** the 375px half. Before this phase, 375px coverage was **ONE** route
+(`/dashboard`, the MOBL-01 block); the issue names eleven. 34-05 added the eleven-route
+sweep (`/dashboard`, `/shops`, `/products`, `/products/import`, `/orders`, `/orders/{id}`,
+`/customers`, `/finance`, `/marketing`, `/kitchen`, `/onboarding`) at a per-describe
+375x812 pin. Enumeration went **13 -> 24 tests per project (+11 each)**, both projects green.
+
+**Also already satisfied, by a different file:** the `/dashboard/staff` click-through, in
+`e2e/dashboard-interface-corrections.spec.ts` — **3** `vendorLogin` references and **0**
+`context.route(` calls (real auth AND real data), the zero confirmed with `searchcheck` and
+a positive control.
+
+**What REMAINS:** the mobile Playwright project is still pinned at **390x844**, not 375.
+Moving it would close #286 in one line and silently relocate every mobile spec, the
+instrument contract and every mobile perf baseline — so the viewport is pinned per-describe
+instead. **REMOVE WHEN:** someone decides whether the project default should move to 375,
+with the perf baselines re-measured in the same change.
+
+**Carried forward from 34-05 and still open** (see D-34-05-01 above): the same unfalsifiable
+overflow shape survives in `public-layout.spec.ts` at three sites and in the MOBL-01 block.
+
+### #110 — narrowed by 34-08 and 34-09
+
+**Closed: all three coverage tiers ROADMAP criterion 4 names** (`.planning/ROADMAP.md:901-903`):
+
+| Tier | Gate | Plan |
+|---|---|---|
+| Go | `scripts/check-go-coverage.sh` | 34-08 |
+| Jest | `coverageThreshold` + its consumer | 34-08 |
+| Java (JaCoCo) | `scripts/check-jacoco-coverage.sh`, floors 85/69/85/85 over the **aggregate** of both suites | 34-09 |
+
+The issue's second criterion — "Playwright runs in CI" — was already satisfied by the
+nightly job, which is what closed #420.
+
+**A note on wording, so the two documents are not read as disagreeing.** 34-09-SUMMARY:323
+says "three of the four coverage tiers"; the ROADMAP criterion names exactly **three**, all
+now closed. The fourth tier in that sentence is mcp-server, which the criterion does not
+name and which is recorded as N/A in **D-34-10-02** above rather than left implied.
+
+**What REMAINS:** the JaCoCo floors are CI-calibrated with margins of only **2.03–2.78
+points**, and the CI aggregate measured **0.10–0.56 points BELOW** this machine's. That is
+real but thin headroom. **REMOVE WHEN:** nothing — this is a standing maintenance property,
+not a deferral. If the gate goes red the answer is a test, not a smaller number.
+
+---
+
+# RUNTIME PARITY — evidence, plan 34-10 Task 3 (2026-08-29)
+
+Recorded here rather than left in a shell session, because "the delivered runtime matches
+the branch" is a claim that has to survive the run that made it.
+
+## Identity — the rebuild happened and is what is serving
+
+`docker compose -f docker-compose.full-stack.yml up -d --build` (never `start`/`restart`,
+neither of which builds, and neither of which replaces a container holding an older image).
+
+| service | image id before -> after | `.Metadata.LastTagTime` before -> after |
+|---|---|---|
+| frontend | `e42abfb8…` -> `25caad77…` | 2026-08-28 16:38:52 -> 2026-08-29 00:22:30 UTC |
+| core-java | `7ae227f7…` -> `b7ddf2c5…` | 2026-08-28 16:40:21 -> 2026-08-29 00:22:30 UTC |
+
+Both RUNNING containers hold the new ids (`jtoye-frontend` -> `25caad77…`,
+`jtoye_oaas_2026-core-java-1` -> `b7ddf2c5…`), which is the check that catches a rebuild
+that was only started.
+
+**`.Created` is NOT usable here, demonstrated rather than asserted.** Across the second
+build `.Created` stayed at `2026-08-29T01:16:50+01:00` for the frontend while
+`LastTagTime` advanced to `00:22:30 UTC` — Docker preserves `.Created` across a cached
+rebuild, which is exactly why the contract names `LastTagTime`.
+
+## Content — a value read out of each RUNNING artefact
+
+- **frontend, served bytes of the SSR route `/shop`:** **54,263 bytes**, 1 `<h1>`, 1
+  `application/ld+json` block, **28** `nonce=` attributes. `scripts/gates/ssr-routes.conf`
+  records 54,184 bytes / 5 shop-name occurrences against a live stack versus **39,438 and
+  0** with no backend — so the byte count distinguishes "the server rendered the shops"
+  from "the server rendered a shell", which a status code cannot. The 28 nonces also show
+  the `middleware.ts` CSP path alive in the running artefact (relevant to D-34-10-01).
+  Negative control: a bogus token scored **0**, so the probe can return 0.
+- **frontend, `BUILD_ID` read from the running container:** `BkRQArypQ5LEbAO7M7fTf`,
+  identical to the freshly built image's. A `next build` mints a new one each time.
+- **core-java, read from INSIDE `/app/app.jar`** (a filesystem `find` returns a misleading
+  0 — the value lives in the archive): `BOOT-INF/classes/application.yml` carries
+  `out-of-order: true`. Jar: 956 files, 171,760,537 bytes.
+- **core-java, jacoco entries in the SHIPPED jar: 0.** 34-09 added the JaCoCo plugin to
+  `core-java/build.gradle.kts`; this confirms it stayed a test-time plugin and did not
+  contaminate the runtime artefact.
+
+**An honest note on what changed.** `git diff --name-only origin/main..HEAD -- core-java/`
+returns exactly one file: `core-java/build.gradle.kts`. So core-java's *runtime* content is
+expected to be unchanged this phase — the rebuild was still required because the freshness
+gate measures build INPUTS, and the gate was genuinely red before it.
+
+## Gate verdicts, both directions where a direction exists
+
+| gate | before | after |
+|---|---|---|
+| `check-runtime-freshness.sh` | **FAIL** — "2 of 4 running built service(s) do not match the source tree (0 unverified)", naming core-java and frontend | **PASS** — 4 FRESH, 0 unverified |
+| `check-e2e-skip-budget.sh` | **VOID (rc=2)** — no report | **PASS** — 297 tests, 6 skipped, budget 6; specDigest `f13669e3…` matches the tree |
+| `check-branch-behind-base.sh` | — | **PASS** — 63 ahead, 0 behind `origin/main` |
+| `check-go-coverage.sh` | **VOID (rc=2)** — profile absent ("an absent profile is not 0% coverage") | **PASS** — 66.8% >= 65.0%, 311 blocks |
+
+Full suite, verdict read FROM the report with `jq` and not from the runner's exit code:
+**total=297 passed=291 failed=0 skipped=6**. The 6 attribute to
+`stomp-relay.spec.ts` (4 = 2 tests x 2 projects, #304) and `vendor-refund-flow.spec.ts`
+(2 = 1 test x 2 projects, #61) — the declared set exactly, with
+`onboarding-blocked-flow.spec.ts` NOT among them, which is 34-06's removal of the false
+exemption vindicated on a real run.
+
+`check-alert-metrics.sh` was predicted red-then-green across `scripts/seed-order-metric.sh`.
+**It was green (rc=0) first time and the remedy was never run** — the full E2E suite had
+just placed real orders, so the counter the gate reads was already non-zero. Recorded as a
+prediction that did not fire, rather than reported as a remedy that was applied.
+
+---
+
+## D-34-10-08 — `infra/db/init/00-create-db.sql` cannot provision a FRESH volume (OUT OF SCOPE, found here)
+
+**Class:** pre-existing defect in a file outside this plan's `files_modified`, found because
+this plan needed a fresh stack. Same class as the V64 finding already recorded in CLAUDE.md:
+*"A provisioning step only a human can perform is not provisioning."*
+
+**Measured, on a genuinely fresh volume** (`docker compose down -v` then `up -d`):
+
+```
+core-java: FATAL: password authentication failed for user "jtoye_app"   (SQL state 28P01)
+           Flyway -> Unable to obtain connection from database
+           container state: Restarting (1) — crash-looping, zero migrations applied
+```
+
+**Root cause, read out of the two sources rather than guessed.**
+`infra/db/init/00-create-db.sql:44` creates the role with `DB_PASSWORD`:
+
+```
+SELECT format('CREATE ROLE jtoye_app LOGIN PASSWORD %L', :'app_password')   -- app_password = DB_PASSWORD
+```
+
+but since the SEC-04/#552 runtime-migrator split, `DB_MIGRATION_USER=jtoye_app` and Flyway
+authenticates with **`DB_MIGRATION_PASSWORD`** — the same file says so at :56. When those
+two credentials differ the role is created with a password Flyway does not know. Compared
+by **digest only**, never by value: `DB_PASSWORD` `04897cf11fda…` vs
+`DB_MIGRATION_PASSWORD` `0bdf45585f5a…` — **different**. The script's own comment at :42-43
+("core-java connects as jtoye_app with DB_PASSWORD") is stale: `DB_USER` is now
+`jtoye_runtime`.
+
+**Why it was invisible until now.** The long-lived local volume predates the split, so its
+`jtoye_app` already carried a working password; only destroying the volume exposes it. CI is
+unaffected wherever the two variables are generated equal.
+
+**Unblocked WITHOUT changing any committed file:** `ALTER ROLE jtoye_app PASSWORD` to the
+migration credential, which preserves the split's intent (the migrator keeps a credential
+distinct from the runtime role's). Verified BY FUNCTION — authenticating as `jtoye_app` —
+not by the ALTER's exit code, then core-java reached `healthy` and Flyway applied V1..V64.
+
+**REMOVE WHEN:** `00-create-db.sql:44` creates `jtoye_app` with `DB_MIGRATION_PASSWORD`
+(falling back to `DB_PASSWORD` only when unset, so single-credential setups keep working),
+its stale :42-43 comment is corrected, and the fix is proven on a `down -v` cycle where the
+two credentials deliberately DIFFER — the arm this defect needs, and the one nobody has run.
