@@ -495,11 +495,19 @@ export function ShopDetailClient({
       {/* Hero banner */}
       <div className="relative h-48 sm:h-64 bg-gradient-to-br from-amber-300 via-amber-500 to-oxblood-600">
         {shop.bannerUrl && (
+          // FE-2: the banner is the storefront's LCP candidate (largest
+          // above-the-fold image, full-bleed at h-48/h-64). `loading="eager"`
+          // already stopped it being lazy-loaded; `fetchPriority="high"`
+          // additionally tells the browser's PRELOAD SCANNER to fetch it
+          // before other same-priority resources, which lazy alone does not
+          // do. Additive and safe — no layout/behaviour change, and it is
+          // the only image on this page marked "high".
           <SafeImage
             src={shop.bannerUrl}
             alt={`${shop.name} banner`}
             className="absolute inset-0 w-full h-full object-cover"
             loading="eager"
+            fetchPriority="high"
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
