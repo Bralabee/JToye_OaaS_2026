@@ -89,6 +89,20 @@ describe("PENDING badge contrast — the shipped source (F3 / A11Y-1)", () => {
     }
   })
 
+  // A11Y-10 remnant (caught by the independent browser verifier): the DRAFT->
+  // PENDING "Submit" transition button on orders/page.tsx shipped white text on
+  // `bg-yellow-600` (2.94:1) — the one-step-insufficient shade the ratio math
+  // above proves still fails AA. The original F3 pass only forbade -500, so -600
+  // slipped through as a solid-fill action button (which axe's stack-free scan
+  // couldn't see because the button only renders for DRAFT orders). Forbid -600
+  // as a white-text fill on these sites too.
+  it("no PENDING site ships the one-step-insufficient bg-yellow-600 as a white-text fill", () => {
+    for (const file of PENDING_SITES) {
+      const source = fs.readFileSync(path.join(FRONTEND_ROOT, file), "utf8")
+      expect(source).not.toMatch(/bg-yellow-600/)
+    }
+  })
+
   it("every PENDING site ships the AA-passing bg-yellow-700 token instead", () => {
     for (const file of PENDING_SITES) {
       const source = fs.readFileSync(path.join(FRONTEND_ROOT, file), "utf8")

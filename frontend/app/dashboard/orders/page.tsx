@@ -162,7 +162,9 @@ const getAvailableTransitions = (
         endpoint: "submit",
         nextStatus: "PENDING",
         icon: ArrowRight,
-        color: "bg-yellow-600 hover:bg-yellow-700",
+        // A11Y-10: white text needs bg-yellow-700 (4.92:1) to clear WCAG AA;
+        // -600 (2.94:1) fails. Hover deepens to -800 to keep a visible delta.
+        color: "bg-yellow-700 hover:bg-yellow-800",
       },
     ],
     PENDING: [
