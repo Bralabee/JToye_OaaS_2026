@@ -533,6 +533,46 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000
 
+      # Phase 35 horizontal layout contract — THE MARKETING TIER ONLY.
+      #
+      # WHAT THIS COVERS, AND WHAT IT DEMONSTRABLY DOES NOT. The spec asserts
+      # four tiers; this step runs one of them. The `@stack-free` filter selects
+      # the Marketing describes, which stub the public API and need nothing but
+      # the frontend already built and started above. The Shell, Index and
+      # Detail tiers each require a Keycloak vendor login against a live stack,
+      # which this job does not have and must not acquire — the moment it needs
+      # a backend it stops running on every pull request, and the blind spot the
+      # whole job exists to close comes back.
+      #
+      # SO THOSE THREE TIERS ARE **COVERED BY A SPEC THAT NO CURRENT TREE
+      # EXECUTES.** Their only instrument is the full-suite nightly lane, and
+      # issue #683 is OPEN: that lane is failing, so while it is red no merge
+      # has full-suite evidence on any tree. Do NOT restate this as "covered
+      # nightly" — CONTEXT.md section 5 fixes the wording above as the
+      # authoritative one. "Covered nightly" tells the next reader an instrument
+      # is watching those tiers and they will act on that; the true state is
+      # that the assertions exist, are correct, and run nowhere. Same root cause
+      # as #686, whose skip-budget gate is wired only into that same dark lane.
+      #
+      # A SEPARATE STEP, NOT AN EXTRA SPEC ON THE COMMAND ABOVE. Two reasons and
+      # the second is the load-bearing one: the two gates' failures stay
+      # distinguishable in the run log, and the tag filter must apply to THIS
+      # spec only — folding it in would apply `--grep` to the layout and
+      # accessibility specs as well and silently drop most of what they assert.
+      #
+      # POSITIVE `--grep`, NEVER `--grep-invert`. Both projects in
+      # playwright.config.ts already set their own `grepInvert` (`@desktop-only`
+      # / `@mobile-only`); overriding that from the command line would replace
+      # it, enumerating desktop-only blocks under the mobile project. That would
+      # look like it worked and would quietly widen what the mobile project
+      # runs.
+      - name: Run layout width contract — Marketing tier (stack-free half)
+        if: github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true'
+        run: npx playwright test e2e/layout-width-contract.spec.ts --grep "@stack-free"
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v7
