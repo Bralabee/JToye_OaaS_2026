@@ -1,5 +1,15 @@
 import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
+// RELATIVE, and it has to be. Tailwind reads this TypeScript config through
+// jiti, which does not apply tsconfig compilerOptions.paths — so the `@/` alias
+// throws "Cannot find module" here while resolving perfectly everywhere else in
+// the app. Measured both directions (phase 35, plan 01, ARM B). This is the
+// first repo-local import any config file in this repository has carried, so
+// without this note the relative form reads as an oversight rather than a
+// requirement. Note also that a `tsc` type-check CANNOT catch a regression
+// here: jiti resolution happens at PostCSS init, which tsc never reaches. Only
+// a real build does.
+import { LAYOUT_WIDTHS } from "./lib/layout-widths";
 
 const config: Config = {
   // Gate every `hover:` utility behind `@media (hover: hover)` (#503).
@@ -27,15 +37,27 @@ const config: Config = {
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+  // The stock shadcn `container` scaffold used to sit here, capping every
+  // dashboard surface at 1400px. It is gone, and `corePlugins` below is what
+  // makes that removal real — see the note there.
   theme: {
-    container: {
-      center: true,
-      padding: "2rem",
-      screens: {
-        "2xl": "1400px",
-      },
-    },
     extend: {
+      // The declared horizontal layout contract (phase 35). Values come from
+      // lib/layout-widths.ts and are never restated here: a number typed into
+      // this file could drift from the module that the app and the Playwright
+      // contract spec both read, which is precisely the failure the single
+      // declaration exists to prevent. The drift check in
+      // lib/__tests__/layout-widths-css.test.ts compares the emitted CSS back
+      // against the module and has a recorded fail arm.
+      //
+      // Three keys, and no `index` key on purpose: the Index tier means "no cap
+      // below the Shell cap", so it has nothing to generate. Each key yields one
+      // unconditional max-width utility with NO media query attached, which is
+      // what makes the caps inert on mobile by construction rather than by
+      // assertion.
+      maxWidth: {
+        ...LAYOUT_WIDTHS,
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -101,6 +123,26 @@ const config: Config = {
         "accordion-up": "accordion-up 0.2s ease-out",
       },
     },
+  },
+  // DELETING THE THEME BLOCK ABOVE IS NOT ENOUGH, and this is the whole reason
+  // this key exists. Measured on this tree: with `theme.container` removed but
+  // the core plugin left on, the plugin falls back to the DEFAULT screens and
+  // emits five media queries — one per breakpoint, each capping at its own
+  // breakpoint value — instead of the single 1400px query the tree had before.
+  // That is strictly worse than the state being replaced, and it happens
+  // silently, because the class keeps working and simply caps somewhere else.
+  //
+  // The plugin also cannot express this phase's contract even if it were kept:
+  // its selector is a hardcoded `.container` (one class for the whole app, and
+  // four tiers are needed) and it forces each cap to EQUAL the breakpoint that
+  // activates it, so "cap at 1700 starting from 1280" is not sayable. Both
+  // properties were read out of the installed plugin source.
+  //
+  // So the utility is retired by switching the plugin off. The CSS test asserts
+  // zero container rules are emitted even with the class name in the scanned
+  // content, and that assertion has a recorded fail arm.
+  corePlugins: {
+    container: false,
   },
   plugins: [tailwindcssAnimate],
 };
