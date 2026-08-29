@@ -136,11 +136,15 @@ async function renderLoadedBranch(): Promise<Element> {
   return container.firstElementChild as Element
 }
 
-const BRANCHES: Array<[string, () => Element | Promise<Element>]> = [
-  ["loading", renderLoadingBranch],
-  ["error", renderErrorBranch],
-  ["loaded", renderLoadedBranch],
-]
+// NO `describe.each` ANYWHERE IN THIS FILE, and the reason is a gate rather than
+// a style preference. `scripts/count-test-blocks.mjs` — the source half of the
+// docs-metrics loop — VOIDs (rc=2) on `describe.each`, because it multiplies
+// every block inside it and the count cannot be resolved statically. It says so
+// by name and refuses to guess, which is the behaviour we want; the cost is that
+// a table-driven describe here would leave that gate unable to answer at all.
+// The blocks below are therefore written out one per branch. `it.each` over an
+// ARRAY LITERAL is supported by that counter, but a variable table is not, so
+// the preserved-class ledgers are single blocks asserting an array.
 
 describe("Order detail — the Detail tier on EVERY page-level render branch", () => {
   beforeEach(() => {
@@ -181,25 +185,63 @@ describe("Order detail — the Detail tier on EVERY page-level render branch", (
 
   // --- The declaration, per branch -------------------------------------------
 
-  describe.each(BRANCHES)("the %s branch", (name, driver) => {
+  describe("the LOADING branch", () => {
+    it("declares the detail width tier", () => {
+      expect(declarationOf(renderLoadingBranch()).tier).toBe("detail")
+    })
+
+    it("carries the detail max-width utility from the tier vocabulary", () => {
+      expect(renderLoadingBranch().classList.contains(WIDTH_TIER_CLASS.detail)).toBe(true)
+    })
+
+    it("centres inside the wider Shell band", () => {
+      expect(renderLoadingBranch().classList.contains("mx-auto")).toBe(true)
+    })
+
+    it("carries exactly ONE max-width class", () => {
+      expect(declarationOf(renderLoadingBranch()).maxWidthClasses).toEqual([
+        WIDTH_TIER_CLASS.detail,
+      ])
+    })
+  })
+
+  describe("the ERROR branch", () => {
     it("declares the detail width tier", async () => {
-      const root = await driver()
-      expect(declarationOf(root).tier).toBe("detail")
+      expect(declarationOf(await renderErrorBranch()).tier).toBe("detail")
     })
 
     it("carries the detail max-width utility from the tier vocabulary", async () => {
-      const root = await driver()
-      expect(root.classList.contains(WIDTH_TIER_CLASS.detail)).toBe(true)
+      expect((await renderErrorBranch()).classList.contains(WIDTH_TIER_CLASS.detail)).toBe(true)
     })
 
     it("centres inside the wider Shell band", async () => {
-      const root = await driver()
-      expect(root.classList.contains("mx-auto")).toBe(true)
+      expect((await renderErrorBranch()).classList.contains("mx-auto")).toBe(true)
     })
 
     it("carries exactly ONE max-width class", async () => {
-      const root = await driver()
-      expect(declarationOf(root).maxWidthClasses).toEqual([WIDTH_TIER_CLASS.detail])
+      expect(declarationOf(await renderErrorBranch()).maxWidthClasses).toEqual([
+        WIDTH_TIER_CLASS.detail,
+      ])
+    })
+  })
+
+  describe("the LOADED branch", () => {
+    it("declares the detail width tier", async () => {
+      expect(declarationOf(await renderLoadedBranch()).tier).toBe("detail")
+    })
+
+    it("carries the detail max-width utility from the tier vocabulary", async () => {
+      expect((await renderLoadedBranch()).classList.contains(WIDTH_TIER_CLASS.detail)).toBe(true)
+    })
+
+    it("centres inside the wider Shell band", async () => {
+      expect((await renderLoadedBranch()).classList.contains("mx-auto")).toBe(true)
+    })
+
+    it("carries exactly ONE max-width class", async () => {
+      expect(declarationOf(await renderLoadedBranch()).maxWidthClasses).toEqual([
+        WIDTH_TIER_CLASS.detail,
+      ])
     })
   })
 
@@ -219,16 +261,21 @@ describe("Order detail — the Detail tier on EVERY page-level render branch", (
 
   // --- The displaced goods: what the tier edit must NOT take away ------------
 
-  const PRESERVED: Array<[string, () => Element | Promise<Element>, string[]]> = [
-    ["loading", renderLoadingBranch, ["flex", "h-full", "items-center", "justify-center", "p-12"]],
-    ["error", renderErrorBranch, ["space-y-4", "p-6"]],
-    ["loaded", renderLoadedBranch, ["space-y-4", "p-6"]],
-  ]
+  it("the LOADING branch keeps every rhythm class it already had", () => {
+    expect(Array.from(renderLoadingBranch().classList)).toEqual(
+      expect.arrayContaining(["flex", "h-full", "items-center", "justify-center", "p-12"])
+    )
+  })
 
-  describe.each(PRESERVED)("the %s branch keeps its existing rhythm", (name, driver, classes) => {
-    it.each(classes)("still carries %s", async (cls) => {
-      const root = await driver()
-      expect(root.classList.contains(cls)).toBe(true)
-    })
+  it("the ERROR branch keeps every rhythm class it already had", async () => {
+    expect(Array.from((await renderErrorBranch()).classList)).toEqual(
+      expect.arrayContaining(["space-y-4", "p-6"])
+    )
+  })
+
+  it("the LOADED branch keeps every rhythm class it already had", async () => {
+    expect(Array.from((await renderLoadedBranch()).classList)).toEqual(
+      expect.arrayContaining(["space-y-4", "p-6"])
+    )
   })
 })

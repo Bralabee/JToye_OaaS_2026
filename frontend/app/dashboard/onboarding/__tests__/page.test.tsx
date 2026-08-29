@@ -626,11 +626,13 @@ describe("Onboarding — the Detail tier on EVERY page-level render branch (35-0
     return container.firstElementChild as Element
   }
 
-  const BRANCHES: Array<[string, () => Element | Promise<Element>]> = [
-    ["loading", renderLoadingBranch],
-    ["create-form", renderCreateFormBranch],
-    ["loaded", renderLoadedBranch],
-  ]
+  // NO `describe.each` in this block, and the reason is a gate rather than a
+  // style preference: `scripts/count-test-blocks.mjs` VOIDs (rc=2) on
+  // `describe.each`, because it multiplies every block inside it and the count
+  // cannot be resolved statically. It names the file and line and refuses to
+  // guess, which is the behaviour we want — the cost is that a table-driven
+  // describe here would leave the source half of the docs-metrics loop unable to
+  // answer at all. Blocks are therefore written out one per branch.
 
   describe("CONTROL — the instrument can fail", () => {
     it("counts two max-width classes when an element carries two", () => {
@@ -649,21 +651,65 @@ describe("Onboarding — the Detail tier on EVERY page-level render branch (35-0
     })
   })
 
-  describe.each(BRANCHES)("the %s branch", (name, driver) => {
+  describe("the LOADING branch", () => {
+    it("declares the detail width tier", () => {
+      expect(declarationOf(renderLoadingBranch()).tier).toBe("detail")
+    })
+
+    it("carries the detail max-width utility from the tier vocabulary", () => {
+      expect(renderLoadingBranch().classList.contains(WIDTH_TIER_CLASS.detail)).toBe(true)
+    })
+
+    it("centres inside the wider Shell band", () => {
+      expect(renderLoadingBranch().classList.contains("mx-auto")).toBe(true)
+    })
+
+    it("carries exactly ONE max-width class", () => {
+      expect(declarationOf(renderLoadingBranch()).maxWidthClasses).toEqual([
+        WIDTH_TIER_CLASS.detail,
+      ])
+    })
+  })
+
+  describe("the CREATE-FORM branch", () => {
     it("declares the detail width tier", async () => {
-      expect(declarationOf(await driver()).tier).toBe("detail")
+      expect(declarationOf(await renderCreateFormBranch()).tier).toBe("detail")
     })
 
     it("carries the detail max-width utility from the tier vocabulary", async () => {
-      expect((await driver()).classList.contains(WIDTH_TIER_CLASS.detail)).toBe(true)
+      expect((await renderCreateFormBranch()).classList.contains(WIDTH_TIER_CLASS.detail)).toBe(
+        true
+      )
     })
 
     it("centres inside the wider Shell band", async () => {
-      expect((await driver()).classList.contains("mx-auto")).toBe(true)
+      expect((await renderCreateFormBranch()).classList.contains("mx-auto")).toBe(true)
     })
 
     it("carries exactly ONE max-width class", async () => {
-      expect(declarationOf(await driver()).maxWidthClasses).toEqual([WIDTH_TIER_CLASS.detail])
+      expect(declarationOf(await renderCreateFormBranch()).maxWidthClasses).toEqual([
+        WIDTH_TIER_CLASS.detail,
+      ])
+    })
+  })
+
+  describe("the LOADED branch", () => {
+    it("declares the detail width tier", async () => {
+      expect(declarationOf(await renderLoadedBranch()).tier).toBe("detail")
+    })
+
+    it("carries the detail max-width utility from the tier vocabulary", async () => {
+      expect((await renderLoadedBranch()).classList.contains(WIDTH_TIER_CLASS.detail)).toBe(true)
+    })
+
+    it("centres inside the wider Shell band", async () => {
+      expect((await renderLoadedBranch()).classList.contains("mx-auto")).toBe(true)
+    })
+
+    it("carries exactly ONE max-width class", async () => {
+      expect(declarationOf(await renderLoadedBranch()).maxWidthClasses).toEqual([
+        WIDTH_TIER_CLASS.detail,
+      ])
     })
   })
 
@@ -679,15 +725,21 @@ describe("Onboarding — the Detail tier on EVERY page-level render branch (35-0
     expect(createForm).toEqual(loaded)
   })
 
-  const PRESERVED: Array<[string, () => Element | Promise<Element>, string[]]> = [
-    ["loading", renderLoadingBranch, ["flex", "h-full", "items-center", "justify-center"]],
-    ["create-form", renderCreateFormBranch, ["space-y-6"]],
-    ["loaded", renderLoadedBranch, ["space-y-6"]],
-  ]
+  it("the LOADING branch keeps every rhythm class it already had", () => {
+    expect(Array.from(renderLoadingBranch().classList)).toEqual(
+      expect.arrayContaining(["flex", "h-full", "items-center", "justify-center"])
+    )
+  })
 
-  describe.each(PRESERVED)("the %s branch keeps its existing rhythm", (name, driver, classes) => {
-    it.each(classes)("still carries %s", async (cls) => {
-      expect((await driver()).classList.contains(cls)).toBe(true)
-    })
+  it("the CREATE-FORM branch keeps every rhythm class it already had", async () => {
+    expect(Array.from((await renderCreateFormBranch()).classList)).toEqual(
+      expect.arrayContaining(["space-y-6"])
+    )
+  })
+
+  it("the LOADED branch keeps every rhythm class it already had", async () => {
+    expect(Array.from((await renderLoadedBranch()).classList)).toEqual(
+      expect.arrayContaining(["space-y-6"])
+    )
   })
 })
