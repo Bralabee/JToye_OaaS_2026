@@ -1,0 +1,125 @@
+# Phase 35 — deferred / out-of-scope discoveries
+
+Items found during execution that lie OUTSIDE the finding plan's declared file set.
+Logged rather than fixed, per the executor scope boundary. One section per finding.
+
+---
+
+## D-35-07-a — `docs-freshness.sh` is VOID (rc=2), not merely stale
+
+**Found by:** plan 35-07, during its closing gates (2026-08-29)
+**Owner of the offending file:** plan **35-05**
+**Owner of the remediation:** plan **35-11** (it owns `docs/metrics.json` and both docs gates)
+
+`scripts/docs-freshness.sh` currently exits **2 (VOID)**, not 1 (drift):
+
+```
+ERROR: count-test-blocks.mjs could not count family 'jest' (rc=2):
+VOID: frontend/app/dashboard/onboarding/__tests__/page.test.tsx:652:
+      describe.each multiplies every block inside it; this counter cannot
+      resolve that statically
+      Treat this as UNVERIFIED, not as a pass. Extend the counter's POLICY.
+```
+
+Introduced by commit `5f9e39b4` — *test(35-05): assert the Detail tier on all three
+onboarding branches (RED)* — which added a `describe.each(BRANCHES)` block. The file is
+`frontend/app/dashboard/onboarding/__tests__/page.test.tsx`, in plan 35-05's file set and
+in no other.
+
+**Why this matters and is not cosmetic.** The counter is failing CLOSED, exactly as
+designed: it refuses to report a number it cannot derive statically. The consequence is
+that **no plan in this wave can measure its own Jest-block drift** until the counter's
+policy is extended or the `describe.each` is rewritten. A reader must not translate this
+into "no drift" — the correct reading is *unmeasured*.
+
+**What 35-11 needs to know.** 35-11 Task 2's action text enumerates the plans that add
+Jest blocks as "35-01, 35-02, 35-05, 35-08 and 35-09". That list is **incomplete**:
+plan **35-07 adds 20 Jest blocks** (measured: the `components/marketing` + `app/shop`
+scope moved 126 → 146 tests), across
+`components/marketing/__tests__/{operator-pitch,business-model-guide,competitive-teardown}.test.tsx`
+and `app/shop/__tests__/shop-discovery-client.test.tsx`. 35-06 also appears to add blocks.
+Regenerate with `scripts/docs-freshness.sh --write`, never arithmetically — and note the
+regeneration cannot even run until the VOID above is cleared.
+
+**Not fixed here because:** the offending file belongs to another plan running
+concurrently in the same working tree, and `docs/metrics.json`, `README.md`, `CLAUDE.md`
+and `AGENTS.md` are all in plan 35-11's declared file set. Editing any of them from 35-07
+would break the wave's zero-overlap property.
+
+### Confirmed independently by plan 35-06, with its own block count
+
+35-06 reproduced this VOID at its own closing gates (2026-08-29) and attributed it to the
+same commit `5f9e39b4` by content (`describe.each` at
+`frontend/app/dashboard/onboarding/__tests__/page.test.tsx:652` and `:688`) and by
+`git log` on that path, rather than by inference.
+
+35-07's guess above is correct: **35-06 adds 17 Jest blocks.** Measured against the parent
+of 35-06's first commit (`6dd5ec2b`), counting literal block openings per file:
+
+| File | before | after | delta |
+|---|---|---|---|
+| `frontend/app/__tests__/landing.test.tsx` | 9 | 16 | **+7** |
+| `frontend/components/public/__tests__/public-header.test.tsx` | 6 | 11 | **+5** |
+| `frontend/components/public/__tests__/public-footer-legal.test.tsx` | 10 | 15 | **+5** |
+
+All 17 are plain `it(` blocks — 35-06 added no `it.each` and no `describe.each` — so the
+declaration-site count and the executed count agree at 17, and neither of the repo's two
+counters needs to resolve a table for them.
+
+---
+
+## D-35-06-a — `/legal/**` sits at 1152px and no tier in the contract claims it
+
+**Found by:** plan 35-06, while proving the shed token was gone from `app/page.tsx` (2026-08-29)
+**Owner of the offending file:** none in this phase
+**Owner of the remediation:** unassigned — raise at the **35-13** owner gate
+
+After 35-06 migrated the four landing bands, `rg -uu -n 'max-w-6xl' app components` returns
+exactly one remaining hit in shipped source:
+
+```
+components/legal/policy-page.tsx:112:  <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
+```
+
+That component renders all five published policy pages (`/legal`, `/legal/privacy`,
+`/legal/cookies`, `/legal/retention`, `/legal/accessibility`) — **public, indexable
+surfaces**, all inside the same `PublicShell` whose header and footer rails now declare the
+Marketing tier at 1280px. So those five pages now carry the exact defect ORCH-04 was raised
+to fix on `/`: content inset 128px from its own chrome.
+
+**Not fixed here because:** `components/legal/policy-page.tsx` is outside 35-06's declared
+file set and outside every other plan's in this phase (checked against all twelve
+`files_modified` blocks). CONTEXT.md section 4's tier table names the Marketing tier as
+applying to "landing, for-operators, business-model-guide" and does not mention `/legal`,
+so assigning it a tier is a **contract decision, not an executor fix** — and a prose page at
+`max-w-[68ch]`-adjacent widths may well be deliberate. Recorded so the decision is taken
+explicitly rather than by the surface being forgotten.
+
+Note the two readings are genuinely different and both are defensible: 1152px may be the
+right *reading* width for a policy page, in which case the correct outcome is a declared
+tier that happens to be narrower — not silence.
+
+---
+
+## D-35-06-b — the landing's desktop CLS could rise on area alone, for 35-09
+
+**Found by:** plan 35-06 (2026-08-29)
+**Owner of the remediation:** plan **35-09** (it owns the ORCH-02 desktop CLS arm)
+
+Not a defect and not deferred work — a specific, mechanical risk 35-09's arm should be
+shaped to catch, recorded here so it is not rediscovered by accident.
+
+`e2e/perf-budgets.ts:49-56` records the single CLS shift on `/` as firing at ~1516 ms with
+its `sources` being **hero elements** — the search form, the category chips, the paragraph
+and both persona doors. Every one of those sits inside the hero band 35-06 just widened
+from 1152px to 1280px.
+
+CLS is **area-weighted**: the impact fraction is the union of the shifting region's visible
+area before and after, over the viewport area. A hero region that is ~11% wider therefore
+produces a ~11% larger impact fraction for an *identical* vertical displacement. The
+distance factor is unchanged; the impact factor is not.
+
+This cannot show at mobile — `.max-w-marketing{max-width:1280px}` is emitted with no media
+query (verified against the generated stylesheet), so it cannot bind against a 375px or
+390px parent, and the recorded 0.1793 baseline was measured at 375px. **Desktop is the only
+place this can appear, and nothing in the repo measured desktop CLS on `/` before 35-09.**
