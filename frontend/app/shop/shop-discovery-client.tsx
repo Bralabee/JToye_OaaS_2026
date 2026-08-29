@@ -494,7 +494,10 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
         // never off `shops.length`, which is exactly how this used to read as
         // "No kitchens found".
         <div className="text-center py-16" role="alert" data-testid="discovery-load-error">
-          <AlertCircle className="mx-auto h-10 w-10 text-red-400" />
+          {/* text-red-700, not -400: this is a scanned SCAN_ROOTS surface
+              (contrast-literals.test.ts) — -400 is 2.77:1 on white, -700 is
+              6.47:1 on white / 6.02:1 on cream, clearing AA on both. */}
+          <AlertCircle className="mx-auto h-10 w-10 text-red-700" />
           <h2 className="mt-4 text-base font-semibold text-oxblood">
             Couldn&apos;t load kitchens
           </h2>
