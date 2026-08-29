@@ -873,7 +873,7 @@ Plans:
 recorded UI traps: a screenshot cannot verify motion, and a screenshot taken without scrolling reads
 scroll-reveal content as empty bands.
 
-### Phase 34: Rendering + Test Truthfulness
+### Phase 34: Rendering + Test Truthfulness ✅ (completed 2026-08-29 — 10/10 plans, VERIFICATION passed 5/5)
 
 **Goal**: The test suite stops reporting on surfaces it does not exercise, and pages stop fetching
 on mount where the server could have rendered them. Grouped because they share one root cause.
