@@ -28,7 +28,10 @@
  * directory (`app/dashboard/orders/__tests__/`) is owned concurrently by plan
  * 35-03, and neither of its two suites mounts this route.
  */
-import { render, screen, waitFor, within } from "@testing-library/react"
+// `screen` is deliberately not imported: every query below is scoped with
+// `within(container)`, because the parity cases render two branches in the same
+// test and a document-wide query would match across both.
+import { render, waitFor, within } from "@testing-library/react"
 import { useParams } from "next/navigation"
 import OrderDetailPage from "../page"
 import apiClient from "@/lib/api-client"
