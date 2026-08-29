@@ -252,9 +252,31 @@ export default function OnboardingApprovalsPage() {
 
   // --- Render: loading / access denied ----------------------------------------
 
+  /*
+   * WIDTH TIER — Index, and this is the PHASE'S LOWEST-CONFIDENCE tier call.
+   * Flagged for the human-verification pass in plan 35-13; if it looks wrong on a
+   * real screen, this is the surface to change.
+   *
+   * PATTERNS A-8. The case genuinely cuts both ways. It is a QUEUE, which is the
+   * resource-index case by name — but each entry is a review card carrying
+   * narrative gate reasons, and prose wants a reading measure, not columns.
+   *
+   * Index is chosen deliberately rather than arrived at. The honest reason is
+   * recorded rather than dressed up: the reading tier is the only dashboard tier
+   * that would need a new wrapper element here, and a silent default would have
+   * shipped this page as Index regardless — so choosing Index explicitly is the
+   * truthful version of the same outcome, and it leaves a marker a later reader
+   * can find and argue with instead of a silence they cannot.
+   *
+   * The tier is written into the DOM as a declaration rather than left as the
+   * absence of a cap, because "uncapped" and "someone forgot to cap it" render
+   * identically and no assertion can tell them apart — ORCH-03 (orchestrator
+   * decision, 2026-08-29). It is declared on EVERY render branch below, not just
+   * the loaded one: a branch without it is an undeclared first paint.
+   */
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div data-width-tier="index" className="flex h-full items-center justify-center">
         <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600" />
       </div>
     )
@@ -262,7 +284,7 @@ export default function OnboardingApprovalsPage() {
 
   if (forbidden) {
     return (
-      <div className="space-y-6">
+      <div data-width-tier="index" className="space-y-6">
         <Header />
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
@@ -282,7 +304,7 @@ export default function OnboardingApprovalsPage() {
   const nothingWaiting = applications.length === 0 && reviews.length === 0
 
   return (
-    <div className="space-y-8">
+    <div data-width-tier="index" className="space-y-8">
       <Header />
 
       {/* Manual-review queue (ONBD-03): VERIFYING + MANUAL_REVIEW applications an

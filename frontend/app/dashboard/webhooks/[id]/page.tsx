@@ -224,9 +224,41 @@ export default function WebhookDetailPage() {
     setPage(0)
   }
 
+  /*
+   * WIDTH TIER — Index. READ THIS BEFORE "CORRECTING" IT.
+   *
+   * This is a bracketed `[id]` DETAIL route, and it deliberately does NOT take
+   * the same tier as the other bracketed routes in the dashboard. That looks like
+   * an inconsistency and is not one. It is PATTERNS A-3, and it is the single
+   * case in phase 35 that proves a width tier must be DECLARED rather than
+   * inferred from a route's shape — because inferring it from the route gets this
+   * page wrong.
+   *
+   * The reason anyone opens this page is the DELIVERY LOG: a wide, multi-column,
+   * timestamp-heavy table (event id, event type, status, attempts, HTTP status,
+   * last error, next attempt, actions) that already carries its own horizontal
+   * scroll region. The subscription summary card above it is a header, not the
+   * content. Narrowing this page to the reading width would make its log table
+   * scroll MORE than it does at today's 1400px band — a strict regression on the
+   * page's primary job, dressed up as a consistency fix.
+   *
+   * So: tier by what the page HOLDS, not by what its route looks like.
+   *
+   * The tier is written into the DOM as a declaration rather than left as the
+   * absence of a cap, because "uncapped" and "someone forgot to cap it" render
+   * identically and no assertion can tell them apart — ORCH-03 (orchestrator
+   * decision, 2026-08-29). All three render branches declare it; a branch without
+   * it is an undeclared first paint.
+   *
+   * The value here is the one in the phase that would survive longest if it were
+   * wrong — both tiers render plausibly on this page — so it is the value whose
+   * fail direction plan 35-04 armed and recorded, and it is asserted in
+   * `../__tests__/delivery-log.test.tsx` both positively and against the tier a
+   * route-shape correction would reach for.
+   */
   if (loadingSub) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div data-width-tier="index" className="flex h-full items-center justify-center">
         <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-orange-500" />
       </div>
     )
@@ -234,7 +266,7 @@ export default function WebhookDetailPage() {
 
   if (subError || !subscription) {
     return (
-      <div className="space-y-6">
+      <div data-width-tier="index" className="space-y-6">
         <Link
           href="/dashboard/webhooks"
           className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
@@ -254,7 +286,7 @@ export default function WebhookDetailPage() {
   const resume = subscription.status !== "ACTIVE"
 
   return (
-    <div className="space-y-6">
+    <div data-width-tier="index" className="space-y-6">
       <Link
         href="/dashboard/webhooks"
         className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
