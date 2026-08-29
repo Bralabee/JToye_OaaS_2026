@@ -400,3 +400,118 @@ name and which is recorded as N/A in **D-34-10-02** above rather than left impli
 points**, and the CI aggregate measured **0.10–0.56 points BELOW** this machine's. That is
 real but thin headroom. **REMOVE WHEN:** nothing — this is a standing maintenance property,
 not a deferral. If the gate goes red the answer is a test, not a smaller number.
+
+---
+
+# RUNTIME PARITY — evidence, plan 34-10 Task 3 (2026-08-29)
+
+Recorded here rather than left in a shell session, because "the delivered runtime matches
+the branch" is a claim that has to survive the run that made it.
+
+## Identity — the rebuild happened and is what is serving
+
+`docker compose -f docker-compose.full-stack.yml up -d --build` (never `start`/`restart`,
+neither of which builds, and neither of which replaces a container holding an older image).
+
+| service | image id before -> after | `.Metadata.LastTagTime` before -> after |
+|---|---|---|
+| frontend | `e42abfb8…` -> `25caad77…` | 2026-08-28 16:38:52 -> 2026-08-29 00:22:30 UTC |
+| core-java | `7ae227f7…` -> `b7ddf2c5…` | 2026-08-28 16:40:21 -> 2026-08-29 00:22:30 UTC |
+
+Both RUNNING containers hold the new ids (`jtoye-frontend` -> `25caad77…`,
+`jtoye_oaas_2026-core-java-1` -> `b7ddf2c5…`), which is the check that catches a rebuild
+that was only started.
+
+**`.Created` is NOT usable here, demonstrated rather than asserted.** Across the second
+build `.Created` stayed at `2026-08-29T01:16:50+01:00` for the frontend while
+`LastTagTime` advanced to `00:22:30 UTC` — Docker preserves `.Created` across a cached
+rebuild, which is exactly why the contract names `LastTagTime`.
+
+## Content — a value read out of each RUNNING artefact
+
+- **frontend, served bytes of the SSR route `/shop`:** **54,263 bytes**, 1 `<h1>`, 1
+  `application/ld+json` block, **28** `nonce=` attributes. `scripts/gates/ssr-routes.conf`
+  records 54,184 bytes / 5 shop-name occurrences against a live stack versus **39,438 and
+  0** with no backend — so the byte count distinguishes "the server rendered the shops"
+  from "the server rendered a shell", which a status code cannot. The 28 nonces also show
+  the `middleware.ts` CSP path alive in the running artefact (relevant to D-34-10-01).
+  Negative control: a bogus token scored **0**, so the probe can return 0.
+- **frontend, `BUILD_ID` read from the running container:** `BkRQArypQ5LEbAO7M7fTf`,
+  identical to the freshly built image's. A `next build` mints a new one each time.
+- **core-java, read from INSIDE `/app/app.jar`** (a filesystem `find` returns a misleading
+  0 — the value lives in the archive): `BOOT-INF/classes/application.yml` carries
+  `out-of-order: true`. Jar: 956 files, 171,760,537 bytes.
+- **core-java, jacoco entries in the SHIPPED jar: 0.** 34-09 added the JaCoCo plugin to
+  `core-java/build.gradle.kts`; this confirms it stayed a test-time plugin and did not
+  contaminate the runtime artefact.
+
+**An honest note on what changed.** `git diff --name-only origin/main..HEAD -- core-java/`
+returns exactly one file: `core-java/build.gradle.kts`. So core-java's *runtime* content is
+expected to be unchanged this phase — the rebuild was still required because the freshness
+gate measures build INPUTS, and the gate was genuinely red before it.
+
+## Gate verdicts, both directions where a direction exists
+
+| gate | before | after |
+|---|---|---|
+| `check-runtime-freshness.sh` | **FAIL** — "2 of 4 running built service(s) do not match the source tree (0 unverified)", naming core-java and frontend | **PASS** — 4 FRESH, 0 unverified |
+| `check-e2e-skip-budget.sh` | **VOID (rc=2)** — no report | **PASS** — 297 tests, 6 skipped, budget 6; specDigest `f13669e3…` matches the tree |
+| `check-branch-behind-base.sh` | — | **PASS** — 63 ahead, 0 behind `origin/main` |
+| `check-go-coverage.sh` | **VOID (rc=2)** — profile absent ("an absent profile is not 0% coverage") | **PASS** — 66.8% >= 65.0%, 311 blocks |
+
+Full suite, verdict read FROM the report with `jq` and not from the runner's exit code:
+**total=297 passed=291 failed=0 skipped=6**. The 6 attribute to
+`stomp-relay.spec.ts` (4 = 2 tests x 2 projects, #304) and `vendor-refund-flow.spec.ts`
+(2 = 1 test x 2 projects, #61) — the declared set exactly, with
+`onboarding-blocked-flow.spec.ts` NOT among them, which is 34-06's removal of the false
+exemption vindicated on a real run.
+
+`check-alert-metrics.sh` was predicted red-then-green across `scripts/seed-order-metric.sh`.
+**It was green (rc=0) first time and the remedy was never run** — the full E2E suite had
+just placed real orders, so the counter the gate reads was already non-zero. Recorded as a
+prediction that did not fire, rather than reported as a remedy that was applied.
+
+---
+
+## D-34-10-08 — `infra/db/init/00-create-db.sql` cannot provision a FRESH volume (OUT OF SCOPE, found here)
+
+**Class:** pre-existing defect in a file outside this plan's `files_modified`, found because
+this plan needed a fresh stack. Same class as the V64 finding already recorded in CLAUDE.md:
+*"A provisioning step only a human can perform is not provisioning."*
+
+**Measured, on a genuinely fresh volume** (`docker compose down -v` then `up -d`):
+
+```
+core-java: FATAL: password authentication failed for user "jtoye_app"   (SQL state 28P01)
+           Flyway -> Unable to obtain connection from database
+           container state: Restarting (1) — crash-looping, zero migrations applied
+```
+
+**Root cause, read out of the two sources rather than guessed.**
+`infra/db/init/00-create-db.sql:44` creates the role with `DB_PASSWORD`:
+
+```
+SELECT format('CREATE ROLE jtoye_app LOGIN PASSWORD %L', :'app_password')   -- app_password = DB_PASSWORD
+```
+
+but since the SEC-04/#552 runtime-migrator split, `DB_MIGRATION_USER=jtoye_app` and Flyway
+authenticates with **`DB_MIGRATION_PASSWORD`** — the same file says so at :56. When those
+two credentials differ the role is created with a password Flyway does not know. Compared
+by **digest only**, never by value: `DB_PASSWORD` `04897cf11fda…` vs
+`DB_MIGRATION_PASSWORD` `0bdf45585f5a…` — **different**. The script's own comment at :42-43
+("core-java connects as jtoye_app with DB_PASSWORD") is stale: `DB_USER` is now
+`jtoye_runtime`.
+
+**Why it was invisible until now.** The long-lived local volume predates the split, so its
+`jtoye_app` already carried a working password; only destroying the volume exposes it. CI is
+unaffected wherever the two variables are generated equal.
+
+**Unblocked WITHOUT changing any committed file:** `ALTER ROLE jtoye_app PASSWORD` to the
+migration credential, which preserves the split's intent (the migrator keeps a credential
+distinct from the runtime role's). Verified BY FUNCTION — authenticating as `jtoye_app` —
+not by the ALTER's exit code, then core-java reached `healthy` and Flyway applied V1..V64.
+
+**REMOVE WHEN:** `00-create-db.sql:44` creates `jtoye_app` with `DB_MIGRATION_PASSWORD`
+(falling back to `DB_PASSWORD` only when unset, so single-credential setups keep working),
+its stale :42-43 comment is corrected, and the fix is proven on a `down -v` cycle where the
+two credentials deliberately DIFFER — the arm this defect needs, and the one nobody has run.
