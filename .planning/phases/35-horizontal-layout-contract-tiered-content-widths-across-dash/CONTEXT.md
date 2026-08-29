@@ -185,3 +185,22 @@ section is **not** self-resolving — read it together with this block.
 - Visual capture at 1920 and 2560 for the orders table, before and after.
 - Full Jest + Playwright suites green; `docs/metrics.json` regenerated via
   `scripts/docs-freshness.sh --write` if test counts move (never hand-edited).
+
+## 7. Owner gate — decisions recorded 2026-08-30
+
+The 35-13 blocking checkpoint was put to the owner by the orchestrator with the
+before/after captures at `frontend/e2e-artifacts/35-12/` and the measured arithmetic.
+**These three ARE owner decisions** — unlike ORCH-01..06, which were orchestrator
+decisions taken under delegated autonomy. The distinction is recorded deliberately,
+because an earlier draft of these plans attributed orchestrator choices to the owner.
+
+| Question | Owner decision | Consequence |
+|---|---|---|
+| Detail tier narrows live surfaces (1120→1100 at 1440; 1600→1100 at 1920/2560) | **Accepted 1100px** | The peer-matched reading column stands (Linear 1136, Square 1016, Lightspeed 1100). The displaced-goods ledger in `35-05-SUMMARY.md` is the accepted cost, not an oversight. |
+| ORCH-01: public `/shop` stays Marketing 1280 rather than fluid | **Confirmed 1280px** | The one owner-visible judgement in the phase is now ratified rather than assumed. No SEO/CLS re-measurement needed on a public indexed surface. |
+| Close-out | **Run 35-13, then open a PR** | Merge left to the owner after CI. |
+
+Measured at the gate, from the running container (not a local `next start`):
+served CSS carries `1700px`/`1100px`/`1280px`, **zero** `.container{` rules, tier
+attributes present; `check-runtime-freshness.sh` rc=0, 4/4 FRESH. The orders index at
+2560 moved from a ~1336px band to ~1636px — matching `min(2304, 1700) − 64px` exactly.
