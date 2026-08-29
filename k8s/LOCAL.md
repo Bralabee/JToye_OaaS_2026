@@ -1960,7 +1960,7 @@ falsification: a scratchpad COPY of this file with two real leaks appended
                at that point, so the probe never touched the tracked document.
 ```
 
-**Full regression suite, run on the final tree** (JDK 21; `core-java/build.gradle.kts:15` redirects the
+**Full regression suite, run on the final tree** (JDK 21; `core-java/build.gradle.kts:19` redirects the
 build directory to `build-local`, so `core-java/build/test-results/` is a **stale 2025-12-27 artifact
 reporting 3 failures** — a false RED that must not be read as this run's result):
 

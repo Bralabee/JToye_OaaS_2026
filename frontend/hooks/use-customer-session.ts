@@ -1,7 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { getCustomerSession, type CustomerProfile } from "@/lib/customer-auth"
+import { useSyncExternalStore } from "react"
+import {
+  getServerSnapshot,
+  getSnapshot,
+  refresh,
+  subscribe,
+} from "@/lib/customer-session-store"
 
 /**
  * The one place customer session state is read for UI purposes (issue #457).
@@ -13,57 +18,25 @@ import { getCustomerSession, type CustomerProfile } from "@/lib/customer-auth"
  * the moment they went home. Measured: the session was intact the whole time;
  * only the header could not see it.
  *
- * Extracting it rather than copying it is the point. Two independent readers is
- * how this class of bug comes back, so PublicHeader and StorefrontNav share this
- * hook and neither calls getCustomerSession() directly.
+ * Extracting it rather than copying it is the point. Independent readers are how
+ * this class of bug comes back, so PublicHeader, PublicFooter and StorefrontNav
+ * share this hook and none of them calls getCustomerSession() directly.
  *
  * Deliberately built on the ASYNC getCustomerSession() (server truth) rather than
  * the synchronous isLoggedIn() marker: the marker carries the access-token expiry
  * and only getCustomerSession() re-stamps it, so a marker-only reader on a public
  * surface goes stale and then lies.
+ *
+ * The session truth now lives in `lib/customer-session-store` and is read here
+ * with `useSyncExternalStore` (plan 34-03). That removed the mount-time
+ * `setState`-in-effect and its `react-hooks/set-state-in-effect` suppression
+ * (#202 / the `#99 follow-up` marker) — the rule traces into the call graph, so
+ * hiding the write in a helper would not have been a fix. The listeners, the
+ * post-OAuth poll and the `{ profile, refresh }` contract are unchanged; the
+ * three consumers were not touched.
  */
 export function useCustomerSession() {
-  const [profile, setProfile] = useState<CustomerProfile | null>(null)
+  const profile = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 
-  const checkSession = useCallback(async () => {
-    const session = await getCustomerSession()
-    setProfile(session?.profile || null)
-  }, [])
-
-  useEffect(() => {
-    // Check on mount
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe mount-time hydration; refactor tracked in issue #99 follow-up
-    checkSession()
-
-    // Re-check when page gains focus (covers OAuth redirect return)
-    const onFocus = () => checkSession()
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") checkSession()
-    }
-    // Re-check on storage changes (covers cross-tab login via marker)
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "jtoye-customer-logged-in" || e.key === "jtoye-customer-expires-at") {
-        checkSession()
-      }
-    }
-
-    window.addEventListener("focus", onFocus)
-    document.addEventListener("visibilitychange", onVisibility)
-    window.addEventListener("storage", onStorage)
-
-    // Also poll briefly after mount to catch the redirect scenario
-    // (OAuth callback sets localStorage then redirects — same tab, no storage event)
-    const timer = setInterval(checkSession, 1000)
-    const cleanup = setTimeout(() => clearInterval(timer), 5000) // Stop polling after 5s
-
-    return () => {
-      window.removeEventListener("focus", onFocus)
-      document.removeEventListener("visibilitychange", onVisibility)
-      window.removeEventListener("storage", onStorage)
-      clearInterval(timer)
-      clearTimeout(cleanup)
-    }
-  }, [checkSession])
-
-  return { profile, refresh: checkSession }
+  return { profile, refresh }
 }

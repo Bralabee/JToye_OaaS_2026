@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 34: the test suite stops reporting on surfaces it does not exercise (#682) — 2026-08-29
+
+- **Rendering + Test Truthfulness shipped whole**: 10 plans / 27 tasks in 5 waves, zero new
+  packages, goal-backward verification passed 5/5 with every criterion independently re-executed.
+- **Coverage that could not lie before now cannot lie quietly**: a default-deny SSR-route manifest
+  gate over all 38 app routes with a raw-served-HTML instrument a browser stub provably cannot
+  satisfy; Go, Jest and aggregate-JaCoCo coverage floors (the unit-only Java figure is 25 points
+  below the aggregate, and a plausible unit-only report is refused as VOID); the E2E skip ceiling
+  measured down to 6 and re-earned on a freshly seeded stack at 297 total / 291 passed / 0 failed.
+- **All four `#99 follow-up` setState-in-effect suppressions removed with real fixes** — shared
+  theme store, customer-session external store, render-time OAuth error — plus a genuine security
+  fix found en route: StrictMode double-exchanged the one-time OAuth code; now ref-guarded.
+- **Three of the phase's own planned verifications were caught being vacuous and hardened by
+  running the fail direction first**: the mobile-viewport overflow yardstick (emulation widens
+  `innerWidth` to fit an 825px overflow), the skip-budget parser arm, and `go tool cover`'s rc=0
+  on an empty profile. The phase practised what it shipped.
+- **Found along the way**: a fresh-volume provisioning defect (D-34-10-08, V64's class — the
+  SEC-04 credential split leaves `jtoye_app` created with the wrong password so a fresh volume
+  crash-loops with zero migrations applied; environment unblocked, code fix recorded), and
+  `check-gate-enforcement.sh` counting workflow comments as wiring.
+- Counts: `docs/metrics.json` 3188 → 3237 (jest 1272/124, playwright 120/25), every gated prose
+  site reconciled; all 40 gates green at closeout.
+
 ### The frontend image stopped building the moment next 16.3.x landed, and only the container could see it (#681) — 2026-08-28
 
 - **#679 widened `next build`'s type-check to the whole tsconfig program**, and every repo

@@ -347,7 +347,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 31. Consumer-Safety and Legal Floor | v2.3 | 18/18 | Complete    | 2026-08-17 |
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
-| 34. Rendering + Test Truthfulness | v2.3 | 0/? | Not started | — |
+| 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
 before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
@@ -873,13 +873,14 @@ Plans:
 recorded UI traps: a screenshot cannot verify motion, and a screenshot taken without scrolling reads
 scroll-reveal content as empty bands.
 
-### Phase 34: Rendering + Test Truthfulness
+### Phase 34: Rendering + Test Truthfulness ✅ (completed 2026-08-29 — 10/10 plans, VERIFICATION passed 5/5)
 
 **Goal**: The test suite stops reporting on surfaces it does not exercise, and pages stop fetching
 on mount where the server could have rendered them. Grouped because they share one root cause.
 **Depends on**: Nothing. Does **not** gate Phase 32.
 **Requirements**: TRUTH-01, TRUTH-02
 **Issues (6)**: #542, #507, #202, #286, #547, #110
+**Plans:** 10/10 plans complete
 
 **Success Criteria** (what must be TRUE):
 
@@ -904,5 +905,18 @@ on mount where the server could have rendered them. Grouped because they share o
      the 7 skips are owned by #304 (Phase 29) and #61 (Phase 30); the `onboarding-blocked-flow`
      mobile skip is the one with no owner and is this phase's to home. The skip budget currently
      sits at 7 against a ceiling of 8. (TRUTH-02)
+
+Plans (execute by wave; every `depends_on` resolves to a strictly earlier wave):
+
+- [x] 34-01-PLAN.md (Wave 1) — The raw-HTML coverage instrument: shared `e2e/helpers/served-html.ts`, a committed proof that a live browser route stub satisfies the DOM instrument and cannot satisfy the raw-HTML one, and the first served-HTML assertion for `/shop/orders`
+- [x] 34-02-PLAN.md (Wave 1, TDD) — `useTheme()` on `useSyncExternalStore`: removes the sidebar and mobile-tab-bar `#99 follow-up` suppressions *and* the DOM-class coupling between them
+- [x] 34-03-PLAN.md (Wave 1, TDD) — `lib/customer-session-store.ts`: the HIGH-risk suppression, with the `{ profile, refresh }` contract and all three consumers left untouched, plus a session-pill block proving a stale marker never reads as signed in
+- [x] 34-04-PLAN.md (Wave 1) — OAuth callback: the missing-code error derived during render, and the previously uncovered error path covered as a landing destination
+- [x] 34-05-PLAN.md (Wave 1) — #286 narrowed and closed: the eleven-route dashboard sweep asserts no horizontal overflow at 375px, additively — the mobile project stays 390x844
+- [x] 34-06-PLAN.md (Wave 1) — #547's one unowned skip homed with `@desktop-only`; the stale ALLOW and its measurably wrong cause deleted, `MAX_SKIPS` 8 -> 6
+- [x] 34-07-PLAN.md (Wave 2) — `check-ssr-coverage-contract.sh` + `gates/ssr-routes.conf`: default-deny SSR-route manifest, wired into `ops-contracts`; also declares every remaining client route WITH A REASON (#507's last criterion) and states what the stack-free E2E job's green does not cover
+- [x] 34-08-PLAN.md (Wave 3) — Go + Jest coverage floors: the profile CI already generated finally has a reader; `collectCoverageFrom` widened to `hooks/**` and the decision recorded before the threshold numbers were chosen
+- [x] 34-09-PLAN.md (Wave 4) — JaCoCo on the AGGREGATE of both suites (unit-only is 25 points low), with a skipped integration job VOIDing rather than passing, and the floor calibrated against a real CI run
+- [x] 34-10-PLAN.md (Wave 5) — Closeout: `docs/metrics.json` + prose reconciliation, the deferred/N-A register, the rebuilt runtime proven by content and identity, and the skip budget re-earned on a fresh digest-matching report
 
 **UI hint**: no

@@ -18,14 +18,20 @@ the 2026-08-24 session broke it once itself (see "The truncating filter", below)
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 37 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 40 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
-# 2026-08-24 actual: 36 clean, plus check-e2e-skip-budget VOID — the documented
-# once-per-merge staleness detector, re-earned by running Playwright on the live stack.
+# 2026-08-29 actual (phase 34 closeout, plan 34-10): all 40 rc=0 from the MAIN checkout,
+# including check-e2e-skip-budget re-earned at 6 skips / budget 6 on a fresh full-suite
+# run (297 tests, 0 failures), and check-jacoco-coverage at 88.07/71.95/87.55/87.53.
+# THREE gates must be run from the MAIN checkout, not a worktree, and VOID elsewhere:
+#   check-runtime-freshness  — compose project name comes from the DIRECTORY
+#   check-infra-exposure     — parses `docker compose config`, needs .env to interpolate
+#   check-container-config-drift — same .env dependency
 # If check-alert-metrics is the only rc=1 after a core-java rebuild, its standing
-# remedy is: bash scripts/seed-order-metric.sh   (restart zeroes the counter)
+# remedy is: bash scripts/seed-order-metric.sh   (restart zeroes the counter). Note it can
+# also be green without the remedy if a full E2E run has just placed real orders.
 ```
 
 | | |
