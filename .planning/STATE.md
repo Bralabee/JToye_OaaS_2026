@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 28 context gathered
-last_updated: "2026-08-28T21:13:58.871Z"
-last_activity: 2026-08-28
+stopped_at: Phase 35 plan 01 complete (layout contract declared; container retired)
+last_updated: "2026-08-29T18:55:00.000Z"
+last_activity: 2026-08-29
 progress:
   total_phases: 14
   completed_phases: 10
@@ -21,12 +21,41 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 34 — rendering-test-truthfulness
+**Current focus:** Phase 35 — horizontal-layout-contract
 
 ## Current Position
 
-Phase: 34 (rendering-test-truthfulness) — COMPLETE (10/10), verification passed 2026-08-29
-Plan: 1 of 10
+Phase: 35 (horizontal-layout-contract) — IN PROGRESS, 1 of 13 plans complete
+Plan: 2 of 13 (next)
+
+> **35-01 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. The four content
+> widths now exist exactly once, in `frontend/lib/layout-widths.ts`, read by the Tailwind build,
+> the app and (from 35-08) the Playwright contract spec. Shell 1700 / Detail 1100 / Marketing
+> 1280, each carrying the peer measurement that justifies it — Stripe's dashboard 1690, Linear
+> 1136, Stripe marketing 1264 — because the phase's root cause was never "1400 is wrong" but
+> that nobody could say where 1400 came from. The Index tier deliberately declares no number.
+>
+> The stock shadcn `container` is RETIRED, and both halves are guarded independently because
+> they fail differently: deleting `theme.container` alone leaves the core plugin emitting the
+> DEFAULT five media queries — measured in the shipped stylesheet under the break arm as caps at
+> 640/768/1024/1280/1536 — which is strictly worse than the single 1400px query the tree had.
+> `corePlugins.container: false` is what makes the retirement real.
+>
+> Nine break arms run, all recorded in the SUMMARY with real output in both directions. **The
+> finding worth more than the feature: one of this plan's own checks was vacuous and only the
+> fail arm exposed it** — the "each number records its justification" assertion searched the
+> whole file, so deleting the shell's peer citation left the suite 12/12 GREEN, because the
+> module header used the same figure in an unrelated sentence. Rescoped to each export's own
+> docblock, with a control proving the scope is not secretly the whole file.
+>
+> **INTERIM STATE, resolved by 35-02:** `dashboard-shell.tsx:55` still carries the now-dead
+> `container` class, so the dashboard band is momentarily FLUID rather than capped. 35-02 owns
+> that file. Recorded because an unstated intermediate state reads as a defect.
+>
+> Full Jest 139 suites / 1360 tests green; `npm run build` rc=0; branch 0 behind base. NOT yet
+> proven in a browser — this plan renders no new class, and per **#683 the nightly lane is dark**,
+> so the dashboard tiers are "covered by a spec no current tree executes", never "covered
+> nightly".
 
 > **Phase 31 SHIPPED 2026-08-17** via PR #633, squash-merged to `main` as `42ac6dc3`
 > (`feat(31): consumer safety and the legal floor (#633)`). 18/18 plans; closes #116, #103 and

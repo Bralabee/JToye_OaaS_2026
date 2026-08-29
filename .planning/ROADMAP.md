@@ -348,6 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
+| 35. Horizontal Layout Contract | v2.3 | 1/13 | In Progress | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
 before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
@@ -753,7 +754,7 @@ Root cause: `frontend/tailwind.config.ts` carries the stock shadcn block `contai
 - The widened index tier must not break the `overflow-x-auto` keyboard-focusable region fixed by A11Y-3 (#685), nor reintroduce body horizontal scroll at 390px.
 
 Plans:
-- [ ] 35-01-PLAN.md — declare the four tier widths in one constants module; generate the utilities from it; retire the shadcn container plugin (wave 1)
+- [x] 35-01-PLAN.md — declare the four tier widths in one constants module; generate the utilities from it; retire the shadcn container plugin (wave 1) — **COMPLETE 2026-08-29**, `35-01-SUMMARY.md`
 - [ ] 35-02-PLAN.md — the tier vocabulary in the DOM (one class map, one wrapper) and the Shell tier applied at the single container call site (wave 2)
 - [ ] 35-03-PLAN.md — Index tier on the five surfaces CONTEXT names: orders, products, overview, customers, shops (wave 3)
 - [ ] 35-04-PLAN.md — Index tier on the eight remaining dashboard surfaces, each PATTERNS ambiguity resolved at its site (wave 3)
