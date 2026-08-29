@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { MapPin, Search, Store, ChevronRight, Loader2, X, AlertCircle } from "lucide-react"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { SafeImage } from "@/components/ui/safe-image"
 import publicApiClient from "@/lib/public-api-client"
 import { describeLoadError } from "@/lib/human-error"
@@ -381,7 +382,42 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   const summary = searchSummary(interpretation, totalElements, searchQuery)
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+    /* PHASE 35 / UIX-07 — the DECLARED Marketing width tier, applied IN PLACE.
+       THIS SURFACE'S WIDTH DOES NOT CHANGE. That is the decision, not an
+       oversight, and it is the most consequential deliberate NON-change in the
+       phase, so the reasoning lives at the site rather than only in the archive.
+
+       ORCH-01 (orchestrator decision, 2026-08-29, recorded in CONTEXT.md
+       section 4b). The public directory keeps the Marketing width rather than
+       going fluid the way a dashboard resource index does. Three reasons:
+
+         - the Index tier is scoped to the DASHBOARD resources (products,
+           orders, customers, shops). A public route taking a dashboard tier
+           would be outside the declared contract;
+         - a fluid card grid would render WIDER than the storefront header rail
+           directly above it, inverting on the storefront exactly the
+           chrome-vs-content misalignment this phase is fixing on the landing
+           page;
+         - this is an SEO- and CLS-measured public, indexed route, and the
+           least-cost correct change here is none. Going fluid would turn a
+           zero-file change into a three-file one and force both to be
+           re-measured.
+
+       PROVENANCE, STATED PRECISELY. This is an ORCHESTRATOR decision taken
+       during planning. It is NOT a user decision: the owner delegated the phase
+       autonomously, which is authority to decide, and is not the owner having
+       chosen this option. The distinction matters because ORCH-01 is flagged
+       owner-visible-if-wrong and is put in front of the owner at the phase's
+       closing gate — a comment claiming the owner chose it would read to the
+       next person as settled product direction rather than as the reversible
+       planning call it is, and would quietly undermine that gate.
+
+       The sub-heading and search-input clamps below are CONTROL widths, not page
+       bands (PATTERNS 1c), and the search input is CLS-sensitive. Both untouched. */
+    <div
+      data-width-tier="marketing"
+      className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-4 sm:px-6 lg:px-8 py-6 sm:py-10`}
+    >
       {/* Hero */}
       <div className="mb-6 sm:mb-8">
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-oxblood">
@@ -632,7 +668,13 @@ export function ShopDiscoveryClient(props: DiscoveryProps) {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+        /* Declares the same tier as the content it stands in for, so this
+           fallback cannot narrow or widen the page when the real grid arrives.
+           The equivalent mismatch on /shop/[slug] was a 384px jump. */
+        <div
+          data-width-tier="marketing"
+          className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-4 sm:px-6 lg:px-8 py-6 sm:py-10`}
+        >
           <div className="h-8 w-64 rounded bg-cream-100 animate-pulse" />
           <div className="mt-4 h-12 w-full max-w-xl rounded-full bg-cream-100 animate-pulse" />
           <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
