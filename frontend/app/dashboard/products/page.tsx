@@ -383,7 +383,12 @@ export default function ProductsPage() {
       <m.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        // FEB-2: this was a no-wrap `flex justify-between` — the h1 plus two
+        // min-width buttons exceed a 390px viewport and clip "Add Product".
+        // `flex-wrap` lets the button row drop below the title on narrow
+        // screens; `gap-3` replaces the space `justify-between` no longer
+        // supplies once the row can wrap.
+        className="flex flex-wrap items-center justify-between gap-3"
       >
         <div>
           <h1 className="text-4xl font-bold text-slate-900">Products</h1>
@@ -456,7 +461,17 @@ export default function ProductsPage() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              // A11Y-3 (axe scrollable-region-focusable, serious): a
+              // horizontally-overflowing region with no focusable element and
+              // no visible scrollbar affordance is unreachable by keyboard.
+              // `tabIndex={0}` + `role="region"` + an accessible name make it
+              // a landmark a keyboard/screen-reader user can find and pan.
+              <div
+                className="overflow-x-auto"
+                tabIndex={0}
+                role="region"
+                aria-label="Products table, scroll horizontally for more columns"
+              >
                 <Table>
                   <TableHeader>
                     <TableRow>
