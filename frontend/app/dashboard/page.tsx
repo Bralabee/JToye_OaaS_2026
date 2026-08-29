@@ -250,7 +250,16 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="space-y-8">
+    // Phase 35, Index tier: a resource index, deliberately uncapped below the
+    // dashboard band. The overview is tiered as an index rather than as a
+    // reading surface on purpose — its recent-orders table is the same
+    // six-column shape as the orders page, and showing one table at two
+    // different widths on two pages is exactly the half-shipped inconsistency
+    // this phase exists to remove. The tier adds NO width class: "fluid to the
+    // shell" is the documented pattern for data-dense lists, and the attribute
+    // is here so that being uncapped is a declaration a test can falsify
+    // rather than an absence indistinguishable from a forgotten cap.
+    <div data-width-tier="index" className="space-y-8">
       {/* Header */}
       <m.div
         initial={{ opacity: 0, y: -20 }}
