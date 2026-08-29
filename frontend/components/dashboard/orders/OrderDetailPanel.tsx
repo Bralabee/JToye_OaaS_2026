@@ -23,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { RefundDialog } from "./RefundDialog"
+import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
+import { ItemAllergenBadge } from "@/components/dashboard/kitchen/item-allergen-badge"
 import type { OrderDetail, OrderStatus, Refund } from "@/types/api"
 
 /**
@@ -33,7 +35,16 @@ import type { OrderDetail, OrderStatus, Refund } from "@/types/api"
  *   - Payment block (paymentStatus / paymentMethod / paymentReference)
  *   - Refund history block (one row per Refund)
  *   - Action panel with an "Issue refund" button gated by visibility predicate
+ *   - QA-council FE-7: the V63/Phase-31-10 write-time allergen snapshot,
+ *     reusing the SAME `OrderAllergenBanner` / `ItemAllergenBadge` the kitchen
+ *     display renders — not a re-derived copy, so the vendor's own order view
+ *     and the kitchen ticket can never disagree about what was declared. See
+ *     that component's own docstring for the null/[]/non-empty distinction
+ *     this must never collapse (a historic order must never read as
+ *     allergen-free, and the advisory `allergenFlags` reconciliation must
+ *     never be merged into the vendor's declared set).
  *
+
  * Visibility predicate for "Issue refund":
  *   - order.status     ∈ {CONFIRMED, PREPARING, READY, COMPLETED}
  *   - order.paymentStatus === "CAPTURED"
@@ -146,6 +157,15 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
           </span>
         </div>
       </div>
+
+      {/* QA-council FE-7: the order's allergen picture, above the customer/
+          items blocks — this is a safety fact, not incidental metadata, and
+          the shared component already renders NOTHING for the common "vendor
+          declared none of the 14, nothing flagged" case. */}
+      <OrderAllergenBanner
+        allergenNames={order.allergenNames}
+        allergenFlags={order.allergenFlags}
+      />
 
       {/* Customer block */}
       <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 p-4 sm:grid-cols-2">
@@ -269,7 +289,14 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
                 {order.items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">
-                      {item.productName || item.productId.substring(0, 8)}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{item.productName || item.productId.substring(0, 8)}</span>
+                        {/* QA-council FE-7: this LINE's own write-time snapshot —
+                            renders nothing for a pre-V63 line (absent/null), which
+                            is deliberate: the order-level banner above already
+                            carries the "not recorded" statement once. */}
+                        <ItemAllergenBadge allergenNames={item.allergenNames} />
+                      </div>
                     </TableCell>
                     <TableCell className="text-center">{item.quantity}</TableCell>
                     <TableCell className="text-right">

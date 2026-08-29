@@ -251,4 +251,82 @@ describe("OrderDetailPanel", () => {
     expect(screen.getByText("failed")).toHaveClass("text-red-600")
     expect(screen.getByText("card_declined")).toBeInTheDocument()
   })
+
+  // QA-council FE-7 (V63 / Phase 31-10): the order-detail vendor view did not
+  // surface the write-time allergen snapshot at all, despite `OrderDetailDto`
+  // already carrying it and the kitchen display already rendering it. NULL
+  // ("not recorded") and [] ("declared none of the 14") must render
+  // differently — see the shared `OrderAllergenBanner`'s own docstring for why.
+  describe("QA-council FE-7: allergen snapshot", () => {
+    it("shows NOT RECORDED when allergenNames is absent — never claims allergen-free", () => {
+      render(<OrderDetailPanel order={makeOrder()} />)
+      expect(screen.getByTestId("kds-allergen-unrecorded")).toBeInTheDocument()
+      expect(screen.getByText("ALLERGENS NOT RECORDED")).toBeInTheDocument()
+      expect(screen.queryByTestId("kds-allergen-banner")).not.toBeInTheDocument()
+    })
+
+    it("renders nothing when the vendor declared none of the 14 and nothing was flagged", () => {
+      render(<OrderDetailPanel order={makeOrder({ allergenNames: [], allergenFlags: [] })} />)
+      expect(screen.queryByTestId("kds-allergen-unrecorded")).not.toBeInTheDocument()
+      expect(screen.queryByTestId("kds-allergen-banner")).not.toBeInTheDocument()
+    })
+
+    it("renders the declared set when allergenNames is non-empty", () => {
+      render(
+        <OrderDetailPanel
+          order={makeOrder({ allergenNames: ["Gluten", "Milk"], allergenFlags: [] })}
+        />
+      )
+      expect(screen.getByTestId("kds-allergen-banner")).toBeInTheDocument()
+      expect(screen.getByTestId("kds-allergen-declared")).toHaveTextContent("Gluten, Milk")
+    })
+
+    it("renders an advisory CHECK line for a flag WITHOUT merging it into the declared set", () => {
+      render(
+        <OrderDetailPanel
+          order={makeOrder({
+            allergenNames: ["Gluten"],
+            allergenFlags: [
+              { productName: "Jollof Rice", allergenBit: 6, allergenName: "Milk" },
+            ],
+          })}
+        />
+      )
+      // The declared line names ONLY the declared set — "Milk" appears solely
+      // in the advisory CHECK line, never folded into the declaration.
+      expect(screen.getByTestId("kds-allergen-declared")).toHaveTextContent("Gluten")
+      expect(screen.getByTestId("kds-allergen-declared")).not.toHaveTextContent("Milk")
+      expect(screen.getByTestId("kds-allergen-check")).toHaveTextContent(
+        "CHECK: Jollof Rice"
+      )
+    })
+
+    it("renders a per-item allergen badge from the line's own snapshot", () => {
+      render(
+        <OrderDetailPanel
+          order={makeOrder({
+            allergenNames: ["Gluten"],
+            items: [
+              {
+                id: "item-1",
+                productId: "prod-1",
+                productName: "Jollof Rice",
+                quantity: 2,
+                unitPricePennies: 500,
+                totalPricePennies: 1000,
+                createdAt: "2026-04-28T10:00:00Z",
+                allergenNames: ["Gluten"],
+              },
+            ],
+          })}
+        />
+      )
+      expect(screen.getByTestId("kds-item-allergen-badge")).toBeInTheDocument()
+    })
+
+    it("renders no per-item badge when a line predates the snapshot (allergenNames absent)", () => {
+      render(<OrderDetailPanel order={makeOrder({ allergenNames: ["Gluten"] })} />)
+      expect(screen.queryByTestId("kds-item-allergen-badge")).not.toBeInTheDocument()
+    })
+  })
 })
