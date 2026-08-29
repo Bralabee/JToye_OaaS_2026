@@ -216,3 +216,43 @@ load-bearing, and in `35-10-SUMMARY.md`. **PATTERNS.md itself was NOT edited**: 
 planning artefact of this phase and rewriting its measurements after the fact would destroy
 the record of what the plans were actually built against. Whoever revisits the inventory
 should read the gate header alongside it.
+
+---
+
+## From 35-11 — "all 21 authenticated routes" is an inherited number; the tree has 18
+
+**Found by:** plan 35-11, while writing `docs/architecture/LAYOUT_WIDTH_CONTRACT.md` (2026-08-29)
+**Owner of the remediation:** unassigned — raise at the **35-13** gate, or leave
+
+Nine places on this branch assert that the dashboard shell's one band is inherited by
+"21 authenticated routes" / "21 dashboard routes":
+
+```
+docs/architecture/layout-tiers.tsv                              (SHELL section comment)
+frontend/lib/layout-widths.ts                                   (module header)
+frontend/components/dashboard/dashboard-shell.tsx               (site comment)
+frontend/components/dashboard/__tests__/dashboard-shell.test.tsx
+35-02-PLAN.md x2 · 35-02-SUMMARY.md x2 · 35-10-SUMMARY.md
+```
+
+Measured with `git ls-files`, and with a control (the same query over `app/legal` returns
+5, which is the known number of legal routes):
+
+```
+git ls-files 'frontend/app/dashboard/**/page.tsx' 'frontend/app/dashboard/page.tsx'
+  => 18
+git ls-files 'frontend/app/**/page.tsx' | grep -v '^frontend/app/(dashboard|shop|legal|auth|track|unsubscribe)/'
+  => business-model-guide, competitive, for-operators — i.e. NO dashboard route group elsewhere
+```
+
+So the count is **18**, not 21. Nothing is broken by it: every one of those sentences is
+load-bearing only in its claim that the inheritance is TOTAL, which is true and does not
+depend on the number. It is recorded because this phase exists to stop numbers being
+repeated without a measurement behind them, and this is one — the same shape as the 1400
+itself, at a much smaller scale.
+
+**Not fixed here because:** all nine sites are outside plan 35-11's declared file set, four
+of them are dated planning artefacts whose measurements should not be rewritten after the
+fact, and one is a test file whose assertions would need re-reading rather than a
+find-and-replace. `LAYOUT_WIDTH_CONTRACT.md` therefore quotes **no** route count at all and
+says why, which is the outcome that needs no maintenance either way.
