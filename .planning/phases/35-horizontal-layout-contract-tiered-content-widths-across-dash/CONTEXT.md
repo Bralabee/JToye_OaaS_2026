@@ -113,6 +113,28 @@ convention (a declared budget other code and tests import), never scattered lite
 This satisfies the global config rule and gives the visual tests something to assert
 against rather than duplicating magic numbers.
 
+## 4b. Decisions
+
+**Provenance matters here and was initially got wrong.** These five were resolved by the
+**orchestrator** during planning, not ratified by the owner. The owner was told they had
+been resolved and delegated the phase autonomously ("complete the entire plan, implement
+and verify phases autonomously"), which is authority to decide — it is **not** the owner
+having chosen each option. The first draft of the plans cited them as "user decision
+D-0N" and instructed the executor to write that phrase into a source comment; that is a
+false attribution and is corrected here. Cite these as **ORCH-0N (orchestrator decision,
+2026-08-29)**, never as a user decision.
+
+Three of them (ORCH-01/02/03) resolve what `RESEARCH.md` §Open Questions left open. That
+section is **not** self-resolving — read it together with this block.
+
+| ID | Decision | Rationale | Reversibility |
+|---|---|---|---|
+| **ORCH-01** | Public `/shop` stays **Marketing (1280px)**, unchanged. The Index tier means the DASHBOARD routes only. | `/shop` is a customer-facing card browse surface, not a dense table. Going fluid turns a zero-file change into ~3 files and forces SEO + CLS re-measurement on a public, indexed surface. | **Owner-visible if wrong.** One-line difference; flag at the 35-13 gate for an explicit look rather than burying it. |
+| **ORCH-02** | `/` gains a **desktop-viewport CLS arm**. | Every existing CLS instrument measures at 375px, where a desktop-only `max-width` provably cannot bind — so without a desktop arm the CLS check on this change is vacuous. | Additive test only. |
+| **ORCH-03** | Index tier carries an explicit **`data-width-tier="index"` marker**, no max-width class. | "Uncapped" implemented as an absence is a contract no assertion can distinguish from a forgotten cap. | Additive attribute. |
+| **ORCH-04** | `/` moves to the **Marketing tier (1280px)**. | Its content bands are `max-w-6xl` (1152px) inside header/footer chrome at `max-w-7xl` (1280px) — content is inset 128px from its own frame. Source: PATTERNS F-2. | Visual; covered by the CLS arm and the 35-13 gate. |
+| **ORCH-05** | `app/shop/[slug]/loading.tsx` skeleton **aligned to the content it replaces**. | Skeleton is `max-w-7xl` (1280px), content is `max-w-4xl` (896px) — a 384px narrowing on hydration. Pre-existing defect, same class as the phase, cheap in place. Source: PATTERNS A-12. | Strict improvement. |
+
 ## 5. Constraints and known hazards
 
 - **CLS control.** `/` already measures **CLS 0.1793** against a `CLS_BUDGET` of 0.1
@@ -134,6 +156,23 @@ against rather than duplicating magic numbers.
 - **Falsifiability.** Every acceptance criterion is run against a deliberately broken
   input first and both directions recorded. A width assertion that has only ever passed
   may be incapable of failing — the cheapest control is the pre-change build.
+- **THE NIGHTLY LANE IS DARK — "covered nightly" is currently FALSE.** Issue **#683** is
+  OPEN: *"Nightly E2E is failing — the full-suite lane is dark… this lane is the project's
+  only full-suite E2E instrument, so while it is red no merge has full-suite evidence on
+  any tree."* The per-PR browser gate runs **only** `public-layout.spec.ts` +
+  `public-a11y.spec.ts` (`.github/workflows/ci-cd.yaml:531`). Therefore: **Marketing-tier**
+  assertions can be per-PR and genuinely blocking; **Shell / Index / Detail** assertions
+  are nightly-only, and the nightly is not running. The honest statement is *"covered by a
+  spec that no current tree executes"*, **not** *"covered nightly"*. Any doc, spec header
+  or CI comment this phase writes must say the former. The phase's own rule — "an unstated
+  boundary reads as covered" — applies to the phase itself. Same root cause as **#686**
+  (the skip-budget gate is wired only into that dark lane).
+- **Skip-budget precondition.** `scripts/gates/e2e-skip-budget.conf` is `MAX_SKIPS 6` and
+  fails on any *undeclared* skip title. New dashboard specs skip via
+  `skipWithoutVendorPassword()` when the credential is absent (`e2e/vendor-credentials.ts`
+  defaults to `""` deliberately). Either state the precondition (`E2E_VENDOR_PASSWORD`, or
+  source the stack `.env` for `KC_SEED_USER_PASSWORD`) or declare the skips in the conf —
+  do not let the run silently exceed budget. Note #686 already records the budget at 7/6.
 
 ## 6. Verification approach
 

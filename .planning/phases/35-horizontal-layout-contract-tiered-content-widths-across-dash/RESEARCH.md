@@ -890,6 +890,22 @@ test.describe("Shell tier @desktop-only", () => {
 
 ## Open Questions
 
+> **RESOLVED by ORCH-01 / ORCH-02 / ORCH-03 — see CONTEXT.md section 4b.** All three questions below
+> were closed during planning by the **orchestrator** (2026-08-29), not ratified by the owner, and each
+> resolution followed this section's own recommendation. Q1 → ORCH-01 (public `/shop` stays Marketing
+> at 1280, unchanged; the Index tier means the DASHBOARD routes only). Q2 → ORCH-02 (`/` gains a
+> desktop-viewport CLS arm; built by plan 35-09). Q3 → ORCH-03 (the Index tier carries an explicit
+> `data-width-tier="index"` marker with no max-width class).
+>
+> This marker exists because this section is **not self-resolving**: read on its own it reads as three
+> live open questions and contradicts the plans, which build the resolved answers. The questions are
+> kept below rather than deleted — the reasoning is what makes each decision reviewable, and ORCH-01 is
+> flagged owner-visible-if-wrong and is put in front of the owner at the 35-13 gate.
+>
+> Assumption **A3** above ("the public `/shop` directory belongs to the Marketing tier", marked
+> *Needs a user decision*) is likewise settled by ORCH-01 — as an orchestrator decision, which is a
+> weaker warrant than a user decision and is why it is surfaced at the gate.
+
 1. **Does the public `/shop` directory take the Marketing tier (1280) or the Index tier (fluid to shell)?**
    - *What we know:* `/shop` is currently `max-w-7xl` = 1280px, which already equals the Marketing
      value. CONTEXT's Index row names "products, orders, customers, shops" alongside three
