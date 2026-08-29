@@ -718,6 +718,55 @@ locality — #460.)
 
 **UI hint**: no
 
+### Phase 35: Horizontal Layout Contract - tiered content widths across dashboard, index, detail and marketing surfaces
+
+**Goal:** Replace the inherited, undeclared shadcn `container` default (1400px, applied uniformly to four different content types) with a **declared four-tier width contract**, so every surface uses horizontal real estate appropriate to what it holds. Owner-raised 2026-08-29: the product "feels narrow and confined to the middle" on desktop and should use at least two-thirds of width on the web.
+
+**Measured baseline** (in-browser, post-#685 runtime, all 4 images FRESH):
+
+| Surface | Cap | @1440 | @1920 | @2560 |
+|---|---|---|---|---|
+| Landing `/` (`max-w-6xl`) | 1152px | 80% | 60% | 45% |
+| Public directory (`max-w-7xl`) | 1280px | 89% | 66.7% | 50% |
+| Dashboard (`container`) | 1400px | 82% | 72.9% | 54.7% |
+
+Root cause: `frontend/tailwind.config.ts` carries the stock shadcn block `container: { center: true, padding: "2rem", screens: { "2xl": "1400px" } }`, applied at `frontend/components/dashboard/dashboard-shell.tsx:55`. **No document in the repo declares a width standard** — the number came with the scaffold.
+
+**The four tiers** (each peer-matched to a measured industry value, not invented):
+
+| Tier | Target | Applies to | Peer evidence |
+|---|---|---|---|
+| Shell | ~1700px | dashboard chrome | Stripe Dashboard `--Chrome-maxWidth` 1690px; Square shells 1680–1720px |
+| Index | fluid to shell | products, orders, customers, shops | Polaris full-width page for many-column lists; IBM Carbon `--full-width`; GitLab/Lightspeed fluid |
+| Detail | ~1100px | order detail, settings, forms | Linear `LayoutContent` 1136px; Square content ladder 1016px |
+| Marketing | ~1280px | landing, for-operators | Stripe marketing token 1264px |
+| Prose | 68ch (unchanged) | body copy | already correct in-tree |
+
+**Requirements**: UIX-07 (declared layout contract), UIX-08 (index surfaces use available width), UIX-09 (reading surfaces keep their measure)
+**Depends on:** Phase 34
+**Plans:** 13 plans (8 waves)
+
+**Constraints that are not negotiable:**
+- Widths are **declared in one config module** (following the existing `frontend/e2e/perf-budgets.ts` convention), never scattered literals — global config rule.
+- `/` carries **known CLS debt 0.1793** against a 0.1 budget. Any landing change is measured against that baseline as a control, never assumed neutral.
+- Incremental Betterment: this reworks live user-visible surfaces, so each displaced good is enumerated and preserved or bettered. Mobile-first behaviour must not regress — this is a *large-screen* change only.
+- The widened index tier must not break the `overflow-x-auto` keyboard-focusable region fixed by A11Y-3 (#685), nor reintroduce body horizontal scroll at 390px.
+
+Plans:
+- [ ] 35-01-PLAN.md — declare the four tier widths in one constants module; generate the utilities from it; retire the shadcn container plugin (wave 1)
+- [ ] 35-02-PLAN.md — the tier vocabulary in the DOM (one class map, one wrapper) and the Shell tier applied at the single container call site (wave 2)
+- [ ] 35-03-PLAN.md — Index tier on the five surfaces CONTEXT names: orders, products, overview, customers, shops (wave 3)
+- [ ] 35-04-PLAN.md — Index tier on the eight remaining dashboard surfaces, each PATTERNS ambiguity resolved at its site (wave 3)
+- [ ] 35-05-PLAN.md — Detail tier on order detail, onboarding and the import wizard; the ceiling-not-target rule and its exceptions ledger (wave 3)
+- [ ] 35-06-PLAN.md — Marketing tier on the landing route (the phase's only real width change) and both public chrome rails (wave 3)
+- [ ] 35-07-PLAN.md — Marketing tier declared on the already-1280 surfaces; shop detail skeleton aligned to its content (wave 3)
+- [ ] 35-08-PLAN.md — the Playwright width-contract spec at 1440/1920/2560, its stack-free half wired into the per-PR browser gate (wave 4)
+- [ ] 35-09-PLAN.md — the desktop-viewport CLS arm for the landing route, control measured by two-arm A/B (wave 4)
+- [ ] 35-10-PLAN.md — the static contract gate, its tier manifest, and its CI wiring in the same commit (wave 5)
+- [ ] 35-11-PLAN.md — the contract document closing the "no declared standard" finding, plus the metrics regeneration (wave 6)
+- [ ] 35-12-PLAN.md — runtime parity, the mobile byte-identical CSS diff, the pre-change control arm and the full browser sweep (wave 7)
+- [ ] 35-13-PLAN.md — owner verification at 1920 and 2560 against the originating complaint (wave 8, blocking checkpoint)
+
 ---
 
 ## The two phases the disposition sweep created — Phases 33–34
