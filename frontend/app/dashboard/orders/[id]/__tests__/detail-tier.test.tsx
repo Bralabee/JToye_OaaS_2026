@@ -92,8 +92,15 @@ interface TierDeclaration {
 /**
  * Token match, never a substring: `max-w-` appears inside plenty of unrelated
  * class strings in this tree, and a substring search would count them. The
- * optional variant prefixes are matched so `sm:max-w-lg` counts as a cap too —
- * a responsive second cap is still a second cap.
+ * optional variant prefixes are matched so a breakpoint-prefixed cap counts
+ * too — a responsive second cap is still a second cap.
+ *
+ * The example is DESCRIBED rather than spelled, and that is load-bearing:
+ * Tailwind's scanner is lexical and this directory is inside the content globs,
+ * so a comment naming a real utility GENERATES that utility. Measured by plan
+ * 35-12's pre/post stylesheet diff, which caught this comment putting a live
+ * `@media (min-width: 640px)` rule into the shipped CSS that no element applies.
+ * Same fix as commit 34256f5c.
  */
 const MAX_WIDTH_TOKEN = /^(?:[A-Za-z0-9_[\]().%-]+:)*max-w-/
 

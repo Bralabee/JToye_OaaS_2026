@@ -19,8 +19,15 @@ import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
  * Every width-cap utility an element declares, as tokens.
  *
  * A token filter, never a substring search: `classList` membership is what a
- * browser resolves, and a substring would match `sm:max-w-none` or a testid and
- * report a cap that is not there.
+ * browser resolves, and a substring would match a breakpoint-prefixed cap, or a
+ * testid, and report a cap that is not there.
+ *
+ * The example is DESCRIBED rather than spelled, and that is load-bearing:
+ * Tailwind's scanner is lexical and this directory is inside the content globs,
+ * so a comment naming a real utility GENERATES that utility. Measured by plan
+ * 35-12's pre/post stylesheet diff, which caught this comment putting a live
+ * `@media (min-width: 640px)` rule into the shipped CSS that no element applies.
+ * Same fix as commit 34256f5c.
  */
 const capTokens = (el: Element) =>
   Array.from(el.classList).filter((c) => c.startsWith("max-w-"))
