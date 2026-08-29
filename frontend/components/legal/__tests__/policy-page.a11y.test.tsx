@@ -243,11 +243,17 @@ describe("PolicyPage — the Marketing tier (ORCH-06)", () => {
     expect(band).not.toBeNull()
     expect(classTokens(band as Element)).toContain(WIDTH_TIER_CLASS.marketing)
 
-    // MEASURED, not assumed (35-06 ARM C): twMerge does NOT resolve a caller's
-    // max-w-* against a tier class — `twMerge('max-w-7xl','max-w-marketing')`
-    // returns BOTH. So a half-done rename leaves two live caps on one element,
-    // renders identically today, and diverges silently the moment the tier
-    // value moves. Only an absence assertion can see it.
+    // MEASURED, not assumed (35-06 ARM C, reproduced here by ARM C over this
+    // component's own render): twMerge does NOT resolve a stock max-w-* scale
+    // token against a tier class — handed both, it returns BOTH. So a half-done
+    // rename leaves two live caps on one element, renders identically today,
+    // and diverges silently the moment the tier value moves. Only an absence
+    // assertion can see it.
+    //
+    // The tier token is deliberately NOT spelled out in this comment: the three
+    // tier literals exist in exactly one module in shipped source and plan
+    // 35-10 gates that, and a comment satisfies a grep just as well as code
+    // does — which is the discipline content-tier.tsx's own docblock states.
     expect(main.querySelectorAll(`[class*="${STOCK_WIDTH_TOKEN}"]`)).toHaveLength(
       0
     )
