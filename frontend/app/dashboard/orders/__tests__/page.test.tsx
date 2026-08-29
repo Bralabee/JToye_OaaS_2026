@@ -74,6 +74,29 @@ describe("Dashboard orders table ID column (QA-council FIX-5)", () => {
   })
 })
 
+// QA-council A11Y-6: <h1>Orders</h1> is followed immediately by CardTitle's
+// hard-coded <h3> ("Order Status Flow") — no <h2> in between (axe heading-order).
+describe("Orders page — heading hierarchy (QA-council A11Y-6)", () => {
+  function headingLevels(): number[] {
+    return screen.getAllByRole("heading").map((el) => Number(el.tagName.slice(1)))
+  }
+
+  it("never steps DOWN more than one level at a time (no H1 -> H3 skip)", async () => {
+    render(<OrdersPage />)
+    await screen.findByRole("table")
+
+    const levels = headingLevels()
+    // POSITIVE CONTROL: more than one level really is present to check.
+    expect(levels.length).toBeGreaterThan(1)
+    expect(levels[0]).toBe(1)
+    for (let i = 1; i < levels.length; i++) {
+      if (levels[i] > levels[i - 1]) {
+        expect(levels[i] - levels[i - 1]).toBe(1)
+      }
+    }
+  })
+})
+
 describe("Orders table PENDING badge contrast (QA-council F3 / A11Y-1)", () => {
   it("renders the PENDING badge as bg-yellow-700, not the failing bg-yellow-500", async () => {
     render(<OrdersPage />)

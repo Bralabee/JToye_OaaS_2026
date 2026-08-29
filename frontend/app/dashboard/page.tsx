@@ -296,6 +296,17 @@ export default function DashboardPage() {
           )
         })()}
 
+      {/*
+        A11Y-6: every section below this point is a `CardTitle`, which is
+        hard-coded to render an <h3> (components/ui/card.tsx — a shared
+        primitive used across the whole app, out of scope to change here).
+        Without a real <h2> between the page's <h1> and the first of those
+        <h3>s, the outline skips a level (axe heading-order). `sr-only`
+        because this fix corrects the SEMANTIC level, not the visual size —
+        every heading below keeps the size its own className already gives it.
+      */}
+      <h2 className="sr-only">Overview</h2>
+
       {/* Stats Cards */}
       <m.div
         variants={staggerContainer}
