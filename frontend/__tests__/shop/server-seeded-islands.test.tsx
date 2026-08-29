@@ -195,4 +195,25 @@ describe("/shop/[slug] — server-seeded storefront", () => {
     expect(add.className).toContain("relative z-10")
     expect(article.contains(add)).toBe(true)
   })
+
+  /**
+   * FE-2: the banner is this page's LCP candidate — the largest
+   * above-the-fold image, already `loading="eager"`. `fetchPriority="high"`
+   * additionally tells the browser's preload scanner to fetch it ahead of
+   * other same-priority resources, which `loading="eager"` alone does not.
+   */
+  it("marks the shop banner fetchPriority=high (FE-2 LCP hint)", async () => {
+    await act(async () => {
+      render(
+        <ShopDetailClient
+          slug="brixton-village-grill"
+          initial={{ ...detail, shop: { ...shop, bannerUrl: "https://cdn.test/banner.jpg" } }}
+        />
+      )
+    })
+
+    const banner = screen.getByAltText("Brixton Village Grill banner")
+    expect(banner).toHaveAttribute("fetchpriority", "high")
+    expect(banner).toHaveAttribute("loading", "eager")
+  })
 })

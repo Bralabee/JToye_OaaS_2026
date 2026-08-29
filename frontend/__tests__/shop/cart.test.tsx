@@ -91,3 +91,77 @@ describe("Shop cart page (/shop/[slug]/cart)", () => {
     expect(checkoutLink.getAttribute("href")).toBe(`/shop/${SLUG}/checkout`)
   })
 })
+
+/**
+ * A11Y-7: the +/- quantity steppers carried NO accessible name at all — a
+ * screen-reader user landed on an unlabelled "button" and had no way to tell
+ * which line item, or which direction, it acted on. The fix names the OBJECT
+ * (the dish), not just the action, and the minus button additionally states
+ * removal rather than "decrease" the moment decreasing WOULD remove the line
+ * (quantity === 1) — a silent removal on the last unit is a worse surprise
+ * than an unlabelled button.
+ */
+describe("Shop cart page — quantity stepper accessible names (A11Y-7)", () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it("names both steppers after the item when quantity > 1", async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        shopSlug: SLUG,
+        items: [
+          {
+            productId: "p1",
+            title: "Jollof Rice",
+            pricePennies: 899,
+            quantity: 2,
+            imageUrl: null,
+            category: "Mains",
+          },
+        ],
+      })
+    )
+
+    renderCart()
+    await screen.findByText("Jollof Rice")
+
+    expect(
+      screen.getByRole("button", { name: "Decrease quantity of Jollof Rice" })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Increase quantity of Jollof Rice" })
+    ).toBeInTheDocument()
+  })
+
+  it("names the minus button as a removal once quantity is 1 (decreasing further removes the line)", async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        shopSlug: SLUG,
+        items: [
+          {
+            productId: "p1",
+            title: "Jollof Rice",
+            pricePennies: 899,
+            quantity: 1,
+            imageUrl: null,
+            category: "Mains",
+          },
+        ],
+      })
+    )
+
+    renderCart()
+    await screen.findByText("Jollof Rice")
+
+    expect(
+      screen.getByRole("button", { name: "Remove Jollof Rice from basket" })
+    ).toBeInTheDocument()
+    // The generic, un-named form must not also be present under a different name.
+    expect(
+      screen.queryByRole("button", { name: "Decrease quantity of Jollof Rice" })
+    ).not.toBeInTheDocument()
+  })
+})
