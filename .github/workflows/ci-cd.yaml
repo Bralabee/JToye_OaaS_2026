@@ -544,10 +544,12 @@ jobs:
       # a backend it stops running on every pull request, and the blind spot the
       # whole job exists to close comes back.
       #
-      # SO THOSE THREE TIERS ARE **COVERED BY A SPEC THAT NO CURRENT TREE
-      # EXECUTES.** Their only instrument is the full-suite nightly lane, and
-      # issue #683 is OPEN: that lane is failing, so while it is red no merge
-      # has full-suite evidence on any tree. Do NOT restate this as "covered
+      # So those three tiers are, in CONTEXT.md section 5's exact words,
+      # "covered by a spec that no current tree executes" — kept on ONE line so
+      # the phrase is greppable rather than split across two comment lines.
+      # Their only instrument is the full-suite nightly lane, and issue #683 is
+      # OPEN: that lane is failing, so while it is red no merge has full-suite
+      # evidence on any tree. Do NOT restate this as "covered
       # nightly" — CONTEXT.md section 5 fixes the wording above as the
       # authoritative one. "Covered nightly" tells the next reader an instrument
       # is watching those tiers and they will act on that; the true state is
