@@ -237,6 +237,39 @@ describe("ShopDiscoveryClient — a non-answer never carries a proximity claim",
     expect(screen.queryByText(/within 3\.1 miles of/i)).toBeNull()
   })
 
+  it("QA-council A11Y-8: a genuine failure shows a load-error panel in the results grid, never 'No kitchens found'", async () => {
+    renderDiscovery({ shops: [NEAR, UNPLACED], query: "jollof", interpretation: TEXT })
+
+    // POSITIVE CONTROL: the two seeded shops ARE on screen before the
+    // failure, so their absence afterwards is a statement about the code.
+    expect(screen.getByText("Dulwich Near Kitchen")).toBeInTheDocument()
+
+    // No `response` — a genuine failure, not a 429. Before the fix this branch
+    // did `setShops([]); setTotalElements(0)` and nothing else, so the results
+    // grid fell through to "No kitchens found" — a false claim that the
+    // marketplace is empty when the request merely failed.
+    mockGet.mockRejectedValue(new Error("Network Error"))
+    fireEvent.change(screen.getByLabelText(/Search kitchens, dishes or a postcode/i), {
+      target: { value: "jollof again" },
+    })
+
+    expect(await screen.findByTestId("discovery-load-error")).toBeInTheDocument()
+    expect(screen.queryByText("No kitchens found")).not.toBeInTheDocument()
+  })
+
+  it("CONTROL: a genuine 200 with zero rows still shows the real 'No kitchens found' empty state", async () => {
+    renderDiscovery({ shops: [NEAR, UNPLACED], query: "jollof", interpretation: TEXT })
+    expect(screen.getByText("Dulwich Near Kitchen")).toBeInTheDocument()
+
+    mockGet.mockResolvedValue({ data: page([]) })
+    fireEvent.change(screen.getByLabelText(/Search kitchens, dishes or a postcode/i), {
+      target: { value: "no such kitchen" },
+    })
+
+    expect(await screen.findByText("No kitchens found")).toBeInTheDocument()
+    expect(screen.queryByTestId("discovery-load-error")).not.toBeInTheDocument()
+  })
+
   it("adopts the interpretation of the response it actually received", async () => {
     renderDiscovery({ query: "jollof", interpretation: TEXT })
 

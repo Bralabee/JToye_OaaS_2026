@@ -158,6 +158,11 @@ describe('Dashboard Page', () => {
       expect(screen.getByText('john@example.com')).toBeInTheDocument()
       expect(screen.getByText('£19.99')).toBeInTheDocument()
     })
+
+    // QA-council F3 / A11Y-1: PENDING badge is white text on bg-yellow-700,
+    // not the failing bg-yellow-500 (1.92:1 on white).
+    expect(screen.getByText('Pending')).toHaveClass('bg-yellow-700')
+    expect(screen.getByText('Pending')).not.toHaveClass('bg-yellow-500')
   })
 
   it('should make API calls to fetch dashboard data', async () => {
@@ -273,5 +278,37 @@ describe('Dashboard Page', () => {
     })
     expect(screen.queryByText('Your onboarding is in progress.')).not.toBeInTheDocument()
     expect(screen.queryByText('Finish setting up your shop to go live.')).not.toBeInTheDocument()
+  })
+})
+
+// QA-council A11Y-6: the page renders an <h1> ("Dashboard") followed
+// immediately by CardTitle's hard-coded <h3> (the first stat card, "Shops")
+// — no <h2> anywhere in between, which is a skipped heading level (axe
+// heading-order).
+describe('Dashboard Page — heading hierarchy (QA-council A11Y-6)', () => {
+  function headingLevels(): number[] {
+    return screen.getAllByRole('heading').map((el) => Number(el.tagName.slice(1)))
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockedApiClient.get.mockImplementation(defaultMock as jest.Mock)
+    mockedGetShopContext.mockReturnValue('all')
+  })
+
+  it('never steps DOWN more than one level at a time (no H1 -> H3 skip)', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText('Shops')).toBeInTheDocument())
+
+    const levels = headingLevels()
+    // POSITIVE CONTROL: the page genuinely has more than one heading level to
+    // check — an empty/blind scan would pass this assertion vacuously.
+    expect(levels.length).toBeGreaterThan(3)
+    expect(levels[0]).toBe(1)
+    for (let i = 1; i < levels.length; i++) {
+      if (levels[i] > levels[i - 1]) {
+        expect(levels[i] - levels[i - 1]).toBe(1)
+      }
+    }
   })
 })

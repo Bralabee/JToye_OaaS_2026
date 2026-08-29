@@ -37,7 +37,9 @@ import { formatDistanceToNow } from "date-fns"
 
 const vatRateConfig: Record<VatRate, { label: string; rate: string; color: string }> = {
   STANDARD: { label: "Standard", rate: "20%", color: "bg-blue-500" },
-  REDUCED: { label: "Reduced", rate: "5%", color: "bg-yellow-500" },
+  // bg-yellow-700, not -500: white text on -500 is 1.92:1 on white — fails AA
+  // (F3 / A11Y-1). -700 is 4.92:1.
+  REDUCED: { label: "Reduced", rate: "5%", color: "bg-yellow-700" },
   ZERO: { label: "Zero", rate: "0%", color: "bg-green-500" },
   EXEMPT: { label: "Exempt", rate: "N/A", color: "bg-gray-500" },
 }
