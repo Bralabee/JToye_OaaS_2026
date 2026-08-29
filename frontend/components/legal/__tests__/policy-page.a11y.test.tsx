@@ -17,11 +17,18 @@
  * Rule-set note: this layer runs jest-axe's nested axe-core 4.10.2, while the
  * Playwright layer runs 4.13.0. The two do not share one rule set, so a clean
  * result here is not a claim about the other.
+ *
+ * IT ALSO HOLDS THE SHELL'S WIDTH CONTRACT (ORCH-06). The band and the reading
+ * measure are two different things that a single careless edit merges into one,
+ * so the assertion that the band is at the Marketing tier and the assertion that
+ * the three 68ch measures are untouched live in the same file, next to each
+ * other, where a reader meets both at once.
  */
 import { render, screen, within } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import { axe, toHaveNoViolations } from "jest-axe"
 import { PolicyPage, PolicySection } from "@/components/legal/policy-page"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import LegalPage from "@/app/legal/page"
 import { getCustomerSession } from "@/lib/customer-auth"
 
@@ -184,6 +191,135 @@ describe("PolicyPage — structure (UI-SPEC S2)", () => {
     expect(
       screen.queryByRole("navigation", { name: /on this page/i })
     ).toBeNull()
+  })
+})
+
+/**
+ * The token the band is renamed FROM, written out exactly once.
+ *
+ * It has to appear as a literal somewhere for the absence to be assertable, and
+ * this is the same shape `app/__tests__/landing.test.tsx` uses for the same
+ * reason. It is NOT a tier literal — the three tier strings live in exactly one
+ * module and plan 35-10 gates that count — so spelling this one out here costs
+ * nothing.
+ */
+const STOCK_WIDTH_TOKEN = "max-w-6xl"
+
+/** The reading measure, held independently of the band. */
+const PROSE_MEASURE = "max-w-[68ch]"
+
+/** The band's non-width classes, every one of which must survive the rename. */
+const PRESERVED_BAND_CLASSES = [
+  "mx-auto",
+  "w-full",
+  "px-4",
+  "py-16",
+  "sm:px-6",
+] as const
+
+function classTokens(el: Element): string[] {
+  return (el.getAttribute("class") || "").split(/\s+/).filter(Boolean)
+}
+
+describe("PolicyPage — the Marketing tier (ORCH-06)", () => {
+  it("declares the Marketing tier on exactly one band inside main", () => {
+    render(<SampleDocument />)
+    const main = assertDocumentReallyRendered()
+
+    // SCOPED TO MAIN, and that scoping is the whole assertion. See the scope
+    // control below: a container-wide query is satisfied by the header and
+    // footer rails over a page whose band declares nothing at all.
+    const declared = Array.from(main.querySelectorAll("[data-width-tier]"))
+    expect(declared.map((el) => el.getAttribute("data-width-tier"))).toEqual([
+      "marketing",
+    ])
+  })
+
+  it("carries the tier class INSTEAD of the stock token, never beside it", () => {
+    render(<SampleDocument />)
+    const main = screen.getByRole("main")
+
+    const band = main.querySelector('[data-width-tier="marketing"]')
+    expect(band).not.toBeNull()
+    expect(classTokens(band as Element)).toContain(WIDTH_TIER_CLASS.marketing)
+
+    // MEASURED, not assumed (35-06 ARM C): twMerge does NOT resolve a caller's
+    // max-w-* against a tier class — `twMerge('max-w-7xl','max-w-marketing')`
+    // returns BOTH. So a half-done rename leaves two live caps on one element,
+    // renders identically today, and diverges silently the moment the tier
+    // value moves. Only an absence assertion can see it.
+    expect(main.querySelectorAll(`[class*="${STOCK_WIDTH_TOKEN}"]`)).toHaveLength(
+      0
+    )
+  })
+
+  it("keeps the auto margin, the full-width base and every padding class on that same band", () => {
+    render(<SampleDocument />)
+    const main = screen.getByRole("main")
+    const band = main.querySelector('[data-width-tier="marketing"]')
+    expect(band).not.toBeNull()
+
+    const tokens = classTokens(band as Element)
+    for (const preserved of PRESERVED_BAND_CLASSES) {
+      expect(tokens).toContain(preserved)
+    }
+  })
+
+  it("applies the tier IN PLACE — no wrapper node was inserted around the band", () => {
+    render(<SampleDocument />)
+    const main = screen.getByRole("main")
+
+    // 35-06 ARM F measured that a wrapper <div> is invisible to every width and
+    // count assertion in a suite like this one; only a structural identity check
+    // catches it. The shell renders the band as main's sole child, so the band
+    // and main.firstElementChild are the same node or the doctrine was broken.
+    expect(main.children).toHaveLength(1)
+    expect(main.firstElementChild).toBe(
+      main.querySelector('[data-width-tier="marketing"]')
+    )
+  })
+
+  it("PRESERVATION CONTROL: leaves all three reading measures at 68ch — a tier is a ceiling, not a target", () => {
+    render(<SampleDocument />)
+    const main = screen.getByRole("main")
+
+    // This case passes BEFORE the band moves as well as after, which is what
+    // makes it a control rather than a restatement of the change. Widening the
+    // band is only safe because the measure is held separately, on three
+    // elements nested inside it; if a future edit ever merges the two, this is
+    // the assertion that says so.
+    const measured = Array.from(
+      main.querySelectorAll(`[class*="${PROSE_MEASURE}"]`)
+    )
+    expect(measured).toHaveLength(3)
+
+    // And none of them is the band itself — a band that acquired the measure
+    // would satisfy a bare count while capping the whole page at 68 characters.
+    const band = main.firstElementChild as Element
+    expect(measured).not.toContain(band)
+    expect(measured.every((el) => band.contains(el))).toBe(true)
+  })
+
+  it("SCOPE CONTROL: a container-wide tier query is satisfied by the chrome, so scoping to main is load-bearing", () => {
+    const { container } = render(<SampleDocument />)
+    const main = screen.getByRole("main")
+
+    const all = Array.from(
+      container.querySelectorAll('[data-width-tier="marketing"]')
+    )
+    const outsideMain = all.filter((el) => !main.contains(el))
+
+    // Both shared rails already declare this exact tier (plan 35-06). So a
+    // document-wide count returns a non-zero result over a policy page whose
+    // band carries nothing — which is precisely how 35-07's header-rail
+    // assertion passed against an unmodified tree, satisfied by the footer.
+    // This case exists so the scoping above is never "simplified" away.
+    expect(outsideMain.length).toBeGreaterThanOrEqual(2)
+    expect(
+      outsideMain.map(
+        (el) => el.closest("header")?.tagName ?? el.closest("footer")?.tagName
+      )
+    ).toEqual(["HEADER", "FOOTER"])
   })
 })
 
