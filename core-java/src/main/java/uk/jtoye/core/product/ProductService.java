@@ -16,6 +16,7 @@ import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.SqlStateExtractor;
+import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.media.MediaAssetService;
 import uk.jtoye.core.media.ProductMedia;
 import uk.jtoye.core.media.ProductMediaRepository;
@@ -135,6 +136,13 @@ public class ProductService {
         if (product.getAvailable() == null) product.setAvailable(true);
         if (product.getFeatured() == null) product.setFeatured(false);
         if (product.getDisplayOrder() == null) product.setDisplayOrder(0);
+        // QA-council cluster P1 (API-1): CreateProductRequest.vatRate deliberately carries no
+        // Java-side default any more (a default there is indistinguishable from the client
+        // explicitly choosing STANDARD, which is what broke PUT — see the DTO's Javadoc), so the
+        // STANDARD default for a genuinely new product now lives here instead (Issue #81 BUG 2:
+        // never silently create a zero-rated product). Without this line a create that omits
+        // vatRate would persist NULL into the NOT NULL vat_rate column (SQLState 23502).
+        if (product.getVatRate() == null) product.setVatRate(VatRate.STANDARD);
 
         // Cache the parsed allergen emphasis spans (PPDS, Issue #82). The label
         // renderer re-parses ingredients_text at render time (authoritative); this
@@ -142,8 +150,10 @@ public class ProductService {
         product.setAllergenSpans(
                 IngredientMarkupParser.parse(product.getIngredientsText()).spans());
 
-        // Save product
-        product = productRepository.save(product);
+        // Save product. QA-council cluster P1 (API-3 rider): saveAndFlush, not save — createdAt
+        // is a @CreationTimestamp generated at FLUSH time, so a bare save() would leave it null
+        // in the DTO built below even though the row persists with a real timestamp.
+        product = productRepository.saveAndFlush(product);
 
         log.info("Created product {} with SKU '{}', price: {} pennies",
                 product.getId(), product.getSku(), product.getPricePennies());

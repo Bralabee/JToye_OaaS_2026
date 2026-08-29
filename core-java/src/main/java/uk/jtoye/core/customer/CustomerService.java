@@ -62,8 +62,11 @@ public class CustomerService {
         customer.setAllergenRestrictions(request.allergenRestrictions() != null ? request.allergenRestrictions() : 0);
         customer.setUpdatedAt(OffsetDateTime.now());
 
-        // Save customer
-        customer = customerRepository.save(customer);
+        // Save customer. QA-council cluster P1 (API-3 rider): saveAndFlush, not save — createdAt
+        // is a @CreationTimestamp generated at FLUSH time, so a bare save() leaves it null in
+        // memory until commit and the DTO built below would report createdAt: null even though
+        // the row persists with a real timestamp.
+        customer = customerRepository.saveAndFlush(customer);
 
         log.info("Created customer {} with email '{}', allergen restrictions: {}",
                 customer.getId(), customer.getEmail(), customer.getAllergenRestrictions());
