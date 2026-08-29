@@ -179,12 +179,22 @@ export const LANDING_CLS_DESKTOP_CONTROL = 0.1316
  * not a timing race — and the shared LANDING_CLS_TOLERANCE of 0.02 is 55%
  * headroom over the measured value. No new tolerance was invented for it.
  *
- * IT ALSO CATCHES A STALE RUNTIME, which is a feature and not a side effect. A
- * frontend image built before this phase serves the 1152px band and scores
- * 0.1316, which sails under the control bound and reds this one. Measured: the
- * Compose frontend image was tagged 15:42 while the newest commit touching
- * `frontend/` was 20:40 the same day, so a run against :3000 on the day this was
- * written would have measured the pre-change code and reported a pass.
+ * AND IT IS LOAD-BEARING, WHICH WAS MEASURED RATHER THAN ARGUED. The plan's
+ * instrument arm put a deliberate desktop-only hydration shift on the landing
+ * hero — 0px server-side, 160px after mount, above the fold — rebuilt, and
+ * measured 0.0962. That is 2.7x the shipped value and an unambiguous regression,
+ * and it PASSES the control bound of 0.1516. Without this second constant the
+ * arm would have gone green over the exact class of defect it exists to detect.
+ *
+ * WHAT IT DOES *NOT* CATCH, stated because the first draft of this comment got
+ * it wrong and the measurement corrected it: a runtime built before 35-06 does
+ * not reach either assertion. It carries no `data-width-tier` at all, so the
+ * spec's second non-vacuity guard reds first with "no Marketing-tier band inside
+ * <main>". Measured against both the merge-base build and the Compose image
+ * (tagged 15:42 while the newest commit touching `frontend/` was 20:40 the same
+ * day) — identical structural failure, no score read. Only a runtime carrying
+ * the attribute with an older tier VALUE gets as far as scoring the control and
+ * reddening here.
  *
  * If a different machine finds this brittle, the honest response is to
  * RE-MEASURE with the two-arm protocol and record what it finds — not to widen

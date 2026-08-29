@@ -455,9 +455,13 @@ test.describe("Landing route `/` — throttled-mobile CWV (33-03)", () => {
  *
  * Run: PLAYWRIGHT_BASE_URL=<a REBUILT frontend> npx playwright test
  *      landing-webperf --project=desktop
- * A frontend image built before phase 35 serves the 1152px band and scores the
- * CONTROL, which passes the first assertion below and reds the second — by
- * design; see LANDING_CLS_DESKTOP_RECORD.
+ *
+ * IT NEEDS A CURRENT RUNTIME, and it says so rather than passing quietly on a
+ * stale one. Measured against both the phase's merge-base build and the Compose
+ * image: a frontend predating 35-06 carries no `data-width-tier`, so guard (2)
+ * below reds with "no Marketing-tier band inside <main>" before any score is
+ * read. A runtime with the attribute but an older tier VALUE gets further — it
+ * scores the pre-change control, passes assertion (i) and reds the ratchet (ii).
  */
 test.describe("@desktop-only Landing route `/` — desktop CLS (35-09, ORCH-02)", () => {
   test.use({ viewport: { width: 1440, height: 900 } })
