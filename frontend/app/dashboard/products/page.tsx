@@ -410,6 +410,14 @@ export default function ProductsPage() {
         </div>
       </m.div>
 
+      {/*
+        A11Y-6 (extended in QA integration): the sections below are all
+        `CardTitle` (<h3>). Without a real <h2> between the page's <h1> and
+        the first of those <h3>s the outline skips a level (axe
+        heading-order). `sr-only` keeps it invisible but in the a11y tree.
+      */}
+      <h2 className="sr-only">Product catalog</h2>
+
       {/* Products Table */}
       <m.div
         initial={{ opacity: 0, y: 20 }}

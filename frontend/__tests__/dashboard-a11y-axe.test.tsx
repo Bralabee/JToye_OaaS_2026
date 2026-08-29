@@ -210,9 +210,16 @@ beforeEach(() => {
  * absorbed by a future fix that never updates this file.
  */
 const ALLOWLISTED_RULES: Record<string, string[]> = {
-  dashboard: ["heading-order"],
-  orders: ["heading-order"],
-  products: ["heading-order"],
+  // heading-order was the standing debt on all three pages; the QA-council
+  // batch cleared it — A11Y-6 added the real <h2> to /dashboard and
+  // /dashboard/orders, and the integration pass extended the identical
+  // sr-only-<h2> fix to /dashboard/products — so the ledger is now trimmed
+  // to empty. The two-directional guard below keeps these empty: a NEW
+  // violation on any page fails `unexpected`, and re-listing a rule that no
+  // longer fires would fail `stale`.
+  dashboard: [],
+  orders: [],
+  products: [],
 }
 
 /**
