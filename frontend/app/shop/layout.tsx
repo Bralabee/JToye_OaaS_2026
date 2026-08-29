@@ -42,6 +42,15 @@ export async function generateMetadata(): Promise<Metadata> {
  * the marketing nav, which is the one justified difference.
  *
  * Wordmark -> "/" (never /shop): the logo is constant across every surface.
+ *
+ * SKIP LINK (A11Y-4). Every other public route is served through
+ * `components/public/public-shell.tsx`, which carries the skip-link + `id="main"`
+ * pair documented at length there (WCAG 2.4.1 Bypass Blocks). This layout is a
+ * SEPARATE component tree — the storefront keeps its own header for the cart
+ * badge/session nav — so it does not inherit that fix for free, and every route
+ * under /shop shipped without it. The markup here is copied verbatim from
+ * `PublicShell` for the same reason that file gives: a fourth hand-rolled copy
+ * of this pattern would be drift, not a fix.
  */
 export default function StorefrontLayout({
   children,
@@ -50,6 +59,7 @@ export default function StorefrontLayout({
 }) {
   return (
     <div className="min-h-screen bg-cream flex flex-col">
+      <a href="#main" className="sr-only z-50 rounded-full bg-oxblood px-4 py-3 text-sm font-bold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4">Skip to main content</a>
       <header className="sticky top-0 z-50 bg-white border-b border-cream-100 shadow-sm">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-14 items-center justify-between">
@@ -68,7 +78,7 @@ export default function StorefrontLayout({
         </div>
       </header>
 
-      <main className="flex-1">{children}</main>
+      <main id="main" className="flex-1">{children}</main>
 
       <PublicFooter />
     </div>
