@@ -428,7 +428,7 @@ THEME_BLOCK="$(block_of "$TW_STRIPPED" theme)"
 # HALF A — the theme block carries no container key.
 claim
 theme_container="$(grep -nE '^[[:space:]]*container[[:space:]]*:' <<< "$THEME_BLOCK")"
-[ -z "$theme_container" ] || violation "G-3a: tailwind.config.ts reinstates a 'container' key inside theme: ${theme_container//$'\n'/ | }. The plugin's selector is a hardcoded '.container' and it forces each cap to EQUAL the breakpoint that activates it, so it cannot express this contract at all."
+[ -z "$theme_container" ] || violation "G-3a: tailwind.config.ts reinstates a 'container' key inside theme (line number is relative to the theme block, not the file): ${theme_container//$'\n'/ | }. The plugin's selector is a hardcoded '.container' and it forces each cap to EQUAL the breakpoint that activates it, so it cannot express this contract at all."
 
 CORE_BLOCK="$(block_of "$TW_STRIPPED" corePlugins)"
 
