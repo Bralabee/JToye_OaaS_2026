@@ -225,7 +225,8 @@ const UNASSERTED_SITES: ReadonlySet<string> = new Set([
   "app/shop/[slug]/cart/page.tsx::text-red-400", // 2.77 on white, 2.57 on cream
   "app/shop/[slug]/cart/page.tsx::text-red-500", // 3.76 on white, 3.5 on cream
   "app/shop/[slug]/cart/page.tsx::text-slate-300", // 1.48 on white, 1.38 on cream
-  "app/shop/[slug]/cart/page.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
+  // text-slate-400 (2.56 on white, 2.39 on cream) fixed -> text-slate-600 (F1 / A11Y-11):
+  // both the "Clear all" link and the category label are gone from this file entirely.
   "app/shop/[slug]/checkout/page.tsx::text-emerald-600", // 3.77 on white, 3.51 on cream
   "app/shop/[slug]/checkout/page.tsx::text-red-600", // 4.83 on white, 4.49 on cream
   "app/shop/[slug]/checkout/page.tsx::text-slate-200", // 1.23 on white, 1.15 on cream

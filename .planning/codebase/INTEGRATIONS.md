@@ -211,7 +211,7 @@
   - Persistence: `payment_event_outbox` table (V31, RLS fixed in V33) for idempotent replay
 
 - WhatsApp Cloud API webhook (gated, currently edge-only stub)
-  - Endpoint: `POST /api/v1/webhooks/whatsapp` on edge-go (`edge-go/cmd/edge/main.go:299`)
+  - Endpoint: `POST /api/v1/webhooks/whatsapp` on edge-go (`edge-go/cmd/edge/main.go:325`)
   - Signature: `X-Hub-Signature-256` HMAC-SHA256 verified against `WHATSAPP_APP_SECRET` (fail-closed — refuses webhook if secret unset; previously would silently skip, fixed in P1 audit)
   - Parser: `edge-go/internal/whatsapp/parser.go`
   - Default shop: `WHATSAPP_DEFAULT_SHOP_ID` (if unset, handler errors rather than fabricating tenant)

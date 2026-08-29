@@ -15,7 +15,7 @@ public routes only). **Keep both in sync when adding pages.**
 | `/for-operators` | Prospective-vendor pitch: takeaway & catering journeys, pilot terms, fit check |
 | `/business-model-guide` | Authoritative business-model decision guide (companion: `docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`) |
 | `/shop` | Storefront discovery / shop directory |
-| `/track` | Order tracking by order number |
+| `/track` | Order tracking by order number. **`noindex` + EXCLUDED from `sitemap.xml`** (FE-6) — a transactional lookup surface, not discovery content; its `robots.txt` disallow and the sitemap omission now agree. |
 | `/unsubscribe` | Token-based one-click email opt-out (GDPR/PECR, COMMS-03). **`noindex,nofollow` + EXCLUDED from `sitemap.xml`** — a transactional surface, not discovery content; never renders the `email`/`token` query params into meta or body. |
 | `/auth/signin` | Vendor (B2B) sign-in — Keycloak `jtoye-dev` realm |
 

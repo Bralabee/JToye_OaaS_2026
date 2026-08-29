@@ -23,6 +23,19 @@ export const metadata: Metadata = {
   title: "J'Toye — Order from local kitchens, or run your own",
   description:
     "Order food from independent local kitchens in minutes, or run your own food business end-to-end — take orders, manage your kitchen, and go live in a day.",
+  // FE-5: canonical + Open Graph were missing on the landing page — the one
+  // page most likely to be shared/linked externally. `alternates.canonical`
+  // is a relative path deliberately (no `metadataBase` is set app-wide, so
+  // Next emits it root-relative — see the note in app/shop/layout.tsx for why
+  // no hostname is guessed here).
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "J'Toye — Order from local kitchens, or run your own",
+    description:
+      "Order food from independent local kitchens in minutes, or run your own food business end-to-end — take orders, manage your kitchen, and go live in a day.",
+    url: "/",
+    type: "website",
+  },
 }
 
 const steps = [

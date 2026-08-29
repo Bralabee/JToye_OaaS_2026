@@ -188,7 +188,7 @@ class OrderServiceTest {
 
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             setField(order, "id", orderId);
             return order;
@@ -208,7 +208,7 @@ class OrderServiceTest {
 
         verify(shopRepository).findById(shopId);
         verify(productRepository).findById(productId);
-        verify(orderRepository).save(any(Order.class));
+        verify(orderRepository).saveAndFlush(any(Order.class));
     }
 
     @Test
@@ -226,7 +226,7 @@ class OrderServiceTest {
         });
 
         assertEquals("Tenant context not set", exception.getMessage());
-        verify(orderRepository, never()).save(any(Order.class));
+        verify(orderRepository, never()).saveAndFlush(any(Order.class));
     }
 
     @Test
@@ -246,7 +246,7 @@ class OrderServiceTest {
 
         assertTrue(exception.getMessage().contains("Shop not found"));
         verify(shopRepository).findById(shopId);
-        verify(orderRepository, never()).save(any(Order.class));
+        verify(orderRepository, never()).saveAndFlush(any(Order.class));
     }
 
     @Test
@@ -272,7 +272,7 @@ class OrderServiceTest {
         assertTrue(exception.getMessage().contains("Product not found"));
         verify(shopRepository).findById(shopId);
         verify(productRepository).findById(productId);
-        verify(orderRepository, never()).save(any(Order.class));
+        verify(orderRepository, never()).saveAndFlush(any(Order.class));
     }
 
     @Test
@@ -300,7 +300,7 @@ class OrderServiceTest {
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
         when(productRepository.findById(productId2)).thenReturn(Optional.of(product2));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         OrderDto result = orderService.createOrder(request);
@@ -619,7 +619,7 @@ class OrderServiceTest {
 
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             setField(order, "id", UUID.randomUUID());
             return order;
@@ -676,7 +676,7 @@ class OrderServiceTest {
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
 
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
-        when(orderRepository.save(orderCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepository.saveAndFlush(orderCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         orderService.createOrder(request);
@@ -727,7 +727,7 @@ class OrderServiceTest {
 
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             setField(order, "id", UUID.randomUUID());
             return order;
@@ -759,7 +759,7 @@ class OrderServiceTest {
 
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             setField(order, "id", UUID.randomUUID());
             return order;
@@ -792,7 +792,7 @@ class OrderServiceTest {
 
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             setField(order, "id", UUID.randomUUID());
             return order;
@@ -826,7 +826,7 @@ class OrderServiceTest {
 
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             setField(order, "id", UUID.randomUUID());
             return order;
@@ -860,7 +860,7 @@ class OrderServiceTest {
 
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             setField(order, "id", UUID.randomUUID());
             return order;
@@ -901,7 +901,7 @@ class OrderServiceTest {
 
         when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
         when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             setField(order, "id", UUID.randomUUID());
             return order;

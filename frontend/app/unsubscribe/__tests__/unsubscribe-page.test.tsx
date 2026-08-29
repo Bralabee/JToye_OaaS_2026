@@ -17,12 +17,23 @@
  */
 import { render, screen, waitFor } from "@testing-library/react"
 import { UnsubscribeContent } from "../unsubscribe-content"
-import { metadata } from "../page"
+import UnsubscribePage, { metadata } from "../page"
 import publicApiClient from "@/lib/public-api-client"
+import { getCustomerSession } from "@/lib/customer-auth"
 import { useSearchParams } from "next/navigation"
 
 jest.mock("@/lib/public-api-client")
 const mockedPublicApiClient = publicApiClient as jest.Mocked<typeof publicApiClient>
+
+// PublicShell's header/footer share `hooks/use-customer-session.ts`, which
+// reads through this module — mocked the same way every other PublicShell
+// consumer test mocks it (see public-shell-landmarks.test.tsx).
+jest.mock("@/lib/customer-auth", () => ({
+  getCustomerSession: jest.fn(() => Promise.resolve(null)),
+  customerLogin: jest.fn(),
+  customerLogout: jest.fn(),
+}))
+const mockedSession = getCustomerSession as jest.Mock
 
 const RAW_TOKEN = "TAMPER3D-t0k3n-must-never-render-in-dom"
 
@@ -134,5 +145,45 @@ describe("Public unsubscribe page (Surface C)", () => {
     // string, whatever shape a future refactor gives the config object.
     expect(String(call[0])).not.toContain(RAW_TOKEN)
     expect(JSON.stringify(config ?? {})).not.toContain(RAW_TOKEN)
+  })
+})
+
+/**
+ * FEB-6: the tokenless/invalid state used to render with no header or nav at
+ * all — a dead end at mobile. The page is now wrapped in the shared
+ * `PublicShell`, which supplies both. Rendered through `UnsubscribePage`
+ * itself (not `UnsubscribeContent` in isolation) because the shell is applied
+ * at the page level.
+ */
+describe("Public unsubscribe page — PublicShell wrap (FEB-6)", () => {
+  beforeEach(() => {
+    mockedSession.mockReset()
+    mockedSession.mockResolvedValue(null)
+  })
+
+  it("renders a header and nav even with no link parameters at all (the dead-end case)", async () => {
+    setSearchParams({}) // every param missing -> the "invalid" state, unseeded
+
+    render(<UnsubscribePage />)
+
+    expect(await screen.findByRole("heading", { name: /this link isn't valid/i })).toBeInTheDocument()
+
+    // The chrome FEB-6 restores: a banner landmark (PublicHeader's <header>)
+    // and a nav a visitor stuck here can actually use to leave the page.
+    expect(screen.getByRole("banner")).toBeInTheDocument()
+    expect(screen.getAllByRole("navigation").length).toBeGreaterThan(0)
+  })
+
+  it("carries the PublicShell skip link and a single id='main' landmark", async () => {
+    setSearchParams({})
+    render(<UnsubscribePage />)
+    await screen.findByRole("heading", { name: /this link isn't valid/i })
+
+    const mains = screen.getAllByRole("main")
+    expect(mains).toHaveLength(1)
+    expect(mains[0]).toHaveAttribute("id", "main")
+
+    const skip = screen.getByRole("link", { name: /skip to main content/i })
+    expect(skip.getAttribute("href")).toBe("#main")
   })
 })

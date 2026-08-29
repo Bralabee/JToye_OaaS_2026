@@ -190,8 +190,11 @@ public class OrderService {
         // Calculate total
         order.calculateTotal();
 
-        // Save order
-        order = orderRepository.save(order);
+        // Save order. QA-council cluster P1 (API-3 rider): saveAndFlush, not save — createdAt is
+        // a @CreationTimestamp generated at FLUSH time, so a bare save() would leave it null in
+        // the DTO built below even though the row persists with a real timestamp. cascade=ALL on
+        // Order.items means the cascaded item rows flush too.
+        order = orderRepository.saveAndFlush(order);
 
         log.info("Created order {} with {} items, total: {} pennies",
                 order.getOrderNumber(), order.getItems().size(), order.getTotalAmountPennies());

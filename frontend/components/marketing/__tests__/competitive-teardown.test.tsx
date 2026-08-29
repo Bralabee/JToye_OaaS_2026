@@ -31,6 +31,37 @@ describe("CompetitiveTeardown", () => {
     expect(screen.getByText(/PPDS \/ Natasha's-Law allergen PDF labels/i)).toBeInTheDocument()
   })
 
+  /**
+   * FE-1: /competitive's body overflowed 56px at 390px. jsdom cannot measure
+   * real layout (no ResizeObserver, no computed scrollWidth), so the actual
+   * "does the document overflow" proof lives in the Playwright mobile-project
+   * run of `e2e/public-layout.spec.ts`'s existing PUBLIC_ROUTES loop, which
+   * already includes `/competitive` and already asserts
+   * `horizontalOverflow <= 1`. This test pins the STRUCTURAL fix instead: the
+   * radar chart's `<figure>` is a CSS-grid item, whose default `min-width:
+   * auto` lets a wide grid-item child (Recharts' pixel-measured axis/legend
+   * layout) force the grid track — and the document — wider than the
+   * viewport. `min-w-0` removes that floor at the source, and the
+   * `overflow-x-auto` wrapper is the safety net (same pattern as
+   * components/legal/retention-table.tsx) so nothing is ever shrunk
+   * off-screen.
+   */
+  it("contains the radar chart in a min-w-0 grid item with an overflow-x-auto scroll fallback (FE-1)", () => {
+    const { container } = render(<CompetitiveTeardown />)
+
+    const figure = container.querySelector("figure")
+    // radar chart <figure> not found would mean the section did not render.
+    expect(figure).toBeInTheDocument()
+    expect(figure).toHaveClass("min-w-0")
+
+    const chartRegion = screen.getByRole("img", {
+      name: /Radar chart comparing Flipdish and J'Toye/i,
+    })
+    // The chart's role=img container must have an overflow-x-auto parent.
+    const scrollWrapper = chartRegion.parentElement
+    expect(scrollWrapper).toHaveClass("overflow-x-auto")
+  })
+
   it("renders all five verdict filter chips as buttons", () => {
     render(<CompetitiveTeardown />)
 

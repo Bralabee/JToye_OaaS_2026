@@ -297,24 +297,37 @@ export function CompetitiveTeardown() {
                   J&apos;Toye spikes on UK compliance and platform.
                 </p>
               </div>
-              <figure className="border-[3px] border-oxblood bg-white p-4 shadow-[8px_8px_0_theme(colors.slate.200)]">
+              <figure className="min-w-0 border-[3px] border-oxblood bg-white p-4 shadow-[8px_8px_0_theme(colors.slate.200)]">
                 <figcaption className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
                   Category coverage radar
                 </figcaption>
-                <div
-                  role="img"
-                  aria-label="Radar chart comparing Flipdish and J'Toye average feature coverage across eight categories. Flipdish leads ordering channels, kitchen and operations, growth and retention, delivery and analytics; J'Toye leads UK compliance and platform; payments are roughly level."
-                >
-                  <ResponsiveContainer width="100%" height={360}>
-                    <RadarChart data={radarData} outerRadius="72%">
-                      <PolarGrid />
-                      <PolarAngleAxis dataKey="group" tick={{ fontSize: 11, fill: TEARDOWN_CHART.axisTick }} />
-                      <Radar name="Flipdish" dataKey="flipdish" stroke={TEARDOWN_CHART.flipdish} fill={TEARDOWN_CHART.flipdish} fillOpacity={0.28} />
-                      <Radar name="J'Toye" dataKey="jtoye" stroke={TEARDOWN_CHART.jtoye} fill={TEARDOWN_CHART.jtoye} fillOpacity={0.32} />
-                      <Legend />
-                      <Tooltip />
-                    </RadarChart>
-                  </ResponsiveContainer>
+                {/* FE-1: this `<figure>` is a CSS grid item (the `lg:grid-cols-[0.8fr_1.2fr]`
+                    row above), and a grid item's default `min-width` is `auto` — it will
+                    not shrink below its content's min-content size. Recharts' axis-tick
+                    labels and legend entries are laid out in pixel-measured SVG/HTML that
+                    does not always respect the 100%-width `ResponsiveContainer` box on a
+                    narrow viewport, which was pushing the whole document 56px wider than
+                    390px. `min-w-0` on the figure (above) removes that floor at the
+                    source; this `overflow-x-auto` wrapper is the safety net the repo's
+                    retention-table pattern also uses (components/legal/retention-table.tsx)
+                    — content is never shrunk off-screen, a local scrollbar appears only if
+                    something still does not fit. */}
+                <div className="overflow-x-auto">
+                  <div
+                    role="img"
+                    aria-label="Radar chart comparing Flipdish and J'Toye average feature coverage across eight categories. Flipdish leads ordering channels, kitchen and operations, growth and retention, delivery and analytics; J'Toye leads UK compliance and platform; payments are roughly level."
+                  >
+                    <ResponsiveContainer width="100%" height={360}>
+                      <RadarChart data={radarData} outerRadius="72%">
+                        <PolarGrid />
+                        <PolarAngleAxis dataKey="group" tick={{ fontSize: 11, fill: TEARDOWN_CHART.axisTick }} />
+                        <Radar name="Flipdish" dataKey="flipdish" stroke={TEARDOWN_CHART.flipdish} fill={TEARDOWN_CHART.flipdish} fillOpacity={0.28} />
+                        <Radar name="J'Toye" dataKey="jtoye" stroke={TEARDOWN_CHART.jtoye} fill={TEARDOWN_CHART.jtoye} fillOpacity={0.32} />
+                        <Legend />
+                        <Tooltip />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
                 {/* Accessible data-table fallback for the chart. */}
                 <table className="sr-only">
