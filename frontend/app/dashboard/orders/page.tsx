@@ -513,7 +513,16 @@ function OrdersPageInner() {
   }
 
   return (
-    <div className="space-y-6">
+    // Phase 35, Index tier: a resource index, deliberately uncapped below the
+    // dashboard band. This is the surface that motivated the phase — six
+    // columns confined to the old 1400px cap left roughly 900px of empty
+    // gutter beside the table at a 2560 viewport. The tier adds NO width class
+    // on purpose: "fluid to the shell" is the documented pattern for
+    // data-dense lists, and the attribute is here so that being uncapped is a
+    // declaration a test can falsify rather than an absence indistinguishable
+    // from a forgotten cap. Do not "tidy" this by adding a max-width — the
+    // narrowing would be the defect this phase exists to remove.
+    <div data-width-tier="index" className="space-y-6">
       {/* Header */}
       <m.div
         initial={{ opacity: 0, y: -20 }}
