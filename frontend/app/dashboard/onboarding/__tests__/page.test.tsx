@@ -9,6 +9,7 @@ process.env.NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS = "2"
 
 import OnboardingPage from "../page"
 import apiClient from "@/lib/api-client"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { manyShops, pagedResponse, param } from "@/test-utils/spring-page"
 import type { GateDto, OnboardingDto, OnboardingState, GateStatus, GateType } from "@/types/api"
 
@@ -554,6 +555,139 @@ describe("#485 — the shop picker pages the whole list", () => {
         .filter((u) => u.startsWith("/api/v1/shops"))
       expect(shopUrls.map((u) => param(u, "page"))).toEqual(["0", "1"])
       expect(shopUrls.every((u) => param(u, "sort") === "name,asc")).toBe(true)
+    })
+  })
+})
+
+// ============================================================================
+// Phase 35 plan 35-05 — the Detail tier, on EVERY page-level render branch.
+//
+// This page has three page-level returns: the loading spinner, the
+// "Take your shop live" CREATE FORM when GET /me is a 404, and the loaded state
+// machine. After plan 35-02 the dashboard band declares the Shell tier, so a
+// branch that did NOT carry the Detail tier would render at the shell's content
+// box while its siblings render at 1100 — the page would change width as the
+// request settles. The create-form branch matters most of the three: it is a
+// fully-rendered state a brand-new vendor sees FIRST, not a transient.
+//
+// The assertions compare branches TO EACH OTHER, not each to a literal, because
+// the defect is the DIFFERENCE. `RemediationRow` and `GateRow` are sub-components
+// rendered INSIDE the loaded branch; they inherit the tier and are deliberately
+// not asserted here — a cap nested inside a cap is the defect, not the fix.
+// ============================================================================
+
+/** What an element SAYS about its width: the declared tier, and every cap on it. */
+interface TierDeclaration {
+  tier: string | null
+  maxWidthClasses: string[]
+}
+
+// Token match, never a substring. Variant prefixes are matched too: a
+// responsive second cap is still a second cap.
+const MAX_WIDTH_TOKEN = /^(?:[A-Za-z0-9_[\]().%-]+:)*max-w-/
+
+function declarationOf(el: Element): TierDeclaration {
+  return {
+    tier: el.getAttribute("data-width-tier"),
+    maxWidthClasses: Array.from(el.classList)
+      .filter((c) => MAX_WIDTH_TOKEN.test(c))
+      .sort(),
+  }
+}
+
+describe("Onboarding — the Detail tier on EVERY page-level render branch (35-05)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  // Each driver proves WHICH branch it got before handing back the root element.
+  // A driver that silently returned the wrong branch would make every assertion
+  // below vacuous.
+
+  function renderLoadingBranch(): Element {
+    // Never settles, so the component stays on its initial loading state.
+    routeGet(() => new Promise<never>(() => {}))
+    const { container } = render(<OnboardingPage />)
+    expect(container.querySelector(".animate-spin")).not.toBeNull()
+    return container.firstElementChild as Element
+  }
+
+  async function renderCreateFormBranch(): Promise<Element> {
+    routeGet(() => Promise.reject(notFound))
+    const { container } = render(<OnboardingPage />)
+    await within(container as HTMLElement).findByText("Take your shop live")
+    return container.firstElementChild as Element
+  }
+
+  async function renderLoadedBranch(): Promise<Element> {
+    routeGet(() => Promise.resolve({ data: onboarding("DRAFT") }))
+    const { container } = render(<OnboardingPage />)
+    await within(container as HTMLElement).findByText("Go live")
+    return container.firstElementChild as Element
+  }
+
+  const BRANCHES: Array<[string, () => Element | Promise<Element>]> = [
+    ["loading", renderLoadingBranch],
+    ["create-form", renderCreateFormBranch],
+    ["loaded", renderLoadedBranch],
+  ]
+
+  describe("CONTROL — the instrument can fail", () => {
+    it("counts two max-width classes when an element carries two", () => {
+      const el = document.createElement("div")
+      el.className = `mx-auto ${WIDTH_TIER_CLASS.detail} ${WIDTH_TIER_CLASS.shell}`
+      expect(declarationOf(el).maxWidthClasses).toHaveLength(2)
+    })
+
+    it("distinguishes a tiered declaration from an untiered one", () => {
+      const tiered = document.createElement("div")
+      tiered.className = `mx-auto ${WIDTH_TIER_CLASS.detail}`
+      tiered.setAttribute("data-width-tier", "detail")
+      const bare = document.createElement("div")
+      bare.className = "space-y-6"
+      expect(declarationOf(tiered)).not.toEqual(declarationOf(bare))
+    })
+  })
+
+  describe.each(BRANCHES)("the %s branch", (name, driver) => {
+    it("declares the detail width tier", async () => {
+      expect(declarationOf(await driver()).tier).toBe("detail")
+    })
+
+    it("carries the detail max-width utility from the tier vocabulary", async () => {
+      expect((await driver()).classList.contains(WIDTH_TIER_CLASS.detail)).toBe(true)
+    })
+
+    it("centres inside the wider Shell band", async () => {
+      expect((await driver()).classList.contains("mx-auto")).toBe(true)
+    })
+
+    it("carries exactly ONE max-width class", async () => {
+      expect(declarationOf(await driver()).maxWidthClasses).toEqual([WIDTH_TIER_CLASS.detail])
+    })
+  })
+
+  it("the LOADING branch renders the same declaration as the loaded branch", async () => {
+    const loading = declarationOf(renderLoadingBranch())
+    const loaded = declarationOf(await renderLoadedBranch())
+    expect(loading).toEqual(loaded)
+  })
+
+  it("the CREATE-FORM branch renders the same declaration as the loaded branch", async () => {
+    const createForm = declarationOf(await renderCreateFormBranch())
+    const loaded = declarationOf(await renderLoadedBranch())
+    expect(createForm).toEqual(loaded)
+  })
+
+  const PRESERVED: Array<[string, () => Element | Promise<Element>, string[]]> = [
+    ["loading", renderLoadingBranch, ["flex", "h-full", "items-center", "justify-center"]],
+    ["create-form", renderCreateFormBranch, ["space-y-6"]],
+    ["loaded", renderLoadedBranch, ["space-y-6"]],
+  ]
+
+  describe.each(PRESERVED)("the %s branch keeps its existing rhythm", (name, driver, classes) => {
+    it.each(classes)("still carries %s", async (cls) => {
+      expect((await driver()).classList.contains(cls)).toBe(true)
     })
   })
 })
