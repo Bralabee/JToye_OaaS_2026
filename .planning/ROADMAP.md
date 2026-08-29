@@ -348,7 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
-| 35. Horizontal Layout Contract | v2.3 | 1/13 | In Progress | — |
+| 35. Horizontal Layout Contract | v2.3 | 2/13 | In Progress | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
 before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
@@ -745,7 +745,7 @@ Root cause: `frontend/tailwind.config.ts` carries the stock shadcn block `contai
 
 **Requirements**: UIX-07 (declared layout contract), UIX-08 (index surfaces use available width), UIX-09 (reading surfaces keep their measure)
 **Depends on:** Phase 34
-**Plans:** 13 plans (8 waves)
+**Plans:** 2/13 plans executed
 
 **Constraints that are not negotiable:**
 - Widths are **declared in one config module** (following the existing `frontend/e2e/perf-budgets.ts` convention), never scattered literals — global config rule.
@@ -755,7 +755,7 @@ Root cause: `frontend/tailwind.config.ts` carries the stock shadcn block `contai
 
 Plans:
 - [x] 35-01-PLAN.md — declare the four tier widths in one constants module; generate the utilities from it; retire the shadcn container plugin (wave 1) — **COMPLETE 2026-08-29**, `35-01-SUMMARY.md`
-- [ ] 35-02-PLAN.md — the tier vocabulary in the DOM (one class map, one wrapper) and the Shell tier applied at the single container call site (wave 2)
+- [x] 35-02-PLAN.md — the tier vocabulary in the DOM (one class map, one wrapper) and the Shell tier applied at the single container call site (wave 2) — **COMPLETE 2026-08-29**, `35-02-SUMMARY.md`
 - [ ] 35-03-PLAN.md — Index tier on the five surfaces CONTEXT names: orders, products, overview, customers, shops (wave 3)
 - [ ] 35-04-PLAN.md — Index tier on the eight remaining dashboard surfaces, each PATTERNS ambiguity resolved at its site (wave 3)
 - [ ] 35-05-PLAN.md — Detail tier on order detail, onboarding and the import wizard; the ceiling-not-target rule and its exceptions ledger (wave 3)

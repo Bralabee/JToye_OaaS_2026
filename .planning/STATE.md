@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 35 plan 01 complete (layout contract declared; container retired)
-last_updated: "2026-08-29T18:55:00.000Z"
+stopped_at: Phase 35 plan 02 complete (tier vocabulary shipped; Shell tier applied to the dashboard band)
+last_updated: "2026-08-29T19:10:00.000Z"
 last_activity: 2026-08-29
 progress:
   total_phases: 14
   completed_phases: 10
   total_plans: 105
-  completed_plans: 95
+  completed_plans: 96
   percent: 71
 ---
 
@@ -25,8 +25,44 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 35 (horizontal-layout-contract) — IN PROGRESS, 1 of 13 plans complete
-Plan: 2 of 13 (next)
+Phase: 35 (horizontal-layout-contract) — IN PROGRESS, 2 of 13 plans complete
+Plan: 3 of 13 (next — wave 3 is five parallel plans, 35-03 / 04 / 05 / 06 / 07)
+
+> **35-02 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. The contract now
+> has a vocabulary the DOM can be queried on. `frontend/components/layout/content-tier.tsx` owns
+> `WIDTH_TIER_CLASS` and the `ContentTier` wrapper, and is the **only** place in the tree where
+> the three tier class literals exist — one occurrence each across `app/` + `components/`,
+> measured with a control (`mx-auto` matches 30 files, so the count is about the tree and not the
+> pattern). The class strings cannot live beside the numbers in `lib/`: Tailwind's content globs
+> exclude that directory and a class written there is silently never generated.
+>
+> **THE INTERIM STATE 35-01 LEFT IS CLOSED.** `dashboard-shell.tsx` no longer carries the dead
+> `container` class; the band declares `data-width-tier="shell"` and the 1700px Shell cap, applied
+> IN PLACE on the element that already existed — **no DOM node added**, so nothing in the existing
+> CLS, motion or bounding-box behaviour has a new element to notice. This is the tree's only width
+> call site, so all 21 dashboard routes now inherit a declared cap instead of running fluid.
+>
+> Seven break arms, all recorded with real output in both directions (the plan specified three;
+> four assertions had no fail direction at all, which is not acceptable on this project).
+> **The arm worth reading is F:** setting the shell tier to `max-w-7xl` — the tree's own existing
+> idiom, i.e. the *plausible* drift — left the **entire dashboard-shell suite green**. That suite
+> reads the class from the vocabulary module, so it proves the band applies whatever the vocabulary
+> says; only `content-tier.test.tsx`'s derivation assertion proves the vocabulary says the right
+> thing. Neither suite alone catches a wrong cap. Wave-3 plans inherit that property.
+>
+> Read out of the shipped stylesheet, not inferred: `.max-w-shell{max-width:1700px}`, with no
+> `@media` wrapping it (so it cannot bind at 390px), and `max-width:1400px` / `.container{`
+> absent. `"data-width-tier":"shell"` is present in the built client chunk. Note for wave 3:
+> `max-w-detail` and `max-w-marketing` are **already** in the CSS because their literals are in a
+> scanned file — so "the rule is in the stylesheet" is NOT evidence any surface applies it.
+>
+> Full Jest **140 suites / 1393 tests** green; `npm run build` rc=0; tsc rc=0; lint 0 errors;
+> branch 0 behind base. **NOT proven in a browser** — the dashboard is authenticated, per-PR CI
+> runs only the two public specs, and per **#683 the nightly lane is dark**. The honest phrasing
+> stays "covered by a spec that no current tree executes", never "covered nightly".
+>
+> UIX-07 advanced to **2 of 4 plans**; UIX-08's *mechanism* shipped but **no index surface
+> declares a tier yet**, so that row stays not-started on its own limbs.
 
 > **35-01 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. The four content
 > widths now exist exactly once, in `frontend/lib/layout-widths.ts`, read by the Tailwind build,
