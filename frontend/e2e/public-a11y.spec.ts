@@ -316,6 +316,89 @@ test.describe("public surfaces — WCAG 2.1 AA", () => {
       console.log(`  [control] checkout seeded line items on page = ${lineCount}`)
     })
   })
+
+  /**
+   * CART — SEEDED, FOR THE SAME REASON AS CHECKOUT.
+   *
+   * `items.length === 0` renders a two-line empty stub with an `<h2>` ("Your
+   * basket is empty") and NO `<h1>` at all (`app/shop/[slug]/cart/page.tsx`) —
+   * the populated branch is the only one carrying `<h1>Your basket</h1>`.
+   * `scanSurface`'s universal control requires at least one `<h1>`, so an
+   * unseeded `/cart` fails that control before axe ever runs — this is not a
+   * weaker guard than checkout's, it is the SAME guard catching the SAME class
+   * of empty-state artefact one route earlier. F1 (A11Y-7 / A11Y-11) added
+   * accessible names to the quantity steppers and fixed the "Clear all" /
+   * category-label contrast on exactly this page; this test is what proves the
+   * fix on the real seeded route rather than merely on the source.
+   */
+  test("cart has no WCAG 2.1 AA violations (with a seeded basket)", async ({
+    page,
+  }) => {
+    const path = await resolveStorefrontPath(page)
+    const slug = path.split("/").filter(Boolean).pop() as string
+    expect(slug, "could not derive a slug from the resolved storefront path").toBeTruthy()
+
+    // Seed BEFORE navigation — same reasoning as checkout above: the provider
+    // hydrates from localStorage on mount, so a post-load write is too late.
+    await page.addInitScript(
+      ([key, shopSlug]) => {
+        window.localStorage.setItem(
+          key,
+          JSON.stringify({
+            shopSlug,
+            owner: null,
+            items: [
+              {
+                productId: "p-1",
+                title: "Portrait Dish",
+                pricePennies: 950,
+                quantity: 2,
+                imageUrl: null,
+                category: "Mains",
+              },
+            ],
+          })
+        )
+      },
+      [`${CART_KEY_PREFIX}${slug}`, slug]
+    )
+
+    await open(page, `${path}/cart`)
+
+    await scanSurface(page, `${path}/cart`, async (p) => {
+      // Both halves fail on the empty stub, and each names a different way the
+      // seed can have failed.
+      await expect(
+        p.getByRole("heading", { level: 1, name: "Your basket" }),
+        "cart rendered its EMPTY state — the basket seed did not take, so the " +
+          "populated <h1> and the quantity steppers are both absent and a clean " +
+          "scan would be measuring a two-line empty-basket stub"
+      ).toBeVisible()
+
+      const lineItems = p.getByText("Portrait Dish")
+      const lineCount = await lineItems.count()
+      expect(
+        lineCount,
+        "no basket line item — the seeded basket did not reach the page"
+      ).toBeGreaterThan(0)
+
+      // THE CONTROL THIS TEST EXISTS FOR (beyond the shared empty-state guard):
+      // the quantity steppers must actually be reachable by their accessible
+      // name, not merely present as unlabelled buttons axe would flag anyway.
+      // Quantity is seeded at 2, so the minus button reads "Decrease quantity
+      // of", never "Remove … from basket".
+      await expect(
+        p.getByRole("button", { name: "Decrease quantity of Portrait Dish" }),
+        "quantity stepper missing its accessible name (A11Y-7 regression)"
+      ).toBeVisible()
+      await expect(
+        p.getByRole("button", { name: "Increase quantity of Portrait Dish" }),
+        "quantity stepper missing its accessible name (A11Y-7 regression)"
+      ).toBeVisible()
+
+      console.log(`  [control] cart seeded line items on page = ${lineCount}`)
+    })
+  })
 })
 
 /**

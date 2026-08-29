@@ -151,6 +151,11 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
                 <div className="relative z-10 inline-flex items-center gap-0 rounded-full bg-amber-500 text-amber-ink">
                   <button
                     onClick={() => updateQuantity(product.id, quantity - 1)}
+                    aria-label={
+                      quantity === 1
+                        ? `Remove ${product.title} from basket`
+                        : `Decrease quantity of ${product.title}`
+                    }
                     className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all"
                   >
                     <Minus className="h-3 w-3" />
@@ -158,6 +163,7 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
                   <span className="min-w-[1.25rem] text-center text-xs font-bold">{quantity}</span>
                   <button
                     onClick={() => updateQuantity(product.id, quantity + 1)}
+                    aria-label={`Increase quantity of ${product.title}`}
                     className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-amber-400 active:scale-95 transition-all"
                   >
                     <PlusIcon className="h-3 w-3" />
