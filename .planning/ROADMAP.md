@@ -745,7 +745,7 @@ Root cause: `frontend/tailwind.config.ts` carries the stock shadcn block `contai
 
 **Requirements**: UIX-07 (declared layout contract), UIX-08 (index surfaces use available width), UIX-09 (reading surfaces keep their measure)
 **Depends on:** Phase 34
-**Plans:** 9/13 plans executed
+**Plans:** 10/13 plans executed
 
 **Constraints that are not negotiable:**
 - Widths are **declared in one config module** (following the existing `frontend/e2e/perf-budgets.ts` convention), never scattered literals — global config rule.
@@ -763,7 +763,7 @@ Plans:
 - [x] 35-07-PLAN.md — Marketing tier declared on the already-1280 surfaces; shop detail skeleton aligned to its content (wave 3)
 - [x] 35-08-PLAN.md — the Playwright width-contract spec at 1440/1920/2560, its stack-free half wired into the per-PR browser gate (wave 4)
 - [x] 35-09-PLAN.md — the desktop-viewport CLS arm for the landing route, control measured by two-arm A/B (wave 4)
-- [ ] 35-10-PLAN.md — the static contract gate, its tier manifest, and its CI wiring in the same commit (wave 5)
+- [x] 35-10-PLAN.md — the static contract gate, its tier manifest, and its CI wiring in the same commit (wave 5) — **COMPLETE 2026-08-29**, `35-10-SUMMARY.md`. 7 assertions / 104 claims over a 43-row manifest, wired into `ops-contracts` in the creating commit; 18 arms recorded in both directions incl. 2 controls and 3 VOIDs; **35-07's owed skeleton-parity arm discharged** (same break: 146 jest tests still green, gate rc=1 naming all three family members)
 - [ ] 35-11-PLAN.md — the contract document closing the "no declared standard" finding, plus the metrics regeneration (wave 6)
 - [ ] 35-12-PLAN.md — runtime parity, the mobile byte-identical CSS diff, the pre-change control arm and the full browser sweep (wave 7)
 - [ ] 35-13-PLAN.md — owner verification at 1920 and 2560 against the originating complaint (wave 8, blocking checkpoint)

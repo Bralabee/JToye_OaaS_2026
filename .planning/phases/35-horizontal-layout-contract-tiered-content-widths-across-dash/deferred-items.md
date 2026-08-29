@@ -168,3 +168,51 @@ A second server on **:3011** with `CORE_API_INTERNAL_URL` pointed at a dead port
 that `/` serves **5** marketing bands with no backend and **6** with one, because the kitchen row
 is `{shops.length > 0 && …}` from a server fetch. An exact band count taken from a live-stack
 probe would have red-ed the per-PR gate on every pull request.
+
+---
+
+## From 35-10 — `check-e2e-skip-budget.sh` is rc=2 VOID, and it is 35-12's
+
+Measured 2026-08-29 on `feature/35-horizontal-layout-contract`, before this plan changed
+anything and again after:
+
+```
+check-e2e-skip-budget  (2026-08-29T21:12:16Z)
+VOID: report describes a DIFFERENT spec set than the tree — re-run the suite.
+        report : e1c6611559839202bf4ffd598c4d24107a4b4a0b19e0bedbb53b07deb20e088b
+        tree   : 53a74f730a2ffc7a25242cf8b8eab0965b67912c6649bd4f082db465f0be71e0
+```
+
+The gate compares CONTENT, so this is not an mtime artefact — the stored report genuinely
+describes a spec set that predates this branch's spec changes (35-08 added
+`e2e/layout-width-contract.spec.ts`; 35-09 touched `landing-webperf.spec.ts`). It is failing
+**closed**, exactly as designed.
+
+**A fresh full-suite report clears it, and that run is 35-12's.** Not fixed here: 35-10 adds
+no spec and touches no `e2e/` file, so it cannot produce the report the gate wants, and
+hand-editing the stored hash would convert a correct VOID into a false green — the precise
+inversion this repo's own proof standards forbid. Recorded so the next reader knows the VOID
+is understood rather than unnoticed.
+
+**Related and still open:** `#686` records the skip budget at 7/6, and the gate is wired only
+into the dark nightly lane (`#683`), so on a current tree it fires nowhere at all. That is a
+separate defect from this VOID and is not 35-10's either.
+
+## From 35-10 — PATTERNS.md's G-2 attribution is wrong, and PATTERNS was not edited
+
+PATTERNS.md section F-1 and section 6 attribute the naive `container` substring noise (269
+hits / 55 files by its count, 371 comment-stripped lines / 55 files by mine) to
+`DialogContent`, `CardContent` and `TabsContent`. **None of those three identifiers contains
+the string `container`** — "Content" is not "container". Measured: the hits are Testing
+Library's `container` local (189 bare, 70 `container.querySelector`, 30
+`container.querySelectorAll`, 27 `container.firstElementChild`, 15 `container.textContent`, 9
+`containerRequest`), every one in a test file, plus 2 occurrences of `.container` which are
+`dashboard-shell.test.tsx`'s own absence guard. Shipped non-test source is **0**
+case-sensitively and **10** case-INSENSITIVELY — `ResponsiveContainer` ×8 (recharts) and
+`staggerContainer` ×2 (framer-motion).
+
+The correction is recorded in `scripts/check-layout-width-contract.sh`'s header, where it is
+load-bearing, and in `35-10-SUMMARY.md`. **PATTERNS.md itself was NOT edited**: it is a dated
+planning artefact of this phase and rewriting its measurements after the fact would destroy
+the record of what the plans were actually built against. Whoever revisits the inventory
+should read the gate header alongside it.

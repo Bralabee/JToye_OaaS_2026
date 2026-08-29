@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 35 plan 08 complete (width-contract browser spec + per-PR CI wiring; wave-3 consolidated build green)
-last_updated: "2026-08-29T20:56:00.000Z"
+stopped_at: Phase 35 plan 10 complete (static layout-contract gate + tier manifest + CI wiring; 35-07's owed parity arm discharged)
+last_updated: "2026-08-29T21:40:00.000Z"
 last_activity: 2026-08-29
 progress:
   total_phases: 14
   completed_phases: 10
   total_plans: 105
-  completed_plans: 103
-  percent: 98
+  completed_plans: 104
+  percent: 99
 ---
 
 # Project State
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 35 (horizontal-layout-contract) — IN PROGRESS, 9 of 13 plans complete
-Plan: 10 of 13 (next — 35-10 static contract gate, then 35-11 / 35-12 / 35-13)
+Phase: 35 (horizontal-layout-contract) — IN PROGRESS, 10 of 13 plans complete
+Plan: 11 of 13 (next — 35-11 the documented standard, then 35-12 / 35-13)
 
 > **COUNTER PROVENANCE, because these numbers were nearly written wrong.** The
 > `completed_plans` figure above was advanced BY HAND from 96 to 103 — the seven plans with a
@@ -43,6 +43,48 @@ Plan: 10 of 13 (next — 35-10 static contract gate, then 35-11 / 35-12 / 35-13)
 > says 105 total. The SDK computes 118/114. The existing basis is preserved (105 total) and only
 > advanced by the plans genuinely completed, so no invented number enters the file — but the
 > discrepancy is real and is owed to whoever owns milestone accounting.
+
+> **35-10 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. The contract is now
+> ENFORCED rather than merely written down. `scripts/check-layout-width-contract.sh` (628 lines,
+> **7 assertions / 104 claims**) reads `docs/architecture/layout-tiers.tsv` (43 rows: 1 shell,
+> 13 index, 3 detail, 10 marketing, 1 vocabulary, **12 N/A**, a 3-member parity family) and is
+> wired into `ops-contracts` **in the same commit that created it** — `check-gate-enforcement.sh`
+> is default-deny, and the wiring itself was armed (deleting the step reds it, naming this gate).
+>
+> **35-07's OWED ARM IS DISCHARGED, and the discharge is the side-by-side rather than a green
+> gate.** The same break — the `/shop/[slug]` skeleton band back to 1280 — was re-run: 35-07's
+> instrument still reports **14 suites / 146 tests passed**, exactly the figure it recorded, while
+> the gate exits **1** naming all three family members. A "the gate passes now" claim would have
+> proved nothing about the debt. The third member (`not-found.tsx`) was armed separately, because
+> a family check proven on two of three reads as covering the route.
+>
+> **Eighteen arms, all with real output in both directions**, including two controls and three
+> VOIDs (empty manifest, a row with a shifted column, a row naming a missing file). Two arms had
+> to be redesigned mid-run: PATTERNS.md attributes the naive `container` noise to `DialogContent`
+> / `CardContent` / `TabsContent`, and **none of those contains the string `container`** — the
+> planned control could never have reproduced the false positive it existed to guard. The real
+> shapes are Testing Library's `container` local (all in test files) and, case-insensitively,
+> `ResponsiveContainer` ×8 + `staggerContainer` ×2 in shipped source.
+>
+> **Two measured design decisions the next reader must not "simplify".** (1) Comments are
+> stripped before every count: unstripped, the tier-literal totals are **3/1/4**, so the gate
+> would red on four pre-existing comment lines it did not cause. (2) The index tier's no-cap
+> check is scoped to the **declaring element**, never the file — all five original index pages
+> legitimately carry `max-w-2xl` on a modal `DialogContent`, and a file-scoped check would red on
+> correct code.
+>
+> A **seventh** assertion was added beyond the plan's six (Rule 2): the index tier's contract is
+> an *absence*, and it was the only tier with no static instrument — 35-03 records that it built
+> no jsdom harness for `customers` or `shops` either.
+>
+> **All seven assertions block a pull request**, which matters on this phase: the gate is static
+> by construction, so unlike the browser-measured Shell/Index/Detail assertions it does not depend
+> on the dark nightly lane (#683). What it CANNOT say is anything about a rendered band width —
+> that remains "covered by a spec that no current tree executes". **Block delta 0**; no test file
+> touched, `docs/metrics.json` correctly untouched.
+>
+> `check-e2e-skip-budget.sh` is **rc=2 VOID** (stored report predates this branch's spec changes)
+> — failing closed as designed, cleared by 35-12's fresh full-suite run, logged not papered over.
 
 > **35-08 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. The contract is now
 > MEASURED in a real browser, not merely declared. `frontend/e2e/layout-width-contract.spec.ts`
