@@ -586,6 +586,38 @@ const INDEX_ROUTES = ["/dashboard/orders", "/dashboard/products"]
 // the Detail tier, so the measurement cannot depend on which one rendered.
 const DETAIL_ROUTE = "/dashboard/onboarding"
 
+/**
+ * DOES THE SHELL CAP BIND AT THIS VIEWPORT? Declared per describe, and this is
+ * the one expectation in the file deliberately NOT derived from the constant.
+ *
+ * Everything else here compares the rendered page to `lib/layout-widths.ts`, so
+ * the two can never drift — which is the whole point of a declared contract, and
+ * is why `MEASURED` in `layout-widths.ts` reads the way it does. But it has a
+ * consequence that has to be designed around rather than discovered: moving the
+ * constant moves BOTH SIDES, so an arm that edits the module and rebuilds makes
+ * the assertion agree with the new value and PASS. Measured during plan 35-08:
+ * setting `SHELL_MAX_PX` to the pre-change 1400 and rebuilding leaves every
+ * min-model assertion green, because 1400 is what the module now claims and 1400
+ * is what the page now renders. A contract change is not a defect.
+ *
+ * So the falsifiable half is a claim about the PAGE'S GEOMETRY that the constant
+ * cannot move. Measured on this tree, `main` offers the shell band:
+ *
+ *   1440 -> 1184   the 1700 cap does not bind; the band is FLUID
+ *   1920 -> 1664   still does not bind (it starts binding near 1956px)
+ *   2560 -> 2304   binds; the band is CAPPED and strictly narrower than main
+ *
+ * At 1440 this is CONTEXT.md's "must not move" case stated so it can fail: the
+ * dashboard already used all its available width there BEFORE this phase, and it
+ * must still. Drop the constant to 900 and the band stops filling `main` — the
+ * fluid claim reds even though the min model is content.
+ */
+const SHELL_CAP_BINDS: Record<number, boolean> = {
+  1440: false,
+  1920: false,
+  2560: true,
+}
+
 function dashboardDescribe(viewportWidth: number, viewportHeight: number): void {
   test.describe(`@desktop-only Dashboard tiers @ ${viewportWidth}px`, () => {
     test.use({ viewport: { width: viewportWidth, height: viewportHeight } })
@@ -630,6 +662,27 @@ function dashboardDescribe(viewportWidth: number, viewportHeight: number): void 
       ).toBe(0)
 
       expectDeclaredMaxWidth(shell, SHELL_CSS, "Shell", where)
+
+      // ── THE CONSTANT-INDEPENDENT HALF — see SHELL_CAP_BINDS for why it has to
+      // exist. Every assertion above imports SHELL_MAX_PX, so all of them follow
+      // the module wherever it goes; only this one can fail when the module is
+      // the thing that moved.
+      if (SHELL_CAP_BINDS[viewportWidth]) {
+        expect(
+          shell.band,
+          `${where}: at this viewport the shell cap is expected to BIND, so the ` +
+            `band must be strictly narrower than the width <main> offers it. ` +
+            `${explain(shell)}`,
+        ).toBeLessThan(shell.parentContentWidth)
+      } else {
+        expect(
+          shell.band,
+          `${where}: at this viewport NO cap binds, so the dashboard must use ` +
+            `every pixel <main> offers it — this is CONTEXT.md's "must not move" ` +
+            `case, and a shell cap set below the available width lands here. ` +
+            `${explain(shell)}`,
+        ).toBe(shell.parentContentWidth)
+      }
     })
 
     test("Index — uncapped BY NAME, and fills the shell's content box", async ({ page }) => {
