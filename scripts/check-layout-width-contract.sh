@@ -28,9 +28,23 @@
 #   G-2 THE RETIRED SCAFFOLD CLASS. The shadcn container class appears in no class context
 #       in shipped app/ or components/ source. Catches the 1400px default being
 #       reintroduced. Matched as a whitespace-delimited TOKEN inside a string literal in a
-#       class context, never as a bare substring: measured on this tree, a naive substring
-#       search returns 371 comment-stripped lines across 55 files against exactly 0 real
-#       ones, because DialogContent, CardContent and TabsContent all contain the word.
+#       class context, never as a bare substring.
+#
+#       MEASURED, and the measurement corrects PATTERNS.md. A naive case-sensitive
+#       substring search over comment-stripped app/ + components/ returns 371 lines across
+#       55 files against 0 real ones. PATTERNS attributes those to DialogContent,
+#       CardContent and TabsContent — that attribution is WRONG and was checked rather
+#       than inherited: none of those three identifiers contains the string "container"
+#       ("Content" is not "container"). What they actually are is Testing Library's
+#       `container` local: 189 bare occurrences plus 70 `container.querySelector`, 30
+#       `container.querySelectorAll`, 27 `container.firstElementChild` and so on, every
+#       one of them in a test file. In shipped non-test source the case-sensitive count is
+#       ZERO. Case-INSENSITIVELY it is 10 — `ResponsiveContainer` x8 (recharts) and
+#       `staggerContainer` x2 (a framer-motion variant) — which is what a sloppier form of
+#       this check would red on. Both are identifiers rather than string literals, so the
+#       token-inside-a-string-literal rule is immune to them by construction, and the G-2
+#       control arm proves it on a real ResponsiveContainer rather than on a fabricated
+#       example.
 #
 #   G-3 THE CONFIG, BOTH HALVES, INDEPENDENTLY. tailwind.config.ts declares no `container`
 #       key inside `theme`, AND sets `container: false` inside `corePlugins`. Deleting the
