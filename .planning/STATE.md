@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 35 plan 02 complete (tier vocabulary shipped; Shell tier applied to the dashboard band)
-last_updated: "2026-08-29T19:10:00.000Z"
+stopped_at: Phase 35 plan 08 complete (width-contract browser spec + per-PR CI wiring; wave-3 consolidated build green)
+last_updated: "2026-08-29T20:56:00.000Z"
 last_activity: 2026-08-29
 progress:
   total_phases: 14
   completed_phases: 10
   total_plans: 105
-  completed_plans: 96
-  percent: 71
+  completed_plans: 103
+  percent: 98
 ---
 
 # Project State
@@ -25,10 +25,53 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 35 (horizontal-layout-contract) — IN PROGRESS, 2 of 13 plans complete
-Plan: 3 of 13 (next — wave 3 is five parallel plans, 35-03 / 04 / 05 / 06 / 07)
+Phase: 35 (horizontal-layout-contract) — IN PROGRESS, 9 of 13 plans complete
+Plan: 10 of 13 (next — 35-10 static contract gate, then 35-11 / 35-12 / 35-13)
 
-> **35-02 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. The contract now
+> **COUNTER PROVENANCE, because these numbers were nearly written wrong.** The
+> `completed_plans` figure above was advanced BY HAND from 96 to 103 — the seven plans with a
+> SUMMARY on disk since it was last set (35-03, 04, 05, 06, 07, 08, 09). It was **not** taken
+> from `gsd-sdk query state.update-progress`: that verb was run once, and besides recomputing the
+> counters it silently rewrote `stopped_at` to *"Phase 28 context gathered"* and `last_activity`
+> to `2026-08-28`, regressing the recorded position by seven phases. The call was reverted by
+> content (`git checkout --`, blob identity confirmed against HEAD) and the counters edited by
+> hand instead. The same corruption is already recorded for `state.record-session`; it is not
+> specific to that verb.
+>
+> **The counter BASIS disagrees with disk and nobody has reconciled it.** Recorded here rather
+> than papered over: disk holds **119** `*-PLAN.md` and **115** `*-SUMMARY.md`, while this block
+> says 105 total. The SDK computes 118/114. The existing basis is preserved (105 total) and only
+> advanced by the plans genuinely completed, so no invented number enters the file — but the
+> discrepancy is real and is owed to whoever owns milestone accounting.
+
+> **35-08 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. The contract is now
+> MEASURED in a real browser, not merely declared. `frontend/e2e/layout-width-contract.spec.ts`
+> (711 lines, 21 desktop tests) asserts all four tiers at 1440/1920/2560 against the imported
+> constants, and a new step in `ci-cd.yaml` runs its stack-free half on every pull request.
+>
+> **Two of the plan's own break arms were measured incapable of failing.** Every shell assertion
+> imported `SHELL_MAX_PX`, so editing the module and rebuilding moved BOTH sides and the arm
+> passed. Fixed by adding a per-viewport claim about the PAGE'S GEOMETRY that the constant cannot
+> move (fill `main` at 1440/1920; strictly narrower at 2560). Five arms then recorded in both
+> directions, including the ARM E control proving the padding-inclusive denominator reds by
+> exactly **64px** at all three viewports.
+>
+> **The consolidated wave-3 close, owed by 35-03/04/05/07, ran here:** `npx jest` **141 suites /
+> 1503 tests** green, and `npm run build` rc=0 from a cleared `.next` — with the build itself shown
+> able to fail (`TS2322` → *"Failed to type check"*, rc=1) so "green" is a claim about a live
+> type-check rather than a no-op.
+>
+> **Runtime parity is NOT clean and this is the handoff:** `check-runtime-freshness.sh` rc=1 —
+> the Compose `frontend` image is `[image-not-rebuilt]` (tagged 15:42 UTC against build inputs
+> from 19:40 UTC) and `curl localhost:3000/` returns **0** tier attributes. Every measurement in
+> 35-08 was therefore taken against a locally built `next start`, never `:3000`. Owed to 35-12/13.
+>
+> Coverage stays honest: the Marketing tier blocks a PR; Shell/Index/Detail are
+> **"covered by a spec that no current tree executes"** (#683), written in those words in both the
+> spec header and the CI step. Skip budget handled by option (a) — the nightly already exports the
+> credential, measured 21 passed / 0 skipped with it and 12 passed / 9 skipped without.
+>
+> **35-02 (2026-08-29)** on `feature/35-horizontal-layout-contract`. The contract now
 > has a vocabulary the DOM can be queried on. `frontend/components/layout/content-tier.tsx` owns
 > `WIDTH_TIER_CLASS` and the `ContentTier` wrapper, and is the **only** place in the tree where
 > the three tier class literals exist — one occurrence each across `app/` + `components/`,

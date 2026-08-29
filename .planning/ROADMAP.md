@@ -348,7 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
-| 35. Horizontal Layout Contract | v2.3 | 2/13 | In Progress | — |
+| 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
 before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
@@ -745,7 +745,7 @@ Root cause: `frontend/tailwind.config.ts` carries the stock shadcn block `contai
 
 **Requirements**: UIX-07 (declared layout contract), UIX-08 (index surfaces use available width), UIX-09 (reading surfaces keep their measure)
 **Depends on:** Phase 34
-**Plans:** 2/13 plans executed
+**Plans:** 9/13 plans executed
 
 **Constraints that are not negotiable:**
 - Widths are **declared in one config module** (following the existing `frontend/e2e/perf-budgets.ts` convention), never scattered literals — global config rule.
@@ -756,13 +756,13 @@ Root cause: `frontend/tailwind.config.ts` carries the stock shadcn block `contai
 Plans:
 - [x] 35-01-PLAN.md — declare the four tier widths in one constants module; generate the utilities from it; retire the shadcn container plugin (wave 1) — **COMPLETE 2026-08-29**, `35-01-SUMMARY.md`
 - [x] 35-02-PLAN.md — the tier vocabulary in the DOM (one class map, one wrapper) and the Shell tier applied at the single container call site (wave 2) — **COMPLETE 2026-08-29**, `35-02-SUMMARY.md`
-- [ ] 35-03-PLAN.md — Index tier on the five surfaces CONTEXT names: orders, products, overview, customers, shops (wave 3)
-- [ ] 35-04-PLAN.md — Index tier on the eight remaining dashboard surfaces, each PATTERNS ambiguity resolved at its site (wave 3)
-- [ ] 35-05-PLAN.md — Detail tier on order detail, onboarding and the import wizard; the ceiling-not-target rule and its exceptions ledger (wave 3)
-- [ ] 35-06-PLAN.md — Marketing tier on the landing route (the phase's only real width change) and both public chrome rails (wave 3)
-- [ ] 35-07-PLAN.md — Marketing tier declared on the already-1280 surfaces; shop detail skeleton aligned to its content (wave 3)
-- [ ] 35-08-PLAN.md — the Playwright width-contract spec at 1440/1920/2560, its stack-free half wired into the per-PR browser gate (wave 4)
-- [ ] 35-09-PLAN.md — the desktop-viewport CLS arm for the landing route, control measured by two-arm A/B (wave 4)
+- [x] 35-03-PLAN.md — Index tier on the five surfaces CONTEXT names: orders, products, overview, customers, shops (wave 3)
+- [x] 35-04-PLAN.md — Index tier on the eight remaining dashboard surfaces, each PATTERNS ambiguity resolved at its site (wave 3)
+- [x] 35-05-PLAN.md — Detail tier on order detail, onboarding and the import wizard; the ceiling-not-target rule and its exceptions ledger (wave 3)
+- [x] 35-06-PLAN.md — Marketing tier on the landing route (the phase's only real width change) and both public chrome rails (wave 3)
+- [x] 35-07-PLAN.md — Marketing tier declared on the already-1280 surfaces; shop detail skeleton aligned to its content (wave 3)
+- [x] 35-08-PLAN.md — the Playwright width-contract spec at 1440/1920/2560, its stack-free half wired into the per-PR browser gate (wave 4)
+- [x] 35-09-PLAN.md — the desktop-viewport CLS arm for the landing route, control measured by two-arm A/B (wave 4)
 - [ ] 35-10-PLAN.md — the static contract gate, its tier manifest, and its CI wiring in the same commit (wave 5)
 - [ ] 35-11-PLAN.md — the contract document closing the "no declared standard" finding, plus the metrics regeneration (wave 6)
 - [ ] 35-12-PLAN.md — runtime parity, the mobile byte-identical CSS diff, the pre-change control arm and the full browser sweep (wave 7)

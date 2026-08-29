@@ -123,3 +123,48 @@ This cannot show at mobile — `.max-w-marketing{max-width:1280px}` is emitted w
 query (verified against the generated stylesheet), so it cannot bind against a 375px or
 390px parent, and the recorded 0.1793 baseline was measured at 375px. **Desktop is the only
 place this can appear, and nothing in the repo measured desktop CLS on `/` before 35-09.**
+
+---
+
+## The Compose frontend runtime predates wave 3 — measured, not fixed here
+
+**Found by:** plan 35-08 (2026-08-29)
+**Owner of the remediation:** plans **35-12 / 35-13** (they own runtime parity and the phase close)
+
+`scripts/check-runtime-freshness.sh` on this branch:
+
+```
+frontend     DRIFT  [image-not-rebuilt]  image tagged 2026-08-29 15:42:00 UTC
+                    / newest build-input commit 34256f5c (2026-08-29 19:40:26 UTC)
+core-java    FRESH    edge-go  FRESH    mcp-server  FRESH
+FAIL: 1 of 4 running built service(s) do not match the source tree (0 unverified).
+```
+
+Corroborated structurally before the gate was consulted, which is the cheaper signal:
+`curl localhost:3000/` returns **0** occurrences of the tier attribute, so the running image
+predates 35-06 entirely.
+
+**Why this is recorded rather than fixed.** It is outside 35-08's file set, and 35-08 did not
+need it: every measurement was taken against a locally built `next start`, which is also what
+the per-PR CI job does. But it is a trap for any later plan that measures against `:3000` and
+reads a confident red as a product defect — the failure would be real, current, and about the
+wrong tree.
+
+**The recipe 35-08 used, so it does not have to be rediscovered.** Build once, then serve on a
+port Keycloak already accepts as a redirect URI (`infra/keycloak/realm-export.json` lists 3000,
+3100, 9090, 8080 — **3011 is NOT among them**, so the dashboard half cannot log in there):
+
+```
+cd frontend
+NEXT_PUBLIC_API_URL=http://localhost:9090 \
+NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8085/realms/jtoye-dev \
+NEXTAUTH_URL=http://localhost:3100 NEXTAUTH_SECRET=<from .env> npm run build
+# then `next start -p 3100` with KEYCLOAK_ISSUER_INTERNAL and CORE_API_INTERNAL_URL
+# pointed at localhost (the compose values name container hostnames the host cannot resolve)
+```
+
+A second server on **:3011** with `CORE_API_INTERNAL_URL` pointed at a dead port reproduces the
+**stack-free CI shape** from the same artefact. That arm is worth keeping: it is what showed
+that `/` serves **5** marketing bands with no backend and **6** with one, because the kitchen row
+is `{shops.length > 0 && …}` from a server fetch. An exact band count taken from a live-stack
+probe would have red-ed the per-PR gate on every pull request.
