@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### P-4: the documented-claims gate runs locally in pre-push (#705) — 2026-08-30
+
+- **`.githooks/pre-push` gains P-4**: the vendored claim-gate
+  (`scripts/check-claims.sh`) now refuses a push whose checkout carries a drifted
+  doc claim — previously it ran only in CI, so drift was always a red-PR round
+  trip. Drift blocks with the gate's own output; VOID blocks too ("could not
+  verify" is not "verified"); a mid-bootstrap repo (missing entrypoint or engine)
+  and a missing `jq` skip loudly; delete-only pushes are not gated.
+- **Proof discipline**: selftest battery grew 4 → 10 arms — engine drift/clean
+  directions over a runtime-built fixture repo, plus rc 0/1/2 stubs driving
+  `check_claims()` itself (the mapping proven able to fail by mutation). The gate
+  deliberately asserts the working tree, matching the canonical trigger's
+  semantics; CI owns the committed truth.
+
 ### Review-record server backstop: merges require a review artifact (#697) — 2026-08-30
 
 - **A `review-record` commit status now posts on every PR head** (push, review,
