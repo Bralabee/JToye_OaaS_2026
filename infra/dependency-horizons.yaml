@@ -343,18 +343,18 @@ dependencies:
     eol_date: "2029-12-31"
 
   - id: golang
-    pin: "golang:1.26-alpine"
-    sites: ["edge-go/Dockerfile:10"]
+    pin: "golang:1.27-alpine"
+    sites: ["edge-go/Dockerfile:11"]
     kind: image
     owner: maintainer
     eol_slug: go
-    eol_cycle: "1.26"
+    eol_cycle: "1.27"
     eol_date: "false"
     note: >-
-      Catalogue `eol: false`. Go's real policy is support until two newer majors ship. 1.26
-      released 2026-02-10 and 1.27 has not shipped, so 1.26 loses support when 1.28 does.
-      That is a horizon without a date, so no `vendor_eol` is recorded — inventing one would
-      be the same fabrication this file exists to prevent.
+      Catalogue `eol: false`. Go's real policy is support until two newer majors ship. 1.27
+      adopted via dependabot #674 (2026-08), so it loses support when 1.29 does. That is a
+      horizon without a date, so no `vendor_eol` is recorded — inventing one would be the
+      same fabrication this file exists to prevent.
 
   - id: node
     pin: "node:24-alpine"
@@ -394,12 +394,12 @@ dependencies:
 
   # ------------------------------------------------------------------ toolchains
   - id: go-toolchain
-    pin: "go 1.26.0"
+    pin: "go 1.27.0"
     sites: ["edge-go/go.mod:3"]
     kind: toolchain
     owner: maintainer
     eol_slug: go
-    eol_cycle: "1.26"
+    eol_cycle: "1.27"
     eol_date: "false"
     note: >-
       Distinct from the `golang` image row: go.mod's directive sets the LANGUAGE version the
@@ -407,12 +407,15 @@ dependencies:
       apart, so they are two rows and H-5 checks both sites.
 
   - id: go-ci-setup
-    pin: "go-version: '1.26'"
-    sites: [".github/workflows/ci-cd.yaml:52", ".github/workflows/ci-cd.yaml:686"]
+    pin: "go-version: '1.27'"
+    sites:
+      - ".github/workflows/ci-cd.yaml:53"
+      - ".github/workflows/ci-cd.yaml:907"
+      - ".github/workflows/ci-cd.yaml:1269"
     kind: toolchain
     owner: maintainer
     eol_slug: go
-    eol_cycle: "1.26"
+    eol_cycle: "1.27"
     eol_date: "false"
     note: >-
       THE THIRD GO PIN, and until 2026-07-30 the only one no gate watched. edge-go/Dockerfile
@@ -422,8 +425,9 @@ dependencies:
       a different Go than production ships. Proven by break arm on 2026-07-30: with both
       go-version pins reverted to '1.25' and everything else at 1.26,
       check-dependency-horizons.sh exited 0. It exits 2 now.
-      TWO sites deliberately: the test job at :52 and the build job at :667. A single-site row
-      would leave the other free to drift, which is the same defect one level down.
+      THREE sites as of the 1.27 bump (#674): the test job, the operational-contracts job's
+      edge↔core contract gate, and the lint job's gofmt step — the third pin existed but was
+      undeclared, which is the same single-site defect one level down.
 
   - id: java-toolchain
     pin: "JavaLanguageVersion.of(21)"

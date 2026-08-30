@@ -7,7 +7,7 @@
 **Primary:**
 - Java 21 - Core API (Spring Boot 3.5.16) — toolchain `JavaLanguageVersion` pinned in `core-java/build.gradle.kts:12-13`
 - TypeScript 5 - Frontend (Next.js 16.3.2, React 19); `typescript` pinned in `frontend/package.json:66`
-- Go 1.26 - Edge API gateway (Gin) — `go 1.26.0` in `edge-go/go.mod:3`
+- Go 1.27 - Edge API gateway (Gin) — `go 1.27.0` in `edge-go/go.mod:3`
 
 **Secondary:**
 - SQL (PostgreSQL 15) - Schema evolution via Flyway migrations (`core-java/src/main/resources/db/migration/`)
@@ -63,7 +63,7 @@
 - Radix UI primitives (alert-dialog, dialog, dropdown-menu, label, select, slot, tabs, toast)
 - Zod 4.4.3 - Schema validation
 - @stomp/stompjs 7.3.0 - Browser STOMP client for KDS WebSocket (added in v2.1)
-- Framer Motion 12.43.0 - Animations
+- Framer Motion 13.1.1 - Animations
 - Recharts 3.10.1 - Admin dashboard charts
 - date-fns 4.4.0, clsx 2.1.1, class-variance-authority 0.7.1, lucide-react 1.33.0
 
@@ -109,7 +109,7 @@
 - @stripe/react-stripe-js 6.1.0, @stripe/stripe-js 9.0.1 - Stripe Elements
 - axios 1.19.0 - HTTP client
 - @stomp/stompjs 7.3.0 - KDS WebSocket client (v2.1 addition)
-- framer-motion 12.43.0, recharts 3.10.1
+- framer-motion 13.1.1, recharts 3.10.1
 
 **Infrastructure (from `docker-compose.full-stack.yml` / `infra/monitoring/docker-compose.monitoring.yml`):**
 - postgres:15-alpine
@@ -186,7 +186,7 @@
 - grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:84`
 - prom/alertmanager:v0.27.0 — `infra/monitoring/docker-compose.monitoring.yml:115`
 - Next.js 16.3.2 — `frontend/package.json:37`
-- Go 1.26 (`go 1.26.0`) — `edge-go/go.mod:3`
+- Go 1.27 (`go 1.27.0`) — `edge-go/go.mod:3`
 
 ## Test Suite
 
