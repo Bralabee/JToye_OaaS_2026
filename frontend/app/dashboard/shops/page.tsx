@@ -6,7 +6,9 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import apiClient from "@/lib/api-client"
+import { describeLoadError } from "@/lib/human-error"
 import { useToast } from "@/hooks/use-toast"
+import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
 import {
   Card,
   CardContent,
@@ -78,6 +80,11 @@ export default function ShopsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [published, setPublished] = useState(false)
   const [openingHours, setOpeningHours] = useState<Record<string, string>>({})
+  // F2 sweep: a 429/network failure must render an error panel, never the
+  // "No shops yet" empty state — `fetchShops`'s catch deliberately does not
+  // reset `shops` to `[]`.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [loadErrorMessage, setLoadErrorMessage] = useState("")
   const { toast } = useToast()
 
   const {
@@ -112,13 +119,17 @@ export default function ShopsPage() {
       setShops(response.data.content || [])
       setTotalPages(response.data.totalPages || 0)
       setTotalElements(response.data.totalElements || 0)
+      setLoadFailed(false)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to load shops"
+      const { message } = describeLoadError(error, "Failed to load shops")
       toast({
         variant: "destructive",
         title: "Error loading shops",
-        description: errorMessage,
+        description: message,
       })
+      // F2 sweep: `shops` is deliberately left untouched above.
+      setLoadFailed(true)
+      setLoadErrorMessage(message)
     } finally {
       setLoading(false)
     }
@@ -130,9 +141,17 @@ export default function ShopsPage() {
       setShops(response.data || [])
       setTotalPages(1)
       setTotalElements(response.data?.length || 0)
-    } catch {
-      // Fall back to showing all shops
+      setLoadFailed(false)
+    } catch (error: unknown) {
+      // F2 sweep: this catch used to be fully silent.
+      setLoadFailed(true)
+      setLoadErrorMessage(describeLoadError(error, "Failed to search shops").message)
     }
+  }
+
+  const retryLoad = () => {
+    if (searchQuery.length >= 2) searchShops(searchQuery)
+    else fetchShops()
   }
 
   const openCreateDialog = () => {
@@ -205,7 +224,12 @@ export default function ShopsPage() {
       if (currentPage === 0) fetchShops()
       else setCurrentPage(0)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : `Failed to ${editingShop ? "update" : "create"} shop`
+      // A11Y-2 (#688): an axios error IS an Error whose .message is transport
+      // text — classify it so an RFC 7807 detail wins and raw strings never show.
+      const errorMessage = describeLoadError(
+        error,
+        `Failed to ${editingShop ? "update" : "create"} shop`
+      ).message
       toast({
         variant: "destructive",
         title: editingShop ? "Error updating shop" : "Error creating shop",
@@ -231,7 +255,8 @@ export default function ShopsPage() {
       if (currentPage === 0) fetchShops()
       else setCurrentPage(0)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to delete shop"
+      // A11Y-2 (#688): same classification as onSubmit above.
+      const errorMessage = describeLoadError(error, "Failed to delete shop").message
       toast({
         variant: "destructive",
         title: "Error deleting shop",
@@ -251,7 +276,13 @@ export default function ShopsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    // Phase 35, Index tier: a resource index, deliberately uncapped below the
+    // dashboard band. The tier adds NO width class on purpose — "fluid to the
+    // shell" is the documented pattern for data-dense lists — and the
+    // attribute is here so that being uncapped is a declaration a test can
+    // falsify rather than an absence indistinguishable from a forgotten cap.
+    // Do not "tidy" this by adding a max-width.
+    <div data-width-tier="index" className="space-y-6">
       {/* Header */}
       <m.div
         initial={{ opacity: 0, y: -20 }}
@@ -279,7 +310,10 @@ export default function ShopsPage() {
             <div>
               <CardTitle>All Shops</CardTitle>
               <CardDescription>
-                {totalElements} shop{totalElements !== 1 ? "s" : ""} in total
+                {/* #688: never assert a count nothing loaded (see products). */}
+                {loadFailed
+                  ? "—"
+                  : `${totalElements} shop${totalElements !== 1 ? "s" : ""} in total`}
               </CardDescription>
             </div>
             <div className="relative w-[220px]">
@@ -293,7 +327,13 @@ export default function ShopsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {shops.length === 0 ? (
+            {loadFailed ? (
+              <LoadErrorPanel
+                subject="shops"
+                message={loadErrorMessage}
+                onRetry={retryLoad}
+              />
+            ) : shops.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Store className="mb-4 h-12 w-12 text-slate-300" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">

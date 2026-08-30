@@ -13,6 +13,14 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react"
 import StaffPage from "../staff/page"
 import apiClient from "@/lib/api-client"
 import { fetchMyShops } from "@/lib/shops-api"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+
+/**
+ * Every width-cap utility an element declares, as tokens. A token filter, never a
+ * substring search — `classList` membership is what a browser resolves.
+ */
+const capTokens = (el: Element) =>
+  Array.from(el.classList).filter((c) => c.startsWith("max-w-"))
 
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
@@ -506,5 +514,58 @@ describe("staff loading state (#454)", () => {
     // a real one here would look actionable and do nothing.
     expect(screen.queryAllByRole("combobox")).toHaveLength(0)
     expect(screen.queryByRole("button", { name: /grant access/i })).toBeNull()
+  })
+})
+
+/**
+ * Phase 35 / UIX-08 — the staff screen's width tier, declared rather than
+ * inherited.
+ *
+ * PATTERNS A-7 resolved this surface to the Index tier. The grant form is inside
+ * a Card that is already narrower than the band and keeps its own width, so
+ * tiering the whole page to the reading width would cap the directory and grants
+ * tables and buy the form nothing.
+ *
+ * All THREE render branches are asserted — loaded, skeleton and access-denied —
+ * because a page that declares its tier only on one branch has undeclared
+ * branches, which is exactly the state ORCH-03's marker exists to make visible.
+ */
+describe("staff width tier (UIX-08)", () => {
+  it("declares the index width tier, with no cap of its own, on the loaded root band", async () => {
+    const { container } = render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    const root = container.firstElementChild as HTMLElement
+    expect(root).toHaveAttribute("data-width-tier", "index")
+    expect(capTokens(root)).toEqual([])
+
+    // Non-vacuity control: the same filter over a real cap from the vocabulary
+    // must find it, so the empty result above is about the page.
+    const probe = document.createElement("div")
+    probe.className = `mx-auto ${WIDTH_TIER_CLASS.detail}`
+    expect(capTokens(probe)).toEqual([WIDTH_TIER_CLASS.detail])
+  })
+
+  it("declares the same tier on the skeleton branch, so the first paint is not undeclared", () => {
+    mockedApiClient.get.mockImplementation((() => new Promise(() => {})) as never)
+    mockedFetchMyShops.mockImplementation((() => new Promise(() => {})) as never)
+
+    const { container } = render(<StaffPage />)
+
+    expect(screen.getByTestId("staff-loading")).toBeInTheDocument()
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
+  })
+
+  it("declares the same tier on the access-denied branch", async () => {
+    mockedApiClient.get.mockRejectedValueOnce(
+      httpError(403, "/shop-access-denied")
+    )
+
+    const { container } = render(<StaffPage />)
+    await waitFor(() =>
+      expect(screen.getByText(/group admin access required/i)).toBeInTheDocument()
+    )
+
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
   })
 })

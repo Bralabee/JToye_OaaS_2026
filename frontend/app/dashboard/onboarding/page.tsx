@@ -8,6 +8,8 @@ import { useCallback, useEffect, useState } from "react"
 import { m } from "framer-motion"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
+import { cn } from "@/lib/utils"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -422,9 +424,19 @@ export default function OnboardingPage() {
 
   // --- Render: loading ------------------------------------------------------
 
+  // Same Detail tier as the loaded branch, deliberately — see the note on the
+  // main return below. Without it this spinner sits in the full Shell band and
+  // the page snaps narrower the instant the request settles.
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div
+        data-width-tier="detail"
+        className={cn(
+          "mx-auto",
+          WIDTH_TIER_CLASS.detail,
+          "flex h-full items-center justify-center"
+        )}
+      >
         <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600" />
       </div>
     )
@@ -432,9 +444,15 @@ export default function OnboardingPage() {
 
   // --- Render: create form (no onboarding yet) ------------------------------
 
+  // Same tier again, and this branch is not a transient: it is the state a
+  // brand-new vendor sees FIRST, so a width that disagreed with the loaded
+  // state would be the version most people met.
   if (!onboarding) {
     return (
-      <div className="space-y-6">
+      <div
+        data-width-tier="detail"
+        className={cn("mx-auto", WIDTH_TIER_CLASS.detail, "space-y-6")}
+      >
         <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="text-4xl font-semibold text-slate-900">Take your shop live</h1>
           <p className="mt-2 text-sm text-slate-600">
@@ -578,8 +596,23 @@ export default function OnboardingPage() {
     { label: "Went live", at: onboarding.wentLiveAt },
   ]
 
+  // THE DETAIL TIER (phase 35, UIX-09). This page is a form with sequential
+  // gates — read, then filled in, one decision at a time. Width buys it nothing:
+  // detail and reading columns cluster between 1016px (Square's content ladder)
+  // and 1136px (Linear's), with Lightspeed's content column at 1100, and
+  // prose-measure guidance (45-75 characters a line) is why they converge
+  // (CONTEXT.md section 3). So this element is deliberately narrower than the
+  // Shell band around it and centres inside it. The number lives once, in
+  // lib/layout-widths.ts (DETAIL_MAX_PX) — change it there, never here.
+  //
+  // RemediationRow and GateRow below are rendered INSIDE this element and
+  // inherit the tier. Do not cap them: a cap nested inside a cap resolves by
+  // cascade, looks correct in review, and is wrong at exactly one viewport.
   return (
-    <div className="space-y-6">
+    <div
+      data-width-tier="detail"
+      className={cn("mx-auto", WIDTH_TIER_CLASS.detail, "space-y-6")}
+    >
       {/* Header + overall-state badge (a focal point) */}
       <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center gap-3">

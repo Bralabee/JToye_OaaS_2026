@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -25,6 +24,7 @@ import {
 import { signOut, useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { ShopSwitcher, shopSwitcherApplies } from "@/components/dashboard/shop-switcher"
+import { useTheme } from "@/hooks/use-theme"
 
 export const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -55,22 +55,11 @@ export const navigation = [
 export function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
-  const [dark, setDark] = useState(false)
-
-  useEffect(() => {
-    const saved = localStorage.getItem("theme")
-    const isDark = saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe mount-time hydration; refactor tracked in issue #99 follow-up
-    setDark(isDark)
-    document.documentElement.classList.toggle("dark", isDark)
-  }, [])
-
-  const toggleDark = () => {
-    const next = !dark
-    setDark(next)
-    document.documentElement.classList.toggle("dark", next)
-    localStorage.setItem("theme", next ? "dark" : "light")
-  }
+  // Theme lives in ONE shared store (hooks/use-theme.ts), not in this
+  // component. The store owns the localStorage read/write and the
+  // documentElement class, so there is no mount-time setState here to suppress
+  // and no second copy of the class side effect.
+  const { dark, toggle } = useTheme()
 
   return (
     <div className="hidden md:flex h-full w-64 flex-col bg-slate-900 text-white">
@@ -138,7 +127,7 @@ export function Sidebar() {
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
-          onClick={toggleDark}
+          onClick={toggle}
         >
           {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           {dark ? "Light Mode" : "Dark Mode"}

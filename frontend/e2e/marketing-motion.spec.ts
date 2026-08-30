@@ -13,6 +13,13 @@
  *   - `.gsap-word`               — hand-split headline word spans (desktop only)
  *   - `[data-motion-active]`     — set by each enhancer INSIDE the matchMedia
  *                                  desktop branch; absent on mobile/reduced-motion
+ *   - `[data-motion-decided]`    — "scene" | "static", stamped by each enhancer
+ *                                  once it has RUN and decided either way; the
+ *                                  deterministic anchor for absence assertions
+ *                                  (the network-idle heuristic was structurally
+ *                                  unreliable on these pages — RSC prefetch
+ *                                  churn + session polling reset the idle
+ *                                  window indefinitely; #687)
  *   - `.pin-spacer`              — inserted by ScrollTrigger.pin. `/` still uses
  *                                  none; `/for-operators` must now have NONE
  *                                  either (its pins were removed so the page
@@ -40,9 +47,12 @@ test.describe("desktop GSAP scenes (>=768px + motion)", { tag: "@desktop-only" }
     page,
   }) => {
     await page.goto(`${BASE}/`)
-    await page.waitForLoadState("networkidle")
 
-    await expect(page.locator("[data-motion-active='desktop']").first()).toBeAttached()
+    // Deterministic anchor: the attribute only exists once the enhancer built
+    // the scene. Generous timeout is slack, not the predicate.
+    await expect(page.locator("[data-motion-active='desktop']").first()).toBeAttached({
+      timeout: 15000,
+    })
     expect(
       await page.locator("h1[data-hero-headline] .gsap-word").count(),
     ).toBeGreaterThanOrEqual(2)
@@ -71,7 +81,13 @@ test.describe("desktop GSAP scenes (>=768px + motion)", { tag: "@desktop-only" }
     page,
   }) => {
     await page.goto(`${BASE}/for-operators`)
-    await page.waitForLoadState("networkidle")
+
+    // Deterministic anchor: the operator hook stamps the same attribute, and
+    // the .gsap-word spans are created synchronously in the same callback, so
+    // the count assertion below is anchored to a settled scene.
+    await expect(page.locator("[data-motion-active='desktop']").first()).toBeAttached({
+      timeout: 15000,
+    })
 
     expect(
       await page.locator("[data-op-headline] .gsap-word").count(),
@@ -121,7 +137,13 @@ test.describe("mobile floor (375px) — no heavy scenes", () => {
   for (const path of ["/", "/for-operators"]) {
     test(`${path} degrades to fully-visible static content`, async ({ page }) => {
       await page.goto(`${BASE}${path}`)
-      await page.waitForLoadState("networkidle")
+      // Load-bearing anchor: the attribute only exists AFTER the enhancer ran
+      // and chose the static branch, so the absence assertions below cannot be
+      // vacuous-by-timing. Asserting the VALUE 'static' (not mere presence)
+      // makes a wrongly-built scene fail the wait itself.
+      await expect(page.locator("[data-motion-decided='static']").first()).toBeAttached({
+        timeout: 15000,
+      })
       await page.waitForTimeout(500)
 
       expect(await page.locator(".gsap-word").count()).toBe(0)
@@ -158,7 +180,11 @@ test.describe("reduced motion — no heavy scenes", () => {
       // page.emulateMedia is the reliable path and matches the phase plan.)
       await page.emulateMedia({ reducedMotion: "reduce" })
       await page.goto(`${BASE}${path}`)
-      await page.waitForLoadState("networkidle")
+      // Load-bearing anchor (see the mobile block): only stamped once the
+      // enhancer ran and DECLINED to build a scene under reduced motion.
+      await expect(page.locator("[data-motion-decided='static']").first()).toBeAttached({
+        timeout: 15000,
+      })
       await page.waitForTimeout(500)
 
       expect(await page.locator(".gsap-word").count()).toBe(0)

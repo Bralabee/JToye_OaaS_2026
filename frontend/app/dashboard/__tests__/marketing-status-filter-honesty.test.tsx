@@ -22,6 +22,14 @@
 import { configure, render, screen, waitFor, fireEvent, within } from "@testing-library/react"
 import MarketingPage from "../marketing/page"
 import apiClient from "@/lib/api-client"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+
+/**
+ * Every width-cap utility an element declares, as tokens. A token filter, never a
+ * substring search — `classList` membership is what a browser resolves.
+ */
+const capTokens = (el: Element) =>
+  Array.from(el.classList).filter((c) => c.startsWith("max-w-"))
 
 configure({ asyncUtilTimeout: 5000 })
 
@@ -281,5 +289,56 @@ describe("#306 — a client-side status filter must not misreport the set", () =
         expect(screen.getByText("1 expired of 3 announcements in total")).toBeInTheDocument()
       )
     })
+  })
+})
+
+/**
+ * Phase 35 / UIX-08 — the marketing screen's width tier, declared rather than
+ * inherited.
+ *
+ * PATTERNS A-5 resolved this surface to the Index tier: the two campaign tables
+ * are what the tier governs. The composer dialogs are Radix portal content
+ * rendered OUTSIDE the page container, so the page's tier cannot reach them
+ * either way — which is why "two tables plus two composers" is not actually a
+ * tension.
+ *
+ * Both the loaded root and the spinner branch are asserted, because a page that
+ * declares its tier only after its fetch resolves has an undeclared first paint.
+ */
+describe("marketing width tier (UIX-08)", () => {
+  beforeEach(() => {
+    mockServer({ promoRows: [promo("a1", "active")], promoTotal: 1 })
+  })
+
+  it("declares the index width tier on the loaded root band", async () => {
+    const { container } = render(<MarketingPage />)
+    await waitFor(() => expect(screen.getByText("Promo a1")).toBeInTheDocument())
+
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
+  })
+
+  it("adds no width cap of its own to the loaded root band", async () => {
+    const { container } = render(<MarketingPage />)
+    await waitFor(() => expect(screen.getByText("Promo a1")).toBeInTheDocument())
+
+    const root = container.firstElementChild as HTMLElement
+    expect(capTokens(root)).toEqual([])
+
+    // Non-vacuity control: the same filter over a real cap from the vocabulary
+    // must find it, so the empty result above is about the page.
+    const probe = document.createElement("div")
+    probe.className = `mx-auto ${WIDTH_TIER_CLASS.detail}`
+    expect(capTokens(probe)).toEqual([WIDTH_TIER_CLASS.detail])
+  })
+
+  it("declares the same tier on the spinner branch, so the first paint is not undeclared", () => {
+    // Hold every fetch open: `promoLoading` starts true, so the promotions tab
+    // renders its spinner branch and nothing else.
+    mockedApiClient.get.mockImplementation((() => new Promise(() => {})) as jest.Mock)
+
+    const { container } = render(<MarketingPage />)
+
+    expect(container.querySelector(".animate-spin")).not.toBeNull()
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
   })
 })

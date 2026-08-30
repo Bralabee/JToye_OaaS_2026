@@ -18,14 +18,30 @@ the 2026-08-24 session broke it once itself (see "The truncating filter", below)
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 37 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 41 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
-# 2026-08-24 actual: 36 clean, plus check-e2e-skip-budget VOID — the documented
-# once-per-merge staleness detector, re-earned by running Playwright on the live stack.
+# 2026-08-29 actual (phase 34 closeout, plan 34-10): all 40 rc=0 from the MAIN checkout,
+# including check-e2e-skip-budget re-earned at 6 skips / budget 6 on a fresh full-suite
+# run (297 tests, 0 failures), and check-jacoco-coverage at 88.07/71.95/87.55/87.53.
+# 2026-08-30 (phase 35 plan 35-13): the count moved 40 -> 41. Plan 35-10 added
+# scripts/check-layout-width-contract.sh, which is the 41st gate; H-1 caught the stale
+# EXPECT immediately, which is the gate working. Phase-35 sweep from the MAIN checkout:
+# 41/41 rc=0, but only after two ENVIRONMENT repairs that are not code defects — a stale
+# untracked edge-go/coverage.out (regenerate with: cd edge-go && go test -coverprofile=coverage.out ./...)
+# and a jtoye-redis-exporter still holding a REDIS_PASSWORD rotated out of .env
+# (repair: docker compose -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate redis-exporter).
+# Neither is repaired by `docker restart`; the exporter needs a compose RECREATE.
+# check-e2e-skip-budget is rc=1 not rc=0 on the phase-35 branch: 7 skips / budget 6, one
+# undeclared (onboarding-blocked-flow) — that is open issue #686, not a phase-35 regression.
+# THREE gates must be run from the MAIN checkout, not a worktree, and VOID elsewhere:
+#   check-runtime-freshness  — compose project name comes from the DIRECTORY
+#   check-infra-exposure     — parses `docker compose config`, needs .env to interpolate
+#   check-container-config-drift — same .env dependency
 # If check-alert-metrics is the only rc=1 after a core-java rebuild, its standing
-# remedy is: bash scripts/seed-order-metric.sh   (restart zeroes the counter)
+# remedy is: bash scripts/seed-order-metric.sh   (restart zeroes the counter). Note it can
+# also be green without the remedy if a full E2E run has just placed real orders.
 ```
 
 | | |
@@ -104,6 +120,52 @@ done
   `RuntimeRoleGrantContractTest` asserts *exactly this grant* and was green throughout, because its
   `@BeforeEach` runs `create-runtime-role.sql` itself: **it certifies the script, not the
   deployment.** `PostcodeTruncateGrantMigrationTest` is the falsifiable sibling.
+
+### What shipped 2026-08-30 (afternoon — continues the block below)
+
+- **#684 CLOSED via PR #694** — a fresh volume provisions its own migrator credential
+  (`00-create-db.sql` creates `jtoye_app` with `DB_MIGRATION_PASSWORD`, fallback to
+  `DB_PASSWORD`); proven on a real `down -v` cycle with digest-confirmed differing
+  credentials: healthy, RestartCount 0, V64 64/64, 45/45 E2E smoke. Instrument lesson:
+  in-container `psql -h 127.0.0.1` is loopback-`trust` and accepts ANY password — auth
+  probes must run over the docker network (now in project memory).
+- **#688 CLOSED via PR #696** — dashed count subtitles under `loadFailed` on all four
+  dashboard list pages + six raw-axios toasts routed through `describeLoadError`; jest
+  now 141/1505, metrics 3494, browser-proven both directions on a rebuilt container.
+- **#690 CLOSED** — owner ratified the approvals queue on the Index tier, viewed with a
+  real MANUAL_REVIEW application (a side effect of #684's fresh-volume smoke).
+- **Phase 35 recorded complete in STATE.md via PR #695** (counters re-measured from
+  disk: 119/119 plans, 11/14 phases; percent scoped "of written plans").
+- **The unexamined-defaults audit ran** (quick-260830-p2o): four findings filed —
+  #699 (md:768 gives tablets the desktop sidebar), #700 (TOAST_LIMIT=1 displaces unread
+  error toasts), #701 (12 dialogs on the 512px default, no density policy), #702
+  (unclamped table titles) — and eight surfaces examined clean with an instrument-armed
+  method. Report: `.planning/quick/260830-p2o-unexamined-defaults-audit/AUDIT.md`.
+- **#697 (another session) added the review-record required-status backstop** — every
+  PR now needs a review artifact (a PR review, an inline review comment, or a
+  `Review-Record:` comment); the audit PR was the first judged by it.
+
+### What shipped 2026-08-30
+
+- **#687 CLOSED — the marketing-motion flake, via PR #692** (squash `b7b2099e`). All 7
+  network-idle waits in marketing-motion + csp-no-violations replaced with deterministic
+  anchors on a new inert both-branches `data-motion-decided` stamp; three break arms
+  observed failing (the planned ARM C createElement vector was VACUOUS under
+  `'strict-dynamic'` and was corrected to an inline event handler); clean pass 18/18
+  against a rebuilt compose frontend. One CI red en route: `check-changelog-cites-pr`
+  wants the entry heading to cite the PR itself, not only the issue — the gate's own
+  error text says this has redded main six times.
+- **#686 — the undeclared-skip cause is scripted, via PR #693** (branch
+  `feature/686-skip-budget-fixture-reset`). `seed-e2e-fixtures.sh` now resets a
+  LIVE/terminal demo-tenant `vendor_onboarding` (row + gates, vendor tenant only,
+  `Shop.published` untouched; `RESET_ONBOARDING=0` preserves state but verification still
+  fails on it). Arms: spec `1 skipped` on WITHDRAWN, opt-out rc=1, post-reset full journey
+  `1 passed (6.1s)`. `check-e2e-skip-budget` re-earned VOID → PASS on a fresh full-suite
+  run: **323 total / 317 passed / 6 skipped / 0 failed**, budget 6, all declared. The
+  dark-lane half is #683's: the nightly's escalation covers the gate step, and tonight's
+  ~02:25 UTC run is the confirming instrument for the #687 fix.
+- Runtime parity after the #692 merge: `sync-runtime.sh` rc=0, 4/4 FRESH re-asserted by
+  the gate's own re-check (core-java + frontend rebuilt and force-recreated, healthy).
 
 ### What shipped 2026-08-28
 
@@ -271,9 +333,17 @@ If the owner has not cleared those, the highest-value available work is:
    - **#654 OPEN** — framer-motion 12→13, a MAJOR. Run Tests and Frontend E2E pass; the remaining
      failure is the same prose-pin class (4 sites). Given #605/#606 were closed for being majors,
      this is an owner call, not a mechanical one.
-   - **#651 OPEN** — five failures including Run Tests and Frontend E2E. Real breakage, real work.
-2. **#654 and #651 are the two dependabot PRs left**, both needing real judgement rather than a
-   rebase — see item 1. Everything else in that batch is closed.
+   - **#651 CLOSED** — closed unmerged by dependabot itself on 2026-08-28T15:25:33Z, with the
+     comment "Looks like these dependencies are updatable in another way, so this is no longer
+     needed". Not an operator decision. Of its five failures, two were stale-base and were already
+     clear; the rest were real work in two classes — three latent type errors that `next build`
+     structurally cannot see (it type-checks the pages/app graph, not the whole tsconfig program),
+     and the prose version pins dependabot structurally cannot edit, the same class that took #604
+     to #638 and #650 to #665. Superseded by branch `feature/deps-frontend-651-supersede`, which
+     lands the same 10-package bump with both classes fixed.
+2. **#654 is the last dependabot PR needing real judgement** rather than a rebase — see item 1 for
+   its state. #651 is no longer in that set; its disposition changed on 2026-08-28 and is recorded
+   above. Everything else in that batch is closed.
 3. Then Phase 30 (The Money Path), Phase 32 or Phase 34.
 
 ### The H-2 self-falsification trap, learned twice on 2026-08-24/25
@@ -306,9 +376,14 @@ its failure was `scripts/check-doc-versions.sh`, because dependabot cannot know 
 `AGENTS.md` and `.planning/codebase/STACK.md`, which each pin the version in prose. **Any future SDK
 bump carries the same four-site requirement.**
 
-**One security item is still deferred:** `next` 16.3.0 updates vendored lodash to 4.17.23 for
-**CVE-2025-13465** (prototype pollution in `_.unset`/`_.omit`). Not applied — the tree runs `next`
-16.2.12. **Assessed 2026-08-19: MEDIUM, LOW reachability, not urgent.** Scorers disagree only on
+**One security item was deferred and this branch discharges its precondition:** `next` 16.3.0
+updates vendored lodash to 4.17.23 for **CVE-2025-13465** (prototype pollution in
+`_.unset`/`_.omit`). The tree now declares `next` `^16.3.2` (lockfile resolves 16.3.3), so the
+16.3.0 migration this was waiting on has happened. **The 4.17.23 figure is upstream's, carried
+from the original advisory and NOT verified by content on this tree** — Next strips the version
+banner from its minified vendor bundles, so `4.17.21` being absent from `node_modules/next` is
+evidence about a missing string, not about the version that shipped.
+**Assessed 2026-08-19: MEDIUM, LOW reachability, not urgent.** Scorers disagree only on
 availability impact (NVD 5.3, GitHub 6.5, vendor 6.9, Red Hat 8.2) — quote the range, not one end.
 Our code never imports lodash; the vulnerable internals live only in two vendored Next bundles whose
 callers pass fixed internal keys. Fix it when the `next` 16.3.0 migration happens.

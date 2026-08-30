@@ -62,7 +62,13 @@ test("homepage emits CSP header and triggers no violations", async ({ page }) =>
   expect(csp).toContain("frame-ancestors 'none'")
   expect(csp).toContain("https://js.stripe.com")
 
-  await page.waitForLoadState("networkidle")
+  // "load" fires when all initial resources have attempted to load (which is
+  // when violations fire); the h1 anchor proves render happened; the fixed
+  // settle below (UNCHANGED) catches stragglers. The network-idle heuristic
+  // was structurally unreliable here — RSC prefetch churn + session polling
+  // kept resetting the idle window (#687).
+  await page.waitForLoadState("load")
+  await expect(page.locator("h1").first()).toBeVisible({ timeout: 15000 })
   await page.waitForTimeout(2000)
   expect(violations, `CSP violations: ${violations.join("\n")}`).toEqual([])
 })
@@ -82,7 +88,9 @@ test("for-operators route emits CSP header and triggers no violations (GSAP bund
   expect(csp).toContain("default-src 'self'")
   expect(csp).toContain("frame-ancestors 'none'")
 
-  await page.waitForLoadState("networkidle")
+  // load-state + positive render anchor; fixed settle UNCHANGED (see homepage).
+  await page.waitForLoadState("load")
+  await expect(page.locator("h1").first()).toBeVisible({ timeout: 15000 })
   await page.waitForTimeout(2000)
   expect(violations, `CSP violations: ${violations.join("\n")}`).toEqual([])
 })
@@ -93,7 +101,9 @@ test("storefront /shop/[slug] triggers no CSP violations", async ({ page }) => {
   expect(response).not.toBeNull()
   expect(response!.ok()).toBe(true)
 
-  await page.waitForLoadState("networkidle")
+  // load-state + positive render anchor; fixed settle UNCHANGED (see homepage).
+  await page.waitForLoadState("load")
+  await expect(page.locator("h1").first()).toBeVisible({ timeout: 15000 })
   await page.waitForTimeout(3000)
   expect(violations, `CSP violations: ${violations.join("\n")}`).toEqual([])
 })

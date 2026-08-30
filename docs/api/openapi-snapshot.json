@@ -807,7 +807,7 @@
           },
           "vatRate" : {
             "default" : "STANDARD",
-            "description" : "VAT liability for this product",
+            "description" : "VAT liability for this product. Defaults to STANDARD on create when omitted; on an edit, omitting it preserves the product's existing rate.",
             "enum" : [
               "ZERO",
               "REDUCED",

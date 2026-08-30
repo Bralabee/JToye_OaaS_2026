@@ -100,7 +100,9 @@ public class DsarIntakeController {
             HttpServletRequest httpRequest) {
 
         // Before the write, not after: the limiter exists to stop rows being queued at all.
-        rateLimiter.checkAllowed(httpRequest);
+        // QA-council cluster S1 (SEC-1): the target email is passed through so the limiter can
+        // also gate on the subject digest and the global ceiling, not the (XFF-spoofable) IP alone.
+        rateLimiter.checkAllowed(httpRequest, request.email());
 
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(dsarIntakeService.lodge(request, idempotencyKey));

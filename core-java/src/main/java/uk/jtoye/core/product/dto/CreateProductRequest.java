@@ -46,11 +46,20 @@ public class CreateProductRequest {
     @Schema(description = "Product price in pennies", example = "999", required = true)
     private Long pricePennies;
 
-    // Defaults to STANDARD when absent so existing API clients keep working and
-    // no product is silently zero-rated (Issue #81 BUG 2).
-    @Schema(description = "VAT liability for this product", example = "STANDARD",
-            defaultValue = "STANDARD")
-    private VatRate vatRate = VatRate.STANDARD;
+    // QA-council cluster P1 (API-1): deliberately NO Java-side default here (contrast with the
+    // Product entity field, which still defaults to STANDARD for the create path). A default
+    // HERE is indistinguishable, on the wire, from the client explicitly sending "STANDARD" — so
+    // this same DTO reused for PUT could never tell "the edit form doesn't render vatRate" from
+    // "the vendor chose STANDARD", and every edit silently reset a ZERO-rated product back to
+    // STANDARD. Left null, an omitted field on PUT correctly preserves the existing rate
+    // (ProductMapper.updateEntity's @BeanMapping IGNORE); the CREATE path re-applies the
+    // STANDARD default itself (ProductService.createProduct) so a brand-new product is never
+    // silently zero-rated (Issue #81 BUG 2) — the default moved from the DTO to the service, it
+    // was not dropped.
+    @Schema(description = "VAT liability for this product. Defaults to STANDARD on create when "
+            + "omitted; on an edit, omitting it preserves the product's existing rate.",
+            example = "STANDARD", defaultValue = "STANDARD")
+    private VatRate vatRate;
 
     // Optional storefront presentation fields
     // QA BE-2: description is TEXT (unbounded); a generous @Size guards against abusive

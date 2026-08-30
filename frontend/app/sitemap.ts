@@ -84,7 +84,15 @@ const STATIC_ROUTES: Array<{
   { path: "/shop", changeFrequency: "daily", priority: 0.9 },
   { path: "/for-operators", changeFrequency: "monthly", priority: 0.8 },
   { path: "/business-model-guide", changeFrequency: "monthly", priority: 0.5 },
-  { path: "/track", changeFrequency: "monthly", priority: 0.4 },
+  // FE-6 (RESOLVED, was: "a pre-existing inconsistency, left alone"): `/track`
+  // used to be listed here AND in `app/robots.ts`'s DISALLOW list — telling
+  // crawlers to index a page they were also told not to fetch. It is now
+  // absent from this file entirely, resolved on the disallow side: a guest
+  // order-lookup form is a state, not a destination, matching every other
+  // mid-journey route already excluded (`/unsubscribe`, `/shop/*/cart`,
+  // `/shop/*/checkout`). `app/track/layout.tsx` carries the matching
+  // `robots.index=false` belt-and-braces meta.
+  //
   // The published policy set (LGL-01). None of these was here, so a crawler
   // reaching the sitemap was told about five pages fewer than the site has.
   //
@@ -92,9 +100,7 @@ const STATIC_ROUTES: Array<{
   // ASSUMED: `app/robots.ts`'s DISALLOW list is /api/, /auth/, /dashboard,
   // /shop/orders, /shop/signin, /shop/auth/, /shop/*/cart, /shop/*/checkout,
   // /shop/*/orders/, /track and /unsubscribe. No /legal prefix appears in it,
-  // so no robots change is needed. (Note /track IS disallowed while sitting in
-  // this list — a pre-existing inconsistency, left alone: it is not this
-  // plan's file to reconcile and is recorded in the summary instead.)
+  // so no robots change is needed.
   //
   // Priority sits at 0.3: these pages must be indexable and findable, but they
   // must not outrank a storefront, which is what the product actually sells.

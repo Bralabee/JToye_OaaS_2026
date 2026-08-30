@@ -602,8 +602,29 @@ export default function KitchenPage() {
   // 90px..218px and pushed the whole board down. The controls now render in both
   // states (disabled while there is nothing to act on), so the header is the height it
   // will end up being from the first paint.
+  /*
+   * WIDTH TIER — Index, and this was a decision rather than a default.
+   *
+   * PATTERNS A-6. The board is a card grid rather than a table, which is the
+   * reason it could defensibly have gone either way. It is Index because a grid
+   * that reflows into more columns is the same argument as a table that shows
+   * more columns, and because a kitchen display is the one dashboard surface
+   * genuinely likely to run on a large wall-mounted screen.
+   *
+   * HAZARD, recorded here because it is not visible from this line: the board is
+   * STOMP-live and its tickets mount and unmount through `AnimatePresence`, so
+   * more columns changes the reflow on every order transition. That is a runtime
+   * property no jsdom assertion can see. `e2e/kitchen-flow.spec.ts` and
+   * `e2e/stomp-relay.spec.ts` are re-run in plan 35-12 for exactly this reason.
+   *
+   * The tier is written into the DOM as a declaration rather than left as the
+   * absence of a cap, because "uncapped" and "someone forgot to cap it" render
+   * identically and no assertion can tell them apart — ORCH-03 (orchestrator
+   * decision, 2026-08-29). This board has ONE render branch; #536 removed the
+   * loading early-return, so this root is the only root there is.
+   */
   return (
-    <div className="space-y-6">
+    <div data-width-tier="index" className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>

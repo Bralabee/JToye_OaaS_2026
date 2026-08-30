@@ -188,7 +188,16 @@ const config = [
   },
   {
     // jest.config.js is a CommonJS module.
-    files: ["jest.config.js"],
+    //
+    // jest.setup.js is one too, and its `require` is load-bearing rather than
+    // stylistic: `setupFilesAfterEnv` runs BEFORE a test file registers its
+    // `jest.mock(...)` calls, so a top-level import of a module under test would
+    // bind to the REAL dependency for every suite and defeat those mocks. The
+    // customer-session store reset (plan 34-03) has to be required inside the
+    // hook, at hook-run time. Converting it to `await import()` would not be an
+    // improvement — it is the same lazy require after transpilation, with an
+    // extra tick before every test in the repo.
+    files: ["jest.config.js", "jest.setup.js"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },

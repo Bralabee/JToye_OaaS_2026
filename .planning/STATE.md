@@ -3,20 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: "PHASE 31 IS MERGED TO main AS 42ac6dc3 (PR #633, squash, 2026-08-17); post-merge CI on main concluded SUCCESS with zero failed jobs. ALL THREE of the STILL-TO-DO-AT-MERGE items recorded further down are DISCHARGED: (a) the runtime was rebuilt FROM THE MAIN CHECKOUT and re-verified 4 of 4 FRESH, proven BY CONTENT — httpcore5 5.4.3 read from inside /app/app.jar with 5.4.2 absent as a negative control, the contrast fix present in the built app_shop_shop-discovery-client_tsx chunk while the old pattern survives only in the unrelated dashboard-shell chunk, and a live order (ORD-00000000-20260817-91108CE7) carrying allergen_mask=1 against 572 historic NULL lines; (b) LGL-01, LGL-02 and LGL-03 all read Complete in REQUIREMENTS.md with their limitations written into the row; (c) all 18 ROADMAP plan checkboxes are ticked AND the two stale summary lines — the top-level phase checkbox and the 7/18 In Progress table row — were reconciled to 18/18 Complete in c4e1f497, a correction NO gate script covers because none reads ROADMAP.md. check-alert-metrics went RED after the post-merge core-java rebuild exactly as predicted and seed-order-metric.sh cleared it (rc=1 then rc=0, both directions recorded) — restart behaviour, not a defect. THE MERGE METHOD WAS LOAD-BEARING: the branch carried 44 feat/fix commits NONE of which cite a PR, and only because check-changelog-contract.sh scans git log --first-parent do they stay off the mainline; a rebase-merge would have stripped the (#633) and voided the gate. Squash with an explicit subject is the only safe method here. NEXT: Phase 29, still PAUSED — both owner actions re-measured 2026-08-18 and BOTH REMAIN UNMET (dig returns no answer for staging.olajay.co.uk or api.staging.olajay.co.uk; 0 populated of 7 declared in ~/.jtoye/staging-operator.env). EVERYTHING AFTER THIS SENTENCE IS THE PRE-MERGE RECORD, RETAINED VERBATIM. Phase 31 — ALL 18 PLANS COMPLETE AND MERGED (18/18); 31-18, the final plan, merged last. FINAL POST-MERGE GATE AT 102df15f: jest 120 suites / 1230 tests / 0 failures, build rc=0, playwright 113 blocks / 22 specs, total 3185 logical invocations, schema head V63; docs-freshness, check-doc-metrics (37 claims), check-claims (47 claims across 6 docs), check-gate-enforcement and check-branch-behind-base ALL rc=0 — the branch is 132 ahead of origin/main and 0 behind. Traceability closed by the orchestrator: LGL-01, LGL-02 and LGL-03 all marked Complete WITH their limitations written into the row rather than a side note, and all 18 roadmap checkboxes ticked only after verifying every plan has a SUMMARY on disk (roadmap.update-plan-progress deliberately NOT run — it corrupts the phase row). THE RUNTIME IS NOW REBUILT AND PROVEN BY CONTENT — PHASE 31 IS COMPLETE. All seven gates are rc=0 on the live stack: docs-freshness, check-doc-metrics, check-claims, check-gate-enforcement, check-runtime-freshness (4 of 4 services FRESH, 0 unverified), check-branch-behind-base and check-alert-metrics. THE DRIFT WAS WORSE THAN THE IMAGE TIMESTAMPS IMPLIED, and the rebuild log is the proof: core-java started with 'Current version of schema public: 61' and 'Successfully applied 2 migrations, now at version v63' — THE LIVE DATABASE WAS TWO MIGRATIONS BEHIND, so dsar_request (V62) and the order_items allergen columns (V63) did not exist in the running database at all until the rebuild. A gate reading image timestamps could only ever have said 'the image is old'; the schema statement is what showed the feature was absent. PARITY WAS PROVEN BY CONTENT AND IDENTITY, NOT BY STATUS CODE: both images have new IDs and new LastTagTime, and BOTH RUNNING CONTAINERS HOLD THE NEW IMAGE IDs (frontend ed0bad1994b0, core-java c1451ad0c06a), which is what distinguishes a rebuild from a mere restart. Frontend: all FIVE /legal routes now serve 200 against a recorded pre-rebuild control of 200/404/404/404/404, with a negative control (/legal/definitely-not-a-page -> 404) proving the 200s are not a blanket catch-all; the SERVED cookie policy carries jtoye-cookie-consent-choices, so the merge-time Gate B fix is live in the running artifact, and the served accessibility statement carries 16471464 while 13434105 is ABSENT. Core-java: application.yml read from INSIDE /app/app.jar, Tomcat on 9090 (NOT 8081 — the known port shift), /health 200, and to_regclass confirms dsar_request exists and order_items carries both allergen columns, against a negative control on a fake table. THE STRONGEST PROOF WAS UNPLANNED: seeding the order metric placed a REAL order through the rebuilt runtime (HTTP 201, ORD-00000000-20260816-EEBC2913) and its line came back allergen_mask=1, allergen_flag_mask=0, NOT NULL — the V63 write-time snapshot populating on the live API path — while 572 pre-existing order lines still read NULL. That 572-vs-1 split is the deliberate no-backfill decision observable in production data: 'not recorded' and 'the vendor declared none' remain genuinely different states. check-alert-metrics went RED after the core-java rebuild exactly as predicted (the counter dies on restart) and scripts/seed-order-metric.sh cleared it; that is restart behaviour, not a defect, and must not be investigated as one. HISTORICAL, FOR CONTEXT: before the rebuild check-runtime-freshness.sh reported rc=1 with 2 of 4 running built services adrift — frontend image tagged 2026-08-10 02:04:04 UTC against build inputs changed through 2026-08-16 (ALL of waves 3-5 are missing from the running container, which is why 31-17 found /legal/privacy|cookies|retention|accessibility returning 404 on :3000 while /legal returned 200), and core-java image tagged 2026-08-11 11:32:48 UTC against build inputs changed at 85d6d7c3, so V63, the DSAR fan-out worker and the order allergen snapshot are NOT in the running container either. FIX IS `docker compose -f docker-compose.full-stack.yml up -d --build frontend core-java` — `start` and `restart` will NOT do it, because neither builds and neither replaces a container holding an older image ID. Expect check-alert-metrics to go RED after the core-java rebuild; that is the known restart-zeroes-the-counter behaviour, not a defect — run scripts/seed-order-metric.sh rather than investigating. 31-18 SHIPPED THE LGL-02 GATE AND THE PHASE RECONCILIATION. The axe gate (frontend/e2e/public-a11y.spec.ts) scans 13 declared surfaces on both viewports and is wired into frontend-e2e's run line IN THE SAME COMMIT — verified against the real YAML that ci-cd.yaml triggers on push [main, phase-*, phase/**] + pull_request [main] while e2e-nightly.yml is schedule + workflow_dispatch only, so the phase/ CI-invisibility trap does NOT apply and the branch is CI-visible. SIX BREAK ARMS RUN, ALL RESTORES VERIFIED BY git hash-object, bracketed clean->arms->clean (closing arm 80/80 across all three browser specs). Arm A: a deliberate alt-less img on / produced 'image-alt [critical] x1' naming the route, rule and node on BOTH viewports, rc=1. Arm D IS THE ONE TO REMEMBER: with the run-line edit reverted the step runs 0 a11y tests AND EXITS 0 — green while testing nothing, which is why the job's colour is not evidence. THE ARTEFACTS WERE QUANTIFIED, NOT DESCRIBED: unseeded checkout = 8 elements, 0 h1/form/input, axe 0 violations/22 passes; storefront with the modal unopened = 0 dialogs, axe 0 violations/23 passes — BOTH A PERFECT ZERO, so a scan over nothing is byte-identical to a scan over a flawless page. RESEARCH's inherited figures ('four elements', 'one moderate violation') were both wrong on this tree and the spec's comments were corrected to what was measured. ONE REAL DEFECT FOUND AND FIXED (8cf11de7): the policy TOC shipped text-amber-700 at 4.41:1 against 4.5:1 on the below-lg bg-cream-100/60 panel, across all four policy documents (9+7+5+6 nodes) — MOBILE ONLY, desktop clean on every one, which is the concrete vindication of running both viewports. Fixed to amber-800 (6.23:1); NO design token moved, contrast-tokens.test.ts 8/8 and untouched. THE STATEMENT CHANGED BY EXACTLY ONE FIELD, preparedOn 2026-08-15 -> 2026-08-16, and that is a finding: all seven exceptions were re-verified in source and all seven still hold (skip link genuinely absent from app/shop/layout.tsx; the three delivery-address fields genuinely carry no required/aria-required while name/email/phone do). A11Y-08 and A11Y-07 stay ABSENT, confirmed. NO remediation date was touched. THE JUDGEMENT CALL: axe found ZERO contrast violations on all three routes the text-contrast-below-minimum exception names, and it was KEPT anyway — the 31-02 literal ledger is still live on those routes and those literals render in states a page-load scan never enters (error text needs a refused submit), so removing it would have been overclaiming. Metrics regenerated on the merged-with-31-18 tree: playwright 107->113 blocks, 21->22 specs, total 3179->3185, schema head still V63; README (3 differently-phrased sites), CLAUDE.md and AGENTS.md all reconciled individually. A9 RESOLVED in the reassuring direction — after --write the prose gate went RED naming ten claims across all three docs, so those regexes DO read those sentences. The stale legacy-RC lint-config claim was corrected in BOTH CLAUDE.md and AGENTS.md (3 sites each), not just the one the plan named. ONE OWNER QUESTION IS OPEN AND UNANSWERED: contrast-literals.test.ts's SCAN_ROOTS excludes components/legal and app/legal, so the ledger is structurally blind to the five /legal routes that ARE declared in-scope surfaces — that blind spot is exactly why the 4.41:1 failure survived to the last plan. Widening it was NOT done (outside files_modified, and it would likely surface further literals folding into a ratified 2027-02-16 dated exception). STILL TO DO AT MERGE, by the orchestrator: (a) run check-runtime-freshness.sh FROM THE MAIN CHECKOUT (it VOIDs from a worktree because the compose project name comes from the directory) and rebuild the compose stack, since the frontend source changed; (b) reconcile LGL-01 and LGL-03 in REQUIREMENTS.md — 31-18 marked only its own LGL-02 (checkbox via the SDK, traceability row by hand because the SDK does not write it), and both of the others shipped earlier in this phase but still read 'Not started'; (c) tick the ROADMAP plan checkboxes for 31-08..31-18, which are ALL still unticked although every one of those plans has a SUMMARY — 31-18 deliberately left them alone rather than tick only its own row and imply the other ten did not ship. roadmap.update-plan-progress was NOT run: this file already records it corrupting the progress row earlier in this session. PRIOR CONTEXT FOLLOWS. Waves 1, 2 and 3 complete and gated (16/18); 31-17 (wave 4) merged at fcac272d. WAVE-4 POST-MERGE GATE GREEN ON MEASURED OUTPUT: jest 120 suites / 1230 tests / 0 failures (matching 31-17's own figures exactly), playwright 107 blocks / 21 specs, total 3179, build rc=0 with all FIVE legal routes emitted, lint rc=0, check-claims rc=0 over 47 claims, and check-doc-metrics run in the FAIL direction first (rc=1, 14 disagreeing claims) then rc=0 over 37. 31-17 DELIVERED REACHABILITY WITH ONE COLUMN: PublicFooter linked NO /legal route at all, and because app/shop/layout.tsx renders PublicFooter over the whole /shop/** subtree, a single Legal column reaches every public route including tenant storefronts — StorefrontLegalStrip was correctly NOT built, and the UI-SPEC premise that /shop/[slug] has no contentinfo landmark was measured FALSE. TWO 31-17 FINDINGS WORTH KEEPING. First, ITS BROWSER ASSERTIONS DID NOT RUN AGAINST PORT 3000, and that mattered: :3000 is a stale compose container (image 2026-08-10) on which /legal/privacy|cookies|retention|accessibility all 404 while /legal returns 200 — a naive reachability check there would have PASSED for the wrong reason. It built and served its own worktree on :3117 and proved identity by content before measuring. Second, ITS FIRST PLAYWRIGHT BREAK-ARM HARNESS WAS VOID AND IT SAID SO: killing the npx PID left next-server alive, so three arms printed PASS having measured nothing and a fourth failed for the wrong reason; rebuilt to kill the PROCESS GROUP, confirm the port REFUSES, and prove each break live in the served HTML first. It also found the plan's tenant-storefront criterion COULD NOT FAIL as written (CompanyLegalLine emits no 'Companies House' string either, so the break arm left it 0 == 0) and replaced it with two assertions falsifiable in both directions. AN OPEN CONTRADICTION IS RECORDED, NOT FIXED, AND IS THE OWNER'S: PublicFooter:189 renders the platform's company identity (J'Toye Digital Ltd, Registered in England and Wales, company no. 16471464) on EVERY TENANT STOREFRONT, while lib/company.ts:9-12 states that identity must render 'never on tenant storefronts'. Pre-existing since PR #232, hard-coded, and out of scope for 31-17 and 31-18 alike. Both readings are defensible — the vendor owns their own trading disclosure, versus the operator must identify itself on pages it serves — so it is a legal-content call, not an engineering one. 31-17's test PINS THE COUNT AT EXACTLY ONE so neither answer is silently pre-empted. The company number rendered is the ACTIVE 16471464, not the dissolved namesake 13434105. WAVE-3 POST-MERGE GATE IS GREEN ON MEASURED OUTPUT: jest 119 suites / 1214 tests / 0 failures, which matches the independent per-worktree deltas exactly (106+13 suites, 1008+206 tests) — the six compositions produced zero cross-plan breakage; playwright 104 blocks / 21 specs; total 3160 logical invocations; frontend npm run build rc=0 with all four /legal routes emitted; lint rc=0; BOTH docs gates run in the FAIL direction first (gate1 rc=1 pre-regeneration, gate2 rc=1 with 16 disagreeing claims) then rc=0 over 37 claims; check-claims rc=0 over 47 claims across 6 docs including 31-12's new retention rows. Schema head stays V63 — wave 3 added no migration. WAVE 3 IS ENTIRELY FRONTEND, so the pre-dispatch baseline was measured on the frontend and recorded before forking: jest 106 suites / 1008 tests and build rc=0 on 0d1834c2 — that recorded baseline is what let six executors tell their own red from a pre-existing one. THE MERGE CONFIRMED THE WAVE-1 PROTOCOL A SECOND TIME: docs/metrics.json was the ONLY file any two of the six touched (36 single-owner files against one shared), because executors are forbidden the authored prose counts and the orchestrator reconciles once on the merged tree. A WORKTREE-CREATION DEFECT HIT AT LEAST 4 OF 6: worktrees were branched from main (bb2ae65d), 76 commits behind base, and each affected executor detected it ITSELF — the tell is that its own PLAN.md does not exist — proved the reset was a strict fast-forward with zero commits of its own, and reset to 0d1834c2. All six were then verified BY CONTENT (plan file + 31-08 policy shell + V63 allergen types present), not by the commit graph; a graph-level loop check reported the opposite for all six and was an instrument defect. Memory feedback_worktree_merge.md is updated: reset at startup, then merge normally — the old cherry-pick advice is superseded. Wave-2 merge is at 0d1834c2: merged tree 2951 logical invocations (1713 Java across 270 files, 1008 Jest across 106 files), schema head V63, both docs gates run in the FAIL direction first (gate1 rc=1, gate2 rc=1 with 13 disagreeing claims) then rc=0 with 37 claims compared. THE WAVE-2 JAVA POST-MERGE GATE LANDED AT 17:09 AND IS GREEN ON REAL EXECUTION, not on a build verdict: :core-java:test 151 files / 1136 tests / 0 failures / 0 errors / 1 skipped, :core-java:integrationTest 131 files / 604 tests / 0 failures / 0 errors / 1 skipped, summed from the testsuite elements in core-java/build-local/test-results (the LIVE results dir — core-java/build/ is stale and reading it is a known trap). Integration grew 128 files/577 tests to 131/604 across wave 2, which is 31-09's DSAR fan-out and 31-10's allergen snapshot arriving. ZERO UP-TO-DATE, FROM-CACHE or NO-SOURCE markers in the 2.6 MB run log, and that empty result was POSITIVE-CONTROLLED rather than trusted — the same alternation was fed a synthetic UP-TO-DATE line and returned rc=0 count=1, so the absence is evidence about the build and not about the pattern. The run also provably post-dates the merged tree: the reconcile commit is 16:47:31 and the unit results were written 16:48, the integration results 17:09. The background task that carried it reported ONLY exit code 0 with an empty output file, which on its own would have proven nothing at all — a Gradle run that executes nothing exits 0 too. The wave-1 prose-count protocol WORKED and is now proven, not merely asserted: wave 1 conflicted on four files, wave 2 on docs/metrics.json alone. THE THREE CROSS-PLAN MERGE GATES ARE NOW RESOLVED, and one of them was a REAL defect that neither suite could see. (a) A11Y-08 CLOSED: 31-14 fixed it with SEVEN valid autofill tokens on seven user-data inputs; the count is seven and not eight because 31-13's plan had counted the notes textarea, which collects no data about the user and correctly takes no token, so 31-13 rightly did NOT list it as an exception and nothing needed changing. A11Y-07 (role=alert / aria-invalid / aria-describedby, all zero on base) was implemented in the same plan, closing that conditional too. Keep 31-14's rendered-DOM finding: the checkout DOM holds EIGHT inputs because Radix mounts a hidden native checkbox (BubbleInput) inside a form, so a naive querySelectorAll('input') equality fails 7 != 8 on a CORRECT tree — it is pinned as all=8 / userData=7 / excluded=1 rather than loosened to >=. (b) GATE B WAS A REAL GAP AND IS FIXED IN COMMIT 9808c90a: 31-16 ships TWO storage keys, and 31-11 disclosed only one. jtoye-cookie-consent-choices — per-category choices, kept deliberately separate from the ack so that dismissing a notice can never read as consent — was undisclosed. It is unwritten today because zero optional categories ship, but the code writes it the moment one is registered and the policy claims exhaustiveness, and under PECR the policy governs the STORAGE not the technology. NEITHER SUITE COULD HAVE CAUGHT IT: 31-11 asserts the page against its own list, so page and test agreed with each other while both disagreed with the shipped code. The added assertion was proven to fail (row removed -> 2 tests red naming the key) with the restore verified by blob identity and a closing clean arm. A third apparent key, jtoye-consent, was correctly NOT disclosed — it is a truncated grep match on jtoye-consent:change, a same-tab DOM CustomEvent name and not storage at all. (c) The seven-vs-eight count is reconciled above. TWO OWNER DECISIONS WERE TAKEN ON 2026-08-16 AND ARE NOT TO BE RE-LITIGATED, both ratifying what wave 3 already shipped so NEITHER required a code change. DECISION 1 — a NOT RECORDED order MAY still be sold and prepared: the checkout and the kitchen ticket both state the absence plainly and give NO instruction, because the platform reports what it knows and does not author a food-safety procedure it cannot stand behind. Blocking the sale and printing a kitchen instruction were both offered and declined. The wording lives in two literals (order-allergen-banner.tsx and kitchen-ticket.tsx) and is now ratified rather than merely authored — 31-14 had flagged it as authored-not-contracted because the UI-SPEC supplies no string for the third state. DECISION 2 — 31-13's seven remediation dates are ACCEPTED AS PUBLISHED COMMITMENTS: 2026-11-16 for the storefront skip link and the visually-only required-field markers, 2027-02-16 for the contrast ledger, the dashboard assessment, the two third-party exceptions and the registered office. An overdue date REDS THE BUILD, which is the property that makes them commitments rather than aspirations. 31-08's checkpoint was RESOLVED by the owner and CF-1 is spent: the registered office is DECLINED for now (NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE ships empty; recoverable by one build arg plus a frontend image rebuild, since NEXT_PUBLIC_* is inlined at build time), and 31-13 publishes it as a named exception using 31-08's verbatim text. The data-subject route is a DEDICATED address, privacy@olajay.co.uk, not the shared support queue — a DSAR carries a one-month statutory clock. STILL OPEN AND OWNER-FACING: that mailbox must exist and be MONITORED before any page naming it goes live; it is an assumption, unverifiable from this repository, and a published contact route nobody reads is the same fail-open shape as no route at all, only worse because it looks discharged. 31-07's Article 26 effectiveness-gate box stays UNTICKED. Wave-1 post-merge gate was GREEN on real output, not on a build verdict: :core-java:test 151 files/1136 tests/0 failures and :core-java:integrationTest 128 files/577 tests/0 failures read from build-local/test-results with ZERO UP-TO-DATE|FROM-CACHE markers (19m07s, --rerun-tasks); frontend npm run build rc=0; Jest 976/976 across 103 suites; BOTH docs gates rc=0 after reconciliation (37 prose claims matched). Tree is 2892 logical invocations, schema head V62. THE WAVE-1 MERGE LESSON, do not repeat: four worktrees each wrote a different metrics total and every one was wrong — the winner came from a core-java worktree that had never seen the frontend siblings' tests (jest_blocks 944 vs a real 976). Correct protocol, now enforced in wave-2 dispatch prompts: agents may regenerate docs/metrics.json but MUST NOT touch the prose counts; the orchestrator runs docs-freshness.sh --write once on the MERGED tree and reconciles README/CLAUDE/AGENTS in one commit. Seven unfalsifiable acceptance criteria were found and RECORDED (not silently substituted) across wave 1, three of them the same shape: a token satisfying its own prohibition in a header comment. Cross-plan carry-forward CF-1..CF-33 is held by the orchestrator; the load-bearing open item is CF-1 — the registered-office address exists NOWHERE in this repo (getCompanyInfo() returns empty without NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE) and is an OWNER decision blocking a legally-complete Article 26 doc and privacy notice. NOTE: this block is HAND-EDITED — `state.begin-phase` and `state.record-session` are BANNED here; `roadmap.update-plan-progress` IS safe for the counts but reproduced its known defect again this session (trailing cell written as 'In Progress|  ', separator and em dash dropped) and was repaired by hand. The corrupt progress: counters below stay untouched on this branch by design. Phase 29 remains paused at its wave-7 boundary on two owner actions (staging DNS + 7 secrets), unchanged."
-last_updated: 2026-08-18T00:00:00.000Z
-last_activity: 2026-08-18
+stopped_at: Phase 35 COMPLETE 13/13 (owner gate taken 2026-08-30, CONTEXT.md §7 — Detail 1100 accepted, ORCH-01 /shop 1280 confirmed; approvals tier undecidable on an empty queue, filed #690; merged as PR #691)
+last_updated: "2026-08-30T15:25:00.000Z"
+last_activity: 2026-08-30
 progress:
-  # ⚠ THESE COUNTERS ARE CORRUPT ON THIS BRANCH and are deliberately left untouched here.
-  # completed_plans (78) EXCEEDS total_plans (77), which is impossible — the signature of
-  # `gsd-sdk query state.record-session`, which is NOT inert mid-plan. The authoritative
-  # figures live on `phase-29-research` (total_plans: 93, completed_plans: 78). Repair them
-  # there or at merge, not on this parallel branch, or the fix will be reverted by the conflict.
   total_phases: 14
-  completed_phases: 8
-  total_plans: 77
-  completed_plans: 78
-  percent: 57
+  completed_phases: 11
+  total_plans: 119
+  completed_plans: 119
+  percent: 100
 ---
 
 # Project State
@@ -26,12 +21,231 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 33 — the consumer product
+**Current focus:** between phases — Phase 35 complete (PR #691); next is an owner call: unblock Phase 29 (staging DNS + operator secrets), or plan Phase 30/32, or decide #690
 
 ## Current Position
 
-Phase: 31 — **COMPLETE (18/18)**, merged to `main` 2026-08-17
-Plan: — phase closed
+Phase: 35 (horizontal-layout-contract) — **COMPLETE, 13 of 13**, merged as **PR #691** (2026-08-30 06:01 UTC)
+Next: no phase in progress. Phase 29 remains PAUSED at 9/16 on two owner actions (staging DNS + operator secrets, body on branch `phase-29-research`); Phases 30/32 unplanned. Open decision from 35-13: the approvals-queue tier (#690), now decidable — the queue renders a real MANUAL_REVIEW application since the 2026-08-30 fresh-volume cycle.
+
+> **PERCENT PROVENANCE (2026-08-30): 100 means "of written plans", not "of the milestone".**
+> Counters re-measured from disk per the 35-11 rule: `git ls-files` reports **119** `*-PLAN.md`
+> and **119** `*-SUMMARY.md` (35-13's SUMMARY shipped inside PR #691). Three phases of the
+> fourteen carry no plans on this branch (29 is paused with its body on `phase-29-research`;
+> 30 and 32 are unplanned), so the milestone itself is NOT done. Hand-edited, as always —
+> `state.update-progress` and `state.record-session` both corrupt `stopped_at`/`last_activity`
+> (recorded above) and were not run.
+
+> **35-13 COMPLETE (2026-08-30) — the owner gate, taken and verified.** The three owner
+> decisions are in `CONTEXT.md` §7: the Detail tier's 1100px measure ACCEPTED (narrowing
+> 1120→1100 at 1440, 1336→1100 at 1920/2560 — a "1600→1100" row overstated it by 264px and
+> was corrected in place), ORCH-01 `/shop` at 1280 CONFIRMED, close-out = run 35-13 then PR.
+> The verification sweep measured the 1440 must-not-move claim per tier (Shell/Index unmoved
+> at 1184, Detail moved by exactly the accepted amount), found the gate's own step 3 described
+> charts on a page that renders none (the real `/dashboard` charts measured ~3:1, fine), and
+> measured both by-eye left-hugging candidates to N/A (VAT grid: 4 declared columns, seed fills
+> 1; status strip: closed six-pill stepper, ink constant 888px). The third resume-signal
+> question — approvals queue Index-vs-Detail — was UNDECIDABLE on an empty queue and is #690.
+> Gate sweep 40/41 rc=0 (the rc=1 was #686, since CLOSED via PR #693).
+
+> **35-12 closed the phase's runtime-parity debt, and the debt was real.** The delivered Compose
+> frontend was serving the PRE-PHASE stylesheet — zero tier attributes on `/` and
+> `.container{max-width:1400px}` in the served CSS — so every measurement taken in this phase
+> before 35-12 described a local `next start`, not the delivered artefact. Rebuilt to 4/4 FRESH,
+> 0 unverified, and re-proved by reading the tier values out of the running container. **Two
+> things 35-13 should carry into the owner gate:** the eight before/after captures at 1920 and
+> 2560 under `frontend/e2e-artifacts/35-12/`, and the two open, deliberately-unabsorbed items —
+> the skip budget at **7/6 with one undeclared** (**#686**, unchanged by this phase) and the
+> `marketing-motion` flake attributed to pre-existing **#687**.
+
+> **COUNTER PROVENANCE, because these numbers were nearly written wrong.** The
+> `completed_plans` figure above was advanced BY HAND from 96 to 103 — the seven plans with a
+> SUMMARY on disk since it was last set (35-03, 04, 05, 06, 07, 08, 09). It was **not** taken
+> from `gsd-sdk query state.update-progress`: that verb was run once, and besides recomputing the
+> counters it silently rewrote `stopped_at` to *"Phase 28 context gathered"* and `last_activity`
+> to `2026-08-28`, regressing the recorded position by seven phases. The call was reverted by
+> content (`git checkout --`, blob identity confirmed against HEAD) and the counters edited by
+> hand instead. The same corruption is already recorded for `state.record-session`; it is not
+> specific to that verb.
+>
+> **The counter BASIS was RECONCILED TO DISK by 35-11 (2026-08-29), because preserving it would
+> have printed a falsehood.** The previous basis was `total_plans: 105 / completed_plans: 104`, and
+> the note here recorded that it disagreed with disk and was owed to milestone accounting.
+> Advancing it by one for 35-11 would have produced **percent: 100** while plans 35-12 and 35-13 are
+> still unwritten — a wrong statement generated by a basis already known to be wrong, which is worse
+> than the discrepancy it preserved. Measured with `git ls-files` at the time of the edit:
+> **119** `*-PLAN.md` and **117** `*-SUMMARY.md` (117 including 35-11's own). Those are the figures
+> above. `completed_phases` is untouched — phase 35 is not complete.
+>
+> The earlier warning still stands and is why this was a hand-edit: `state.update-progress` was run
+> once, and besides recomputing the counters it silently rewrote `stopped_at` and `last_activity`,
+> regressing the recorded position by seven phases. It was reverted by content and blob identity.
+
+> **35-11 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. **The repository now
+> states its content-width standard** — `docs/architecture/LAYOUT_WIDTH_CONTRACT.md`, indexed in
+> `DOCUMENTATION_INDEX.md` — which closes the finding the phase was opened on. It carries the peer
+> measurement behind each tier, the ceiling-not-target rule, every exception and N/A, the
+> displaced-goods record, the `lib/`-vs-`components/` directory rule, and the coverage boundary in
+> CONTEXT §5's wording ("covered by a spec that no current tree executes", citing **#683**, never
+> "covered nightly"). It carries **no `file:line` citation** by design.
+>
+> **UIX-07 is COMPLETE** with this plan — 35-01 declared, 35-02 gave it a vocabulary, 35-10 gated
+> it, 35-11 documented it.
+>
+> The phase's **single** `docs/metrics.json` regeneration also landed here: `jest_blocks`
+> 1394 → **1503**, `jest_files` 140 → **141**, `playwright_blocks` 122 → **127**,
+> `playwright_specs` 26 → **27**, total 3378 → **3492**, with README / CLAUDE.md / AGENTS.md
+> reconciled. **It read 1504 first, and that was a real defect, not a rounding error:**
+> `check-test-count-oracle.sh` (jest's own `numTotalTests`) said 1503, and it and
+> `docs-freshness.sh` assert the same key from opposite ends with both required — the #582 deadlock
+> reached from the over-counting side. Root cause in `scripts/count-test-blocks.mjs`: comments were
+> masked to a non-whitespace FILL, so a **trailing comma followed by a comment** read as a separator
+> and every such `it.each` table gained a phantom row. Fixed (comments now mask to whitespace),
+> blast radius measured across all three families **before** the change landed (exactly one file
+> moves; playwright and vitest byte-identical), and guarded by a new fixture that reads 13 against
+> the pre-fix counter and 10 against this one. Harness 18 arms → 20, all green.
+>
+> **Three inherited figures were re-measured and all three were wrong:** the dashboard route count
+> is **18**, not the "21" asserted in nine places (logged to `deferred-items.md`, not fixed at
+> source); the `/legal` index lists **4** policies, not five or six; the index-page modal caps are
+> **5 across 4 files**, not five files. The document quotes no route count at all.
+>
+> Still owed to **35-12**: the fresh full-suite report that clears `check-e2e-skip-budget.sh`
+> (rc=2 VOID, failing closed), the pre-change-tree arm, and the stale Compose frontend rebuild.
+
+> **35-10 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. The contract is now
+> ENFORCED rather than merely written down. `scripts/check-layout-width-contract.sh` (628 lines,
+> **7 assertions / 104 claims**) reads `docs/architecture/layout-tiers.tsv` (43 rows: 1 shell,
+> 13 index, 3 detail, 10 marketing, 1 vocabulary, **12 N/A**, a 3-member parity family) and is
+> wired into `ops-contracts` **in the same commit that created it** — `check-gate-enforcement.sh`
+> is default-deny, and the wiring itself was armed (deleting the step reds it, naming this gate).
+>
+> **35-07's OWED ARM IS DISCHARGED, and the discharge is the side-by-side rather than a green
+> gate.** The same break — the `/shop/[slug]` skeleton band back to 1280 — was re-run: 35-07's
+> instrument still reports **14 suites / 146 tests passed**, exactly the figure it recorded, while
+> the gate exits **1** naming all three family members. A "the gate passes now" claim would have
+> proved nothing about the debt. The third member (`not-found.tsx`) was armed separately, because
+> a family check proven on two of three reads as covering the route.
+>
+> **Eighteen arms, all with real output in both directions**, including two controls and three
+> VOIDs (empty manifest, a row with a shifted column, a row naming a missing file). Two arms had
+> to be redesigned mid-run: PATTERNS.md attributes the naive `container` noise to `DialogContent`
+> / `CardContent` / `TabsContent`, and **none of those contains the string `container`** — the
+> planned control could never have reproduced the false positive it existed to guard. The real
+> shapes are Testing Library's `container` local (all in test files) and, case-insensitively,
+> `ResponsiveContainer` ×8 + `staggerContainer` ×2 in shipped source.
+>
+> **Two measured design decisions the next reader must not "simplify".** (1) Comments are
+> stripped before every count: unstripped, the tier-literal totals are **3/1/4**, so the gate
+> would red on four pre-existing comment lines it did not cause. (2) The index tier's no-cap
+> check is scoped to the **declaring element**, never the file — all five original index pages
+> legitimately carry `max-w-2xl` on a modal `DialogContent`, and a file-scoped check would red on
+> correct code.
+>
+> A **seventh** assertion was added beyond the plan's six (Rule 2): the index tier's contract is
+> an *absence*, and it was the only tier with no static instrument — 35-03 records that it built
+> no jsdom harness for `customers` or `shops` either.
+>
+> **All seven assertions block a pull request**, which matters on this phase: the gate is static
+> by construction, so unlike the browser-measured Shell/Index/Detail assertions it does not depend
+> on the dark nightly lane (#683). What it CANNOT say is anything about a rendered band width —
+> that remains "covered by a spec that no current tree executes". **Block delta 0**; no test file
+> touched, `docs/metrics.json` correctly untouched.
+>
+> `check-e2e-skip-budget.sh` is **rc=2 VOID** (stored report predates this branch's spec changes)
+> — failing closed as designed, cleared by 35-12's fresh full-suite run, logged not papered over.
+
+> **35-08 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. The contract is now
+> MEASURED in a real browser, not merely declared. `frontend/e2e/layout-width-contract.spec.ts`
+> (711 lines, 21 desktop tests) asserts all four tiers at 1440/1920/2560 against the imported
+> constants, and a new step in `ci-cd.yaml` runs its stack-free half on every pull request.
+>
+> **Two of the plan's own break arms were measured incapable of failing.** Every shell assertion
+> imported `SHELL_MAX_PX`, so editing the module and rebuilding moved BOTH sides and the arm
+> passed. Fixed by adding a per-viewport claim about the PAGE'S GEOMETRY that the constant cannot
+> move (fill `main` at 1440/1920; strictly narrower at 2560). Five arms then recorded in both
+> directions, including the ARM E control proving the padding-inclusive denominator reds by
+> exactly **64px** at all three viewports.
+>
+> **The consolidated wave-3 close, owed by 35-03/04/05/07, ran here:** `npx jest` **141 suites /
+> 1503 tests** green, and `npm run build` rc=0 from a cleared `.next` — with the build itself shown
+> able to fail (`TS2322` → *"Failed to type check"*, rc=1) so "green" is a claim about a live
+> type-check rather than a no-op.
+>
+> **Runtime parity is NOT clean and this is the handoff:** `check-runtime-freshness.sh` rc=1 —
+> the Compose `frontend` image is `[image-not-rebuilt]` (tagged 15:42 UTC against build inputs
+> from 19:40 UTC) and `curl localhost:3000/` returns **0** tier attributes. Every measurement in
+> 35-08 was therefore taken against a locally built `next start`, never `:3000`. Owed to 35-12/13.
+>
+> Coverage stays honest: the Marketing tier blocks a PR; Shell/Index/Detail are
+> **"covered by a spec that no current tree executes"** (#683), written in those words in both the
+> spec header and the CI step. Skip budget handled by option (a) — the nightly already exports the
+> credential, measured 21 passed / 0 skipped with it and 12 passed / 9 skipped without.
+>
+> **35-02 (2026-08-29)** on `feature/35-horizontal-layout-contract`. The contract now
+> has a vocabulary the DOM can be queried on. `frontend/components/layout/content-tier.tsx` owns
+> `WIDTH_TIER_CLASS` and the `ContentTier` wrapper, and is the **only** place in the tree where
+> the three tier class literals exist — one occurrence each across `app/` + `components/`,
+> measured with a control (`mx-auto` matches 30 files, so the count is about the tree and not the
+> pattern). The class strings cannot live beside the numbers in `lib/`: Tailwind's content globs
+> exclude that directory and a class written there is silently never generated.
+>
+> **THE INTERIM STATE 35-01 LEFT IS CLOSED.** `dashboard-shell.tsx` no longer carries the dead
+> `container` class; the band declares `data-width-tier="shell"` and the 1700px Shell cap, applied
+> IN PLACE on the element that already existed — **no DOM node added**, so nothing in the existing
+> CLS, motion or bounding-box behaviour has a new element to notice. This is the tree's only width
+> call site, so all 21 dashboard routes now inherit a declared cap instead of running fluid.
+>
+> Seven break arms, all recorded with real output in both directions (the plan specified three;
+> four assertions had no fail direction at all, which is not acceptable on this project).
+> **The arm worth reading is F:** setting the shell tier to `max-w-7xl` — the tree's own existing
+> idiom, i.e. the *plausible* drift — left the **entire dashboard-shell suite green**. That suite
+> reads the class from the vocabulary module, so it proves the band applies whatever the vocabulary
+> says; only `content-tier.test.tsx`'s derivation assertion proves the vocabulary says the right
+> thing. Neither suite alone catches a wrong cap. Wave-3 plans inherit that property.
+>
+> Read out of the shipped stylesheet, not inferred: `.max-w-shell{max-width:1700px}`, with no
+> `@media` wrapping it (so it cannot bind at 390px), and `max-width:1400px` / `.container{`
+> absent. `"data-width-tier":"shell"` is present in the built client chunk. Note for wave 3:
+> `max-w-detail` and `max-w-marketing` are **already** in the CSS because their literals are in a
+> scanned file — so "the rule is in the stylesheet" is NOT evidence any surface applies it.
+>
+> Full Jest **140 suites / 1393 tests** green; `npm run build` rc=0; tsc rc=0; lint 0 errors;
+> branch 0 behind base. **NOT proven in a browser** — the dashboard is authenticated, per-PR CI
+> runs only the two public specs, and per **#683 the nightly lane is dark**. The honest phrasing
+> stays "covered by a spec that no current tree executes", never "covered nightly".
+>
+> UIX-07 advanced to **2 of 4 plans**; UIX-08's *mechanism* shipped but **no index surface
+> declares a tier yet**, so that row stays not-started on its own limbs.
+
+> **35-01 COMPLETE (2026-08-29)** on `feature/35-horizontal-layout-contract`. The four content
+> widths now exist exactly once, in `frontend/lib/layout-widths.ts`, read by the Tailwind build,
+> the app and (from 35-08) the Playwright contract spec. Shell 1700 / Detail 1100 / Marketing
+> 1280, each carrying the peer measurement that justifies it — Stripe's dashboard 1690, Linear
+> 1136, Stripe marketing 1264 — because the phase's root cause was never "1400 is wrong" but
+> that nobody could say where 1400 came from. The Index tier deliberately declares no number.
+>
+> The stock shadcn `container` is RETIRED, and both halves are guarded independently because
+> they fail differently: deleting `theme.container` alone leaves the core plugin emitting the
+> DEFAULT five media queries — measured in the shipped stylesheet under the break arm as caps at
+> 640/768/1024/1280/1536 — which is strictly worse than the single 1400px query the tree had.
+> `corePlugins.container: false` is what makes the retirement real.
+>
+> Nine break arms run, all recorded in the SUMMARY with real output in both directions. **The
+> finding worth more than the feature: one of this plan's own checks was vacuous and only the
+> fail arm exposed it** — the "each number records its justification" assertion searched the
+> whole file, so deleting the shell's peer citation left the suite 12/12 GREEN, because the
+> module header used the same figure in an unrelated sentence. Rescoped to each export's own
+> docblock, with a control proving the scope is not secretly the whole file.
+>
+> **INTERIM STATE, resolved by 35-02:** `dashboard-shell.tsx:55` still carries the now-dead
+> `container` class, so the dashboard band is momentarily FLUID rather than capped. 35-02 owns
+> that file. Recorded because an unstated intermediate state reads as a defect.
+>
+> Full Jest 139 suites / 1360 tests green; `npm run build` rc=0; branch 0 behind base. NOT yet
+> proven in a browser — this plan renders no new class, and per **#683 the nightly lane is dark**,
+> so the dashboard tiers are "covered by a spec no current tree executes", never "covered
+> nightly".
 
 > **Phase 31 SHIPPED 2026-08-17** via PR #633, squash-merged to `main` as `42ac6dc3`
 > (`feat(31): consumer safety and the legal floor (#633)`). 18/18 plans; closes #116, #103 and
@@ -338,7 +552,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Ready to plan
+Status: Executing Phase 34
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -349,7 +563,7 @@ Status: Ready to plan
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-08-10
+Last activity: 2026-08-30 - Completed quick task 260830-p2o: unexamined-defaults audit — 4 new findings filed (#699-#702), 8 surfaces examined clean; the 1400px class is now a hunted category, not a surprise
 
 Progress: [██████████] 98%
 
@@ -452,6 +666,8 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 ## Accumulated Context
 
 ### Roadmap Evolution
+
+- **Phase 35 added (2026-08-29): Horizontal Layout Contract** — tiered content widths across dashboard, index, detail and marketing surfaces. Owner-raised after the QA-council #685 merge: the product "feels narrow and confined to the middle" on desktop. Investigated rather than assumed: measured in-browser against the freshly-rebuilt runtime (landing 1152px = 60% of 1920 / 45% of 2560; directory 1280px = 66.7%/50%; dashboard 1400px = 72.9%/54.7%), root-caused to the **stock shadcn `container` block shipped verbatim** in `tailwind.config.ts` and applied at `dashboard-shell.tsx:55`, with **no width standard declared anywhere in the repo**. Industry research (self-corrected mid-task; one unverifiable value struck) found three independent products clustered at **1680–1720px** for the app shell — Stripe Dashboard 1690, Square 1680/1720 — i.e. the owner's "two thirds" instinct reproduces the measured industry ceiling. The larger finding is that mature systems **tier width by content type** rather than applying one number: full-width for resource indexes (Polaris, Carbon `--full-width`, GitLab, Lightspeed), ~1100px for detail/reading (Linear 1136, Square 1016), ~1280px for marketing (Stripe 1264). Evidence and hazards in `35-.../CONTEXT.md`. Toast and Square Market are explicitly NOT verifiable and are not cited as closest-domain evidence.
 
 - Phase 27 added (2026-07-27): Operational Maturity — messaging as the first instance. Requirements OPS-01..OPS-05. Seven plans written and audited (5 passes) BEFORE registration; see `.planning/phases/27-operational-maturity/`. NOTE: `gsd-sdk query phase.add` derived Phase **28** because the phase directory already existed — corrected to 27 by hand, and the stray `28-operational-maturity/` directory removed.
 
@@ -591,6 +807,13 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260830-p2o | The unexamined-defaults audit — the deliberate hunt for the 1400px-container class (library defaults load-bearing on visible surfaces, nobody declared them, outside the instrument envelope). 12-row AUDIT.md; **4 filed**: #699 `md:768` gives tablets the full desktop sidebar; #700 `TOAST_LIMIT=1` displaces unread error toasts (measured live, count stayed 1); #701 eleven dialogs on the 512px default + no dialog density policy (products form: 28 fields, 1564px scroll in an 810px box); #702 unclamped table titles (224-char title = 6-line row, API-reachable per `@Size max=255`; storefront truncates correctly). 8 rows examined-clean/ratified incl. zero overflow on all 14 probes at 768/1024 with the instrument armed first (+560 on an injected div). Probe product SQL-inserted and deleted, count 0 verified. No fixes in-task by design. The PR #703 review found 5 record defects (count 12→11, a misnamed dialog, the unrecorded SQL-vs-API deviation, this row's artifact column, a circular issue pointer) — all verified and corrected | 2026-08-30 | PR #703 | [260830-p2o-unexamined-defaults-audit](./quick/260830-p2o-unexamined-defaults-audit/) |
+| 260830-ngf | Close #688 (FEB-1/A11Y-2 residuals): count subtitles on all four dashboard list pages dash out under `loadFailed` (never "0 X in total" beside an error panel), and six raw-axios toasts (products load + customers/shops mutations ×2 each) routed through `describeLoadError` so RFC 7807 detail wins. Sweep answered: orders already clean on toasts but had the count edge; `/shop` clean, untouched. 2 new jest tests observed failing pre-fix (only they failed, 2/5); full jest 141/1505; metrics 3492→3494 via `--write` + 3 prose docs reconciled, both doc gates rc=0. Browser proof both directions against the REBUILT container: stub-500 arm `zeroInTotal:0, dash:1, toastRawAxios:false` (toast captured non-empty), control arm real count + no panel | 2026-08-30 | 7f9a17c8 | [260830-ngf-close-688-products-error-residuals](./quick/260830-ngf-close-688-products-error-residuals/) |
+| 260830-l8g | Close #684 (fresh-volume provisioning, the V64 class): `00-create-db.sql` created `jtoye_app` — the MIGRATOR since SEC-04 — with `DB_PASSWORD` while Flyway presents `DB_MIGRATION_PASSWORD`, so a fresh volume 28P01 crash-looped with zero migrations wherever the two differ. Now created with the migration credential, falling back to `DB_PASSWORD` on unset/empty (`\set '' + \getenv` sentinel + `coalesce(nullif())`); compose passes the var into postgres init; the nightly's must-be-equal DERIVED comment corrected (equality = simplification, kept so that lane exercises the fallback while the local differing `.env` exercises the split). **The first instrument was vacuous** — in-container loopback is `trust`, garbage password rc=0 — rebuilt onto the network/scram path with a garbage control before any result was trusted. Pre-fix file reproduces the defect, post-fix inverts it, both fallback arms land on `DB_PASSWORD`, `jtoye_runtime` untouched. Close condition run for real: `down -v` with differing creds → healthy, RestartCount 0, V64 64/64, role creds proven by content, postcodes 1,748,230, smoke 45/45, freshness + alert gates PASS | 2026-08-30 | c5d2b275 | [260830-l8g-close-684-fresh-volume-migrator-credential](./quick/260830-l8g-close-684-fresh-volume-migrator-credential/) |
+| 260830-kmi | Close #686 (E2E skip-budget): the undeclared-skip cause — a LIVE/terminal demo-tenant `vendor_onboarding` making ONBD-05 skip — is now provisioned by script, not by hand. `seed-e2e-fixtures.sh` section 3 deletes the row + gates when terminal (scoped to the vendor tenant only; Shop.published and Envers `_aud` untouched; `RESET_ONBOARDING=0` preserves state but verification still fails on it), and the end-of-run check asks the spec's own predicate (0 terminal rows). Three arms all observed failing: spec `1 skipped` on WITHDRAWN, opt-out rc=1 with the row proven still present, reset then full journey `1 passed (6.1s)`. Gate re-earned VOID(rc=2, #692 specDigest) → PASS on a fresh full-suite run: 323 total / 317 passed / 6 skipped / 0 failed, all declared, budget 6. Dark-lane half handed to #683 (nightly escalation already covers the gate step; tonight's run is the confirming instrument) | 2026-08-30 | 815178e8 | [260830-kmi-close-686-onboarding-reset-fixture](./quick/260830-kmi-close-686-onboarding-reset-fixture/) |
+| 260830-hjs | Kill the homepage networkidle flake (#687): replace all 7 `waitForLoadState("networkidle")` waits in marketing-motion + csp-no-violations specs with deterministic anchors. Root cause measured: Next RSC prefetch abort/re-issue churn + session polling reset Playwright's 500ms idle window (~1 timeout per full run, page fully rendered each time). No both-branches motion signal existed, so an inert `data-motion-decided="scene\|static"` stamp was added to both enhancers — mobile/reduced absence assertions now anchor on it (and it doubles as a runtime-parity alarm: a stale frontend image lacks it and fails loudly). CSP tests use load + visible-h1; the 2000/2000/3000ms violation-collection settles unchanged. Three break arms all observed failing (bogus anchor timeout; count flip received-0; inline **event-handler** CSP violation — the planned createElement'd-script arm was VACUOUS, allowed by 'strict-dynamic' by design, and was substituted). Clean pass 18/18 vs the rebuilt compose frontend; mobile tests 60s-timeout → ~800ms. specDigest changed: stored e2e reports predating the branch are VOID for check-e2e-skip-budget.sh | 2026-08-30 | 356cdd87 | [260830-hjs-fix-flaky-networkidle-waits-in-marketing](./quick/260830-hjs-fix-flaky-networkidle-waits-in-marketing/) |
+| 260828-fast | Fix-forward for the frontend Docker image build #679 broke: next 16.3.x type-checks the whole program, and the a11y retention test imports repo-root docs/retention-manifest.json — unreachable from the ./frontend build context, so ONLY the container build failed (every CI job runs in a full checkout). tsconfig.build.json narrows `next build` to shipped code; a new bare `tsc --noEmit` CI step KEEPS the accidental test-type-coverage gain (viable now that jest-dom 7.x fixed the ~366 matcher errors). Both directions proven incl. a planted-error arm where build stayed green while tsc went red. Caught by the post-merge runtime-parity re-sync, a class no PR gate can see. PR #681. Inline (gsd-fast, 4 files — one over the 3-edit bar, recorded rather than split from its changelog) | 2026-08-28 | 035e1bec | (fast, inline — no task dir) |
+| 260828-msx | Supersede dependabot #651 (closed unmerged by dependabot itself): land the 10-package frontend minor-and-patch bump incl. next 16.2.12→16.3.2 (meets the CVE-2025-13465 lodash-fix precondition — 4.17.23 figure is upstream's, unverified by content since Next strips version banners), fix the 3 PRE-EXISTING tsc errors invisible to `next build` (rc 1→0, both directions recorded), reconcile 13 gated doc-pin claims (the gate caught AGENTS.md:502, which the hand enumeration missed) plus the ungated Stripe pins in INTEGRATIONS.md that NO gate reads, and correct HANDOFF.md's falsified "#651 OPEN" claim. PR #679 | 2026-08-28 | 692daa90 | [260828-msx-supersede-dependabot-pr-651-frontend-min](./quick/260828-msx-supersede-dependabot-pr-651-frontend-min/) |
 | 260828-h0i | Unbreak the six failing nightly E2E tests (#666) — three instrument defects in storefront-flows.spec.ts, three tests x two projects; **the product was correct in all three**. Two ambiguous locators collided with Phase 31 copy ("Browse" ⊂ "browser"; the cookie notice's "remembering what is in your basket"). The third re-attributes what the 2026-08-25 handoff called "NOT YET ATTRIBUTED and the more serious": the **LGL-03 allergen gate** refuses the submit before any network call with the button left enabled, so the click was swallowed and no order row was ever created — meaning **no E2E had covered a successful order placement since Phase 31 merged**. Falsified clean→arms→clean, restores content-verified by git hash-object: arm 1 → 2 fail, arm 2 → 2 fail, arm 3 → 4 fail with the original CI symptom, closing arm 6/6 pass and **0→4 real orders** in the database carrying V63 allergen snapshots. Full spec 44/44. Also measured, not this task: compose maps core-java as the RANGE "9090-9091:9090" and Docker picked 9091 while the bundle bakes localhost:9090 — six further local failures, all cleared by a force-recreate with no code change | 2026-08-28 | 6b1df8a1 | [20260828-e2e-storefront-nightly-six](./quick/20260828-e2e-storefront-nightly-six/) |
 | 260809-ivz | Close UF-33-01 (33-SECURITY.md residual) — the rejected client coordinate is WARN-logged at integer degrees, never the raw pair; arm shown failing pre-fix, ShopServiceGeocodeTest 15/15 fresh post-fix | 2026-08-09 | a1e8ef64 | [260809-ivz-close-uf-33-01-coarsen-the-client-coordi](./quick/260809-ivz-close-uf-33-01-coarsen-the-client-coordi/) |
 | 260715-fcq | Reconcile stale docs to current state (milestone identity → v2.3; test count 1257→1401; schema V51→V56; incl. AGENTS.md mirror) | 2026-07-15 | aed0929 | [260715-fcq-reconcile-stale-project-docs-to-current-](./quick/260715-fcq-reconcile-stale-project-docs-to-current-/) |

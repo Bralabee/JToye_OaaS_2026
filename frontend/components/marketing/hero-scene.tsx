@@ -22,7 +22,10 @@ import { canEnhance, DESKTOP_MOTION_QUERY, splitWords } from "@/lib/gsap-gate"
  * unmount / breakpoint change, so nothing leaks across a client route change.
  *
  * E2E signals: `[data-motion-active="desktop"]` on the scope (set in-branch,
- * removed in cleanup) and `.gsap-word` spans from `splitWords`.
+ * removed in cleanup), `.gsap-word` spans from `splitWords`, and
+ * `[data-motion-decided="scene"|"static"]` on the scope — an INERT marker
+ * (no stylesheet, no logic reads it) stamped once the enhancer has RUN and
+ * decided either way, so absence assertions have a deterministic anchor.
  */
 export function HeroScene({ children }: { children: ReactNode }) {
   const scope = useRef<HTMLDivElement>(null)
@@ -36,6 +39,7 @@ export function HeroScene({ children }: { children: ReactNode }) {
       const mm = gsap.matchMedia()
       mm.add(DESKTOP_MOTION_QUERY, () => {
         root.setAttribute("data-motion-active", "desktop")
+        root.setAttribute("data-motion-decided", "scene")
 
         // Headline split-type entrance (hand-split, no SplitText plugin).
         const headline = root.querySelector<HTMLElement>("[data-hero-headline]")
@@ -156,8 +160,19 @@ export function HeroScene({ children }: { children: ReactNode }) {
 
         return () => {
           root.removeAttribute("data-motion-active")
+          // matchMedia cleanup also runs on breakpoint change, so the marker
+          // stays truthful if the desktop query stops matching mid-session.
+          root.setAttribute("data-motion-decided", "static")
         }
       })
+
+      // Negative-branch default: mm.add fires its callback synchronously when
+      // the query matches, so on desktop the attribute is already "scene" here.
+      // Mobile / reduced-motion pages get their stamp the moment the enhancer
+      // has run and DECLINED to build a scene.
+      if (!root.hasAttribute("data-motion-decided")) {
+        root.setAttribute("data-motion-decided", "static")
+      }
     },
     { scope },
   )

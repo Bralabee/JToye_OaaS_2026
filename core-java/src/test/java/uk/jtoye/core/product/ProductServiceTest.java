@@ -188,7 +188,7 @@ class ProductServiceTest {
     @DisplayName("createProduct - Success with valid request")
     void testCreateProduct_Success() {
         // Given
-        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> {
+        when(productRepository.saveAndFlush(any(Product.class))).thenAnswer(invocation -> {
             Product product = invocation.getArgument(0);
             setField(product, "id", productId);
             setField(product, "createdAt", OffsetDateTime.now());
@@ -208,7 +208,7 @@ class ProductServiceTest {
         assertEquals(999L, result.getPricePennies());
 
         ArgumentCaptor<Product> productCaptor = ArgumentCaptor.forClass(Product.class);
-        verify(productRepository).save(productCaptor.capture());
+        verify(productRepository).saveAndFlush(productCaptor.capture());
 
         Product savedProduct = productCaptor.getValue();
         assertEquals(tenantId, savedProduct.getTenantId());
@@ -227,7 +227,7 @@ class ProductServiceTest {
         });
 
         assertEquals("Tenant context not set", exception.getMessage());
-        verify(productRepository, never()).save(any(Product.class));
+        verify(productRepository, never()).saveAndFlush(any(Product.class));
     }
 
     @Test
@@ -235,7 +235,7 @@ class ProductServiceTest {
     void testCreateProduct_SetsTenantId() {
         // Given
         ArgumentCaptor<Product> productCaptor = ArgumentCaptor.forClass(Product.class);
-        when(productRepository.save(productCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(productRepository.saveAndFlush(productCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         productService.createProduct(validRequest);
@@ -250,14 +250,14 @@ class ProductServiceTest {
     void testCreateProduct_AllergenMaskValidation() {
         // Given
         validRequest.setAllergenMask(16383); // Maximum valid value (14 allergens)
-        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(productRepository.saveAndFlush(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         ProductDto result = productService.createProduct(validRequest);
 
         // Then
         assertEquals(16383, result.getAllergenMask());
-        verify(productRepository).save(any(Product.class));
+        verify(productRepository).saveAndFlush(any(Product.class));
     }
 
     @Test
@@ -437,14 +437,14 @@ class ProductServiceTest {
     void testCreateProduct_ZeroPrice() {
         // Given
         validRequest.setPricePennies(0L);
-        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(productRepository.saveAndFlush(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         ProductDto result = productService.createProduct(validRequest);
 
         // Then
         assertEquals(0L, result.getPricePennies());
-        verify(productRepository).save(any(Product.class));
+        verify(productRepository).saveAndFlush(any(Product.class));
     }
 
     @Test
@@ -452,14 +452,14 @@ class ProductServiceTest {
     void testCreateProduct_MaxPrice() {
         // Given
         validRequest.setPricePennies(1000000000L); // £10,000,000
-        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(productRepository.saveAndFlush(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         ProductDto result = productService.createProduct(validRequest);
 
         // Then
         assertEquals(1000000000L, result.getPricePennies());
-        verify(productRepository).save(any(Product.class));
+        verify(productRepository).saveAndFlush(any(Product.class));
     }
 
     @Test
@@ -468,14 +468,14 @@ class ProductServiceTest {
         // Given
         String longIngredients = "A".repeat(2000); // Maximum length
         validRequest.setIngredientsText(longIngredients);
-        when(productRepository.save(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(productRepository.saveAndFlush(any(Product.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         ProductDto result = productService.createProduct(validRequest);
 
         // Then
         assertEquals(longIngredients, result.getIngredientsText());
-        verify(productRepository).save(any(Product.class));
+        verify(productRepository).saveAndFlush(any(Product.class));
     }
 
     @Test

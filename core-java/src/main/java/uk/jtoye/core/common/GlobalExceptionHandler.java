@@ -33,8 +33,10 @@ import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
+import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.media.exception.DecompressionBombException;
 import uk.jtoye.core.media.exception.MediaRedriveRejectedException;
 import uk.jtoye.core.media.exception.PayloadTooLargeException;
@@ -44,6 +46,7 @@ import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Centralized exception handling for all REST controllers.
@@ -136,8 +139,50 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
+    /**
+     * QA-council cluster P2 (API-2/FE-4) — this used to be ONE blanket mapping from every
+     * {@link DataIntegrityViolationException} to 409 "Duplicate Entry", discriminated only by a
+     * substring match on the constraint/index name below. 23502 (not-null), 23503
+     * (foreign-key) and 23505 (unique) are semantically different failures, and only 23505 is
+     * genuinely a duplicate.
+     *
+     * <p>SQLState (via {@link SqlStateExtractor}) is the AUTHORITATIVE discriminator — it comes
+     * straight off the JDBC driver's real {@link java.sql.SQLException}, unlike Hibernate's own
+     * {@code ConstraintViolationException.getKind()}, which (as of Hibernate 6.6.53) only ever
+     * distinguishes {@code UNIQUE} from {@code OTHER} and so cannot tell a not-null violation from
+     * a foreign-key violation. 23502 gets its OWN 400 mapping below. Everything else — a genuine
+     * 23505 unique violation, AND anything this handler cannot classify (including an
+     * insert-time 23503 bad-parent-reference, which the service layer is expected to reject
+     * BEFORE the write ever reaches the database via an explicit existence check — a
+     * deliberately separate, untouched code path) — falls through to the original substring-keyed
+     * "Duplicate Entry" mapping, UNCHANGED. A delete-time 23503 (a row still referenced by
+     * something else) never reaches this generic handler at all: {@code ProductService} /
+     * {@code CustomerService} catch it at the delete call site and translate it to
+     * {@link ResourceInUseException}, handled separately by {@link #handleResourceInUse}.
+     */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        if ("23502".equals(SqlStateExtractor.sqlState(ex).orElse(null))) {
+            return handleNotNullViolation(ex);
+        }
+        return handleDuplicateEntry(ex);
+    }
+
+    private ProblemDetail handleNotNullViolation(DataIntegrityViolationException ex) {
+        String field = extractNotNullColumn(ex).orElse(null);
+        String detail = field != null
+                ? "Required field is missing: " + field
+                : "A required field is missing";
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
+        problem.setTitle("Missing Required Field");
+        problem.setType(URI.create("https://jtoye.uk/errors/missing-field"));
+        if (field != null) {
+            problem.setProperty("field", field);
+        }
+        return problem;
+    }
+
+    private ProblemDetail handleDuplicateEntry(DataIntegrityViolationException ex) {
         String message = "Data integrity constraint violated";
         if (ex.getMessage() != null) {
             if (ex.getMessage().contains("idx_products_tenant_sku")) {
@@ -152,6 +197,51 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, message);
         problem.setTitle("Duplicate Entry");
         problem.setType(URI.create("https://jtoye.uk/errors/duplicate"));
+        return problem;
+    }
+
+    /**
+     * Best-effort extraction of the offending column name from Postgres's own 23502 message
+     * ({@code null value in column "foo" of relation "bar" violates not-null constraint}), so the
+     * 400 body names the field a machine client should fill in (D-06 / agent-readiness). Not
+     * load-bearing: if the message shape ever changes, {@link #handleNotNullViolation} falls back
+     * to a generic detail rather than failing.
+     */
+    private static final java.util.regex.Pattern NOT_NULL_COLUMN_PATTERN =
+            java.util.regex.Pattern.compile("null value in column \"([a-zA-Z0-9_]+)\"");
+
+    private static Optional<String> extractNotNullColumn(Throwable ex) {
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            String msg = t.getMessage();
+            if (msg != null) {
+                java.util.regex.Matcher m = NOT_NULL_COLUMN_PATTERN.matcher(msg);
+                if (m.find()) {
+                    return Optional.of(m.group(1));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * QA-council cluster P2 (API-2/FE-4) — a DELETE hit SQLState 23503: another row still
+     * references the target through a foreign key (a product still line-itemed on an order, a
+     * customer still named on an order). 409 Conflict, DELIBERATELY DISTINCT from the blanket
+     * {@code errors/duplicate} the generic {@link #handleDataIntegrityViolation} used to return
+     * for every integrity violation. {@code ProductService.deleteProduct} /
+     * {@code CustomerService.deleteCustomer} catch the FK violation at the delete call site
+     * (see {@link ResourceInUseException}'s Javadoc for why this is scoped to the delete
+     * direction only) and translate it here, exactly as {@link #handleMediaRedriveRejected}
+     * translates its own typed family.
+     */
+    @ExceptionHandler(ResourceInUseException.class)
+    public ProblemDetail handleResourceInUse(ResourceInUseException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Resource In Use");
+        problem.setType(URI.create("https://jtoye.uk/errors/in-use"));
+        if (ex.getConstraintName() != null) {
+            problem.setProperty("constraintName", ex.getConstraintName());
+        }
         return problem;
     }
 

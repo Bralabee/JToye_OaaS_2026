@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, type ReactNode } from "react"
 import { ArrowDown, ArrowUpRight, Check, ClipboardCheck, Copy, Download, MessageCircle, Package, Store } from "lucide-react"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useOperatorEntranceScene } from "@/components/marketing/operator-entrance-scene"
 
 type BusinessShape = "Takeaway" | "Catering" | "Both"
@@ -70,14 +71,39 @@ export function OperatorPitch() {
       <a href="#main-pitch" className="sr-only z-50 rounded-full bg-oxblood px-4 py-3 text-sm font-bold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4">Skip to operator pitch</a>
 
       <div className="border-b border-cream-100 bg-cream">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
+        {/* PHASE 35 / UIX-07 — the DECLARED Marketing width tier, applied IN PLACE.
+            This band's rendered width does not change: it is deliberately equal to
+            the shared public header and footer rails, so the chrome and the content
+            it frames stay aligned. What changes is that the width is now DECLARED
+            rather than inherited — it was previously the stock scale token that
+            happens to equal the same number, i.e. correct by coincidence, which is
+            the same class of problem as the unaccounted-for dashboard width this
+            phase exists to remove. The class name it replaces is deliberately not
+            spelled out again; a comment satisfies a grep as readily as code does.
+
+            The tier class is never written as a literal here — plan 35-10's gate
+            reads the property that it occurs in exactly one module. The three
+            band sites in this file all carry the declaration, and the COUNT is
+            asserted in __tests__/operator-pitch.test.tsx, because a band left on
+            the old token renders identically today and only diverges once the
+            tier's value moves.
+
+            The headline and paragraph measures below are typographic clamps, not
+            page bands. They are orthogonal to the tier and stay untouched. */}
+        <div
+          data-width-tier="marketing"
+          className={`mx-auto flex ${WIDTH_TIER_CLASS.marketing} items-center justify-between gap-4 px-5 py-4 sm:px-8`}
+        >
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-oxblood-600">J&apos;Toye / operator pilot</p>
           <p className="text-right text-xs font-semibold text-slate-600">Built for the service you already run</p>
         </div>
       </div>
 
       <section id="main-pitch" className="relative overflow-hidden bg-gradient-to-br from-oxblood via-oxblood to-oxblood-700 text-cream">
-        <div className="relative mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:px-8 sm:py-20 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+        <div
+          data-width-tier="marketing"
+          className={`relative mx-auto grid ${WIDTH_TIER_CLASS.marketing} gap-10 px-5 py-14 sm:px-8 sm:py-20 lg:grid-cols-[1.2fr_0.8fr] lg:items-end`}
+        >
           <div>
             <p className="mb-5 inline-flex rounded-full border border-white/25 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-gold">One London cluster · owner-led food businesses</p>
             <h1 data-op-headline className="max-w-4xl text-4xl font-bold leading-[0.98] tracking-[-0.05em] sm:text-5xl sm:leading-[0.93] lg:text-6xl">Keep the order. <span className="text-amber-300">Keep the customer.</span> Keep the kitchen moving.</h1>
@@ -99,7 +125,10 @@ export function OperatorPitch() {
         </div>
       </section>
 
-      <div className="mx-auto max-w-7xl px-5 py-14 sm:px-8 sm:py-20">
+      <div
+        data-width-tier="marketing"
+        className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-5 py-14 sm:px-8 sm:py-20`}
+      >
         <section aria-labelledby="pressure-heading" className="grid gap-6 border-b border-cream-100 pb-14 lg:grid-cols-[0.8fr_1.2fr]">
           <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-oxblood-600">The service leak</p><h2 id="pressure-heading" className="mt-4 text-4xl font-bold leading-none tracking-[-0.045em] text-oxblood sm:text-5xl">One change. Three channels. Two versions of the order.</h2></div>
           <div className="grid gap-3 sm:grid-cols-3"><Impact title="The counter checks messages" detail="Changes sit beside the order instead of becoming the order." /><Impact title="The kitchen works from memory" detail="Availability, portions and handover details become verbal." /><Impact title="The owner carries the risk" detail="The customer still expects one accurate promise." /></div>

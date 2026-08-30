@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 
 type Confidence = "High" | "Working assumption" | "To validate"
 
@@ -115,7 +116,25 @@ export function BusinessModelGuide() {
       </a>
 
       <header className="border-b-[3px] border-oxblood bg-oxblood text-slate-50 print:bg-white print:text-slate-900">
-        <div className="mx-auto max-w-7xl px-5 py-5 sm:px-8">
+        {/* PHASE 35 / UIX-07 — the DECLARED Marketing width tier, applied IN PLACE.
+            No band in this file changes its rendered width. This width is
+            deliberately equal to the shared public header and footer rails, and it
+            was previously the stock scale token that happens to equal the same
+            number — correct by coincidence, which a declared contract replaces
+            with a statement something can assert. The class it replaces is not
+            spelled out again; a comment satisfies a grep as readily as code does.
+
+            Four band sites in this file — this header rail, the sticky topic rail,
+            the body and the footer rail — and the COUNT is asserted in
+            __tests__/business-model-guide.test.tsx, because a band left on the old
+            token renders identically today and only diverges once the tier moves.
+
+            The headline and paragraph clamps inside these bands are typographic
+            measures, orthogonal to the page tier, and stay untouched. */}
+        <div
+          data-width-tier="marketing"
+          className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-5 py-5 sm:px-8`}
+        >
           <div className="flex flex-wrap items-center justify-between gap-4 text-xs font-bold uppercase tracking-[0.18em]">
             <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 bg-amber-300" /> J&apos;Toye OaaS / field guide</span>
             <span className="font-medium tracking-[0.12em] text-slate-300 print:text-slate-600">Research cutoff · 10 July 2026</span>
@@ -140,7 +159,10 @@ export function BusinessModelGuide() {
       </header>
 
       <nav aria-label="Guide topics" className="sticky top-0 z-30 border-b border-slate-200 bg-cream/95 backdrop-blur print:static">
-        <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-5 py-3 sm:px-8">
+        <div
+          data-width-tier="marketing"
+          className={`mx-auto flex ${WIDTH_TIER_CLASS.marketing} items-center gap-2 overflow-x-auto px-5 py-3 sm:px-8`}
+        >
           <span className="mr-2 shrink-0 text-xs font-bold uppercase tracking-[0.15em] text-slate-600">Read</span>
           {navItems.map(([id, label]) => (
             <a key={id} href={`#${id}`} className="shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500">
@@ -158,7 +180,10 @@ export function BusinessModelGuide() {
 
       {feedback && <div aria-live="polite" className="fixed bottom-5 right-5 z-50 max-w-sm rounded bg-oxblood px-4 py-3 text-sm font-semibold text-white shadow-xl print:hidden">{feedback}</div>}
 
-      <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8 sm:py-16">
+      <div
+        data-width-tier="marketing"
+        className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-5 py-12 sm:px-8 sm:py-16`}
+      >
         <section id="the-decision" aria-labelledby="decision-heading" className="scroll-mt-20">
           <SectionLabel number="01" label="The decision" />
           <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
@@ -252,7 +277,7 @@ export function BusinessModelGuide() {
         </section>
       </div>
 
-      <footer className="border-t-[3px] border-oxblood bg-oxblood px-5 py-7 text-slate-300 print:hidden"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 sm:px-3"><p className="text-xs uppercase tracking-[0.14em]">J&apos;Toye OaaS / decision guide</p><div className="flex gap-3"><button type="button" onClick={copyLink} className="inline-flex items-center gap-2 text-sm font-bold underline decoration-amber-300 decoration-2 underline-offset-4"><Copy size={15} /> Copy link</button><a href="/business-model-guide.pdf" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-bold underline decoration-amber-300 decoration-2 underline-offset-4"><Printer size={15} /> Print / save PDF</a></div></div></footer>
+      <footer className="border-t-[3px] border-oxblood bg-oxblood px-5 py-7 text-slate-300 print:hidden"><div data-width-tier="marketing" className={`mx-auto flex ${WIDTH_TIER_CLASS.marketing} flex-wrap items-center justify-between gap-4 sm:px-3`}><p className="text-xs uppercase tracking-[0.14em]">J&apos;Toye OaaS / decision guide</p><div className="flex gap-3"><button type="button" onClick={copyLink} className="inline-flex items-center gap-2 text-sm font-bold underline decoration-amber-300 decoration-2 underline-offset-4"><Copy size={15} /> Copy link</button><a href="/business-model-guide.pdf" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-bold underline decoration-amber-300 decoration-2 underline-offset-4"><Printer size={15} /> Print / save PDF</a></div></div></footer>
     </div>
   )
 }
