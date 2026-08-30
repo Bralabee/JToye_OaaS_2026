@@ -24,11 +24,19 @@ metrics:
 The deliberate hunt for the 1400px-container class found **four more members, all filed**:
 the `md:768` breakpoint silently giving tablets the full desktop sidebar (#699),
 `TOAST_LIMIT=1` letting any new toast displace an unread error — measured live, count
-stayed 1 (#700), twelve dialogs riding the 512px shadcn default with no declared
+stayed 1 (#700), **eleven** dialogs riding the 512px shadcn default with no declared
 width/density policy while the widened products form scrolls 28 fields through 1564px in
 an 810px box (#701), and unclamped titles letting one 224-char product quadruple its own
 table row (#702, the one mechanical fix; the storefront truncates the same title
-correctly). Eight further rows are examined-clean or ratified — including **zero
+correctly).
+
+**Corrected by the PR #703 review (5 findings, all verified against source and applied):**
+the dialog count was 12 in the first draft (SecretRevealDialog carries `max-w-md`), the
+products no-override dialog is the Delete confirmation at `:991` (not an "edit legacy
+site", which does not exist), the probe product's SQL insert deviated from the plan's
+"via the API" and its reachability is now recorded (`@Size max=255`, 224 passes), the
+STATE.md row names PR #703 instead of no artifact, and #700's body now carries the 5000ms
+duration ratification ask that a circular pointer had stranded here. Eight further rows are examined-clean or ratified — including **zero
 horizontal overflow on all 14 route×viewport probes at 768/1024**, with the overflow
 instrument shown able to fail (+560 on an injected div) before any clean result was
 believed. The probe product was inserted and deleted by SQL, removal verified count 0.
