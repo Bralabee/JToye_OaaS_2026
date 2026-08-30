@@ -96,7 +96,7 @@
 **Critical (Backend):**
 - PostgreSQL JDBC 42.7.13 (`core-java/build.gradle.kts:163`)
 - Hibernate ORM (managed by Spring Boot BOM) + Hibernate Envers for audit history
-- AWS SDK v2 BOM 2.53.2 + `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:119-120`)
+- AWS SDK v2 BOM 2.54.3 + `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:119-120`)
 - Stripe Java SDK 33.3.0 (`core-java/build.gradle.kts:145`)
 - OpenPDF 2.0.3 - Allergen label PDF generation (`core-java/build.gradle.kts:148`)
 - ~~JasperReports~~ — **REMOVED 2026-07-27** (`core-java/build.gradle.kts:153`). Never used (zero imports, zero `.jrxml`/`.jasper` templates) and the sole source of `commons-beanutils`; removing it cleared three Trivy image-gate HIGHs (CVE-2025-48734, CVE-2025-10492, CVE-2026-6009). PDF generation is OpenPDF.
