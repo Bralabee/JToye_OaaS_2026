@@ -600,8 +600,12 @@ function OrdersPageInner() {
             <div>
               <CardTitle>All Orders</CardTitle>
               <CardDescription>
-                {totalElements} order{totalElements !== 1 ? "s" : ""} in total
-                {statusFilter !== "ALL" && ` (filtered: ${statusFilter})`}
+                {/* #688: never assert a count nothing loaded (see products). */}
+                {loadFailed
+                  ? "—"
+                  : `${totalElements} order${totalElements !== 1 ? "s" : ""} in total${
+                      statusFilter !== "ALL" ? ` (filtered: ${statusFilter})` : ""
+                    }`}
               </CardDescription>
             </div>
             <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(0) }}>

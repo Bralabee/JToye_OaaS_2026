@@ -198,16 +198,19 @@ export default function ProductsPage() {
       setTotalElements(response.data.totalElements || 0)
       setLoadFailed(false)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to load products"
+      // A11Y-2 (#688): `error.message` on an axios error is its own transport
+      // string ("Request failed with status code 500") — route the toast
+      // through the shared classifier so it says what the panel says.
+      const { message } = describeLoadError(error, "Failed to load products")
       toast({
         variant: "destructive",
         title: "Error loading products",
-        description: errorMessage,
+        description: message,
       })
       // F2 (FEB-1): `products` is deliberately left untouched above — a false
       // "No products yet" empty state is worse than briefly stale rows.
       setLoadFailed(true)
-      setLoadErrorMessage(describeLoadError(error).message)
+      setLoadErrorMessage(message)
     } finally {
       setLoading(false)
     }
@@ -437,10 +440,15 @@ export default function ProductsPage() {
             <div>
               <CardTitle>All Products</CardTitle>
               <CardDescription>
-                {totalElements} product{totalElements !== 1 ? "s" : ""}
-                {contextShopId
-                  ? ` in ${contextShopName || "the selected shop"}`
-                  : " in total"}
+                {/* #688: never assert a count nothing loaded — the panel below
+                    says the load failed, so the subtitle must not say "0". */}
+                {loadFailed
+                  ? "—"
+                  : `${totalElements} product${totalElements !== 1 ? "s" : ""}${
+                      contextShopId
+                        ? ` in ${contextShopName || "the selected shop"}`
+                        : " in total"
+                    }`}
               </CardDescription>
             </div>
             <div className="relative w-[220px]">

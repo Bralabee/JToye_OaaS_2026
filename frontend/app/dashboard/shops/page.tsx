@@ -224,7 +224,12 @@ export default function ShopsPage() {
       if (currentPage === 0) fetchShops()
       else setCurrentPage(0)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : `Failed to ${editingShop ? "update" : "create"} shop`
+      // A11Y-2 (#688): an axios error IS an Error whose .message is transport
+      // text — classify it so an RFC 7807 detail wins and raw strings never show.
+      const errorMessage = describeLoadError(
+        error,
+        `Failed to ${editingShop ? "update" : "create"} shop`
+      ).message
       toast({
         variant: "destructive",
         title: editingShop ? "Error updating shop" : "Error creating shop",
@@ -250,7 +255,8 @@ export default function ShopsPage() {
       if (currentPage === 0) fetchShops()
       else setCurrentPage(0)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to delete shop"
+      // A11Y-2 (#688): same classification as onSubmit above.
+      const errorMessage = describeLoadError(error, "Failed to delete shop").message
       toast({
         variant: "destructive",
         title: "Error deleting shop",
@@ -304,7 +310,10 @@ export default function ShopsPage() {
             <div>
               <CardTitle>All Shops</CardTitle>
               <CardDescription>
-                {totalElements} shop{totalElements !== 1 ? "s" : ""} in total
+                {/* #688: never assert a count nothing loaded (see products). */}
+                {loadFailed
+                  ? "—"
+                  : `${totalElements} shop${totalElements !== 1 ? "s" : ""} in total`}
               </CardDescription>
             </div>
             <div className="relative w-[220px]">

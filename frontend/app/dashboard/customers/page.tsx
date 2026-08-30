@@ -185,7 +185,12 @@ export default function CustomersPage() {
       if (currentPage === 0) fetchCustomers()
       else setCurrentPage(0)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : `Failed to ${editingCustomer ? "update" : "create"} customer`
+      // A11Y-2 (#688): an axios error IS an Error whose .message is transport
+      // text — classify it so an RFC 7807 detail wins and raw strings never show.
+      const errorMessage = describeLoadError(
+        error,
+        `Failed to ${editingCustomer ? "update" : "create"} customer`
+      ).message
       toast({
         variant: "destructive",
         title: editingCustomer ? "Error updating customer" : "Error creating customer",
@@ -211,7 +216,8 @@ export default function CustomersPage() {
       if (currentPage === 0) fetchCustomers()
       else setCurrentPage(0)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to delete customer"
+      // A11Y-2 (#688): same classification as onSubmit above.
+      const errorMessage = describeLoadError(error, "Failed to delete customer").message
       toast({
         variant: "destructive",
         title: "Error deleting customer",
@@ -266,7 +272,10 @@ export default function CustomersPage() {
           <CardHeader>
             <CardTitle>All Customers</CardTitle>
             <CardDescription>
-              {totalElements} customer{totalElements !== 1 ? "s" : ""} in total
+              {/* #688: never assert a count nothing loaded (see products). */}
+              {loadFailed
+                ? "—"
+                : `${totalElements} customer${totalElements !== 1 ? "s" : ""} in total`}
             </CardDescription>
           </CardHeader>
           <CardContent>
