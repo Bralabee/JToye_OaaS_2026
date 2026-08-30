@@ -121,6 +121,28 @@ done
   `@BeforeEach` runs `create-runtime-role.sql` itself: **it certifies the script, not the
   deployment.** `PostcodeTruncateGrantMigrationTest` is the falsifiable sibling.
 
+### What shipped 2026-08-30
+
+- **#687 CLOSED — the marketing-motion flake, via PR #692** (squash `b7b2099e`). All 7
+  network-idle waits in marketing-motion + csp-no-violations replaced with deterministic
+  anchors on a new inert both-branches `data-motion-decided` stamp; three break arms
+  observed failing (the planned ARM C createElement vector was VACUOUS under
+  `'strict-dynamic'` and was corrected to an inline event handler); clean pass 18/18
+  against a rebuilt compose frontend. One CI red en route: `check-changelog-cites-pr`
+  wants the entry heading to cite the PR itself, not only the issue — the gate's own
+  error text says this has redded main six times.
+- **#686 — the undeclared-skip cause is scripted, via PR #693** (branch
+  `feature/686-skip-budget-fixture-reset`). `seed-e2e-fixtures.sh` now resets a
+  LIVE/terminal demo-tenant `vendor_onboarding` (row + gates, vendor tenant only,
+  `Shop.published` untouched; `RESET_ONBOARDING=0` preserves state but verification still
+  fails on it). Arms: spec `1 skipped` on WITHDRAWN, opt-out rc=1, post-reset full journey
+  `1 passed (6.1s)`. `check-e2e-skip-budget` re-earned VOID → PASS on a fresh full-suite
+  run: **323 total / 317 passed / 6 skipped / 0 failed**, budget 6, all declared. The
+  dark-lane half is #683's: the nightly's escalation covers the gate step, and tonight's
+  ~02:25 UTC run is the confirming instrument for the #687 fix.
+- Runtime parity after the #692 merge: `sync-runtime.sh` rc=0, 4/4 FRESH re-asserted by
+  the gate's own re-check (core-java + frontend rebuilt and force-recreated, healthy).
+
 ### What shipped 2026-08-28
 
 - **#666 CLOSED — the nightly lane is fixed, in two halves.** V64 (#661) had fixed the stack half;
