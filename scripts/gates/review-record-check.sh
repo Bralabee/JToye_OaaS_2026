@@ -247,17 +247,23 @@ SHIM
 	BASHRC="$(dirname "$SELF")/../bash/.bashrc"
 	SKIPPED=0
 	if [ ! -f "$GUARD" ] || [ ! -f "$BASHRC" ]; then
-		SKIPPED=12
-		printf '  SKIP  %s arms (guard dispatch + slug fallback + list parity) — vendored context: no sibling pr-merge-guard.sh/.bashrc; canonical dotfiles runs them\n' "$SKIPPED"
+		SKIPPED=22
+		printf '  SKIP  %s arms (guard dispatch + ledger + wrapper behavioral + slug fallback + list/ledger parity) — vendored context: no sibling pr-merge-guard.sh/.bashrc; canonical dotfiles runs them\n' "$SKIPPED"
 		printf 'review-record-check selftest: passed=%s failed=%s skipped=%s\n' "$PASSED" "$FAILED" "$SKIPPED"
 		[ "$FAILED" -eq 0 ] || exit 1
 		exit 0
 	fi
+	# Every guard arm pins the ledger path (RRFILE_FIX) — by default at a path that
+	# does not exist — so the machine's REAL review-repos.txt can never leak into an
+	# arm and flip a control (an enrolled repo would satisfy 'unlisted stays opt-in').
+	RRFILE_FIX="$WORK/no-ledger"
 	armg() { # <fixture> <review-repos-env> <expected-rc> <reason-regex> <label> [guard-args...]
 		local fix="$1" slug="$2" exp="$3" want="$4" label="$5"; shift 5
 		local out rc
 		out=$(PATH="$WORK/bin:$PATH" GH_FIXTURE_DIR="$WORK/$fix" GH_FIXTURE_RC=0 \
-			DOTFILES_REVIEW_REPOS="$slug" bash "$GUARD" "$@" 2>&1); rc=$?
+			DOTFILES_REVIEW_REPOS="$slug" DOTFILES_REVIEW_REPOS_FILE="$RRFILE_FIX" \
+			DOTFILES_REPO_SLUG= \
+			bash "$GUARD" "$@" 2>&1); rc=$?
 		if [ "$rc" = "$exp" ] && grep -Eq "$want" <<< "$out"; then
 			printf '  ok    %-44s rc=%s\n' "$label" "$rc"; PASSED=$((PASSED+1))
 		else
@@ -277,11 +283,32 @@ SHIM
 	armg absent  x/y 1 'G-4 ON.*review-gated'   'guard env ADDS, never drops the built-ins' --repo Bralabee/dotfiles --pr 1
 	armg garbage x/y 2 'VOID:'                  'guard G-4 VOIDs on unevaluable record'     "${G[@]}" --require-review
 
+	# ── ledger arms: review-repos.txt enrolls at call time, additively ───────────────
+	# Fail directions proven at introduction by a guard mutation (dropping
+	# $FILE_REPOS from the list) flipping the two enrolling arms to NOT OK.
+	printf 'o/r\n' > "$WORK/ledger-hit.txt"
+	printf '# a comment\na/b\ndecline o/r 2026-08-30 scratch repo\no/r trailing junk\n' > "$WORK/ledger-miss.txt"
+	RRFILE_FIX="$WORK/ledger-hit.txt"
+	armg absent '' 1 'G-4 ON.*review-gated'     'guard ledger file enrolls a repo'          "${G[@]}"
+	armg absent '' 1 'G-4 ON.*review-gated'     'guard ledger ADDS, built-ins stay gated'   --repo Bralabee/dotfiles --pr 1
+	RRFILE_FIX="$WORK/ledger-miss.txt"
+	armg absent '' 0 'GO:'                      'guard ledger comments/declines NOT enrolls' "${G[@]}"
+	# CRLF is the dangerous shape (#161 review): [[:space:]] matches \r, so before
+	# the tr -d '\r' fix a CRLF line passed the harvest but kept the \r in the
+	# token and matched nothing — an enrolled repo merged UNGATED while every
+	# green arm stayed green. Proven failing against the pre-fix guard.
+	printf 'o/r\r\n' > "$WORK/ledger-crlf.txt"
+	RRFILE_FIX="$WORK/ledger-crlf.txt"
+	armg absent '' 1 'G-4 ON.*review-gated'     'guard CRLF ledger line still enrolls'      "${G[@]}"
+	RRFILE_FIX="$WORK/no-ledger"
+	armg absent '' 0 'GO:'                      'guard absent ledger changes nothing'       "${G[@]}"
+
 	# DOTFILES_REPO_SLUG fallback: a fork's injected slug must stay auto-gated (the
 	# #153 review's mutation run proved these default paths were previously untested
 	# — a guard default missing dotfiles shipped with the selftest fully green).
 	out=$(PATH="$WORK/bin:$PATH" GH_FIXTURE_DIR="$WORK/absent" GH_FIXTURE_RC=0 \
 		DOTFILES_REVIEW_REPOS="" DOTFILES_REPO_SLUG="fork/dots" \
+		DOTFILES_REVIEW_REPOS_FILE="$WORK/no-ledger" \
 		bash "$GUARD" --repo fork/dots --pr 1 2>&1); rc=$?
 	if [ "$rc" = "1" ] && grep -Eq 'G-4 ON.*review-gated' <<< "$out"; then
 		printf '  ok    %-44s rc=%s\n' 'guard honours the DOTFILES_REPO_SLUG fallback' "$rc"; PASSED=$((PASSED+1))
@@ -295,11 +322,68 @@ SHIM
 	# it extracts the literal list from BOTH lines and fails on ANY divergence,
 	# including a reshaped line that would empty an extraction (never a silent skip).
 	wl=$(sed -n 's/^ *local _review_repos="\$_slug \(.*\) \${DOTFILES_REVIEW_REPOS:-}"$/\1/p' "$BASHRC")
-	gl=$(sed -n 's/^\tfor RSLUG in \${DOTFILES_REPO_SLUG:-Bralabee\/dotfiles} \(.*\) \${DOTFILES_REVIEW_REPOS:-}; do$/\1/p' "$GUARD")
+	gl=$(sed -n 's/^\tfor RSLUG in \${DOTFILES_REPO_SLUG:-Bralabee\/dotfiles} \(.*\) \${DOTFILES_REVIEW_REPOS:-} \$FILE_REPOS; do$/\1/p' "$GUARD")
 	if [ -n "$wl" ] && [ "$wl" = "$gl" ]; then
 		printf '  ok    %-44s [%s]\n' 'wrapper and guard default lists are IDENTICAL' "$wl"; PASSED=$((PASSED+1))
 	else
 		printf '  NOT OK %-43s wrapper=[%s] guard=[%s]\n' 'wrapper and guard default lists are IDENTICAL' "${wl:-EXTRACTION-EMPTY}" "${gl:-EXTRACTION-EMPTY}"
+		FAILED=$((FAILED+1))
+	fi
+
+	# Wrapper BEHAVIORAL arms (#161 review round 2: a mutation deleting the
+	# wrapper's whole harvest pipeline left every textual arm green — the parity
+	# greps check that the lines EXIST, these prove the wrapper EXECUTES them).
+	# Source the real .bashrc (non-interactive sourcing stops at the interactive
+	# guard, past the gh() definition), ledger-enroll a fake repo, and point
+	# DOTFILES_DIR at a gate-less dir: an enrolled repo must BLOCK fail-closed;
+	# an unenrolled one must fall through to `command gh` (the shim, rc 64).
+	printf 'wrap/led\n' > "$WORK/wrap-ledger.txt"
+	mkdir -p "$WORK/emptydot/gates"
+	# WLEDGER parametrizes the wrapper's ledger fixture (the RRFILE_FIX idiom);
+	# DOTFILES_REVIEW_WAIVE is pinned EMPTY — an exported waive flipped the
+	# sourced gh() into its waive branch and false-blocked every push (#161 r3).
+	WLEDGER="$WORK/wrap-ledger.txt"
+	armw() { # <target-repo> <expected-rc> <output-regex|!regex> <label>
+		local tgt="$1" exp="$2" want="$3" label="$4" out rc okre=1
+		out=$(PATH="$WORK/bin:$PATH" bash -c "source '$BASHRC' 2>/dev/null
+			DOTFILES_DIR='$WORK/emptydot' DOTFILES_REVIEW_REPOS_FILE='$WLEDGER' \
+			DOTFILES_REVIEW_REPOS='' DOTFILES_REPO_SLUG= DOTFILES_REVIEW_WAIVE= \
+			gh pr merge 1 -R '$tgt'" 2>&1); rc=$?
+		case "$want" in
+			!*) grep -Eq "${want#!}" <<< "$out" && okre=0 ;;   # must NOT match
+			*)  grep -Eq "$want"     <<< "$out" || okre=0 ;;
+		esac
+		if [ "$rc" = "$exp" ] && [ "$okre" = 1 ]; then
+			printf '  ok    %-44s rc=%s\n' "$label" "$rc"; PASSED=$((PASSED+1))
+		else
+			printf '  NOT OK %-43s rc=%s (wanted rc=%s + /%s/)\n' "$label" "$rc" "$exp" "$want"
+			FAILED=$((FAILED+1)); printf '%s\n' "$out" | sed 's/^/          /' | head -4
+		fi
+	}
+	armw wrap/led   1 'BLOCKED — review gate not found' 'wrapper EXECUTES the ledger harvest (gates)'
+	# rc 64 is the gh SHIM's signature: the wrapper matched nothing and ran
+	# `command gh` — proof of clean fall-through, with no BLOCK in sight.
+	armw wrap/other 64 '!BLOCKED'                       'wrapper control: unenrolled falls through'
+	# The dangerous harvest shapes must be proven through the WRAPPER's copy of
+	# the duplicated pipeline too, not only the guard's (#161 round 3: a
+	# wrapper-only regression would leave every guard-side arm green).
+	printf 'wrap/led\r\n' > "$WORK/wrap-crlf.txt"
+	printf '# c\ndecline wrap/led 2026-08-30 x\n' > "$WORK/wrap-decl.txt"
+	WLEDGER="$WORK/wrap-crlf.txt"
+	armw wrap/led   1 'BLOCKED — review gate not found' 'wrapper harvest strips CRLF too'
+	WLEDGER="$WORK/wrap-decl.txt"
+	armw wrap/led   64 '!BLOCKED'                       'wrapper: decline lines do not enroll'
+	WLEDGER="$WORK/wrap-ledger.txt"
+
+	# Ledger parity: BOTH gates must read the committed ledger through the same
+	# override var, or one side of the fleet silently stops honouring enrollments.
+	# Extracted textually (the list-parity idiom); an empty count is a FAILURE.
+	wledge=$(grep -cF '_ledger="${DOTFILES_REVIEW_REPOS_FILE:-$_dotdir/gates/review-repos.txt}"' "$BASHRC")
+	gledge=$(grep -cF 'RRFILE="${DOTFILES_REVIEW_REPOS_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/review-repos.txt}"' "$GUARD")
+	if [ "$wledge" = "1" ] && [ "$gledge" = "1" ]; then
+		printf '  ok    %-44s wrapper=1 guard=1\n' 'wrapper and guard BOTH read the ledger'; PASSED=$((PASSED+1))
+	else
+		printf '  NOT OK %-43s wrapper=%s guard=%s (expected exactly 1 each)\n' 'wrapper and guard BOTH read the ledger' "$wledge" "$gledge"
 		FAILED=$((FAILED+1))
 	fi
 
