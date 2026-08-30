@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Review-record server backstop: merges require a review artifact (#697) — 2026-08-30
+
+- **A `review-record` commit status now posts on every PR head** (push, review,
+  comment, and `workflow_dispatch` events), decided by the vendored
+  `scripts/gates/review-record-check.sh` (verbatim from canonical dotfiles, where it
+  carries five review passes and a 53-arm selftest; the vendored run is 41/0 with 12
+  canonical-only arms skipped loudly). Success needs a review record from an
+  owner/member that is at least as new as the head commit; a head-scoped owner waive
+  (`Review-Record: WAIVED sha=<head12>`) covers exactly one head; anything
+  unevaluable fails the job with no status — fail closed.
+- **Why**: after Copilot review was retired, merges #691 and #685 landed with zero
+  review artifacts and branch protection required none. Once a live probe passes,
+  the context becomes a required status check, so the web UI merge button and every
+  CLI path obey it; CI remains required under a waive.
+
 ### Dashboard error states: dashed counts and humanised toasts (#688) (#696) — 2026-08-30
 
 - **The count subtitle no longer asserts a number nothing loaded**: products, orders,
