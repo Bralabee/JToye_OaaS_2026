@@ -35,10 +35,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@v6
         with:
-          java-version: '21'
+          java-version: '25'
           distribution: 'temurin'
           cache: 'gradle'
 
@@ -292,11 +292,11 @@ jobs:
           echo "  COVERAGE — do not read it as a coverage result, and do not quote a number from it."
           echo "  Could not measure is not measured and fine."
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
         uses: actions/setup-java@v6
         with:
-          java-version: '21'
+          java-version: '25'
           distribution: 'temurin'
           cache: 'gradle'
 
@@ -728,10 +728,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@v6
         with:
-          java-version: '21'
+          java-version: '25'
           distribution: 'temurin'
           cache: 'gradle'
 

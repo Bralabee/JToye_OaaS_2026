@@ -5,7 +5,7 @@
 ## Languages
 
 **Primary:**
-- Java 21 - Core API (Spring Boot 3.5.16) — toolchain `JavaLanguageVersion` pinned in `core-java/build.gradle.kts:12-13`
+- Java 25 - Core API (Spring Boot 3.5.16) — toolchain `JavaLanguageVersion` pinned in `core-java/build.gradle.kts:12-13`
 - TypeScript 5 - Frontend (Next.js 16.3.2, React 19); `typescript` pinned in `frontend/package.json:66`
 - Go 1.27 - Edge API gateway (Gin) — `go 1.27.0` in `edge-go/go.mod:3`
 
@@ -17,7 +17,7 @@
 ## Runtime
 
 **Environment:**
-- JVM (Java 21) - Core API execution
+- JVM (Java 25) - Core API execution
 - Node.js 24+ - Frontend build and runtime
 - Go 1.22 runtime - Edge gateway
 - PostgreSQL 15-alpine - Database (shared with Keycloak; separate DB)
@@ -25,7 +25,7 @@
 - RabbitMQ 4.3.4-management-alpine - AMQP + STOMP relay
 
 **Package Manager:**
-- Gradle 8.10+ (Kotlin DSL) - Java build (`settings.gradle.kts`, `core-java/build.gradle.kts`)
+- Gradle 9.7+ (Kotlin DSL) - Java build (`settings.gradle.kts`, `core-java/build.gradle.kts`)
 - npm - Node.js dependencies (`frontend/package.json`)
 - go mod - Go dependencies (`edge-go/go.mod`, `edge-go/go.sum`)
 
@@ -157,14 +157,14 @@
 
 **Development:**
 - Docker + Docker Compose (Docker Engine 29+ / API >= 1.40; Testcontainers env var `DOCKER_API_VERSION=1.45` in `core-java/build.gradle.kts:198`)
-- Java 21 JDK (JDK 25 incompatible with Gradle 8.10)
+- Java 25 JDK (requires Gradle ≥ 9.1; the wrapper pins 9.7.1)
 - Node.js 24+
 - Go 1.22+
 - Git
 - Optional: NVIDIA GPU + Container Toolkit for Ollama image analysis
 
 **Build:**
-- Gradle 8.10+ via wrapper
+- Gradle 9.7+ via wrapper
 - npm (bundled with Node.js)
 - Docker (for multi-stage images and Testcontainers)
 
@@ -176,7 +176,7 @@
 - Prometheus + Alertmanager + Grafana stack
 
 **Container/Image Versions (source of truth):**
-- Spring Boot 3.5.16 on Java 21 — `core-java/build.gradle.kts:2,9`
+- Spring Boot 3.5.16 on Java 25 — `core-java/build.gradle.kts:2,9`
 - postgres:15-alpine — `docker-compose.full-stack.yml:43`
 - keycloak:24.0.5 — `docker-compose.full-stack.yml:145`
 - redis:7-alpine — `docker-compose.full-stack.yml:193`

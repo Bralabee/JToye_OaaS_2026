@@ -10,7 +10,7 @@ plugins {
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(JavaLanguageVersion.of(25))
     }
 }
 
@@ -333,8 +333,15 @@ tasks.register<Test>("integrationTest") {
 //
 //   `jacoco` is a CORE Gradle plugin — no version coordinate in `plugins`, no
 //   `dependencies` entry, no third-party supply-chain surface (threat T-34-09-SC).
-//   toolVersion is pinned to the 0.8.12 that produced the numbers above so a Gradle
-//   upgrade cannot silently move them.
+//   toolVersion is pinned so a Gradle upgrade cannot silently move the numbers.
+//   The table above was measured under 0.8.12 (Gradle 8.10.2, JDK 21). The JDK 25
+//   bump FORCED a move to 0.8.15: 0.8.12 cannot read class file major version 69,
+//   so jacocoTestReport/jacocoAggregateReport fail with "Error while creating
+//   report" (measured on PR #707's first CI run — the suites passed, the report
+//   step died). Java 25 support landed in 0.8.14; 0.8.15 (2026-06-04) is the
+//   pinned release. The aggregate was re-measured under 0.8.15/JDK 25 in the same
+//   change and stayed within the check-jacoco-coverage.sh floors' >=2-point
+//   margins, so the floors were NOT re-anchored — see that script's header.
 //
 // NO TEST TASK IS FINALIZED BY A REPORT
 //
@@ -352,7 +359,7 @@ tasks.register<Test>("integrationTest") {
 //   input path is a fact in version control instead of an inference.
 // ---------------------------------------------------------------------------------
 jacoco {
-    toolVersion = "0.8.12"
+    toolVersion = "0.8.15"
 }
 
 tasks.named<JacocoReport>("jacocoTestReport") {

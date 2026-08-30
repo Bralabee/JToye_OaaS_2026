@@ -231,7 +231,7 @@ gate-enforced test manifest (`docs/metrics.json`, 3185 logical invocations); 37 
 
 ## 9. Constraints (from `CLAUDE.md`, still binding)
 
-- **Stack is fixed:** Spring Boot 3.5.16 (JDK 21 — JDK 25 breaks Gradle 8.10), Next.js 16.2.12 /
+- **Stack is fixed:** Spring Boot 3.5.16 (JDK 25 on Gradle 9.7), Next.js 16.2.12 /
   React 19, Go 1.26, PostgreSQL 15.
 - **Multi-tenancy is non-negotiable:** all new features respect RLS + `TenantContext`.
 - **All new code requires tests;** the manifest count is a gate, not a guideline.
