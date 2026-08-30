@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Dashboard error states: dashed counts and humanised toasts (#688) (#696) — 2026-08-30
+
+- **The count subtitle no longer asserts a number nothing loaded**: products, orders,
+  customers and shops render an em dash under `loadFailed` instead of "0 <things> in
+  total" beside an error panel — the smaller sibling of the false-zero FEB-1 fixed.
+- **Six raw-axios toasts routed through `describeLoadError`** (products load toast +
+  customers/shops mutation toasts), matching orders' A11Y-2 shape: RFC 7807 `detail` wins,
+  transport strings like "Request failed with status code 500" never render. `/shop`
+  swept clean and untouched.
+- Two new jest tests observed failing on the pre-fix tree before passing; browser proof
+  both directions against the rebuilt container (stub-500 arm + control). Metrics
+  3492 → 3494 with all three gated prose sites reconciled.
+
 ### A fresh volume provisions its own migrator credential (#684) (#694) — 2026-08-30
 
 - **`00-create-db.sql` now creates `jtoye_app` — the owner/migrator since the SEC-04/#552

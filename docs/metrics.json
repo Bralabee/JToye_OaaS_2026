@@ -5,11 +5,11 @@
   "schema_version": 64,
   "go_test_funcs": 84,
   "go_test_files": 11,
-  "jest_blocks": 1503,
+  "jest_blocks": 1505,
   "jest_files": 141,
   "playwright_blocks": 127,
   "playwright_specs": 27,
   "mcp_test_blocks": 48,
   "mcp_test_files": 8,
-  "total_logical_invocations": 3492
+  "total_logical_invocations": 3494
 }
