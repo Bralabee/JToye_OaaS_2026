@@ -121,6 +121,30 @@ done
   `@BeforeEach` runs `create-runtime-role.sql` itself: **it certifies the script, not the
   deployment.** `PostcodeTruncateGrantMigrationTest` is the falsifiable sibling.
 
+### What shipped 2026-08-30 (afternoon — continues the block below)
+
+- **#684 CLOSED via PR #694** — a fresh volume provisions its own migrator credential
+  (`00-create-db.sql` creates `jtoye_app` with `DB_MIGRATION_PASSWORD`, fallback to
+  `DB_PASSWORD`); proven on a real `down -v` cycle with digest-confirmed differing
+  credentials: healthy, RestartCount 0, V64 64/64, 45/45 E2E smoke. Instrument lesson:
+  in-container `psql -h 127.0.0.1` is loopback-`trust` and accepts ANY password — auth
+  probes must run over the docker network (now in project memory).
+- **#688 CLOSED via PR #696** — dashed count subtitles under `loadFailed` on all four
+  dashboard list pages + six raw-axios toasts routed through `describeLoadError`; jest
+  now 141/1505, metrics 3494, browser-proven both directions on a rebuilt container.
+- **#690 CLOSED** — owner ratified the approvals queue on the Index tier, viewed with a
+  real MANUAL_REVIEW application (a side effect of #684's fresh-volume smoke).
+- **Phase 35 recorded complete in STATE.md via PR #695** (counters re-measured from
+  disk: 119/119 plans, 11/14 phases; percent scoped "of written plans").
+- **The unexamined-defaults audit ran** (quick-260830-p2o): four findings filed —
+  #699 (md:768 gives tablets the desktop sidebar), #700 (TOAST_LIMIT=1 displaces unread
+  error toasts), #701 (12 dialogs on the 512px default, no density policy), #702
+  (unclamped table titles) — and eight surfaces examined clean with an instrument-armed
+  method. Report: `.planning/quick/260830-p2o-unexamined-defaults-audit/AUDIT.md`.
+- **#697 (another session) added the review-record required-status backstop** — every
+  PR now needs a review artifact (a PR review, an inline review comment, or a
+  `Review-Record:` comment); the audit PR was the first judged by it.
+
 ### What shipped 2026-08-30
 
 - **#687 CLOSED — the marketing-motion flake, via PR #692** (squash `b7b2099e`). All 7
