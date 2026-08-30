@@ -167,6 +167,26 @@ function mask(src) {
   const blank = (from, to) => {
     for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = FILL;
   };
+  // COMMENTS are masked to WHITESPACE, deliberately NOT to FILL.
+  //
+  // FILL is non-whitespace so that a masked ELEMENT — a string literal standing
+  // as an `it.each` row — still reads as content when counting array rows. That
+  // is right for elements and wrong for comments, because a comment is never an
+  // element. Masking a comment as content made a TRAILING COMMA followed by a
+  // comment look like a separator rather than a terminator, so every such table
+  // gained one phantom row.
+  //
+  // Measured on frontend/lib/__tests__/layout-widths.test.ts: this counter said
+  // 16, jest executed 15. Both docs-freshness.sh and check-test-count-oracle.sh
+  // assert `.jest_blocks` from opposite ends and both are required checks, so a
+  // one-row over-count leaves NO value of docs/metrics.json able to merge — the
+  // same deadlock issue #582 describes from the under-counting side.
+  //
+  // Guarded by fixtures/test-block-counter/commented-each-table.fixture.ts, whose
+  // arm reads 13 against the pre-fix counter and 10 against this one.
+  const blankComment = (from, to) => {
+    for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
+  };
 
   let i = 0;
   let lastSig = ""; // last significant (non-space, non-masked) code character
@@ -182,7 +202,7 @@ function mask(src) {
     if (c === "/" && c2 === "/") {
       let j = i;
       while (j < src.length && src[j] !== "\n") j++;
-      blank(i, j);
+      blankComment(i, j);
       i = j;
       continue;
     }
@@ -190,7 +210,7 @@ function mask(src) {
     if (c === "/" && c2 === "*") {
       const end = src.indexOf("*/", i + 2);
       const j = end === -1 ? src.length : end + 2;
-      blank(i, j);
+      blankComment(i, j);
       i = j;
       continue;
     }

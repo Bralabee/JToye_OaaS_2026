@@ -12,6 +12,14 @@ import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import { ReviewQueue } from "@/components/dashboard/media/ReviewQueue"
 import { fetchReviewQueue, keepAsset, reprocessAsset } from "@/lib/media-api"
 import type { MediaAsset } from "@/types/api"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+
+/**
+ * Every width-cap utility an element declares, as tokens. A token filter, never a
+ * substring search — `classList` membership is what a browser resolves.
+ */
+const capTokens = (el: Element) =>
+  Array.from(el.classList).filter((c) => c.startsWith("max-w-"))
 
 jest.mock("@/lib/media-api", () => ({
   fetchReviewQueue: jest.fn(),
@@ -217,5 +225,35 @@ describe("ReviewQueue", () => {
     // The row stays — the failure is terminal for these bytes, and the row is
     // where the Re-upload remedy is offered.
     expect(screen.getByText(/processing stalled/i)).toBeInTheDocument()
+  })
+
+  // --- Phase 35 / UIX-08: the width tier, declared rather than inherited ---
+  //
+  // PATTERNS A-9. `/dashboard/media/review` declares no markup of its own — this
+  // component owns the band, so the declaration belongs here and not on the thin
+  // page file. The reasoning is written out at the site.
+
+  it("declares the index width tier, with no cap of its own, on the queue's root band", async () => {
+    mockedFetch.mockResolvedValue([FAILED, FLAGGED])
+    const { container } = render(<ReviewQueue />)
+    await screen.findByText(/unsupported image format/i)
+
+    const root = container.firstElementChild as HTMLElement
+    expect(root).toHaveAttribute("data-width-tier", "index")
+    expect(capTokens(root)).toEqual([])
+
+    // Non-vacuity control: the same filter over a real cap from the vocabulary
+    // must find it, so the empty result above is about the queue.
+    const probe = document.createElement("div")
+    probe.className = `mx-auto ${WIDTH_TIER_CLASS.detail}`
+    expect(capTokens(probe)).toEqual([WIDTH_TIER_CLASS.detail])
+  })
+
+  it("declares the same tier on the loading branch, so the first paint is not undeclared", () => {
+    mockedFetch.mockImplementation(() => new Promise(() => {}))
+    const { container } = render(<ReviewQueue />)
+
+    expect(screen.getByText(/loading the review queue/i)).toBeInTheDocument()
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
   })
 })

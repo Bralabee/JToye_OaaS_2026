@@ -1,6 +1,7 @@
 import { Suspense } from "react"
 import type { Metadata } from "next"
 import { Loader2 } from "lucide-react"
+import { PublicShell } from "@/components/public/public-shell"
 import { UnsubscribeContent } from "./unsubscribe-content"
 
 /**
@@ -16,6 +17,15 @@ import { UnsubscribeContent } from "./unsubscribe-content"
  *
  * The interactive part lives in a co-located "use client" component so this
  * server component can export `metadata` (a client module cannot).
+ *
+ * FEB-6: wrapped in `PublicShell` rather than a bare `<main>`. A malformed or
+ * stripped link (any of tenant/email/category/token missing) renders the
+ * "invalid" state, and with no nav/header of its own this page was a dead end
+ * at mobile — a visitor arriving with a broken link had no way to reach the
+ * rest of the site. `PublicShell` already supplies the `id="main"` landmark
+ * (WCAG 2.4.1 skip link included), so this file's own bare `<main>` is
+ * removed rather than nested — a second `<main>` would itself be a landmark
+ * violation.
  */
 export const metadata: Metadata = {
   title: "Unsubscribe — J'Toye",
@@ -25,7 +35,7 @@ export const metadata: Metadata = {
 
 export default function UnsubscribePage() {
   return (
-    <main className="min-h-screen bg-slate-50">
+    <PublicShell>
       <Suspense
         fallback={
           <div className="flex items-center justify-center py-24">
@@ -35,6 +45,6 @@ export default function UnsubscribePage() {
       >
         <UnsubscribeContent />
       </Suspense>
-    </main>
+    </PublicShell>
   )
 }

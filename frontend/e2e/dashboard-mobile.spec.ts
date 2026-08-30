@@ -21,6 +21,77 @@
  * everywhere (19-RESEARCH Pitfall 5) — deliberately NOT the idle-network wait.
  * The definitive human-visual pass is deferred to the whole-app UAT in plan
  * 19-09 against the rebuilt stack.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * #286, NARROWED — measured 2026-08-28 (plan 34-05)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * #286 asked for two things, and both are now answered — one of them not by this
+ * file at all. Every number below was RE-MEASURED on this tree rather than
+ * carried over from the issue or from 34-RESEARCH; where a figure matched, that
+ * is said explicitly.
+ *
+ * 1. THE `/dashboard/staff` CLICK-THROUGH IS ALREADY SATISFIED, LIVE — by
+ *    `e2e/dashboard-interface-corrections.spec.ts`, not by this spec. Measured
+ *    with `rg -uu -c`: **3** `vendorLogin` references (`:49` definition, `:108`,
+ *    `:201`) and **0** `context.route(` calls — real auth AND real data. The
+ *    zero was confirmed with `searchcheck 'context\.route\(' <that file>` (all
+ *    search paths agree, 0 files) and with a positive control on the same file
+ *    (`test(` -> 5, rc=0), because an unvalidated zero is a statement about the
+ *    search, not about the code. Both figures match 34-RESEARCH.
+ *
+ * 2. THE 375px HALF IS CLOSED BY THE LAST BLOCK IN THIS FILE — "Dashboard mobile
+ *    shell (375px) — the eleven-route sweep has no horizontal overflow" — which
+ *    drives all ELEVEN entries of `ROUTES` (/dashboard, /shops, /products,
+ *    /products/import, /orders, /orders/{id}, /customers, /finance, /marketing,
+ *    /kitchen, /onboarding) at a per-describe 375x812 pin. Before it, the 375px
+ *    coverage in this repo was ONE route (`/dashboard`, in the MOBL-01 block
+ *    below), so the issue's "375px" ask was met for 1/11 of the surface it
+ *    names. Enumeration went 13 -> 24 tests per project (+11 each) and both
+ *    projects are green. The new assertion was shown to FAIL before it was
+ *    trusted, and the first attempt COULD NOT: see that block's own docblock for
+ *    the measured reason (`window.innerWidth` grows with the content under
+ *    mobile emulation) and the fix.
+ *
+ * 3. THE `context.route(` STUBS STAY, DELIBERATELY — and they are #542's
+ *    complaint, not a #286 defect. Re-counted here rather than trusted: **9**
+ *    registrations, matching the nine the issue names — eight in `setupStubs`
+ *    at :338 :346 :351 :355 :359 :365 :371 :372, and the ninth (staff/me) in
+ *    the MOBL-01 block at :504.
+ *
+ *    THE COMMAND THAT COUNTS THEM CHANGED BECAUSE OF THIS PARAGRAPH, and saying
+ *    so is the point. Before this stanza existed,
+ *    `rg -uu -c 'context\.route\(' <this file>` printed 9. It now prints **11**,
+ *    because the prose above names the token twice — the "a rule that must name
+ *    what it measures" shape. The count that survives its own documentation is
+ *    `rg -uu -c '^\s*await context\.route\(' <this file>` -> **9** (rc=0), and
+ *    that is the figure asserted here. Anyone re-checking with the naive pattern
+ *    should expect 9 code registrations plus however many times the docblock
+ *    mentions it.
+ *
+ *    They exist so this dashboard surface can be driven
+ *    without depending on seeded tenant data, which is a different question from
+ *    SSR coverage. No raw-HTML assertion could cover these routes in any case:
+ *    all ELEVEN of their `page.tsx` files carry the `"use client"` directive as
+ *    their first statement (measured 11/11 by reading each file's first
+ *    non-empty line — NOT by grepping for the string, which also matches prose
+ *    in comments and is 34-RESEARCH's named anti-pattern). That
+ *    client-component classification is declared for the SSR gate in
+ *    `scripts/gates/ssr-routes.conf` (plan 34-07); that file does not exist on
+ *    this branch yet (`ls` -> No such file, rc=2) and 34-07 owns it.
+ *
+ * 4. THE PLAYWRIGHT MOBILE PROJECT STAYS AT 390x844
+ *    (`frontend/playwright.config.ts`), untouched. Moving it to 375 would
+ *    satisfy #286 in one line and silently move every other mobile spec, the
+ *    `mobile-instrument-contract.spec.ts` assertions and every mobile perf
+ *    baseline measured at 390 — trading a working, documented good for a new
+ *    one. The 375px coverage is therefore additive, pinned per-describe.
+ *    `check-playwright-mobile-contract.sh` still exits 0 and
+ *    `mobile-instrument-contract.spec.ts` is still green (2 passed).
+ *
+ * SO WHAT #286 STILL ASKS FOR: nothing in this file. What it no longer asks for:
+ * the 375px viewport coverage (point 2) and the staff click-through (point 1).
+ * What was never its to ask: the stubs (point 3, -> #542).
  */
 
 import { test, expect, type BrowserContext, type Page } from "@playwright/test"
@@ -506,4 +577,113 @@ test.describe("Dashboard mobile shell (375px) — MOBL-01 + switcher regression"
     expect(stale!.select!.top).toBeGreaterThanOrEqual(0)
     expect(stale!.select!.bottom).toBeLessThanOrEqual(56)
   })
+})
+
+/**
+ * #286's 375px half, for ALL ELEVEN routes — additive to the 390px sweep above.
+ *
+ * The block before this one is the only 375px coverage that existed, and it
+ * drives ONE route (`/dashboard`). The eleven-route sweep ran only at 390px. So
+ * the issue's "375px" ask was satisfied for 1/11 of the surface it names.
+ *
+ * WHY A NEW BLOCK RATHER THAN MOVING THE PROJECT VIEWPORT. Changing
+ * `playwright.config.ts`'s `mobile` project from 390x844 to 375 would satisfy
+ * #286 in one line — and silently move every other mobile spec, the
+ * `mobile-instrument-contract.spec.ts` assertions, and every mobile perf
+ * baseline that was measured at 390. That trades a working, documented good for
+ * a new one, which the Incremental Betterment Doctrine forbids. The viewport is
+ * therefore pinned HERE, per-describe, exactly as the two blocks above do —
+ * which is also what makes the block correct under BOTH Playwright projects: at
+ * the desktop project's 1440px the tab bar hides and the sidebar shows, so an
+ * unpinned viewport would be a false red there. `playwright.config.ts` is
+ * deliberately NOT touched by this block; `check-playwright-mobile-contract.sh`
+ * still guards its shape.
+ *
+ * WHY THE PRESENCE CONTROLS COME FIRST. A no-overflow assertion is satisfied
+ * *trivially* by an empty page, a redirect to /auth/signin, and a 404 — nothing
+ * wide cannot overflow. That is the exact vacuous shape this file's sibling
+ * already documents (`dashboard-interface-corrections.spec.ts:15-20`: with the
+ * API refusing, the switcher falls back to a zero-grant state and the count
+ * reads 0 — "a pass on a page that is not working"). So each iteration asserts
+ * the shell is really rendered — the Primary nav, and the page `<h1>` where the
+ * route has one — BEFORE it measures geometry. Proven: pointing an iteration at
+ * a route that does not exist turns the PRESENCE assertion red rather than
+ * letting the geometry one pass over a page that is not the dashboard.
+ *
+ * WHY THIS COMPARES AGAINST `page.viewportSize()`, NOT `window.innerWidth` —
+ * MEASURED, and it is the reason this block does not simply copy the assertion
+ * from the block above. Under `isMobile: true` Chromium emulates a phone's
+ * LAYOUT VIEWPORT: when content is wider than the device width the page zooms
+ * out to fit, and `window.innerWidth` GROWS to match the content. So
+ * `docScrollWidth <= window.innerWidth + 1` compares a number against itself and
+ * **cannot fail**. Measured 2026-08-28 on /dashboard/kitchen by appending a
+ * deliberate 1200px-wide div before the read:
+ *
+ *   {"docScrollWidth":1200,"bodyScrollWidth":1200,"innerWidth":1200,
+ *    "htmlOverflowX":"visible","bodyOverflowX":"visible","injectedWidth":1200}
+ *
+ * — a 1200px overflow on a 375px phone, and the assertion PASSED (1 passed,
+ * rc=0). `page.viewportSize()!.width` is the width Playwright was configured
+ * with (375) and does not move, so the same injection now reads
+ * `expect(received).toBeLessThanOrEqual(expected)  expected: 376  received: 1200`.
+ * The widening of the layout viewport is itself the user-visible symptom (the
+ * page shrinks to fit), so it is asserted directly as well.
+ *
+ * NOTE for whoever touches the single-route 375px block above: its overflow
+ * line (`geom.docScrollWidth <= geom.viewportWidth + 1`) has this same vacuous
+ * shape and is left alone here only because it is out of this plan's scope. Its
+ * OTHER assertions — the 56px top-bar geometry and the escaping-element list —
+ * are genuinely falsifiable and were measured red on main.
+ *
+ * No `@desktop-only` / `@mobile-only` tag, deliberately: the 390px and 375px
+ * blocks above are enumerated by both projects by design, and consistency with
+ * them is worth more than halving the run.
+ */
+test.describe("Dashboard mobile shell (375px) — the eleven-route sweep has no horizontal overflow", () => {
+  test.use({ viewport: { width: 375, height: 812 }, isMobile: true })
+
+  test.beforeEach(async ({ context, page }) => {
+    // Same order as the 390px sweep: stub the API data first (no effect on the
+    // Keycloak login origin), then perform the real vendor sign-in so the
+    // server-side dashboard auth gate lets us through.
+    await setupStubs(context)
+    await vendorLogin(page)
+  })
+
+  for (const route of ROUTES) {
+    test(`${route.name} (${route.path}) has no horizontal overflow at 375px`, async ({ page }) => {
+      await page.goto(`${BASE}${route.path}`, { waitUntil: "domcontentloaded" })
+
+      // ---- PRESENCE CONTROL: the page is actually rendered ---------------------
+      // Without this, every assertion below passes on a blank page.
+      await expect(tabBarOf(page)).toBeVisible({ timeout: 10_000 })
+      if (route.titleHasH1) {
+        await expect(live(page).locator("main h1").first()).toBeVisible({
+          timeout: 10_000,
+        })
+      }
+
+      // ---- the measurement -----------------------------------------------------
+      // The width Playwright was CONFIGURED with — a fixed 375 that no amount of
+      // page content can move. See the docblock: window.innerWidth can, which is
+      // what makes the innerWidth form of this assertion unfalsifiable.
+      const configuredWidth = page.viewportSize()!.width
+      const geom = await page.evaluate(() => ({
+        docScrollWidth: document.documentElement.scrollWidth,
+        layoutViewportWidth: window.innerWidth,
+        mainWidth:
+          (document.querySelector("body > div:not([hidden]) main") as HTMLElement | null)
+            ?.clientWidth ?? 0,
+      }))
+      // No horizontal overflow (+1px tolerance for sub-pixel rounding).
+      expect(geom.docScrollWidth).toBeLessThanOrEqual(configuredWidth + 1)
+      // The layout viewport did not widen — i.e. the phone did not zoom out to
+      // fit oversized content, which is what the user actually sees.
+      expect(geom.layoutViewportWidth).toBeLessThanOrEqual(configuredWidth + 1)
+      // …and the content column still spans (near) the full width — the sidebar
+      // steals nothing at 375px. A collapsed column would satisfy the overflow
+      // assertion while being unusable.
+      expect(geom.mainWidth).toBeGreaterThanOrEqual(300)
+    })
+  }
 })

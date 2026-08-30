@@ -173,9 +173,32 @@ export function ReviewQueue() {
 
   // --- Loading ----------------------------------------------------------------
 
+  /*
+   * WIDTH TIER — Index, and this was a decision rather than a default.
+   *
+   * PATTERNS A-9. `/dashboard/media/review` declares no markup of its own; this
+   * component owns the band, so the declaration belongs HERE rather than on the
+   * thin page file. Putting it on the page would have meant adding a wrapper node
+   * around a component that already has a root — the shape the phase's doctrine
+   * reserves for surfaces with no band element.
+   *
+   * Index because the queue is a list of attention items scanned in bulk, and its
+   * rows carry a thumbnail, a reason and two or three controls side by side.
+   *
+   * NOTE for plan 35-12: this surface owns `e2e/media-review-320.spec.ts`, the
+   * TIGHTEST viewport in the suite. The Index tier adds no cap, so it is inert at
+   * 320px by construction — but that is reasoning, not a run, and the spec is
+   * re-run there rather than assumed green.
+   *
+   * The tier is written into the DOM as a declaration rather than left as the
+   * absence of a cap, because "uncapped" and "someone forgot to cap it" render
+   * identically and no assertion can tell them apart — ORCH-03 (orchestrator
+   * decision, 2026-08-29). Both render branches declare it; a branch without it is
+   * an undeclared first paint.
+   */
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center py-16">
+      <div data-width-tier="index" className="flex h-full items-center justify-center py-16">
         <Loader2 className="h-10 w-10 animate-spin text-orange-500" aria-hidden="true" />
         <span className="sr-only">Loading the review queue…</span>
       </div>
@@ -191,7 +214,7 @@ export function ReviewQueue() {
   const nothingWaiting = failed.length === 0 && flagged.length === 0 && delayed.length === 0
 
   return (
-    <div className="space-y-8">
+    <div data-width-tier="index" className="space-y-8">
       <Header />
 
       {nothingWaiting ? (

@@ -2,6 +2,7 @@ package uk.jtoye.core.customer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,7 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.customer.CustomerController.CreateCustomerRequest;
 import uk.jtoye.core.customer.CustomerController.CustomerDto;
 import uk.jtoye.core.customer.CustomerController.UpdateCustomerRequest;
+import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.security.TenantContext;
 
 import java.time.OffsetDateTime;
@@ -59,8 +62,11 @@ public class CustomerService {
         customer.setAllergenRestrictions(request.allergenRestrictions() != null ? request.allergenRestrictions() : 0);
         customer.setUpdatedAt(OffsetDateTime.now());
 
-        // Save customer
-        customer = customerRepository.save(customer);
+        // Save customer. QA-council cluster P1 (API-3 rider): saveAndFlush, not save — createdAt
+        // is a @CreationTimestamp generated at FLUSH time, so a bare save() leaves it null in
+        // memory until commit and the DTO built below would report createdAt: null even though
+        // the row persists with a real timestamp.
+        customer = customerRepository.saveAndFlush(customer);
 
         log.info("Created customer {} with email '{}', allergen restrictions: {}",
                 customer.getId(), customer.getEmail(), customer.getAllergenRestrictions());
@@ -126,7 +132,9 @@ public class CustomerService {
     /**
      * Delete customer by ID (tenant-scoped).
      * RLS ensures we can only delete customers belonging to our tenant.
-     * Note: This may fail if customer has associated orders (foreign key constraint).
+     * Note: This fails with a typed 409 ({@link uk.jtoye.core.exception.ResourceInUseException})
+     * if the customer has associated orders (foreign key constraint {@code fk_orders_customer}) —
+     * QA-council cluster P2 (API-2/FE-4).
      */
     public void deleteCustomer(UUID customerId) {
         log.debug("Deleting customer {}", customerId);
@@ -142,6 +150,17 @@ public class CustomerService {
             customerRepository.flush();
         } catch (OptimisticLockingFailureException ex) {
             throw vanishedMidTransaction(customerId, ex);
+        } catch (DataIntegrityViolationException ex) {
+            // QA-council cluster P2 (API-2/FE-4): a genuine 23503 (still-referenced-by-an-order)
+            // used to surface as the blanket 409 "Duplicate Entry" from GlobalExceptionHandler's
+            // generic DataIntegrityViolationException mapping — misleading, since nothing was
+            // duplicated. Translate it to the typed, distinct 409 here.
+            if ("23503".equals(SqlStateExtractor.sqlState(ex).orElse(null))) {
+                throw new ResourceInUseException(
+                        "Customer cannot be deleted: still referenced by an existing order",
+                        SqlStateExtractor.constraintName(ex).orElse(null));
+            }
+            throw ex;
         }
 
         log.info("Deleted customer {} with email '{}'", customer.getId(), customer.getEmail());

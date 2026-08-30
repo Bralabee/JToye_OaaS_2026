@@ -427,7 +427,7 @@ dependencies:
 
   - id: java-toolchain
     pin: "JavaLanguageVersion.of(21)"
-    sites: ["core-java/build.gradle.kts:9"]
+    sites: ["core-java/build.gradle.kts:13"]
     kind: toolchain
     owner: maintainer
     eol_slug: eclipse-temurin

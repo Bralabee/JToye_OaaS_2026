@@ -128,7 +128,7 @@ But there are **5 real production blockers** detailed in §9 below, ranked by da
 | Log aggregation | ❌ | None (container stdout only) |
 | K8s secrets | ⚠️ | Plain base64; sealed-secrets documented but not deployed |
 | Postgres backup | ⚠️ | Daily `pg_dump` → S3 CronJob; **no PITR, no restore test** |
-| `.env` in repo | ❌ **critical** | Contains `POSTGRES_PASSWORD=secret`, `KEYCLOAK_ADMIN_PASSWORD=admin123`, `REDIS_PASSWORD=redispass123` in plaintext. Must be `.gitignore`'d and rotated |
+| `.env` in repo | ❌ **critical** | Contains `POSTGRES_PASSWORD=secret`, `KEYCLOAK_ADMIN_PASSWORD=admin123`, `REDIS_PASSWORD=<rotated-2026-08-29-see-.env>` in plaintext. Must be `.gitignore`'d and rotated |
 
 ---
 
@@ -481,7 +481,7 @@ These remain code-traced (§3–§5) but not live-verified. The stack should com
 - **Scope:** Swap `enableSimpleBroker` for `enableStompBrokerRelay` bound to RabbitMQ (5672/15672). Add `stomp.broker.mode` config flag (`in-memory` vs `relay`). Update k8s secrets for relay login. Add Playwright e2e that asserts real-time kitchen update from a 2-replica staging deployment.
 
 ### Blocker 5 — `.env` committed + Alertmanager missing
-- **Where:** Repo root `.env` (plaintext `POSTGRES_PASSWORD=secret`, `KEYCLOAK_ADMIN_PASSWORD=admin123`, `REDIS_PASSWORD=redispass123`); `infra/monitoring/` missing Alertmanager deployment
+- **Where:** Repo root `.env` (plaintext `POSTGRES_PASSWORD=secret`, `KEYCLOAK_ADMIN_PASSWORD=admin123`, `REDIS_PASSWORD=<rotated-2026-08-29-see-.env>`); `infra/monitoring/` missing Alertmanager deployment
 - **Impact:** Credential exposure if repo goes public; 13 Prometheus alerts fire into the void.
 - **Evidence:** Infra agent read `.env` from repo root; Prometheus rules file exists but no Alertmanager container in compose.
 - **Effort:** 2 days

@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { PublicShell } from "@/components/public/public-shell"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { cn } from "@/lib/utils"
 import {
   PolicyToc,
@@ -109,7 +110,40 @@ export function PolicyPage({
 
   return (
     <PublicShell>
-      <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
+      {/* THE POLICY BAND, AND WHY IT DECLARES A TIER RATHER THAN A NUMBER.
+
+          This band is deliberately EQUAL to the Marketing content tier, which is
+          what PublicShell's header and footer rails around it already render at.
+          They must move together or not at all.
+
+          They did not. The rails moved to the declared tier at 1280px while this
+          band stayed on a stock scale token at 1152px, so all four policy pages
+          sat 128px inside their own chrome — the nav and the document did not
+          share a left edge. That is the same defect the landing page carried
+          before ORCH-04, inherited here by omission rather than by decision, and
+          fixing one surface while leaving its sibling is the "inconsistent half"
+          the Incremental Betterment doctrine names a defect in its own right.
+
+          WIDENING THIS BAND DOES NOT WIDEN THE PROSE, and that is the whole
+          reason the change is safe. The reading measure is held independently on
+          the three max-w-[68ch] elements NESTED INSIDE this one — the title
+          block, the document column and the back link. A tier is a ceiling, not
+          a target: this element caps the page, those three cap the line. The
+          co-located test asserts both halves side by side so a later edit cannot
+          quietly merge them.
+
+          ORCH-06 (orchestrator decision, 2026-08-29); see CONTEXT.md section 4b.
+          Raised mid-execution by plan 35-06 as finding D-35-06-a. The class comes
+          from the vocabulary module and is never written out here: the tier
+          literals exist in exactly one file and plan 35-10 gates that count. */}
+      <div
+        data-width-tier="marketing"
+        className={cn(
+          "mx-auto w-full",
+          WIDTH_TIER_CLASS.marketing,
+          "px-4 py-16 sm:px-6"
+        )}
+      >
         {/*
           A plain div, NOT a header element. HTML-AAM scopes `header` to
           `generic` when it descends from `main`, so in a correct implementation

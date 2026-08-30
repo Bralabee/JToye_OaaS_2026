@@ -2,6 +2,14 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import OnboardingApprovalsPage from "../page"
 import apiClient from "@/lib/api-client"
 import type { AdminOnboardingDto, GateDto, GateStatus } from "@/types/api"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+
+/**
+ * Every width-cap utility an element declares, as tokens. A token filter, never a
+ * substring search — `classList` membership is what a browser resolves.
+ */
+const capTokens = (el: Element) =>
+  Array.from(el.classList).filter((c) => c.startsWith("max-w-"))
 
 // Mock the API client (mirrors the onboarding-page test idiom)
 jest.mock("@/lib/api-client")
@@ -330,5 +338,51 @@ describe("Onboarding Approvals Page", () => {
         {}
       )
     })
+  })
+})
+
+/**
+ * Phase 35 / UIX-08 — the approvals queue's width tier.
+ *
+ * PATTERNS A-8, and the phase's own LOWEST-CONFIDENCE tier call. It is flagged
+ * for the human-verification pass in plan 35-13; the reasoning is written out at
+ * the site in `../page.tsx` rather than only here.
+ */
+describe("approvals width tier (UIX-08)", () => {
+  it("declares the index width tier, with no cap of its own, on the queue's root band", async () => {
+    routePending(() => Promise.resolve({ data: [application()] }))
+
+    const { container } = render(<OnboardingApprovalsPage />)
+    await waitFor(() => expect(screen.getByText("Mama's Kitchen")).toBeInTheDocument())
+
+    const root = container.firstElementChild as HTMLElement
+    expect(root).toHaveAttribute("data-width-tier", "index")
+    expect(capTokens(root)).toEqual([])
+
+    // Non-vacuity control: the same filter over a real cap from the vocabulary
+    // must find it, so the empty result above is about the page.
+    const probe = document.createElement("div")
+    probe.className = `mx-auto ${WIDTH_TIER_CLASS.detail}`
+    expect(capTokens(probe)).toEqual([WIDTH_TIER_CLASS.detail])
+  })
+
+  it("declares the same tier on the spinner branch, so the first paint is not undeclared", () => {
+    routePending(() => new Promise(() => {}))
+
+    const { container } = render(<OnboardingApprovalsPage />)
+
+    expect(container.querySelector(".animate-spin")).not.toBeNull()
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
+  })
+
+  it("declares the same tier on the admin-access-required branch", async () => {
+    routePending(() => Promise.reject(forbidden))
+
+    const { container } = render(<OnboardingApprovalsPage />)
+    await waitFor(() =>
+      expect(screen.getByText("Admin access required")).toBeInTheDocument()
+    )
+
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
   })
 })

@@ -8,6 +8,14 @@
 // constant across requests live here.
 const nextConfig = {
   output: 'standalone',
+  // Build-time type-check scope: shipped code only (tests/e2e excluded).
+  // The Docker build context is ./frontend, so a test importing a repo-root
+  // file (docs/retention-manifest.json) can never resolve there; tests are
+  // type-checked by the bare `tsc --noEmit` CI step instead. Rationale and
+  // the 2026-08-28 measurement live in tsconfig.build.json's header.
+  typescript: {
+    tsconfigPath: 'tsconfig.build.json',
+  },
   images: {
     remotePatterns: [
       {

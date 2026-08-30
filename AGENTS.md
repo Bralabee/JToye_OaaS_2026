@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16, Go 1.26, PostgreSQL 15
 - **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 3188 logical invocations passing (1716 Java `@Test` methods across 271 files + 1230 Jest `it/test` blocks across 120 files + 81 top-level Go `Test*` funcs across 11 files + 113 Playwright `test()` blocks across 22 specs + 48 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
+- **Testing**: All new code requires tests — project standard is 3492 logical invocations passing (1730 Java `@Test` methods across 275 files + 1503 Jest `it/test` blocks across 141 files + 84 top-level Go `Test*` funcs across 11 files + 127 Playwright `test()` blocks across 27 specs + 48 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -21,7 +21,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 
 ## Languages
 - Java 21 - Core API (Spring Boot 3.5.16)
-- TypeScript 5 - Frontend (Next.js 16.2.12, React 19)
+- TypeScript 5 - Frontend (Next.js 16.3.2, React 19)
 - Go 1.26 - Edge API gateway (Gin)
 - SQL (PostgreSQL) - Database migrations via Flyway
 - YAML - Configuration management
@@ -48,9 +48,9 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation
 - Micrometer Prometheus - Metrics export
 - Micrometer Tracing (Brave/Zipkin) - Distributed tracing
-- Next.js 16.2.12 - React framework with file-based routing
+- Next.js 16.3.2 - React framework with file-based routing
 - React 19 - UI component library
-- React Hook Form 7.84.0 - Form state management
+- React Hook Form 7.85.0 - Form state management
 - Next-Auth 5.0.0-beta.32 - Authentication middleware
 - TailwindCSS 3.4.1 - Utility-first CSS framework
 - Radix UI - Headless component library
@@ -74,7 +74,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Hibernate ORM (via Spring Boot 3.5.16) - JPA implementation
 - Hibernate Envers - Audit history tracking
 - AWS SDK v2 (2.53.2) - S3 API for image storage
-- Stripe React/JS 6.8.0, 9.12.0 - Payment processing UI integration
+- Stripe React/JS 6.8.2, 9.14.0 - Payment processing UI integration
 - Axios 1.19.0 - HTTP client for API calls
 - Framer Motion 12.43.0 - Animation library
 - Recharts 3.10.1 - Charts and data visualization
@@ -136,7 +136,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - MinIO: latest
 - Go: 1.26-alpine
 - Node.js: 24+
-- Next.js: 16.2.12
+- Next.js: 16.3.2
 ## Performance Tuning
 - Connection pooling: HikariCP
 - Batch insert/update: Hibernate batch_size=20 (prod: 50)
@@ -491,7 +491,7 @@ edge answer a request without consulting the core.
 
 ### oaas-frontend
 
-Frontend engineer for the J'Toye OaaS Next.js app (frontend/). Use for vendor dashboard, storefront, onboarding UI, forms, and mobile-layout work. Knows Next 16.2.12 App Router, React 19, Tailwind, Radix, react-hook-form + Zod, and next-auth 5 beta. Runs Jest and Playwright over the existing suites. Prefer over a generic agent for any OaaS UI work.
+Frontend engineer for the J'Toye OaaS Next.js app (frontend/). Use for vendor dashboard, storefront, onboarding UI, forms, and mobile-layout work. Knows Next 16.3.2 App Router, React 19, Tailwind, Radix, react-hook-form + Zod, and next-auth 5 beta. Runs Jest and Playwright over the existing suites. Prefer over a generic agent for any OaaS UI work.
 
 **Write boundary.** WRITE: frontend/** only.
 
@@ -499,7 +499,7 @@ You own `~/IdeaProjects/JToye_OaaS_2026/frontend/`.
 
 ## Stack facts
 
-Next.js 16.2.12 (App Router), React 19, TailwindCSS 3.4, Radix UI primitives, react-hook-form
+Next.js 16.3.2 (App Router), React 19, TailwindCSS 3.4, Radix UI primitives, react-hook-form
 7.8x with Zod 4 resolvers, next-auth 5.0.0-beta.32. Node 24+. For suite sizes read `docs/metrics.json`
 in the app repo — it is the source of truth and two CI gates enforce it. Never restate a count
 here: this charter is emitted into that repo's own `AGENTS.md`, so a stale figure fails its

@@ -4,6 +4,8 @@ import { useState, useRef, useCallback } from "react"
 import { m } from "framer-motion"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
+import { cn } from "@/lib/utils"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,8 +34,23 @@ export default function ImportProductsPage() {
   const [activeTab, setActiveTab] = useState<Tab>("csv")
   const { toast } = useToast()
 
+  // THE DETAIL TIER (phase 35, UIX-09). This is a tabbed FORM — pick a tab, hand
+  // over a file, read the result — not a list. Width buys it nothing: detail and
+  // reading columns cluster between 1016px (Square's content ladder) and 1136px
+  // (Linear's), with Lightspeed's content column at 1100 (CONTEXT.md section 3).
+  // So this element is deliberately narrower than the Shell band around it and
+  // centres inside it. The number lives once, in lib/layout-widths.ts
+  // (DETAIL_MAX_PX) — change it there, never here.
+  //
+  // This is the page's ONLY page-level branch, and CsvImportTab, PhotoImportTab
+  // and ImportResultsPanel are sub-components rendered INSIDE it. They inherit
+  // this tier. Do not cap them: a cap nested inside a cap resolves by cascade,
+  // looks correct in review, and is wrong at exactly one viewport.
   return (
-    <div className="space-y-6">
+    <div
+      data-width-tier="detail"
+      className={cn("mx-auto", WIDTH_TIER_CLASS.detail, "space-y-6")}
+    >
       <m.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-4">
         {/* Icon-only LINK — same empty-accessible-name defect as the icon

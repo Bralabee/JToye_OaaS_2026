@@ -12,7 +12,7 @@ spring:
     redis:
       host: localhost
       port: 6379
-      password: redispass123  # From docker-compose.full-stack.yml
+      password: ${REDIS_PASSWORD}  # From docker-compose.full-stack.yml; rotated 2026-08-29 (SEC-5), no hardcoded literal
 
 # Local development re-enables the metrics and Prometheus scrape endpoints
 # that the base profile (application.yml) deliberately omits. Safe here —

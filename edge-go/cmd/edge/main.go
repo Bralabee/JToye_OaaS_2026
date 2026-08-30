@@ -132,6 +132,28 @@ func newManagementRouter() *gin.Engine {
 	return mgmtRouter
 }
 
+// rateLimiterExemptPaths are routes the token bucket must never gate.
+//
+// issue API-4: the limiter previously sat in front of EVERY route, including
+// /health and /ready — so a burst of real traffic (or another probe firing
+// concurrently) could starve the kubelet's own liveness/readiness checks of
+// tokens. A liveness probe that gets 429'd looks identical to a genuinely
+// wedged process, so the kubelet restarts a healthy pod; a readiness probe
+// that gets 429'd looks like a downstream outage, so the pod is pulled from
+// the Service. Both are self-inflicted — the DoS guard causing the exact
+// outage it exists to prevent. Probes are exempted from the bucket entirely
+// (not merely refunded after the fact) so they never compete with real
+// traffic for burst capacity either.
+//
+// This is a small, closed allow-list keyed on the literal request path
+// rather than c.FullPath(): the limiter middleware can be (and is, in
+// TestRateLimiter_*) exercised directly against a bare *gin.Context that
+// never went through router dispatch, where FullPath() is still empty.
+var rateLimiterExemptPaths = map[string]bool{
+	"/health": true,
+	"/ready":  true,
+}
+
 // rateLimiter is a single, process-wide token-bucket used purely as a coarse
 // DoS / overload guard for this edge replica — it is NOT a per-tenant quota.
 // The authoritative per-tenant rate limit (e.g. 100 req/min per tenant) lives
@@ -165,6 +187,10 @@ func rateLimiter(ctx context.Context, rps int, burst int) gin.HandlerFunc {
 	}()
 
 	return func(c *gin.Context) {
+		if rateLimiterExemptPaths[c.Request.URL.Path] {
+			c.Next()
+			return
+		}
 		select {
 		case <-tokens:
 			c.Next()

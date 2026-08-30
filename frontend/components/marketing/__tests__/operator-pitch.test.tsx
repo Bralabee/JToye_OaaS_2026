@@ -1,8 +1,23 @@
 import fs from "fs"
 import path from "path"
 import { fireEvent, render, screen } from "@testing-library/react"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { OperatorPitch } from "@/components/marketing/operator-pitch"
 import ForOperatorsPage from "@/app/for-operators/page"
+
+/**
+ * The stock scale token these bands used to carry, named ONCE per suite.
+ *
+ * The assertion it backs is that the swap is COMPLETE per site (T-35-24): a band
+ * left carrying both the old token and the tier class renders identically today
+ * and diverges silently the moment the tier's value moves, which is the whole
+ * failure mode a declared contract exists to prevent.
+ *
+ * NOTE FOR PLAN 35-10: a static gate over this token must exclude `__tests__/`,
+ * exactly as plan 35-02 recorded for the shed dashboard width class. The literal
+ * below is the assertion, not a surviving usage.
+ */
+const STOCK_BAND_TOKEN = "max-w-7xl"
 
 describe("OperatorPitch design tokens (Surface C re-skin)", () => {
   const src = fs.readFileSync(
@@ -85,6 +100,62 @@ describe("OperatorPitch", () => {
     expect(screen.getByText(/not an offline KDS/i)).toBeInTheDocument()
     expect(screen.getByText(/allergen information is vendor-entered assistance/i)).toBeInTheDocument()
     expect(screen.getAllByText(/not production connected-account settlement/i)).toHaveLength(2)
+  })
+
+  /**
+   * PHASE 35 / UIX-07 — the DECLARED Marketing width tier.
+   *
+   * This surface already rendered at the Marketing width before the phase, but
+   * only because a stock scale token happens to equal that number. A coincidence
+   * nothing asserts is the same class of problem as the inherited dashboard width
+   * this phase exists to remove, so the tier is now DECLARED and the declaration
+   * is what these cases read.
+   *
+   * The count is asserted per component rather than "at least one", because a
+   * band left behind is invisible at today's value.
+   */
+  const MARKETING_BANDS = 3
+
+  function marketingBands(): Element[] {
+    const { container } = render(<OperatorPitch />)
+    return Array.from(container.querySelectorAll('[data-width-tier="marketing"]'))
+  }
+
+  it("declares the Marketing tier on every one of its band elements", () => {
+    expect(marketingBands()).toHaveLength(MARKETING_BANDS)
+  })
+
+  it("carries the marketing tier class on every declared band", () => {
+    const bands = marketingBands()
+    // Non-vacuity: a per-band loop over an empty list passes trivially.
+    expect(bands.length).toBeGreaterThan(0)
+    for (const band of bands) {
+      expect(band.classList.contains(WIDTH_TIER_CLASS.marketing)).toBe(true)
+    }
+  })
+
+  it("carries the tier class INSTEAD of the stock token, never beside it", () => {
+    const bands = marketingBands()
+    expect(bands.length).toBeGreaterThan(0)
+    for (const band of bands) {
+      // CONTROL, run first and on this very element: classList.contains
+      // demonstrably finds a token that IS present here, so the absence below is
+      // a statement about the token rather than about the instrument.
+      expect(band.classList.contains("mx-auto")).toBe(true)
+      expect(band.classList.contains(STOCK_BAND_TOKEN)).toBe(false)
+    }
+  })
+
+  it("leaves the typographic measure clamps inside the band alone", () => {
+    render(<OperatorPitch />)
+
+    // A headline measure is not a page band: it is orthogonal to the tier and
+    // must survive the swap untouched.
+    const headline = screen.getByRole("heading", {
+      name: /keep the order.*keep the customer.*keep the kitchen moving/i,
+    })
+    expect(headline.classList.contains("max-w-4xl")).toBe(true)
+    expect(headline.hasAttribute("data-width-tier")).toBe(false)
   })
 
   it("reveals the fit check and copies its locally generated summary", async () => {
