@@ -8,7 +8,7 @@
 #   git's INDEX, because a hook without it is skipped SILENTLY and that is
 #   indistinguishable from a hook that ran and had nothing to say.
 #
-# WHY ONLY THESE THREE, WHEN CI ALREADY RUNS SIX WORKFLOWS
+# WHY ONLY THESE FOUR, WHEN CI ALREADY RUNS SIX WORKFLOWS
 #   This repo is PUBLIC, so Actions are free and CI is the right home for anything
 #   slow. A pre-push check earns its place only if it is fast, offline, and either
 #   (a) impossible to undo once the push lands, or (b) load-bearing enough that
@@ -26,6 +26,15 @@
 #        green while the branch sat three commits behind origin/main, so the image
 #        was missing three merged PRs and no rebuild could have added them. Catching
 #        that here costs a second; catching it as a red PR costs a round trip.
+#
+#   P-4  documented claims match their sources    (scripts/check-claims.sh)
+#        The vendored claim-gate over scripts/gates/claims.manifest: every count the
+#        docs assert, bound to the file that decides it. Fast (greps over tracked
+#        files), fully offline, and its failure IS the cheap-to-catch-here kind — a
+#        drifted doc number discovered as a red PR costs a round trip; here it costs
+#        a second. Ran only in CI until 2026-08-30 (the dotfiles installer's check
+#        printed "no local trigger" on every --check). VOID (rc 2) BLOCKS: "could
+#        not verify the claims" must never read as "verified".
 #
 #   P-3  secrets in the commits being pushed
 #        The one check that CANNOT be left to CI. gitleaks.yml runs AFTER the push,
@@ -60,6 +69,7 @@ set -uo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 GITLEAKS_CONFIG_PATH="$REPO_ROOT/.gitleaks.toml"
 BEHIND_GATE="$REPO_ROOT/scripts/check-branch-behind-base.sh"
+CLAIMS_GATE="$REPO_ROOT/scripts/check-claims.sh"
 
 FAILED=0
 red()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
@@ -136,6 +146,30 @@ check_secrets() {
     return 0
 }
 
+# ── P-4 ───────────────────────────────────────────────────────────────────────
+# The documented-claims gate. Exit contract of check-claims.sh: 0 match · 1 a
+# claim drifted · 2 VOID, could not check. BOTH nonzero shapes block — a VOID
+# read as a pass is exactly the vacuous-check class the gate exists to kill.
+# A missing/non-executable gate is a SKIP said out loud (a repo mid-bootstrap
+# is not a failure), never a silent pass.
+check_claims() {
+    if [ ! -x "$CLAIMS_GATE" ]; then
+        skip "P-4 documented-claims gate — $CLAIMS_GATE not executable (claims NOT checked; not a pass)"
+        return 0
+    fi
+    local out rc
+    out="$(bash "$CLAIMS_GATE" 2>&1)"; rc=$?
+    case "$rc" in
+        0) ok "P-4 documented claims match their sources" ;;
+        1) bad "P-4 a documented claim drifted from its source of truth"
+           printf '%s\n' "$out" | tail -8 >&2
+           printf '        fix the doc or the source, never the manifest.\n' >&2 ;;
+        *) bad "P-4 claim gate VOID (rc=$rc) — could not verify, which is NOT verified"
+           printf '%s\n' "$out" | tail -4 >&2 ;;
+    esac
+    return 0
+}
+
 # ── advisory ──────────────────────────────────────────────────────────────────
 advise_review() {
     local range="$1"
@@ -206,6 +240,22 @@ selftest() {
     if [ -x "$BEHIND_GATE" ]; then printf 'ok    arm fires: P-2 gate is present and executable\n'; pass=$((pass+1))
     else printf 'FAIL  arm SILENT: P-2 gate missing at %s\n' "$BEHIND_GATE"; miss=$((miss+1)); fi
 
+    # A5/A6: P-4 must FAIL on a drifted claim and must NOT fail on a matching one.
+    # Hermetic: a runtime-built fixture repo drives the vendored ENGINE directly —
+    # never this repo's real manifest, whose pass state is what main asserts.
+    local CT; CT="$(mktemp -d)"
+    printf 'v=2\n' > "$CT/src.txt"; printf 'version 2\n' > "$CT/doc.md"
+    printf 'source\tv\tregex\tsrc.txt\tint\t^v=\\K[0-9]+\nrule\tv\t-\tdoc.md\tdoc version\tversion \\K[0-9]+\n' > "$CT/m.tsv"
+    local prc brc
+    (bash "$REPO_ROOT/scripts/gates/claim-gate.sh" -r "$CT" -m "$CT/m.tsv" >/dev/null 2>&1); prc=$?
+    printf 'version 1\n' > "$CT/doc.md"
+    (bash "$REPO_ROOT/scripts/gates/claim-gate.sh" -r "$CT" -m "$CT/m.tsv" >/dev/null 2>&1); brc=$?
+    rm -rf "$CT"
+    if [ "$brc" -eq 1 ]; then printf 'ok    arm fires: P-4 detects a drifted claim (rc=1)\n'; pass=$((pass+1))
+    else printf 'FAIL  arm SILENT: P-4 passed a drifted claim (rc=%s)\n' "$brc"; miss=$((miss+1)); fi
+    if [ "$prc" -eq 0 ]; then printf 'ok    arm fires: P-4 matching claim stays clean (no false positive)\n'; pass=$((pass+1))
+    else printf 'FAIL  arm SILENT: P-4 flagged a matching claim (rc=%s) — it would block every push\n' "$prc"; miss=$((miss+1)); fi
+
     echo
     echo "arms firing: $pass · silent: $miss"
     [ "$miss" -eq 0 ]
@@ -247,6 +297,7 @@ fi
 echo "pre-push verification (fast, offline; ci-cd.yaml owns the rest)"
 check_not_behind
 check_secrets "$RANGE"
+check_claims
 
 if [ "$FAILED" -gt 0 ]; then
     echo
