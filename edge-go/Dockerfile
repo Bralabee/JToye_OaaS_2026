@@ -2,12 +2,13 @@
 # Optimized for production: minimal size (<15MB), security, fast startup
 
 # Stage 1: Build stage
-# Go version must match the go directive in go.mod (1.26.0) and BOTH CI setup-go
-# pins in .github/workflows/ci-cd.yaml (there are two: the test job and the build
-# job) — bump all of them in lockstep. There is a fourth site the older wording
-# missed: the `golang` row in infra/dependency-horizons.yaml, whose `pin:` must
-# name this exact image or check-dependency-horizons.sh VOIDs on H-5 drift.
-FROM golang:1.26-alpine AS builder
+# Go version must match the go directive in go.mod (1.27.0) and ALL CI setup-go
+# pins in .github/workflows/ci-cd.yaml (there are three: the test job, the
+# operational-contracts job's edge↔core contract gate, and the lint job) — bump
+# all of them in lockstep. Plus the Go rows in infra/dependency-horizons.yaml
+# (`golang`, `go-toolchain`, `go-ci-setup`), whose `pin:` values must name these
+# exact versions or check-dependency-horizons.sh VOIDs on H-5 drift.
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /app
 

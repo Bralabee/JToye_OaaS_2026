@@ -42,14 +42,15 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Set up Go 1.25
+      - name: Set up Go 1.27
         uses: actions/setup-go@v7
         with:
-          # Must match edge-go/go.mod (go 1.25.0). Pinning an older version
-          # (was 1.22) made GOTOOLCHAIN auto-download 1.25 mid-build, and that
-          # switched toolchain broke `go tool covdata` during coverage
-          # ("no such tool covdata"). Install 1.25 natively so covdata exists.
-          go-version: '1.26'
+          # Must match edge-go/go.mod (go 1.27.0). Pinning an older version
+          # (was 1.22) made GOTOOLCHAIN auto-download the newer one mid-build,
+          # and that switched toolchain broke `go tool covdata` during coverage
+          # ("no such tool covdata"). Install the matching Go natively so
+          # covdata exists.
+          go-version: '1.27'
           cache-dependency-path: edge-go/go.sum
 
       - name: Set up Node.js
@@ -900,10 +901,10 @@ jobs:
       # bolted onto `test`: it is a static contract assertion, it shares the
       # 0/1/2 VOID convention with the gates around it, and it stays green on a
       # docs-only PR where the heavy test job has nothing to say.
-      - name: Set up Go 1.26
+      - name: Set up Go 1.27
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26'
+          go-version: '1.27'
           cache-dependency-path: edge-go/go.sum
 
       - name: Assert every terminal failure state has a detection path (27-00 F-9)
@@ -1262,10 +1263,10 @@ jobs:
         run: npm run lint
         working-directory: frontend
 
-      - name: Set up Go 1.25
+      - name: Set up Go 1.27
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26'
+          go-version: '1.27'
           cache-dependency-path: edge-go/go.sum
 
       - name: Check edge-go formatting (gofmt)

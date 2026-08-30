@@ -79,6 +79,39 @@
 #   total, per directory) and was validated against `go test`'s own per-package output on
 #   2026-08-28: all six figures identical to the tenth of a point.
 #
+# RE-BASELINED FOR GO 1.27 (2026-08-30, dependabot #674)
+#
+#   Go 1.27's coverage instrumentation counts MORE statements than 1.26 did — the
+#   denominator changed, not the code or the tests. A/B measured on IDENTICAL source
+#   (main tree, go.mod at 1.26.0) with only GOTOOLCHAIN varied:
+#
+#       toolchain    total    cmd/edge         profile data lines
+#       go1.26.0     67.0%    50.4%            314
+#       go1.27.0     43.7%    22.3% (158/708)  371
+#
+#   The collapse is attribution, not regression: per-FUNCTION coverage is essentially
+#   unchanged (the only movers were SyncBatch 52.4->48.1 and WhatsAppWebhook
+#   60.3->65.2), every internal package went UP (auth 88.6->92.3, core 80.0->84.0,
+#   middleware 79.8->83.2, whatsapp 92.6->93.1), and the delta is concentrated in the
+#   uncovered ~180-line main() wiring function, whose main.go attribution grew from
+#   122 to 527 statements under 1.27. Measured on the #674 tree, Go 1.27, CI and local
+#   agreeing:
+#
+#       github.com/jtoye/edge/cmd/edge              22.3%   (158/708 stmts)
+#       github.com/jtoye/edge/docs                   0.0%   (0/1 stmts)   generated swag docs
+#       github.com/jtoye/edge/internal/auth         92.3%   (48/52 stmts)
+#       github.com/jtoye/edge/internal/core         84.0%   (121/144 stmts)
+#       github.com/jtoye/edge/internal/middleware   83.2%   (114/137 stmts)
+#       github.com/jtoye/edge/internal/whatsapp     93.1%   (27/29 stmts)
+#       ------------------------------------------------------------------
+#       total                                       43.7%   (468/1071 stmts)
+#
+#   MIN_TOTAL_PERCENT moves 65.0 -> 42.0: the fresh measurement minus the same-shaped
+#   margin (1.7 points ~ 18 statements of 1071). This is the "record the new number,
+#   not widen the margin silently" path the A2 note above prescribes — the floor is
+#   re-anchored to a NEW instrument, it is not lowered against the old one. Under the
+#   old instrument nothing fell.
+#
 # INPUT
 #   edge-go/coverage.out, produced by:
 #     cd edge-go && go test -coverprofile=coverage.out ./...
@@ -104,9 +137,10 @@
 set -uo pipefail
 
 # --- the floor -----------------------------------------------------------------------
-# NO-REGRESSION GUARDRAIL, not a target. Measured total on 2026-08-28: 66.8%.
-# Margin: 1.8 points. Read the MEASURED and "WHY A FLOOR" sections above before editing.
-MIN_TOTAL_PERCENT=65.0
+# NO-REGRESSION GUARDRAIL, not a target. Measured total on 2026-08-30 under Go 1.27:
+# 43.7% (the 1.26 instrument read the same tree at 67.0% — see RE-BASELINED above).
+# Margin: 1.7 points. Read the MEASURED and "WHY A FLOOR" sections above before editing.
+MIN_TOTAL_PERCENT=42.0
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODULE_DIR="${GO_MODULE_DIR:-$REPO_ROOT/edge-go}"
