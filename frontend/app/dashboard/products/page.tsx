@@ -7,8 +7,10 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import apiClient from "@/lib/api-client"
 import { fetchAllMyShops } from "@/lib/shops-api"
+import { describeLoadError } from "@/lib/human-error"
 import { useToast } from "@/hooks/use-toast"
 import { useShopContext } from "@/hooks/use-shop-context"
+import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
 import {
   Card,
   CardContent,
@@ -107,6 +109,11 @@ export default function ProductsPage() {
   const [selectedShopId, setSelectedShopId] = useState<string>("")
   const [trackInventory, setTrackInventory] = useState(false)
   const [quantityInStock, setQuantityInStock] = useState<number>(0)
+  // F2 (FEB-1): a 429/network failure must render an error panel, never the
+  // "No products yet" empty state — the catch blocks below deliberately do
+  // NOT reset `products` to `[]`, so this is keyed off list length nowhere.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [loadErrorMessage, setLoadErrorMessage] = useState("")
   const { toast } = useToast()
   // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
   const { contextShopId } = useShopContext()
@@ -189,13 +196,21 @@ export default function ProductsPage() {
       setProducts(response.data.content || [])
       setTotalPages(response.data.totalPages || 0)
       setTotalElements(response.data.totalElements || 0)
+      setLoadFailed(false)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to load products"
+      // A11Y-2 (#688): `error.message` on an axios error is its own transport
+      // string ("Request failed with status code 500") — route the toast
+      // through the shared classifier so it says what the panel says.
+      const { message } = describeLoadError(error, "Failed to load products")
       toast({
         variant: "destructive",
         title: "Error loading products",
-        description: errorMessage,
+        description: message,
       })
+      // F2 (FEB-1): `products` is deliberately left untouched above — a false
+      // "No products yet" empty state is worse than briefly stale rows.
+      setLoadFailed(true)
+      setLoadErrorMessage(message)
     } finally {
       setLoading(false)
     }
@@ -213,9 +228,18 @@ export default function ProductsPage() {
       setProducts(response.data || [])
       setTotalPages(1)
       setTotalElements(response.data?.length || 0)
-    } catch {
-      // Fall back to showing all products
+      setLoadFailed(false)
+    } catch (error: unknown) {
+      // F2 (FEB-1): this catch used to be fully silent, leaving whatever was on
+      // screen before the search with no indication the search itself failed.
+      setLoadFailed(true)
+      setLoadErrorMessage(describeLoadError(error).message)
     }
+  }
+
+  const retryLoad = () => {
+    if (searchQuery.length >= 2) searchProducts(searchQuery)
+    else fetchProducts()
   }
 
   const openCreateDialog = () => {
@@ -357,12 +381,25 @@ export default function ProductsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    // Phase 35, Index tier: a resource index, deliberately uncapped below the
+    // dashboard band. The tier adds NO width class on purpose — "fluid to the
+    // shell" is the documented pattern for data-dense lists — and the
+    // attribute is here so that being uncapped is a declaration a test can
+    // falsify rather than an absence indistinguishable from a forgotten cap.
+    // Adding a max-width here would also change when the table's scroll region
+    // below overflows, and that region carries the #685 keyboard-reachability
+    // fix. Do not "tidy" this by capping it.
+    <div data-width-tier="index" className="space-y-6">
       {/* Header */}
       <m.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        // FEB-2: this was a no-wrap `flex justify-between` — the h1 plus two
+        // min-width buttons exceed a 390px viewport and clip "Add Product".
+        // `flex-wrap` lets the button row drop below the title on narrow
+        // screens; `gap-3` replaces the space `justify-between` no longer
+        // supplies once the row can wrap.
+        className="flex flex-wrap items-center justify-between gap-3"
       >
         <div>
           <h1 className="text-4xl font-bold text-slate-900">Products</h1>
@@ -384,6 +421,14 @@ export default function ProductsPage() {
         </div>
       </m.div>
 
+      {/*
+        A11Y-6 (extended in QA integration): the sections below are all
+        `CardTitle` (<h3>). Without a real <h2> between the page's <h1> and
+        the first of those <h3>s the outline skips a level (axe
+        heading-order). `sr-only` keeps it invisible but in the a11y tree.
+      */}
+      <h2 className="sr-only">Product catalog</h2>
+
       {/* Products Table */}
       <m.div
         initial={{ opacity: 0, y: 20 }}
@@ -395,10 +440,15 @@ export default function ProductsPage() {
             <div>
               <CardTitle>All Products</CardTitle>
               <CardDescription>
-                {totalElements} product{totalElements !== 1 ? "s" : ""}
-                {contextShopId
-                  ? ` in ${contextShopName || "the selected shop"}`
-                  : " in total"}
+                {/* #688: never assert a count nothing loaded — the panel below
+                    says the load failed, so the subtitle must not say "0". */}
+                {loadFailed
+                  ? "—"
+                  : `${totalElements} product${totalElements !== 1 ? "s" : ""}${
+                      contextShopId
+                        ? ` in ${contextShopName || "the selected shop"}`
+                        : " in total"
+                    }`}
               </CardDescription>
             </div>
             <div className="relative w-[220px]">
@@ -412,7 +462,13 @@ export default function ProductsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {products.length === 0 ? (
+            {loadFailed ? (
+              <LoadErrorPanel
+                subject="products"
+                message={loadErrorMessage}
+                onRetry={retryLoad}
+              />
+            ) : products.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Package className="mb-4 h-12 w-12 text-slate-300" />
                 <h3 className="mb-2 text-lg font-semibold text-slate-900">
@@ -429,7 +485,17 @@ export default function ProductsPage() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              // A11Y-3 (axe scrollable-region-focusable, serious): a
+              // horizontally-overflowing region with no focusable element and
+              // no visible scrollbar affordance is unreachable by keyboard.
+              // `tabIndex={0}` + `role="region"` + an accessible name make it
+              // a landmark a keyboard/screen-reader user can find and pan.
+              <div
+                className="overflow-x-auto"
+                tabIndex={0}
+                role="region"
+                aria-label="Products table, scroll horizontally for more columns"
+              >
                 <Table>
                   <TableHeader>
                     <TableRow>

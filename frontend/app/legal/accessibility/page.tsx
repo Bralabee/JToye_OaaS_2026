@@ -84,8 +84,11 @@ export default function AccessibilityStatementPage() {
           {company.legalName} (company no. {company.companyNumber}) is committed
           to making this platform usable by as many people as possible. This
           statement covers the public J&apos;Toye storefront and its sign-in
-          pages. It does not cover the vendor dashboard, which is not yet
-          assessed.
+          pages. It does not cover the vendor dashboard: dashboard pages are
+          scanned automatically for accessibility problems on every change and
+          monitored nightly, but that automated coverage is not the same as a
+          full assessment against the standard, so no conformance claim is
+          made about it.
         </>
       }
     >

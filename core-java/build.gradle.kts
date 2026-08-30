@@ -2,6 +2,10 @@ plugins {
     id("org.springframework.boot") version "3.5.16"
     id("io.spring.dependency-management") version "1.1.7"
     java
+    // Plan 34-09 (TRUTH-02, #110). CORE Gradle plugin: no version coordinate, no
+    // dependencies entry, no third-party supply-chain surface. Its configuration and
+    // the measurement behind its floor live in the JaCoCo block near the test tasks.
+    jacoco
 }
 
 java {
@@ -111,7 +115,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
     // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod)
-    implementation(platform("software.amazon.awssdk:bom:2.53.2"))
+    implementation(platform("software.amazon.awssdk:bom:2.54.3"))
     implementation("software.amazon.awssdk:s3")
 
     // Phase 24 (IMG-02) — WebP transcode + image normalize pipeline.
@@ -281,6 +285,130 @@ tasks.register<Test>("integrationTest") {
     }
 
     shouldRunAfter(tasks.test)
+}
+
+// ---------------------------------------------------------------------------------
+// JaCoCo — plan 34-09 (TRUTH-02, #110). Java coverage is measured on the AGGREGATE of
+// `test` + `integrationTest`. That is a MEASUREMENT, not a preference.
+//
+// WHY AGGREGATE, AND WHY THE UNIT-ONLY FLOOR WAS REJECTED
+//
+//   `tasks.test` above EXCLUDES the `testcontainers` tag (:183-186) and
+//   `integrationTest` runs ONLY that tag (:202-284). Both drive sourceSets["test"], so
+//   the two halves of ONE suite execute in two tasks — and, in CI, in two different
+//   jobs. Measured on this tree 2026-08-28 (JaCoCo 0.8.12, Gradle 8.10.2, JDK 21):
+//
+//       counter        `test` only    `test` + `integrationTest`     delta
+//       INSTRUCTION        62.57%                        88.07%     +25.50
+//       BRANCH             51.09%                        71.95%     +20.86
+//       LINE               62.12%                        87.55%     +25.43
+//       METHOD             65.01%                        87.53%     +22.52
+//
+//   `integrationTest` contributes 607 tests across 132 classes and +25.43 points of
+//   LINE coverage. The alternative is rejected ON THOSE NUMBERS: a "60% line" gate on
+//   `test` alone would sit about two points under a codebase that is actually at
+//   87.55%. It could never catch a real regression — a quarter of the codebase could
+//   stop being covered before it noticed — and it would publish a coverage figure
+//   wrong by that same quarter. The unit-only floor is the cheap number, not the
+//   honest one, and this project does not ship the cheap one while calling it
+//   "coverage".
+//
+// A SKIPPED INTEGRATION JOB MUST VOID, NEVER PASS
+//
+//   ci-cd.yaml's `integration-tests` job is path-filtered and reports SUCCESS while
+//   SKIPPING, deliberately, so it stays a satisfiable required check. An aggregate
+//   gate running there unconditionally would be wrong on exactly the runs that skip.
+//   So the coverage steps carry the SAME `if:` expression as the suite they measure,
+//   and scripts/check-jacoco-coverage.sh exits 2 (VOID) when its inputs are absent.
+//   "Could not measure" is not "measured and fine". DO NOT simplify that guard away:
+//   removing it turns every skipped run into a false coverage pass, which is the one
+//   failure this whole arrangement exists to prevent.
+//
+//   Note the same hazard inside Gradle: JacocoReport carries a built-in `onlyIf` that
+//   SKIPS the task when no execution data file exists, so a missing .exec produces a
+//   green build and NO report rather than an error. That is precisely why the gate
+//   treats a missing/empty CSV as VOID rather than as 0%.
+//
+// TOOL VERSION IS PINNED
+//
+//   `jacoco` is a CORE Gradle plugin — no version coordinate in `plugins`, no
+//   `dependencies` entry, no third-party supply-chain surface (threat T-34-09-SC).
+//   toolVersion is pinned to the 0.8.12 that produced the numbers above so a Gradle
+//   upgrade cannot silently move them.
+//
+// NO TEST TASK IS FINALIZED BY A REPORT
+//
+//   Reports are produced by explicit steps that name the report task; nothing is
+//   wired with `finalizedBy`. A developer running `./gradlew :core-java:test` locally
+//   pays nothing for coverage they did not ask for, and the ~24-minute integration
+//   suite is never triggered as a side effect of asking for a report.
+//
+// PATHS
+//
+//   Every artefact lands under core-java/build-local/ (the layout.buildDirectory
+//   redirect at :15). core-java/build/ is STALE, and reading it is a recorded
+//   stale-artifact trap in this repo. Both report destinations below are set
+//   EXPLICITLY rather than left to the plugin's naming convention, so the gate's
+//   input path is a fact in version control instead of an inference.
+// ---------------------------------------------------------------------------------
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.named<JacocoReport>("jacocoTestReport") {
+    // UNIT-ONLY report (test.exec). Kept because the gate compares it against the
+    // aggregate: an "aggregate" that merely equals the unit figure is a unit report
+    // wearing the wrong name, and that comparison is what makes the gate a gate.
+    reports {
+        csv.required.set(true)
+        csv.outputLocation.set(layout.buildDirectory.file("reports/jacoco/test/jacocoTestReport.csv"))
+        xml.required.set(true)
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/test/jacocoTestReport.xml"))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco/test/html"))
+    }
+}
+
+// The AGGREGATE. executionData is a fileTree over build-local/jacoco/*.exec, so it
+// picks up test.exec AND integrationTest.exec whenever both are present. In CI the
+// integration job downloads job `test`'s test.exec into that directory before running
+// this task, which is the whole point of the cross-job artifact hand-off. The tree is
+// resolved at EXECUTION time, so a file that arrives after configuration still counts.
+//
+// mustRunAfter, not dependsOn: requesting the report must never launch a suite, but
+// when a suite IS requested on the same command line the report has to come second or
+// it would read the previous run's .exec.
+// Captured OUTSIDE the task-configuration lambda deliberately: inside a JacocoReport
+// block `sourceSets` is the task's own vararg METHOD (JacocoReportBase.sourceSets), not
+// the project's SourceSetContainer, and leaning on which receiver wins is the kind of
+// thing a Gradle upgrade quietly changes. Naming it here removes the ambiguity.
+val mainSourceSetForCoverage = sourceSets["main"]
+
+tasks.register<JacocoReport>("jacocoAggregateReport") {
+    description = "JaCoCo report over BOTH test.exec and integrationTest.exec — see the block above."
+    group = "verification"
+    // The two suites are named EXPLICITLY rather than globbed as `jacoco/*.exec`.
+    // Every Test task gets a JacocoTaskExtension, so `generateOpenApiSpec` and
+    // `updateOpenApiSnapshot` also drop .exec files here when a developer runs them —
+    // a glob would then make this report's number depend on which unrelated commands
+    // happened to run first, and the floor below was calibrated on exactly these two
+    // suites. A future third suite is therefore EXCLUDED until it is added here, which
+    // under-reports and turns the gate red; that is the safe direction to fail.
+    executionData(
+        fileTree(layout.buildDirectory)
+            .include("jacoco/test.exec")
+            .include("jacoco/integrationTest.exec")
+    )
+    sourceSets(mainSourceSetForCoverage)
+    mustRunAfter(tasks.named("test"), tasks.named("integrationTest"))
+    reports {
+        csv.required.set(true)
+        csv.outputLocation.set(layout.buildDirectory.file("reports/jacoco/aggregate/jacocoAggregateReport.csv"))
+        xml.required.set(true)
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/aggregate/jacocoAggregateReport.xml"))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco/aggregate/html"))
+    }
 }
 
 // #97 AC3 — OpenAPI snapshot tooling. Both tasks run the single

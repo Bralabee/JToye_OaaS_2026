@@ -33,6 +33,8 @@ import {
   CLS_BUDGET,
   LANDING_CLS_KNOWN_BASELINE,
   LANDING_CLS_TOLERANCE,
+  LANDING_CLS_DESKTOP_CONTROL,
+  LANDING_CLS_DESKTOP_RECORD,
   LANDING_BUNDLE_BASELINE_BYTES,
   LANDING_BUNDLE_CEILING_BYTES,
   LANDING_POST_GRANT_MAX_VERTICAL_PX,
@@ -420,5 +422,154 @@ test.describe("Landing route `/` — throttled-mobile CWV (33-03)", () => {
       return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }
     })
     expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1)
+  })
+})
+
+/**
+ * THE DESKTOP ARM — 35-09 / ORCH-02 (orchestrator decision, 2026-08-29).
+ *
+ * WHY IT EXISTS, AND WHY IT IS NOT A DUPLICATE OF THE DESCRIBE ABOVE. Everything
+ * above pins a 375px viewport, and it does so even under the Playwright
+ * `desktop` project, because a describe's own `test.use` overrides the project's.
+ * Phase 35 moved this route's content bands from 1152px to 1280px, and the
+ * generated `max-w-marketing` rule is emitted with NO media query — so it cannot
+ * bind at 375px. The mobile arm is therefore STRUCTURALLY BLIND to the change:
+ * it can only ever report a pass, and a pass from an instrument that cannot see
+ * the thing it is asked about is not evidence.
+ *
+ * THE TWO ARMS MEASURE DIFFERENT THINGS AND NEITHER REPLACES THE OTHER. CLS
+ * normalises by viewport, so 0.1793 at 375px and 0.1316 at 1440px describe
+ * different layouts and their difference means nothing on its own. The mobile
+ * arm above is untouched by this plan — its baseline, its tolerance and the
+ * absolute CLS_BUDGET are all unchanged, so the pre-existing debt stays visible.
+ *
+ * Tagged `@desktop-only` so the `mobile` project never ENUMERATES it. A skip must
+ * mean "nobody checked this"; it must not also mean "not applicable here" (#420),
+ * and an enumerated-then-skipped block would spend the e2e skip budget (#686).
+ *
+ * COVERAGE BOUNDARY, stated rather than implied: `.github/workflows/ci-cd.yaml`
+ * runs only `public-layout.spec.ts` and `public-a11y.spec.ts` per PR, so this
+ * block is NOT in the per-PR set. #683 records the nightly full-suite lane as
+ * dark. The honest phrasing is "covered by a spec that no current tree executes",
+ * never "covered nightly".
+ *
+ * Run: PLAYWRIGHT_BASE_URL=<a REBUILT frontend> npx playwright test
+ *      landing-webperf --project=desktop
+ *
+ * IT NEEDS A CURRENT RUNTIME, and it says so rather than passing quietly on a
+ * stale one. Measured against both the phase's merge-base build and the Compose
+ * image: a frontend predating 35-06 carries no `data-width-tier`, so guard (2)
+ * below reds with "no Marketing-tier band inside <main>" before any score is
+ * read. A runtime with the attribute but an older tier VALUE gets further — it
+ * scores the pre-change control, passes assertion (i) and reds the ratchet (ii).
+ */
+test.describe("@desktop-only Landing route `/` — desktop CLS (35-09, ORCH-02)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } })
+
+  test("holds desktop CLS no worse than its measured pre-change control", async ({
+    context,
+    page,
+  }) => {
+    // The SAME throttling and the SAME observer as the mobile arm, deliberately:
+    // both declared constants were measured through these two helpers, and a
+    // number measured one way and asserted another is not a comparison.
+    await throttle(context, page)
+    await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 20_000 })
+    await imagesSettled(page)
+
+    const { lcp, cls } = await measureVitals(page)
+
+    // ---- NON-VACUITY, BEFORE THE SCORE IS TRUSTED -------------------------
+    // A page that failed to render scores a PERFECT CLS of 0, and that zero
+    // would be cited as evidence about this phase. So the score is only read
+    // after the landing page is shown to be present, at desktop, in `main`.
+    const main = page.locator("main")
+
+    // (1) It is the LANDING page, not an error route: exactly one h1 in `main`.
+    await expect(
+      main.getByRole("heading", { level: 1 }),
+      "no landing h1 inside <main> — this arm measured something that is not the landing page, " +
+        "and a CLS of 0 from a page that did not render is not a pass"
+    ).toHaveCount(1)
+
+    // (2) The band this arm exists to measure is present, SCOPED TO `main`.
+    const bandsInMain = main.locator('[data-width-tier="marketing"]')
+    const inMain = await bandsInMain.count()
+    expect(
+      inMain,
+      "no Marketing-tier band inside <main> — the surface whose width changed is not on this page"
+    ).toBeGreaterThan(0)
+
+    // (3) THE SCOPE CONTROL. The shared public header and footer rails ALSO
+    // declare `marketing` (35-06), so a document-wide `length > 0` check would
+    // be satisfied by chrome alone and would pass over a landing page whose own
+    // bands were never migrated. This proves the scope above is doing work: the
+    // document-wide count must strictly exceed the main-scoped one.
+    const docWide = await page.locator('[data-width-tier="marketing"]').count()
+    expect(
+      docWide,
+      `the scope control failed: ${docWide} Marketing bands document-wide vs ${inMain} inside <main>. ` +
+        "The header and footer rails declare this tier too, so these counts must differ — if they " +
+        "are equal the main-scoped query above is not discriminating and guard (2) is vacuous"
+    ).toBeGreaterThan(inMain)
+
+    // (4) It really ran at a DESKTOP width. A 375px render would satisfy (1)-(3)
+    // and score the wrong thing entirely; the declared constants describe 1440.
+    // Deliberately a floor, not the tier's value — plan 35-08 owns the width
+    // contract, and restating 1280 here would duplicate it and let the two drift.
+    const bandWidth = await bandsInMain
+      .first()
+      .evaluate((el) => Math.round(el.getBoundingClientRect().width))
+    expect(
+      bandWidth,
+      `the Marketing band measured ${bandWidth}px — this arm did not render at a desktop width, ` +
+        "so the score does not describe the viewport the declared constants were measured at"
+    ).toBeGreaterThan(375)
+
+    test.info().annotations.push({
+      type: "web-vitals-desktop",
+      description:
+        `/ — LCP=${Math.round(lcp)}ms CLS=${cls.toFixed(4)} at 1440x900, 4x CPU · ` +
+        `Marketing band ${bandWidth}px, ${inMain} in main / ${docWide} document-wide · ` +
+        `control ${LANDING_CLS_DESKTOP_CONTROL} · record ${LANDING_CLS_DESKTOP_RECORD}`,
+    })
+
+    // ---- (i) THE NO-REGRESSION FORM, against the MEASURED pre-change control.
+    // Not against CLS_BUDGET: `/` breaches 0.1 at 375px and this phase is not
+    // fixing that. "It still breaches the absolute budget" is expected; "it got
+    // worse than it was before this phase" is the failure.
+    expect(
+      cls,
+      `/ desktop CLS ${cls.toFixed(4)} regressed past LANDING_CLS_DESKTOP_CONTROL ` +
+        `(${LANDING_CLS_DESKTOP_CONTROL} + LANDING_CLS_TOLERANCE ${LANDING_CLS_TOLERANCE} = ` +
+        `${(LANDING_CLS_DESKTOP_CONTROL + LANDING_CLS_TOLERANCE).toFixed(4)}) — the phase made the ` +
+        "landing route less stable at the viewport where its width actually changed"
+    ).toBeLessThan(LANDING_CLS_DESKTOP_CONTROL + LANDING_CLS_TOLERANCE)
+
+    // ---- (ii) AND THE RATCHET on the improvement this phase actually shipped.
+    // (i) alone leaves 0.1154 of slack over what the route now measures — a
+    // bound 3.6x the value it guards, which fires only on a catastrophe. This
+    // keeps the delivered good from rotting back silently, and it is also what
+    // catches a runtime built before the change: that runtime serves the 1152px
+    // band, scores the control, and sails under (i).
+    expect(
+      cls,
+      `/ desktop CLS ${cls.toFixed(4)} regressed past LANDING_CLS_DESKTOP_RECORD ` +
+        `(${LANDING_CLS_DESKTOP_RECORD} + LANDING_CLS_TOLERANCE ${LANDING_CLS_TOLERANCE} = ` +
+        `${(LANDING_CLS_DESKTOP_RECORD + LANDING_CLS_TOLERANCE).toFixed(4)}). Two causes, both real: ` +
+        "a genuine layout-stability regression, OR a frontend build that predates phase 35 — " +
+        "check the runtime is current before changing this number"
+    ).toBeLessThan(LANDING_CLS_DESKTOP_RECORD + LANDING_CLS_TOLERANCE)
+
+    if (cls >= CLS_BUDGET) {
+      test.info().annotations.push({
+        type: "known-debt",
+        description:
+          `/ desktop CLS=${cls.toFixed(4)} exceeds the declared CLS_BUDGET of ${CLS_BUDGET}. ` +
+          "The pre-change control was 0.1316 at this viewport; the absolute target stays " +
+          "declared and unmet so the debt stays visible.",
+      })
+    }
   })
 })

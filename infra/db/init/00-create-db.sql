@@ -7,8 +7,19 @@
 -- POSTGRES_USER with POSTGRES_PASSWORD *before* running this directory, so the
 -- IF NOT EXISTS guard always skipped it. For `jtoye_app` it was live: nothing
 -- creates that role first, so on a FRESH VOLUME it really was created with
--- 'secret', and core-java — which connects as jtoye_app using DB_PASSWORD —
--- could only ever authenticate if DB_PASSWORD happened to be that literal.
+-- 'secret', and the service authenticating as jtoye_app could only ever
+-- succeed if its configured password happened to be that literal.
+--
+-- WHO CONNECTS AS WHAT, since the SEC-04/#552 runtime-migrator split:
+--   jtoye_app     — the owner/MIGRATOR. Flyway authenticates with
+--                   DB_MIGRATION_USER/DB_MIGRATION_PASSWORD (application.yml).
+--   jtoye_runtime — the non-owner DML role the APPLICATION runs as
+--                   (DB_USER/DB_PASSWORD).
+-- Issue #684: this file created jtoye_app with DB_PASSWORD, so wherever the two
+-- credentials differ, a fresh volume 28P01 crash-looped core-java with ZERO
+-- migrations applied — invisible on long-lived volumes (the role predates the
+-- split there) and in any environment that generates the two equal, which is
+-- exactly what e2e-nightly.yml's DERIVED block did as a workaround.
 --
 -- That is why e2e-nightly.yml failed every night: it generates a random
 -- DB_PASSWORD per run, so jtoye_app's actual password and the one core-java
@@ -24,6 +35,14 @@
 \getenv superuser_password POSTGRES_PASSWORD
 \getenv app_password DB_PASSWORD
 
+-- Migrator credential, with a single-credential fallback (#684). \getenv leaves
+-- the psql variable UNCHANGED when the env var is absent, so the pre-set empty
+-- string is the sentinel for both "unset" and "set but empty"; the NULLIF/
+-- COALESCE at the use site folds either case back to DB_PASSWORD, so an
+-- environment that has not adopted the SEC-04 split behaves exactly as before.
+\set migration_password ''
+\getenv migration_password DB_MIGRATION_PASSWORD
+
 -- Create role jtoye if it doesn't exist.
 -- Unreachable in practice (see above) but kept correct rather than hardcoded:
 -- if it ever DID fire, a literal here would create the role with a password no
@@ -38,10 +57,15 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'jtoye')\gexec
 SELECT 'CREATE DATABASE keycloak OWNER jtoye'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'keycloak')\gexec
 
--- Create role jtoye_app if it doesn't exist (non-owner for RLS).
--- This is the one that was actually broken: core-java connects as jtoye_app
--- with DB_PASSWORD, so the role must be created with DB_PASSWORD.
-SELECT format('CREATE ROLE jtoye_app LOGIN PASSWORD %L', :'app_password')
+-- Create role jtoye_app if it doesn't exist — the owner/MIGRATOR since the
+-- SEC-04/#552 split. Flyway authenticates as it with DB_MIGRATION_PASSWORD, so
+-- that is the password the role must be created with (#684); the previous text
+-- here ("core-java connects as jtoye_app with DB_PASSWORD") described the
+-- pre-split world and was the defect. Falls back to DB_PASSWORD when
+-- DB_MIGRATION_PASSWORD is unset or empty, so single-credential setups keep
+-- working unchanged.
+SELECT format('CREATE ROLE jtoye_app LOGIN PASSWORD %L',
+              coalesce(nullif(:'migration_password', ''), :'app_password'))
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'jtoye_app')\gexec
 
 -- Create role jtoye_runtime — the non-owner DML application role (SEC-04 / #552,

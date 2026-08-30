@@ -678,9 +678,26 @@ export default function MarketingPage() {
 
   // --- Render ---
 
+  /*
+   * WIDTH TIER — Index, and this was a decision rather than a default.
+   *
+   * PATTERNS A-5. The apparent tension is "two campaign tables, which want the
+   * width, plus two composer forms, which want a reading measure". It dissolves
+   * on inspection: the composers are Radix `DialogContent`, rendered into a
+   * PORTAL outside this page's container, and they carry their own width. This
+   * tier therefore cannot reach them in either direction. Only the promotions and
+   * announcements tables are governed by it, and both are wide multi-column
+   * tables with their own horizontal scroll regions.
+   *
+   * The tier is written into the DOM as a declaration rather than left as the
+   * absence of a cap, because "uncapped" and "someone forgot to cap it" render
+   * identically and no assertion can tell them apart — ORCH-03 (orchestrator
+   * decision, 2026-08-29). It is declared on EVERY render branch below, not just
+   * the loaded one: a branch without it is an undeclared first paint.
+   */
   if (activeTab === "promotions" && promoLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div data-width-tier="index" className="flex h-full items-center justify-center">
         <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
       </div>
     )
@@ -688,14 +705,14 @@ export default function MarketingPage() {
 
   if (activeTab === "announcements" && announcementsLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div data-width-tier="index" className="flex h-full items-center justify-center">
         <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <div data-width-tier="index" className="space-y-6">
       {/* Header */}
       <m.div
         initial={{ opacity: 0, y: -20 }}

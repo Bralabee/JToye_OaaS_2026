@@ -106,17 +106,42 @@ async function isVisible(page: Page, selector: ReturnType<Page["locator"]>): Pro
 }
 
 test.describe("Phase 21 — blocked onboarding journey (ONBD-05)", () => {
-  test("bad company number -> fix inline -> re-run checks -> honest in-review", async ({ page }, testInfo) => {
-    // Pin this stateful journey to a SINGLE project. vendor_onboarding is
-    // UNIQUE(tenant_id): running the mobile + desktop projects as parallel workers
-    // would race two concurrent create/submit flows onto the one onboarding this
-    // tenant may have. Desktop is the canonical journey viewport; the create form +
-    // status view are responsive (no sidebar-click), and mobile dashboard layout is
-    // covered separately by dashboard-mobile.spec.ts.
-    test.skip(
-      testInfo.project.name !== "desktop",
-      "single-tenant onboarding journey pinned to the desktop project (UNIQUE(tenant_id) — no cross-worker race)"
-    )
+  /**
+   * `@desktop-only` — the mobile project's `grepInvert` (playwright.config.ts) stops this
+   * block being ENUMERATED there, and that is deliberate rather than a coverage gap.
+   *
+   * WHY ONE PROJECT. `vendor_onboarding` is UNIQUE(tenant_id): running the mobile and
+   * desktop projects as parallel workers would race two concurrent create/submit flows
+   * onto the one onboarding this tenant may have. Desktop is the canonical journey
+   * viewport — the create form and status view are responsive (no sidebar-click), and
+   * mobile dashboard layout is covered separately by dashboard-mobile.spec.ts.
+   *
+   * WHY A TAG AND NOT A `test.skip`. This used to pin the project at RUNTIME, which put a
+   * permanent "not applicable here" entry into the suite's skip count. A skip must mean
+   * NOBODY CHECKED THIS; it cannot also mean "not applicable here" and stay useful
+   * (playwright.config.ts:75-80, #420). The tag removes it from the count without removing
+   * it from coverage.
+   *
+   * THE SKIP-BUDGET CONFIG WAS WRONG ABOUT WHY, and correcting it is the point of this
+   * change. `scripts/gates/e2e-skip-budget.conf` declared the cause as "needs a shop for
+   * the demo tenant (DemoDataSeeder, dev profile)". Measured on nightly run 33142364550
+   * (e2e-nightly.yml, started 2026-08-28T04:43:48Z), reading that report's own per-test
+   * annotations with `jq`:
+   *
+   *   [mobile]  status=skipped  73ms    skip="single-tenant onboarding journey pinned to
+   *                                           the desktop project (UNIQUE(tenant_id) …)"
+   *   [desktop] status=passed   6746ms
+   *
+   * The desktop arm PASSES, and a 6.7-second pass drives the create form — which is only
+   * possible if the shop fixture IS present. The annotation names the project pin, not a
+   * missing seeder. So the config named a cause that was false, and this was one skip
+   * (mobile only), never two.
+   *
+   * THE NO-SHOP GUARD AT THE END OF THIS TEST IS A DIFFERENT, GENUINE SKIP and stays. It
+   * fires only when the tenant really has no selectable shop; on the measured run it never
+   * fired, because the desktop arm reached the end of the journey.
+   */
+  test("bad company number -> fix inline -> re-run checks -> honest in-review @desktop-only", async ({ page }) => {
     // QA ONB-7: no committed password default — require a real credential.
     test.skip(
       !VENDOR_PASSWORD,

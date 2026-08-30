@@ -97,7 +97,10 @@ const statusConfig: Record<
   { label: string; color: string; chartColor: string; icon: React.ComponentType<{ className?: string }> }
 > = {
   DRAFT: { label: "Draft", color: "bg-gray-500", chartColor: "#6b7280", icon: Clock },
-  PENDING: { label: "Pending", color: "bg-yellow-500", chartColor: "#eab308", icon: Clock },
+  // bg-yellow-700, not -500: white text on -500 is 1.92:1 on white — fails AA
+  // (needs 4.5:1). -700 is 4.92:1 (F3 / A11Y-1). chartColor is UNCHANGED — a
+  // pie-chart fill has no AA text requirement, only the badge text does.
+  PENDING: { label: "Pending", color: "bg-yellow-700", chartColor: "#eab308", icon: Clock },
   CONFIRMED: { label: "Confirmed", color: "bg-blue-500", chartColor: CHART_COLORS.ember, icon: CheckCircle2 },
   PREPARING: { label: "Preparing", color: "bg-amber-500", chartColor: CHART_COLORS.amber, icon: Clock },
   READY: { label: "Ready", color: "bg-green-500", chartColor: "#22c55e", icon: CheckCircle2 },
@@ -247,7 +250,16 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="space-y-8">
+    // Phase 35, Index tier: a resource index, deliberately uncapped below the
+    // dashboard band. The overview is tiered as an index rather than as a
+    // reading surface on purpose — its recent-orders table is the same
+    // six-column shape as the orders page, and showing one table at two
+    // different widths on two pages is exactly the half-shipped inconsistency
+    // this phase exists to remove. The tier adds NO width class: "fluid to the
+    // shell" is the documented pattern for data-dense lists, and the attribute
+    // is here so that being uncapped is a declaration a test can falsify
+    // rather than an absence indistinguishable from a forgotten cap.
+    <div data-width-tier="index" className="space-y-8">
       {/* Header */}
       <m.div
         initial={{ opacity: 0, y: -20 }}
@@ -292,6 +304,17 @@ export default function DashboardPage() {
             </div>
           )
         })()}
+
+      {/*
+        A11Y-6: every section below this point is a `CardTitle`, which is
+        hard-coded to render an <h3> (components/ui/card.tsx — a shared
+        primitive used across the whole app, out of scope to change here).
+        Without a real <h2> between the page's <h1> and the first of those
+        <h3>s, the outline skips a level (axe heading-order). `sr-only`
+        because this fix corrects the SEMANTIC level, not the visual size —
+        every heading below keeps the size its own className already gives it.
+      */}
+      <h2 className="sr-only">Overview</h2>
 
       {/* Stats Cards */}
       <m.div

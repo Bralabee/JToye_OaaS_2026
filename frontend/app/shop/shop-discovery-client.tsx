@@ -3,9 +3,11 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { MapPin, Search, Store, ChevronRight, Loader2, X } from "lucide-react"
+import { MapPin, Search, Store, ChevronRight, Loader2, X, AlertCircle } from "lucide-react"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { SafeImage } from "@/components/ui/safe-image"
 import publicApiClient from "@/lib/public-api-client"
+import { describeLoadError } from "@/lib/human-error"
 import {
   isRateLimitError,
   getRetryDelayMs,
@@ -234,6 +236,12 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   // never the authoritative "No shops found" empty state.
   const [rateLimited, setRateLimited] = useState(false)
   const [retriesExhausted, setRetriesExhausted] = useState(false)
+  // A11Y-8: a genuine (non-429) failure must render an error panel, never the
+  // "No kitchens found" empty state — the ELSE branch below used to
+  // `setShops([])` and stop there, which is a false claim that the
+  // marketplace has nothing when the request merely failed.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [loadErrorMessage, setLoadErrorMessage] = useState("")
   const retryAttemptRef = useRef(0)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Latest fetch fn, so the retry timer always calls the current closure without
@@ -268,6 +276,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
       // A real (possibly empty) 200 clears the busy state and resets the budget.
       setRateLimited(false)
       setRetriesExhausted(false)
+      setLoadFailed(false)
       retryAttemptRef.current = 0
     } catch (err) {
       // A NON-ANSWER CARRIES NO CLAIM. A 429 or a genuine failure is not a
@@ -290,11 +299,18 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
           setRetriesExhausted(true)
         }
       } else {
-        // Genuine failure / empty — preserve the existing empty behaviour.
+        // A11Y-8: a genuine failure is NOT "zero shops" — `shops` still goes to
+        // `[]` (there is nothing safe to keep on screen from a stale response),
+        // but the results grid renders a load-error panel instead of falling
+        // through to "No kitchens found" (see `loadFailed` below).
         setShops([])
         setTotalElements(0)
         setRateLimited(false)
         setRetriesExhausted(false)
+        setLoadFailed(true)
+        setLoadErrorMessage(
+          describeLoadError(err, "Something went wrong loading kitchens.").message
+        )
       }
     } finally {
       setLoading(false)
@@ -366,7 +382,42 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   const summary = searchSummary(interpretation, totalElements, searchQuery)
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+    /* PHASE 35 / UIX-07 — the DECLARED Marketing width tier, applied IN PLACE.
+       THIS SURFACE'S WIDTH DOES NOT CHANGE. That is the decision, not an
+       oversight, and it is the most consequential deliberate NON-change in the
+       phase, so the reasoning lives at the site rather than only in the archive.
+
+       ORCH-01 (orchestrator decision, 2026-08-29, recorded in CONTEXT.md
+       section 4b). The public directory keeps the Marketing width rather than
+       going fluid the way a dashboard resource index does. Three reasons:
+
+         - the Index tier is scoped to the DASHBOARD resources (products,
+           orders, customers, shops). A public route taking a dashboard tier
+           would be outside the declared contract;
+         - a fluid card grid would render WIDER than the storefront header rail
+           directly above it, inverting on the storefront exactly the
+           chrome-vs-content misalignment this phase is fixing on the landing
+           page;
+         - this is an SEO- and CLS-measured public, indexed route, and the
+           least-cost correct change here is none. Going fluid would turn a
+           zero-file change into a three-file one and force both to be
+           re-measured.
+
+       PROVENANCE, STATED PRECISELY. This is an ORCHESTRATOR decision taken
+       during planning. It is NOT a user decision: the owner delegated the phase
+       autonomously, which is authority to decide, and is not the owner having
+       chosen this option. The distinction matters because ORCH-01 is flagged
+       owner-visible-if-wrong and is put in front of the owner at the phase's
+       closing gate — a comment claiming the owner chose it would read to the
+       next person as settled product direction rather than as the reversible
+       planning call it is, and would quietly undermine that gate.
+
+       The sub-heading and search-input clamps below are CONTROL widths, not page
+       bands (PATTERNS 1c), and the search input is CLS-sensitive. Both untouched. */
+    <div
+      data-width-tier="marketing"
+      className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-4 sm:px-6 lg:px-8 py-6 sm:py-10`}
+    >
       {/* Hero */}
       <div className="mb-6 sm:mb-8">
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-oxblood">
@@ -474,7 +525,28 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
       )}
 
       {/* Results */}
-      {rateLimited ? (
+      {loadFailed ? (
+        // A11Y-8 (QA-council F2): a genuine fetch failure, keyed off a flag —
+        // never off `shops.length`, which is exactly how this used to read as
+        // "No kitchens found".
+        <div className="text-center py-16" role="alert" data-testid="discovery-load-error">
+          {/* text-red-700, not -400: this is a scanned SCAN_ROOTS surface
+              (contrast-literals.test.ts) — -400 is 2.77:1 on white, -700 is
+              6.47:1 on white / 6.02:1 on cream, clearing AA on both. */}
+          <AlertCircle className="mx-auto h-10 w-10 text-red-700" />
+          <h2 className="mt-4 text-base font-semibold text-oxblood">
+            Couldn&apos;t load kitchens
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">{loadErrorMessage}</p>
+          <button
+            type="button"
+            onClick={() => fetchShops()}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-5 py-2.5 text-sm font-bold text-amber-ink hover:-translate-y-0.5 active:scale-95 transition-all"
+          >
+            Try again
+          </button>
+        </div>
+      ) : rateLimited ? (
         // F-RATE (#88): busy/retrying state — NEVER the "No shops found" empty
         // state. Static copy only; the 429 body carries no useful detail.
         <div className="text-center py-16">
@@ -596,7 +668,13 @@ export function ShopDiscoveryClient(props: DiscoveryProps) {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+        /* Declares the same tier as the content it stands in for, so this
+           fallback cannot narrow or widen the page when the real grid arrives.
+           The equivalent mismatch on /shop/[slug] was a 384px jump. */
+        <div
+          data-width-tier="marketing"
+          className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-4 sm:px-6 lg:px-8 py-6 sm:py-10`}
+        >
           <div className="h-8 w-64 rounded bg-cream-100 animate-pulse" />
           <div className="mt-4 h-12 w-full max-w-xl rounded-full bg-cream-100 animate-pulse" />
           <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">

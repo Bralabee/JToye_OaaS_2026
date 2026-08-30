@@ -24,50 +24,41 @@
  *
  * The uniqueness block is asserted ACROSS routes on purpose: a single-page check
  * cannot detect "all pages share one title", which is the actual defect.
+ *
+ * RE-MEASURED 2026-08-28 (phase 34, plan 34-01) — the fail direction of this
+ * whole file, executed rather than assumed. Against a stack-free Next server
+ * (`next start -p 3105` with CORE_API_INTERNAL_URL unreachable, which is the
+ * per-PR CI condition), `PLAYWRIGHT_BASE_URL=http://localhost:3105 npx
+ * playwright test e2e/storefront-ssr-seo.spec.ts --project=desktop` exits rc=1
+ * with 13 of 17 red, opening on "the shop name must be an h1 in the served
+ * HTML — Expected: > 0, Received: 0"; the same command against the stacked
+ * :3000 exits rc=0, 17 passed. Served bytes on the two servers:
+ *
+ *   :3000 /shop 54,184 B, 5 occurrences of "Brixton Village Grill", 1 <h1
+ *   :3000 /shop/brixton-village-grill 90,951 B, 33 occurrences, 1 <h1
+ *   :3105 /shop 39,438 B, 0 occurrences, 1 <h1
+ *   :3105 /shop/brixton-village-grill 39,299 B, 0 occurrences, 0 <h1
+ *
+ * So these blocks are falsifiable and this suite is NOT covered by the
+ * stack-free CI job — it needs the live stack to mean anything. The raw-HTML
+ * helpers moved to `e2e/helpers/served-html.ts`; `e2e/ssr-coverage.spec.ts`
+ * carries the proof that a browser route stub cannot satisfy them.
  */
 
-import { test, expect, type APIRequestContext } from "@playwright/test"
+import { test, expect } from "@playwright/test"
+
+// The raw-HTML instrument lives in ONE module — `e2e/ssr-coverage.spec.ts`
+// asserts against the same functions, and two copies of "what did the server
+// actually serve" is the one thing this instrument cannot afford.
+import {
+  servedHtml,
+  countOf,
+  titleOf,
+  jsonLdNodes,
+  typesOf,
+} from "./helpers/served-html"
 
 const SHOP_SLUGS = ["brixton-village-grill", "mama-ades-kitchen"]
-
-/** The raw response body — no browser, no hydration, no waiting. */
-async function servedHtml(request: APIRequestContext, path: string): Promise<string> {
-  const res = await request.get(path)
-  expect(res.status(), `${path} should serve 200`).toBe(200)
-  return res.text()
-}
-
-function countOf(html: string, needle: string | RegExp): number {
-  const re =
-    typeof needle === "string"
-      ? new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")
-      : new RegExp(needle.source, needle.flags.includes("g") ? needle.flags : needle.flags + "g")
-  return (html.match(re) ?? []).length
-}
-
-function titleOf(html: string): string | null {
-  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/)
-  // Next escapes the apostrophe in "J'Toye" as &#x27;. Normalise so a title is
-  // compared as text rather than as an encoding.
-  return m ? m[1].replace(/&#x27;/g, "'").replace(/&amp;/g, "&").trim() : null
-}
-
-/** Every `<script type="application/ld+json">` payload, parsed. */
-function jsonLdNodes(html: string): unknown[] {
-  const blocks = [
-    ...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g),
-  ]
-  const nodes: unknown[] = []
-  for (const [, body] of blocks) {
-    const parsed: unknown = JSON.parse(body) // throws -> the block fails, which is correct
-    nodes.push(...(Array.isArray(parsed) ? parsed : [parsed]))
-  }
-  return nodes
-}
-
-function typesOf(nodes: unknown[]): string[] {
-  return nodes.map((n) => (n as { "@type"?: string })["@type"] ?? "(none)")
-}
 
 // The served bytes do not vary with viewport, so this half runs once rather than
 // being duplicated across both projects. `@desktop-only` EXCLUDES it from the

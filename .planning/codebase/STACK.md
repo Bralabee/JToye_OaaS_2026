@@ -5,7 +5,7 @@
 ## Languages
 
 **Primary:**
-- Java 21 - Core API (Spring Boot 3.5.16) — toolchain `JavaLanguageVersion` pinned in `core-java/build.gradle.kts:8-9`
+- Java 21 - Core API (Spring Boot 3.5.16) — toolchain `JavaLanguageVersion` pinned in `core-java/build.gradle.kts:12-13`
 - TypeScript 5 - Frontend (Next.js 16.3.2, React 19); `typescript` pinned in `frontend/package.json:66`
 - Go 1.26 - Edge API gateway (Gin) — `go 1.26.0` in `edge-go/go.mod:3`
 
@@ -43,16 +43,16 @@
 - Spring OAuth2 Resource Server - JWT validation against Keycloak JWKS
 - Spring AOP - Aspect-oriented programming (`@Cacheable`, tenant guards)
 - Spring Cache - Redis-backed distributed cache
-- Spring AMQP - RabbitMQ publisher/consumer for order events (`spring-boot-starter-amqp`, `core-java/build.gradle.kts:48`)
-- Spring WebSocket + STOMP - Kitchen Display System real-time messaging (`spring-boot-starter-websocket`, `core-java/build.gradle.kts:104`)
-- Spring WebFlux (`spring-boot-starter-webflux`) - Non-blocking WebClient for Claude/Ollama AI calls (`core-java/build.gradle.kts:130`)
-- Spring Statemachine 4.0.2 - Order lifecycle state machine (`core-java/build.gradle.kts:91`)
+- Spring AMQP - RabbitMQ publisher/consumer for order events (`spring-boot-starter-amqp`, `core-java/build.gradle.kts:52`)
+- Spring WebSocket + STOMP - Kitchen Display System real-time messaging (`spring-boot-starter-websocket`, `core-java/build.gradle.kts:108`)
+- Spring WebFlux (`spring-boot-starter-webflux`) - Non-blocking WebClient for Claude/Ollama AI calls (`core-java/build.gradle.kts:134`)
+- Spring Statemachine 4.0.2 - Order lifecycle state machine (`core-java/build.gradle.kts:95`)
 
 **API & Observability:**
 - Spring Actuator - `/actuator/health`, `/actuator/prometheus`
-- SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation (`core-java/build.gradle.kts:160`)
+- SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation (`core-java/build.gradle.kts:164`)
 - Micrometer Prometheus - Metrics export (`io.micrometer:micrometer-registry-prometheus`)
-- Micrometer Tracing (`micrometer-tracing-bridge-brave`) + Zipkin Reporter - Distributed tracing (`core-java/build.gradle.kts:134`)
+- Micrometer Tracing (`micrometer-tracing-bridge-brave`) + Zipkin Reporter - Distributed tracing (`core-java/build.gradle.kts:138`)
 
 **Frontend:**
 - Next.js 16.3.2 - React framework, file-based routing, standalone output
@@ -77,7 +77,7 @@
 **Testing:**
 - JUnit 5 (spring-boot-starter-test) - Java unit/integration tests
 - Spring Security Test - `@WithMockUser`, security-aware MockMvc
-- Testcontainers 1.21.4 (+ postgresql, junit-jupiter) - Dockerized integration tests, excluded by default, opt-in via `-PincludeIntegration` (`org.testcontainers:testcontainers`, `core-java/build.gradle.kts:185-186`)
+- Testcontainers 1.21.4 (+ postgresql, junit-jupiter) - Dockerized integration tests, excluded by default, opt-in via `-PincludeIntegration` (`org.testcontainers:testcontainers`, `core-java/build.gradle.kts:189-190`)
 - H2 - Lightweight in-memory JPA tests
 - Jest 29.7.0 + jest-environment-jsdom 30.3.0 - JS test runner
 - @testing-library/react 16.3.0, @testing-library/jest-dom 7.0.1, @testing-library/user-event 14.6.5
@@ -86,7 +86,7 @@
 
 **Build & Development:**
 - Spring Boot Gradle Plugin 3.5.16 + io.spring.dependency-management 1.1.7
-- Build output redirected to `build-local/` to avoid root-owned `build/` permission issues (`core-java/build.gradle.kts:15`)
+- Build output redirected to `build-local/` to avoid root-owned `build/` permission issues (`core-java/build.gradle.kts:19`)
 - Flyway core + flyway-database-postgresql - DB migrations
 - Lombok + lombok-mapstruct-binding 0.2.0 - Boilerplate reduction
 - MapStruct 1.6.3 - Compile-time DTO ↔ entity mapping
@@ -94,12 +94,12 @@
 ## Key Dependencies
 
 **Critical (Backend):**
-- PostgreSQL JDBC 42.7.13 (`core-java/build.gradle.kts:159`)
+- PostgreSQL JDBC 42.7.13 (`core-java/build.gradle.kts:163`)
 - Hibernate ORM (managed by Spring Boot BOM) + Hibernate Envers for audit history
-- AWS SDK v2 BOM 2.53.2 + `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:115-116`)
-- Stripe Java SDK 33.3.0 (`core-java/build.gradle.kts:141`)
-- OpenPDF 2.0.3 - Allergen label PDF generation (`core-java/build.gradle.kts:144`)
-- ~~JasperReports~~ — **REMOVED 2026-07-27** (`core-java/build.gradle.kts:149`). Never used (zero imports, zero `.jrxml`/`.jasper` templates) and the sole source of `commons-beanutils`; removing it cleared three Trivy image-gate HIGHs (CVE-2025-48734, CVE-2025-10492, CVE-2026-6009). PDF generation is OpenPDF.
+- AWS SDK v2 BOM 2.54.3 + `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:119-120`)
+- Stripe Java SDK 33.3.0 (`core-java/build.gradle.kts:145`)
+- OpenPDF 2.0.3 - Allergen label PDF generation (`core-java/build.gradle.kts:148`)
+- ~~JasperReports~~ — **REMOVED 2026-07-27** (`core-java/build.gradle.kts:153`). Never used (zero imports, zero `.jrxml`/`.jasper` templates) and the sole source of `commons-beanutils`; removing it cleared three Trivy image-gate HIGHs (CVE-2025-48734, CVE-2025-10492, CVE-2026-6009). PDF generation is OpenPDF.
 
 **Resilience & Rate Limiting:**
 - Resilience4j Spring Boot 3 Starter 2.4.0 - Circuit breakers for stripe/email/ai
@@ -156,7 +156,7 @@
 ## Platform Requirements
 
 **Development:**
-- Docker + Docker Compose (Docker Engine 29+ / API >= 1.40; Testcontainers env var `DOCKER_API_VERSION=1.45` in `core-java/build.gradle.kts:194`)
+- Docker + Docker Compose (Docker Engine 29+ / API >= 1.40; Testcontainers env var `DOCKER_API_VERSION=1.45` in `core-java/build.gradle.kts:198`)
 - Java 21 JDK (JDK 25 incompatible with Gradle 8.10)
 - Node.js 24+
 - Go 1.22+
@@ -178,10 +178,10 @@
 **Container/Image Versions (source of truth):**
 - Spring Boot 3.5.16 on Java 21 — `core-java/build.gradle.kts:2,9`
 - postgres:15-alpine — `docker-compose.full-stack.yml:43`
-- keycloak:24.0.5 — `docker-compose.full-stack.yml:139`
-- redis:7-alpine — `docker-compose.full-stack.yml:187`
-- rabbitmq:4.3.4-management-alpine — `docker-compose.full-stack.yml:211`
-- mailhog/mailhog:v1.0.1 — `docker-compose.full-stack.yml:689`
+- keycloak:24.0.5 — `docker-compose.full-stack.yml:145`
+- redis:7-alpine — `docker-compose.full-stack.yml:193`
+- rabbitmq:4.3.4-management-alpine — `docker-compose.full-stack.yml:217`
+- mailhog/mailhog:v1.0.1 — `docker-compose.full-stack.yml:695`
 - prom/prometheus:v2.48.0 — `infra/monitoring/docker-compose.monitoring.yml:35`
 - grafana/grafana:10.2.2 — `infra/monitoring/docker-compose.monitoring.yml:84`
 - prom/alertmanager:v0.27.0 — `infra/monitoring/docker-compose.monitoring.yml:115`

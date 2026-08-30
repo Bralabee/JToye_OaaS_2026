@@ -13,6 +13,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 
 // ---------------------------------------------------------------------------
 // THE DATASET — single source of truth. Flipdish verified from public product
@@ -217,7 +218,29 @@ export function CompetitiveTeardown() {
 
         {/* Hero */}
         <header className="border-b-4 border-oxblood bg-oxblood text-slate-50">
-          <div className="mx-auto max-w-7xl px-5 py-6 sm:px-8">
+          {/* PHASE 35 / UIX-07 — the DECLARED Marketing width tier, applied IN PLACE.
+              No band in this file changes its rendered width. This width is
+              deliberately equal to the shared public header and footer rails; it
+              was previously the stock scale token that happens to equal the same
+              number, i.e. correct by coincidence rather than by contract. The
+              class it replaces is not spelled out again — a comment satisfies a
+              grep as readily as code does.
+
+              Four band sites here — this hero rail, the sticky jump rail, the body
+              and the footer rail — and the COUNT is asserted in
+              __tests__/competitive-teardown.test.tsx, because a band left on the
+              old token renders identically today and only diverges once the tier
+              value moves.
+
+              The radar chart's min-w-0 figure and its overflow-x-auto wrapper
+              (FE-1) live INSIDE the body band and are untouched: the swap moves a
+              class on an element that already existed and adds no DOM node, so
+              nothing in the scroll-reveal or bounding-box behaviour has a new
+              element to notice. */}
+          <div
+            data-width-tier="marketing"
+            className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-5 py-6 sm:px-8`}
+          >
             <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-bold uppercase tracking-[0.16em]">
               <span className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 bg-amber-300" /> J&apos;Toye OaaS / competitive teardown
@@ -247,7 +270,10 @@ export function CompetitiveTeardown() {
           aria-label="Teardown sections"
           className="sticky top-0 z-30 border-b border-slate-200 bg-cream/95 backdrop-blur"
         >
-          <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-5 py-3 sm:px-8">
+          <div
+            data-width-tier="marketing"
+            className={`mx-auto flex ${WIDTH_TIER_CLASS.marketing} items-center gap-2 overflow-x-auto px-5 py-3 sm:px-8`}
+          >
             <span className="mr-2 shrink-0 text-xs font-bold uppercase tracking-[0.15em] text-slate-600">
               Jump
             </span>
@@ -263,7 +289,10 @@ export function CompetitiveTeardown() {
           </div>
         </nav>
 
-        <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8 sm:py-16">
+        <div
+          data-width-tier="marketing"
+          className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-5 py-12 sm:px-8 sm:py-16`}
+        >
           {/* Overview + stat tiles */}
           <section id="overview" aria-labelledby="overview-heading" className="scroll-mt-20">
             <SectionLabel number="01" label="The scoreboard" />
@@ -297,24 +326,37 @@ export function CompetitiveTeardown() {
                   J&apos;Toye spikes on UK compliance and platform.
                 </p>
               </div>
-              <figure className="border-[3px] border-oxblood bg-white p-4 shadow-[8px_8px_0_theme(colors.slate.200)]">
+              <figure className="min-w-0 border-[3px] border-oxblood bg-white p-4 shadow-[8px_8px_0_theme(colors.slate.200)]">
                 <figcaption className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
                   Category coverage radar
                 </figcaption>
-                <div
-                  role="img"
-                  aria-label="Radar chart comparing Flipdish and J'Toye average feature coverage across eight categories. Flipdish leads ordering channels, kitchen and operations, growth and retention, delivery and analytics; J'Toye leads UK compliance and platform; payments are roughly level."
-                >
-                  <ResponsiveContainer width="100%" height={360}>
-                    <RadarChart data={radarData} outerRadius="72%">
-                      <PolarGrid />
-                      <PolarAngleAxis dataKey="group" tick={{ fontSize: 11, fill: TEARDOWN_CHART.axisTick }} />
-                      <Radar name="Flipdish" dataKey="flipdish" stroke={TEARDOWN_CHART.flipdish} fill={TEARDOWN_CHART.flipdish} fillOpacity={0.28} />
-                      <Radar name="J'Toye" dataKey="jtoye" stroke={TEARDOWN_CHART.jtoye} fill={TEARDOWN_CHART.jtoye} fillOpacity={0.32} />
-                      <Legend />
-                      <Tooltip />
-                    </RadarChart>
-                  </ResponsiveContainer>
+                {/* FE-1: this `<figure>` is a CSS grid item (the `lg:grid-cols-[0.8fr_1.2fr]`
+                    row above), and a grid item's default `min-width` is `auto` — it will
+                    not shrink below its content's min-content size. Recharts' axis-tick
+                    labels and legend entries are laid out in pixel-measured SVG/HTML that
+                    does not always respect the 100%-width `ResponsiveContainer` box on a
+                    narrow viewport, which was pushing the whole document 56px wider than
+                    390px. `min-w-0` on the figure (above) removes that floor at the
+                    source; this `overflow-x-auto` wrapper is the safety net the repo's
+                    retention-table pattern also uses (components/legal/retention-table.tsx)
+                    — content is never shrunk off-screen, a local scrollbar appears only if
+                    something still does not fit. */}
+                <div className="overflow-x-auto">
+                  <div
+                    role="img"
+                    aria-label="Radar chart comparing Flipdish and J'Toye average feature coverage across eight categories. Flipdish leads ordering channels, kitchen and operations, growth and retention, delivery and analytics; J'Toye leads UK compliance and platform; payments are roughly level."
+                  >
+                    <ResponsiveContainer width="100%" height={360}>
+                      <RadarChart data={radarData} outerRadius="72%">
+                        <PolarGrid />
+                        <PolarAngleAxis dataKey="group" tick={{ fontSize: 11, fill: TEARDOWN_CHART.axisTick }} />
+                        <Radar name="Flipdish" dataKey="flipdish" stroke={TEARDOWN_CHART.flipdish} fill={TEARDOWN_CHART.flipdish} fillOpacity={0.28} />
+                        <Radar name="J'Toye" dataKey="jtoye" stroke={TEARDOWN_CHART.jtoye} fill={TEARDOWN_CHART.jtoye} fillOpacity={0.32} />
+                        <Legend />
+                        <Tooltip />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
                 {/* Accessible data-table fallback for the chart. */}
                 <table className="sr-only">
@@ -544,7 +586,10 @@ export function CompetitiveTeardown() {
         </div>
 
         <footer className="border-t-4 border-oxblood bg-oxblood px-5 py-7 text-slate-300">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 sm:px-3">
+          <div
+            data-width-tier="marketing"
+            className={`mx-auto flex ${WIDTH_TIER_CLASS.marketing} flex-wrap items-center justify-between gap-4 sm:px-3`}
+          >
             <p className="text-xs uppercase tracking-[0.14em]">J&apos;Toye OaaS / competitive teardown</p>
             <p className="text-xs uppercase tracking-[0.12em] text-slate-400">Last updated 24 July 2026</p>
           </div>

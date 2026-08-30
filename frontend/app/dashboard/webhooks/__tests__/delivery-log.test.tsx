@@ -15,6 +15,14 @@ import userEvent from "@testing-library/user-event"
 import { webcrypto } from "node:crypto"
 import WebhookDetailPage from "../[id]/page"
 import apiClient from "@/lib/api-client"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+
+/**
+ * Every width-cap utility an element declares, as tokens. A token filter, never a
+ * substring search — `classList` membership is what a browser resolves.
+ */
+const capTokens = (el: Element) =>
+  Array.from(el.classList).filter((c) => c.startsWith("max-w-"))
 
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
@@ -196,5 +204,67 @@ describe("Webhook delivery-log browser (Surface B)", () => {
       | { headers?: Record<string, string> }
       | undefined
     expect(config?.headers?.["Idempotency-Key"]).toBeTruthy()
+  })
+
+  // --- Phase 35 / UIX-08: the width tier, and the exception it records ---
+  //
+  // PATTERNS A-3 — the one case in the phase where ROUTE shape and CONTENT shape
+  // disagree. `/dashboard/webhooks/[id]` is a bracketed detail route whose body
+  // is a wide, timestamp-heavy delivery table with its own horizontal scroll
+  // region, so it takes the Index tier and NOT the reading tier its sibling
+  // bracketed routes take.
+  //
+  // This is the tier value in the phase that would survive longest if it were
+  // wrong: both tiers render plausibly here, and the mistake reads as a
+  // consistency fix. Its fail direction is armed and recorded in plan 35-04's
+  // Task 3 for exactly that reason.
+
+  it("declares the index width tier, with no cap of its own, on the delivery log's root band", async () => {
+    const { container } = render(<WebhookDetailPage />)
+    await screen.findAllByText("Delivered")
+
+    const root = container.firstElementChild as HTMLElement
+    expect(root).toHaveAttribute("data-width-tier", "index")
+    expect(capTokens(root)).toEqual([])
+
+    // Non-vacuity control: the same filter over a real cap from the vocabulary
+    // must find it, so the empty result above is about the page.
+    const probe = document.createElement("div")
+    probe.className = `mx-auto ${WIDTH_TIER_CLASS.detail}`
+    expect(capTokens(probe)).toEqual([WIDTH_TIER_CLASS.detail])
+  })
+
+  it("takes the index tier and NOT the reading tier its route shape would imply", async () => {
+    // Stated as its own case rather than folded into the one above, because
+    // "detail" is the value a reader correcting this page would reach for. If
+    // this ever reds, read the exception written at the site before changing it.
+    const { container } = render(<WebhookDetailPage />)
+    await screen.findAllByText("Delivered")
+
+    const root = container.firstElementChild as HTMLElement
+    expect(root.getAttribute("data-width-tier")).not.toBe("detail")
+    expect(root.className).not.toContain(WIDTH_TIER_CLASS.detail)
+  })
+
+  it("declares the same tier on the spinner and error branches, so no paint is undeclared", async () => {
+    // Spinner: hold the subscription fetch open.
+    mockedApiClient.get.mockImplementation((() => new Promise(() => {})) as never)
+    const loadingView = render(<WebhookDetailPage />)
+    expect(loadingView.container.querySelector(".animate-spin")).not.toBeNull()
+    expect(loadingView.container.firstElementChild).toHaveAttribute(
+      "data-width-tier",
+      "index"
+    )
+    loadingView.unmount()
+
+    // Error: the subscription fetch rejects, so the "couldn't load" card renders.
+    mockedApiClient.get.mockImplementation((() =>
+      Promise.reject(new Error("boom"))) as never)
+    const errorView = render(<WebhookDetailPage />)
+    await screen.findByText(/couldn.t load this endpoint/i)
+    expect(errorView.container.firstElementChild).toHaveAttribute(
+      "data-width-tier",
+      "index"
+    )
   })
 })

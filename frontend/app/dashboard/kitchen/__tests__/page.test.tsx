@@ -13,6 +13,24 @@
 import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react"
 import KitchenPage from "../page"
 import { useStomp } from "@/hooks/use-stomp"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+
+/**
+ * Every width-cap utility an element declares, as tokens.
+ *
+ * A token filter, never a substring search: `classList` membership is what a
+ * browser resolves, and a substring would match a breakpoint-prefixed cap, or a
+ * testid, and report a cap that is not there.
+ *
+ * The example is DESCRIBED rather than spelled, and that is load-bearing:
+ * Tailwind's scanner is lexical and this directory is inside the content globs,
+ * so a comment naming a real utility GENERATES that utility. Measured by plan
+ * 35-12's pre/post stylesheet diff, which caught this comment putting a live
+ * `@media (min-width: 640px)` rule into the shipped CSS that no element applies.
+ * Same fix as commit 34256f5c.
+ */
+const capTokens = (el: Element) =>
+  Array.from(el.classList).filter((c) => c.startsWith("max-w-"))
 
 // Mock useStomp — we want the page's render logic, not a real WS
 jest.mock("@/hooks/use-stomp", () => ({
@@ -734,5 +752,35 @@ describe("KitchenPage", () => {
     )
     expect(screen.queryByTestId("kds-other-shop-notice")).not.toBeInTheDocument()
     expect(screen.queryByTestId("kds-all-shops-notice")).not.toBeInTheDocument()
+  })
+
+  // --- Phase 35 / UIX-08: the width tier, declared rather than inherited ---
+  //
+  // PATTERNS A-6 resolved this board to the Index tier. The board has exactly ONE
+  // render branch (#536 removed the loading early-return), so the root asserted
+  // here is the only root it has.
+
+  it("declares the index width tier on the board's root band", async () => {
+    stubApi([])
+    const { container } = render(<KitchenPage />)
+    await screen.findByText(/Kitchen Display/i)
+
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
+  })
+
+  it("adds no width cap of its own to the board's root band", async () => {
+    stubApi([])
+    const { container } = render(<KitchenPage />)
+    await screen.findByText(/Kitchen Display/i)
+
+    const root = container.firstElementChild as HTMLElement
+    expect(capTokens(root)).toEqual([])
+
+    // Non-vacuity control. Without it the empty result above is a statement about
+    // the predicate, not about the board: the same filter over a real cap taken
+    // from the tier vocabulary must find it.
+    const probe = document.createElement("div")
+    probe.className = `mx-auto ${WIDTH_TIER_CLASS.detail}`
+    expect(capTokens(probe)).toEqual([WIDTH_TIER_CLASS.detail])
   })
 })

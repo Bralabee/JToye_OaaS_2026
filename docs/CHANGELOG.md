@@ -7,6 +7,128 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Review-record server backstop: merges require a review artifact (#697) — 2026-08-30
+
+- **A `review-record` commit status now posts on every PR head** (push, review,
+  comment, and `workflow_dispatch` events), decided by the vendored
+  `scripts/gates/review-record-check.sh` (verbatim from canonical dotfiles, where it
+  carries five review passes and a 53-arm selftest; the vendored run is 41/0 with 12
+  canonical-only arms skipped loudly). Success needs a review record from an
+  owner/member that is at least as new as the head commit; a head-scoped owner waive
+  (`Review-Record: WAIVED sha=<head12>`) covers exactly one head; anything
+  unevaluable fails the job with no status — fail closed.
+- **Why**: after Copilot review was retired, merges #691 and #685 landed with zero
+  review artifacts and branch protection required none. Once a live probe passes,
+  the context becomes a required status check, so the web UI merge button and every
+  CLI path obey it; CI remains required under a waive.
+
+### Dashboard error states: dashed counts and humanised toasts (#688) (#696) — 2026-08-30
+
+- **The count subtitle no longer asserts a number nothing loaded**: products, orders,
+  customers and shops render an em dash under `loadFailed` instead of "0 <things> in
+  total" beside an error panel — the smaller sibling of the false-zero FEB-1 fixed.
+- **Six raw-axios toasts routed through `describeLoadError`** (products load toast +
+  customers/shops mutation toasts), matching orders' A11Y-2 shape: RFC 7807 `detail` wins,
+  transport strings like "Request failed with status code 500" never render. `/shop`
+  swept clean and untouched.
+- Two new jest tests observed failing on the pre-fix tree before passing; browser proof
+  both directions against the rebuilt container (stub-500 arm + control). Metrics
+  3492 → 3494 with all three gated prose sites reconciled.
+
+### A fresh volume provisions its own migrator credential (#684) (#694) — 2026-08-30
+
+- **`00-create-db.sql` now creates `jtoye_app` — the owner/migrator since the SEC-04/#552
+  split — with `DB_MIGRATION_PASSWORD`**, falling back to `DB_PASSWORD` when unset or
+  empty, closing the 28P01 crash-loop (zero migrations) a fresh volume hit whenever the
+  two credentials differed. Compose passes the variable into the postgres init
+  environment; the nightly's must-be-equal workaround comment is corrected — equality is
+  now a simplification that exercises the fallback path, while the local differing `.env`
+  exercises the split path.
+- The first verification instrument was vacuous — in-container loopback is `trust`, so a
+  garbage password authenticated — and was rebuilt onto the network/scram path with a
+  garbage-password control before any result was trusted.
+- Close condition run for real: `down -v` with digest-confirmed differing credentials
+  booted unattended to healthy (RestartCount 0), Flyway V64 64/64, role credentials
+  proven by content on the fresh cluster, 1,748,230 postcodes imported, E2E smoke 45/45.
+
+### E2E seeder resets a terminal demo-tenant onboarding — ONBD-05 runs instead of skipping (#686) (#693) — 2026-08-30
+
+- **The undeclared-skip cause behind the skip-budget failure is now provisioned by script,
+  not by hand**: `scripts/seed-e2e-fixtures.sh` deletes the demo tenant's
+  `vendor_onboarding` row + gate rows when the status is LIVE/SUSPENDED/REJECTED/WITHDRAWN
+  (scoped to the vendor tenant only; `Shop.published` and Envers history untouched), and
+  its end-of-run verification asks the spec's own skip predicate — 0 terminal rows.
+- `RESET_ONBOARDING=0` preserves a terminal state deliberately (e.g. an owner-gate
+  reviewer inspecting LIVE), but verification still fails on it.
+- All arms observed failing: the spec skips on a WITHDRAWN row, the opt-out exits 1 with
+  the row proven present, and after the reset the full blocked-onboarding journey passes
+  in 6.1s. `check-e2e-skip-budget.sh` re-earned VOID → PASS on a fresh full-suite run:
+  323 total / 317 passed / 6 skipped / 0 failed, all declared, budget 6.
+- The gate's dark-lane aspect stays with #683: the nightly's escalation step already
+  covers the skip-budget step, and the lane's red was the #687 flake fixed in PR #692.
+
+### Flaky marketing E2E: network-idle waits replaced with deterministic anchors (#687) (#692) — 2026-08-30
+
+- **All 7 network-idle waits removed** from `marketing-motion.spec.ts` and
+  `csp-no-violations.spec.ts` — every replacement is a predicate on page state (attribute
+  attached / element visible / load event), never an idle heuristic. The `/ degrades to
+  fully-visible static content` test failed ~1 in 3 under retries=0 because the idle wait raced
+  hydration, making "no scene was built" indistinguishable from "the enhancer has not run yet".
+- **New inert both-branches `data-motion-decided="scene|static"` marker** stamped by both
+  marketing motion enhancers (`hero-scene.tsx`, `operator-entrance-scene.tsx`), giving absence
+  assertions a deterministic anchor; no stylesheet, logic, or Tailwind class reads it, and jsdom
+  suites are unaffected by construction.
+- **All three break arms observed failing before the clean pass** (bogus anchor, flipped absence
+  expectation, CSP window with a corrected injection vector — the planned `createElement` vector
+  is allowed by `'strict-dynamic'` by design and was proven vacuous). Clean pass 18/18 both
+  projects against a freshly rebuilt compose frontend; mobile absence tests settle in ~800ms
+  instead of timing out at 60s.
+- No `test()` block added or removed (`docs/metrics.json` untouched), no retries added,
+  `playwright.config.ts` untouched. The suite's specDigest changes, so stored skip-budget
+  reports predating this branch are VOID until the next full-suite run (#686 tracks the CI lane).
+
+### Phase 34: the test suite stops reporting on surfaces it does not exercise (#682) — 2026-08-29
+
+- **Rendering + Test Truthfulness shipped whole**: 10 plans / 27 tasks in 5 waves, zero new
+  packages, goal-backward verification passed 5/5 with every criterion independently re-executed.
+- **Coverage that could not lie before now cannot lie quietly**: a default-deny SSR-route manifest
+  gate over all 38 app routes with a raw-served-HTML instrument a browser stub provably cannot
+  satisfy; Go, Jest and aggregate-JaCoCo coverage floors (the unit-only Java figure is 25 points
+  below the aggregate, and a plausible unit-only report is refused as VOID); the E2E skip ceiling
+  measured down to 6 and re-earned on a freshly seeded stack at 297 total / 291 passed / 0 failed.
+- **All four `#99 follow-up` setState-in-effect suppressions removed with real fixes** — shared
+  theme store, customer-session external store, render-time OAuth error — plus a genuine security
+  fix found en route: StrictMode double-exchanged the one-time OAuth code; now ref-guarded.
+- **Three of the phase's own planned verifications were caught being vacuous and hardened by
+  running the fail direction first**: the mobile-viewport overflow yardstick (emulation widens
+  `innerWidth` to fit an 825px overflow), the skip-budget parser arm, and `go tool cover`'s rc=0
+  on an empty profile. The phase practised what it shipped.
+- **Found along the way**: a fresh-volume provisioning defect (D-34-10-08, V64's class — the
+  SEC-04 credential split leaves `jtoye_app` created with the wrong password so a fresh volume
+  crash-loops with zero migrations applied; environment unblocked, code fix recorded), and
+  `check-gate-enforcement.sh` counting workflow comments as wiring.
+- Counts: `docs/metrics.json` 3188 → 3237 (jest 1272/124, playwright 120/25), every gated prose
+  site reconciled; all 40 gates green at closeout.
+
+### The frontend image stopped building the moment next 16.3.x landed, and only the container could see it (#681) — 2026-08-28
+
+- **#679 widened `next build`'s type-check to the whole tsconfig program**, and every repo
+  checkout stayed green — PR checks, local builds, bare `tsc` all rc=0. The one context that
+  broke was the Docker image build: the compose build context is `./frontend`, and
+  `retention-table.a11y.test.tsx` imports the repo-root `docs/retention-manifest.json`, which
+  cannot exist inside that context. TS2307, rc=1, caught by the post-merge runtime-parity
+  re-sync — a defect class no PR gate could have seen, because every CI job runs in a full
+  checkout where the import resolves.
+- **The build scope is narrowed back to shipped code; the accidental coverage gain is kept.**
+  `next build` now checks via `tsconfig.build.json` (tests/e2e excluded), and a new bare
+  `tsc --noEmit` step in Run Tests becomes the ONLY gate type-checking the jest test files —
+  possible at all because jest-dom 7.x fixed the ~366 matcher-type errors that used to make a
+  bare tsc permanently red; the stale ci-cd.yaml comment recording that figure is corrected.
+- **Both directions proven**: the image build's rc=1 is on record pre-fix and rc=0 post-fix;
+  the new tsc step went rc=2 on a planted test-file error while `npm run build` stayed rc=0
+  with that same error present — the split behaves exactly as designed. Restore verified by
+  blob hash, closing arm clean.
+
 ### The Trivy daily-DB time-bomb fired again, and redded three main pipelines in one afternoon (#673) — 2026-08-28
 
 - **CVE-2026-14456** (OpenSSL QUIC-server DoS) landed in Trivy's daily vulnerability DB and the

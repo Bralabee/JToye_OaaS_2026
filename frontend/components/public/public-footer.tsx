@@ -2,6 +2,8 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { cn } from "@/lib/utils"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useCustomerSession } from "@/hooks/use-customer-session"
 
 /**
@@ -80,7 +82,27 @@ export function PublicFooter() {
 
   return (
     <footer className="bg-oxblood text-cream">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
+      {/* THE FOOTER RAIL — the other half of the pair.
+
+          Deliberately EQUAL to the Marketing content tier, and therefore equal
+          to the public header rail and to the landing page's four content
+          bands. All three move together or not at all; editing one alone
+          silently recreates the misalignment phase 35 exists to close (the
+          landing content used to sit 128px inside this chrome — PATTERNS F-2).
+
+          The rendered width does not change here: the Marketing tier is 1280px,
+          exactly what the stock token it replaces produced. Only the
+          DECLARATION is new, and the declaration is the point — it is what a
+          test and a browser can read. ORCH-04 (orchestrator decision,
+          2026-08-29), CONTEXT.md section 4b.
+
+          Note this footer is shared chrome: app/shop/layout.tsx mounts it over
+          the whole /shop/** subtree, so the tier declared here is the tier
+          every public route's footer declares. */}
+      <div
+        data-width-tier="marketing"
+        className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8 py-12")}
+      >
         {/* A FIXED track count per breakpoint, never one derived from session
             state. Collapsing the tracks when the operator column hides was
             tried first and looked tidier in a static screenshot, but the
