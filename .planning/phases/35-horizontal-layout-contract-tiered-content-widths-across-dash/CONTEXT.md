@@ -196,7 +196,14 @@ because an earlier draft of these plans attributed orchestrator choices to the o
 
 | Question | Owner decision | Consequence |
 |---|---|---|
-| Detail tier narrows live surfaces (1120→1100 at 1440; 1600→1100 at 1920/2560) | **Accepted 1100px** | The peer-matched reading column stands (Linear 1136, Square 1016, Lightspeed 1100). The displaced-goods ledger in `35-05-SUMMARY.md` is the accepted cost, not an oversight. |
+| Detail tier narrows live surfaces (**1120→1100 at 1440; 1336→1100 at 1920/2560**) | **Accepted 1100px** | The peer-matched reading column stands (Linear 1136, Square 1016, Lightspeed 1100). The displaced-goods ledger in `35-05-SUMMARY.md` is the accepted cost, not an oversight. |
+
+> **Correction, 2026-08-30 — this row first said `1600→1100` and overstated the narrowing by 264px.** Caught by 35-13's verification sweep against the plan's own measurement, and corrected here rather than left standing. The three numbers are distinct and easy to conflate:
+> - **1336** — what order detail ACTUALLY rendered at 1920 before this phase (the 1400 `container` cap minus 64px `sm:p-8`). This is the real "before".
+> - **1600** — a **counterfactual**: what it WOULD have rendered had the container been retired and the Detail tier never applied. It is the jump 35-05's ARM C prevents, not a width any user ever saw.
+> - **1100** — the delivered Detail tier.
+>
+> So the narrowing the owner accepted is **−236px at 1920**, not −500. **The decision does not change**: the gate presented the plan's measured figure, so the owner accepted on the correct number and only this summary row was wrong. Recorded because a phase whose whole subject is measured widths cannot carry a wrong width in its own decision record.
 | ORCH-01: public `/shop` stays Marketing 1280 rather than fluid | **Confirmed 1280px** | The one owner-visible judgement in the phase is now ratified rather than assumed. No SEO/CLS re-measurement needed on a public indexed surface. |
 | Close-out | **Run 35-13, then open a PR** | Merge left to the owner after CI. |
 
