@@ -330,7 +330,8 @@ If the owner has not cleared those, the highest-value available work is:
    - **#652 CLOSED**, **#655 CLOSED** — both merged 2026-08-25 after #664 landed, in that order
      (`f975f83b`, `a6eecf70`). See "What shipped 2026-08-25" above for how #655 was verified;
      the short version is that its 14 green PR checks were incapable of testing it.
-   - **#654 OPEN** — framer-motion 12→13, a MAJOR. Run Tests and Frontend E2E pass; the remaining
+   - **#654 MERGED** (2026-08-30, `966d987b`) — framer-motion 12→13, a MAJOR; the owner call was
+     made and it landed via the merge queue. Historical note of its pre-merge state: the remaining
      failure is the same prose-pin class (4 sites). Given #605/#606 were closed for being majors,
      this is an owner call, not a mechanical one.
    - **#651 CLOSED** — closed unmerged by dependabot itself on 2026-08-28T15:25:33Z, with the
@@ -341,8 +342,8 @@ If the owner has not cleared those, the highest-value available work is:
      and the prose version pins dependabot structurally cannot edit, the same class that took #604
      to #638 and #650 to #665. Superseded by branch `feature/deps-frontend-651-supersede`, which
      lands the same 10-package bump with both classes fixed.
-2. **#654 is the last dependabot PR needing real judgement** rather than a rebase — see item 1 for
-   its state. #651 is no longer in that set; its disposition changed on 2026-08-28 and is recorded
+2. **#654 was the last dependabot PR needing real judgement** — MERGED 2026-08-30 (`966d987b`); see
+   item 1. #651 is no longer in that set; its disposition changed on 2026-08-28 and is recorded
    above. Everything else in that batch is closed.
 3. Then Phase 30 (The Money Path), Phase 32 or Phase 34.
 
