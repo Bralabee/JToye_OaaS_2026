@@ -10,7 +10,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 ### Constraints
 
 - **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16, Go 1.26, PostgreSQL 15
-- **Java version**: JDK 21 (JDK 25 incompatible with Gradle 8.10)
+- **Java version**: JDK 25 (Temurin) on Gradle 9.7.1 — JDK 25 requires Gradle ≥ 9.1 (migrated from JDK 21/Gradle 8.10.2, 2026-08-31)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
 - **Testing**: All new code requires tests — project standard is 3494 logical invocations passing (1730 Java `@Test` methods across 275 files + 1505 Jest `it/test` blocks across 141 files + 84 top-level Go `Test*` funcs across 11 files + 127 Playwright `test()` blocks across 27 specs + 48 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `AGENTS.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
@@ -21,17 +21,17 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 ## Technology Stack
 
 ## Languages
-- Java 21 - Core API (Spring Boot 3.5.16)
+- Java 25 - Core API (Spring Boot 3.5.16)
 - TypeScript 5 - Frontend (Next.js 16.3.2, React 19)
 - Go 1.26 - Edge API gateway (Gin)
 - SQL (PostgreSQL) - Database migrations via Flyway
 - YAML - Configuration management
 ## Runtime
-- JVM (Java 21) - Core API execution
+- JVM (Java 25) - Core API execution
 - Node.js 24+ - Frontend build and runtime
 - Go 1.26 runtime - Edge gateway
 - PostgreSQL 15 - Database
-- Gradle 8.10+ (Kotlin DSL) - Java/Spring Boot build
+- Gradle 9.7+ (Kotlin DSL) - Java/Spring Boot build
 - npm - Node.js dependencies
 - go mod - Go dependencies
 - Gradle: Present (`gradle-wrapper` properties)
@@ -114,11 +114,11 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Port: 8080 (customizable via PORT env var)
 ## Platform Requirements
 - Docker & Docker Compose v2+ — the `docker compose` subcommand (for local stack)
-- Java 21 JDK
+- Java 25 JDK
 - Node.js 24+
 - Go 1.26+
 - Git
-- Gradle 8.10+ (included via wrapper)
+- Gradle 9.7+ (included via wrapper)
 - npm (included in Node.js)
 - Docker (for building multi-stage images)
 - Kubernetes (recommended) - See `k8s/` directory for manifests
@@ -129,7 +129,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Keycloak 24.0+ (external identity provider)
 - AWS S3 (or S3-compatible storage like MinIO)
 - SMTP server (SendGrid, AWS SES, etc.)
-- Spring Boot: 3.5.16 (Java 21)
+- Spring Boot: 3.5.16 (Java 25)
 - PostgreSQL: 15-alpine
 - Keycloak: 24.0.5
 - Redis: 7-alpine

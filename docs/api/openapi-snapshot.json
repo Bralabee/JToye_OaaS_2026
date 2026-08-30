@@ -255,65 +255,6 @@
                         },
                         "type" : "array"
                       },
-                      "classLoader" : {
-                        "properties" : {
-                          "defaultAssertionStatus" : {
-                            "type" : "boolean",
-                            "writeOnly" : true
-                          },
-                          "definedPackages" : {
-                            "items" : {
-                              "properties" : {
-                                "annotations" : {
-                                  "items" : {
-                                    "type" : "object"
-                                  },
-                                  "type" : "array"
-                                },
-                                "declaredAnnotations" : {
-                                  "items" : {
-                                    "type" : "object"
-                                  },
-                                  "type" : "array"
-                                },
-                                "implementationTitle" : {
-                                  "type" : "string"
-                                },
-                                "implementationVendor" : {
-                                  "type" : "string"
-                                },
-                                "implementationVersion" : {
-                                  "type" : "string"
-                                },
-                                "name" : {
-                                  "type" : "string"
-                                },
-                                "sealed" : {
-                                  "type" : "boolean"
-                                },
-                                "specificationTitle" : {
-                                  "type" : "string"
-                                },
-                                "specificationVendor" : {
-                                  "type" : "string"
-                                },
-                                "specificationVersion" : {
-                                  "type" : "string"
-                                }
-                              },
-                              "type" : "object"
-                            },
-                            "type" : "array"
-                          },
-                          "name" : {
-                            "type" : "string"
-                          },
-                          "registeredAsParallelCapable" : {
-                            "type" : "boolean"
-                          }
-                        },
-                        "type" : "object"
-                      },
                       "declaredAnnotations" : {
                         "items" : {
                           "type" : "object"
@@ -366,65 +307,6 @@
                       "type" : "object"
                     },
                     "type" : "array"
-                  },
-                  "classLoader" : {
-                    "properties" : {
-                      "defaultAssertionStatus" : {
-                        "type" : "boolean",
-                        "writeOnly" : true
-                      },
-                      "definedPackages" : {
-                        "items" : {
-                          "properties" : {
-                            "annotations" : {
-                              "items" : {
-                                "type" : "object"
-                              },
-                              "type" : "array"
-                            },
-                            "declaredAnnotations" : {
-                              "items" : {
-                                "type" : "object"
-                              },
-                              "type" : "array"
-                            },
-                            "implementationTitle" : {
-                              "type" : "string"
-                            },
-                            "implementationVendor" : {
-                              "type" : "string"
-                            },
-                            "implementationVersion" : {
-                              "type" : "string"
-                            },
-                            "name" : {
-                              "type" : "string"
-                            },
-                            "sealed" : {
-                              "type" : "boolean"
-                            },
-                            "specificationTitle" : {
-                              "type" : "string"
-                            },
-                            "specificationVendor" : {
-                              "type" : "string"
-                            },
-                            "specificationVersion" : {
-                              "type" : "string"
-                            }
-                          },
-                          "type" : "object"
-                        },
-                        "type" : "array"
-                      },
-                      "name" : {
-                        "type" : "string"
-                      },
-                      "registeredAsParallelCapable" : {
-                        "type" : "boolean"
-                      }
-                    },
-                    "type" : "object"
                   },
                   "declaredAnnotations" : {
                     "items" : {
@@ -3619,6 +3501,53 @@
               },
               "registeredAsParallelCapable" : {
                 "type" : "boolean"
+              },
+              "unnamedModule" : {
+                "properties" : {
+                  "annotations" : {
+                    "items" : {
+                      "type" : "object"
+                    },
+                    "type" : "array"
+                  },
+                  "declaredAnnotations" : {
+                    "items" : {
+                      "type" : "object"
+                    },
+                    "type" : "array"
+                  },
+                  "descriptor" : {
+                    "properties" : {
+                      "automatic" : {
+                        "type" : "boolean"
+                      },
+                      "open" : {
+                        "type" : "boolean"
+                      }
+                    },
+                    "type" : "object"
+                  },
+                  "layer" : {
+                    "type" : "object"
+                  },
+                  "name" : {
+                    "type" : "string"
+                  },
+                  "named" : {
+                    "type" : "boolean"
+                  },
+                  "nativeAccessEnabled" : {
+                    "type" : "boolean"
+                  },
+                  "packages" : {
+                    "items" : {
+                      "type" : "string"
+                    },
+                    "type" : "array",
+                    "uniqueItems" : true
+                  }
+                },
+                "type" : "object"
               }
             },
             "type" : "object"

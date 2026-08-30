@@ -2,7 +2,7 @@
 # Optimized for production: small size, security, fast startup
 
 # Stage 1: Build stage
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM eclipse-temurin:25-jdk-alpine AS builder
 
 WORKDIR /app
 
@@ -24,7 +24,7 @@ COPY core-java/src core-java/src
 RUN ./gradlew :core-java:bootJar -x test --no-daemon
 
 # Stage 2: Runtime stage
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 
 # Install curl for health checks, plus musl-native cwebp/dwebp/gif2webp for the
 # Phase 24 WebP transcode step (IMG-02). scrimage-webp's BUNDLED cwebp binaries
@@ -33,9 +33,12 @@ FROM eclipse-temurin:21-jre-alpine
 # -Dcom.sksamuel.scrimage.webp.binary.dir=/usr/bin flag in JAVA_OPTS below.
 #
 # The `apk upgrade` of libexpat + p11-kit is a security fix, not a convenience.
-# eclipse-temurin:21-jre-alpine ships Alpine 3.23 packages predating their fixes,
-# which the CI Trivy image gate (.github/workflows/ci-cd.yaml, fail on fixable
-# CRITICAL/HIGH) rejects:
+# MEASURED ON THE FORMER 21-jre-alpine BASE (kept for the audit trail; on the
+# current 25-jre-alpine base each named upgrade is a no-op wherever the shipped
+# package is already >= the fixed version — apk upgrade never downgrades): that
+# base shipped Alpine 3.23 packages predating their fixes, which the CI Trivy
+# image gate (.github/workflows/ci-cd.yaml, fail on fixable CRITICAL/HIGH)
+# rejects:
 #   libexpat      2.8.1-r0  -> 2.8.2-r0   CVE-2026-56131, CVE-2026-56407, CVE-2026-56408
 #   p11-kit(-trust) 0.25.5-r2 -> 0.26.2-r0  CVE-2026-2100
 # Both fixed versions were confirmed available in the Alpine 3.23 `main` repo

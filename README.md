@@ -18,7 +18,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 | Layer | Technology |
 |-------|------------|
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS, NextAuth.js v5 |
-| **Backend** | Spring Boot 3, Java 21, MapStruct 1.6.3, Redis Caching, Spring State Machine |
+| **Backend** | Spring Boot 3, Java 25, MapStruct 1.6.3, Redis Caching, Spring State Machine |
 | **Edge** | Go 1.26, Gin, Circuit Breakers, Rate Limiting |
 | **Database** | PostgreSQL 15 with Row-Level Security (RLS) |
 | **Auth** | Keycloak 24 (OAuth2/OIDC) |
@@ -297,7 +297,7 @@ Database schema version: **V64** (Flyway).
 
 ### Prerequisites
 
-- **Java 21** (Eclipse Temurin recommended). JDK 25 is incompatible with Gradle 8.10.
+- **Java 25** (Eclipse Temurin recommended); the bundled Gradle 9.7.1 wrapper is required (JDK 25 needs Gradle ≥ 9.1).
 - **Node.js 24+** (with npm)
 - **Go 1.26+** (`edge-go/go.mod` declares `go 1.26.0`)
 - **Docker** with **Compose v2** (`docker compose`, not the standalone `docker-compose` v1 binary)
