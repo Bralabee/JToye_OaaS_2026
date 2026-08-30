@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.3
 milestone_name: vendor-ops-ai-interleaved
 status: executing
-stopped_at: Phase 35 plan 12 complete (runtime parity proven by content after the delivered container was measured serving the pre-phase stylesheet; the filtered mobile CSS diff with a two-directional control; the pre-change arm 21/21 RED and 21/21 GREEN; T-35-13 and T-35-15 run rather than reasoned)
-last_updated: "2026-08-29T23:20:00.000Z"
+stopped_at: Phase 35 COMPLETE 13/13 (owner gate taken 2026-08-30, CONTEXT.md §7 — Detail 1100 accepted, ORCH-01 /shop 1280 confirmed; approvals tier undecidable on an empty queue, filed #690; merged as PR #691)
+last_updated: "2026-08-30T15:25:00.000Z"
 last_activity: 2026-08-30
 progress:
   total_phases: 14
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 119
-  completed_plans: 118
-  percent: 98
+  completed_plans: 119
+  percent: 100
 ---
 
 # Project State
@@ -21,12 +21,32 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 35 — horizontal-layout-contract
+**Current focus:** between phases — Phase 35 complete (PR #691); next is an owner call: unblock Phase 29 (staging DNS + operator secrets), or plan Phase 30/32, or decide #690
 
 ## Current Position
 
-Phase: 35 (horizontal-layout-contract) — IN PROGRESS, 12 of 13 plans complete
-Plan: 13 of 13 (next — 35-13, the owner gate; it is a blocking `checkpoint:human-verify`)
+Phase: 35 (horizontal-layout-contract) — **COMPLETE, 13 of 13**, merged as **PR #691** (2026-08-30 06:01 UTC)
+Next: no phase in progress. Phase 29 remains PAUSED at 9/16 on two owner actions (staging DNS + operator secrets, body on branch `phase-29-research`); Phases 30/32 unplanned. Open decision from 35-13: the approvals-queue tier (#690), now decidable — the queue renders a real MANUAL_REVIEW application since the 2026-08-30 fresh-volume cycle.
+
+> **PERCENT PROVENANCE (2026-08-30): 100 means "of written plans", not "of the milestone".**
+> Counters re-measured from disk per the 35-11 rule: `git ls-files` reports **119** `*-PLAN.md`
+> and **119** `*-SUMMARY.md` (35-13's SUMMARY shipped inside PR #691). Three phases of the
+> fourteen carry no plans on this branch (29 is paused with its body on `phase-29-research`;
+> 30 and 32 are unplanned), so the milestone itself is NOT done. Hand-edited, as always —
+> `state.update-progress` and `state.record-session` both corrupt `stopped_at`/`last_activity`
+> (recorded above) and were not run.
+
+> **35-13 COMPLETE (2026-08-30) — the owner gate, taken and verified.** The three owner
+> decisions are in `CONTEXT.md` §7: the Detail tier's 1100px measure ACCEPTED (narrowing
+> 1120→1100 at 1440, 1336→1100 at 1920/2560 — a "1600→1100" row overstated it by 264px and
+> was corrected in place), ORCH-01 `/shop` at 1280 CONFIRMED, close-out = run 35-13 then PR.
+> The verification sweep measured the 1440 must-not-move claim per tier (Shell/Index unmoved
+> at 1184, Detail moved by exactly the accepted amount), found the gate's own step 3 described
+> charts on a page that renders none (the real `/dashboard` charts measured ~3:1, fine), and
+> measured both by-eye left-hugging candidates to N/A (VAT grid: 4 declared columns, seed fills
+> 1; status strip: closed six-pill stepper, ink constant 888px). The third resume-signal
+> question — approvals queue Index-vs-Detail — was UNDECIDABLE on an empty queue and is #690.
+> Gate sweep 40/41 rc=0 (the rc=1 was #686, since CLOSED via PR #693).
 
 > **35-12 closed the phase's runtime-parity debt, and the debt was real.** The delivered Compose
 > frontend was serving the PRE-PHASE stylesheet — zero tier attributes on `/` and
