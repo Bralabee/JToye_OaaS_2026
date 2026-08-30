@@ -55,6 +55,27 @@
 #
 #   kind      json   read <file> as JSON; each rule's <key> is a top-level field
 #             regex  read one value from <file> using <extractor>; rules pass key "-"
+#             count  the value IS the number of LINES in <file> matching <extractor>;
+#                    rules pass key "-". Shape is always int.
+#
+#             WHY count EXISTS (added 2026-08-25). Every number this repo's own docs
+#             got wrong was a COUNT of something in the tree — arms in a selftest,
+#             entries in an array, numbered checks in a hook — and `regex` cannot
+#             express one: it reads the FIRST match and stops. So those numbers were
+#             unbindable, and each was re-audited by eye every session until it drifted.
+#             Measured the day this was added: "the five SYMLINKED shell/git files"
+#             (six since 2026-08-18), "6-check local gate" (seven since PR #129),
+#             "hermetic 27-arm proof" (the suite prints 55).
+#
+#             It counts matching LINES, not occurrences — two matches on one line count
+#             once. Pick an anchored extractor (`^arm `) so the two cannot differ.
+#             ZERO matches is a VOID, never the value 0: a count of zero is far more
+#             often a wrong extractor than a real answer, and a gate that reports 0
+#             confidently is the vacuous-check failure this engine exists to distrust.
+#
+#             A count whose truth needs the thing RUN (a suite whose arms sit in loops,
+#             so call-sites != executed arms) is not a count source. Do not bind those;
+#             quote them as a dated observation of a specific run instead.
 #   shape     int    value must be a plain integer
 #             semver value must be X.Y.Z
 #             any    value must merely be non-empty
@@ -89,7 +110,14 @@
 # only passing is exactly the thing this engine exists to distrust.
 set -uo pipefail
 
-VERSION="1.0.0"   # bump on any behaviour change; install.sh stamps it into vendored copies
+VERSION="1.1.1"   # bump on any behaviour change; install.sh stamps it into vendored copies
+#                  1.1.1 (2026-08-25): a pattern beginning with `-` was unwritable —
+#                  grep parsed it as options, VOIDed, and the rule could never be used.
+#                  1.1.0 (2026-08-25): kind=count. The bump matters for a reason the
+#                  drift report showed on the very next push: with both sides still at
+#                  1.0.0, --check-all printed "DRIFT (vendored v1.0.0, canonical v1.0.0)",
+#                  which reads like a false alarm. The hash does the detecting; the
+#                  version is what makes the report legible.
 
 MANIFEST=""
 ROOT=""
@@ -188,7 +216,19 @@ while IFS= read -r raw || [ -n "$raw" ]; do
 			if [ -z "$extract" ]; then
 				void "source '$name': kind=regex needs an extractor pattern"
 			else
-				v=$(grep -ohP "$extract" "$sfile" 2>/dev/null | head -1); grc=$?
+				# `-e` and `--` are load-bearing, not style. Without them a pattern or
+				# filename that begins with `-` is parsed as an option bundle: grep
+				# exits 2, the branch below reports "grep -P errored", and the rule is
+				# unwritable — it fails CLOSED, which is why this stayed hidden. A
+				# leading `-` is ordinary in real claims (a negative number, a CLI flag
+				# quoted in a doc, `--version` output).
+				#
+				# The rc is captured off grep itself rather than through `| head -1`.
+				# `set -o pipefail` above happens to make the pipeline's rc grep's, so
+				# the old form worked — but only by depending on an option set far away
+				# from here. Relax pipefail and the check silently becomes dead code.
+				v=$(grep -ohP -e "$extract" -- "$sfile" 2>/dev/null); grc=$?
+				v=$(printf '%s\n' "$v" | head -1)
 				if [ "$grc" -gt 1 ]; then
 					void "source '$name': grep -P errored (rc=$grc) on extractor: $extract"
 				elif [ -z "$v" ]; then
@@ -200,7 +240,27 @@ while IFS= read -r raw || [ -n "$raw" ]; do
 				fi
 			fi
 			;;
-		*) void "source '$name': unknown kind '$skind' (expected json or regex)" ;;
+		count)
+			if [ -z "$extract" ]; then
+				void "source '$name': kind=count needs an extractor pattern"
+			else
+				# grep -c exits 1 on zero matches and >1 on a bad pattern. Both are
+				# non-zero, so the rc is read BEFORE deciding — a bare `|| void` here
+				# would report an uncompilable PCRE as "matched nothing", which is the
+				# wrong reason and sends the reader to the wrong file.
+				v=$(grep -cP -e "$extract" -- "$sfile" 2>/dev/null); grc=$?
+				if [ "$grc" -gt 1 ]; then
+					void "source '$name': grep -P errored (rc=$grc) on extractor: $extract"
+				elif [ -z "$v" ] || [ "$v" = "0" ]; then
+					void "source '$name': extractor matched no line in $sfile (a count of 0 is treated as a broken extractor, never as the value)"
+				elif ! shape_ok "$v" int; then
+					void "source '$name': count '$v' is not an integer"
+				else
+					value="$v"
+				fi
+			fi
+			;;
+		*) void "source '$name': unknown kind '$skind' (expected json, regex or count)" ;;
 	esac
 
 	SRC_NAMES+=("$name"); SRC_KINDS+=("$skind"); SRC_FILES+=("$sfile")
@@ -289,7 +349,9 @@ while IFS= read -r raw || [ -n "$raw" ]; do
 			[ "$found" = "__ABSENT__" ] && found=""
 			;;
 		*)
-			found=$(grep -ohP "$pat" "$doc" 2>/dev/null)
+			# -e / -- for the same reason as the source extractor above: a claim whose
+			# pattern legitimately starts with `-` must be expressible.
+			found=$(grep -ohP -e "$pat" -- "$doc" 2>/dev/null)
 			grc=$?
 			if [ "$grc" -gt 1 ]; then
 				void "$doc [$label]: grep -P errored (rc=$grc) on pattern: $pat"
