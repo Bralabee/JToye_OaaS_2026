@@ -43,6 +43,8 @@
 #   PROMO_DAYS      default 30                 how far ahead the promo window runs
 #   CLEAN_RESIDUE   default 0                  1 = delete cross-tenant rows (see below)
 #   SKIP_MEDIA      default 0                  1 = do not run seed-media-review-fixtures.sh
+#   RESET_ONBOARDING default 1                 0 = preserve a terminal demo-tenant
+#                                              onboarding (verification still fails on it)
 #
 # EXIT CODES — uniform with this repo's other scripts
 #   0 = every fixture is present and in the asserted state
@@ -56,6 +58,7 @@ PROMO_SHOP_SLUG="${PROMO_SHOP_SLUG:-mama-ades-kitchen}"
 PROMO_DAYS="${PROMO_DAYS:-30}"
 CLEAN_RESIDUE="${CLEAN_RESIDUE:-0}"
 SKIP_MEDIA="${SKIP_MEDIA:-0}"
+RESET_ONBOARDING="${RESET_ONBOARDING:-1}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$REPO_ROOT/.env"
@@ -160,7 +163,53 @@ SQL
 )
 psql_run "$promo_sql" || void "promotion/announcement seed failed"
 
-# --- 3. Optional: cross-tenant residue ---------------------------------------------
+# --- 3. Demo-tenant onboarding reset (#686) ----------------------------------------
+# onboarding-blocked-flow.spec.ts (Phase 21 ONBD-05) deliberately SKIPS when this
+# tenant's vendor_onboarding is LIVE or terminal, to avoid mutating a live demo — and
+# that skip is UNDECLARED in scripts/gates/e2e-skip-budget.conf, so the suite fails the
+# skip-budget gate the moment anyone drives the demo tenant to LIVE (the 35-13 owner
+# gate invites exactly that: the reviewer resolves the parked FHRS gate by hand).
+# On 2026-08-30 the fix was a MANUAL reset nobody scripted — the "provisioning only a
+# human can perform" anti-pattern this repo already paid for once (V64/#647). This
+# section is that reset, scripted and idempotent.
+#
+# SCOPE: SHOP_TENANT only. Another tenant's onboarding row (…0002 is WITHDRAWN on the
+# dev DB) is not this spec's concern and a table-wide sweep would destroy state other
+# flows may assert.
+#
+# Shop.published is DELIBERATELY untouched: demo shops are seed-published and the
+# storefront specs depend on that. The state machine's "sole writer of Shop.published"
+# rule governs application flows; this restores the pre-onboarding FIXTURE state.
+# Envers _aud rows keep their history — append-only audit, not fixture state.
+#
+# RESET_ONBOARDING=0 preserves a terminal state on purpose (e.g. an owner-gate reviewer
+# inspecting LIVE). The verification at the bottom still FAILS in that case — opting out
+# of the repair is not opting out of the truth.
+TERMINAL_STATES="('LIVE','SUSPENDED','REJECTED','WITHDRAWN')"
+onb_status=$(psql_q "select status from vendor_onboarding where tenant_id = '$SHOP_TENANT';")
+if [ -z "$onb_status" ]; then
+  echo "  onboarding: no row for tenant $SHOP_TENANT — create path open, nothing to reset"
+elif ! grep -qF "'$onb_status'" <<< "$TERMINAL_STATES"; then
+  echo "  onboarding: $onb_status — re-runnable, untouched"
+elif [ "$RESET_ONBOARDING" != "1" ]; then
+  echo "  onboarding: $onb_status (terminal) — RESET_ONBOARDING=0, PRESERVED (verification will fail)"
+else
+  onb_reset_sql=$(cat <<SQL
+delete from vendor_onboarding_gate g
+ using vendor_onboarding o
+ where g.onboarding_id = o.id
+   and o.tenant_id = '$SHOP_TENANT'
+   and o.status in $TERMINAL_STATES;
+delete from vendor_onboarding
+ where tenant_id = '$SHOP_TENANT'
+   and status in $TERMINAL_STATES;
+SQL
+)
+  psql_run "$onb_reset_sql" || void "onboarding reset failed"
+  echo "  onboarding: was $onb_status (terminal) — row + gates deleted; ONBD-05 can run again"
+fi
+
+# --- 4. Optional: cross-tenant residue ---------------------------------------------
 # Rows whose tenant_id does not match their shop's tenant_id. Left over from a
 # cross-tenant RLS test; RLS hides them from the app, but they make the tables look
 # populated when they effectively are not. Opt-in, and it reports what it removes.
@@ -178,7 +227,7 @@ if [ "$CLEAN_RESIDUE" = "1" ]; then
   echo "  residue   : removed $removed promotion(s), $removed_a announcement(s) whose tenant != shop's tenant"
 fi
 
-# --- 4. Media review fixtures (delegated, not duplicated) ---------------------------
+# --- 5. Media review fixtures (delegated, not duplicated) ---------------------------
 if [ "$SKIP_MEDIA" != "1" ]; then
   if bash "$REPO_ROOT/scripts/seed-media-review-fixtures.sh" >/dev/null 2>&1; then
     echo "  media     : OK (seed-media-review-fixtures.sh)"
@@ -213,13 +262,18 @@ ann=$(psql_q "select count(*) from shop_announcements
   where shop_id = '$SHOP_ID' and active
     and (valid_from is null or valid_from <= now())
     and (valid_until is null or valid_until > now());")
+# onboarding-blocked-flow's own skip guard, asked of the DB: a LIVE/terminal row for the
+# vendor tenant means ONBD-05 will skip UNDECLARED. Expect 0 such rows.
+onb_terminal=$(psql_q "select count(*) from vendor_onboarding
+  where tenant_id = '$SHOP_TENANT' and status in $TERMINAL_STATES;")
 
 echo "  DRAFT orders ON PAGE 1 (top $ORDERS_PAGE_SIZE by created_at)  : $draft  (expect >= 1)"
 echo "  ACTIVE, in-window promotions on the shop     : $promo  (expect >= 1)"
 echo "  ACTIVE, in-window announcements on the shop  : $ann  (expect >= 1)"
+echo "  LIVE/terminal onboarding rows for the tenant : $onb_terminal  (expect 0 — else ONBD-05 skips undeclared)"
 
-if [ "$draft" -ge 1 ] && [ "$promo" -ge 1 ] && [ "$ann" -ge 1 ]; then
-  echo "PASS: vendor-refund-flow's DRAFT test and storefront-flows' STFR-06 can now assert non-vacuously."
+if [ "$draft" -ge 1 ] && [ "$promo" -ge 1 ] && [ "$ann" -ge 1 ] && [ "$onb_terminal" -eq 0 ]; then
+  echo "PASS: vendor-refund-flow's DRAFT test, storefront-flows' STFR-06 and onboarding-blocked-flow's ONBD-05 can now assert non-vacuously."
   echo "NOTE: vendor-refund-flow's REFUND test stays skipped by design — it needs real"
   echo "      Stripe test-mode keys (STRIPE_API_KEY), not a fixture."
   exit 0
