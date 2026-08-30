@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### E2E seeder resets a terminal demo-tenant onboarding — ONBD-05 runs instead of skipping (#686) (#693) — 2026-08-30
+
+- **The undeclared-skip cause behind the skip-budget failure is now provisioned by script,
+  not by hand**: `scripts/seed-e2e-fixtures.sh` deletes the demo tenant's
+  `vendor_onboarding` row + gate rows when the status is LIVE/SUSPENDED/REJECTED/WITHDRAWN
+  (scoped to the vendor tenant only; `Shop.published` and Envers history untouched), and
+  its end-of-run verification asks the spec's own skip predicate — 0 terminal rows.
+- `RESET_ONBOARDING=0` preserves a terminal state deliberately (e.g. an owner-gate
+  reviewer inspecting LIVE), but verification still fails on it.
+- All arms observed failing: the spec skips on a WITHDRAWN row, the opt-out exits 1 with
+  the row proven present, and after the reset the full blocked-onboarding journey passes
+  in 6.1s. `check-e2e-skip-budget.sh` re-earned VOID → PASS on a fresh full-suite run:
+  323 total / 317 passed / 6 skipped / 0 failed, all declared, budget 6.
+- The gate's dark-lane aspect stays with #683: the nightly's escalation step already
+  covers the skip-budget step, and the lane's red was the #687 flake fixed in PR #692.
+
 ### Flaky marketing E2E: network-idle waits replaced with deterministic anchors (#687) (#692) — 2026-08-30
 
 - **All 7 network-idle waits removed** from `marketing-motion.spec.ts` and
