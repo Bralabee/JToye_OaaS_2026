@@ -115,7 +115,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
     // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod)
-    implementation(platform("software.amazon.awssdk:bom:2.53.2"))
+    implementation(platform("software.amazon.awssdk:bom:2.54.3"))
     implementation("software.amazon.awssdk:s3")
 
     // Phase 24 (IMG-02) — WebP transcode + image normalize pipeline.
