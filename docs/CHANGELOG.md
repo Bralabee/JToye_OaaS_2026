@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Flaky marketing E2E: network-idle waits replaced with deterministic anchors (#687) (#692) — 2026-08-30
+
+- **All 7 network-idle waits removed** from `marketing-motion.spec.ts` and
+  `csp-no-violations.spec.ts` — every replacement is a predicate on page state (attribute
+  attached / element visible / load event), never an idle heuristic. The `/ degrades to
+  fully-visible static content` test failed ~1 in 3 under retries=0 because the idle wait raced
+  hydration, making "no scene was built" indistinguishable from "the enhancer has not run yet".
+- **New inert both-branches `data-motion-decided="scene|static"` marker** stamped by both
+  marketing motion enhancers (`hero-scene.tsx`, `operator-entrance-scene.tsx`), giving absence
+  assertions a deterministic anchor; no stylesheet, logic, or Tailwind class reads it, and jsdom
+  suites are unaffected by construction.
+- **All three break arms observed failing before the clean pass** (bogus anchor, flipped absence
+  expectation, CSP window with a corrected injection vector — the planned `createElement` vector
+  is allowed by `'strict-dynamic'` by design and was proven vacuous). Clean pass 18/18 both
+  projects against a freshly rebuilt compose frontend; mobile absence tests settle in ~800ms
+  instead of timing out at 60s.
+- No `test()` block added or removed (`docs/metrics.json` untouched), no retries added,
+  `playwright.config.ts` untouched. The suite's specDigest changes, so stored skip-budget
+  reports predating this branch are VOID until the next full-suite run (#686 tracks the CI lane).
+
 ### Phase 34: the test suite stops reporting on surfaces it does not exercise (#682) — 2026-08-29
 
 - **Rendering + Test Truthfulness shipped whole**: 10 plans / 27 tasks in 5 waves, zero new
