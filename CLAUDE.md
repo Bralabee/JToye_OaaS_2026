@@ -77,7 +77,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - AWS SDK v2 (2.54.3) - S3 API for image storage
 - Stripe React/JS 6.8.2, 9.14.0 - Payment processing UI integration
 - Axios 1.19.0 - HTTP client for API calls
-- Framer Motion 12.43.0 - Animation library
+- Framer Motion 13.1.1 - Animation library
 - Recharts 3.10.1 - Charts and data visualization
 - Redis 7 - Session and cache store
 - RabbitMQ 4.3.4 - Message queue (AMQP)
