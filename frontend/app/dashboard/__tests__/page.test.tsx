@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import DashboardPage from '../page'
 import apiClient from '@/lib/api-client'
+import { WIDTH_TIER_CLASS } from '@/components/layout/content-tier'
 import { getShopContext } from '@/lib/shop-context'
 import { manyShops, pagedResponse, param } from '@/test-utils/spring-page'
 
@@ -310,5 +311,63 @@ describe('Dashboard Page — heading hierarchy (QA-council A11Y-6)', () => {
         expect(levels[i] - levels[i - 1]).toBe(1)
       }
     }
+  })
+})
+
+/**
+ * Phase 35 — the Index width tier (ORCH-03, orchestrator decision 2026-08-29).
+ *
+ * The overview is tiered Index rather than Detail on purpose: its recent-orders
+ * table is the same six-column shape as /dashboard/orders, and showing one table
+ * at two different widths on two pages is exactly the half-shipped inconsistency
+ * this phase exists to remove.
+ *
+ * PATTERNS.md F-3: a measurement at the band width cannot distinguish a
+ * deliberate resource-index tier from a forgotten cap — both read identically.
+ * The declaration is what makes the uncapped claim falsifiable.
+ */
+describe('Dashboard overview — the Index width tier (phase 35)', () => {
+  // A Tailwind max-width utility as a whole class TOKEN, never a substring.
+  const WIDTH_CAP = /(?:^|\s)max-w-/
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockedApiClient.get.mockImplementation(defaultMock as jest.Mock)
+    mockedGetShopContext.mockReturnValue('all')
+  })
+
+  async function loadedRoot() {
+    const view = render(<DashboardPage />)
+    // Wait for the LOADED branch — the in-flight branch is the spinner guard,
+    // which carries no tier by design (see the note at the declaration site).
+    await screen.findByRole('heading', { name: 'Dashboard', level: 1 })
+    const declared = view.container.querySelectorAll<HTMLElement>('[data-width-tier]')
+    return { view, declared }
+  }
+
+  it('declares the index tier once, on the loaded root element itself', async () => {
+    const { view, declared } = await loadedRoot()
+    // Exactly one: a nested second declaration would be a cap inside a cap.
+    expect(declared).toHaveLength(1)
+    expect(declared[0]).toBe(view.container.firstElementChild)
+    expect(declared[0]).toHaveAttribute('data-width-tier', 'index')
+  })
+
+  it('adds no width cap of its own — Index is fluid to the shell band', async () => {
+    const { declared } = await loadedRoot()
+
+    // NON-VACUITY CONTROL: the detector fires on a real tier cap read from the
+    // vocabulary module, so the absence below is about this element and not
+    // about a pattern incapable of matching anything.
+    const probe = document.createElement('div')
+    probe.className = `space-y-8 ${WIDTH_TIER_CLASS.detail}`
+    expect(probe.className).toMatch(WIDTH_CAP)
+
+    expect(declared[0].className).not.toMatch(WIDTH_CAP)
+  })
+
+  it('keeps the vertical rhythm class the declaration was added beside', async () => {
+    const { declared } = await loadedRoot()
+    expect(declared[0]).toHaveClass('space-y-8')
   })
 })

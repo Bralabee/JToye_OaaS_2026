@@ -18,13 +18,23 @@ the 2026-08-24 session broke it once itself (see "The truncating filter", below)
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 40 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 41 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
 # 2026-08-29 actual (phase 34 closeout, plan 34-10): all 40 rc=0 from the MAIN checkout,
 # including check-e2e-skip-budget re-earned at 6 skips / budget 6 on a fresh full-suite
 # run (297 tests, 0 failures), and check-jacoco-coverage at 88.07/71.95/87.55/87.53.
+# 2026-08-30 (phase 35 plan 35-13): the count moved 40 -> 41. Plan 35-10 added
+# scripts/check-layout-width-contract.sh, which is the 41st gate; H-1 caught the stale
+# EXPECT immediately, which is the gate working. Phase-35 sweep from the MAIN checkout:
+# 41/41 rc=0, but only after two ENVIRONMENT repairs that are not code defects — a stale
+# untracked edge-go/coverage.out (regenerate with: cd edge-go && go test -coverprofile=coverage.out ./...)
+# and a jtoye-redis-exporter still holding a REDIS_PASSWORD rotated out of .env
+# (repair: docker compose -f infra/monitoring/docker-compose.monitoring.yml up -d --force-recreate redis-exporter).
+# Neither is repaired by `docker restart`; the exporter needs a compose RECREATE.
+# check-e2e-skip-budget is rc=1 not rc=0 on the phase-35 branch: 7 skips / budget 6, one
+# undeclared (onboarding-blocked-flow) — that is open issue #686, not a phase-35 regression.
 # THREE gates must be run from the MAIN checkout, not a worktree, and VOID elsewhere:
 #   check-runtime-freshness  — compose project name comes from the DIRECTORY
 #   check-infra-exposure     — parses `docker compose config`, needs .env to interpolate

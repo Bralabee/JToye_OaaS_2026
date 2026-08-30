@@ -348,6 +348,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 32. Production Cutover + First Tenant | v2.3 | 0/? | Not started | — |
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
+| 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
 before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
@@ -717,6 +718,55 @@ locality — #460.)
      failure mode is reaching production with the Cohort B question still unasked. (GTM-02)
 
 **UI hint**: no
+
+### Phase 35: Horizontal Layout Contract - tiered content widths across dashboard, index, detail and marketing surfaces
+
+**Goal:** Replace the inherited, undeclared shadcn `container` default (1400px, applied uniformly to four different content types) with a **declared four-tier width contract**, so every surface uses horizontal real estate appropriate to what it holds. Owner-raised 2026-08-29: the product "feels narrow and confined to the middle" on desktop and should use at least two-thirds of width on the web.
+
+**Measured baseline** (in-browser, post-#685 runtime, all 4 images FRESH):
+
+| Surface | Cap | @1440 | @1920 | @2560 |
+|---|---|---|---|---|
+| Landing `/` (`max-w-6xl`) | 1152px | 80% | 60% | 45% |
+| Public directory (`max-w-7xl`) | 1280px | 89% | 66.7% | 50% |
+| Dashboard (`container`) | 1400px | 82% | 72.9% | 54.7% |
+
+Root cause: `frontend/tailwind.config.ts` carries the stock shadcn block `container: { center: true, padding: "2rem", screens: { "2xl": "1400px" } }`, applied at `frontend/components/dashboard/dashboard-shell.tsx:55`. **No document in the repo declares a width standard** — the number came with the scaffold.
+
+**The four tiers** (each peer-matched to a measured industry value, not invented):
+
+| Tier | Target | Applies to | Peer evidence |
+|---|---|---|---|
+| Shell | ~1700px | dashboard chrome | Stripe Dashboard `--Chrome-maxWidth` 1690px; Square shells 1680–1720px |
+| Index | fluid to shell | products, orders, customers, shops | Polaris full-width page for many-column lists; IBM Carbon `--full-width`; GitLab/Lightspeed fluid |
+| Detail | ~1100px | order detail, settings, forms | Linear `LayoutContent` 1136px; Square content ladder 1016px |
+| Marketing | ~1280px | landing, for-operators | Stripe marketing token 1264px |
+| Prose | 68ch (unchanged) | body copy | already correct in-tree |
+
+**Requirements**: UIX-07 (declared layout contract), UIX-08 (index surfaces use available width), UIX-09 (reading surfaces keep their measure)
+**Depends on:** Phase 34
+**Plans:** 13/13 plans executed
+
+**Constraints that are not negotiable:**
+- Widths are **declared in one config module** (following the existing `frontend/e2e/perf-budgets.ts` convention), never scattered literals — global config rule.
+- `/` carries **known CLS debt 0.1793** against a 0.1 budget. Any landing change is measured against that baseline as a control, never assumed neutral.
+- Incremental Betterment: this reworks live user-visible surfaces, so each displaced good is enumerated and preserved or bettered. Mobile-first behaviour must not regress — this is a *large-screen* change only.
+- The widened index tier must not break the `overflow-x-auto` keyboard-focusable region fixed by A11Y-3 (#685), nor reintroduce body horizontal scroll at 390px.
+
+Plans:
+- [x] 35-01-PLAN.md — declare the four tier widths in one constants module; generate the utilities from it; retire the shadcn container plugin (wave 1) — **COMPLETE 2026-08-29**, `35-01-SUMMARY.md`
+- [x] 35-02-PLAN.md — the tier vocabulary in the DOM (one class map, one wrapper) and the Shell tier applied at the single container call site (wave 2) — **COMPLETE 2026-08-29**, `35-02-SUMMARY.md`
+- [x] 35-03-PLAN.md — Index tier on the five surfaces CONTEXT names: orders, products, overview, customers, shops (wave 3)
+- [x] 35-04-PLAN.md — Index tier on the eight remaining dashboard surfaces, each PATTERNS ambiguity resolved at its site (wave 3)
+- [x] 35-05-PLAN.md — Detail tier on order detail, onboarding and the import wizard; the ceiling-not-target rule and its exceptions ledger (wave 3)
+- [x] 35-06-PLAN.md — Marketing tier on the landing route (the phase's only real width change) and both public chrome rails (wave 3)
+- [x] 35-07-PLAN.md — Marketing tier declared on the already-1280 surfaces; shop detail skeleton aligned to its content (wave 3)
+- [x] 35-08-PLAN.md — the Playwright width-contract spec at 1440/1920/2560, its stack-free half wired into the per-PR browser gate (wave 4)
+- [x] 35-09-PLAN.md — the desktop-viewport CLS arm for the landing route, control measured by two-arm A/B (wave 4)
+- [x] 35-10-PLAN.md — the static contract gate, its tier manifest, and its CI wiring in the same commit (wave 5) — **COMPLETE 2026-08-29**, `35-10-SUMMARY.md`. 7 assertions / 104 claims over a 43-row manifest, wired into `ops-contracts` in the creating commit; 18 arms recorded in both directions incl. 2 controls and 3 VOIDs; **35-07's owed skeleton-parity arm discharged** (same break: 146 jest tests still green, gate rc=1 naming all three family members)
+- [x] 35-11-PLAN.md — the contract document closing the "no declared standard" finding, plus the metrics regeneration (wave 6) — **COMPLETE 2026-08-29**, `35-11-SUMMARY.md`. `docs/architecture/LAYOUT_WIDTH_CONTRACT.md` written; `docs/metrics.json` regenerated once for the whole phase (1503/141 jest, 127/27 playwright, total 3492); a block-counter defect that had made two required CI gates mutually unsatisfiable found and fixed, with a fixture that reproduces it
+- [x] 35-12-PLAN.md — runtime parity, the mobile byte-identical CSS diff, the pre-change control arm and the full browser sweep (wave 7) — **COMPLETE 2026-08-30**, `35-12-SUMMARY.md`. The delivered container was measured serving the **pre-phase stylesheet** (0 tier attributes, `.container{max-width:1400px}`, and the same content-hashed chunk the merge-base control build emits); rebuilt to 4/4 FRESH / 0 unverified and parity re-proved by reading the three tier values out of the running artefact. The filtered below-`lg` CSS diff reduces to exactly the 3 tier additions plus the retired scaffold class and its `!important` variant — after it surfaced **two `@media (min-width:640px)` rules generated by prose in two test-file comments**, fixed in `59b80ce0`; the filter itself is armed in both directions. The pre-change arm CONTEXT §6 names is delivered: **21/21 RED** on a real merge-base build (with a page snapshot proving the dashboard arm was logged in, so the failure is the missing declaration and not a login wall) and **21/21 GREEN** on the delivered runtime. **T-35-13 and T-35-15 run rather than reasoned** — neither spec named for T-35-13 exercises it (`kitchen-flow` stubs the websocket, `stomp-relay` is a declared skip), so a deleted-after-use probe drove a real transition over a real feed. Reported honestly and not absorbed: skip budget **7/6 with one undeclared** (unchanged by this phase, #686) and the `marketing-motion` timeout attributed to pre-existing **#687**
+- [x] 35-13-PLAN.md — owner verification at 1920 and 2560 against the originating complaint (wave 8, blocking checkpoint) — **COMPLETE 2026-08-30**, `35-13-SUMMARY.md` + phase-level `35-VERIFICATION.md` (`status: passed`, 5/5 roadmap goal-and-constraint criteria). The gate was **taken by the owner on 2026-08-30** and recorded in `CONTEXT.md` §7: Detail accepted at **1100px**, ORCH-01 (`/shop` stays Marketing 1280) **confirmed**, close-out is verify-then-PR. The scoped must-not-move claim is now MEASURED per tier rather than asserted — Shell **1184** and Index **1120** unmoved at 1440 (the pre-change 1400 cap never bound against a 1184 parent), Detail moved by the accepted **−20px @1440 / −236px @1920+**. Step 4, the visual class no assertion covers, finally ran: `/dashboard/orders` reads better (band stays centred, gutters shrink 485→334 at 2560), and both left-hugging candidates were **measured and recorded EXAMINED N/A** — the finance VAT grid declares 4 columns and fills 1 from the seed, the orders status-flow strip is a closed six-value stepper under ceiling-not-target. The two deliberately-unapplied additive candidates were **DECIDED, not deferred**: the finance chart band is **moot** (that page renders zero charts and imports no chart library; selector control found 2 on `/dashboard`), and the approvals tier is **undecidable on an empty queue** → **#690**. Full sweep **40/41 rc=0, 0 VOID**; the one rc=1 is pre-existing **#686**. Three first-sweep failures triaged to cause: HANDOFF's gate count went stale because this phase added the **41st** gate (**caused by this phase** — `check-handoff-contract` runs on `pull_request`, so the PR would have opened RED; fixed `bcb1d011` and break-armed), plus a stale `edge-go/coverage.out` and a redis-exporter holding a rotated `REDIS_PASSWORD` (both environment, both repaired, neither a phase defect)
 
 ---
 

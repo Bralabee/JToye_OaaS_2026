@@ -110,9 +110,36 @@ export default function FinancePage() {
     }
   }
 
+  /*
+   * WIDTH TIER — Index, and this was a decision rather than a default.
+   *
+   * PATTERNS A-4. This surface holds two things that want opposite widths: the
+   * VAT/transaction ledger, which is a wide horizontally-scrolling table, and the
+   * revenue charts, which have a fixed aspect ratio and read as very wide, very
+   * short plots when stretched. Index is chosen because the ledger is the reason
+   * the page exists — capping the whole page to protect the charts would starve
+   * exactly the surface this phase was opened to widen.
+   *
+   * If the charts do need protecting, the fix is ADDITIVE and local: cap the
+   * chart band inside an Index page. It is deliberately NOT added here on a
+   * hunch; plan 35-12's visual capture at 2560 decides whether it is needed, and
+   * a speculative local cap would be a scattered width literal.
+   *
+   * The tier is written into the DOM as a declaration rather than left as the
+   * absence of a cap, because "uncapped" and "someone forgot to cap it" render
+   * identically and no assertion can tell them apart — ORCH-03 (orchestrator
+   * decision, 2026-08-29). It is declared on EVERY render branch below, not just
+   * the loaded one: a branch without it is an undeclared first paint.
+   *
+   * COVERAGE BOUNDARY, stated rather than implied: this page has no mounted page
+   * test, so none of the three declarations below is asserted in jsdom. They are
+   * covered by plan 35-10's static gate and by a browser spec in plan 35-08 that
+   * no current tree executes (#683 — the nightly lane is dark). Nothing on a
+   * pull request exercises them.
+   */
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div data-width-tier="index" className="flex h-full items-center justify-center">
         <div className="h-32 w-32 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
       </div>
     )
@@ -122,7 +149,7 @@ export default function FinancePage() {
   // card, instead of an empty "No transactions yet" table plus a red 403 error toast.
   if (forbidden) {
     return (
-      <div className="space-y-6">
+      <div data-width-tier="index" className="space-y-6">
         <div>
           <h1 className="text-4xl font-bold text-slate-900">Finance</h1>
           <p className="mt-2 text-slate-600">Revenue, expenses, and VAT reporting</p>
@@ -141,7 +168,7 @@ export default function FinancePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div data-width-tier="index" className="space-y-6">
       {/* Header */}
       <m.div
         initial={{ opacity: 0, y: -20 }}

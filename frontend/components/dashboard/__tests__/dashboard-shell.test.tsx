@@ -10,6 +10,7 @@ import { render, screen, within } from "@testing-library/react"
 import { usePathname } from "next/navigation"
 import { DashboardShell } from "../dashboard-shell"
 import { ShopSwitcherProvider } from "../shop-switcher-provider"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 
 // jest.setup.js already mocks next/navigation with `usePathname: () => '/'`;
 // grab the mock so individual cases can put the shell on a real route.
@@ -126,6 +127,115 @@ describe("DashboardShell", () => {
     expect(
       within(screen.getByTestId("mobile-topbar")).getByTestId("shop-switcher")
     ).toBeInTheDocument()
+  })
+})
+
+/**
+ * Phase 35 — the Shell tier at the tree's ONE width call site.
+ *
+ * PATTERNS.md F-1: the stock shadcn width utility was consumed by exactly one
+ * element in the whole repository, the band below, and all 21 dashboard routes
+ * inherit their width from it — no dashboard layout or page declares a width of
+ * its own. That makes this a one-line change and it is also why it is the
+ * highest-blast-radius edit in the phase (T-35-06): a bad edit here blanks every
+ * authenticated page at once.
+ *
+ * So the preserved declarations are ENUMERATED rather than assumed. That is the
+ * Incremental Betterment rule made executable: the shed utility supplied three
+ * declarations, each accounted for at the call site, and every class the element
+ * kept is asserted by name below.
+ *
+ * WHY THE REMOVAL IS ASSERTED AS A TOKEN AND NOT A SUBSTRING. `DialogContent`,
+ * `CardContent` and `TabsContent` are everywhere in this tree, so a naive
+ * substring search for the shed class returns 269 hits across 55 files against
+ * one real one (PATTERNS.md F-1). `classList.contains` is a token match by
+ * definition, and the control case below proves that instrument can still see
+ * the class when it is genuinely present.
+ *
+ * WHAT THIS SUITE IS NOT EVIDENCE ABOUT. `e2e/dashboard-mobile.spec.ts` measures
+ * `main`, which sits OUTSIDE this element (PATTERNS.md B-4), so a green mobile
+ * run there says nothing about this change. And per issue #683 the nightly lane
+ * that would run the Shell-tier browser assertions is dark — the honest phrasing
+ * for those is "covered by a spec that no current tree executes", never "covered
+ * nightly". This jsdom suite proves the class is APPLIED; it cannot prove the
+ * resulting element is 1700px wide in a browser.
+ */
+describe("DashboardShell — the Shell width tier", () => {
+  /** The one content band. Throws rather than returning null, so an assertion below cannot pass on nothing. */
+  function renderBand(): HTMLElement {
+    const view = render(
+      <DashboardShell>
+        <div data-testid="content">hello</div>
+      </DashboardShell>
+    )
+    const band = view.container.querySelector<HTMLElement>('[data-width-tier="shell"]')
+    if (!band) throw new Error("no element declares the shell width tier")
+    return band
+  }
+
+  it("declares the shell tier on the content band", () => {
+    expect(renderBand()).toHaveAttribute("data-width-tier", "shell")
+  })
+
+  it("caps the band at the shell tier's declared utility", () => {
+    // Read from the vocabulary module rather than restated, so the band and the
+    // generated utility cannot drift apart in this assertion.
+    expect(renderBand()).toHaveClass(WIDTH_TIER_CLASS.shell)
+  })
+
+  it("no longer carries the shadcn width class", () => {
+    // Token match, not substring — see the note above.
+    expect(renderBand().classList.contains("container")).toBe(false)
+  })
+
+  it("would notice that class if it were there — the control for the line above", () => {
+    // NON-VACUITY CONTROL. Without it, "the class is absent" is equally
+    // satisfied by an instrument that can never observe the class at all.
+    const probe = document.createElement("div")
+    probe.className = `container ${WIDTH_TIER_CLASS.shell} mx-auto`
+    expect(probe.classList.contains("container")).toBe(true)
+  })
+
+  /**
+   * The displaced-goods ledger, executable. Every class the band carried before
+   * the tier was applied, named individually so a silent drop reds.
+   */
+  it.each([
+    "mx-auto",
+    "p-4",
+    "pb-20",
+    "sm:p-8",
+    "sm:pb-20",
+    "md:pb-8",
+    "dark:text-slate-100",
+  ])("keeps the %s declaration it already had", (kept) => {
+    expect(renderBand()).toHaveClass(kept)
+  })
+
+  it("keeps the footer and its legal line inside the band", () => {
+    const band = renderBand()
+    const footer = band.querySelector("footer")
+    expect(footer).not.toBeNull()
+    expect(
+      within(band).getByRole("link", { name: /legal & company information/i })
+    ).toBeInTheDocument()
+  })
+
+  it("renders its children inside the band, not beside it", () => {
+    expect(within(renderBand()).getByTestId("content")).toHaveTextContent("hello")
+  })
+
+  it("leaves the mobile top bar and the 55% switcher clamp outside and untouched", () => {
+    const band = renderBand()
+    const topbar = screen.getByTestId("mobile-topbar")
+    // The bar is a SIBLING of the band; a tier applied to the wrong element
+    // would swallow the sticky chrome.
+    expect(band.contains(topbar)).toBe(false)
+    expect(topbar).toHaveClass("md:hidden")
+    // The switcher's width clamp is protected and deliberately not swept into
+    // the tier vocabulary — shop-switcher.test.tsx reasons about it at 375px.
+    const clamp = within(topbar).getByTestId("shop-switcher").parentElement
+    expect(clamp).toHaveClass("max-w-[55%]")
   })
 })
 

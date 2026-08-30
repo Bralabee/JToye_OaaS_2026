@@ -7,6 +7,8 @@ import { MobileTabBar } from "@/components/dashboard/mobile-tab-bar"
 import { ShopSwitcher, shopSwitcherApplies } from "@/components/dashboard/shop-switcher"
 import { ShopSwitcherProvider } from "@/components/dashboard/shop-switcher-provider"
 import { CompanyLegalLine } from "@/components/platform/company-legal"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+import { cn } from "@/lib/utils"
 import type { ReactNode } from "react"
 
 /**
@@ -52,7 +54,44 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             </div>
           )}
         </div>
-        <div className="container mx-auto p-4 pb-20 sm:p-8 sm:pb-20 md:pb-8 dark:text-slate-100">
+        {/* THE content band. Phase 35 applies the Shell tier here, IN PLACE:
+            the max-width class is swapped on the element that already existed
+            and the tier is declared beside it, so no DOM node is added and no
+            layout, motion or scroll-reveal behaviour moves. This is the tree's
+            only width call site — all 21 dashboard routes inherit this line and
+            none declares a width of its own (PATTERNS F-1) — which is why the
+            tier is 1700px of measured peer evidence (lib/layout-widths.ts)
+            rather than the 1400px that arrived with the shadcn scaffold and
+            that nobody could account for.
+
+            THE DISPLACED-GOODS LEDGER. The shadcn width utility this replaces
+            supplied three declarations, and each is accounted for:
+              - its auto margins were already duplicated by the mx-auto sitting
+                on this same element, so nothing is lost;
+              - its 2rem padding was ALREADY DEAD. That utility is a
+                components-layer rule while p-4 and sm:p-8 are utilities,
+                emitted later at equal specificity, so the padding utilities
+                already won at every width — confirmed by reading the generated
+                CSS ordering, not inferred;
+              - its width:100% is equivalent here, because the parent main is a
+                block container so this child fills by default, and Tailwind's
+                preflight sets border-box. Corroborated by the tree itself:
+                every marketing surface already centres correctly with a bare
+                mx-auto plus a max-width and no width utility.
+            The class name it replaces is deliberately not spelled out again —
+            a comment satisfies a grep as readily as code does.
+
+            Everything else on this element is unchanged, and each kept class is
+            asserted by name in __tests__/dashboard-shell.test.tsx rather than
+            assumed. */}
+        <div
+          data-width-tier="shell"
+          className={cn(
+            "mx-auto",
+            WIDTH_TIER_CLASS.shell,
+            "p-4 pb-20 sm:p-8 sm:pb-20 md:pb-8 dark:text-slate-100"
+          )}
+        >
           {children}
           <footer className="mt-10 border-t border-slate-200 pt-4 dark:border-slate-800">
             <CompanyLegalLine />

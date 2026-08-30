@@ -243,16 +243,35 @@ export default function WebhooksPage() {
     )
   }
 
+  /*
+   * WIDTH TIER — Index, and this was a decision rather than a default.
+   *
+   * The subscription list is a six-column table (endpoint URL, events, status,
+   * failures, created, actions) inside its own horizontal scroll region, which is
+   * the resource-index case exactly.
+   *
+   * DISPLACED GOODS, preserved and asserted by name in the suite: the responsive
+   * card/table split below (`sm:hidden` cards, `hidden … sm:block` table) is what
+   * keeps this surface from overflowing at 375px, and the tier is orthogonal to
+   * it — an attribute on the root, no class, no wrapper node, so nothing about
+   * when the table overflows or which container is visible has changed.
+   *
+   * The tier is written into the DOM as a declaration rather than left as the
+   * absence of a cap, because "uncapped" and "someone forgot to cap it" render
+   * identically and no assertion can tell them apart — ORCH-03 (orchestrator
+   * decision, 2026-08-29). Both render branches declare it; a branch without it is
+   * an undeclared first paint.
+   */
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div data-width-tier="index" className="flex h-full items-center justify-center">
         <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-orange-500" />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <div data-width-tier="index" className="space-y-6">
       {/* Header — stacks on mobile so the CTA never collides with the title */}
       <m.div
         initial={{ opacity: 0, y: -20 }}

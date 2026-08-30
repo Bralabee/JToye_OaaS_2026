@@ -10,6 +10,7 @@
 import { render, screen, within } from "@testing-library/react"
 import OrdersPage from "../page"
 import apiClient from "@/lib/api-client"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
@@ -110,5 +111,62 @@ describe("Orders table PENDING badge contrast (QA-council F3 / A11Y-1)", () => {
       expect(badge).toHaveClass("bg-yellow-700")
       expect(badge).not.toHaveClass("bg-yellow-500")
     }
+  })
+})
+
+/**
+ * Phase 35 — the Index width tier (ORCH-03, orchestrator decision 2026-08-29).
+ *
+ * This page is the surface the phase exists for. CONTEXT.md section 1 measured
+ * the six-column table confined to 1400px at a 2560 viewport with roughly 900px
+ * of empty gutter beside it. Plan 35-02 freed the WIDTH at the dashboard band;
+ * what these cases assert is the CONTRACT, which is a separate claim.
+ *
+ * PATTERNS.md F-3 is why the contract needs asserting at all: a spec measuring
+ * this page at the band width cannot tell a deliberate resource-index tier from
+ * a forgotten narrow cap, because the two read identically. Declaring the tier
+ * in the DOM turns "this page is deliberately uncapped" into something a test
+ * can find and falsify, rather than an absence nobody can distinguish from a bug.
+ */
+describe("Orders page — the Index width tier (phase 35)", () => {
+  // A Tailwind max-width utility as a whole class TOKEN — never a substring of
+  // some longer name, which is the shape that made a naive `container` search
+  // match 57 files in this tree (PATTERNS.md F-1).
+  const WIDTH_CAP = /(?:^|\s)max-w-/
+
+  async function loadedRoot() {
+    const view = render(<OrdersPage />)
+    // Wait for the LOADED branch. While the fetch is in flight the component
+    // returns its spinner guard, which carries no tier by design — see the note
+    // at the declaration site in page.tsx.
+    await screen.findByRole("table")
+    const declared = view.container.querySelectorAll<HTMLElement>("[data-width-tier]")
+    return { view, declared }
+  }
+
+  it("declares the index tier once, on the loaded root element itself", async () => {
+    const { view, declared } = await loadedRoot()
+    // Exactly one: a second, nested declaration would be a cap inside a cap.
+    expect(declared).toHaveLength(1)
+    expect(declared[0]).toBe(view.container.firstElementChild)
+    expect(declared[0]).toHaveAttribute("data-width-tier", "index")
+  })
+
+  it("adds no width cap of its own — Index is fluid to the shell band", async () => {
+    const { declared } = await loadedRoot()
+
+    // NON-VACUITY CONTROL. The detector is shown firing on a real tier cap
+    // first, so the absence below is a statement about this element rather than
+    // about a pattern incapable of matching anything.
+    const probe = document.createElement("div")
+    probe.className = `space-y-6 ${WIDTH_TIER_CLASS.detail}`
+    expect(probe.className).toMatch(WIDTH_CAP)
+
+    expect(declared[0].className).not.toMatch(WIDTH_CAP)
+  })
+
+  it("keeps the vertical rhythm class the declaration was added beside", async () => {
+    const { declared } = await loadedRoot()
+    expect(declared[0]).toHaveClass("space-y-6")
   })
 })

@@ -138,7 +138,12 @@ const FIELD_LABELS = {
  */
 function StaffLoading() {
   return (
-    <div className="space-y-6" data-testid="staff-loading" aria-busy="true">
+    <div
+      data-width-tier="index"
+      className="space-y-6"
+      data-testid="staff-loading"
+      aria-busy="true"
+    >
       <div>
         <h1 className="text-4xl font-bold text-slate-900">{PAGE_TITLE}</h1>
         <p className="mt-2 text-slate-600">{PAGE_SUBTITLE}</p>
@@ -388,13 +393,32 @@ export default function StaffPage() {
     }
   }
 
+  /*
+   * WIDTH TIER — Index, and this was a decision rather than a default.
+   *
+   * PATTERNS A-7. The competing reading is "there is a form on this page, and
+   * forms want a reading measure". The form is inside a Card that is already
+   * narrower than the band and keeps its own width whatever the band does, so
+   * tiering the whole page to the reading width would buy the form nothing and
+   * would cap the directory and grants tables — which are the multi-column
+   * surfaces this phase exists to widen.
+   *
+   * The tier is written into the DOM as a declaration rather than left as the
+   * absence of a cap, because "uncapped" and "someone forgot to cap it" render
+   * identically and no assertion can tell them apart — ORCH-03 (orchestrator
+   * decision, 2026-08-29). It is declared on all THREE render branches — the
+   * skeleton in `StaffLoading` above, the access-denied card below and the loaded
+   * page — because a branch without it is an undeclared paint, and the skeleton
+   * one matters most here: #454 made that branch hold the loaded page's geometry,
+   * so a tier mismatch between them would reintroduce the shift it removed.
+   */
   if (loading) {
     return <StaffLoading />
   }
 
   if (forbidden) {
     return (
-      <div className="space-y-6">
+      <div data-width-tier="index" className="space-y-6">
         <div>
           <h1 className="text-4xl font-bold text-slate-900">{PAGE_TITLE}</h1>
           <p className="mt-2 text-slate-600">{PAGE_SUBTITLE}</p>
@@ -416,7 +440,7 @@ export default function StaffPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div data-width-tier="index" className="space-y-6">
       <div>
         <h1 className="text-4xl font-bold text-slate-900">{PAGE_TITLE}</h1>
         <p className="mt-2 text-slate-600">{PAGE_SUBTITLE}</p>

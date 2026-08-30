@@ -533,6 +533,48 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000
 
+      # Phase 35 horizontal layout contract — THE MARKETING TIER ONLY.
+      #
+      # WHAT THIS COVERS, AND WHAT IT DEMONSTRABLY DOES NOT. The spec asserts
+      # four tiers; this step runs one of them. The `@stack-free` filter selects
+      # the Marketing describes, which stub the public API and need nothing but
+      # the frontend already built and started above. The Shell, Index and
+      # Detail tiers each require a Keycloak vendor login against a live stack,
+      # which this job does not have and must not acquire — the moment it needs
+      # a backend it stops running on every pull request, and the blind spot the
+      # whole job exists to close comes back.
+      #
+      # So those three tiers are, in CONTEXT.md section 5's exact words,
+      # "covered by a spec that no current tree executes" — kept on ONE line so
+      # the phrase is greppable rather than split across two comment lines.
+      # Their only instrument is the full-suite nightly lane, and issue #683 is
+      # OPEN: that lane is failing, so while it is red no merge has full-suite
+      # evidence on any tree. Do NOT restate this as "covered
+      # nightly" — CONTEXT.md section 5 fixes the wording above as the
+      # authoritative one. "Covered nightly" tells the next reader an instrument
+      # is watching those tiers and they will act on that; the true state is
+      # that the assertions exist, are correct, and run nowhere. Same root cause
+      # as #686, whose skip-budget gate is wired only into that same dark lane.
+      #
+      # A SEPARATE STEP, NOT AN EXTRA SPEC ON THE COMMAND ABOVE. Two reasons and
+      # the second is the load-bearing one: the two gates' failures stay
+      # distinguishable in the run log, and the tag filter must apply to THIS
+      # spec only — folding it in would apply `--grep` to the layout and
+      # accessibility specs as well and silently drop most of what they assert.
+      #
+      # POSITIVE `--grep`, NEVER `--grep-invert`. Both projects in
+      # playwright.config.ts already set their own `grepInvert` (`@desktop-only`
+      # / `@mobile-only`); overriding that from the command line would replace
+      # it, enumerating desktop-only blocks under the mobile project. That would
+      # look like it worked and would quietly widen what the mobile project
+      # runs.
+      - name: Run layout width contract — Marketing tier (stack-free half)
+        if: github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true'
+        run: npx playwright test e2e/layout-width-contract.spec.ts --grep "@stack-free"
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v7
@@ -1086,6 +1128,42 @@ jobs:
         run: |
           chmod +x ./scripts/check-ssr-coverage-contract.sh
           ./scripts/check-ssr-coverage-contract.sh
+
+      #   10c. Plan 35-10 (UIX-07). The four-tier horizontal layout contract. The 1400px cap
+      #      this phase deleted was the stock shadcn `container` scaffold block, shipped
+      #      verbatim and never chosen — it survived for the life of the product because
+      #      nothing was watching. A contract enforced by a paragraph erodes at the next
+      #      scaffold, the next component or the next well-meaning cleanup, so this gate is
+      #      the thing that reds instead. Its surface set is the machine-readable manifest
+      #      docs/architecture/layout-tiers.tsv, read by the gate rather than hard-coded, so
+      #      the declared surfaces and the enforcement cannot disagree.
+      #
+      #      Static by construction: it reads .ts/.tsx, one Tailwind config and one TSV out
+      #      of the checkout, starts no browser, runs no build, touches no database and makes
+      #      no network call — so it says the same thing on a hosted runner as it does
+      #      locally. It therefore belongs here and must NEVER get a
+      #      scripts/gates/gate-enforcement.conf entry: that table's bar is "a hosted runner
+      #      does not have the thing this inspects", which is false for a file in the
+      #      checkout, and check-gate-enforcement.sh would reject the entry as a stale
+      #      exemption anyway.
+      #
+      #      That static-ness is the whole reason this step matters on this phase. The
+      #      full-suite Playwright lane is DARK (#683), so the phase's browser-MEASURED
+      #      width assertions are covered by a spec that no current tree executes. These
+      #      seven assertions are not: they block every pull request.
+      #
+      #      This step and the script it names MUST stay in the same commit as each other,
+      #      for the reason recorded on the retention gate above.
+      #
+      #      SHOWN TO FAIL before being trusted — one arm per assertion, plus two control
+      #      arms, two second-direction arms, the third-family-member arm and a VOID. See
+      #      35-10-SUMMARY.md for the recorded output of each. The G-4 arm is the one plan
+      #      35-07 ran against the tree and recorded as producing NO red anywhere, because
+      #      this gate did not exist yet; discharging it was a required outcome of 35-10.
+      - name: Assert the four-tier layout contract holds at every surface (35-10 UIX-07)
+        run: |
+          chmod +x ./scripts/check-layout-width-contract.sh
+          ./scripts/check-layout-width-contract.sh
 
       #   11. The meta-gate, so the three steps above are the LAST time this is found by
       #      hand. It asserts that every scripts/check-*.sh either runs in a workflow or

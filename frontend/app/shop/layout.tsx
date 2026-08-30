@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { StorefrontNav } from "@/components/storefront/storefront-nav"
 import { PublicFooter } from "@/components/public/public-footer"
 import { resolvePublicOrigin } from "@/lib/public-origin"
@@ -61,7 +62,16 @@ export default function StorefrontLayout({
     <div className="min-h-screen bg-cream flex flex-col">
       <a href="#main" className="sr-only z-50 rounded-full bg-oxblood px-4 py-3 text-sm font-bold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4">Skip to main content</a>
       <header className="sticky top-0 z-50 bg-white border-b border-cream-100 shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/* PHASE 35 / UIX-07 — the DECLARED Marketing width tier, applied IN PLACE.
+            The rail's rendered width is unchanged. It is a deliberate verbatim
+            mirror of PublicShell's header rail and must stay equal to it, so the
+            storefront chrome and the content below it stay aligned; declaring the
+            same tier on both is what makes that agreement checkable instead of a
+            coincidence of two files having picked the same stock scale token. */}
+        <div
+          data-width-tier="marketing"
+          className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-4 sm:px-6 lg:px-8`}
+        >
           <div className="flex h-14 items-center justify-between">
             <Link
               href="/"

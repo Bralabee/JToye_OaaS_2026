@@ -23,8 +23,13 @@
  * `/shop?q=SE22` would render the plain heading and never correct itself.
  */
 
+import fs from "fs"
+import path from "path"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { ShopDiscoveryClient } from "@/app/shop/shop-discovery-client"
+import StorefrontLayout from "@/app/shop/layout"
+import ShopBrowseLoading from "@/app/shop/loading"
 import publicApiClient from "@/lib/public-api-client"
 import type { SearchInterpretation } from "@/lib/search-interpretation"
 import type { PageResponse } from "@/types/api"
@@ -34,6 +39,20 @@ jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
   default: { get: jest.fn() },
 }))
+
+// StorefrontNav reads the customer session. Mirrors shop-layout-a11y.test.tsx,
+// which renders the same layout for the same reason.
+jest.mock("@/lib/customer-auth", () => ({
+  getCustomerSession: jest.fn(() => Promise.resolve(null)),
+  customerLogin: jest.fn(),
+  customerLogout: jest.fn(),
+}))
+
+/**
+ * The stock scale token these storefront bands used to carry, named ONCE.
+ * A static gate over this token in plan 35-10 must exclude `__tests__/`.
+ */
+const STOCK_BAND_TOKEN = "max-w-7xl"
 
 const mockGet = publicApiClient.get as jest.Mock
 
@@ -294,5 +313,125 @@ describe("ShopDiscoveryClient — a non-answer never carries a proximity claim",
 
     expect(await screen.findByText(/1 kitchen for/)).toBeInTheDocument()
     expect(screen.queryByText(/within 3\.1 miles of/i)).toBeNull()
+  })
+})
+
+/**
+ * PHASE 35 / UIX-07 — the DECLARED Marketing width tier across the `/shop`
+ * route family, and the skeleton/content parity that goes with it.
+ *
+ * WHY THE LAYOUT AND ROUTE-SKELETON CASES LIVE IN THIS FILE. Plan 35-07 runs in
+ * a wave of five plans against one shared branch, and the wave is only
+ * parallel-safe because each plan stays inside a declared, non-overlapping file
+ * set. `shop-layout-a11y.test.tsx` belongs to no plan in this wave, so the
+ * storefront chrome and route-skeleton assertions are made here rather than by
+ * reaching outside the set. They are about the same route family.
+ *
+ * ORCH-01 (orchestrator decision, 2026-08-29, CONTEXT.md section 4b): `/shop`
+ * KEEPS the Marketing width. These cases therefore assert a declaration, never a
+ * change of width — the value is identical before and after.
+ */
+describe("/shop route family — the declared Marketing width tier (UIX-07)", () => {
+  function bandsIn(container: HTMLElement): Element[] {
+    return Array.from(container.querySelectorAll('[data-width-tier="marketing"]'))
+  }
+
+  it("declares the tier on the directory band the crawler and the customer see", () => {
+    const { container } = renderDiscovery({ query: "jollof", interpretation: TEXT })
+
+    const bands = bandsIn(container)
+    expect(bands).toHaveLength(1)
+    expect(bands[0].classList.contains(WIDTH_TIER_CLASS.marketing)).toBe(true)
+    // CONTROL on this very element, so the absence below is about the token.
+    expect(bands[0].classList.contains("mx-auto")).toBe(true)
+    expect(bands[0].classList.contains(STOCK_BAND_TOKEN)).toBe(false)
+  })
+
+  it("leaves the sub-heading and search-input control widths alone", () => {
+    renderDiscovery({ query: "jollof", interpretation: TEXT })
+
+    // PATTERNS 1c: a control's width is not a page band. The search input keeps
+    // its own clamp, and it is CLS-sensitive (CONTEXT section 5).
+    const input = screen.getByLabelText(/Search kitchens, dishes or a postcode/i)
+    const controlClamp = input.closest(".max-w-xl")
+    expect(controlClamp).not.toBeNull()
+    expect(controlClamp?.hasAttribute("data-width-tier")).toBe(false)
+  })
+
+  it("declares the tier on the directory's own Suspense skeleton band too", () => {
+    // The Suspense fallback does not render under jsdom (nothing suspends), so
+    // this arm reads the source. It is paired with the DOM case above: that one
+    // proves one of the two declarations is real and applied, this one proves
+    // BOTH sites carry it. A count, not a substring — a half-done file reds.
+    const src = fs.readFileSync(
+      path.join(process.cwd(), "app/shop/shop-discovery-client.tsx"),
+      "utf8"
+    )
+    const declarations = src.match(/data-width-tier="marketing"/g) ?? []
+    expect(declarations).toHaveLength(2)
+
+    // CONTROL: the pattern is capable of finding nothing, so the count above is
+    // a measurement rather than a tautology.
+    expect(src.match(/data-width-tier="shell"/g)).toBeNull()
+  })
+
+  it("declares the tier on the storefront header rail, and leaves main uncapped", () => {
+    const { container } = render(
+      <StorefrontLayout>
+        <p>Page body</p>
+      </StorefrontLayout>
+    )
+
+    // SCOPED TO THE HEADER ON PURPOSE. This layout also renders PublicFooter,
+    // whose rail already declares the same tier (plan 35-06). A container-wide
+    // query is therefore satisfied by the FOOTER even when the header rail
+    // carries nothing — measured: this case passed against the unmodified
+    // layout before the scoping was added. The pass would have been about the
+    // wrong element.
+    const header = container.querySelector("header")
+    expect(header).not.toBeNull()
+    const bands = Array.from(header!.querySelectorAll('[data-width-tier="marketing"]'))
+    expect(bands).toHaveLength(1)
+    expect(bands[0].classList.contains(WIDTH_TIER_CLASS.marketing)).toBe(true)
+    expect(bands[0].classList.contains("mx-auto")).toBe(true)
+    expect(bands[0].classList.contains(STOCK_BAND_TOKEN)).toBe(false)
+
+    // The layout's own main is deliberately width-free so its children own their
+    // bands — the policy pages nest in this tree. Do NOT cap it.
+    const main = container.querySelector("main#main")
+    expect(main).not.toBeNull()
+    expect(main?.className).not.toMatch(/max-w-/)
+    expect(main?.hasAttribute("data-width-tier")).toBe(false)
+  })
+
+  it("declares the tier on the /shop route skeleton", () => {
+    const { container } = render(<ShopBrowseLoading />)
+
+    const bands = bandsIn(container)
+    expect(bands).toHaveLength(1)
+    expect(bands[0].classList.contains(WIDTH_TIER_CLASS.marketing)).toBe(true)
+    expect(bands[0].classList.contains("mx-auto")).toBe(true)
+    expect(bands[0].classList.contains(STOCK_BAND_TOKEN)).toBe(false)
+  })
+
+  it("PARITY: the /shop route skeleton and the directory content declare the SAME band width", () => {
+    // The pair is consistent today at the Marketing width and must stay so, or
+    // `/shop` acquires the hydration narrowing that `/shop/[slug]` had. The
+    // OTHER pair — the `/shop/[slug]` skeleton, its detail client and its
+    // not-found panel — is a THREE-file family at a different width and is
+    // asserted by plan 35-10's static gate, not here.
+    const skeleton = bandsIn(render(<ShopBrowseLoading />).container)[0]
+    const content = bandsIn(
+      renderDiscovery({ query: "jollof", interpretation: TEXT }).container
+    )[0]
+
+    expect(skeleton).toBeDefined()
+    expect(content).toBeDefined()
+    expect(skeleton.getAttribute("data-width-tier")).toBe(content.getAttribute("data-width-tier"))
+    expect(skeleton.classList.contains(WIDTH_TIER_CLASS.marketing)).toBe(
+      content.classList.contains(WIDTH_TIER_CLASS.marketing)
+    )
+    // And that shared value is a real class, not two matching absences.
+    expect(WIDTH_TIER_CLASS.marketing).not.toBe("")
   })
 })

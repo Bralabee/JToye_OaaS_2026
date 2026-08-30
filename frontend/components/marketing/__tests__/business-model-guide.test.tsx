@@ -1,8 +1,17 @@
 import fs from "fs"
 import path from "path"
 import { fireEvent, render, screen } from "@testing-library/react"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { BusinessModelGuide } from "@/components/marketing/business-model-guide"
 import BusinessModelGuidePage from "@/app/business-model-guide/page"
+
+/**
+ * The stock scale token these bands used to carry, named ONCE per suite.
+ * See the note in operator-pitch.test.tsx: the assertion it backs is that the
+ * swap is COMPLETE per site (T-35-24), and a static gate over this token in plan
+ * 35-10 must exclude `__tests__/` or it will count this assertion as a usage.
+ */
+const STOCK_BAND_TOKEN = "max-w-7xl"
 
 describe("BusinessModelGuide design tokens (Surface C re-skin)", () => {
   const src = fs.readFileSync(
@@ -64,6 +73,60 @@ describe("BusinessModelGuide", () => {
 
     expect(screen.getByText("Assisted onboarding may beat a self-serve funnel")).toBeInTheDocument()
     expect(screen.queryByText("The first cluster should be narrow, not pan-European")).not.toBeInTheDocument()
+  })
+
+  /**
+   * PHASE 35 / UIX-07 — the DECLARED Marketing width tier.
+   *
+   * Four bands: the header rail, the sticky topic rail, the body and the footer
+   * rail. All four already rendered at the Marketing width via a stock scale
+   * token; the tier is now declared so the width is a contract rather than a
+   * coincidence. The count is asserted because a band left behind is invisible
+   * at today's value and only diverges when the tier moves.
+   */
+  const MARKETING_BANDS = 4
+
+  function marketingBands(): Element[] {
+    const { container } = render(<BusinessModelGuide />)
+    return Array.from(container.querySelectorAll('[data-width-tier="marketing"]'))
+  }
+
+  it("declares the Marketing tier on every one of its band elements", () => {
+    expect(marketingBands()).toHaveLength(MARKETING_BANDS)
+  })
+
+  it("carries the marketing tier class on every declared band", () => {
+    const bands = marketingBands()
+    expect(bands.length).toBeGreaterThan(0)
+    for (const band of bands) {
+      expect(band.classList.contains(WIDTH_TIER_CLASS.marketing)).toBe(true)
+    }
+  })
+
+  it("carries the tier class INSTEAD of the stock token, never beside it", () => {
+    const bands = marketingBands()
+    expect(bands.length).toBeGreaterThan(0)
+    for (const band of bands) {
+      // CONTROL on this very element, so the absence below is about the token.
+      expect(band.classList.contains("mx-auto")).toBe(true)
+      expect(band.classList.contains(STOCK_BAND_TOKEN)).toBe(false)
+    }
+  })
+
+  it("keeps the topic rail's own horizontal scroll behaviour on the band element", () => {
+    // The sticky topic rail IS one of the four bands, and it carries an overflow
+    // class on the same element. A displaced good: the swap must not shed it.
+    const bands = marketingBands()
+    const scrollRail = bands.filter((b) => b.classList.contains("overflow-x-auto"))
+    expect(scrollRail).toHaveLength(1)
+  })
+
+  it("leaves the typographic measure clamps inside the band alone", () => {
+    render(<BusinessModelGuide />)
+
+    const headline = screen.getByRole("heading", { level: 1 })
+    expect(headline.classList.contains("max-w-4xl")).toBe(true)
+    expect(headline.hasAttribute("data-width-tier")).toBe(false)
   })
 
   it("copies the link and provides a printable PDF", async () => {

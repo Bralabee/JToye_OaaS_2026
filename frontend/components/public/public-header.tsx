@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { LogOut, Menu, Package, User, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useCustomerSession } from "@/hooks/use-customer-session"
 import { customerLogout } from "@/lib/customer-auth"
 import {
@@ -76,7 +77,32 @@ export function PublicHeader() {
 
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-cream-100 shadow-sm">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      {/* THE HEADER RAIL, AND WHY IT DECLARES A TIER RATHER THAN A NUMBER.
+
+          This rail is deliberately EQUAL to the Marketing content tier, and the
+          public footer rail and the landing page's four content bands are equal
+          to it too. The three must move together or not at all.
+
+          They did not, and that is the defect this replaces. The rail rendered
+          at 1280px while `app/page.tsx` rendered its bands at 1152px, so the
+          landing content sat 128px inside its own chrome — the nav and the hero
+          did not share a left edge. Nothing detected it, because both values
+          were locally reasonable and neither element knew about the other.
+
+          Swapping a stock scale token for a declared tier is what makes the
+          agreement checkable: `data-width-tier` is queryable from a test and
+          from a browser, so "these two surfaces are the same width" stops being
+          a coincidence that survived review and becomes an assertion. The
+          RENDERED WIDTH IS UNCHANGED — the Marketing tier is 1280px, exactly
+          what the token it replaces produced.
+
+          ORCH-04 (orchestrator decision, 2026-08-29); see CONTEXT.md section 4b.
+          The class comes from the vocabulary module, never written out here:
+          the tier literals exist in exactly one file and plan 35-10 gates it. */}
+      <div
+        data-width-tier="marketing"
+        className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8")}
+      >
         <div className="flex h-14 items-center justify-between">
           {/* Wordmark -> the landing page, from every public surface. */}
           <Link

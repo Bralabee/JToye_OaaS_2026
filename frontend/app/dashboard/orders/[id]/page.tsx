@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import apiClient from "@/lib/api-client"
+import { cn } from "@/lib/utils"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useOrderEvents } from "@/hooks/use-order-events"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
@@ -65,17 +67,32 @@ export default function OrderDetailPage() {
     if (event.orderId === orderId) fetchDetail()
   })
 
+  // The loading branch carries the SAME tier as the loaded one, deliberately —
+  // otherwise this spinner sits in the full Shell band and the page snaps
+  // narrower the instant the fetch resolves. Not a redundant cap on a spinner.
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center p-12">
+      <div
+        data-width-tier="detail"
+        className={cn(
+          "mx-auto",
+          WIDTH_TIER_CLASS.detail,
+          "flex h-full items-center justify-center p-12"
+        )}
+      >
         <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-orange-500"></div>
       </div>
     )
   }
 
+  // Same tier as the loaded branch, for the same reason: a failed load must not
+  // render wider than a successful one.
   if (error) {
     return (
-      <div className="space-y-4 p-6">
+      <div
+        data-width-tier="detail"
+        className={cn("mx-auto", WIDTH_TIER_CLASS.detail, "space-y-4 p-6")}
+      >
         <Button
           variant="ghost"
           onClick={() => router.push("/dashboard/orders")}
@@ -104,8 +121,23 @@ export default function OrderDetailPage() {
     fetchDetail()
   }
 
+  // THE DETAIL TIER (phase 35, UIX-09). This page is a reading surface — a
+  // labelled key-value read plus a line-item list — not a data grid. Its measure
+  // comes from the industry cluster CONTEXT.md section 3 records: detail and
+  // reading columns sit tightly between 1016px (Square's content ladder) and
+  // 1136px (Linear's detail ladder), with Lightspeed's content column at 1100,
+  // and prose-measure guidance (45-75 characters a line) is why they converge.
+  //
+  // So this element is DELIBERATELY narrower than the Shell band around it, and
+  // it centres inside that band rather than hugging its left edge. Widening it
+  // to the shell cap would be a regression dressed up as an improvement. The
+  // number itself lives once, in lib/layout-widths.ts (DETAIL_MAX_PX) — change
+  // it there, never here.
   return (
-    <div className="space-y-4 p-6">
+    <div
+      data-width-tier="detail"
+      className={cn("mx-auto", WIDTH_TIER_CLASS.detail, "space-y-4 p-6")}
+    >
       <div className="flex items-center justify-between">
         <Button
           variant="ghost"

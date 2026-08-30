@@ -1,0 +1,200 @@
+# layout-tiers.tsv — the machine-readable surface-to-tier manifest for the phase-35
+# horizontal layout contract. Read by scripts/check-layout-width-contract.sh.
+#
+# WHY A MANIFEST AND NOT A PARAGRAPH. The 1400px cap this phase deleted arrived as a
+# stock shadcn scaffold block and stayed for the life of the product because nothing was
+# watching. A document records what someone intended; this file is what the gate reads,
+# so the declared surface set and the enforcement cannot disagree. Plan 35-11 writes the
+# prose a person reads; this is the thing that reds a pull request.
+#
+# FORMAT. One claim per line. EXACTLY TWO fields, separated by a SINGLE TAB:
+#
+#     <repo-relative path><TAB><claim>
+#
+# A row that does not split into exactly two non-empty fields is a VOID, not a skip.
+# Consecutive tabs collapse under a tab field separator, so an empty field shifts every
+# later column and the gate would then be reasoning about the wrong data while reporting
+# success. That trap has been paid for in this repository before.
+#
+# Blank lines and lines whose first character is `#` are skipped. Reasons therefore live
+# in comments ABOVE the rows they explain, never inside a row.
+#
+# CLAIM GRAMMAR
+#
+#   shell | index | detail | marketing
+#       The file DECLARES that tier: its comment-stripped source contains
+#       data-width-tier="<tier>". Checked in both directions by G-6.
+#
+#   N/A
+#       The surface was EXAMINED and DELIBERATELY LEFT UNTIERED. Its comment-stripped
+#       source must declare no tier at all. This claim exists because a manifest listing
+#       only what IS tiered cannot express "this was considered and left alone" — a later
+#       reader sees an absence and reads it as an oversight. An unstated boundary reads as
+#       covered.
+#
+#   vocabulary
+#       The single file allowed to hold the three tier class literals. G-1 reads this row
+#       rather than hard-coding the path, so moving the vocabulary is a manifest edit and
+#       not a gate edit.
+#
+#   parity:<family>:<band-token>
+#       The file is a member of a width FAMILY whose members must all render at the same
+#       band, and its comment-stripped source must carry <band-token> and no other band
+#       token. Used for surfaces that have no tier assignment but must still agree with
+#       each other. Checked by G-4.
+#
+# A path may appear on more than one row when more than one claim is true of it: the
+# /shop/[slug] files are each both N/A (no tier assigned) and a parity member (they must
+# nevertheless agree with one another).
+
+
+# ---------------------------------------------------------------------------------------
+# SHELL — the dashboard chrome. One line, inherited by all 21 authenticated routes.
+# ---------------------------------------------------------------------------------------
+frontend/components/dashboard/dashboard-shell.tsx	shell
+
+
+# ---------------------------------------------------------------------------------------
+# INDEX — resource-index surfaces, fluid to the shell cap. Thirteen surfaces.
+#
+# The Index tier applies NO class: "fluid to shell" is the documented pattern for
+# data-dense lists (Polaris prescribes a full-width page for lists with many columns,
+# Carbon ships a full-width escape from its own grid, Lightspeed's shell is uncapped).
+# The tier is nevertheless DECLARED in the DOM, because "uncapped" implemented as an
+# absence is a contract no assertion can distinguish from a forgotten cap — ORCH-03
+# (orchestrator decision, 2026-08-29, CONTEXT.md section 4b).
+#
+# G-7 asserts the absence AT THE DECLARING ELEMENT and deliberately not file-wide.
+# Measured on this tree: all five of the original index pages legitimately carry
+# max-w-2xl on a modal DialogContent — orders/page.tsx:782,958, products/page.tsx:641,
+# customers/page.tsx:419, shops/page.tsx:430. Those are Radix portals rendered outside
+# the page container, so the page tier cannot reach them and their width is a modal
+# ergonomics decision. A file-scoped no-cap gate would red on correct code.
+# ---------------------------------------------------------------------------------------
+frontend/app/dashboard/page.tsx	index
+frontend/app/dashboard/orders/page.tsx	index
+frontend/app/dashboard/products/page.tsx	index
+frontend/app/dashboard/customers/page.tsx	index
+frontend/app/dashboard/shops/page.tsx	index
+frontend/app/dashboard/finance/page.tsx	index
+frontend/app/dashboard/marketing/page.tsx	index
+frontend/app/dashboard/kitchen/page.tsx	index
+frontend/app/dashboard/staff/page.tsx	index
+frontend/app/dashboard/onboarding/approvals/page.tsx	index
+frontend/app/dashboard/webhooks/page.tsx	index
+# A [id] DETAIL route deliberately tiered INDEX. Tiered by CONTENT shape, not route
+# shape: the reason to open it is a wide, timestamp-heavy delivery log with its own
+# horizontal scroll region, and capping it to 1100 would make it scroll MORE than it does
+# today. Stated here so the next reader does not "fix" it back to detail. (PATTERNS A-3.)
+frontend/app/dashboard/webhooks/[id]/page.tsx	index
+# The flagged-media review queue renders through a component rather than its page.tsx,
+# so the declaration lives in components/ — app/dashboard/media/review/page.tsx itself
+# carries none, which is why it is recorded below as N/A rather than omitted.
+frontend/components/dashboard/media/ReviewQueue.tsx	index
+
+
+# ---------------------------------------------------------------------------------------
+# DETAIL — ~1100px. Order detail, forms, sequential wizards.
+# ---------------------------------------------------------------------------------------
+frontend/app/dashboard/orders/[id]/page.tsx	detail
+frontend/app/dashboard/products/import/page.tsx	detail
+frontend/app/dashboard/onboarding/page.tsx	detail
+
+
+# ---------------------------------------------------------------------------------------
+# MARKETING — ~1280px. Public bands and the chrome rails they must stay equal to.
+#
+# The rails are listed alongside the bands on purpose: if a rail and the content beneath
+# it declare different tiers, the misalignment this phase removed from the landing page
+# reappears inverted. Both directions of G-6 are what keep them together.
+# ---------------------------------------------------------------------------------------
+frontend/app/page.tsx	marketing
+frontend/components/marketing/operator-pitch.tsx	marketing
+frontend/components/marketing/business-model-guide.tsx	marketing
+frontend/components/marketing/competitive-teardown.tsx	marketing
+# ORCH-06 (orchestrator decision, 2026-08-29): the outer band of all four /legal/* policy
+# routes. The reading measure is held independently at max-w-[68ch] on the columns inside
+# it, so widening the band does not widen prose — a tier is a ceiling, not a target.
+frontend/components/legal/policy-page.tsx	marketing
+frontend/components/public/public-header.tsx	marketing
+frontend/components/public/public-footer.tsx	marketing
+# ORCH-01 (orchestrator decision, 2026-08-29): public /shop KEEPS the Marketing width and
+# does NOT take the Index tier. Flagged owner-visible-if-wrong at the 35-13 gate.
+frontend/app/shop/layout.tsx	marketing
+frontend/app/shop/shop-discovery-client.tsx	marketing
+frontend/app/shop/loading.tsx	marketing
+
+
+# ---------------------------------------------------------------------------------------
+# VOCABULARY — the one file allowed to spell the tier class literals.
+# ---------------------------------------------------------------------------------------
+frontend/components/layout/content-tier.tsx	vocabulary
+
+
+# ---------------------------------------------------------------------------------------
+# N/A — EXAMINED AND DELIBERATELY LEFT UNTIERED.
+#
+# Everything below was inventoried by this phase and left alone with a stated reason.
+# None of it is an omission. Each row's reason is in the comment above it.
+# ---------------------------------------------------------------------------------------
+
+# THIS ONE CARRIES AN ACTIVE TRAP: DO NOT ADD A CAP HERE. Its <main id="main"> is
+# deliberately width-free so children own their bands. Two independent reasons, both
+# measured: /shop is a SEPARATE layout tree, and PolicyPage nests inside this one — so a
+# cap here would silently narrow surfaces this phase never examined. The concrete
+# consequence is recorded at PATTERNS B-12: e2e/unsubscribe-flow.spec.ts asserts no
+# horizontal overflow at 375px on /unsubscribe, which is PublicShell + max-w-lg, and is
+# "only at risk if PublicShell gains a cap".
+frontend/components/public/public-shell.tsx	N/A
+
+# The /legal index — a <dl> of company facts plus a linked policy list, held at
+# max-w-3xl (768). EXAMINED by ORCH-06 and deliberately left: its content is text with no
+# columns to gain from width, and widening a six-item list to 1280 produces a mostly-empty
+# band, which is the defect this phase exists to remove reintroduced on a different page.
+# Recorded rather than dropped, because an unstated boundary reads as covered.
+frontend/app/legal/page.tsx	N/A
+
+# The /shop/[slug] family. All three are N/A — the surface has not been ASSIGNED a tier
+# (PATTERNS A-11 deferred: a tier is a ceiling not a target, 896 is within prose-measure
+# territory for a scannable list of dish rows, and the surface is absent from CONTEXT's
+# measured baseline). A tier attribute would claim an assignment nobody made. They are
+# nevertheless bound to each other by the parity rows further down.
+frontend/app/shop/[slug]/loading.tsx	N/A
+frontend/app/shop/[slug]/shop-detail-client.tsx	N/A
+frontend/app/shop/[slug]/not-found.tsx	N/A
+
+# Storefront and public surfaces that are ALREADY NARROWER than the Detail tier for a
+# stated ergonomic reason — a linear checkout step, a receipt, a phone-first history list,
+# a two-field lookup form, a single-purpose transactional panel. Each is an instance of
+# the ceiling-not-target rule, not an omission.
+frontend/app/shop/[slug]/cart/page.tsx	N/A
+frontend/app/shop/[slug]/checkout/page.tsx	N/A
+frontend/app/shop/[slug]/orders/[orderNumber]/page.tsx	N/A
+frontend/app/shop/orders/orders-client.tsx	N/A
+frontend/app/track/page.tsx	N/A
+frontend/app/unsubscribe/unsubscribe-content.tsx	N/A
+
+# The media review route file is a thin wrapper; its tier is declared by the component it
+# renders (listed above under INDEX). Recorded so the page's own empty tier set reads as
+# delegation rather than as a gap.
+frontend/app/dashboard/media/review/page.tsx	N/A
+
+
+# ---------------------------------------------------------------------------------------
+# PARITY FAMILIES — surfaces with no tier assignment that must still agree with one
+# another. The failure this catches is measured, not hypothetical.
+#
+# Before plan 35-07 the /shop/[slug] skeleton rendered its band at 1280 while the content
+# that replaces it renders at 896: the page NARROWED BY 384px the moment real content
+# arrived. 35-07 fixed the width and then ran the break arm — reverting the skeleton — and
+# recorded that NOTHING on this tree caught it: 14 suites / 146 tests stayed green, and a
+# repo-wide search with controls found no test, spec or e2e assertion referencing that
+# skeleton at all. It handed the arm to this gate as an explicit debt.
+#
+# IT IS A FAMILY OF THREE, NOT A PAIR. A check hard-coded to compare the skeleton and the
+# client would leave app/shop/[slug]/not-found.tsx free to drift while reporting the route
+# as covered — the same "half a check" failure in the other direction.
+# ---------------------------------------------------------------------------------------
+frontend/app/shop/[slug]/loading.tsx	parity:shop-slug-896:max-w-4xl
+frontend/app/shop/[slug]/shop-detail-client.tsx	parity:shop-slug-896:max-w-4xl
+frontend/app/shop/[slug]/not-found.tsx	parity:shop-slug-896:max-w-4xl

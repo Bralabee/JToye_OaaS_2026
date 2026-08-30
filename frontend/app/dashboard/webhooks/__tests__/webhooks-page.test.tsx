@@ -9,6 +9,14 @@
 import { render, screen } from "@testing-library/react"
 import WebhooksPage from "../page"
 import apiClient from "@/lib/api-client"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+
+/**
+ * Every width-cap utility an element declares, as tokens. A token filter, never a
+ * substring search — `classList` membership is what a browser resolves.
+ */
+const capTokens = (el: Element) =>
+  Array.from(el.classList).filter((c) => c.startsWith("max-w-"))
 
 jest.mock("@/lib/api-client")
 const mockedApiClient = apiClient as jest.Mocked<typeof apiClient>
@@ -74,5 +82,44 @@ describe("Webhook subscriptions list (Surface A)", () => {
     const table = container.querySelector('[data-testid="webhooks-table"]')
     expect(cards).toHaveClass("sm:hidden")
     expect(table).toHaveClass("hidden")
+  })
+
+  // --- Phase 35 / UIX-08: the width tier, declared rather than inherited ---
+
+  it("declares the index width tier, with no cap of its own, on the list's root band", async () => {
+    const { container } = render(<WebhooksPage />)
+    await screen.findAllByText("https://a.example.com/hooks")
+
+    const root = container.firstElementChild as HTMLElement
+    expect(root).toHaveAttribute("data-width-tier", "index")
+    expect(capTokens(root)).toEqual([])
+
+    // Non-vacuity control: the same filter over a real cap from the vocabulary
+    // must find it, so the empty result above is about the page.
+    const probe = document.createElement("div")
+    probe.className = `mx-auto ${WIDTH_TIER_CLASS.detail}`
+    expect(capTokens(probe)).toEqual([WIDTH_TIER_CLASS.detail])
+  })
+
+  it("leaves the responsive card/table split untouched while declaring the tier", async () => {
+    // The displaced-goods control. The tier is an attribute on the root; the
+    // breakpoint visibility rules live on descendants and must be byte-identical,
+    // because a widened band changes WHEN the table overflows and this split is
+    // what keeps 375px card-stacked (COMMS-06).
+    const { container } = render(<WebhooksPage />)
+    await screen.findAllByText("https://a.example.com/hooks")
+
+    expect(container.querySelector('[data-testid="webhooks-cards"]')).toHaveClass("sm:hidden")
+    expect(container.querySelector('[data-testid="webhooks-table"]')).toHaveClass("hidden")
+    expect(container.querySelector('[data-testid="webhooks-table"]')).toHaveClass("sm:block")
+  })
+
+  it("declares the same tier on the spinner branch, so the first paint is not undeclared", () => {
+    mockedApiClient.get.mockImplementation((() => new Promise(() => {})) as never)
+
+    const { container } = render(<WebhooksPage />)
+
+    expect(container.querySelector(".animate-spin")).not.toBeNull()
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
   })
 })
