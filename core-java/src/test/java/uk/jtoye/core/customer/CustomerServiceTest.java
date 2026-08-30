@@ -120,7 +120,7 @@ class CustomerServiceTest {
     @DisplayName("createCustomer - Success with valid request")
     void testCreateCustomer_Success() {
         // Given
-        when(customerRepository.save(any(Customer.class))).thenAnswer(invocation -> {
+        when(customerRepository.saveAndFlush(any(Customer.class))).thenAnswer(invocation -> {
             Customer customer = invocation.getArgument(0);
             setField(customer, "id", customerId);
             setField(customer, "createdAt", OffsetDateTime.now());
@@ -139,7 +139,7 @@ class CustomerServiceTest {
         assertEquals(5, result.allergenRestrictions());
 
         ArgumentCaptor<Customer> customerCaptor = ArgumentCaptor.forClass(Customer.class);
-        verify(customerRepository).save(customerCaptor.capture());
+        verify(customerRepository).saveAndFlush(customerCaptor.capture());
 
         Customer savedCustomer = customerCaptor.getValue();
         assertEquals(tenantId, savedCustomer.getTenantId());
@@ -159,7 +159,7 @@ class CustomerServiceTest {
         });
 
         assertEquals("Tenant context not set", exception.getMessage());
-        verify(customerRepository, never()).save(any(Customer.class));
+        verify(customerRepository, never()).saveAndFlush(any(Customer.class));
     }
 
     @Test
@@ -167,7 +167,7 @@ class CustomerServiceTest {
     void testCreateCustomer_SetsTenantId() {
         // Given
         ArgumentCaptor<Customer> customerCaptor = ArgumentCaptor.forClass(Customer.class);
-        when(customerRepository.save(customerCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(customerRepository.saveAndFlush(customerCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         customerService.createCustomer(validCreateRequest);
@@ -187,14 +187,14 @@ class CustomerServiceTest {
                 "07123456789",
                 null
         );
-        when(customerRepository.save(any(Customer.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(customerRepository.saveAndFlush(any(Customer.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         CustomerDto result = customerService.createCustomer(requestWithoutAllergens);
 
         // Then
         assertEquals(0, result.allergenRestrictions());
-        verify(customerRepository).save(any(Customer.class));
+        verify(customerRepository).saveAndFlush(any(Customer.class));
     }
 
     @Test
@@ -207,14 +207,14 @@ class CustomerServiceTest {
                 null,
                 0
         );
-        when(customerRepository.save(any(Customer.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(customerRepository.saveAndFlush(any(Customer.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         CustomerDto result = customerService.createCustomer(requestWithoutPhone);
 
         // Then
         assertNull(result.phone());
-        verify(customerRepository).save(any(Customer.class));
+        verify(customerRepository).saveAndFlush(any(Customer.class));
     }
 
     @Test
@@ -431,14 +431,14 @@ class CustomerServiceTest {
                 "07123456789",
                 Integer.MAX_VALUE
         );
-        when(customerRepository.save(any(Customer.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(customerRepository.saveAndFlush(any(Customer.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         CustomerDto result = customerService.createCustomer(requestWithMaxAllergens);
 
         // Then
         assertEquals(Integer.MAX_VALUE, result.allergenRestrictions());
-        verify(customerRepository).save(any(Customer.class));
+        verify(customerRepository).saveAndFlush(any(Customer.class));
     }
 
     @Test
@@ -485,7 +485,7 @@ class CustomerServiceTest {
     void testCreateCustomer_SetsUpdatedAt() {
         // Given
         ArgumentCaptor<Customer> customerCaptor = ArgumentCaptor.forClass(Customer.class);
-        when(customerRepository.save(customerCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(customerRepository.saveAndFlush(customerCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
 
         // When
         customerService.createCustomer(validCreateRequest);

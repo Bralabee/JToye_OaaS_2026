@@ -1,3 +1,5 @@
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+
 /**
  * /shop loading boundary (debug: rsc-prefetch-double-abort).
  *
@@ -6,10 +8,19 @@
  * one continuous skeleton. The StorefrontNav header stays visible via
  * app/shop/layout.tsx, so navigation commits instantly with correct chrome
  * instead of freezing on the previous page for a full server round-trip.
+ *
+ * PHASE 35 / UIX-07: the band below declares the Marketing tier, at an UNCHANGED
+ * width. Skeleton and content must declare the SAME width or the page jumps on
+ * hydration — this pair was already consistent and is kept so deliberately. The
+ * sibling pair on /shop/[slug] was NOT consistent (skeleton 384px wider than its
+ * content) and is fixed in the same plan.
  */
 export default function ShopBrowseLoading() {
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+    <div
+      data-width-tier="marketing"
+      className={`mx-auto ${WIDTH_TIER_CLASS.marketing} px-4 sm:px-6 lg:px-8 py-6 sm:py-10`}
+    >
       {/* Hero skeleton */}
       <div className="mb-8 sm:mb-10 animate-pulse">
         <div className="h-8 w-72 max-w-full rounded bg-cream-100" />

@@ -216,6 +216,24 @@ jtoye:
       # request: a link built from an attacker-supplied Host header would redirect a live,
       # single-use bearer token to a collector of their choosing.
       verify-base-url: ${DSAR_VERIFY_BASE_URL:http://localhost:8080/api/v1/public/gdpr/dsar/verify}
+      # QA-council cluster S1 (SEC-1): DsarIntakeRateLimiter's three independent axes. The
+      # pre-existing IP-keyed bucket (requests-per-hour / max-tracked-clients — deliberately left
+      # undocumented here to match its own prior convention) is keyed on the client-controllable
+      # X-Forwarded-For first hop and is defeated by rotating it; these two close that gap.
+      rate-limit:
+        # Requests per DIGESTED subject email per day — XFF-independent. A genuine subject lodges
+        # once; this allows a couple of retries over a day without arming an email-bombing
+        # amplifier against an address named by an attacker who rotates their own IP freely.
+        requests-per-email-per-day: ${DSAR_RATE_LIMIT_REQUESTS_PER_EMAIL_PER_DAY:3}
+        # Upper bound on tracked subject digests before the limiter evicts idle entries and then
+        # shares one fail-closed overflow bucket — the memory-amplification guard already applied
+        # to the IP map, mirrored here (an attacker can mint unlimited target addresses).
+        max-tracked-emails: ${DSAR_RATE_LIMIT_MAX_TRACKED_EMAILS:10000}
+        # Aggregate ceiling across EVERY caller regardless of IP or target email — the final
+        # backstop when both axes are rotated simultaneously. Sized well above genuine
+        # platform-wide DSAR volume (this queue is usually empty) and well below a number that
+        # would let a flood do real damage in an hour.
+        global-requests-per-hour: ${DSAR_RATE_LIMIT_GLOBAL_REQUESTS_PER_HOUR:200}
   security:
     jwt:
       expected-audience: ${JWT_EXPECTED_AUDIENCE:core-api}

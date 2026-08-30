@@ -48,7 +48,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
         </div>
         <button
           onClick={clearCart}
-          className="text-xs text-slate-400 hover:text-red-500 transition-colors"
+          className="text-xs text-slate-600 hover:text-red-500 transition-colors"
         >
           Clear all
         </button>
@@ -76,7 +76,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-semibold text-slate-900 truncate">{item.title}</h3>
               {item.category && (
-                <p className="text-xs text-slate-400">{item.category}</p>
+                <p className="text-xs text-slate-600">{item.category}</p>
               )}
               <p className="text-sm font-bold text-slate-900 mt-0.5">
                 {formatPrice(item.pricePennies * item.quantity)}
@@ -87,6 +87,11 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             <div className="flex items-center gap-0">
               <button
                 onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                aria-label={
+                  item.quantity === 1
+                    ? `Remove ${item.title} from basket`
+                    : `Decrease quantity of ${item.title}`
+                }
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 hover:bg-cream active:scale-95 transition-all"
               >
                 {item.quantity === 1 ? <Trash2 className="h-3.5 w-3.5 text-red-400" /> : <Minus className="h-3.5 w-3.5" />}
@@ -96,6 +101,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
               </span>
               <button
                 onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                aria-label={`Increase quantity of ${item.title}`}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 hover:bg-cream active:scale-95 transition-all"
               >
                 <Plus className="h-3.5 w-3.5" />

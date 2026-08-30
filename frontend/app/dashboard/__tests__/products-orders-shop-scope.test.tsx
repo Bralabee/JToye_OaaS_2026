@@ -321,7 +321,11 @@ describe("#485 — pickers are followed to the end of the list", () => {
       expect(
         await screen.findByRole("option", { name: new RegExp(`^${TAIL_PRODUCT.title} `) })
       ).toBeInTheDocument()
-    })
+      // Explicit generous timeout: this test does ~4.2s of work; under the
+      // parallel CPU load added by the new dashboard-a11y-axe scan it can
+      // brush the default 5s ceiling and flake. Raise the ceiling rather
+      // than shrink the work (QA-council integration follow-up).
+    }, 15000)
 
     it("does NOT re-page the pickers when the orders list refetches", async () => {
       // The pickers used to ride inside `fetchData`, which reruns on every pager

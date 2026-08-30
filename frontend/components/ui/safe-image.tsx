@@ -15,6 +15,12 @@ interface SafeImageProps {
   // derivative carries media_asset.width/height). Optional + backward-compatible.
   width?: number
   height?: number
+  // FE-2: a resource-fetch hint for the browser's preload scanner, forwarded
+  // verbatim to the <img>'s `fetchpriority` attribute. Optional and
+  // undefined by default — every existing call site is unaffected, and only
+  // the ONE genuine LCP candidate on a page should ever pass "high" (marking
+  // several images "high" defeats the hint by spreading priority evenly).
+  fetchPriority?: "high" | "low" | "auto"
 }
 
 /**
@@ -30,6 +36,7 @@ export function SafeImage({
   loading = "lazy",
   width,
   height,
+  fetchPriority,
 }: SafeImageProps) {
   const [failed, setFailed] = useState(false)
 
@@ -49,6 +56,7 @@ export function SafeImage({
       loading={loading}
       width={width}
       height={height}
+      fetchPriority={fetchPriority}
       onError={() => setFailed(true)}
     />
   )

@@ -138,7 +138,7 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
     {
       name: "The vendor dashboard, and everything behind a vendor sign-in",
       reason:
-        "The dashboard is the tool vendors use to run their shop. It has not been assessed against WCAG 2.1 level AA, so no claim is made about it. It is named here rather than left unmentioned, because a scope that quietly stops at the sign-in page reads as a claim about everything.",
+        "The dashboard is the tool vendors use to run their shop. It has not been comprehensively assessed against WCAG 2.1 level AA, so no conformance claim is made about it — but it is no longer unmonitored: key dashboard pages are scanned automatically with axe on every pull request (a blocking check), and every dashboard route is scanned nightly in a report-only pass that surfaces new problems without gating a release. It is named here rather than left unmentioned, because a scope that quietly stops at the sign-in page reads as a claim about everything.",
     },
   ],
 
@@ -146,11 +146,11 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
     // --- Outside the claim by decision -------------------------------------
     {
       id: "vendor-dashboard-not-assessed",
-      title: "The vendor dashboard has not been assessed",
+      title: "The vendor dashboard has not been comprehensively assessed",
       description:
-        "Everything behind a vendor sign-in — the dashboard, the kitchen display and the vendor settings pages — has not been tested against the standard, so we do not know how well it performs for someone using assistive technology.",
+        "Everything behind a vendor sign-in — the dashboard, the kitchen display and the vendor settings pages — is now scanned automatically for accessibility problems: an axe scan of key dashboard pages runs on every pull request and blocks it on a violation, and every dashboard route is scanned again nightly in a report-only pass. That is real, ongoing coverage, but it is not the same as a person comprehensively testing the standard against every page, so we do not yet make a conformance claim about it.",
       reason:
-        "This round of work deliberately covered the pages a member of the public can reach without an account, because that is where an inaccessible page stops somebody buying food. The dashboard is next, not forgotten.",
+        "This round of work deliberately covered the pages a member of the public can reach without an account, because that is where an inaccessible page stops somebody buying food. Automated dashboard scanning closes part of that gap; a full assessment is next, not forgotten.",
       category: "out-of-scope",
       routes: ["/dashboard"],
       remediationBy: "2027-02-16",

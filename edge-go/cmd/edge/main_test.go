@@ -200,6 +200,71 @@ func TestRateLimiter_ContextCancelStopsRefill(t *testing.T) {
 	}
 }
 
+func TestRateLimiter_HealthEndpointExempt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Deliberately tiny burst: any non-exempt path would trip 429 well before
+	// 50 requests, so this loop is a real test of the exemption, not a
+	// tolerance check on the token math.
+	handler := rateLimiter(ctx, 1, 2)
+
+	for i := 0; i < 50; i++ {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/health", nil)
+
+		handler(c)
+
+		if w.Code == http.StatusTooManyRequests {
+			t.Fatalf("/health request %d was rate-limited (429) — the kubelet liveness probe must never trip the token bucket", i+1)
+		}
+	}
+}
+
+func TestRateLimiter_ReadyEndpointExempt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	handler := rateLimiter(ctx, 1, 2)
+
+	for i := 0; i < 50; i++ {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/ready", nil)
+
+		handler(c)
+
+		if w.Code == http.StatusTooManyRequests {
+			t.Fatalf("/ready request %d was rate-limited (429) — the kubelet readiness probe must never trip the token bucket", i+1)
+		}
+	}
+}
+
+func TestRateLimiter_BusinessRouteStillLimited(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	handler := rateLimiter(ctx, 1, 2)
+
+	// Exhaust the burst on a real business route.
+	for i := 0; i < 2; i++ {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/api/v1/sync/batch", nil)
+		handler(c)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/sync/batch", nil)
+	handler(c)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("Expected a business route to still be rate-limited after its burst is exhausted, got %d", w.Code)
+	}
+}
+
 // --- Health endpoint tests ---
 
 func setupRouter(coreServer *httptest.Server, jwksServer *httptest.Server) *gin.Engine {

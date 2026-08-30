@@ -154,7 +154,7 @@ docker compose -f docker-compose.full-stack.yml down -v
 - Frontend: http://localhost:3000
 - Core API: http://localhost:9090 (endpoints: `/customers`, `/products`, etc.)
 - Keycloak Admin: http://localhost:8085 (user `$KEYCLOAK_ADMIN`, password `$KEYCLOAK_ADMIN_PASSWORD` from your `.env`)
-- RabbitMQ Management: http://localhost:15672 (jtoye/rabbitmqpass123)
+- RabbitMQ Management: http://localhost:15672 (jtoye/<rotated-2026-08-29-see-.env>)
 
 **Test Authentication:**
 1. Open http://localhost:3000/auth/signin

@@ -6,8 +6,8 @@
 
 **Payment Processing:**
 - Stripe — Online card payments + COD fallback
-  - SDK: `com.stripe:stripe-java:33.3.0` (`core-java/build.gradle.kts:141`)
-  - Frontend: `@stripe/react-stripe-js` 6.8.0, `@stripe/stripe-js` 9.12.0 (`frontend/package.json:27-28`)
+  - SDK: `com.stripe:stripe-java:33.3.0` (`core-java/build.gradle.kts:145`)
+  - Frontend: `@stripe/react-stripe-js` 6.8.2, `@stripe/stripe-js` 9.14.0 (`frontend/package.json:27-28`)
   - Implementation: `core-java/src/main/java/uk/jtoye/core/payment/` (PaymentService, webhook controller)
   - Auth: `STRIPE_API_KEY` (sk_test_/sk_live_), `STRIPE_WEBHOOK_SECRET` (whsec_), `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
   - Failure mode: Resilience4j circuit breaker (`resilience4j.circuitbreaker.instances.stripe`, 50% failure threshold, 30s wait)
@@ -45,7 +45,7 @@
   - Credentials: `S3_ACCESS_KEY`, `S3_SECRET_KEY` (default `minioadmin`/`minioadmin`)
   - Bucket: `S3_BUCKET` (`jtoye-images`), anonymous GetObject-only policy (#626) applied by `minio-init` sidecar (`docker-compose.full-stack.yml:554-570`)
   - Public URL: `S3_PUBLIC_URL`
-  - SDK: AWS SDK v2 BOM → `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:115-116`). Version is claimed once, in STACK.md, which the version gate checks.
+  - SDK: AWS SDK v2 BOM → `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:119-120`). Version is claimed once, in STACK.md, which the version gate checks.
   - Implementation: `core-java/src/main/java/uk/jtoye/core/storage/`
   - Constraints: max 5MB, allowed types `image/jpeg|png|webp|gif`
 
@@ -68,7 +68,7 @@
   - `rabbitmq_stomp` — **new in v2.1**, port 61613, backs Spring STOMP broker relay
 - Ports: 5672 (AMQP), 15672 (mgmt UI), 61613 (STOMP)
 - Auth: `RABBITMQ_USER` / `RABBITMQ_PASSWORD` (also reused as STOMP client/system login)
-- Java client: `spring-boot-starter-amqp` (`core-java/build.gradle.kts:48`)
+- Java client: `spring-boot-starter-amqp` (`core-java/build.gradle.kts:52`)
 - Use cases:
   - Order event publishing (`OrderEventPublisher`)
   - Email/notification async dispatch
@@ -94,7 +94,7 @@
   - Health/metrics exposed (`KC_HEALTH_ENABLED=true`, `KC_METRICS_ENABLED=true`)
 
 **Backend (Spring Security):**
-- `spring-boot-starter-oauth2-resource-server` (`core-java/build.gradle.kts:87`)
+- `spring-boot-starter-oauth2-resource-server` (`core-java/build.gradle.kts:91`)
 - Config: `core-java/src/main/java/uk/jtoye/core/security/` (`SecurityConfig`, `JwtTenantFilter`, `TenantContext`)
 - Token validation: JWT signature + issuer check against Keycloak JWKS
 - Tenant extraction from JWT claim → `TenantContext` ThreadLocal → RLS `set_config` per request
@@ -172,7 +172,7 @@
 - `/actuator/info`
 
 **Distributed Tracing:**
-- Micrometer Tracing with Brave bridge → Zipkin reporter (`micrometer-tracing-bridge-brave` in `core-java/build.gradle.kts:134`)
+- Micrometer Tracing with Brave bridge → Zipkin reporter (`micrometer-tracing-bridge-brave` in `core-java/build.gradle.kts:138`)
 - Endpoint: `ZIPKIN_ENDPOINT` (default `http://localhost:9411/api/v2/spans`)
 - Sampling: `TRACING_PROBABILITY=0.1`
 - Log correlation: `%X{traceId}`, `%X{spanId}` MDC fields
@@ -211,7 +211,7 @@
   - Persistence: `payment_event_outbox` table (V31, RLS fixed in V33) for idempotent replay
 
 - WhatsApp Cloud API webhook (gated, currently edge-only stub)
-  - Endpoint: `POST /api/v1/webhooks/whatsapp` on edge-go (`edge-go/cmd/edge/main.go:299`)
+  - Endpoint: `POST /api/v1/webhooks/whatsapp` on edge-go (`edge-go/cmd/edge/main.go:325`)
   - Signature: `X-Hub-Signature-256` HMAC-SHA256 verified against `WHATSAPP_APP_SECRET` (fail-closed — refuses webhook if secret unset; previously would silently skip, fixed in P1 audit)
   - Parser: `edge-go/internal/whatsapp/parser.go`
   - Default shop: `WHATSAPP_DEFAULT_SHOP_ID` (if unset, handler errors rather than fabricating tenant)

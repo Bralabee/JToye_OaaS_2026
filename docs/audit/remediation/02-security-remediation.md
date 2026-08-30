@@ -900,8 +900,8 @@ If absorb is committed, the existing Spring `RateLimitInterceptor` is already pe
 |---|---|---|---|
 | `POSTGRES_PASSWORD` | `secret` | 90 days (prod), pre-staging-deploy | kubeseal → `postgres` secret → rolling restart of `core-java`, `keycloak` |
 | `DB_PASSWORD` (`jtoye_app`) | `secret` | 90 days | `ALTER USER` then kubeseal → `core-java` rolling restart |
-| `REDIS_PASSWORD` | `redispass123` | 90 days | kubeseal → `core-java` (Lettuce reconnects) |
-| `RABBITMQ_DEFAULT_PASS` | `rabbitmqpass123` | 90 days | RabbitMQ user reset → `core-java` reconnects |
+| `REDIS_PASSWORD` | `<rotated-2026-08-29-see-.env>` | 90 days | kubeseal → `core-java` (Lettuce reconnects) |
+| `RABBITMQ_DEFAULT_PASS` | `<rotated-2026-08-29-see-.env>` | 90 days | RabbitMQ user reset → `core-java` reconnects |
 | `NEXTAUTH_SECRET` | base64 32-byte (OK strength) | 180 days | kubeseal → frontend rolling restart **(invalidates all sessions)** |
 | `KEYCLOAK_CLIENT_SECRET` | `core-api-secret-2026` | 90 days, immediately on staff exit | Keycloak admin → kubeseal → frontend + core-java rolling |
 | `STRIPE_API_KEY` | (not in `.env`, prod-only) | 30 days, immediately on suspected leak | Stripe dashboard rotate → kubeseal → core-java |

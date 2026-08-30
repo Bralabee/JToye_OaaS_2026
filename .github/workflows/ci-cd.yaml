@@ -68,6 +68,29 @@ jobs:
           DB_USER: jtoye
           DB_PASSWORD: password
 
+      # Plan 34-09 (TRUTH-02, #110). This file is HALF of the Java coverage
+      # measurement, and the other half is produced in a different job. `test` above
+      # EXCLUDES the testcontainers tag and `integrationTest` runs ONLY that tag, so
+      # neither job can compute the real number alone. Measured 2026-08-29 on a tree
+      # at this commit: this suite alone covers 62.12% of lines, the two together
+      # cover 87.55% — a 25.43-point gap, a quarter of the codebase. Publishing the
+      # first as "coverage" would be a false statement, so the integration job
+      # downloads this artifact and reports over both.
+      #
+      # if: always() so a failing unit suite still hands over whatever it executed.
+      # The downstream gate decides whether that is measurable and VOIDs if it is
+      # not — it never scores a partial or absent run as a coverage regression.
+      # if-no-files-found: error because a silently empty upload would surface far
+      # downstream as an opaque artifact error instead of here, at its source.
+      - name: Upload the unit suite's JaCoCo execution data
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: java-coverage-exec-unit
+          path: core-java/build-local/jacoco/test.exec
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Install swaggo/swag CLI (needed by edge-go OpenAPI freshness test)
         run: go install github.com/swaggo/swag/cmd/swag@v1.16.3
 
@@ -81,6 +104,38 @@ jobs:
           # swag is installed to $(go env GOPATH)/bin; make sure the
           # OpenAPI freshness test can find it.
           PATH: ${{ env.PATH }}:/home/runner/go/bin
+
+      # Plan 34-08 (TRUTH-02, #110). The step ABOVE has written coverage.out for
+      # months and the upload step at the end of this job has archived it. Nothing
+      # read it: no `go tool cover`, no threshold, no consumer of any kind anywhere
+      # in the repository. Every edge-go package could have fallen to zero and this
+      # job would have stayed green, because producing a number and checking a
+      # number are two different acts and only the first was happening.
+      #
+      # No `working-directory:` deliberately — the gate resolves the repo root and
+      # the module directory itself, and cds into edge-go before invoking
+      # `go tool cover`, which MUST run inside the module (measured: from the repo
+      # root it exits non-zero with "go.mod file not found in current directory or
+      # any parent directory"). Giving the step a working-directory as well would
+      # put the same fact in two places.
+      #
+      # Shown to FAIL before being wired, then restored and verified by
+      # `git hash-object` (78870d8c…, identical before and after):
+      #   floor raised to 99.9 ......................... rc=1, naming 66.8 and 99.9
+      #   GO_COVERPROFILE at a path that does not exist  rc=2 VOID
+      #   an EMPTY profile ............................. rc=2 VOID
+      #   a profile of one junk line ................... rc=2 VOID
+      #   a mode line with zero data lines ............. rc=2 VOID
+      # The last two matter most. MEASURED with Go 1.26: `go tool cover -func` on an
+      # empty file AND on a mode-line-only file both exit 0 reporting
+      # "total: (statements) 0.0%". A gate that trusts rc and then trusts the total
+      # therefore turns a broken or skipped test run into a coverage regression,
+      # reporting an infrastructure failure as a code problem. The gate parses the
+      # profile structurally first and VOIDs instead. Clean tree: rc=0 at 66.8%.
+      - name: Enforce the edge-go coverage floor (#110)
+        run: |
+          chmod +x ./scripts/check-go-coverage.sh
+          ./scripts/check-go-coverage.sh
 
       - name: Validate edge-go OpenAPI spec (@seriousme/openapi-schema-validator)
         # ROADMAP DOC-01 success criterion #1: /openapi.json is a valid
@@ -100,24 +155,58 @@ jobs:
         run: npm run build
         working-directory: frontend
 
-      # The step above does NOT cover frontend/e2e. `next build` type-checks the
-      # pages/app graph, not every file in the tsconfig program — measured by
-      # planting `const broken: number = "..."` in a spec: `npm run build` exits 0
-      # and never mentions the file, while `tsc --noEmit` exits 2 with TS2322.
-      # Playwright transpiles specs without full checking either, so until this
-      # step existed a type error in a spec could reach main with every gate green.
+      # `next build` type-checks via tsconfig.build.json (next.config.mjs
+      # `typescript.tsconfigPath`), which deliberately excludes tests and e2e:
+      # the Docker image build context is ./frontend, and a test importing a
+      # repo-root file (docs/retention-manifest.json) can never resolve there
+      # (measured 2026-08-28: the image build failed at TS2307 on exactly that
+      # import under next 16.3.x, which widened the build check from the
+      # pages/app graph to the whole program). This step is therefore the ONLY
+      # gate that type-checks the jest test files — it runs bare `tsc --noEmit`
+      # over tsconfig.json (tests and e2e included) in a full repo checkout
+      # where the manifest exists. Its fail direction is on record: it exited 1
+      # naming 3 real test-file errors on the pre-#679 tree.
       #
-      # Scoped to tsconfig.e2e.json deliberately: a bare `tsc --noEmit` over the
-      # frontend is red at ~366 pre-existing jest-dom matcher errors that
-      # `next build` never checks, and a permanently red gate is an ignored one.
-      - name: Type-check the Playwright specs (nothing else does)
+      # Historical note: this step used to be impossible — a bare tsc was red at
+      # ~366 jest-dom matcher errors. @testing-library/jest-dom 7.x fixed its
+      # types; the program measured clean (rc=0, 0 errors) on 2026-08-28.
+      - name: Type-check the full frontend program (only gate covering jest test files)
+        run: npx tsc --noEmit
+        working-directory: frontend
+
+      # Redundant with the bare tsc above for e2e specs, kept deliberately: it
+      # pins the e2e files to their own tsconfig.e2e.json settings, and a
+      # second instrument with an independent config is cheap insurance against
+      # a future exclude quietly dropping the specs from the main program.
+      - name: Type-check the Playwright specs (scoped tsconfig.e2e.json)
         run: bash scripts/check-e2e-typecheck.sh
 
       # --json --outputFile is here so the count oracle below can reuse THIS run
       # rather than executing the suite a second time. The human-readable reporter
       # output is unaffected.
+      #
+      # --coverage was added by plan 34-08 (TRUTH-02, #110) and the two flags
+      # deliberately coexist on ONE run. jest.config.js now declares a
+      # coverageThreshold, which Jest enforces itself inside this same execution —
+      # there is no separate gate script to wire, and no second suite run to pay
+      # for. Before this, the config had collectCoverageFrom and no threshold and
+      # this step passed no --coverage at all, so the frontend coverage number was
+      # never even PRODUCED in CI, let alone checked.
+      #
+      # The --json --outputFile pair MUST survive any edit to this line: the two
+      # oracle steps below read that report rather than re-running the suite, so
+      # dropping it does not just lose a file, it silently removes the only check
+      # that asks a RUNNER what docs/metrics.json claims. Verified locally after
+      # adding --coverage — the oracle read the coverage run's report and exited 0,
+      # so coverage collection does not change the report's shape.
+      #
+      # Shown to FAIL before being trusted: each of the four thresholds was raised
+      # above its measurement once and Jest went red naming that counter (e.g.
+      # 'coverage threshold for lines (90%) not met: 66.49%'), rc=1, while
+      # 'Tests: 1272 passed' — proving the threshold and not a test is what fires.
+      # Every arm restored and verified by `git hash-object` (dd133e72…).
       - name: Run frontend Jest tests
-        run: npm test -- --ci --watchAll=false --json --outputFile="$RUNNER_TEMP/jest-report.json"
+        run: npm test -- --ci --watchAll=false --coverage --json --outputFile="$RUNNER_TEMP/jest-report.json"
         working-directory: frontend
 
       # Issue #291. docs-freshness.sh asserts docs/metrics.json against the source
@@ -193,6 +282,14 @@ jobs:
           echo "  (core-java/**, build.gradle.kts, settings.gradle.kts, gradle.properties, gradle/**, gradlew, gradlew.bat, .github/workflows/ci-cd.yaml)"
           echo "so ./gradlew :core-java:integrationTest cannot be affected. This job reports SUCCESS on purpose"
           echo "so it stays a satisfiable required check. push/release runs always execute the full suite."
+          echo ""
+          echo "JAVA COVERAGE WAS NOT EVALUATED ON THIS RUN."
+          echo "  The Java coverage floor is enforced over the AGGREGATE of the unit suite and this"
+          echo "  integration suite, because the unit suite alone covers 62.12% of lines where the two"
+          echo "  together cover 87.55% (measured 2026-08-29). This job skipped its half, so no"
+          echo "  aggregate could be computed and none was. THIS JOB'S SUCCESS SAYS NOTHING ABOUT"
+          echo "  COVERAGE — do not read it as a coverage result, and do not quote a number from it."
+          echo "  Could not measure is not measured and fine."
 
       - name: Set up JDK 21
         if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
@@ -218,12 +315,81 @@ jobs:
         if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
         run: ./gradlew :core-java:integrationTest --no-daemon
 
+      # Plan 34-09 (TRUTH-02, #110). Java coverage is measured over BOTH suites and
+      # gated on the aggregate. The unit half arrives as an artifact from job `test`;
+      # this job holds the other half, so this is the only place in the pipeline where
+      # the real number can be computed at all.
+      #
+      # ALL THREE STEPS CARRY THE SAME `if:` AS THE SUITE ABOVE, AND THAT IS THE POINT.
+      # This job is path-filtered and reports SUCCESS while skipping, deliberately, so
+      # it stays a satisfiable required check. A coverage gate running unconditionally
+      # here would be wrong on exactly the runs that skip — it would have no aggregate
+      # to read and would either invent a number or red a PR that changed no Java. The
+      # guard keeps the gate where it can measure; the skip-notice step above states in
+      # words that coverage was not evaluated where it cannot. Do not "simplify" either
+      # away: together they are what stops this job's green being read as a coverage
+      # result.
+      #
+      # continue-on-error on the download, deliberately. The two jobs run in PARALLEL
+      # with no `needs:` between them, so in principle the artifact could be absent when
+      # this step runs. In practice it cannot: the download happens AFTER the ~25-45
+      # minute integration suite while job `test` finishes in ~12-18, and both are
+      # queued by the same trigger. If that ever inverts, the correct outcome is the
+      # gate's own VOID naming the missing suite, not an opaque "unable to find any
+      # artifacts" error — and under no ordering does a missing half produce a PASS.
+      - name: Download the unit suite's JaCoCo execution data
+        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: java-coverage-exec-unit
+          path: core-java/build-local/jacoco
+
+      # BOTH reports, not just the aggregate: the gate compares them, and an
+      # "aggregate" that merely equals the unit figure is a unit report wearing the
+      # wrong filename. Generating the unit-only one here costs nothing and re-runs no
+      # test — MEASURED with --dry-run on 2026-08-29, jacocoTestReport's whole task
+      # graph is compileJava -> processResources -> classes -> jacocoTestReport, with
+      # the `test` task absent from it entirely (the jacoco plugin wires the report to
+      # its test task with mustRunAfter, never dependsOn). It re-reports the downloaded
+      # .exec and nothing else.
+      - name: Generate the unit-only and aggregate JaCoCo reports
+        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        run: ./gradlew :core-java:jacocoTestReport :core-java:jacocoAggregateReport --no-daemon
+
+      # Shown to FAIL before being trusted, then restored and verified by
+      # `git hash-object` (82c8928e…, identical before and after every arm):
+      #   both floors raised to 99.9 ................... rc=1, four FAILs, real numbers
+      #   LINE floor alone raised to 99.9 .............. rc=1, "87.55% is BELOW 99.9%"
+      #   aggregate CSV at a path that does not exist .. rc=2 VOID
+      #   an EMPTY aggregate CSV ....................... rc=2 VOID
+      #   a HEADER-ONLY aggregate CSV .................. rc=2 VOID
+      #   a CSV whose header is not JaCoCo's ........... rc=2 VOID
+      #   the exec directory with no .exec in it ....... rc=2 VOID, naming the suite
+      #   an unknown argument .......................... rc=2 VOID
+      # The arm that justifies the design is the last one, and it is not any of the
+      # above. The aggregate report was REGENERATED from the unit .exec alone and both
+      # .exec files then put back, so every structural check passes and the CSV is a
+      # real, well-formed JaCoCo report — of the wrong thing. It reads 62.12% line, and
+      # a naive "60% line" floor would have PASSED it while publishing a figure wrong
+      # by a quarter of the codebase. The gate compares the aggregate against the
+      # unit-only report and exits 2 instead. Clean tree: rc=0 at 88.06 / 71.88 / 87.55
+      # / 87.53.
+      - name: Enforce the aggregate Java coverage floor (#110)
+        if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
+        run: |
+          chmod +x ./scripts/check-jacoco-coverage.sh
+          ./scripts/check-jacoco-coverage.sh
+
       - name: Upload integration test results
         if: always() && (github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true')
         uses: actions/upload-artifact@v7
         with:
           name: integration-test-results
-          path: core-java/build-local/reports/tests/integrationTest/
+          path: |
+            core-java/build-local/reports/tests/integrationTest/
+            core-java/build-local/reports/jacoco/aggregate/jacocoAggregateReport.csv
+            core-java/build-local/reports/jacoco/test/jacocoTestReport.csv
 
   # Job 1b2: Frontend browser gate for the PUBLIC surfaces.
   #
@@ -240,6 +406,45 @@ jobs:
   #
   # KEEP IT STACK-FREE. The moment this spec needs a backend it stops running in
   # CI and the blind spot comes back.
+  #
+  # WHAT THIS JOB'S GREEN DOES AND DOES NOT COVER (34-07, #542 third criterion).
+  #
+  #   It runs a STACK-FREE `next start` with CORE_API_INTERNAL_URL unset, so every
+  #   server-side fetch in lib/storefront-server.ts falls through to an unreachable
+  #   origin, returns `defer`, and the client island's request is answered by the
+  #   spec's own browser stub. Measured 2026-08-28, stack-free versus the live stack:
+  #
+  #     server        route                        bytes   shop-name occurrences  <h1
+  #     stacked       /shop                       54,184                       5    1
+  #     stacked       /shop/brixton-village-grill 90,951                      33    1
+  #     stack-free    /shop                       39,438                       0    1
+  #     stack-free    /shop/brixton-village-grill 39,299                       0    1
+  #
+  #   The `<h1` control is present in all four, so the zeros are about the CONTENT,
+  #   not a dead server. The stack-free slug page returns 200 and not 404 — `defer`,
+  #   not `notfound` — which is exactly what lets the browser stub fill it.
+  #
+  #   COVERS: the public layout in the DOM, and the WCAG 2.1 AA scan, on mobile and
+  #   desktop. Those are real and they are the reason this job exists.
+  #   DOES NOT COVER: the server-render path of ANY route. A DOM assertion here is
+  #   satisfied identically by a server that rendered the content and one that
+  #   rendered nothing, so this job's green is not evidence about served bytes.
+  #
+  #   Two things do cover it, and neither is here: the SSR-coverage contract gate in the
+  #   ops-contracts job (its manifest is scripts/gates/ssr-routes.conf) asserts that every
+  #   server-rendered route HAS a raw-HTML assertion, statically, per PR — and
+  #   .github/workflows/e2e-nightly.yml RUNS those assertions against the full compose
+  #   stack. Adding a backend to this job would close the gap for real; until then the
+  #   honest statement is above rather than an implication that a green browser job
+  #   covered the server render.
+  #
+  #   That gate is named here by DESCRIPTION and by its manifest, never by its script
+  #   filename, and that is deliberate. check-gate-enforcement.sh decides "is this gate
+  #   wired?" by searching workflow files for the script's name WITHOUT stripping
+  #   comments — measured 2026-08-28: with the ops-contracts step deleted and this
+  #   sentence naming the file, the meta-gate still reported PASS at rc=0. A comment
+  #   mentioning a gate must not be able to satisfy the check that the gate actually
+  #   runs, so the only occurrence of that filename in this file is the run: line itself.
   frontend-e2e:
     name: Frontend E2E (public surfaces)
     runs-on: ubuntu-latest
@@ -324,6 +529,48 @@ jobs:
       - name: Run public-surface layout + accessibility conformance (mobile + desktop)
         if: github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true'
         run: npx playwright test e2e/public-layout.spec.ts e2e/public-a11y.spec.ts
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+
+      # Phase 35 horizontal layout contract — THE MARKETING TIER ONLY.
+      #
+      # WHAT THIS COVERS, AND WHAT IT DEMONSTRABLY DOES NOT. The spec asserts
+      # four tiers; this step runs one of them. The `@stack-free` filter selects
+      # the Marketing describes, which stub the public API and need nothing but
+      # the frontend already built and started above. The Shell, Index and
+      # Detail tiers each require a Keycloak vendor login against a live stack,
+      # which this job does not have and must not acquire — the moment it needs
+      # a backend it stops running on every pull request, and the blind spot the
+      # whole job exists to close comes back.
+      #
+      # So those three tiers are, in CONTEXT.md section 5's exact words,
+      # "covered by a spec that no current tree executes" — kept on ONE line so
+      # the phrase is greppable rather than split across two comment lines.
+      # Their only instrument is the full-suite nightly lane, and issue #683 is
+      # OPEN: that lane is failing, so while it is red no merge has full-suite
+      # evidence on any tree. Do NOT restate this as "covered
+      # nightly" — CONTEXT.md section 5 fixes the wording above as the
+      # authoritative one. "Covered nightly" tells the next reader an instrument
+      # is watching those tiers and they will act on that; the true state is
+      # that the assertions exist, are correct, and run nowhere. Same root cause
+      # as #686, whose skip-budget gate is wired only into that same dark lane.
+      #
+      # A SEPARATE STEP, NOT AN EXTRA SPEC ON THE COMMAND ABOVE. Two reasons and
+      # the second is the load-bearing one: the two gates' failures stay
+      # distinguishable in the run log, and the tag filter must apply to THIS
+      # spec only — folding it in would apply `--grep` to the layout and
+      # accessibility specs as well and silently drop most of what they assert.
+      #
+      # POSITIVE `--grep`, NEVER `--grep-invert`. Both projects in
+      # playwright.config.ts already set their own `grepInvert` (`@desktop-only`
+      # / `@mobile-only`); overriding that from the command line would replace
+      # it, enumerating desktop-only blocks under the mobile project. That would
+      # look like it worked and would quietly widen what the mobile project
+      # runs.
+      - name: Run layout width contract — Marketing tier (stack-free half)
+        if: github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true'
+        run: npx playwright test e2e/layout-width-contract.spec.ts --grep "@stack-free"
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000
@@ -844,6 +1091,79 @@ jobs:
         run: |
           chmod +x ./scripts/check-no-measured-placeholders.sh
           ./scripts/check-no-measured-placeholders.sh
+
+      #   10b. Plan 34-07 (TRUTH-01, #542/#507). A route-interception stub answers a
+      #      browser navigation and cannot answer `request.get`, so the moment a route
+      #      becomes server-rendered, a spec whose only coverage is a stub goes on
+      #      passing while proving nothing about the server render. Nothing failed at the
+      #      moment of conversion, and nothing ever would have. This gate is that
+      #      failure: scripts/gates/ssr-routes.conf declares every frontend/app/**/page.tsx
+      #      as SSR, STATIC or CLIENT, and an undeclared page, a stale declaration, a
+      #      class that disagrees with the file, or an SSR entry whose raw-HTML assertion
+      #      has been deleted all go red in the change that caused them.
+      #
+      #      Static by construction: it reads page.tsx files, spec files and one conf out
+      #      of the checkout, runs no browser, no build and no server, and makes no
+      #      network call — so it says the same thing on a hosted runner as it does
+      #      locally. It therefore belongs here and must NEVER get a
+      #      scripts/gates/gate-enforcement.conf entry: that table's bar is "a hosted
+      #      runner does not have the thing this inspects", which is false for a file in
+      #      the checkout, and check-gate-enforcement.sh would reject the entry as a stale
+      #      exemption anyway. Wiring beats exempting whenever a real runtime is available.
+      #
+      #      This step and the script it names MUST stay in the same commit as each other,
+      #      for the reason recorded on the retention gate above.
+      #
+      #      SHOWN TO FAIL before being wired, then restored and verified by
+      #      `git hash-object`. A gate observed only passing is not evidence:
+      #        - R-1 undeclared page   : deleted the dashboard/staff CLIENT line   -> rc=1
+      #        - R-1 stale declaration : declared a page that does not exist       -> rc=1
+      #        - R-2b raw-HTML deleted : /shop/orders servedHtml( -> page.goto(    -> rc=1
+      #        - R-3 fixture missing   : moved app/track/page.tsx away             -> rc=2
+      #      Clean tree: rc=0, 38 discovered, 4 SSR / 13 STATIC / 21 CLIENT.
+      #      The R-2b arm is the load-bearing one: the spec still NAMED the route in a
+      #      test title, and the gate still went red, because the literal has to sit
+      #      inside the raw-HTML call and not merely somewhere in the file.
+      - name: Assert every server-rendered route has a raw-HTML assertion (34-07 #542)
+        run: |
+          chmod +x ./scripts/check-ssr-coverage-contract.sh
+          ./scripts/check-ssr-coverage-contract.sh
+
+      #   10c. Plan 35-10 (UIX-07). The four-tier horizontal layout contract. The 1400px cap
+      #      this phase deleted was the stock shadcn `container` scaffold block, shipped
+      #      verbatim and never chosen — it survived for the life of the product because
+      #      nothing was watching. A contract enforced by a paragraph erodes at the next
+      #      scaffold, the next component or the next well-meaning cleanup, so this gate is
+      #      the thing that reds instead. Its surface set is the machine-readable manifest
+      #      docs/architecture/layout-tiers.tsv, read by the gate rather than hard-coded, so
+      #      the declared surfaces and the enforcement cannot disagree.
+      #
+      #      Static by construction: it reads .ts/.tsx, one Tailwind config and one TSV out
+      #      of the checkout, starts no browser, runs no build, touches no database and makes
+      #      no network call — so it says the same thing on a hosted runner as it does
+      #      locally. It therefore belongs here and must NEVER get a
+      #      scripts/gates/gate-enforcement.conf entry: that table's bar is "a hosted runner
+      #      does not have the thing this inspects", which is false for a file in the
+      #      checkout, and check-gate-enforcement.sh would reject the entry as a stale
+      #      exemption anyway.
+      #
+      #      That static-ness is the whole reason this step matters on this phase. The
+      #      full-suite Playwright lane is DARK (#683), so the phase's browser-MEASURED
+      #      width assertions are covered by a spec that no current tree executes. These
+      #      seven assertions are not: they block every pull request.
+      #
+      #      This step and the script it names MUST stay in the same commit as each other,
+      #      for the reason recorded on the retention gate above.
+      #
+      #      SHOWN TO FAIL before being trusted — one arm per assertion, plus two control
+      #      arms, two second-direction arms, the third-family-member arm and a VOID. See
+      #      35-10-SUMMARY.md for the recorded output of each. The G-4 arm is the one plan
+      #      35-07 ran against the tree and recorded as producing NO red anywhere, because
+      #      this gate did not exist yet; discharging it was a required outcome of 35-10.
+      - name: Assert the four-tier layout contract holds at every surface (35-10 UIX-07)
+        run: |
+          chmod +x ./scripts/check-layout-width-contract.sh
+          ./scripts/check-layout-width-contract.sh
 
       #   11. The meta-gate, so the three steps above are the LAST time this is found by
       #      hand. It asserts that every scripts/check-*.sh either runs in a workflow or

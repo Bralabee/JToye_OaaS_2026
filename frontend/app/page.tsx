@@ -10,6 +10,8 @@ import {
   ArrowRight,
 } from "lucide-react"
 import { PublicShell } from "@/components/public/public-shell"
+import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+import { cn } from "@/lib/utils"
 import { HeroScene } from "@/components/marketing/hero-scene"
 import { HeroSearch } from "@/components/marketing/hero-search"
 import { Reveal } from "@/components/marketing/reveal"
@@ -23,6 +25,19 @@ export const metadata: Metadata = {
   title: "J'Toye — Order from local kitchens, or run your own",
   description:
     "Order food from independent local kitchens in minutes, or run your own food business end-to-end — take orders, manage your kitchen, and go live in a day.",
+  // FE-5: canonical + Open Graph were missing on the landing page — the one
+  // page most likely to be shared/linked externally. `alternates.canonical`
+  // is a relative path deliberately (no `metadataBase` is set app-wide, so
+  // Next emits it root-relative — see the note in app/shop/layout.tsx for why
+  // no hostname is guessed here).
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "J'Toye — Order from local kitchens, or run your own",
+    description:
+      "Order food from independent local kitchens in minutes, or run your own food business end-to-end — take orders, manage your kitchen, and go live in a day.",
+    url: "/",
+    type: "website",
+  },
 }
 
 const steps = [
@@ -171,7 +186,46 @@ export default async function Home() {
             aria-hidden
             className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_85%_-10%,#fde7c8_0%,transparent_55%)]"
           />
-          <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-14 md:py-20">
+          {/* ── THE LANDING CONTENT BAND, EXPLAINED ONCE ────────────────────
+
+              This band — and the three below it — is deliberately EQUAL to the
+              public header and footer rails that wrap this page. It was not.
+              The rails rendered at 1280px and these four bands at 1152px, so
+              the landing content sat 128px inside its own chrome: the nav and
+              this hero did not share a left edge. That is the specific
+              mechanical reason the page read as confined, and it is the one
+              width VALUE that actually changes anywhere in phase 35 — every
+              other surface in the phase is a rename at the same number.
+
+              Nothing invented a figure here. 1280px is what the chrome around
+              this page was already doing, and what its three sibling marketing
+              routes were already doing. Moving these bands to the same declared
+              tier is an alignment, not a re-layout.
+
+              ORCH-04 (orchestrator decision, 2026-08-29); CONTEXT.md section 4b.
+
+              Applied IN PLACE on the element that already existed. No wrapper
+              node was added: this page is dense with GSAP hooks and
+              scroll-reveal, and a new node between a section and its band is
+              exactly the change that moves a boundingBox assertion for no
+              reason. The class comes from the vocabulary module rather than
+              being written out, so the tier literals stay single-occurrence.
+
+              Explained ONCE. The three bands below apply the same thing without
+              repeating this; four copies of one explanation is drift waiting to
+              happen, and the padding and auto margin on every band are pinned by
+              app/__tests__/landing.test.tsx rather than by a comment. What is
+              deliberately NOT touched: the hero sub-paragraph's reading measure
+              and the search form's width, both nested inside this band. They are
+              typographic measures and a CLS-sensitive control, not page bands. */}
+          <div
+            data-width-tier="marketing"
+            className={cn(
+              "relative mx-auto",
+              WIDTH_TIER_CLASS.marketing,
+              "px-4 sm:px-6 lg:px-8 py-14 md:py-20"
+            )}
+          >
             <div className="grid items-center gap-10 lg:grid-cols-2">
               {/* Left column — copy, search, doors */}
               <div>
@@ -260,7 +314,10 @@ export default async function Home() {
         {/* ── The kitchen row — REAL published shops (#544, #460) ─────────── */}
         {shops.length > 0 && (
           <section className="border-t border-cream-100 bg-white">
-            <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-12">
+            <div
+              data-width-tier="marketing"
+              className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8 py-12")}
+            >
               {/* The row's heading, its scroller and its cards now live in a
                   client island so that a visitor who GRANTS location gets the
                   same shops re-ordered by real distance (33-07). The shops are
@@ -276,7 +333,10 @@ export default async function Home() {
 
         {/* ── How it works (motion-hooked) ────────────────────────────────── */}
         <section className="bg-cream py-16">
-          <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div
+            data-width-tier="marketing"
+            className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8")}
+          >
             <h2 data-hero-howtitle className="text-3xl font-bold leading-tight text-oxblood">
               How it works
             </h2>
@@ -302,7 +362,10 @@ export default async function Home() {
 
         {/* ── Trust strip (motion-hooked chips) ───────────────────────────── */}
         <section className="border-t border-cream-100 bg-white py-12">
-          <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div
+            data-width-tier="marketing"
+            className={cn("mx-auto", WIDTH_TIER_CLASS.marketing, "px-4 sm:px-6 lg:px-8")}
+          >
             <Reveal as="div" className="flex flex-wrap gap-3">
               {trustMarkers.map((marker) => (
                 <span
