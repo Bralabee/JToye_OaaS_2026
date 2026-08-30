@@ -64,6 +64,12 @@ services:
       # so a missing value fails at compose-parse time rather than producing a
       # role whose password nothing knows.
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set (used to create the jtoye_app role)}
+      # #684: since the SEC-04 split, jtoye_app is the MIGRATOR and Flyway
+      # authenticates with DB_MIGRATION_PASSWORD — so 00-create-db.sql creates
+      # the role with THIS value, falling back to DB_PASSWORD when it is unset
+      # or empty. Deliberately no `:?` guard: absence is the supported
+      # single-credential case, not a misconfiguration.
+      DB_MIGRATION_PASSWORD: ${DB_MIGRATION_PASSWORD:-}
     ports:
       # Loopback-only by default (#438). The account reachable on this port
       # holds role attributes that bypass row-level security, so an

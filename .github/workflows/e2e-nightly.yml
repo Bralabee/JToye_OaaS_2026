@@ -141,11 +141,13 @@ jobs:
           # D-01). DB_MIGRATION_USER is a role NAME — the owner/migrator jtoye_app that Flyway
           # migrates AS — and randomising a name points Flyway at a role that does not exist, so
           # every migration fails auth (the same class of break KC_DB_PASSWORD was added here for).
-          # DB_MIGRATION_PASSWORD must equal DB_PASSWORD: on a fresh volume
-          # infra/db/init/00-create-db.sql creates jtoye_app AND jtoye_runtime BOTH with DB_PASSWORD,
-          # the app connects as DB_USER=jtoye_runtime and Flyway as jtoye_app, so the migrator's
-          # password is DB_PASSWORD. DB_USER itself is NOT in REQUIRED_VARS, so it is never in this
-          # loop and keeps .env.example's jtoye_runtime.
+          # DB_MIGRATION_PASSWORD = DB_PASSWORD is a SIMPLIFICATION, no longer a requirement:
+          # since #684, infra/db/init/00-create-db.sql creates jtoye_app with
+          # DB_MIGRATION_PASSWORD (falling back to DB_PASSWORD when unset/empty), so differing
+          # credentials provision correctly on a fresh volume. Equal values remain valid and are
+          # kept here so this lane exercises the single-credential fallback path; the local dev
+          # .env holds DIFFERING values, so the split path is exercised there. DB_USER itself is
+          # NOT in REQUIRED_VARS, so it is never in this loop and keeps .env.example's jtoye_runtime.
           DERIVED="KC_DB_PASSWORD POSTGRES_EXPORTER_PASSWORD RABBITMQ_PASSWORD KC_SEED_USER_PASSWORD DB_MIGRATION_USER DB_MIGRATION_PASSWORD"
           required=$(bash scripts/verify-env.sh --list-required)
           [ -n "$required" ] || { echo "FATAL: verify-env.sh --list-required produced nothing" >&2; exit 1; }

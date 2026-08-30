@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A fresh volume provisions its own migrator credential (#684) (#694) — 2026-08-30
+
+- **`00-create-db.sql` now creates `jtoye_app` — the owner/migrator since the SEC-04/#552
+  split — with `DB_MIGRATION_PASSWORD`**, falling back to `DB_PASSWORD` when unset or
+  empty, closing the 28P01 crash-loop (zero migrations) a fresh volume hit whenever the
+  two credentials differed. Compose passes the variable into the postgres init
+  environment; the nightly's must-be-equal workaround comment is corrected — equality is
+  now a simplification that exercises the fallback path, while the local differing `.env`
+  exercises the split path.
+- The first verification instrument was vacuous — in-container loopback is `trust`, so a
+  garbage password authenticated — and was rebuilt onto the network/scram path with a
+  garbage-password control before any result was trusted.
+- Close condition run for real: `down -v` with digest-confirmed differing credentials
+  booted unattended to healthy (RestartCount 0), Flyway V64 64/64, role credentials
+  proven by content on the fresh cluster, 1,748,230 postcodes imported, E2E smoke 45/45.
+
 ### E2E seeder resets a terminal demo-tenant onboarding — ONBD-05 runs instead of skipping (#686) (#693) — 2026-08-30
 
 - **The undeclared-skip cause behind the skip-budget failure is now provisioned by script,
