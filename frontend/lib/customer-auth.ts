@@ -18,6 +18,7 @@
 import {
   clearStoredCarts,
   forgetCustomerId,
+  getCurrentCustomerId,
   rememberCustomerId,
 } from "@/lib/cart-identity"
 
@@ -86,12 +87,33 @@ function decodeJwtPayload(token: string): IdTokenClaims | null {
 
 function setMarker(expiresAt: number, sub?: string | null) {
   if (typeof window === "undefined") return
+  // Read the OUTGOING identity before anything is written. This call is the
+  // only moment it is still on disk — `rememberCustomerId` below overwrites it.
+  const previous = getCurrentCustomerId()
   try {
     localStorage.setItem(MARKER_KEY, "true")
     localStorage.setItem(EXPIRES_KEY, String(expiresAt))
   } catch {
     /* storage may be unavailable (private mode) — ignore */
   }
+  // R-16 — the ACCOUNT-SWITCH backstop. Both call sites reach here: the OAuth
+  // callback (`handleCallback`) and the session renewal (`getCustomerSession`),
+  // and a switch can arrive through either. If a DIFFERENT customer is now
+  // signed in on this browser, the previous one's baskets go with them — this
+  // is a change of person, which is exactly what `clearStoredCarts` is for.
+  //
+  // BOTH operands must be non-empty, and that is the whole safety of it. A
+  // blank or absent `sub` means "unknown", never "different person": a
+  // one-sided `previous !== sub` is also true for `undefined`, so it would
+  // empty a live basket every time a session response arrived without a
+  // profile — several times a minute on the 1s poll (T-R16-04).
+  //
+  // A BACKSTOP, not the cure. On the reported repro this is VACUOUS: the
+  // anonymous downgrade has already nulled the basket's owner AND cleared the
+  // recorded id long before the new sign-in gets here, so `previous` is null
+  // and nothing fires. The cure is `resolveCartOwner` on the write path. This
+  // covers the switch that happens while the marker is still intact.
+  if (previous && sub && previous !== sub) clearStoredCarts()
   // WHO is signed in, not just THAT somebody is. The basket is stamped with it
   // so a second customer on the same browser cannot inherit the first one's
   // (#459). Its own try/catch, so a storage failure on the marker above cannot

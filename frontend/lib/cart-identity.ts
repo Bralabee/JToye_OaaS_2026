@@ -121,6 +121,47 @@ export function canAdoptCart(
 }
 
 /**
+ * Who should be stamped on the basket about to be written — R-16.
+ *
+ * The header above argues that sign-OUT is the only unambiguous "a different
+ * person may be next" moment. That argument was only ever applied to the READ
+ * (`canAdoptCart`); the WRITE stamped `getCurrentCustomerId()` unconditionally,
+ * and so quietly did the one thing the whole module forbids — it REMOVED an
+ * ownership marker on an event that is not a sign-out.
+ *
+ * The event is routine, not exotic: the access cookie lives 300s, the session
+ * probe runs on mount, on a 1s poll and on focus, and a `{ authenticated: false }`
+ * answer forgets the customer id. The next shop-page render then re-persists the
+ * basket — nothing has to change for that write to happen — stamped `null`. A
+ * null owner is adoptable by anyone, so the very next registration on that
+ * browser inherited the previous account's basket and checked out with it.
+ *
+ * So a write may ADD an owner or CONFIRM one; only `clearStoredCarts` removes
+ * one. Concretely `current ?? prior ?? null`, and each branch is load-bearing:
+ *
+ *   prior null/absent, current X   -> X   the guest -> registration carry-over
+ *                                         this module exists to protect. Must
+ *                                         not become "preserve null forever".
+ *   prior A, current null          -> A   the lapsed session. THE FIX.
+ *   prior A, current B             -> B   B is signed in and writing, so B owns
+ *                                         the slot. Preserving A here would be
+ *                                         the same leak backwards: every item B
+ *                                         adds stored under A's name.
+ *   prior A, current A             -> A   unchanged.
+ *
+ * Pure and exported for its own unit tests: the decision is cart-specific, so it
+ * lives here rather than in the generic `useStoredState`, and the provider's job
+ * is only to supply the prior value.
+ */
+export function resolveCartOwner(
+  priorOwner: string | null | undefined,
+  current: string | null
+): string | null {
+  if (current) return current
+  return priorOwner ?? null
+}
+
+/**
  * Remove every stored basket, for every shop. Called on an explicit sign-out.
  *
  * Walks the whole keyspace rather than the slugs we happen to know about: the

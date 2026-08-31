@@ -14,6 +14,7 @@ import {
   canAdoptCart,
   cartStorageKey,
   getCurrentCustomerId,
+  resolveCartOwner,
 } from "@/lib/cart-identity"
 
 export interface CartItem {
@@ -70,6 +71,38 @@ function parseCart(raw: string, slug: string): CartItem[] | undefined {
   return parsed.items || []
 }
 
+/**
+ * The owner already on disk for this slot, or `undefined` when there isn't one
+ * we can trust — R-16.
+ *
+ * `undefined` deliberately covers four different unknowns, all of which must
+ * degrade to today's behaviour (stamp whoever is writing) rather than to
+ * anything stricter that could strand or eat a basket:
+ *   - no payload stored at all;
+ *   - a payload for ANOTHER shop sitting in this key, whose owner must never be
+ *     allowed to donate itself to this slot (the cross-shop guard `parseCart`
+ *     already applies on the read side, applied here on the write side too);
+ *   - corrupt JSON;
+ *   - storage unavailable (private mode, quota).
+ *
+ * Read at serialize time rather than held in state on purpose: the identity can
+ * change between the hydrate and the write (a session probe resolving, a
+ * sibling tab), and the value that matters is the one on disk at the moment of
+ * the write.
+ */
+function readStoredOwner(slug: string): string | null | undefined {
+  if (typeof window === "undefined") return undefined
+  try {
+    const raw = window.localStorage.getItem(cartStorageKey(slug))
+    if (raw === null) return undefined
+    const parsed = JSON.parse(raw) as CartState
+    if (parsed.shopSlug !== slug) return undefined
+    return parsed.owner
+  } catch {
+    return undefined
+  }
+}
+
 /** A full read of a shop's stored basket, with both rules applied. */
 function readCart(slug: string): CartItem[] {
   if (typeof window === "undefined") return EMPTY_ITEMS
@@ -101,10 +134,16 @@ export function CartProvider({
       // Stamp the writer's identity, so the next read can tell "the same
       // person who was browsing anonymously" from "a different person on the
       // same device" — a distinction that is invisible at sign-in time.
+      //
+      // ADD or CONFIRM, never ERASE (R-16). The stamp used to be written
+      // unconditionally, so a single signed-out render — which happens on any
+      // page view once the 300s access cookie lapses — downgraded an owned
+      // basket to `owner: null` and handed it to the next person who signed in.
+      // `resolveCartOwner` owns that rule; see the argument in cart-identity.ts.
       serialize: (value) =>
         JSON.stringify({
           shopSlug,
-          owner: getCurrentCustomerId(),
+          owner: resolveCartOwner(readStoredOwner(shopSlug), getCurrentCustomerId()),
           items: value,
         } satisfies CartState),
       // Broadcast so same-document listeners (the nav basket badge) update
