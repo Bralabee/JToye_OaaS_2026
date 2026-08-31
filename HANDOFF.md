@@ -1,6 +1,21 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution) and 2026-08-31 (customer-surface fixes). Replaces the 2026-08-18 block.** This is the only live block in this file.
+
+**2026-08-31 delta — customer-surface P0/P1 fixes (PR #711, quick task 260831-gnm).** A five-lane
+human-like utilisation audit of the customer surfaces found 15 defects; PR #711 fixed the six with
+root causes in frontend code — the **P0**: vendor Sign Out never ended the Keycloak SSO session
+(one click silently re-entered the dashboard) — plus the `/shop` search-revert, the stale-response
+race, the hero paint-then-vanish, the non-fail-safe customer signout teardown, and the systemic
+cookie-notice overlay. All six browser-verified fail→pass in two rounds with the audit's own repro
+scripts. Full record: `.planning/quick/260831-gnm-fix-p0-p1-customer-surface-audit-finding/` and
+the memory file `project_customer_surface_audit_20260831.md`. **Still open from that audit**:
+Keycloak realm config (no login theme on either realm — stock `JTOYE-DEV` pages — and
+`smtpServer: {}`, so customer password reset is a dead end AND an enumeration oracle; this is an
+`infra/keycloak/` + re-import task, see [[reference_keycloak_realm_reimport]] semantics), the
+Work Sans fallback `size-adjust` CLS fix (100% of landing CLS is the font swap, misattributed to
+hydration in `frontend/e2e/perf-budgets.ts` docs), vendor back-channel logout (front-channel only
+today), and the P2/P3 register. Known residuals recorded in PR #711's description.
 **Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
 the 2026-08-24 session broke it once itself (see "The truncating filter", below).
 
