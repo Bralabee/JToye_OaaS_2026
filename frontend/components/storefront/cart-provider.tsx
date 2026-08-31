@@ -10,10 +10,13 @@ import {
 } from "react"
 import { useStoredState } from "@/hooks/use-stored-state"
 import {
+  CARTS_CLEARED_EVENT,
   CUSTOMER_ID_KEY,
   canAdoptCart,
   cartStorageKey,
   getCurrentCustomerId,
+  hasActiveSessionMarker,
+  resolveCartOwner,
 } from "@/lib/cart-identity"
 
 export interface CartItem {
@@ -58,16 +61,96 @@ const EMPTY_ITEMS: CartItem[] = []
  *
  * `undefined` means reject — useStoredState falls back to an empty cart.
  */
+/**
+ * The stored payload for this slot, or `undefined` when there isn't a usable
+ * one. ONE definition, used by both the read path (`parseCart`) and the write
+ * path (`readStoredOwner`) — WR-05.
+ *
+ * Those two used to hold independent copies of "parse it, reject a foreign
+ * `shopSlug`", and the write-side copy was covered by no test at all: deleting
+ * it left the entire suite green while a foreign payload's owner leaked into
+ * this slot. Two copies of a rule is two rules, eventually.
+ */
+function parsePayload(raw: string, slug: string): CartState | undefined {
+  try {
+    const parsed = JSON.parse(raw) as CartState
+    // The stored shape carries its own slug; a mismatched payload is rejected
+    // so a stale key can never surface — or donate its owner to — another
+    // shop's basket.
+    return parsed.shopSlug === slug ? parsed : undefined
+  } catch {
+    // Corrupt JSON. A broken cache must never break the UI.
+    return undefined
+  }
+}
+
+/**
+ * An owner is a non-empty opaque subject id, or it is nothing — WR-01.
+ *
+ * This validation is load-bearing precisely BECAUSE of R-16. Before it, every
+ * write recomputed the stamp from `getCurrentCustomerId()`, so a corrupt or
+ * tampered value was repaired by the first write. Preserve-semantics make it
+ * PERMANENT instead:
+ *
+ *   owner: "" / 0 / false   falsy but not nullish, so `prior ?? null` waves it
+ *                           through — and `canAdoptCart` opens with
+ *                           `if (!owner) return true`, i.e. the basket becomes
+ *                           adoptable by ANY signed-in customer. That is the
+ *                           R-16 end state, now self-sustaining.
+ *   owner: {} / []          truthy non-string, so `owner === current` is never
+ *                           true: the slot becomes permanently unreadable to
+ *                           every signed-in customer.
+ *
+ * Reaching either needs same-origin write access (XSS, devtools, an extension),
+ * so this is hardening — but `owner` IS the identity boundary, and it is this
+ * change that turned it from derived state into persisted state. Anything we
+ * did not write degrades to "no prior owner", which is the pre-R-16 behaviour,
+ * and a non-null current identity then repairs the slot on the next write.
+ */
+function validOwner(owner: unknown): string | undefined {
+  return typeof owner === "string" && owner.length > 0 ? owner : undefined
+}
+
 function parseCart(raw: string, slug: string): CartItem[] | undefined {
-  const parsed = JSON.parse(raw) as CartState
-  // Stored shape carries its own slug; a mismatched payload is rejected so a
-  // stale key can never surface another shop's basket.
-  if (parsed.shopSlug !== slug) return undefined
-  // ...and its own owner, so a shared browser cannot surface another
-  // CUSTOMER's basket (#459). See lib/cart-identity.ts for why "nobody is
-  // signed in" deliberately does NOT reject.
-  if (!canAdoptCart(parsed.owner, getCurrentCustomerId())) return undefined
+  const parsed = parsePayload(raw, slug)
+  if (!parsed) return undefined
+  // The payload carries its own owner, so a shared browser cannot surface
+  // another CUSTOMER's basket (#459). See lib/cart-identity.ts for why "nobody
+  // is signed in" deliberately does NOT reject.
+  if (!canAdoptCart(validOwner(parsed.owner), getCurrentCustomerId())) return undefined
   return parsed.items || []
+}
+
+/**
+ * The owner already on disk for this slot, or `undefined` when there isn't one
+ * we can trust — R-16.
+ *
+ * `undefined` deliberately covers five different unknowns, all of which must
+ * degrade to today's behaviour (stamp whoever is writing) rather than to
+ * anything stricter that could strand or eat a basket:
+ *   - no payload stored at all;
+ *   - a payload for ANOTHER shop sitting in this key, whose owner must never be
+ *     allowed to donate itself to this slot (one shared `parsePayload` applies
+ *     that guard to the read and write paths alike — WR-05);
+ *   - an `owner` that is not a non-empty string (`validOwner` — WR-01);
+ *   - corrupt JSON;
+ *   - storage unavailable (private mode, quota).
+ *
+ * Read at serialize time rather than held in state on purpose: the identity can
+ * change between the hydrate and the write (a session probe resolving, a
+ * sibling tab), and the value that matters is the one on disk at the moment of
+ * the write.
+ */
+function readStoredOwner(slug: string): string | undefined {
+  if (typeof window === "undefined") return undefined
+  try {
+    const raw = window.localStorage.getItem(cartStorageKey(slug))
+    if (raw === null) return undefined
+    return validOwner(parsePayload(raw, slug)?.owner)
+  } catch {
+    // Storage unavailable (private mode, quota).
+    return undefined
+  }
 }
 
 /** A full read of a shop's stored basket, with both rules applied. */
@@ -101,10 +184,24 @@ export function CartProvider({
       // Stamp the writer's identity, so the next read can tell "the same
       // person who was browsing anonymously" from "a different person on the
       // same device" — a distinction that is invisible at sign-in time.
+      //
+      // ADD or CONFIRM, never ERASE (R-16). The stamp used to be written
+      // unconditionally, so a single signed-out render — which happens on any
+      // page view once the 300s access cookie lapses — downgraded an owned
+      // basket to `owner: null` and handed it to the next person who signed in.
+      // `resolveCartOwner` owns that rule; see the argument in cart-identity.ts.
       serialize: (value) =>
         JSON.stringify({
           shopSlug,
-          owner: getCurrentCustomerId(),
+          owner: resolveCartOwner(
+            readStoredOwner(shopSlug),
+            getCurrentCustomerId(),
+            // The third fact (WR-02): is a session live even though we have no
+            // id for it? Read here, at the moment of the write, alongside the
+            // other two — all three describe the same instant or they describe
+            // nothing.
+            hasActiveSessionMarker()
+          ),
           items: value,
         } satisfies CartState),
       // Broadcast so same-document listeners (the nav basket badge) update
@@ -155,6 +252,22 @@ export function CartProvider({
     window.addEventListener("storage", onStorage)
     return () => window.removeEventListener("storage", onStorage)
   }, [shopSlug, setItems])
+
+  // WR-03 — the SAME-document counterpart of the effect above.
+  //
+  // `storage` fires only in the OTHER documents of an origin, so a
+  // `clearStoredCarts()` reached from this very page — the account-switch
+  // backstop firing on the 1s session poll, on focus, at checkout — clears disk
+  // and leaves this provider holding the outgoing customer's items. They stay
+  // on screen, and the next setItems re-persists them under the NEW customer's
+  // stamp. Dropping to empty is the only correct response: the person this
+  // basket belonged to is, by construction, not the person here now.
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const onCleared = () => setItems(EMPTY_ITEMS)
+    window.addEventListener(CARTS_CLEARED_EVENT, onCleared)
+    return () => window.removeEventListener(CARTS_CLEARED_EVENT, onCleared)
+  }, [setItems])
 
   const addItem = useCallback((item: Omit<CartItem, "quantity">) => {
     setItems((prev) => {

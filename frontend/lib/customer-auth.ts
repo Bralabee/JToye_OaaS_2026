@@ -16,8 +16,12 @@
  */
 
 import {
+  CUSTOMER_EXPIRES_KEY,
+  CUSTOMER_MARKER_KEY,
   clearStoredCarts,
   forgetCustomerId,
+  getCurrentCustomerId,
+  hasActiveSessionMarker,
   rememberCustomerId,
 } from "@/lib/cart-identity"
 
@@ -33,8 +37,11 @@ const KC_BASE =
 const CLIENT_ID = "storefront-client"
 const REDIRECT_URI = typeof window !== "undefined" ? `${window.location.origin}/shop/auth/callback` : ""
 
-const MARKER_KEY = "jtoye-customer-logged-in"
-const EXPIRES_KEY = "jtoye-customer-expires-at"
+// The identity keyspace lives in cart-identity.ts — one owner for every
+// localStorage key that says who this browser belongs to. Aliased rather than
+// re-declared so there is exactly one definition of each string.
+const MARKER_KEY = CUSTOMER_MARKER_KEY
+const EXPIRES_KEY = CUSTOMER_EXPIRES_KEY
 
 export interface CustomerProfile {
   sub: string
@@ -86,11 +93,49 @@ function decodeJwtPayload(token: string): IdTokenClaims | null {
 
 function setMarker(expiresAt: number, sub?: string | null) {
   if (typeof window === "undefined") return
+  // Read the OUTGOING identity before anything is written. This call is the
+  // only moment it is still on disk — `rememberCustomerId` below overwrites it.
+  const previous = getCurrentCustomerId()
   try {
     localStorage.setItem(MARKER_KEY, "true")
     localStorage.setItem(EXPIRES_KEY, String(expiresAt))
   } catch {
     /* storage may be unavailable (private mode) — ignore */
+  }
+  // R-16 — the ACCOUNT-SWITCH backstop. Both call sites reach here: the OAuth
+  // callback (`handleCallback`) and the session renewal (`getCustomerSession`),
+  // and a switch can arrive through either. If a DIFFERENT customer is now
+  // signed in on this browser, the previous one's baskets go with them — this
+  // is a change of person, which is exactly what `clearStoredCarts` is for.
+  //
+  // BOTH operands must be non-empty, and that is the whole safety of it. A
+  // blank or absent `sub` means "unknown", never "different person": a
+  // one-sided `previous !== sub` is also true for `undefined`, so it would
+  // empty a live basket every time a session response arrived without a
+  // profile — several times a minute on the 1s poll (T-R16-04).
+  //
+  // A BACKSTOP, not the cure. On the reported repro this is VACUOUS: the
+  // anonymous downgrade has already nulled the basket's owner AND cleared the
+  // recorded id long before the new sign-in gets here, so `previous` is null
+  // and nothing fires. The cure is `resolveCartOwner` on the write path. This
+  // covers the switch that happens while the marker is still intact.
+  if (previous && sub && previous !== sub) clearStoredCarts()
+  // WR-02 — the anomalous state, said out loud rather than defaulted away. A
+  // marker is about to go live while we hold no identity at all, so nothing can
+  // tell "this customer" from "the last one". The cart write path is already
+  // safe against it (`hasActiveSessionMarker()` makes `resolveCartOwner` refuse
+  // to inherit), but it should never happen, and a silent occurrence is how it
+  // would go unnoticed until it mattered.
+  //
+  // Deliberately NOT `forgetCustomerId()` here: a sub-less RENEWAL of an
+  // existing session is normal and must keep the recorded id (see the "does NOT
+  // clear when the session carries NO sub" control). The condition is
+  // specifically "no incoming identity AND none already on record".
+  if (!sub && !previous) {
+    console.warn(
+      "[customer-auth] session marker set with no customer id on record — " +
+        "cart writes will not inherit a prior owner (WR-02)"
+    )
   }
   // WHO is signed in, not just THAT somebody is. The basket is stamped with it
   // so a second customer on the same browser cannot inherit the first one's
@@ -180,15 +225,11 @@ export async function fetchWithTimeout(
  * marker. UI-only — cannot be trusted for security decisions.
  */
 export function isLoggedIn(): boolean {
-  if (typeof window === "undefined") return false
-  try {
-    if (localStorage.getItem(MARKER_KEY) !== "true") return false
-    const exp = Number(localStorage.getItem(EXPIRES_KEY) || "0")
-    if (!exp) return false
-    return exp > Math.floor(Date.now() / 1000)
-  } catch {
-    return false
-  }
+  // One implementation, in cart-identity.ts, because the cart write path needs
+  // exactly this fact — "a session is live" independent of "we know who" — to
+  // tell a lapsed token from an unrecorded sign-in (WR-02). A second copy here
+  // would be the two-copies-of-a-key problem one level up.
+  return hasActiveSessionMarker()
 }
 
 // Generate a URL-safe token with 32 bytes of CSPRNG entropy. Shared by the PKCE
@@ -355,6 +396,22 @@ export async function handleCallback(
       clearAuthTransients()
       return null
     }
+    // WR-02 — a token with no SUBJECT cannot establish a cart identity, so it
+    // must not establish a session either. This used to be `sub: payload.sub
+    // ?? ""` further down, and `rememberCustomerId("")` returns early on a
+    // falsy sub: the result was a live cookie session with NO recorded
+    // identity, in which every later cart write took the "preserve the prior
+    // owner" branch and stamped this customer's items with the previous
+    // customer's id. Rejected here, beside the nonce check and BEFORE any
+    // cookie is set, so the ambiguous state cannot be created at all.
+    //
+    // Keycloak always issues `sub`, so this is hardening — but the fix's
+    // correctness depended on that silently, and a dependency you rely on
+    // should be enforced rather than assumed.
+    if (!payload.sub) {
+      clearAuthTransients()
+      return null
+    }
 
     // Nonce verified — NOW hand tokens to the server. They become HttpOnly
     // cookies and the access/refresh/id strings never touch JS again.
@@ -374,7 +431,9 @@ export async function handleCallback(
     if (!loginRes.ok) return null
 
     const profile: CustomerProfile = {
-      sub: payload.sub ?? "",
+      // Narrowed to `string` by the sub check above — no `?? ""` fallback, which
+      // is what manufactured the unrecorded-identity state (WR-02).
+      sub: payload.sub,
       email: payload.email || "",
       name: payload.name || payload.preferred_username || "",
       emailVerified: payload.email_verified || false,

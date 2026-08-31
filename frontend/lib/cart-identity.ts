@@ -61,6 +61,51 @@ export function cartStorageKey(slug: string): string {
  */
 export const CUSTOMER_ID_KEY = "jtoye-customer-id"
 
+/**
+ * The non-sensitive "a session exists" marker and its expiry, owned here rather
+ * than in `customer-auth.ts` so this module holds the WHOLE localStorage
+ * identity keyspace — `CART_KEY_PREFIX`, `CUSTOMER_ID_KEY` and these two — in
+ * one place. Two copies of a key string is how a "clear everything" quietly
+ * starts missing keys; the same argument that put `CART_KEY_PREFIX` here.
+ *
+ * `customer-auth.ts` imports them (never the reverse — that would be a cycle)
+ * and `isLoggedIn()` delegates to `hasActiveSessionMarker()` below.
+ */
+export const CUSTOMER_MARKER_KEY = "jtoye-customer-logged-in"
+export const CUSTOMER_EXPIRES_KEY = "jtoye-customer-expires-at"
+
+/**
+ * Does this browser believe a customer session is LIVE — independent of whether
+ * we managed to record WHO it belongs to?
+ *
+ * That independence is the entire point (WR-02). `getCurrentCustomerId()`
+ * returns null for two different facts, and they demand opposite treatment on a
+ * cart write:
+ *
+ *   nobody is signed in            -> preserve the prior owner. Correct: this is
+ *                                     the 300s token lapse R-16 is about.
+ *   signed in, identity unrecorded -> preserving is WRONG. The prior owner is a
+ *                                     DIFFERENT person from the one now
+ *                                     shopping, and stamping their items with
+ *                                     it is the reverse leak through a side
+ *                                     door.
+ *
+ * This function is what tells the two apart. It is deliberately a read of the
+ * marker and its expiry — never of `CUSTOMER_ID_KEY` — so it stays true exactly
+ * when the id is missing, which is the case it exists to detect.
+ */
+export function hasActiveSessionMarker(): boolean {
+  if (typeof window === "undefined") return false
+  try {
+    if (window.localStorage.getItem(CUSTOMER_MARKER_KEY) !== "true") return false
+    const exp = Number(window.localStorage.getItem(CUSTOMER_EXPIRES_KEY) || "0")
+    if (!exp) return false
+    return exp > Math.floor(Date.now() / 1000)
+  } catch {
+    return false
+  }
+}
+
 /** The customer this browser currently believes is signed in, or null. */
 export function getCurrentCustomerId(): string | null {
   if (typeof window === "undefined") return null
@@ -121,6 +166,80 @@ export function canAdoptCart(
 }
 
 /**
+ * Who should be stamped on the basket about to be written — R-16.
+ *
+ * The header above argues that sign-OUT is the only unambiguous "a different
+ * person may be next" moment. That argument was only ever applied to the READ
+ * (`canAdoptCart`); the WRITE stamped `getCurrentCustomerId()` unconditionally,
+ * and so quietly did the one thing the whole module forbids — it REMOVED an
+ * ownership marker on an event that is not a sign-out.
+ *
+ * The event is routine, not exotic: the access cookie lives 300s, the session
+ * probe runs on mount, on a 1s poll and on focus, and a `{ authenticated: false }`
+ * answer forgets the customer id. The next shop-page render then re-persists the
+ * basket — nothing has to change for that write to happen — stamped `null`. A
+ * null owner is adoptable by anyone, so the very next registration on that
+ * browser inherited the previous account's basket and checked out with it.
+ *
+ * So a write may ADD an owner or CONFIRM one; only `clearStoredCarts` removes
+ * one. A TRUTHY current identity always wins; otherwise the prior one stands.
+ * Deliberately truthiness and NOT the literal `current ?? prior ?? null` that
+ * an earlier version of this comment claimed: a blank id is not an identity,
+ * and "simplifying" this guard into nullish coalescing would re-open exactly
+ * the empty-string hole `validOwner` exists to close (IN-03 / WR-01).
+ *
+ * Each branch is load-bearing:
+ *
+ *   prior null/absent, current X   -> X   the guest -> registration carry-over
+ *                                         this module exists to protect. Must
+ *                                         not become "preserve null forever".
+ *   prior A, current null          -> A   the lapsed session. THE FIX.
+ *   prior A, current B             -> B   B is signed in and writing, so B owns
+ *                                         the slot. Preserving A here would be
+ *                                         the same leak backwards: every item B
+ *                                         adds stored under A's name.
+ *   prior A, current A             -> A   unchanged.
+ *
+ * `sessionActive` is the THIRD fact, and it is required rather than optional so
+ * that no call site can silently omit it — WR-02. `current === null` conflates
+ * two states that demand opposite treatment:
+ *
+ *   nobody is signed in            -> preserve. The 300s lapse. Above.
+ *   signed in, identity unrecorded -> do NOT preserve: resolve to null.
+ *
+ * In the second, the person shopping is not the person named on the stamp, so
+ * preserving it would store THEIR items under the previous customer's identity
+ * — the reverse leak arriving through a side door instead of the front. Falling
+ * back to null makes the basket adoptable, which is the lesser harm: a writer
+ * we cannot identify must not be able to make an authoritative ownership claim
+ * on somebody else's behalf. `hasActiveSessionMarker()` supplies the fact, and
+ * it reads the marker and never `CUSTOMER_ID_KEY`, so it stays true in exactly
+ * the case it exists to detect.
+ *
+ * Pure and exported for its own unit tests: the decision is cart-specific, so it
+ * lives here rather than in the generic `useStoredState`, and the provider's job
+ * is only to supply the three facts.
+ */
+export function resolveCartOwner(
+  priorOwner: string | null | undefined,
+  current: string | null,
+  sessionActive: boolean
+): string | null {
+  if (current) return current
+  if (sessionActive) return null
+  return priorOwner ?? null
+}
+
+/**
+ * Broadcast name for "every stored basket just went away" — WR-03.
+ *
+ * ONE definition, imported by the reaper below and by whatever holds a basket in
+ * memory, for the same reason `CART_KEY_PREFIX` is one definition: a typo in a
+ * second copy is a listener that silently never fires.
+ */
+export const CARTS_CLEARED_EVENT = "jtoye:carts-cleared"
+
+/**
  * Remove every stored basket, for every shop. Called on an explicit sign-out.
  *
  * Walks the whole keyspace rather than the slugs we happen to know about: the
@@ -141,5 +260,22 @@ export function clearStoredCarts(): void {
     for (const k of doomed) window.localStorage.removeItem(k)
   } catch {
     /* private mode / quota — there is nothing stored to clear */
+  }
+  // WR-03 — clearing DISK is only half of it. A same-document localStorage
+  // write raises NO `storage` event (that event fires only in the other
+  // documents of an origin), and this function is reached from inside the
+  // [slug] subtree where CartProvider is mounted: the 1s session poll, focus,
+  // visibilitychange, checkout. Without this broadcast the provider keeps the
+  // outgoing customer's items in React state, still on screen, and the next
+  // add/remove/quantity change re-persists them stamped with the NEW
+  // customer's sub — the leak made permanent and legitimate-looking.
+  //
+  // Dispatched OUTSIDE the try above, deliberately: if the disk removal threw,
+  // in-memory holders need telling more, not less. Mirrors the existing
+  // `jtoye:cart-updated` broadcast the nav badge already listens to.
+  try {
+    window.dispatchEvent(new CustomEvent(CARTS_CLEARED_EVENT))
+  } catch {
+    /* CustomEvent unavailable in an exotic environment — nothing to notify */
   }
 }

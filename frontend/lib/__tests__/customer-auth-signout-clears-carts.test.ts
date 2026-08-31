@@ -1,6 +1,7 @@
 import {
   customerLogout,
   getCustomerSession,
+  handleCallback,
   isLoggedIn,
   LOGOUT_FETCH_TIMEOUT_MS,
 } from "@/lib/customer-auth"
@@ -202,5 +203,135 @@ describe("a session that simply went away", () => {
     // Without this the renewal path would leave the identity blank and every
     // later basket write would look anonymous — adoptable by the next person.
     expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBe("sub-renewed")
+  })
+})
+
+/**
+ * R-16 (2026-08-31 customer-surface audit) — the ACCOUNT SWITCH backstop.
+ *
+ * Kept in THIS file rather than a new one on purpose: sign-out, session lapse
+ * and account switch are one ownership-lifecycle story told by one module, and
+ * splitting them across files is precisely how the distinction between "the
+ * session went away" and "a different person is here" gets collapsed by a later
+ * edit. The three cases sit side by side so the collapse is loud.
+ *
+ * This is a BACKSTOP, not the cure. On the reported repro it is vacuous on its
+ * own: the anonymous downgrade has already nulled the basket's owner before any
+ * sign-in reads it, and the recorded identity is gone too. The cure is the
+ * provider-side preservation rule (lib/cart-identity.ts `resolveCartOwner`).
+ * What this covers is the switch that happens while the marker survives.
+ */
+describe("signing in as a DIFFERENT customer", () => {
+  function sessionResponse(profile: Record<string, unknown> | undefined) {
+    global.fetch = jest.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          authenticated: true,
+          expiresAt: Math.floor(Date.now() / 1000) + 300,
+          profile,
+        }),
+      }) as Response
+    ) as unknown as typeof fetch
+  }
+
+  it("clears every basket when the incoming sub differs from the recorded one", async () => {
+    seedSignedIn() // records sub-a
+    seedBaskets() // both owned by sub-a
+    sessionResponse({ sub: "sub-b", email: "b@example.com", name: "B", emailVerified: true })
+
+    await getCustomerSession()
+
+    // Asserted on ITEMS, never on key presence — see `basketItems`.
+    expect(basketItems(SLUG)).toHaveLength(0)
+    expect(basketItems(OTHER)).toHaveLength(0)
+    expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBe("sub-b")
+  })
+
+  it("does NOT clear when the SAME customer's session is renewed", async () => {
+    // CONTROL. A renewal is the common case and fires on a 1s poll; clearing
+    // here would empty a live basket several times a minute.
+    seedSignedIn()
+    seedBaskets()
+    sessionResponse({ sub: "sub-a", email: "a@example.com", name: "A", emailVerified: true })
+
+    await getCustomerSession()
+
+    expect(basketItems(SLUG)).toHaveLength(1)
+    expect(basketItems(OTHER)).toHaveLength(1)
+    expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBe("sub-a")
+  })
+
+  /**
+   * WR-02, the path that CREATES the ambiguous state rather than reacting to
+   * it. `handleCallback` built `sub: payload.sub ?? ""`, and
+   * `rememberCustomerId("")` returns early on a falsy sub — so a sub-less ID
+   * token established a LIVE cookie session with no recorded identity. Every
+   * later cart write then took the "preserve the prior owner" branch and
+   * stamped this customer's items with the previous one's id.
+   *
+   * Rejected the same way a bad nonce already is, and BEFORE the login POST, so
+   * no session is established at all. Keycloak always issues `sub`, so this is
+   * hardening — but the fix's correctness depended on that silently, and a
+   * dependency you rely on should be enforced, not assumed.
+   */
+  it("rejects an id token with NO sub instead of establishing an unrecorded session", async () => {
+    const NONCE = "nonce-abc"
+    sessionStorage.setItem("jtoye-pkce-verifier", "verifier-abc")
+    sessionStorage.setItem("jtoye-oauth-state", "state-abc")
+    sessionStorage.setItem("jtoye-oauth-nonce", NONCE)
+
+    // A well-formed id token that is valid in every way EXCEPT that it carries
+    // no subject — so nothing but the sub check can reject it.
+    const claims = { email: "nosub@example.com", name: "No Sub", nonce: NONCE }
+    const payload = btoa(JSON.stringify(claims))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "")
+    const idToken = `header.${payload}.signature`
+
+    const calls: string[] = []
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.includes("openid-connect/token")) {
+        return {
+          ok: true,
+          json: async () => ({
+            access_token: "at",
+            refresh_token: "rt",
+            id_token: idToken,
+            expires_in: 300,
+          }),
+        } as Response
+      }
+      return { ok: true, json: async () => ({}) } as Response
+    }) as unknown as typeof fetch
+
+    const profile = await handleCallback("the-code", "state-abc")
+
+    expect(profile).toBeNull()
+    // No cookie session may be established: the login POST must never happen.
+    expect(calls.some((u) => u.includes("/api/customer-auth/login"))).toBe(false)
+    // ...and no marker, so nothing later reads this as "somebody is signed in".
+    expect(isLoggedIn()).toBe(false)
+    expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBeNull()
+  })
+
+  it("does NOT clear when the session carries NO sub", async () => {
+    // T-R16-04, the fail-DESTRUCTIVE hazard. An unknown identity is not a
+    // different person. A one-sided check (`previous !== sub`) is true for
+    // `undefined` too, so it would destroy a live basket every time a session
+    // response arrived without a profile — a self-inflicted denial of service
+    // that would look like "the basket randomly empties itself".
+    seedSignedIn()
+    seedBaskets()
+    sessionResponse(undefined)
+
+    await getCustomerSession()
+
+    expect(basketItems(SLUG)).toHaveLength(1)
+    expect(basketItems(OTHER)).toHaveLength(1)
+    expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBe("sub-a")
   })
 })
