@@ -23,6 +23,23 @@ hydration in `frontend/e2e/perf-budgets.ts` docs), vendor back-channel logout (f
 today), the P2/P3 register, and two filed follow-ups: #714 (Keycloak theme-contract gate) and the
 sibling-`.verify.mjs` wiring gap issue from the #715 review. Known residuals recorded in the PR
 descriptions of #711, #713 and #715.
+**2026-08-31 evening delta — basket bar branded + landing redesign parked.** The owner reported the
+first add-to-basket popup rendering unbranded; investigation showed no toast at all — the floating
+cart bar's deliberate grey below-minimum state (colour-as-state reading as a dead control). Fixed
+via PR #718: always oxblood, the signal moved to an amber label stating delta AND rule
+("Add £1.50 to order · min £10.00"), arithmetic unified in `lib/minimum-order.ts` (bar + checkout),
+the bar extracted to `components/storefront/floating-cart-bar.tsx`, and all five findings of the
+in-session /code-review applied (the interim contrast-scan test-file exclusion was reverted; the
+suite lives in `frontend/__tests__/` instead — the gate's own documented placement). Verified live
+on the rebuilt 4/4-fresh stack, both directions, at brixton-village-grill. In parallel the landing
+redesign ran three sketch rounds (005 all rejected as re-skins; 006 winner A "The Pass" after a
+malformed round taught the eyeball-390/768/1280/1920 rule; 007 full-page elaboration), merged as
+PRs #719/#720 — and the owner then ruled: **the shipped 004-D landing stays as-is; 006-A/007 are
+parked for later, not rejected** (PR #722 records it in the sketch MANIFEST; do not reopen
+unprompted). PR #721 fixed the STATE.md row that cited a pre-squash sha. Residual filed in STATE:
+dashboard toasts are still stock-shadcn white (`--secondary/--muted/--accent` never got the brand
+refresh) plus two upstream `use-toast` staleness bugs.
+
 **Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
 the 2026-08-24 session broke it once itself (see "The truncating filter", below).
 
@@ -71,8 +88,8 @@ done
 | `main` HEAD | tip of `main` at or after the **PR #658** merge — deliberately NOT a sha, see below |
 | Phase 31 | `42ac6dc3` — `feat(31): consumer safety and the legal floor (#633)`, 18/18 plans |
 | Working tree | clean, no worktrees in use |
-| Schema head | **V63**, matching the live dev database |
-| Test manifest | **3185** logical invocations (Java 1713/270 files, Jest 1230/120, Playwright 113/22, Go 81/11, MCP 48/8) — `docs/metrics.json` |
+| Schema head | **V64** (re-measured 2026-08-31; V64 is #661's TRUNCATE grant) |
+| Test manifest | **3572** logical invocations (Java 1730/275 files, Jest 1583/146, Playwright 127/27, Go 84/11, MCP 48/8) — `docs/metrics.json`, re-measured 2026-08-31 |
 | Gate sweep 2026-08-25 | **36 PASS, 1 FAIL, 0 VOID** across all 37 gate scripts, measured after the runtime re-sync AND the E2E run. The one non-pass is `check-e2e-skip-budget` **FAIL** (65 skipped vs a budget of 8, plus an undeclared skip) — it was VOID until a completed run replaced the stale report, so this is a real answer rather than an unanswerable one. Progression that day: 34/2/1 → 36/0/1 → 36/1/0 |
 
 > **Why the HEAD row names a PR and not a sha — do not "helpfully" put one back.** A document that
