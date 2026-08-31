@@ -120,6 +120,23 @@ function setMarker(expiresAt: number, sub?: string | null) {
   // and nothing fires. The cure is `resolveCartOwner` on the write path. This
   // covers the switch that happens while the marker is still intact.
   if (previous && sub && previous !== sub) clearStoredCarts()
+  // WR-02 — the anomalous state, said out loud rather than defaulted away. A
+  // marker is about to go live while we hold no identity at all, so nothing can
+  // tell "this customer" from "the last one". The cart write path is already
+  // safe against it (`hasActiveSessionMarker()` makes `resolveCartOwner` refuse
+  // to inherit), but it should never happen, and a silent occurrence is how it
+  // would go unnoticed until it mattered.
+  //
+  // Deliberately NOT `forgetCustomerId()` here: a sub-less RENEWAL of an
+  // existing session is normal and must keep the recorded id (see the "does NOT
+  // clear when the session carries NO sub" control). The condition is
+  // specifically "no incoming identity AND none already on record".
+  if (!sub && !previous) {
+    console.warn(
+      "[customer-auth] session marker set with no customer id on record — " +
+        "cart writes will not inherit a prior owner (WR-02)"
+    )
+  }
   // WHO is signed in, not just THAT somebody is. The basket is stamped with it
   // so a second customer on the same browser cannot inherit the first one's
   // (#459). Its own try/catch, so a storage failure on the marker above cannot
@@ -379,6 +396,22 @@ export async function handleCallback(
       clearAuthTransients()
       return null
     }
+    // WR-02 — a token with no SUBJECT cannot establish a cart identity, so it
+    // must not establish a session either. This used to be `sub: payload.sub
+    // ?? ""` further down, and `rememberCustomerId("")` returns early on a
+    // falsy sub: the result was a live cookie session with NO recorded
+    // identity, in which every later cart write took the "preserve the prior
+    // owner" branch and stamped this customer's items with the previous
+    // customer's id. Rejected here, beside the nonce check and BEFORE any
+    // cookie is set, so the ambiguous state cannot be created at all.
+    //
+    // Keycloak always issues `sub`, so this is hardening — but the fix's
+    // correctness depended on that silently, and a dependency you rely on
+    // should be enforced rather than assumed.
+    if (!payload.sub) {
+      clearAuthTransients()
+      return null
+    }
 
     // Nonce verified — NOW hand tokens to the server. They become HttpOnly
     // cookies and the access/refresh/id strings never touch JS again.
@@ -398,7 +431,9 @@ export async function handleCallback(
     if (!loginRes.ok) return null
 
     const profile: CustomerProfile = {
-      sub: payload.sub ?? "",
+      // Narrowed to `string` by the sub check above — no `?? ""` fallback, which
+      // is what manufactured the unrecorded-identity state (WR-02).
+      sub: payload.sub,
       email: payload.email || "",
       name: payload.name || payload.preferred_username || "",
       emailVerified: payload.email_verified || false,

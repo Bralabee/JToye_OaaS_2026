@@ -182,7 +182,13 @@ export function canAdoptCart(
  * browser inherited the previous account's basket and checked out with it.
  *
  * So a write may ADD an owner or CONFIRM one; only `clearStoredCarts` removes
- * one. Concretely `current ?? prior ?? null`, and each branch is load-bearing:
+ * one. A TRUTHY current identity always wins; otherwise the prior one stands.
+ * Deliberately truthiness and NOT the literal `current ?? prior ?? null` that
+ * an earlier version of this comment claimed: a blank id is not an identity,
+ * and "simplifying" this guard into nullish coalescing would re-open exactly
+ * the empty-string hole `validOwner` exists to close (IN-03 / WR-01).
+ *
+ * Each branch is load-bearing:
  *
  *   prior null/absent, current X   -> X   the guest -> registration carry-over
  *                                         this module exists to protect. Must
@@ -194,17 +200,44 @@ export function canAdoptCart(
  *                                         adds stored under A's name.
  *   prior A, current A             -> A   unchanged.
  *
+ * `sessionActive` is the THIRD fact, and it is required rather than optional so
+ * that no call site can silently omit it — WR-02. `current === null` conflates
+ * two states that demand opposite treatment:
+ *
+ *   nobody is signed in            -> preserve. The 300s lapse. Above.
+ *   signed in, identity unrecorded -> do NOT preserve: resolve to null.
+ *
+ * In the second, the person shopping is not the person named on the stamp, so
+ * preserving it would store THEIR items under the previous customer's identity
+ * — the reverse leak arriving through a side door instead of the front. Falling
+ * back to null makes the basket adoptable, which is the lesser harm: a writer
+ * we cannot identify must not be able to make an authoritative ownership claim
+ * on somebody else's behalf. `hasActiveSessionMarker()` supplies the fact, and
+ * it reads the marker and never `CUSTOMER_ID_KEY`, so it stays true in exactly
+ * the case it exists to detect.
+ *
  * Pure and exported for its own unit tests: the decision is cart-specific, so it
  * lives here rather than in the generic `useStoredState`, and the provider's job
- * is only to supply the prior value.
+ * is only to supply the three facts.
  */
 export function resolveCartOwner(
   priorOwner: string | null | undefined,
-  current: string | null
+  current: string | null,
+  sessionActive: boolean
 ): string | null {
   if (current) return current
+  if (sessionActive) return null
   return priorOwner ?? null
 }
+
+/**
+ * Broadcast name for "every stored basket just went away" — WR-03.
+ *
+ * ONE definition, imported by the reaper below and by whatever holds a basket in
+ * memory, for the same reason `CART_KEY_PREFIX` is one definition: a typo in a
+ * second copy is a listener that silently never fires.
+ */
+export const CARTS_CLEARED_EVENT = "jtoye:carts-cleared"
 
 /**
  * Remove every stored basket, for every shop. Called on an explicit sign-out.
@@ -227,5 +260,22 @@ export function clearStoredCarts(): void {
     for (const k of doomed) window.localStorage.removeItem(k)
   } catch {
     /* private mode / quota — there is nothing stored to clear */
+  }
+  // WR-03 — clearing DISK is only half of it. A same-document localStorage
+  // write raises NO `storage` event (that event fires only in the other
+  // documents of an origin), and this function is reached from inside the
+  // [slug] subtree where CartProvider is mounted: the 1s session poll, focus,
+  // visibilitychange, checkout. Without this broadcast the provider keeps the
+  // outgoing customer's items in React state, still on screen, and the next
+  // add/remove/quantity change re-persists them stamped with the NEW
+  // customer's sub — the leak made permanent and legitimate-looking.
+  //
+  // Dispatched OUTSIDE the try above, deliberately: if the disk removal threw,
+  // in-memory holders need telling more, not less. Mirrors the existing
+  // `jtoye:cart-updated` broadcast the nav badge already listens to.
+  try {
+    window.dispatchEvent(new CustomEvent(CARTS_CLEARED_EVENT))
+  } catch {
+    /* CustomEvent unavailable in an exotic environment — nothing to notify */
   }
 }
