@@ -46,6 +46,29 @@ import { resolvePublicOrigin } from "@/lib/public-origin"
 export const dynamic = "force-dynamic"
 
 /**
+ * WR-04 — the response body embeds the caller's raw `id_token`, so it must
+ * never be stored by anything.
+ *
+ * `export const dynamic = "force-dynamic"` governs Next's RENDERING mode, not
+ * the emitted `Cache-Control`. Without an explicit header, correctness rested on
+ * a framework default plus every intermediary — ingress, any future CDN, a
+ * corporate proxy — inferring "do not share this" from a URL that carries no
+ * user-varying component. A shared cache keyed on path alone would serve user
+ * A's id_token to user B. There is no CDN in front of `/api/*` today, so this is
+ * defence in depth rather than a live hole; it is one line, and this is the P0
+ * path.
+ *
+ * `Vary: Cookie` states the actual dependency: the answer is a function of the
+ * session cookie, not of the URL.
+ *
+ * Applied to BOTH exit branches below, so the two cannot drift.
+ */
+const NO_STORE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0",
+  Vary: "Cookie",
+} as const
+
+/**
  * The PUBLIC (browser-resolvable) vendor realm base, read at REQUEST time
  * rather than at module load. Both names are listed as REQUIRED in
  * `lib/env-validation.ts`, so the null branch below is defence in depth — but
@@ -86,6 +109,23 @@ export async function GET(req: NextRequest) {
   // Injected, never read off the request: `nextUrl.origin` is the server's BIND
   // address inside a container (measured `http://0.0.0.0:3000`, unmoved by the
   // Host header). `resolvePublicOrigin` returns null rather than guessing.
+  //
+  // RESIDUAL, STATED HERE BECAUSE THIS IS THE P0 PATH (WR-04/WR-07). That
+  // resolver's LAST fallback is `req.nextUrl.origin`. Inside a container
+  // `isBindAddress` filters it, which is the case it was written for. OUTSIDE
+  // one — a non-standalone `next dev`, or any deployment binding a real
+  // interface — `nextUrl.origin` does follow the request Host, so with BOTH
+  // `APP_PUBLIC_ORIGIN` and `NEXTAUTH_URL` unset an attacker-supplied
+  // `Host: evil.example` would reach `post_logout_redirect_uri`, leaving only
+  // Keycloak's registered-redirect-URI check — a control in another system —
+  // between that and a post-authentication open redirect.
+  //
+  // Inherited rather than introduced (the customer route consumed this first)
+  // and `lib/env-validation.ts` lists NEXTAUTH_URL as REQUIRED, so it is a
+  // residual and not a live hole. Narrowing the resolver is deliberately NOT
+  // done here: it is shared with the customer route and changing it is a
+  // separate, separately-tested change. Recorded so the next reader of the
+  // vendor path does not have to rediscover it.
   const origin = resolvePublicOrigin(req)
   const postLogoutRedirectUri = origin ? `${origin}${redirect}` : null
 
@@ -95,7 +135,10 @@ export async function GET(req: NextRequest) {
     // build, so bounce back to the redirect target. With no trustworthy origin
     // the RELATIVE path is strictly safer and equally correct: the browser
     // resolves it against the page it is already on, which is this app.
-    return NextResponse.json({ url: postLogoutRedirectUri ?? redirect })
+    return NextResponse.json(
+      { url: postLogoutRedirectUri ?? redirect },
+      { headers: NO_STORE_HEADERS }
+    )
   }
 
   const params = new URLSearchParams({ id_token_hint: idToken })
@@ -109,7 +152,8 @@ export async function GET(req: NextRequest) {
   // redirect uri errors WITHOUT terminating anything. Losing the return journey
   // is a cosmetic degradation; losing the sign-out is the security defect.
   // Never trade the second away to keep the first.
-  return NextResponse.json({
-    url: `${base}/protocol/openid-connect/logout?${params.toString()}`,
-  })
+  return NextResponse.json(
+    { url: `${base}/protocol/openid-connect/logout?${params.toString()}` },
+    { headers: NO_STORE_HEADERS }
+  )
 }

@@ -213,3 +213,46 @@ describe("/api/vendor-auth/logout-url — the redirect can never leave this orig
     })
   })
 })
+
+/**
+ * WR-04 (code review, 2026-08-31) — the id_token must not be storable.
+ *
+ * The body embeds the caller's raw id_token. `export const dynamic =
+ * "force-dynamic"` governs Next's RENDERING mode, not the emitted
+ * `Cache-Control`, so without an explicit header correctness rested on a
+ * framework default plus every intermediary inferring "do not share this" from
+ * a URL that carries no user-varying component. A shared cache keyed on path
+ * alone would serve user A's id_token to user B.
+ *
+ * BOTH branches are asserted. The degraded branch carries no token today, but
+ * the two exits are one edit away from drifting, and the drift would be silent.
+ */
+describe("/api/vendor-auth/logout-url — the id_token is never cacheable (WR-04)", () => {
+  it("sends no-store and Vary: Cookie on the branch that carries the token", async () => {
+    await withEnv(SPLIT_HORIZON, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      // Non-vacuity: this really is the branch with the token in it.
+      const { url } = await res.clone().json()
+      expect(url).toContain("id_token_hint=ID")
+
+      expect(res.headers.get("cache-control")).toBe("private, no-store, max-age=0")
+      expect(res.headers.get("vary")).toBe("Cookie")
+    })
+  })
+
+  it("sends the same headers on the degraded branch, so the two cannot drift", async () => {
+    mockAuth.mockResolvedValue(null)
+    await withEnv(SPLIT_HORIZON, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      const { url } = await res.clone().json()
+      expect(url).not.toContain("id_token_hint")
+
+      expect(res.headers.get("cache-control")).toBe("private, no-store, max-age=0")
+      expect(res.headers.get("vary")).toBe("Cookie")
+    })
+  })
+})
