@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch 007 — The Pass, full page</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,400;0,500;0,600;0,700;0,900;1,600&family=Caveat:wght@600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ox: #3A0B0D; --ox-deep: #1C0405; --cream: #FBF6EE; --cream-2: #F3E9D9; --cream-3: #EADCC6;
+    --amber: #F59E0B; --o700: #C2410C; --gold: #D9A441; --emerald: #059669;
+    --ink: #241A17; --mut: #6B5E57;
+    --ws: 'Work Sans', system-ui, sans-serif; --hand: 'Caveat', cursive;
+    --sh-1: 0 2px 8px rgba(28,4,5,.08);
+    --sh-2: 0 14px 34px rgba(28,4,5,.16);
+    --sh-3: 0 30px 70px rgba(28,4,5,.32);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { overflow-x: clip; }
+  body { font-family: var(--ws); color: var(--ink); background: var(--cream); }
+  .bandwrap { overflow: hidden; }
+  img { max-width: 100%; display: block; }
+  a { text-decoration: none; color: inherit; }
+  .cv { max-width: 1280px; margin: 0 auto; padding: 0 clamp(18px, 3vw, 44px); position: relative; }
+  .eyebrow { font: 700 12px var(--ws); letter-spacing: .22em; text-transform: uppercase; color: var(--o700); }
+  .h-xl { font: 900 clamp(2.4rem, 6.4vw, 5.6rem)/0.96 var(--ws); letter-spacing: -.04em; text-transform: uppercase; color: var(--ox); }
+  .h-xl .out { color: transparent; -webkit-text-stroke: 2px var(--amber); }
+  .hand { font: 600 clamp(18px, 1.7vw, 24px) var(--hand); color: var(--o700); }
+  .imgbox { position: relative; overflow: hidden; background: linear-gradient(135deg,#fbe9d4,#f6dcd8); }
+  .imgbox img { width: 100%; height: 100%; object-fit: cover; }
+  .imgbox .fb { position: absolute; inset: 0; display: none; place-items: center; font-size: 42px; }
+  .imgbox.dead img { display: none; } .imgbox.dead .fb { display: grid; }
+  .grain { position: absolute; inset: 0; pointer-events: none; opacity: .45; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.55 0 0 0 0 0.45 0 0 0 0 0.35 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .marq { overflow: hidden; white-space: nowrap; }
+  .marq-in { display: inline-flex; gap: 34px; animation: marq 26s linear infinite; padding: 11px 0; }
+  @keyframes marq { to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .marq-in { animation: none !important; } }
+  .stamp { display: inline-grid; place-items: center; text-align: center; border-radius: 50%;
+    border: 1.5px solid currentColor; font: 700 9.5px/1.25 var(--ws); letter-spacing: .06em;
+    text-transform: uppercase; padding: 10px; width: 88px; height: 88px; }
+  .snap { position: relative; }
+  .snap .tag { position: absolute; background: var(--amber); color: var(--ox-deep); font: 700 12.5px var(--ws);
+    border-radius: 999px; padding: 7px 12px; box-shadow: var(--sh-2); white-space: nowrap; z-index: 2; }
+  .snap .note { position: absolute; font: 600 clamp(17px,1.6vw,23px) var(--hand); white-space: nowrap; z-index: 2; }
+
+  /* ── ticket: the page's recurring object (receipt stub, perforated top) ── */
+  .ticket { background: #fff; border-radius: 4px 4px 12px 12px; box-shadow: var(--sh-2); position: relative; padding: 26px 22px 22px;
+    background-image: radial-gradient(circle at 8px -4px, transparent 7px, #fff 8px); }
+  .ticket::before { content: ""; position: absolute; top: -1px; left: 0; right: 0; height: 8px;
+    background: radial-gradient(circle at 8px 0, transparent 5px, #fff 5.5px); background-size: 16px 8px; background-position: 4px 0; }
+  .ticket .tno { position: absolute; top: 14px; right: 16px; font: 600 11px var(--ws); letter-spacing: .14em; color: var(--mut); }
+
+  /* ═══ header ═══ */
+  .hdr { display: flex; justify-content: space-between; align-items: center; padding-top: 24px; position: relative; z-index: 6; }
+  .hdr b { font: 900 19px var(--ws); color: var(--ox); letter-spacing: -.02em; }
+  .hdr .right { display: flex; gap: 18px; align-items: center; }
+  .hdr .navlink { font: 600 13.5px var(--ws); color: var(--cream-2); }
+  .hdr .basket { font: 700 12px var(--ws); color: var(--cream); background: var(--o700); border-radius: 999px; padding: 8px 14px; }
+  @media (max-width: 900px) { .hdr .navlink { display: none; } }
+
+  /* ═══ hero scene ═══ */
+  .scene { position: relative; background: var(--cream); overflow: hidden; }
+  .scene::before { content: ""; position: absolute; inset: 0; background: var(--ox);
+    clip-path: polygon(63% 0, 100% 0, 100% 100%, 41% 100%); }
+  .hgrid { display: grid; grid-template-columns: repeat(12, 1fr); align-items: center;
+    padding: clamp(30px, 5vh, 66px) 0 clamp(64px, 9vh, 116px); column-gap: 12px; }
+  .tblock { grid-column: 1 / 9; grid-row: 1; position: relative; z-index: 2; }
+  .tblock .l { display: block; font: 900 clamp(2.9rem, 8.2vw, 7.3rem)/0.93 var(--ws);
+    letter-spacing: -.048em; text-transform: uppercase; color: var(--ox); white-space: nowrap; }
+  .tblock .l2 { margin-left: .5em; color: transparent; -webkit-text-stroke: 2.5px var(--amber); }
+  .tblock .l3 { color: var(--cream); -webkit-text-stroke: 1.5px var(--ox); }
+  .plateunit { grid-column: 8 / 13; grid-row: 1; z-index: 3; align-self: start; margin-top: clamp(12px, 3vh, 44px); }
+  .plateunit .imgbox { border-radius: 50%; aspect-ratio: 1; box-shadow: var(--sh-3); transform: rotate(-6deg); transition: transform .5s cubic-bezier(.2,1,.3,1); }
+  .plateunit:hover .imgbox { transform: rotate(-1deg) scale(1.02); }
+  .plateunit .tag { left: -4px; bottom: 13%; transform: rotate(-8deg); }
+  .plateunit .note { top: -32px; left: 12%; transform: rotate(-5deg); color: var(--gold); }
+  .undertype { grid-column: 1 / 7; grid-row: 2; z-index: 4; margin-top: 20px; }
+  .undertype p { font: 500 15.5px/1.55 var(--ws); color: var(--cream-2); background: rgba(28,4,5,.72);
+    border-radius: 14px; padding: 12px 16px; display: inline-block; max-width: 46ch; }
+  .search { display: flex; gap: 10px; align-items: center; background: #fff; border-radius: 999px;
+    padding: 6px 6px 6px 18px; max-width: 540px; box-shadow: var(--sh-3); margin-top: 16px; }
+  .search input { border: 0; outline: 0; flex: 1; font: 500 15px var(--ws); min-width: 0; background: none; }
+  .search button { background: var(--o700); color: #fff; border: 0; border-radius: 999px; padding: 13px 22px; font: 700 14px var(--ws); cursor: pointer; transition: background .2s; }
+  .search button:hover { background: #A63A0B; }
+  .chiprow { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .chip { font: 600 12.5px var(--ws); color: var(--ox); background: var(--cream); border: 1px solid var(--cream-3);
+    border-radius: 999px; padding: 7px 13px; transition: border-color .2s, background .2s; }
+  .chip:hover { border-color: var(--amber); background: #FFF3DF; }
+  .stamps { grid-column: 9 / 13; grid-row: 2; justify-self: end; display: flex; gap: 10px; z-index: 2; }
+  .stamps .stamp { color: var(--cream); background: rgba(255,255,255,.06); }
+  .stamps .stamp:nth-child(1) { transform: rotate(-7deg); } .stamps .stamp:nth-child(2) { transform: rotate(4deg); }
+  .stamps .stamp:nth-child(3) { transform: rotate(-3deg); }
+  @media (max-width: 760px) {
+    .scene::before { clip-path: polygon(0 44%, 100% 34%, 100% 100%, 0 100%); }
+    .tblock { grid-column: 1 / 13; }
+    .plateunit { grid-column: 6 / 13; grid-row: 2; margin-top: -6px; }
+    .undertype { grid-column: 1 / 13; grid-row: 3; }
+    .chiprow .chip { background: rgba(255,255,255,.9); }
+    .stamps { grid-column: 1 / 13; grid-row: 4; justify-self: start; margin-top: 22px; }
+    .stamps .stamp { width: 78px; height: 78px; }
+  }
+
+  /* ═══ dish strip ═══ */
+  .strip { display: flex; gap: 16px; overflow-x: auto; padding: 0 clamp(18px,3vw,44px) 34px;
+    margin: -54px auto 0; scrollbar-width: none; align-items: flex-end; position: relative; z-index: 5; max-width: 1280px; }
+  .strip::-webkit-scrollbar { display: none; }
+  .card { flex: 0 0 auto; background: #fff; border-radius: 14px; padding: 9px 9px 12px; box-shadow: var(--sh-2); transition: transform .25s; }
+  .card:hover { transform: translateY(-8px) rotate(0deg) !important; }
+  .card .ib { border-radius: 9px; display: block; overflow: hidden; position: relative; background: linear-gradient(135deg,#fbe9d4,#f6dcd8); }
+  .card .ib img { width: 100%; height: 100%; object-fit: cover; }
+  .card figcaption { padding: 10px 5px 0; }
+  .card .r1 { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .card .r1 b { font: 700 13.5px var(--ws); color: var(--ox); }
+  .card .r1 span { font: 600 18px var(--hand); color: var(--o700); }
+  .card .r2 { display: flex; align-items: center; gap: 6px; margin-top: 3px; font: 500 11.5px var(--ws); color: var(--mut); }
+  .card .r2 i { width: 6px; height: 6px; border-radius: 50%; background: var(--emerald); box-shadow: 0 0 6px #34D399; }
+
+  .band { background: var(--amber); transform: rotate(1.2deg); margin: 26px -10px 0; }
+  .band span { font: 800 14px var(--ws); letter-spacing: .18em; color: var(--ox-deep); }
+
+  /* ═══ how it works — order tickets ═══ */
+  .how { padding: clamp(64px, 9vw, 120px) 0 clamp(50px, 6vw, 90px); position: relative; }
+  .how .headrow { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  .how .rail { position: relative; margin-top: clamp(30px, 4vw, 54px); display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(16px, 2.6vw, 34px); }
+  .how .rail::before { content: ""; position: absolute; top: -16px; left: 6%; right: 6%; border-top: 2px dashed var(--cream-3); }
+  .how .ticket:nth-child(1) { transform: rotate(-1.4deg); }
+  .how .ticket:nth-child(2) { transform: rotate(.8deg); margin-top: 18px; }
+  .how .ticket:nth-child(3) { transform: rotate(-.6deg); }
+  .how .ticket .ico { font-size: 30px; }
+  .how .ticket h3 { font: 800 19px var(--ws); color: var(--ox); margin-top: 12px; letter-spacing: -.01em; }
+  .how .ticket p { font: 500 14px/1.55 var(--ws); color: var(--mut); margin-top: 7px; }
+  .how .ticket .stub { position: absolute; left: 22px; top: -13px; background: var(--ox); color: var(--cream);
+    font: 800 12px var(--ws); letter-spacing: .12em; border-radius: 6px; padding: 5px 10px; box-shadow: var(--sh-1); }
+  @media (max-width: 760px) { .how .rail { grid-template-columns: 1fr; max-width: 420px; } .how .rail::before { display: none; } }
+
+  /* ═══ tonight's kitchens ═══ */
+  .kitchens { padding: clamp(30px, 4vw, 60px) 0 clamp(70px, 8vw, 110px); }
+  .kgrid { display: grid; grid-template-columns: repeat(12, 1fr); gap: clamp(14px, 2vw, 26px); margin-top: clamp(28px, 4vw, 50px); align-items: stretch; }
+  .kbig { grid-column: 1 / 8; }
+  .kside { grid-column: 8 / 13; display: grid; gap: clamp(14px, 2vw, 26px); }
+  .kcard { position: relative; border-radius: 18px; overflow: hidden; box-shadow: var(--sh-2); display: block; min-height: 240px; }
+  .kcard .imgbox { position: absolute; inset: 0; }
+  .kcard .veil { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 30%, rgba(28,4,5,.86) 100%); }
+  .kcard .kmeta { position: absolute; left: 18px; right: 18px; bottom: 16px; color: var(--cream); }
+  .kcard .kmeta b { font: 800 clamp(19px, 2vw, 26px) var(--ws); letter-spacing: -.02em; display: block; }
+  .kcard .kmeta span { font: 500 13px var(--ws); color: #E8CDB1; }
+  .kcard .open { position: absolute; top: 14px; left: 14px; display: inline-flex; align-items: center; gap: 6px;
+    font: 700 10.5px var(--ws); letter-spacing: .1em; text-transform: uppercase; color: #7CE0B0;
+    background: rgba(28,4,5,.72); border-radius: 999px; padding: 6px 11px; }
+  .kcard .open i { width: 7px; height: 7px; border-radius: 50%; background: #34D399; box-shadow: 0 0 8px #34D399; }
+  .kcard .fh { position: absolute; top: 14px; right: 14px; font: 700 10.5px var(--ws); letter-spacing: .08em;
+    color: var(--ox); background: var(--cream); border-radius: 999px; padding: 6px 11px; box-shadow: var(--sh-1); }
+  .kcard:hover .imgbox img { transform: scale(1.04); }
+  .kcard .imgbox img { transition: transform .6s cubic-bezier(.2,1,.3,1); }
+  .kbig .kcard { height: 100%; min-height: 420px; }
+  @media (max-width: 860px) { .kbig, .kside { grid-column: 1 / 13; } .kbig .kcard { min-height: 300px; } }
+
+  /* ═══ quote slab ═══ */
+  .quote { position: relative; background: var(--ox); color: var(--cream); overflow: hidden;
+    padding: clamp(60px, 8vw, 110px) 0; clip-path: polygon(0 clamp(18px,2.4vw,34px), 100% 0, 100% calc(100% - clamp(18px,2.4vw,34px)), 0 100%); }
+  .quote blockquote { font: 900 clamp(1.7rem, 4.2vw, 3.6rem)/1.12 var(--ws); letter-spacing: -.03em; max-width: 21ch; }
+  .quote blockquote em { font-style: normal; color: var(--gold); }
+  .quote figcaption { margin-top: 22px; display: flex; align-items: center; gap: 12px; }
+  .quote .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--gold); display: grid; place-items: center; font-size: 22px; }
+  .quote figcaption b { font: 700 14.5px var(--ws); display: block; }
+  .quote figcaption span { font: 500 12.5px var(--ws); color: #D9BFA8; }
+  .quote .qhand { position: absolute; right: clamp(20px, 8vw, 140px); top: clamp(38px, 6vw, 90px); color: var(--gold); transform: rotate(4deg); }
+  .quote .stars { color: var(--amber); letter-spacing: 3px; font-size: 15px; margin-top: 14px; }
+
+  /* ═══ stats ═══ */
+  .stats { padding: clamp(56px, 7vw, 100px) 0 clamp(30px, 4vw, 60px); }
+  .statgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; text-align: center; }
+  .statgrid b { font: 900 clamp(2.6rem, 6vw, 5.2rem)/1 var(--ws); letter-spacing: -.04em; color: var(--ox); display: block; }
+  .statgrid b i { font-style: normal; color: var(--amber); }
+  .statgrid span { font: 700 11.5px var(--ws); letter-spacing: .18em; text-transform: uppercase; color: var(--mut); display: block; margin-top: 8px; }
+  @media (max-width: 640px) { .statgrid { grid-template-columns: 1fr; gap: 30px; } }
+
+  /* ═══ operator ═══ */
+  .op { position: relative; background: var(--ox-deep); color: var(--cream); overflow: hidden; margin-top: clamp(50px, 6vw, 90px); }
+  .op::before { content: ""; position: absolute; inset: 0; background: var(--ox); clip-path: polygon(0 0, 34% 0, 18% 100%, 0 100%); }
+  .opgrid { display: grid; grid-template-columns: repeat(12, 1fr); gap: clamp(16px, 2.4vw, 32px);
+    padding: clamp(64px, 9vw, 120px) 0; align-items: center; }
+  .opcopy { grid-column: 1 / 8; position: relative; z-index: 2; }
+  .opcopy h2 { font: 900 clamp(2.4rem, 6vw, 5.4rem)/0.95 var(--ws); letter-spacing: -.045em; text-transform: uppercase; }
+  .opcopy h2 em { font-style: normal; color: transparent; -webkit-text-stroke: 2px var(--gold); }
+  .opcopy p { margin-top: 16px; max-width: 44ch; font: 500 15.5px/1.6 var(--ws); color: #EBD9C4; }
+  .opcopy ul { margin-top: 22px; list-style: none; display: grid; gap: 12px; }
+  .opcopy li { display: flex; gap: 12px; align-items: baseline; font: 600 15px var(--ws); }
+  .opcopy li i { font-style: normal; color: var(--amber); font-weight: 900; }
+  .opcopy .cta { display: inline-flex; gap: 10px; margin-top: 28px; background: var(--gold); color: var(--ox-deep);
+    font: 700 15px var(--ws); border-radius: 999px; padding: 14px 26px; transition: transform .2s; }
+  .opcopy .cta:hover { transform: translateY(-2px); }
+  .kds { grid-column: 8 / 13; position: relative; z-index: 2; }
+  .kds .ticket { transform: rotate(2.2deg); color: var(--ink); }
+  .kds .ticket .oline { display: flex; justify-content: space-between; font: 600 13.5px var(--ws); padding: 8px 0; border-bottom: 1px dashed var(--cream-3); }
+  .kds .ticket .oline span:last-child { color: var(--mut); font-weight: 500; }
+  .kds .ticket .ohead { font: 800 12px var(--ws); letter-spacing: .16em; text-transform: uppercase; color: var(--o700); padding-bottom: 8px; }
+  .kds .ticket .ready { margin-top: 14px; text-align: center; background: var(--emerald); color: #fff;
+    font: 700 13px var(--ws); border-radius: 9px; padding: 11px; }
+  .kds .opstamp { position: absolute; top: -28px; right: -6px; color: var(--gold); transform: rotate(8deg); background: rgba(28,4,5,.4); }
+  @media (max-width: 860px) { .opcopy { grid-column: 1 / 13; } .kds { grid-column: 1 / 11; margin-top: 26px; } }
+
+  /* ═══ doors + footer ═══ */
+  .doors { padding-top: clamp(40px, 6vw, 80px); }
+  .door { display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+    padding: clamp(24px, 3.5vw, 42px) clamp(18px,3vw,44px); border-top: 2px solid var(--ox); transition: background .25s; max-width: 1280px; margin: 0 auto; }
+  .doors nav > a:last-child { border-bottom: 2px solid var(--ox); }
+  .door .t { font: 900 clamp(1.7rem, 4.6vw, 4rem)/1 var(--ws); letter-spacing: -.03em; text-transform: uppercase; color: var(--ox); }
+  .door .d { font: 500 13px var(--ws); color: var(--mut); max-width: 230px; text-align: right; }
+  .door .arr { font: 900 clamp(1.7rem, 4.6vw, 4rem)/1 var(--ws); color: var(--amber); transition: transform .25s; }
+  .door:hover { background: var(--cream-2); } .door:hover .arr { transform: translateX(10px); }
+  footer { padding: clamp(40px, 5vw, 70px) 0 40px; }
+  .fgrid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 26px; }
+  .fgrid b.mark { font: 900 22px var(--ws); color: var(--ox); }
+  .fgrid p { font: 500 13px/1.6 var(--ws); color: var(--mut); margin-top: 10px; max-width: 30ch; }
+  .fgrid h4 { font: 700 12px var(--ws); letter-spacing: .16em; text-transform: uppercase; color: var(--ox); }
+  .fgrid ul { list-style: none; margin-top: 12px; display: grid; gap: 9px; }
+  .fgrid li a { font: 500 13.5px var(--ws); color: var(--mut); } .fgrid li a:hover { color: var(--o700); }
+  .legal { border-top: 1px solid var(--cream-3); margin-top: 36px; padding-top: 18px; display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; font: 500 12px var(--ws); color: var(--mut); }
+  @media (max-width: 760px) { .fgrid { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+
+<!-- ═══ HERO ═══ -->
+<section class="scene">
+  <div class="grain"></div>
+  <div class="cv">
+    <header class="hdr">
+      <b>J’TOYE</b>
+      <div class="right">
+        <a class="navlink" href="#">Browse kitchens</a>
+        <a class="navlink" href="#">For food businesses</a>
+        <a class="basket" href="#">Basket · 0</a>
+      </div>
+    </header>
+    <div class="hgrid">
+      <h1 class="tblock">
+        <span class="l">Real</span>
+        <span class="l l2">kitchens,</span>
+        <span class="l l3">real close.</span>
+      </h1>
+      <div class="plateunit snap">
+        <span class="note">on the pass now ↓</span>
+        <div class="imgbox"><img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=900&q=72" alt="" onerror="dead(this)"><div class="fb">🍔</div></div>
+        <span class="tag">Mama Efe’s · £9.50</span>
+      </div>
+      <div class="undertype">
+        <p>Independent cooks, minutes away. Order in — or fire up your own kitchen on J’Toye.</p>
+        <form class="search" role="search">
+          <span aria-hidden>📍</span><input placeholder="Postcode or a craving — “jollof”, “B14”…"><button>Search</button>
+        </form>
+        <nav class="chiprow" aria-label="Browse by cuisine">
+          <a class="chip" href="#">🍚 Jollof</a><a class="chip" href="#">🍗 Grill</a><a class="chip" href="#">🥘 Caribbean</a>
+          <a class="chip" href="#">🍛 South Asian</a><a class="chip" href="#">🥗 Vegan</a><a class="chip" href="#">🍰 Desserts</a>
+        </nav>
+      </div>
+      <div class="stamps" aria-hidden>
+        <span class="stamp">FHRS<br>verified</span>
+        <span class="stamp">allergen<br>labelled</span>
+        <span class="stamp">no app<br>needed</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ DISH STRIP ═══ -->
+<div class="strip">
+  <figure class="card" style="width:205px; transform:rotate(-2deg)"><span class="ib imgbox" style="height:158px"><img src="https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=70" alt="" onerror="dead(this)"><span class="fb">🍖</span></span>
+    <figcaption><div class="r1"><b>Yard Vibes</b><span>£11</span></div><div class="r2"><i></i>Caribbean · Moseley</div></figcaption></figure>
+  <figure class="card" style="width:245px; transform:rotate(1.5deg)"><span class="ib imgbox" style="height:198px"><img src="https://images.unsplash.com/photo-1574484284002-952d92456975?auto=format&fit=crop&w=600&q=70" alt="" onerror="dead(this)"><span class="fb">🍛</span></span>
+    <figcaption><div class="r1"><b>Spice Route</b><span>£12.50</span></div><div class="r2"><i></i>South Asian · Sparkhill</div></figcaption></figure>
+  <figure class="card" style="width:185px; transform:rotate(-1deg)"><span class="ib imgbox" style="height:138px"><img src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&q=70" alt="" onerror="dead(this)"><span class="fb">🥗</span></span>
+    <figcaption><div class="r1"><b>Green Bowl</b><span>£8</span></div><div class="r2"><i></i>Vegan · Digbeth</div></figcaption></figure>
+  <figure class="card" style="width:225px; transform:rotate(2deg)"><span class="ib imgbox" style="height:172px"><img src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=600&q=70" alt="" onerror="dead(this)"><span class="fb">🍢</span></span>
+    <figcaption><div class="r1"><b>Suya Spot</b><span>£10</span></div><div class="r2"><i></i>West African · Selly Oak</div></figcaption></figure>
+  <figure class="card" style="width:205px; transform:rotate(-1.5deg)"><span class="ib imgbox" style="height:152px"><img src="https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?auto=format&fit=crop&w=600&q=70" alt="" onerror="dead(this)"><span class="fb">🍰</span></span>
+    <figcaption><div class="r1"><b>Sweet Yard</b><span>£4.50</span></div><div class="r2"><i></i>Desserts · Kings Heath</div></figcaption></figure>
+</div>
+
+<div class="bandwrap"><div class="band marq" aria-hidden><div class="marq-in">
+  <span>COOKING NEAR YOU</span><span>◆</span><span>27 KITCHENS LIVE</span><span>◆</span><span>ORDER IN MINUTES</span><span>◆</span>
+  <span>COOKING NEAR YOU</span><span>◆</span><span>27 KITCHENS LIVE</span><span>◆</span><span>ORDER IN MINUTES</span><span>◆</span>
+</div></div></div>
+
+<!-- ═══ HOW IT WORKS ═══ -->
+<section class="how"><div class="cv">
+  <div class="headrow">
+    <div>
+      <span class="eyebrow">How it works</span>
+      <h2 class="h-xl" style="margin-top:10px">Three tickets<br>to <span class="out">dinner.</span></h2>
+    </div>
+    <span class="hand" style="transform:rotate(-3deg)">easy as that ↓</span>
+  </div>
+  <div class="rail">
+    <article class="ticket"><span class="stub">TICKET 01</span><span class="tno">№ 0247</span>
+      <div class="ico" aria-hidden>🔍</div>
+      <h3>Find your kitchen</h3>
+      <p>Search a postcode or a craving. Independent cooks near you, menus open — allergen info on every single dish.</p>
+    </article>
+    <article class="ticket"><span class="stub">TICKET 02</span><span class="tno">№ 0248</span>
+      <div class="ico" aria-hidden>🛍️</div>
+      <h3>Order &amp; pay</h3>
+      <p>Basket, secure checkout, delivery or collection. Your order lands straight on the kitchen’s pass.</p>
+    </article>
+    <article class="ticket"><span class="stub">TICKET 03</span><span class="tno">№ 0249</span>
+      <div class="ico" aria-hidden>📍</div>
+      <h3>Track it home</h3>
+      <p>Watch it move — accepted, cooking, out the door. From their kitchen to yours in real time.</p>
+    </article>
+  </div>
+</div></section>
+
+<!-- ═══ TONIGHT'S KITCHENS ═══ -->
+<section class="kitchens"><div class="cv">
+  <div class="headrow" style="display:flex; align-items:baseline; justify-content:space-between; gap:20px; flex-wrap:wrap">
+    <div>
+      <span class="eyebrow">Tonight’s kitchens</span>
+      <h2 class="h-xl" style="margin-top:10px">On the pass<br><span class="out">tonight.</span></h2>
+    </div>
+    <a class="hand" href="#" style="transform:rotate(-2deg)">see all 27 kitchens →</a>
+  </div>
+  <div class="kgrid">
+    <div class="kbig">
+      <a class="kcard" href="#">
+        <span class="imgbox"><img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=72" alt="" onerror="dead(this)"><span class="fb">🥘</span></span>
+        <span class="veil"></span>
+        <span class="open"><i></i>Open now</span>
+        <span class="fh">FHRS 5</span>
+        <span class="kmeta"><b>Mama Efe’s Kitchen</b><span>Nigerian · Kings Heath · smoky party jollof from £9.50</span></span>
+      </a>
+    </div>
+    <div class="kside">
+      <a class="kcard" href="#">
+        <span class="imgbox"><img src="https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=70" alt="" onerror="dead(this)"><span class="fb">🍖</span></span>
+        <span class="veil"></span>
+        <span class="open"><i></i>Open now</span>
+        <span class="fh">FHRS 5</span>
+        <span class="kmeta"><b>Yard Vibes</b><span>Caribbean · Moseley · jerk chicken from £11</span></span>
+      </a>
+      <a class="kcard" href="#">
+        <span class="imgbox"><img src="https://images.unsplash.com/photo-1574484284002-952d92456975?auto=format&fit=crop&w=800&q=70" alt="" onerror="dead(this)"><span class="fb">🍛</span></span>
+        <span class="veil"></span>
+        <span class="open"><i></i>Open now</span>
+        <span class="fh">FHRS 4</span>
+        <span class="kmeta"><b>Spice Route</b><span>South Asian · Sparkhill · lamb karahi from £12.50</span></span>
+      </a>
+    </div>
+  </div>
+</div></section>
+
+<!-- ═══ QUOTE ═══ -->
+<figure class="quote">
+  <div class="grain"></div>
+  <div class="cv">
+    <span class="qhand hand" aria-hidden>real customer, real order</span>
+    <blockquote>“Tastes like my auntie’s Sunday pot. <em>It got here in twenty minutes.</em>”</blockquote>
+    <div class="stars" aria-label="5 stars">★★★★★</div>
+    <figcaption>
+      <span class="avatar" aria-hidden>🍚</span>
+      <span><b>Adaeze, Kings Heath</b><span>ordered smoky party jollof from Mama Efe’s Kitchen</span></span>
+    </figcaption>
+  </div>
+</figure>
+
+<!-- ═══ STATS ═══ -->
+<section class="stats"><div class="cv">
+  <div class="statgrid">
+    <div><b>27</b><span>independent kitchens live</span></div>
+    <div><b>4.8<i>★</i></b><span>average kitchen rating</span></div>
+    <div><b>12<i> min</i></b><span>average time to accept</span></div>
+  </div>
+</div></section>
+
+<!-- ═══ OPERATOR ═══ -->
+<section class="op">
+  <div class="grain"></div>
+  <div class="cv"><div class="opgrid">
+    <div class="opcopy">
+      <span class="eyebrow" style="color:var(--gold)">For food businesses</span>
+      <h2 style="margin-top:10px">Run <em>your</em> kitchen on J’Toye.</h2>
+      <p>Everything between “order placed” and “out the door” — menus, kitchen display, payments and payouts — in one place, with your name on the front of it.</p>
+      <ul>
+        <li><i>✓</i> Take orders online — no app for your customers to install</li>
+        <li><i>✓</i> Kitchen display built for the pass, not a printer</li>
+        <li><i>✓</i> Allergen labelling handled, Natasha’s Law included</li>
+        <li><i>✓</i> Paid out to your bank, VAT ledger kept straight</li>
+      </ul>
+      <a class="cta" href="#">Start selling — live in a day →</a>
+    </div>
+    <div class="kds snap">
+      <span class="opstamp stamp" aria-hidden>live in<br>a day</span>
+      <div class="ticket">
+        <div class="ohead">Incoming · №&nbsp;0250</div>
+        <div class="oline"><span>2 × Party jollof</span><span>£19.00</span></div>
+        <div class="oline"><span>1 × Plantain side</span><span>£3.50</span></div>
+        <div class="oline"><span>1 × Zobo drink</span><span>£2.80</span></div>
+        <div class="oline" style="border-bottom:0"><b>Total</b><b>£25.30</b></div>
+        <div class="ready">Mark ready →</div>
+      </div>
+    </div>
+  </div></div>
+</section>
+
+<!-- ═══ DOORS + FOOTER ═══ -->
+<div class="doors"><nav>
+  <a class="door" href="#"><span class="t">Order food</span><span class="d">Browse independent kitchens near you</span><span class="arr">→</span></a>
+  <a class="door" href="#"><span class="t">Run your kitchen</span><span class="d">Take orders, manage the pass, live in a day</span><span class="arr">→</span></a>
+</nav></div>
+
+<footer><div class="cv">
+  <div class="fgrid">
+    <div>
+      <b class="mark">J’TOYE</b>
+      <p>Independent UK kitchens, online. Order real food from real cooks — or take your own kitchen online in a day. 🇬🇧</p>
+    </div>
+    <div><h4>Hungry</h4><ul>
+      <li><a href="#">Browse kitchens</a></li><li><a href="#">Cuisines</a></li><li><a href="#">Track an order</a></li>
+    </ul></div>
+    <div><h4>Cooking</h4><ul>
+      <li><a href="#">Start selling</a></li><li><a href="#">Pricing</a></li><li><a href="#">Kitchen display</a></li>
+    </ul></div>
+    <div><h4>J’Toye</h4><ul>
+      <li><a href="#">About</a></li><li><a href="#">Privacy</a></li><li><a href="#">Allergen policy</a></li>
+    </ul></div>
+  </div>
+  <div class="legal"><span>© 2026 J’Toye Digital Ltd.</span><span>Food hygiene ratings shown are official FHRS data.</span></div>
+</div></footer>
+
+<div id="sketch-tools" style="position:fixed;bottom:12px;right:12px;z-index:9999;font-family:system-ui;font-size:12px;background:rgba(0,0,0,.75);color:#fff;padding:8px 12px;border-radius:8px;opacity:.45;transition:opacity .2s;display:flex;gap:8px;align-items:center"
+     onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='.45'">
+  <span style="opacity:.7">viewport</span>
+  <button onclick="setVp('390px')" style="cursor:pointer">📱 390</button>
+  <button onclick="setVp('768px')" style="cursor:pointer">tablet</button>
+  <button onclick="setVp('none')" style="cursor:pointer">🖥 full</button>
+</div>
+<script>
+function setVp(w) { document.body.style.maxWidth = (w === 'none' ? '' : w); document.body.style.margin = '0 auto'; document.body.style.boxShadow = '0 0 0 1px #00000018'; }
+function dead(img) { img.closest('.imgbox').classList.add('dead'); }
+</script>
+</body>
+</html>
