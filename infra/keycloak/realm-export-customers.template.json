@@ -1,7 +1,19 @@
 {
   "realm" : "jtoye-customers",
+  "displayName" : "J'Toye",
+  "displayNameHtml" : "<span style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em\">J'Toye</span>",
+  "loginTheme" : "keycloak",
   "enabled" : true,
   "sslRequired" : "external",
+  "smtpServer" : {
+    "host" : "mailhog",
+    "port" : "1025",
+    "from" : "no-reply@jtoye.local",
+    "fromDisplayName" : "J'Toye",
+    "auth" : "false",
+    "ssl" : "false",
+    "starttls" : "false"
+  },
   "defaultSignatureAlgorithm" : "RS256",
   "accessTokenLifespan" : 300,
   "accessTokenLifespanForImplicitFlow" : 300,
