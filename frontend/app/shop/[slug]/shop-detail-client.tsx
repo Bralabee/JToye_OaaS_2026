@@ -803,7 +803,8 @@ export function ShopDetailClient({
   )
 }
 
-function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumOrderPennies: number }) {
+// Exported for the Jest suite (app/shop/__tests__/floating-cart-bar.test.tsx) only.
+export function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumOrderPennies: number }) {
   const { itemCount, totalPennies } = useCart()
   // R-07: publish this bar's height as `--jt-bottom-chrome` so the cookie
   // notice sits ABOVE it and its "Got it" control stays clickable. THIS
@@ -830,11 +831,7 @@ function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumO
           <div className="mx-auto max-w-4xl">
             <Link
               href={`/shop/${slug}/cart`}
-              className={`flex items-center justify-between rounded-2xl px-5 py-3.5 shadow-lg transition-all active:scale-[0.98] ${
-                belowMinimum
-                  ? "bg-slate-700 hover:bg-slate-800"
-                  : "bg-oxblood hover:bg-oxblood-700"
-              } text-white`}
+              className="flex items-center justify-between rounded-2xl px-5 py-3.5 shadow-lg transition-all active:scale-[0.98] bg-oxblood hover:bg-oxblood-700 text-white"
             >
               <div className="flex items-center gap-3">
                 <div className="relative">
@@ -848,8 +845,8 @@ function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumO
               <div className="text-right">
                 <span className="text-sm font-bold">{formatPrice(totalPennies)}</span>
                 {belowMinimum && (
-                  <p className="text-xs text-slate-300">
-                    Min {formatPrice(minimumOrderPennies)}
+                  <p className="text-xs text-amber-300">
+                    Add {formatPrice(minimumOrderPennies - totalPennies)} to order
                   </p>
                 )}
               </div>
