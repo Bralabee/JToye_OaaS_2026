@@ -274,6 +274,12 @@ const UNASSERTED_SITES: ReadonlySet<string> = new Set([
   "components/storefront/cart-drawer.tsx::text-slate-300", // 1.48 on white, 1.38 on cream
   "components/storefront/cart-drawer.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
   "components/storefront/customer-signin-prompt.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
+  // The cart bar's amber shortfall label sits on the bar's own bg-oxblood
+  // (#3A0B0D, ~7.7:1 against amber-300), never on a light surface; the pair
+  // moved here with the component's extraction out of shop-detail-client
+  // (#718), whose own amber-300 entry above remains for its other site.
+  "components/storefront/floating-cart-bar.tsx::text-amber-300", // 1.44 on white, 1.34 on cream
+
   "components/storefront/product-detail-modal.tsx::text-amber-500", // 2.15 on white, 2 on cream
   "components/storefront/storefront-nav.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
 ])

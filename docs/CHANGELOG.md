@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Cart bar branded from the first add — the grey below-minimum state becomes an amber shortfall label (#718) — 2026-08-31
+
+- **The floating basket bar is oxblood from the customer's very first basket
+  interaction.** It used to render `bg-slate-700` whenever the basket total was
+  below the shop's minimum order and only turn brand oxblood once the minimum
+  was crossed — with the seeded shop (£8.99 item, £10 minimum) that made the
+  first add-to-basket popup grey and the second branded, and grey-on-first-touch
+  reads as a dead control (owner complaint 2026-08-31). Investigation ruled out
+  the "old CSS remnant"/toast hypotheses: the storefront fires no toasts; the
+  two-state colour ternary was written this way when the bar was introduced.
+- **The below-minimum signal is kept, expressed in words instead of colour:** an
+  amber active-voice label states the shortfall AND the absolute rule
+  ("Add £1.01 to order · min £10.00") in place of the old grey "Min £10.00" —
+  the review caught that a delta alone is a moving target the customer cannot
+  learn the minimum from. The arithmetic now lives once in
+  `lib/minimum-order.ts`, shared by the bar and checkout's hint/submit gate
+  (semantics unchanged), and the bar itself moved to
+  `components/storefront/floating-cart-bar.tsx` so its tests no longer stub
+  the 870-line shop-detail-client's unrelated imports.
+- **First real test coverage of the bar:** a 4-test suite
+  (`floating-cart-bar.test.tsx`) committed failing against the old markup
+  first, living in `frontend/__tests__/` — outside the contrast gate's scan
+  roots, the same placement rule that gate documents for itself. An earlier
+  commit on this branch excluded `*.test.ts(x)` from the contrast scan
+  instead; the review showed that diverged from jest's real testMatch in both
+  directions (fail-open for a shipped `*.test.tsx`-named surface), so the
+  exclusion is reverted and the scanner is untouched relative to main.
+
 ### Cart identity: a write may ADD or CONFIRM an owner, never ERASE one — R-16 (#715) — 2026-08-31
 
 - **A newly registered customer no longer inherits the previous account's

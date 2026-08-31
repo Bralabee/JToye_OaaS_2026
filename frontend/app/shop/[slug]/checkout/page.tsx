@@ -13,6 +13,7 @@ import { OrderAllergenPanel } from "@/components/storefront/order-allergen-panel
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { describeOrderError } from "@/lib/order-error"
+import { minimumShortfallPennies } from "@/lib/minimum-order"
 import publicApiClient from "@/lib/public-api-client"
 import { getAllergenNames } from "@/types/api"
 import { PublicShop, PublicProduct } from "@/types/storefront"
@@ -708,8 +709,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // WR-01: mirror the server-side minimum-order gate (item subtotal, delivery
   // fee excluded). The server enforces it authoritatively in createGuestOrder;
   // this just stops the user submitting an order that would be rejected.
+  // Arithmetic shared with FloatingCartBar via lib/minimum-order (#718 F-3).
   const minimumOrderPennies = shop?.minimumOrderPennies ?? 0
-  const belowMinimum = minimumOrderPennies > 0 && subtotalPennies < minimumOrderPennies
+  const minimumShortfall = minimumShortfallPennies(subtotalPennies, minimumOrderPennies)
+  const belowMinimum = minimumShortfall !== null
   // VAT-inclusive fraction already contained within the gross (UK retail idiom,
   // unchanged): gross * 20 / 120, rounded down.
   const vatPreviewPennies = Math.floor((previewTotalPennies * 20) / 120)
@@ -1009,10 +1012,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         )}
 
         {/* Below-minimum hint (WR-01) */}
-        {belowMinimum && (
+        {minimumShortfall !== null && (
           <p className="text-center text-xs font-medium text-slate-600">
             Minimum order {formatPrice(minimumOrderPennies)} — add{" "}
-            {formatPrice(minimumOrderPennies - subtotalPennies)} more to place this order.
+            {formatPrice(minimumShortfall)} more to place this order.
           </p>
         )}
 
