@@ -171,18 +171,20 @@ label {
   border-bottom-color: #bdb2a8;
 }
 
+/* The outline is TRANSPARENT rather than `none` on purpose. Under
+   `forced-colors: active` (Windows High Contrast) the user agent discards author
+   box-shadows and overrides border-color, so a shadow-only ring leaves the username,
+   password and submit controls with no focus indicator at all — the form becomes
+   unusable by keyboard. A transparent outline gives forced-colors something to
+   repaint. The ring opacity is also raised from 0.18 (~1.13:1 over white, barely
+   visible) to 0.45. */
 .pf-c-form-control:focus,
 .pf-c-form-control:focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
   border-color: var(--jtoye-primary);
   border-bottom-color: var(--jtoye-primary);
-  box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.18);
-}
-
-/* PatternFly draws focus as a thick bottom border via a generated element */
-.pf-c-form-control:focus::after,
-.pf-c-form-control:hover::after {
-  border-bottom-color: var(--jtoye-primary) !important; /* generated content: no other hook */
+  box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.45);
 }
 
 /* the show/hide password affordance sits in an input group beside the field */
@@ -229,9 +231,11 @@ input[type="submit"].pf-m-primary:hover {
   color: var(--jtoye-primary-fg);
 }
 
+/* transparent-not-none, for the forced-colors reason above */
 .pf-c-button.pf-m-primary:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.35);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.45);
 }
 
 .pf-c-button.pf-m-primary:disabled,
@@ -257,6 +261,14 @@ input[type="submit"].pf-m-primary:hover {
 
 /* -------------------------------------------------------------------- links */
 
+/* The underline is REQUIRED, not decoration — do not remove it for a cleaner look.
+   These are inline links inside sentences ("New user? Register", the #kc-info-wrapper
+   copy), where colour is the only other cue. Oxblood #3A0B0D against the body ink
+   #1C1917 is 1.03:1 and against the muted #57534E is 2.21:1, both far below the 3:1
+   that WCAG 2.1 SC 1.4.1 requires when colour alone distinguishes a link from its
+   surrounding text. Contrast against the BACKGROUND is fine (14.4:1); it is the
+   link-vs-text delta that fails, so an underline is the distinction.
+   This surface sits outside the frontend axe gate, so this rule is the only guard. */
 .login-pf a,
 #kc-info-wrapper a,
 #kc-registration a,
@@ -264,14 +276,23 @@ input[type="submit"].pf-m-primary:hover {
 a {
   color: var(--jtoye-oxblood);
   font-weight: 600;
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .login-pf a:hover,
 #kc-registration a:hover,
 a:hover {
   color: var(--jtoye-primary);
-  text-decoration: underline;
+}
+
+/* Elements the theme styles AS BUTTONS are exempt: their shape, fill and size are the
+   non-colour distinction, so an underline there would be noise, not information. */
+.pf-c-button,
+.pf-c-button:hover,
+a.pf-c-button,
+a.pf-c-button:hover {
+  text-decoration: none;
 }
 
 a:focus-visible {
@@ -305,16 +326,26 @@ input[type="checkbox"]:focus-visible {
 /* --------------------------------------------------------- footer / sign-up */
 
 /* The "New user? Register" strip that sits INSIDE the card, full-bleed to its edges.
-   The stock theme achieves that with `margin: 0 -40px`, which exactly cancels the
-   stock card's 40px horizontal padding. This theme sets a different card padding, so
-   the negative margin MUST be restated to match — leaving the stock -40px made the
-   strip 2 x 22px wider than the card at 390px and pushed the document to 411px,
-   measured as a real horizontal overflow. The two values are coupled: change the
-   card padding and this must change with it. */
+   Stock, read out of org.keycloak.keycloak-themes-24.0.5.jar, is:
+       login.css:167   #kc-info { margin: 20px -40px -30px; }
+       login.css:514   .card-pf { padding: 0 20px; max-width: 500px; }
+   Note the stock pair does NOT cancel: -40px against 20px of padding. So there is no
+   stock invariant to inherit here. This theme ADOPTS the stricter rule that the strip's
+   negative horizontal margin equals its own card padding at each breakpoint, which is a
+   choice, not a restatement of upstream.
+   The SHORTHAND is load-bearing. Stock is a three-value shorthand whose -30px BOTTOM
+   survives any top/left/right longhand override: written as longhands this rule left
+   `margin-bottom: -30px` live at every width, pulling the strip 13px (<=480px) / 5px
+   (>=481px) below the card's border box, where the two rounded bottoms cannot coincide
+   and the strip overhangs as a cream lip. Keep this as a shorthand so top and bottom
+   are explicitly zeroed. */
 #kc-info {
-  margin-top: 0;
-  margin-left: -2rem; /* == .card-pf padding-left */
-  margin-right: -2rem; /* == .card-pf padding-right */
+  /* Each negative margin cancels the corresponding .card-pf padding, so the strip is
+     flush to the card's border box on three sides and its bottom corners ARE the
+     card's bottom corners. Card padding here is `2rem 2rem 1.5rem`. Simply zeroing the
+     bottom instead leaves the strip floating 25px above the card's bottom edge with a
+     band of white beneath it. */
+  margin: 0 -2rem -1.5rem;
 }
 
 #kc-info-wrapper {
@@ -395,9 +426,34 @@ p.instruction {
 
 /* ------------------------------------------------------------- mobile first */
 
-/* The card must not overflow at 390px. The stock grid gives the card a
-   percentage width inside a fluid container; at small widths the padding is what
-   pushes it over, so it is reduced rather than the width overridden. */
+/* THIS BREAKPOINT MUST MATCH THE STOCK THEME'S PHONE BLOCK, which is 767px, not 480px:
+       login.css:524   @media (max-width: 767px) {
+       login.css:525     .login-pf-page .card-pf {
+       login.css:526       max-width: none; margin-left: 0; margin-right: 0;
+       login.css:529       padding-top: 0; border-top: 0; box-shadow: 0 0;
+   The overlay's base rule re-asserts padding-top, border-top and box-shadow (same
+   specificity, later source order), but `max-width: none` and the zeroed side margins
+   are only undone here. Scoping the gutter to 480px left 481-767px rendering the card
+   edge-to-edge with a 16px radius and a drop shadow clipped flush at both viewport
+   edges — measured full-bleed at 481, 600 and 767. A 390px capture cannot see that band. */
+@media (max-width: 767px) {
+  .login-pf-page .card-pf {
+    /* a gutter so the rounded corners and shadow are not clipped flush against the
+       viewport edge */
+    margin-left: 0.75rem;
+    margin-right: 0.75rem;
+    border-radius: var(--jtoye-radius);
+  }
+
+  /* the footer strip's bottom corners track the card's, or they disagree in this band */
+  #kc-info-wrapper {
+    border-radius: 0 0 var(--jtoye-radius) var(--jtoye-radius);
+  }
+}
+
+/* Phone-only type and padding steps. Kept as a separate, narrower block so the
+   geometry fix above covers the whole phone/small-tablet band while these do not.
+   Source order matters: this must follow the 767px block to win at <=480px. */
 @media (max-width: 480px) {
   #kc-header-wrapper {
     font-size: 1.625rem;
@@ -406,17 +462,12 @@ p.instruction {
 
   .login-pf-page .card-pf {
     padding: 1.25rem 1.125rem 1rem;
-    border-radius: var(--jtoye-radius);
-    /* a gutter so the rounded corners are not clipped flush against the viewport
-       edge; kept small, and the no-overflow assertion is re-run after this */
-    margin-left: 0.75rem;
-    margin-right: 0.75rem;
   }
 
-  /* kept in lockstep with the mobile .card-pf padding above (1.125rem) */
+  /* tracks THIS breakpoint's card padding (`1.25rem 1.125rem 1rem`) — shorthand, so the
+     stock -30px bottom cannot survive here either; see the #kc-info note above */
   #kc-info {
-    margin-left: -1.125rem;
-    margin-right: -1.125rem;
+    margin: 0 -1.125rem -1rem;
   }
 
   #kc-info-wrapper {
