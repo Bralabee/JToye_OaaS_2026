@@ -23,6 +23,26 @@ export function StorefrontNav() {
   // reads the same one so the two headers can never disagree (#457).
   const { profile } = useCustomerSession()
   const [menuOpen, setMenuOpen] = useState(false)
+  // R-04: a sign-out is now bounded at 3s per round-trip, so it can take a
+  // visible moment on a bad connection. Without a busy state the shopper gets
+  // no acknowledgement at all and taps again — which is how a sign-out that
+  // silently did nothing went unreported for so long.
+  // WR-06: NO `finally { setSigningOut(false) }`. `customerLogout()` resolves at
+  // the end of its OWN finally — i.e. immediately after it assigns
+  // `window.location.href`. Assigning `location.href` only SCHEDULES a
+  // navigation; the document stays live and interactive until it commits, which
+  // on the bad connection this feature targets is precisely the slow part. So
+  // resetting there re-enabled the button for exactly the window the busy state
+  // exists to cover, and the flag made a promise it did not keep.
+  //
+  // A sign-out button's correct terminal state is "busy until this document
+  // goes away". If a reset is ever wanted for the navigation-was-blocked case,
+  // it belongs on `pagehide`/`visibilitychange`, not on promise resolution.
+  const [signingOut, setSigningOut] = useState(false)
+  const handleSignOut = async () => {
+    setSigningOut(true)
+    await customerLogout()
+  }
   const pathname = usePathname()
   const params = useParams<{ slug?: string }>()
   const slug = params?.slug
@@ -153,8 +173,10 @@ export function StorefrontNav() {
             <User className="h-3.5 w-3.5" />
           </div>
           <button
-            onClick={() => customerLogout()}
-            className="flex items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            aria-busy={signingOut}
+            className="flex items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-60"
             title="Sign out"
           >
             <LogOut className="h-3.5 w-3.5" />

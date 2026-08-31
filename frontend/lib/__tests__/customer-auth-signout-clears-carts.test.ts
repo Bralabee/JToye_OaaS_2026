@@ -1,4 +1,9 @@
-import { customerLogout, getCustomerSession, isLoggedIn } from "@/lib/customer-auth"
+import {
+  customerLogout,
+  getCustomerSession,
+  isLoggedIn,
+  LOGOUT_FETCH_TIMEOUT_MS,
+} from "@/lib/customer-auth"
 import { CUSTOMER_ID_KEY, cartStorageKey } from "@/lib/cart-identity"
 
 /**
@@ -27,6 +32,25 @@ function seedBaskets() {
     cartStorageKey(OTHER),
     JSON.stringify({ shopSlug: OTHER, owner: "sub-a", items: [{ productId: "p2", quantity: 2 }] })
   )
+}
+
+/**
+ * What a basket HOLDS, which is the thing that matters — never whether its key
+ * exists.
+ *
+ * A re-created EMPTY `jtoye-cart-<slug>` key is LEGITIMATE after a correct
+ * sign-out: `hooks/use-stored-state.ts`'s write effect persists the (now empty)
+ * cart on its next run. A key-presence gate would therefore red on a correct
+ * build, which is the worst kind of gate — one that trains people to weaken it.
+ */
+function basketItems(slug: string): unknown[] {
+  const raw = localStorage.getItem(cartStorageKey(slug))
+  if (raw === null) return []
+  try {
+    return (JSON.parse(raw) as { items?: unknown[] }).items ?? []
+  } catch {
+    return []
+  }
 }
 
 function seedSignedIn() {
@@ -90,6 +114,55 @@ describe("customerLogout", () => {
     expect(localStorage.getItem(cartStorageKey(SLUG))).toBeNull()
     expect(localStorage.getItem(cartStorageKey(OTHER))).toBeNull()
     expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBeNull()
+  })
+
+  /**
+   * R-04 (2026-08-31 customer-surface audit) — the arm the audit specifically
+   * calls for, and the one the two above could not reach.
+   *
+   * Both existing arms settle: one resolves, one REJECTS. Neither describes the
+   * network failure that actually happens on a phone leaving a wifi cell, which
+   * is a request that simply never answers. Against the pre-fix code
+   * `customerLogout()` awaited two un-timeouted fetches with the teardown on the
+   * far side of both, so a stall was a SILENT NO-OP SIGN-OUT: session alive,
+   * basket intact, still stamped with the departing customer's `sub`, and no
+   * feedback at all. The fail direction here is a jest TIMEOUT — the call never
+   * resolves — which is recorded rather than smoothed over.
+   */
+  it("clears the local state even when the round-trip NEVER SETTLES", async () => {
+    seedSignedIn()
+    seedBaskets()
+
+    jest.useFakeTimers()
+    try {
+      global.fetch = jest.fn(
+        () => new Promise<Response>(() => {})
+      ) as unknown as typeof fetch
+
+      const pending = customerLogout()
+      // TWICE the budget plus slack: customerLogout makes two sequential
+      // bounded calls, and the second one's timer is only scheduled once the
+      // first has given up.
+      await jest.advanceTimersByTimeAsync(LOGOUT_FETCH_TIMEOUT_MS * 2 + 10)
+      await pending
+
+      expect(isLoggedIn()).toBe(false)
+      expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBeNull()
+      // Asserted on ITEMS, not on key presence — see `basketItems`.
+      expect(basketItems(SLUG)).toHaveLength(0)
+      expect(basketItems(OTHER)).toHaveLength(0)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it("CONTROL: the helper can still SEE a basket that was not cleared", async () => {
+    // Without this, `basketItems() === []` would be satisfied by a helper that
+    // is simply unable to read anything, and the never-settling arm above would
+    // pass over a completely broken teardown.
+    seedBaskets()
+    expect(basketItems(SLUG)).toHaveLength(1)
+    expect(basketItems(OTHER)).toHaveLength(1)
   })
 })
 

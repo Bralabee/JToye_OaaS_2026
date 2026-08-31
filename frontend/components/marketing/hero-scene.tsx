@@ -2,7 +2,12 @@
 
 import { useRef, type ReactNode } from "react"
 import { gsap, ScrollTrigger, useGSAP } from "@/lib/gsap"
-import { canEnhance, DESKTOP_MOTION_QUERY, splitWords } from "@/lib/gsap-gate"
+import {
+  canEnhance,
+  DESKTOP_MOTION_QUERY,
+  entranceIsSafeForMount,
+  splitWords,
+} from "@/lib/gsap-gate"
 
 /**
  * HeroScene — the `/` landing progressive-enhancement seam (sketch 002-B).
@@ -26,6 +31,19 @@ import { canEnhance, DESKTOP_MOTION_QUERY, splitWords } from "@/lib/gsap-gate"
  * `[data-motion-decided="scene"|"static"]` on the scope — an INERT marker
  * (no stylesheet, no logic reads it) stamped once the enhancer has RUN and
  * decided either way, so absence assertions have a deterministic anchor.
+ * `[data-entrance="played"|"skipped"]` joins them (R-03), reporting whether the
+ * bundle arrived in time for an entrance to still BE an entrance.
+ *
+ * LATE-ARRIVAL contract (R-03), which is the OPPOSITE of the No-FOUC one above
+ * and needs the opposite defence: on the FIRST mount after a document load,
+ * past `ENTRANCE_BUDGET_MS` the two entrance blocks are SKIPPED, because their
+ * `autoAlpha: 0` would hide content the visitor is already reading. On a SOFT
+ * NAVIGATION to `/` the entrance always plays (WR-01): nothing was painted
+ * before this scene existed, so there is nothing to blank. Everything else in
+ * the scene is scroll-triggered and cannot blank a first paint, so it is
+ * untouched. The no-JS path (nothing runs) and the reduced-motion / mobile path
+ * (the query does not match) are both already CORRECT and are likewise
+ * untouched — this fix must not regress either to close the third.
  */
 export function HeroScene({ children }: { children: ReactNode }) {
   const scope = useRef<HTMLDivElement>(null)
@@ -36,24 +54,59 @@ export function HeroScene({ children }: { children: ReactNode }) {
       const root = scope.current
       if (!root) return
 
+      // R-03 (2026-08-31 customer-surface audit). The two ENTRANCE blocks below
+      // open by HIDING content (`autoAlpha: 0`) and then bringing it in. That
+      // is correct while there is nothing on screen yet — and a regression once
+      // there is. On a throttled load this bundle hydrates ~2.5s after first
+      // paint, so the `set` RETROACTIVELY BLANKED an h1 and the persona CTAs
+      // the visitor had already been reading (~800ms of blank). The file's
+      // No-FOUC contract above guards the opposite failure ("the JS never
+      // arrives") and cannot see this one.
+      //
+      // DECIDED ONCE PER MOUNT, OUTSIDE `matchMedia` (WR-01). Two reasons:
+      //  - `entranceIsSafeForMount` consumes the per-document first-mount
+      //    latch, and the matchMedia callback re-fires on every breakpoint
+      //    change, which is not a new mount and must not be counted as one;
+      //  - a breakpoint change therefore reuses this mount's verdict instead of
+      //    re-playing an entrance over content that is already on screen.
+      //
+      // The argument is `performance.now()` — ms since the document's TIME
+      // ORIGIN — and it is the right clock for the FIRST mount only. The gate
+      // owns that distinction; see its docblock for why a soft navigation must
+      // not be measured against it.
+      const animateEntrance = entranceIsSafeForMount(
+        typeof performance !== "undefined" ? performance.now() : 0
+      )
+
       const mm = gsap.matchMedia()
       mm.add(DESKTOP_MOTION_QUERY, () => {
         root.setAttribute("data-motion-active", "desktop")
         root.setAttribute("data-motion-decided", "scene")
+        // INERT marker so the orchestrator's throttled-profile pass can observe
+        // which way the decision went. Inert means inert: no stylesheet rule
+        // reads it and no logic here branches on it.
+        root.setAttribute("data-entrance", animateEntrance ? "played" : "skipped")
 
         // Headline split-type entrance (hand-split, no SplitText plugin).
         const headline = root.querySelector<HTMLElement>("[data-hero-headline]")
         if (headline) {
+          // UNCONDITIONAL, even when the entrance is skipped. The `.gsap-word`
+          // spans are an E2E signal that other specs hang assertions on, and
+          // they are visually inert without the tweens — skipping the wrap to
+          // "save work" would break assertions that have nothing to do with
+          // this fix.
           const words = splitWords(headline)
-          gsap.set(words, { yPercent: 115, autoAlpha: 0 })
-          gsap.to(words, {
-            yPercent: 0,
-            autoAlpha: 1,
-            duration: 0.7,
-            stagger: 0.045,
-            ease: "power3.out",
-            delay: 0.1,
-          })
+          if (animateEntrance) {
+            gsap.set(words, { yPercent: 115, autoAlpha: 0 })
+            gsap.to(words, {
+              yPercent: 0,
+              autoAlpha: 1,
+              duration: 0.7,
+              stagger: 0.045,
+              ease: "power3.out",
+              delay: 0.1,
+            })
+          }
         }
 
         // Persona doors deal-in. Explicit set+to (NOT `gsap.from`): a plain
@@ -63,7 +116,7 @@ export function HeroScene({ children }: { children: ReactNode }) {
         // primary CTAs invisible on desktop). set+to animates toward the
         // natural visible state and is refresh-safe, mirroring the headline.
         const doors = root.querySelectorAll<HTMLElement>("[data-hero-door]")
-        if (doors.length) {
+        if (doors.length && animateEntrance) {
           gsap.set(doors, { autoAlpha: 0, y: 34, rotateZ: -1.5 })
           gsap.to(doors, {
             autoAlpha: 1,
@@ -160,6 +213,9 @@ export function HeroScene({ children }: { children: ReactNode }) {
 
         return () => {
           root.removeAttribute("data-motion-active")
+          // Describes a scene that no longer exists, so it goes with it —
+          // same treatment as `data-motion-active`.
+          root.removeAttribute("data-entrance")
           // matchMedia cleanup also runs on breakpoint change, so the marker
           // stays truthful if the desktop query stops matching mid-session.
           root.setAttribute("data-motion-decided", "static")

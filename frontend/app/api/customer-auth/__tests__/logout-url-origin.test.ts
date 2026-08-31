@@ -190,3 +190,35 @@ describe("/api/customer-auth/logout-url — the same-origin restriction still ho
     })
   })
 })
+
+/**
+ * WR-04 (code review, 2026-08-31) — the same gap, on the sibling that had it
+ * first. Fixing one route alone is how the pair starts to diverge, so both
+ * carry the header and both assert it.
+ */
+describe("/api/customer-auth/logout-url — the id_token is never cacheable (WR-04)", () => {
+  it("sends no-store and Vary: Cookie on the branch that carries the token", async () => {
+    await withEnv({ NEXTAUTH_URL: "http://localhost:3000", APP_PUBLIC_ORIGIN: undefined }, async () => {
+      const res = await logoutUrlGET(
+        containerRequest("/api/customer-auth/logout-url?redirect=/shop", {
+          "jtoye-customer-id": "id-token-value",
+        })
+      )
+      const { url } = await res.clone().json()
+      expect(url).toContain("id_token_hint=id-token-value")
+
+      expect(res.headers.get("cache-control")).toBe("private, no-store, max-age=0")
+      expect(res.headers.get("vary")).toBe("Cookie")
+    })
+  })
+
+  it("sends the same headers on the no-session branch", async () => {
+    await withEnv({ NEXTAUTH_URL: "http://localhost:3000", APP_PUBLIC_ORIGIN: undefined }, async () => {
+      const res = await logoutUrlGET(
+        containerRequest("/api/customer-auth/logout-url?redirect=/shop")
+      )
+      expect(res.headers.get("cache-control")).toBe("private, no-store, max-age=0")
+      expect(res.headers.get("vary")).toBe("Cookie")
+    })
+  })
+})

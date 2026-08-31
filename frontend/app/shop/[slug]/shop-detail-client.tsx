@@ -20,6 +20,7 @@ import { PublicShop, PublicProduct, ProductsByCategory, Review, ShopDetail } fro
 import type { PublicPromotion, PublicAnnouncement } from "@/types/storefront"
 import { ALLERGENS, hasAllergen } from "@/types/api"
 import { useCart } from "@/components/storefront/cart-provider"
+import { useBottomChromeHeight } from "@/hooks/use-bottom-chrome-height"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Badge } from "@/components/ui/badge"
 import { ProductDetailModal } from "@/components/storefront/product-detail-modal"
@@ -804,6 +805,14 @@ export function ShopDetailClient({
 
 function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumOrderPennies: number }) {
   const { itemCount, totalPennies } = useCart()
+  // R-07: publish this bar's height as `--jt-bottom-chrome` so the cookie
+  // notice sits ABOVE it and its "Got it" control stays clickable. THIS
+  // component is mounted unconditionally and never unmounts; the ref-bearing
+  // element below is inside <AnimatePresence> and gated on `itemCount > 0`, so
+  // the two lifecycles are decoupled and the hook deliberately carries no
+  // dependency array (see hooks/use-bottom-chrome-height.ts).
+  const barRef = useRef<HTMLDivElement>(null)
+  useBottomChromeHeight(barRef)
 
   const belowMinimum = minimumOrderPennies > 0 && totalPennies < minimumOrderPennies
 
@@ -811,6 +820,7 @@ function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumO
     <AnimatePresence>
       {itemCount > 0 && (
         <m.div
+          ref={barRef}
           initial={{ y: 96, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 96, opacity: 0 }}

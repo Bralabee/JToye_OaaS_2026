@@ -22,6 +22,7 @@ import { axe, toHaveNoViolations } from "jest-axe"
 
 import { CookieNotice } from "@/components/public/cookie-notice"
 import { ConsentBanner } from "@/components/public/consent-banner"
+import { BOTTOM_CHROME_VAR } from "@/hooks/use-bottom-chrome-height"
 import {
   COOKIE_NOTICE_ACK_KEY,
   COOKIE_POLICY_VERSION,
@@ -32,9 +33,17 @@ expect.extend(toHaveNoViolations)
 
 const AXE_TIMEOUT_MS = 30_000
 
-/** The verbatim body. Any drift here is a legal-copy change, not a typo fix. */
+/**
+ * The verbatim body. Any drift here is a legal-copy change, not a typo fix.
+ *
+ * COMPACTED by R-07 symptom (5) — the previous three-sentence body truncated in
+ * the mobile band at 390px. The compaction is a rendering fix and must not
+ * become a copy regression, so the three legally operative elements are ALSO
+ * asserted individually below: cookies AND browser storage, strictly necessary,
+ * and nothing to accept or reject.
+ */
 const BODY_COPY =
-  "We only use cookies and browser storage that are strictly necessary to run this site — keeping you signed in, remembering what is in your basket, and keeping your order secure. We do not use advertising or analytics cookies, so there is nothing here to accept or reject."
+  "We use cookies and browser storage only where strictly necessary to run this site — there is nothing to accept or reject."
 
 const FIXTURE = {
   id: "fixture-analytics",
@@ -54,6 +63,23 @@ describe("the notice a first-time visitor sees", () => {
     expect(screen.getByText("Cookies on J'Toye")).toBeInTheDocument()
     // Fixed string, not a regex fragment: the whole sentence is the disclosure.
     expect(screen.getByText(BODY_COPY)).toBeInTheDocument()
+  })
+
+  it("keeps all three legally operative elements after the R-07 compaction", () => {
+    render(<CookieNotice />)
+    const text = screen.getByRole("region", { name: "Cookie notice" }).textContent ?? ""
+
+    // Asserted as three separate claims rather than only as the whole string,
+    // so a future re-wording that drops ONE of them names which one it dropped.
+    expect(text).toContain("cookies and browser storage")
+    expect(text).toContain("strictly necessary")
+    expect(text).toMatch(/nothing to accept or reject/i)
+    // And the detail is still reachable — the compaction is only defensible
+    // because /legal/cookies carries what came out.
+    expect(screen.getByRole("link", { name: "Cookie policy" })).toHaveAttribute(
+      "href",
+      "/legal/cookies"
+    )
   })
 
   it("never claims 'cookies only' while localStorage is in use", () => {
@@ -100,6 +126,52 @@ describe("the notice a first-time visitor sees", () => {
     expect(
       screen.getByRole("link", { name: "A link on the page behind the notice" })
     ).toBeInTheDocument()
+  })
+
+  /**
+   * R-07 — the notice may not intercept a click on anything it is not itself
+   * drawn over, and its own dismiss control must always be reachable.
+   *
+   * These are STRUCTURAL assertions (jsdom computes no layout and has no
+   * `elementFromPoint` worth the name), so each is paired with a break arm run
+   * during execution: delete the class, watch it red. A class-name assertion
+   * that has only ever been seen passing may be matching something else
+   * entirely. The real proof — `elementFromPoint` over the vendor sidebar's
+   * Sign Out, over "Got it" at 390x844 with a non-empty basket, over "Browse
+   * all kitchens", and over the landing CTA — is the orchestrator's browser
+   * pass, and a Playwright `click()` passes where a human tap fails, which is
+   * why the existing suites never caught this.
+   */
+  it("cannot intercept a click outside its own card", () => {
+    render(<CookieNotice />)
+    const notice = screen.getByRole("region", { name: "Cookie notice" })
+
+    // The positioning wrapper is transparent to the pointer…
+    expect(notice.className).toMatch(/pointer-events-none/)
+
+    // …and the drawn card, which holds every control, takes them back.
+    const dismiss = screen.getByRole("button", { name: "Got it" })
+    const card = dismiss.closest(".pointer-events-auto")
+    expect(card).not.toBeNull()
+    // The two are genuinely different elements in the expected nesting, so the
+    // pair above cannot be satisfied by one element carrying both classes.
+    expect(card).not.toBe(notice)
+    expect(notice.contains(card)).toBe(true)
+  })
+
+  it("sits above whatever bottom-fixed bar is mounted", () => {
+    render(<CookieNotice />)
+    const notice = screen.getByRole("region", { name: "Cookie notice" })
+
+    // Symptom (2): with a z-50 cart bar or tab bar in the same corner, "Got it"
+    // was painted over and the notice was permanently un-dismissable. The
+    // offset is published BY THE BAR (hooks/use-bottom-chrome-height.ts), so
+    // there is no tuned constant here to go stale.
+    expect(notice.getAttribute("style") ?? "").toContain(BOTTOM_CHROME_VAR)
+    // The z-ranking decision is unchanged and still deliberate: BELOW both bars.
+    expect(notice.className).toMatch(/\bz-40\b/)
+    // And it is still out of document flow, so the zero-CLS property holds.
+    expect(notice.className).toMatch(/\bfixed\b/)
   })
 
   it("links to the cookie policy", () => {
@@ -181,6 +253,68 @@ describe("the dormant consent banner", () => {
     try {
       render(<ConsentBanner />)
       expect(screen.getByRole("region", { name: "Cookie choices" })).toBeInTheDocument()
+    } finally {
+      unregister()
+    }
+  })
+
+  /**
+   * WR-03 (code review, 2026-08-31) — the banner bypassed the whole R-07 fix.
+   *
+   * `CookieNotice` returns `<ConsentBanner />` and exits BEFORE any of the R-07
+   * work whenever a non-essential category is registered, and the banner was
+   * still `fixed inset-x-0 bottom-0 z-40` with no pointer-events split and no
+   * offset. Every one of the five measured symptoms returned on that branch —
+   * including the storefront cart bar painting over the dismiss control, which
+   * on a CONSENT surface makes the banner permanently un-dismissable and the
+   * choice unrecordable.
+   *
+   * It was dormant only by accident. These arms are the reason the next person
+   * to register an analytics category does not discover it in production.
+   */
+  it("carries the SAME bottom-chrome contract as the cookie notice", () => {
+    const unregister = register(FIXTURE)
+    try {
+      render(<ConsentBanner />)
+      const banner = screen.getByRole("region", { name: "Cookie choices" })
+
+      expect(banner.className).toMatch(/pointer-events-none/)
+      expect(banner.getAttribute("style") ?? "").toContain(BOTTOM_CHROME_VAR)
+      expect(banner.className).toMatch(/\bz-40\b/)
+      expect(banner.className).toMatch(/\bfixed\b/)
+
+      // The controls live on a card that takes pointer events back.
+      const accept = screen.getByRole("button", { name: "Accept all" })
+      const card = accept.closest(".pointer-events-auto")
+      expect(card).not.toBeNull()
+      expect(card).not.toBe(banner)
+      expect(banner.contains(card)).toBe(true)
+    } finally {
+      unregister()
+    }
+  })
+
+  it("shares ONE shell with the notice — asserted by comparing the two", () => {
+    // The finding was not "the banner has the wrong classes"; it was "there are
+    // two copies and only one got fixed". So this asserts the thing that
+    // actually prevents recurrence: both surfaces resolve to the same wrapper
+    // contract. A future edit to one alone reds here.
+    const noticeWrapper = render(<CookieNotice />).container.querySelector(
+      '[aria-label="Cookie notice"]'
+    )
+    const unregister = register(FIXTURE)
+    try {
+      const bannerWrapper = render(<ConsentBanner />).container.querySelector(
+        '[aria-label="Cookie choices"]'
+      )
+      expect(noticeWrapper).not.toBeNull()
+      expect(bannerWrapper).not.toBeNull()
+      expect(bannerWrapper!.className).toBe(noticeWrapper!.className)
+      expect(bannerWrapper!.getAttribute("style")).toBe(
+        noticeWrapper!.getAttribute("style")
+      )
+      // And that shared value is a real contract, not two matching blanks.
+      expect(noticeWrapper!.className).toMatch(/pointer-events-none/)
     } finally {
       unregister()
     }

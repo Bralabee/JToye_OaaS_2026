@@ -11,6 +11,22 @@ import { resolvePublicOrigin } from "@/lib/public-origin"
 
 const ID_COOKIE = "jtoye-customer-id"
 
+/**
+ * WR-04 — this body embeds the caller's raw id token, so nothing may store it.
+ *
+ * The handler previously set no cache headers at all. Correctness rested on a
+ * framework default plus every intermediary inferring "do not share this" from
+ * a URL with no user-varying component; a shared cache keyed on path alone
+ * would serve one customer's id_token to the next. `Vary: Cookie` states the
+ * real dependency. Applied to BOTH exit branches so they cannot drift, and
+ * mirrored verbatim in the vendor sibling — the two routes share this gap and
+ * fixing one alone is how the pair starts to diverge.
+ */
+const NO_STORE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0",
+  Vary: "Cookie",
+} as const
+
 // Phase 18: customer logout targets the jtoye-customers realm end-session endpoint.
 // Use the dedicated customer base URL, falling back ONLY to the jtoye-customers dev
 // default — never to NEXT_PUBLIC_KEYCLOAK_URL (the staff/vendor realm), which would
@@ -57,7 +73,10 @@ export async function GET(req: NextRequest) {
     // No session — just bounce back to the redirect target. With no trustworthy
     // origin the RELATIVE path is strictly safer and equally correct: the
     // browser resolves it against the page it is already on, which is this app.
-    return NextResponse.json({ url: postLogoutRedirectUri ?? redirect })
+    return NextResponse.json(
+      { url: postLogoutRedirectUri ?? redirect },
+      { headers: NO_STORE_HEADERS }
+    )
   }
 
   const params = new URLSearchParams({ id_token_hint: id })
@@ -70,7 +89,8 @@ export async function GET(req: NextRequest) {
   // unregistered redirect uri errors WITHOUT terminating anything. Losing the
   // return journey is a cosmetic degradation; losing the sign-out is the
   // security defect. Never trade the second away to keep the first.
-  return NextResponse.json({
-    url: `${KC_BASE}/protocol/openid-connect/logout?${params.toString()}`,
-  })
+  return NextResponse.json(
+    { url: `${KC_BASE}/protocol/openid-connect/logout?${params.toString()}` },
+    { headers: NO_STORE_HEADERS }
+  )
 }

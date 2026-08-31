@@ -130,6 +130,52 @@ function clearSignedOutState() {
 }
 
 /**
+ * How long a sign-out round-trip is allowed to take before the local teardown
+ * stops waiting for it. Shared by the customer path below and by
+ * `lib/vendor-logout.ts` (R-01), which imports `fetchWithTimeout` from here
+ * rather than growing a second copy.
+ */
+export const LOGOUT_FETCH_TIMEOUT_MS = 3000
+
+/**
+ * `fetch` with a hard deadline — R-04 (2026-08-31 customer-surface audit).
+ *
+ * WHY NOT `AbortSignal.timeout(ms)` ALONE, which is the obvious simplification
+ * and would silently re-break the test that guards this: its internal timer is
+ * owned by the platform and is NOT driven by jest fake timers, so the
+ * never-settling arm would HANG for the jest timeout instead of asserting.
+ *
+ * So: a race that an `AbortController` backs. The `setTimeout` is a plain one,
+ * which IS what fake timers control, and the `abort()` genuinely cancels a real
+ * in-flight request rather than merely abandoning it. Both halves are needed —
+ * the abort is what makes it correct in a browser, the plain timer is what
+ * makes it deterministic under test even when a mocked `fetch` ignores the
+ * signal entirely.
+ */
+export async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs: number = LOGOUT_FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(new Error(`Request timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([
+      fetch(input, { ...init, signal: controller.signal }),
+      deadline,
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
  * Synchronous "am I probably logged in" check based on the localStorage
  * marker. UI-only — cannot be trusted for security decisions.
  */
@@ -395,13 +441,32 @@ export async function getCustomerSession(): Promise<CustomerSession | null> {
  * localStorage marker AND every stored basket, then follows the Keycloak
  * end-session URL built by the server (so the raw id token never reaches the
  * browser).
+ *
+ * R-04 (2026-08-31 customer-surface audit). Two changes, one defect.
+ *
+ * The teardown used to live in the SUCCESS path with a duplicate copy in a
+ * `catch`, and both fetches were un-timeouted. That covers a request that
+ * RESOLVES and a request that REJECTS — and misses the one that actually
+ * happens on a phone leaving a wifi cell, which is a request that never answers
+ * at all. A stall was therefore a SILENT NO-OP SIGN-OUT: session alive, basket
+ * intact, still stamped with the departing customer's `sub`, and no feedback.
+ * On a shared device that is the previous customer's basket adopted by the next
+ * person (T-QF-05).
+ *
+ * So: both fetches are bounded by `fetchWithTimeout`, and the teardown plus the
+ * navigation moved into a `finally` where they run EXACTLY ONCE whatever the
+ * network did. Neither is reachable-only-on-success any more, and there is no
+ * longer a second copy to drift from the first.
  */
 export async function customerLogout() {
+  // Declared outside the try so the `finally` can read it. The inner try/catch
+  // degrading it to "/shop" is preserved verbatim: a failed end-session lookup
+  // should cost the return journey to Keycloak, never the sign-out itself.
+  let logoutUrl = "/shop"
   try {
-    // Get the Keycloak logout URL while the cookie still exists
-    let logoutUrl = "/shop"
+    // Get the Keycloak logout URL while the cookie still exists.
     try {
-      const urlRes = await fetch("/api/customer-auth/logout-url?redirect=/shop", {
+      const urlRes = await fetchWithTimeout("/api/customer-auth/logout-url?redirect=/shop", {
         credentials: "include",
         cache: "no-store",
       })
@@ -413,22 +478,17 @@ export async function customerLogout() {
       /* ignore — fall back to /shop */
     }
 
-    await fetch("/api/customer-auth/logout", {
+    await fetchWithTimeout("/api/customer-auth/logout", {
       method: "POST",
       credentials: "include",
     })
-
+  } catch {
+    /* The server round-trip failed or timed out. The user asked to sign out,
+       so the teardown below happens regardless — see the `finally`. */
+  } finally {
     clearSignedOutState()
     if (typeof window !== "undefined") {
       window.location.href = logoutUrl
-    }
-  } catch {
-    // The server round-trip failed, but the user asked to sign out — the local
-    // teardown must still happen, or a failed logout is exactly the shared
-    // device that keeps the previous customer's basket.
-    clearSignedOutState()
-    if (typeof window !== "undefined") {
-      window.location.href = "/shop"
     }
   }
 }

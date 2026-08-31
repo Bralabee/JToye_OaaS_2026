@@ -63,6 +63,9 @@ function clientId(): string {
 
 export type IdpLogoutOutcome = "ok" | "failed" | "skipped"
 
+/** How long the IdP has to answer before the sign-out stops waiting for it. */
+const IDP_LOGOUT_TIMEOUT_MS = 3000
+
 /**
  * Best-effort. Every outcome is reported, none is thrown.
  *
@@ -72,6 +75,19 @@ export type IdpLogoutOutcome = "ok" | "failed" | "skipped"
  * "skipped" means there was nothing to revoke or nowhere to send it, and is not
  * an error — it is the honest answer under k8s, where the customer realm is not
  * yet wired into `k8s/base/frontend-deployment.yaml` at all.
+ *
+ * R-04 (2026-08-31 customer-surface audit): the call is BOUNDED at 3s. The
+ * module header above already documents the connect-hang this is exposed to —
+ * a misconfigured issuer host hangs ~10s rather than refusing — and until now
+ * nothing stopped that hang from holding the whole sign-out request open. An
+ * abort lands in the existing `catch` and returns "failed", which is exactly
+ * what the best-effort contract already promises for an IdP that would not
+ * cooperate: the cookie clear proceeds either way.
+ *
+ * `AbortSignal.timeout` is correct HERE and would be wrong on the client half:
+ * this runs in the server runtime with no jest fake timers in its test path,
+ * whereas `fetchWithTimeout` in `lib/customer-auth.ts` needs a plain timer that
+ * fake timers can drive.
  */
 export async function endCustomerIdpSession(
   refreshToken: string | undefined | null
@@ -89,6 +105,7 @@ export async function endCustomerIdpSession(
         refresh_token: refreshToken,
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(IDP_LOGOUT_TIMEOUT_MS),
     })
     // Keycloak answers 204 on success. A 400 here is the ordinary case of a
     // refresh token that already rotated or expired, not a reason to shout.

@@ -25,7 +25,8 @@
 
 import fs from "fs"
 import path from "path"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { useSearchParams } from "next/navigation"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { ShopDiscoveryClient } from "@/app/shop/shop-discovery-client"
 import StorefrontLayout from "@/app/shop/layout"
@@ -313,6 +314,259 @@ describe("ShopDiscoveryClient — a non-answer never carries a proximity claim",
 
     expect(await screen.findByText(/1 kitchen for/)).toBeInTheDocument()
     expect(screen.queryByText(/within 3\.1 miles of/i)).toBeNull()
+  })
+})
+
+/**
+ * R-02 (2026-08-31 customer-surface audit, P1) — a cleared query stays cleared.
+ *
+ * THE HARNESS IS THE ARGUMENT HERE. `useSearchParams` is mocked globally in
+ * `jest.setup.js` to a stub whose `get` returns undefined, which is why every
+ * case above can ignore the URL entirely. That stub cannot see the defect: the
+ * bug is a round trip through the URL, and a mock that never changes has no
+ * round trip. So these cases re-point the mock at `window.location.search` —
+ * the component's own debounce writes the URL through `history.replaceState`,
+ * jsdom updates `window.location.search` for it, and the mock therefore
+ * observes exactly what a real `useSearchParams` observes.
+ *
+ * `rerender()` stands in for the router notification a real Next app delivers
+ * after a `replaceState`. Reading the value AFTER a re-render, never after a
+ * fresh mount, is what makes the arm capable of failing: the resurrection
+ * happens on the render that follows the URL write.
+ */
+describe("ShopDiscoveryClient — clearing the search is sticky (R-02)", () => {
+  const mockUseSearchParams = useSearchParams as jest.Mock
+
+  beforeEach(() => {
+    // A real URLSearchParams over the live jsdom URL, re-read on every render.
+    mockUseSearchParams.mockImplementation(
+      () => new URLSearchParams(window.location.search)
+    )
+    mockGet.mockResolvedValue({ data: page([NEAR]), headers: {} })
+    jest.useFakeTimers()
+  })
+
+  afterEach(async () => {
+    // Inside `act` because next/link's intersection-observer schedules an idle
+    // callback that fake timers own: draining the queue outside act produces a
+    // "not wrapped in act(...)" console.error that has nothing to do with this
+    // component and would train the next reader to ignore real ones.
+    await act(async () => {
+      jest.runOnlyPendingTimers()
+    })
+    jest.useRealTimers()
+    // Restore the file-local default so the cases below this block are
+    // unaffected: an empty search means `get("q")` is null, exactly as the
+    // jest.setup stub's `undefined` behaved.
+    mockUseSearchParams.mockImplementation(() => new URLSearchParams(""))
+    window.history.replaceState(null, "", "/shop")
+  })
+
+  /** Type into the box and let the 400 ms URL debounce settle. */
+  async function typeAndSettle(value: string) {
+    fireEvent.change(screen.getByLabelText(/Search kitchens, dishes or a postcode/i), {
+      target: { value },
+    })
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(500)
+    })
+  }
+
+  it("CONTROL: an externally-changed ?q= is still adopted into the input", async () => {
+    window.history.replaceState(null, "", "/shop?q=jollof")
+    const view = render(
+      <ShopDiscoveryClient
+        initial={page([NEAR])}
+        initialQuery="jollof"
+        initialInterpretation={TEXT}
+      />
+    )
+    const input = () =>
+      screen.getByLabelText(/Search kitchens, dishes or a postcode/i) as HTMLInputElement
+    expect(input().value).toBe("jollof")
+
+    // A category chip clicked elsewhere on the page, or a Back step: the URL
+    // changes underneath a mounted island and state must follow it. If this
+    // arm ever goes red, the URL->state sync is broken and the "stays cleared"
+    // assertion below would be passing for the wrong reason.
+    await act(async () => {
+      window.history.replaceState(null, "", "/shop?q=vegan")
+    })
+    view.rerender(
+      <ShopDiscoveryClient
+        initial={page([NEAR])}
+        initialQuery="jollof"
+        initialInterpretation={TEXT}
+      />
+    )
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(500)
+    })
+
+    expect(input().value).toBe("vegan")
+  })
+
+  it("does not resurrect the SSR seed ~400 ms after the box is cleared", async () => {
+    window.history.replaceState(null, "", "/shop?q=jollof")
+    const view = render(
+      <ShopDiscoveryClient
+        initial={page([NEAR])}
+        initialQuery="jollof"
+        initialInterpretation={TEXT}
+      />
+    )
+    const input = () =>
+      screen.getByLabelText(/Search kitchens, dishes or a postcode/i) as HTMLInputElement
+
+    // Step 1: the island takes ownership of the URL by writing to it.
+    await typeAndSettle("grill")
+    view.rerender(
+      <ShopDiscoveryClient
+        initial={page([NEAR])}
+        initialQuery="jollof"
+        initialInterpretation={TEXT}
+      />
+    )
+    expect(new URLSearchParams(window.location.search).get("q")).toBe("grill")
+    expect(input().value).toBe("grill")
+
+    // Step 2: the customer clears it. The debounce deletes `q` from the URL.
+    await typeAndSettle("")
+    expect(new URLSearchParams(window.location.search).get("q")).toBeNull()
+
+    // Step 3: the render that follows the URL write. PRE-FIX this reads
+    // "jollof" — the immutable SSR seed, re-supplied by `?? initialQuery` and
+    // written back over the input by the URL->state effect.
+    view.rerender(
+      <ShopDiscoveryClient
+        initial={page([NEAR])}
+        initialQuery="jollof"
+        initialInterpretation={TEXT}
+      />
+    )
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(500)
+    })
+
+    expect(input().value).toBe("")
+  })
+
+  it("the X button and 'Browse all kitchens' clear just as permanently", async () => {
+    window.history.replaceState(null, "", "/shop?q=jollof")
+    // Zero results, so the escape hatch renders.
+    mockGet.mockResolvedValue({ data: page([]), headers: {} })
+    const view = render(
+      <ShopDiscoveryClient
+        initial={page([NEAR])}
+        initialQuery="jollof"
+        initialInterpretation={TEXT}
+      />
+    )
+    const input = () =>
+      screen.getByLabelText(/Search kitchens, dishes or a postcode/i) as HTMLInputElement
+
+    await typeAndSettle("no such kitchen")
+    view.rerender(
+      <ShopDiscoveryClient
+        initial={page([NEAR])}
+        initialQuery="jollof"
+        initialInterpretation={TEXT}
+      />
+    )
+
+    // The "Never a dead end" escape hatch at the bottom of the empty state.
+    fireEvent.click(screen.getByRole("button", { name: "Browse all kitchens" }))
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(500)
+    })
+    view.rerender(
+      <ShopDiscoveryClient
+        initial={page([NEAR])}
+        initialQuery="jollof"
+        initialInterpretation={TEXT}
+      />
+    )
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(500)
+    })
+
+    expect(input().value).toBe("")
+  })
+})
+
+/**
+ * R-09 (2026-08-31 customer-surface audit) — a slow keystroke response can
+ * never overwrite a newer result set or its count.
+ *
+ * Each `mockGet` call hands out a manually-resolvable deferred, so the ORDER of
+ * settle is the test's to choose. That is the whole defect: on a real network a
+ * two-character query issued while a one-character query is still in flight is
+ * routinely answered second, and the older answer used to win.
+ */
+describe("ShopDiscoveryClient — a stale response never wins (R-09)", () => {
+  type Deferred = { resolve: (value: unknown) => void }
+
+  function deferredQueue(): Deferred[] {
+    const queue: Deferred[] = []
+    mockGet.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          queue.push({ resolve })
+        })
+    )
+    return queue
+  }
+
+  const STALE = shop({ slug: "stale-kitchen", name: "Stale Kitchen", distanceKm: null })
+
+  it("CONTROL: the ordinary single-request path still renders its result", async () => {
+    const queue = deferredQueue()
+    renderDiscovery({ shops: [NEAR], query: "jollof", interpretation: TEXT })
+
+    fireEvent.change(screen.getByLabelText(/Search kitchens, dishes or a postcode/i), {
+      target: { value: "stale" },
+    })
+    expect(queue).toHaveLength(1)
+
+    await act(async () => {
+      queue[0].resolve({ data: page([STALE], 1), headers: {} })
+    })
+
+    // Without this arm the generation guard could be dropping EVERY response
+    // and the out-of-order case below would still look green.
+    expect(await screen.findByText("Stale Kitchen")).toBeInTheDocument()
+    expect(screen.getByText(/1 kitchen for/)).toBeInTheDocument()
+  })
+
+  it("keeps the newer result set and count when an older request settles last", async () => {
+    const queue = deferredQueue()
+    renderDiscovery({ shops: [NEAR], query: "jollof", interpretation: TEXT })
+
+    // Search A, then search B while A is still in flight.
+    fireEvent.change(screen.getByLabelText(/Search kitchens, dishes or a postcode/i), {
+      target: { value: "s" },
+    })
+    fireEvent.change(screen.getByLabelText(/Search kitchens, dishes or a postcode/i), {
+      target: { value: "su" },
+    })
+    expect(queue).toHaveLength(2)
+
+    // B answers first…
+    await act(async () => {
+      queue[1].resolve({ data: page([NEAR, UNPLACED], 2), headers: {} })
+    })
+    expect(await screen.findByText("Dulwich Near Kitchen")).toBeInTheDocument()
+
+    // …and then A, the older request, finally settles. PRE-FIX this overwrites
+    // both the grid and the count with A's answer.
+    await act(async () => {
+      queue[0].resolve({ data: page([STALE], 1), headers: {} })
+    })
+
+    expect(screen.getByText("Dulwich Near Kitchen")).toBeInTheDocument()
+    expect(screen.getByText("Mama Ade's Kitchen")).toBeInTheDocument()
+    expect(screen.queryByText("Stale Kitchen")).toBeNull()
+    expect(screen.getByText(/2 kitchens for/)).toBeInTheDocument()
   })
 })
 

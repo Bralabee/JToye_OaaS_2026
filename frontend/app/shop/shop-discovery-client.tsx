@@ -206,7 +206,30 @@ interface DiscoveryProps {
 
 function ShopDiscovery({ initial, initialQuery, initialInterpretation }: DiscoveryProps) {
   const searchParams = useSearchParams()
-  const urlQuery = searchParams.get("q") ?? initialQuery
+  // R-02 (2026-08-31 customer-surface audit). What the URL ACTUALLY says, kept
+  // separate from what to do about it — `null` means "no `q` in the URL", and
+  // that is a different fact from "the query is empty".
+  //
+  // A single `searchParams.get("q") ?? initialQuery` used to stand here and
+  // serve as BOTH the first-render seed and the standing URL->state input.
+  // `initialQuery` is the SSR seed and it is IMMUTABLE, so as a standing
+  // fallback it re-supplied itself every time the debounce below deleted `q`
+  // from the URL — and the URL->state effect then wrote it back over the input
+  // ~400 ms later. It broke every clear affordance on this surface: typing the
+  // box empty, the X button, and the zero-result "Browse all kitchens" escape
+  // hatch further down, whose own comment promises "Never a dead end". It read
+  // as intermittent only because the FIRST clear on a deep link is safe by
+  // accident — the derived value does not change on that pass.
+  //
+  // The seed is a FIRST-RENDER default, not a standing fallback; see the
+  // URL->state effect below, where the two roles are now separated.
+  const rawUrlQuery = searchParams.get("q")
+  const seededQuery = rawUrlQuery ?? initialQuery
+  // Set the instant this island first writes the URL itself (see the debounce
+  // effect below, where it is assigned on the line immediately before
+  // `replaceState`). Read only inside the URL->state effect — never during
+  // render, which `react-hooks/refs` correctly forbids.
+  const clientOwnsUrl = useRef(false)
 
   const [shops, setShops] = useState<PublicShop[]>(initial?.content ?? [])
   // Server-seeded content is not "loading": swapping real HTML for a skeleton on
@@ -214,7 +237,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   const [loading, setLoading] = useState(initial === null)
   // Seeded from ?q= so the landing search / category chips / a shared link all
   // arrive with the query already applied, not on a blank index.
-  const [searchQuery, setSearchQuery] = useState(urlQuery)
+  const [searchQuery, setSearchQuery] = useState(seededQuery)
   const [totalPages, setTotalPages] = useState(initial?.totalPages ?? 0)
   const [totalElements, setTotalElements] = useState(initial?.totalElements ?? 0)
   // The server's statement about how `q` was read. Seeded from the SSR response
@@ -231,7 +254,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   const [page, setPage] = useState(0)
   // Tracks the ?q= we have already reflected into state, so the URL->state and
   // state->URL syncs below can never ping-pong.
-  const appliedUrlQuery = useRef(urlQuery)
+  const appliedUrlQuery = useRef(seededQuery)
   // F-RATE (#88): a public 429 must surface a transient "busy / retrying" state,
   // never the authoritative "No shops found" empty state.
   const [rateLimited, setRateLimited] = useState(false)
@@ -251,8 +274,23 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   // mount effect does not immediately refetch what is already on screen — but
   // any later page or query change still fetches normally.
   const serverSeeded = useRef(initial !== null)
+  // R-09 (2026-08-31 customer-surface audit): monotonic request generation.
+  //
+  // Every keystroke starts a request and none of them used to identify itself,
+  // so a SLOW answer to an OLD query overwrote a newer result set AND its
+  // count — the page then stated "1 kitchen for 'su'" over the wrong grid.
+  // Each call captures the generation it started at and every settle path
+  // checks it before touching state.
+  //
+  // A counter rather than an AbortController on axios, DELIBERATELY: an axios
+  // cancellation surfaces in the `catch` below as an error that
+  // `isRateLimitError` / `describeLoadError` would misclassify as a genuine
+  // load failure, rendering the A11Y-8 error panel over a perfectly good newer
+  // result. The counter has no such failure mode. Do not "simplify" it.
+  const fetchGeneration = useRef(0)
 
   const fetchShops = useCallback(async () => {
+    const generation = ++fetchGeneration.current
     setLoading(true)
     try {
       const params: Record<string, string | number> = { page, size: SHOPS_PAGE_SIZE }
@@ -262,6 +300,8 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
         "/public/shops",
         { params }
       )
+      // R-09: a superseded request contributes nothing.
+      if (generation !== fetchGeneration.current) return
       setShops(res.data.content)
       setTotalPages(res.data.totalPages)
       setTotalElements(res.data.totalElements)
@@ -279,6 +319,10 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
       setLoadFailed(false)
       retryAttemptRef.current = 0
     } catch (err) {
+      // R-09: a superseded request's FAILURE is equally not news — without
+      // this guard a slow 500 for an abandoned query paints the load-error
+      // panel over a newer result set that arrived and rendered correctly.
+      if (generation !== fetchGeneration.current) return
       // A NON-ANSWER CARRIES NO CLAIM. A 429 or a genuine failure is not a
       // statement about how `q` was read, so the interpretation resets rather
       // than persisting from the last good response — the same rule
@@ -313,7 +357,11 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
         )
       }
     } finally {
-      setLoading(false)
+      // R-09: this guard matters as much as the other two. A stale settle that
+      // cleared `loading` would strip the skeleton off a request that is still
+      // genuinely in flight, so the customer sees an empty-looking grid while
+      // the real answer is still coming.
+      if (generation === fetchGeneration.current) setLoading(false)
     }
   }, [page, searchQuery])
 
@@ -350,11 +398,18 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   // URL -> state: a category chip clicked while already on /shop (or a back/
   // forward step) changes ?q= without remounting; adopt it.
   useEffect(() => {
-    if (urlQuery !== appliedUrlQuery.current) {
-      appliedUrlQuery.current = urlQuery
-      setSearchQuery(urlQuery)
+    // R-02: an ABSENT `q` means two different things depending on who wrote
+    // the URL last. Before this island has touched it, the URL is just a deep
+    // link that omitted the parameter and the SSR seed is the right answer.
+    // AFTER the island has written the URL, an absent `q` is a STATEMENT —
+    // "the customer cleared it" — and re-supplying the immutable seed here is
+    // what used to resurrect "jollof" into a box the customer had just emptied.
+    const nextQuery = rawUrlQuery ?? (clientOwnsUrl.current ? "" : initialQuery)
+    if (nextQuery !== appliedUrlQuery.current) {
+      appliedUrlQuery.current = nextQuery
+      setSearchQuery(nextQuery)
     }
-  }, [urlQuery])
+  }, [rawUrlQuery, initialQuery])
 
   // state -> URL: typing rewrites ?q= (debounced) so the result set is
   // shareable and survives a reload. replaceState keeps it out of history so
@@ -368,6 +423,10 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
       else params.delete("q")
       const qs = params.toString()
       appliedUrlQuery.current = term
+      // R-02: from here on an absent `q` means the customer cleared it, not
+      // that the seed should be re-applied. Assigned immediately before the
+      // write so there is no render that can read a stale `false`.
+      clientOwnsUrl.current = true
       window.history.replaceState(
         null,
         "",

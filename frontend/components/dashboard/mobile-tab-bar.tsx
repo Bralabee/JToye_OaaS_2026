@@ -1,15 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { signOut, useSession } from "next-auth/react"
+import { useSession } from "next-auth/react"
+// R-01 (P0): see the note in sidebar.tsx — a bare next-auth `signOut` leaves
+// the Keycloak SSO session alive. Both dashboard affordances share one helper
+// so they cannot drift, exactly as they share one `navigation` array.
+import { vendorLogout } from "@/lib/vendor-logout"
 import { cn } from "@/lib/utils"
 import { Menu, LogOut, Moon, Sun } from "lucide-react"
 // Single source of truth: the SAME navigation array the desktop sidebar renders.
 // Do NOT re-declare it here — both bars must never drift (see 19-UI-SPEC Surface D).
 import { navigation } from "@/components/dashboard/sidebar"
 import { useTheme } from "@/hooks/use-theme"
+import { useBottomChromeHeight } from "@/hooks/use-bottom-chrome-height"
 import {
   Sheet,
   SheetClose,
@@ -63,6 +68,20 @@ export function MobileTabBar({ className }: { className?: string }) {
   // is observed by the other with no reload and regardless of which mounted
   // first.
   const { dark, toggle } = useTheme()
+  // R-07: publish this bar's height as `--jt-bottom-chrome` so the cookie
+  // notice sits ABOVE it rather than under it. This bar is `md:hidden` rather
+  // than conditionally rendered, so the ref is always attached and the height
+  // is 0 at >=md — which the hook reads as "no bar", and its resize listener
+  // re-measures when the viewport crosses the breakpoint.
+  const barRef = useRef<HTMLElement>(null)
+  useBottomChromeHeight(barRef)
+  // CR-02: see the matching note in sidebar.tsx. Never reset — a sign-out
+  // button's terminal state is "busy until this page goes away".
+  const [signingOut, setSigningOut] = useState(false)
+  const handleSignOut = () => {
+    setSigningOut(true)
+    void vendorLogout()
+  }
 
   const tabClass = (active: boolean) =>
     cn(
@@ -74,6 +93,7 @@ export function MobileTabBar({ className }: { className?: string }) {
 
   return (
     <nav
+      ref={barRef}
       data-testid="mobile-tab-bar"
       aria-label="Primary"
       className={cn(
@@ -161,7 +181,9 @@ export function MobileTabBar({ className }: { className?: string }) {
             <Button
               variant="ghost"
               className="w-full justify-start gap-3 text-slate-700 dark:text-slate-200"
-              onClick={() => signOut({ callbackUrl: "/auth/signin" })}
+              onClick={handleSignOut}
+              disabled={signingOut}
+              aria-busy={signingOut}
             >
               <LogOut className="h-5 w-5" />
               Sign Out

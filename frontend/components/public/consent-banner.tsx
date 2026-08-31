@@ -4,6 +4,7 @@ import { useState } from "react"
 
 import { cn } from "@/lib/utils"
 import { accept, choosableCategories, reject } from "@/lib/consent"
+import { BottomNoticeShell } from "./bottom-notice-shell"
 
 /**
  * The consent banner — CONTRACTED NOW, SHOWN LATER (S1).
@@ -62,14 +63,26 @@ export function ConsentBanner() {
   }
 
   return (
-    <section
-      aria-label="Cookie choices"
-      className={cn(
-        "fixed inset-x-0 bottom-0 z-40 border-t border-white/15 bg-oxblood text-cream",
-        "px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
-      )}
-    >
-      <div className="mx-auto max-w-3xl">
+    // WR-03: the SAME positioning shell the cookie notice uses, not a second
+    // copy of the pre-R-07 shape.
+    //
+    // This branch was left behind by R-07 and the omission was invisible:
+    // `CookieNotice` returns `<ConsentBanner />` and exits before any of the
+    // R-07 work, so all five measured symptoms came back here — including the
+    // storefront cart bar painting over the dismiss control, which on a CONSENT
+    // surface makes the banner permanently un-dismissable and the choice
+    // unrecordable. That is a compliance failure, not a cosmetic one, and it was
+    // dormant only because `choosableCategories()` is empty today. The day an
+    // analytics category ships it would have shipped broken behind a green
+    // suite, and the fix would have LOOKED done because cookie-notice.tsx was
+    // fixed. One shell closes the drift structurally instead of by remembering.
+    //
+    // `sm:max-w-lg` widens the measure over the shell's `sm:max-w-md` (merged by
+    // `cn`/tailwind-merge): this banner carries a per-category list and three
+    // controls, not one sentence and two. It cannot drop `pointer-events-auto`
+    // that way — different utility group.
+    <BottomNoticeShell label="Cookie choices" cardClassName="sm:max-w-lg">
+      <div>
         <h2 className="text-sm font-semibold leading-[1.5]">
           Choose what we store on your device
         </h2>
@@ -124,6 +137,6 @@ export function ConsentBanner() {
           </button>
         </div>
       </div>
-    </section>
+    </BottomNoticeShell>
   )
 }
