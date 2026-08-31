@@ -44,7 +44,15 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
             Back to menu
           </Link>
           <h1 className="text-xl font-bold text-slate-900">Your basket</h1>
-          <p className="text-sm text-slate-600">{itemCount} item{itemCount !== 1 ? "s" : ""}</p>
+          {/* data-testid, not a class or a text shape: e2e/cart-identity-boundary.verify.mjs
+              reads this count, and it has been broken twice by incidental coupling — once when
+              PR #522's contrast pass changed this paragraph's colour token, and once (nearly)
+              by cart-drawer.tsx rendering the identical "N items" string. A testid moves only
+              when someone means it to.
+              The colour token is deliberately NOT named here: __tests__/contrast-literals.test.ts
+              scans this file for Tailwind literals and cannot tell a live class from a comment,
+              so naming the old one reds that gate. Measured, not guessed. */}
+          <p data-testid="cart-item-count" className="text-sm text-slate-600">{itemCount} item{itemCount !== 1 ? "s" : ""}</p>
         </div>
         <button
           onClick={clearCart}

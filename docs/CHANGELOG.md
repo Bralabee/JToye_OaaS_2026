@@ -22,8 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider supplying the prior value). A non-null current identity always wins,
   so a customer taking over a slot a previous one used re-stamps to them and
   their later items cannot leak backwards; a null current preserves what is on
-  disk. A guest basket still carries forward into sign-in or registration — the
-  good this fix deliberately does not trade away. A second layer clears every
+  disk. A guest basket built in a slot with **no prior owner** still carries
+  forward into sign-in or registration — the good this fix deliberately does not
+  trade away. The qualifier is load-bearing: where a lapsed session has left
+  another customer's stamp on the slot, a different anonymous shopper's own
+  additions are now stamped with that prior owner, so on registering they are
+  rejected and that shopper's basket is silently discarded. The trade is
+  deliberate — losing one guest's basket beats leaking the previous customer's —
+  but it is a behaviour change and is recorded as one. Surfacing it in the UI is
+  tracked as a follow-up. A second layer clears every
   basket when a session response brings a genuinely different `sub`; it requires
   BOTH identities non-empty, because an absent profile is "unknown", not "a
   different person", and is vacuous on the reported repro by itself.

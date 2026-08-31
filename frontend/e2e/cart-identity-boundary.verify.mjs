@@ -52,8 +52,13 @@
 //     that failed to clear.
 //
 // Secrets: the registration password comes from KC_SEED_USER_PASSWORD in .env
-// and is never printed. Only booleans, pass/fail lines and generated test
-// emails (not secret) are logged.
+// and is never printed. What IS logged: booleans, pass/fail lines, the
+// generated test emails, and — named explicitly rather than left out of this
+// list (IN-02) — the Keycloak SUBJECT IDS of the throwaway customers these arms
+// register, printed by `describeStored` and by the `B.sub=` detail strings.
+// Those users exist only for the run and live on a realm destroyed with it, so
+// the risk is nil; the point is that a secrets claim which has quietly drifted
+// is the kind that gets trusted later.
 
 import { chromium } from "@playwright/test"
 
@@ -62,6 +67,13 @@ const PASSWORD = process.env.KC_SEED_USER_PASSWORD
 const SHOP = process.env.E2E_SHOP_SLUG || "peckham-jollof-co"
 const OTHER_SHOP = process.env.E2E_OTHER_SHOP_SLUG || "mama-ades-kitchen"
 const HEADLESS = process.env.HEADED !== "1"
+
+/**
+ * How many `check()` calls a complete run must produce. Asserted in main() so a
+ * run that executed FEWER than it declares exits VOID rather than printing a
+ * proportion that looks like a pass. Update it deliberately when adding an arm.
+ */
+const EXPECTED_CHECKS = 18
 
 const results = []
 function check(id, name, cond, detail = "") {
@@ -109,21 +121,26 @@ async function cartPageState(page, slug) {
     return { empty: true, itemCount: 0, titles: [] }
   }
   const titles = await page.locator("article h3, h3.text-sm").allTextContents()
-  // The item-count line, located by its CONTENT rather than by a colour utility
-  // class. The previous selector was `p.text-sm.text-slate-500`, and PR #522
-  // (a11y contrast pass) moved that paragraph to `text-slate-600` — after which
-  // it matched nothing, `.textContent()` waited out its full 30s default and
-  // every arm that reads a non-empty basket THREW. Nobody noticed, because this
-  // script ran in no workflow, gate or npm script; the CI wiring added alongside
-  // this repair is the actual fix for that. A guard that dies when a palette
-  // token changes is not a guard.
+  // The item-count line, located by an EXPLICIT testid.
+  //
+  // Two incidental couplings have already broken this, and the second was
+  // caught in review rather than in the wild (WR-09). It was
+  // `p.text-sm.text-slate-500`; PR #522's contrast pass moved the paragraph to
+  // `text-slate-600`, after which the locator matched nothing, `.textContent()`
+  // waited out its full 30s default and every arm reading a non-empty basket
+  // THREW. The first repair selected any `<p>` whose whole text is "N items" —
+  // and `components/storefront/cart-drawer.tsx` renders exactly that shape. It
+  // does not collide today only because Radix `Sheet` unmounts closed content
+  // and the drawer is portalled after `{children}`: two facts no test pins, so
+  // a `forceMount` would silently redirect `.first()` to the drawer.
+  //
+  // A testid moves only when somebody means it to, which is the whole point.
   //
   // Bounded and non-throwing: an unreadable count degrades to -1, which fails
   // every `itemCount >= 1` fail arm CLOSED and is announced, rather than
   // exploding the arm or — worse — reading as an empty basket.
   const countText = await page
-    .locator("p")
-    .filter({ hasText: /^\s*\d+\s+items?\s*$/ })
+    .locator('[data-testid="cart-item-count"]')
     .first()
     .textContent({ timeout: 5000 })
     .catch(() => null)
@@ -395,7 +412,16 @@ async function anonymousDowngradeGuard(browser) {
       ([k, payload]) => window.localStorage.setItem(k, payload),
       [
         cartKey(SHOP),
-        JSON.stringify({ shopSlug: SHOP, owner: FAKE_A, items: [seedItem("owned-by-a")] }),
+        // `_seed` is a marker the APP never writes: CartProvider's serialize
+        // emits exactly { shopSlug, owner, items }. Its DISAPPEARANCE is
+        // therefore proof that the provider re-persisted this slot — see the
+        // wait below.
+        JSON.stringify({
+          shopSlug: SHOP,
+          owner: FAKE_A,
+          items: [seedItem("owned-by-a")],
+          _seed: true,
+        }),
       ]
     )
 
@@ -403,7 +429,30 @@ async function anonymousDowngradeGuard(browser) {
     // signed in, the provider hydrates, and its write effect re-persists the
     // basket. Everything below reads the result of THIS.
     await page.goto(`${BASE}/shop/${SHOP}`, { waitUntil: "domcontentloaded" })
-    await page.waitForTimeout(1500)
+
+    // WAIT FOR THE WRITE, NOT FOR THE CLOCK (WR-10). This was
+    // `waitForTimeout(1500)` — a sleep, not a condition. On a loaded runner the
+    // write effect may not have run when it expired, in which case C1c.1 ("the
+    // stamp SURVIVES") would pass TRIVIALLY: nothing wrote, so nothing could
+    // have downgraded it.
+    //
+    // The condition has to distinguish "the provider wrote" from "my seed is
+    // still sitting there", which is why it cannot be a check on shopSlug or on
+    // the items — the seed satisfies both. `_seed` is a key the app never emits,
+    // so its removal happens if and only if serialize ran.
+    await page.waitForFunction(
+      (k) => {
+        const raw = window.localStorage.getItem(k)
+        if (!raw) return false
+        try {
+          return !("_seed" in JSON.parse(raw))
+        } catch {
+          return false
+        }
+      },
+      cartKey(SHOP),
+      { timeout: 15000 }
+    )
 
     // FAIL ARM FIRST: without this, "the owner is unchanged" is satisfied by a
     // page that never hydrated and therefore never wrote anything.
@@ -610,6 +659,20 @@ async function main() {
     await sharedBrowserFlow(browser)
   } finally {
     await browser.close()
+  }
+
+  // "Found nothing" is never "clean" (IN-01). With no floor, an empty `results`
+  // prints `0/0 checks passed` and exits 0 — the shape check-e2e-skip-budget.sh
+  // exits 2/VOID for. Every arm currently pushes a failing result from its
+  // catch, so an empty `results` is hard to reach today; a future arm that
+  // returns early would reopen it silently. The floor is the arm count this
+  // script declares, so DELETING an arm is also caught, not just an empty run.
+  if (results.length < EXPECTED_CHECKS) {
+    console.log(
+      `\nVOID: expected at least ${EXPECTED_CHECKS} checks, got ${results.length} — ` +
+        `a run that executed less than it declares is not a pass`
+    )
+    process.exit(2)
   }
 
   const failed = results.filter((r) => !r.ok)
