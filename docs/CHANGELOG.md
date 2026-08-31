@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Customer-surface P0/P1 fixes from the 2026-08-31 utilisation audit (#711) — 2026-08-31
+
+- **P0 — vendor Sign Out now ends the Keycloak SSO session.** A new
+  `/api/vendor-auth/logout-url` end-session route (public issuer host,
+  open-redirect-hardened, `no-store`) plus `lib/vendor-logout.ts` — bounded
+  lookup AND bounded signOut, in-flight latch, busy state on both dashboard
+  buttons. Pre-fix, one click on "Sign in with Keycloak" silently re-entered
+  the dashboard as the departed user; post-fix the IdP cookie jar is empty and
+  re-signin is challenged (browser-proven, two rounds).
+- **Search**: clearing the `/shop` box no longer resurrects the first query
+  (`clientOwnsUrl` ownership ref replaces the `?? initialQuery` standing
+  fallback), and a generation guard stops stale keystroke responses
+  overwriting fresh results (wire-order-proven: a response landing 2s late is
+  ignored).
+- **Hero**: a late-hydrating entrance can no longer blank the already-painted
+  headline (`entranceIsSafe` budget); a first-mount latch keeps the entrance
+  playing on soft navigations — pre-fix it was silently skipped forever after
+  the first client-side nav.
+- **Sign-out is fail-safe**: both customer logout fetches and the server-side
+  IdP call are bounded at 3s and local teardown (`clearStoredCarts`) runs in a
+  `finally`; a stalled network can no longer leave the session and basket
+  silently alive. All three affordances gain pending state.
+- **Cookie notice** refactored onto a shared `BottomNoticeShell`:
+  pointer-events split + a cart-bar/tab-bar-published `--jt-bottom-chrome`
+  offset. "Got it" is clickable with the floating cart bar present, the vendor
+  sidebar Sign Out is no longer blocked, and the consent banner uses the same
+  shell so the defect class cannot re-arm.
+- Verification: 145 Jest suites / 1566 tests with every new test observed
+  failing pre-fix; two-round in-session code review (2 criticals found and
+  fixed); browser re-verification against rebuilt containers using the
+  original audit repro scripts — all six findings flipped fail-to-pass with
+  controls byte-identical green. Known residuals recorded in the PR.
+
 ### P-4: the documented-claims gate runs locally in pre-push (#705) — 2026-08-30
 
 - **`.githooks/pre-push` gains P-4**: the vendored claim-gate
