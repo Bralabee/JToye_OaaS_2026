@@ -1,6 +1,8 @@
 import {
   canEnhance,
   DESKTOP_MOTION_QUERY,
+  ENTRANCE_BUDGET_MS,
+  entranceIsSafe,
   prefersDesktopMotion,
   splitWords,
 } from "@/lib/gsap-gate"
@@ -93,5 +95,53 @@ describe("gsap-gate — canEnhance", () => {
   it("is false when window.matchMedia is absent (jsdom / SSR)", () => {
     delete (window as unknown as { matchMedia?: unknown }).matchMedia
     expect(canEnhance()).toBe(false)
+  })
+})
+
+/**
+ * R-03 (2026-08-31 customer-surface audit) — the late-hydration predicate.
+ *
+ * WHAT THESE ARMS PROVE, AND WHAT THEY DO NOT. They prove the PREDICATE: its
+ * boundary, and that it can answer both ways. They say NOTHING about rendering.
+ * The claim the fix actually makes — "a GSAP bundle that hydrates late never
+ * hides already-painted landing content" — is a browser-level truth measured on
+ * a throttled profile, and it belongs to the orchestrator's pass. A screenshot
+ * cannot verify motion either; the timeline is the instrument. Do not let a
+ * green run here be read as the rendering claim.
+ *
+ * Both sides of the boundary are asserted, so an inverted comparison or an
+ * off-by-one reds rather than sliding through on one lucky side.
+ */
+describe("gsap-gate — entranceIsSafe (R-03)", () => {
+  it("plays the entrance at first paint", () => {
+    expect(entranceIsSafe(0)).toBe(true)
+  })
+
+  it("plays the entrance EXACTLY on the budget (inclusive)", () => {
+    expect(entranceIsSafe(ENTRANCE_BUDGET_MS)).toBe(true)
+  })
+
+  it("REFUSES the entrance one millisecond past the budget", () => {
+    expect(entranceIsSafe(ENTRANCE_BUDGET_MS + 1)).toBe(false)
+  })
+
+  it("refuses a genuinely late hydration by a wide margin", () => {
+    // The measured case: a throttled load hydrates ~2.5s after first paint, and
+    // the entrance's `autoAlpha: 0` used to RETROACTIVELY BLANK an h1 and the
+    // persona CTAs the visitor had already been reading (~800ms of blank).
+    expect(entranceIsSafe(2500)).toBe(false)
+  })
+
+  it("treats a negative elapsed reading as safe rather than as a refusal", () => {
+    // `performance.now()` cannot go backwards, but a caller passing 0 for an
+    // absent `performance` must never be pushed onto the refusing side.
+    expect(entranceIsSafe(-1)).toBe(true)
+  })
+
+  it("the budget is a positive finite number, so the arms above mean something", () => {
+    // Non-vacuity: with the budget at 0 or NaN the boundary arms would still
+    // pass while asserting nothing about a real timing decision.
+    expect(Number.isFinite(ENTRANCE_BUDGET_MS)).toBe(true)
+    expect(ENTRANCE_BUDGET_MS).toBeGreaterThan(0)
   })
 })

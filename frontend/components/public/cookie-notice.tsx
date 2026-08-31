@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 
 import { cn } from "@/lib/utils"
+import { BOTTOM_CHROME_VAR } from "@/hooks/use-bottom-chrome-height"
 import {
   acknowledgeCookieNotice,
   choosableCategories,
@@ -43,6 +44,8 @@ import { ConsentBanner } from "./consent-banner"
  *  it mounts or unmounts. Being fixed IS the property; nothing is "reserved" and
  *  nothing needs to be. Same mechanism as `mobile-tab-bar.tsx` and the
  *  storefront `FloatingCartBar`, neither of which reserves space either.
+ *  UNCHANGED by R-07: still fixed, still out of flow, still never
+ *  server-rendered.
  *
  *  The corollary that makes it airtight: the notice never renders on the server
  *  (`shouldShowCookieNotice()` returns false without a `window`) and appears only
@@ -59,16 +62,59 @@ import { ConsentBanner } from "./consent-banner"
  *  DECISION: the notice takes `z-40` — deliberately BELOW both. The basket bar
  *  is a transactional control on the critical path to checkout and the tab bar
  *  is primary navigation; an informational notice must never occlude either.
- *  Ranking by z-index rather than by an offset was chosen because an offset has
- *  to be re-tuned every time either bar changes height, and a stale offset fails
- *  SILENTLY as a covered CTA. A z-index cannot drift.
+ *  THAT DECISION IS UNCHANGED and still correct.
+ *
+ *  ── WHAT R-07 ADDS, AND WHY AN OFFSET IS NOW ACCEPTABLE HERE ────────────────
+ *  Four of five lanes of the 2026-08-31 audit found this notice independently.
+ *  Five measured symptoms: (1) it covered the vendor sidebar's bottom-rail Sign
+ *  Out — `elementFromPoint` returned the notice; (2) on a mobile storefront with
+ *  a non-empty basket the z-50 cart bar painted over "Got it", so the notice was
+ *  permanently UN-DISMISSABLE and the acknowledgement never written; (3) it
+ *  covered the mobile "Browse all kitchens" zero-result escape hatch; (4) it hid
+ *  ~80% of the landing "Order food near you" CTA at 390x844; (5) its own copy
+ *  truncated in the mobile band.
+ *
+ *  The z-ranking above did not reason about the REVERSE direction — those bars
+ *  occluding the notice's OWN dismiss control — and symptom (2) is exactly that.
+ *  No z-index can fix it: either ordering breaks one of the two. The notice has
+ *  to stop SHARING THE BAND. Two mechanisms, both structural:
+ *
+ *   - POINTER-EVENTS SPLIT. The positioning wrapper is `pointer-events-none` and
+ *     the card is `pointer-events-auto`, so the notice can no longer intercept a
+ *     click on anything it is not itself drawn over. That closes (1), (3) and
+ *     (4) as a CLASS rather than one at a time — including the next such
+ *     collision, which nobody has found yet.
+ *   - A PUBLISHED BOTTOM OFFSET. `var(--jt-bottom-chrome, 0px)` lifts the notice
+ *     clear of whichever bar is mounted, closing (2).
+ *
+ *  The comment above rejected an offset, and that rejection was right about the
+ *  offset it had in mind: a TUNED CONSTANT has to be re-tuned every time either
+ *  bar changes height, and a stale one fails silently as a covered CTA. This
+ *  offset is a different thing. The bar PUBLISHES its own measured height at the
+ *  moment it appears (`hooks/use-bottom-chrome-height.ts`) and clears it when it
+ *  goes, so there is no constant here to go stale. The `0px` fallback is the
+ *  no-bar case and needs no coordination at all.
  *
  *  `pb-[max(0.75rem,env(safe-area-inset-bottom))]` copies `FloatingCartBar`'s
  *  form on purpose: a plain `pb-[env(safe-area-inset-bottom)]` collapses to 0 on
  *  every non-notch device, putting the controls flush against the screen edge.
  */
-const NOTICE_CLASS = cn(
-  "fixed inset-x-0 bottom-0 z-40 border-t border-white/15 bg-oxblood text-cream",
+const WRAPPER_CLASS = cn(
+  // `bottom` is an INLINE style rather than a class, because Tailwind cannot
+  // express `var(--jt-bottom-chrome, 0px)` as an arbitrary value that also
+  // survives the JIT's class extraction reliably.
+  "fixed inset-x-0 z-40 pointer-events-none"
+)
+
+/** The drawn surface. Everything the visitor can actually click lives here. */
+const CARD_CLASS = cn(
+  "pointer-events-auto border border-white/15 bg-oxblood text-cream shadow-lg",
+  "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between",
+  // Inset from the edges on mobile so it reads as a card rather than a band…
+  "mx-3 mb-3 rounded-xl",
+  // …and right-aligned with a capped measure from `sm` up, so on the desktop
+  // dashboard it sits nowhere near the bottom-LEFT sidebar rail (symptom 1).
+  "sm:ml-auto sm:mr-4 sm:max-w-md",
   "px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
   "sm:pt-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]"
 )
@@ -109,18 +155,25 @@ export function CookieNotice() {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
-      className={NOTICE_CLASS}
+      className={WRAPPER_CLASS}
+      // R-07 symptom (2): sit ABOVE whatever bottom-fixed bar is mounted. The
+      // value is published by the bar itself; `0px` is the no-bar case.
+      style={{ bottom: `var(${BOTTOM_CHROME_VAR}, 0px)` }}
     >
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className={CARD_CLASS}>
         <div className="min-w-0">
           {/* h2, at the same 14px/600 as the actions: this is chrome, and it
               must not compete with the page's own <h1>. */}
           <h2 className="text-sm font-semibold leading-[1.5]">{"Cookies on J'Toye"}</h2>
+          {/* R-07 symptom (5): compacted to one sentence so it does not truncate
+              in the mobile band. Every element of the legal intent survives —
+              cookies AND browser storage (PECR treats localStorage as storage on
+              terminal equipment exactly as a cookie is, and this site uses it for
+              the basket), strictly necessary, and nothing to accept or reject.
+              The detail now lives where it always did, behind /legal/cookies. */}
           <p className="mt-1 text-sm leading-[1.5] text-cream/85">
-            We only use cookies and browser storage that are strictly necessary to run this
-            site — keeping you signed in, remembering what is in your basket, and keeping
-            your order secure. We do not use advertising or analytics cookies, so there is
-            nothing here to accept or reject.
+            We use cookies and browser storage only where strictly necessary to run this
+            site — there is nothing to accept or reject.
           </p>
         </div>
 

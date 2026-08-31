@@ -41,6 +41,39 @@ export function canEnhance(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function"
 }
 
+/**
+ * How long after navigation start an ENTRANCE animation is still an entrance.
+ *
+ * 1200 ms: comfortably past a healthy hydration on a warm connection, and well
+ * short of the ~2.5 s measured on a throttled 4x-CPU / Slow-4G landing load.
+ */
+export const ENTRANCE_BUDGET_MS = 1200
+
+/**
+ * Is it still safe to play an ENTRANCE — R-03 (2026-08-31 customer-surface
+ * audit).
+ *
+ * AN ENTRANCE IS AN ENTRANCE, NOT A REVEAL. It works by hiding content and
+ * bringing it in, which is correct only while there is nothing on screen yet.
+ * Past the budget the content is ALREADY PAINTED and the visitor is already
+ * reading it, so hiding it in order to animate it in is a regression dressed as
+ * a flourish — measured on `/`, a late GSAP bundle blanked the h1 and the
+ * persona CTAs for ~800 ms after the user had been reading them.
+ *
+ * This is the OPPOSITE failure to the one `hero-scene.tsx`'s "No-FOUC contract"
+ * guards. That one is "the JS never arrives"; this one is "the JS arrives
+ * LATE", and it needs the opposite defence — which is why a new predicate
+ * rather than a tweak to the existing gate.
+ *
+ * @param elapsedMs milliseconds since navigation start, i.e. `performance.now()`.
+ *                  Inclusive at the boundary; anything at or below the budget
+ *                  is safe, so a caller that cannot measure (passing 0) always
+ *                  gets the animated path it would have had before this change.
+ */
+export function entranceIsSafe(elapsedMs: number): boolean {
+  return elapsedMs <= ENTRANCE_BUDGET_MS
+}
+
 const WORD_CLASS = "gsap-word"
 
 /**

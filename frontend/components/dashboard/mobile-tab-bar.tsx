@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useSession } from "next-auth/react"
@@ -14,6 +14,7 @@ import { Menu, LogOut, Moon, Sun } from "lucide-react"
 // Do NOT re-declare it here — both bars must never drift (see 19-UI-SPEC Surface D).
 import { navigation } from "@/components/dashboard/sidebar"
 import { useTheme } from "@/hooks/use-theme"
+import { useBottomChromeHeight } from "@/hooks/use-bottom-chrome-height"
 import {
   Sheet,
   SheetClose,
@@ -67,6 +68,13 @@ export function MobileTabBar({ className }: { className?: string }) {
   // is observed by the other with no reload and regardless of which mounted
   // first.
   const { dark, toggle } = useTheme()
+  // R-07: publish this bar's height as `--jt-bottom-chrome` so the cookie
+  // notice sits ABOVE it rather than under it. This bar is `md:hidden` rather
+  // than conditionally rendered, so the ref is always attached and the height
+  // is 0 at >=md — which the hook reads as "no bar", and its resize listener
+  // re-measures when the viewport crosses the breakpoint.
+  const barRef = useRef<HTMLElement>(null)
+  useBottomChromeHeight(barRef)
 
   const tabClass = (active: boolean) =>
     cn(
@@ -78,6 +86,7 @@ export function MobileTabBar({ className }: { className?: string }) {
 
   return (
     <nav
+      ref={barRef}
       data-testid="mobile-tab-bar"
       aria-label="Primary"
       className={cn(
