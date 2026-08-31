@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -60,6 +61,24 @@ export const navigation = [
 export function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
+  // CR-02: the same busy state the four CUSTOMER sign-out affordances got, for
+  // the same stated reason — "without a busy state the user gets no
+  // acknowledgement at all and taps again". The vendor round-trip is bounded at
+  // 3s and therefore visibly slow on a bad connection, and here a re-tap was
+  // not merely untidy: it could override the pending Keycloak navigation and
+  // hand the P0 back. `vendorLogout` carries its own latch as well; this is the
+  // half the vendor can see.
+  //
+  // NEVER RESET, deliberately (and `vendorLogout` is not awaited for the same
+  // reason). `location.href` only SCHEDULES a navigation; the document stays
+  // live and tappable until it commits, which on a bad connection is the slow
+  // part. A sign-out button's correct terminal state is "busy until this page
+  // goes away".
+  const [signingOut, setSigningOut] = useState(false)
+  const handleSignOut = () => {
+    setSigningOut(true)
+    void vendorLogout()
+  }
   // Theme lives in ONE shared store (hooks/use-theme.ts), not in this
   // component. The store owns the localStorage read/write and the
   // documentElement class, so there is no mount-time setState here to suppress
@@ -140,7 +159,9 @@ export function Sidebar() {
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
-          onClick={() => vendorLogout()}
+          onClick={handleSignOut}
+          disabled={signingOut}
+          aria-busy={signingOut}
         >
           <LogOut className="h-5 w-5" />
           Sign Out

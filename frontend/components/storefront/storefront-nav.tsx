@@ -27,14 +27,21 @@ export function StorefrontNav() {
   // visible moment on a bad connection. Without a busy state the shopper gets
   // no acknowledgement at all and taps again — which is how a sign-out that
   // silently did nothing went unreported for so long.
+  // WR-06: NO `finally { setSigningOut(false) }`. `customerLogout()` resolves at
+  // the end of its OWN finally — i.e. immediately after it assigns
+  // `window.location.href`. Assigning `location.href` only SCHEDULES a
+  // navigation; the document stays live and interactive until it commits, which
+  // on the bad connection this feature targets is precisely the slow part. So
+  // resetting there re-enabled the button for exactly the window the busy state
+  // exists to cover, and the flag made a promise it did not keep.
+  //
+  // A sign-out button's correct terminal state is "busy until this document
+  // goes away". If a reset is ever wanted for the navigation-was-blocked case,
+  // it belongs on `pagehide`/`visibilitychange`, not on promise resolution.
   const [signingOut, setSigningOut] = useState(false)
   const handleSignOut = async () => {
     setSigningOut(true)
-    try {
-      await customerLogout()
-    } finally {
-      setSigningOut(false)
-    }
+    await customerLogout()
   }
   const pathname = usePathname()
   const params = useParams<{ slug?: string }>()

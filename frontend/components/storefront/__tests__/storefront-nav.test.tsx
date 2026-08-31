@@ -27,7 +27,7 @@
 
 import { render, screen, fireEvent, act } from "@testing-library/react"
 import { StorefrontNav } from "@/components/storefront/storefront-nav"
-import { getCustomerSession } from "@/lib/customer-auth"
+import { customerLogout, getCustomerSession } from "@/lib/customer-auth"
 
 jest.mock("@/lib/customer-auth", () => ({
   getCustomerSession: jest.fn(() => Promise.resolve(null)),
@@ -116,5 +116,50 @@ describe("StorefrontNav (shop storefront header) — signed IN as a customer (#4
     expect(
       screen.getByRole("link", { name: /my orders/i }).getAttribute("href")
     ).toBe("/shop/orders")
+  })
+})
+
+/**
+ * WR-06 (code review, 2026-08-31) — the busy state used to flicker off at
+ * exactly the wrong moment.
+ *
+ * The handler was `try { await customerLogout() } finally { setSigningOut(false) }`.
+ * `customerLogout()` resolves at the end of its OWN finally, i.e. immediately
+ * after it assigns `window.location.href`. Assigning `location.href` only
+ * SCHEDULES a navigation — the document stays live and interactive until it
+ * commits, which on the bad connection this whole feature targets is precisely
+ * the slow part. So the button was re-enabled for the entire navigation window:
+ * the very window the busy state exists to cover, and the shopper could tap
+ * again exactly as before.
+ *
+ * A sign-out button's correct terminal state is "busy until this document goes
+ * away".
+ */
+describe("StorefrontNav — the sign-out busy state (WR-06)", () => {
+  const mockedLogout = customerLogout as jest.Mock
+
+  beforeEach(() => {
+    mockedLogout.mockReset()
+    mockedLogout.mockResolvedValue(undefined)
+  })
+
+  it("stays disabled after customerLogout RESOLVES", async () => {
+    signedIn()
+    await renderNav()
+
+    const button = screen.getByRole("button", { name: /sign out/i })
+    // CONTROL: enabled before the tap, so "disabled after" is a measurement
+    // rather than a button that was never usable.
+    expect(button).toBeEnabled()
+
+    await act(async () => {
+      fireEvent.click(button)
+    })
+
+    // The promise has fully settled by here. Pre-fix the `finally` had already
+    // re-enabled the button at this exact point.
+    expect(mockedLogout).toHaveBeenCalledTimes(1)
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute("aria-busy", "true")
   })
 })

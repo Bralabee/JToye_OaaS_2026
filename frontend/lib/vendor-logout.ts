@@ -110,12 +110,63 @@ async function settleWithin(work: unknown, ms: number): Promise<void> {
 }
 
 /**
+ * The one sign-out this document will ever run — CR-02.
+ *
+ * A DOUBLE-TAP USED TO CANCEL THE FEDERATED LOGOUT AND HAND THE P0 BACK:
+ *
+ *   1. Tap 1 -> lookup A in flight.
+ *   2. Tap 2 -> lookup B in flight.
+ *   3. A resolves with the Keycloak end-session URL -> `signOut()` ->
+ *      `location.href = <keycloak>`. The browser BEGINS navigating, async.
+ *   4. B resolves. The app session was dropped by step 3, so the route
+ *      correctly takes its `!idToken` branch and returns `/auth/signin`. The
+ *      second invocation assigns THAT, overriding the pending navigation.
+ *
+ * Net: app cookie gone, Keycloak SSO session alive, vendor parked on the
+ * sign-in page where one click re-enters the dashboard with no prompt. Reached
+ * by the exact behaviour a slow, unacknowledged button invites.
+ *
+ * The latch is deliberately NOT cleared when the work finishes. A sign-out has
+ * no "done, you may try again" state in a real browser — only "the page went
+ * away". `location.href` merely SCHEDULES a navigation, so the document stays
+ * live and tappable for the whole commit window, which on a bad connection is
+ * the slow part; clearing the latch on resolution would re-open the race during
+ * precisely that window. This matches the busy state on the buttons, which for
+ * the same reason is never reset either.
+ *
+ * The UI guard (`disabled`/`aria-busy`) and this one are BOTH present on
+ * purpose. The UI one is what the vendor sees; this one is what holds when the
+ * UI is bypassed — a second component, a keyboard repeat, a stale click queued
+ * before the disable painted.
+ */
+let inFlight: Promise<string> | null = null
+
+/**
+ * Reset the latch. TEST ONLY.
+ *
+ * Jest keeps one module registry per FILE, so module state outlives an
+ * individual `it`. Without this every case after the first would be handed the
+ * first case's outcome. Same escape hatch, and the same reason, as
+ * `lib/customer-session-store.__resetForTests`.
+ */
+export function __resetVendorLogoutForTests(): void {
+  inFlight = null
+}
+
+/**
  * Sign the vendor out of the app AND out of Keycloak.
+ *
+ * Idempotent for the life of the document: a second call returns the FIRST
+ * call's promise and never issues a second lookup or a second navigation.
  *
  * @returns the URL the browser was sent to — the Keycloak end-session URL on
  *          the happy path, `/auth/signin` on every degraded one.
  */
-export async function vendorLogout(): Promise<string> {
+export function vendorLogout(): Promise<string> {
+  return (inFlight ??= runVendorLogout())
+}
+
+async function runVendorLogout(): Promise<string> {
   let destination = FALLBACK_DESTINATION
   try {
     const res = await fetchWithTimeout(

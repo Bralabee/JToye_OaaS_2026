@@ -1,5 +1,9 @@
 import { signOut } from "next-auth/react"
-import { vendorLogout, VENDOR_LOGOUT_TIMEOUT_MS } from "@/lib/vendor-logout"
+import {
+  vendorLogout,
+  VENDOR_LOGOUT_TIMEOUT_MS,
+  __resetVendorLogoutForTests,
+} from "@/lib/vendor-logout"
 
 /**
  * R-01 (2026-08-31 customer-surface audit, **P0**) — the client half of vendor
@@ -38,6 +42,12 @@ afterAll(() => {
 beforeEach(() => {
   mockSignOut.mockReset()
   mockSignOut.mockResolvedValue(undefined)
+  // `vendorLogout` latches its in-flight promise for the life of the DOCUMENT
+  // (CR-02) — a sign-out has no "finished, try again" state in a real browser,
+  // only "the page went away". Jest keeps one module registry per FILE, so
+  // without this every case after the first would be handed the first case's
+  // outcome.
+  __resetVendorLogoutForTests()
 })
 
 describe("vendorLogout", () => {
@@ -149,5 +159,84 @@ describe("vendorLogout", () => {
     // Resolves rather than rejecting: the caller is a button handler, and an
     // unhandled rejection there is a sign-out that looks like nothing happened.
     await expect(vendorLogout()).resolves.toBe("http://kc.example/logout")
+  })
+})
+
+/**
+ * CR-02 (code review, 2026-08-31) — a double-tap could CANCEL the federated
+ * logout and hand the P0 straight back.
+ *
+ * The sequence the reviewer traced, which is ordinary user behaviour on a
+ * connection slow enough to make a 3s-bounded round trip visible:
+ *
+ *   1. Tap 1 -> lookup A in flight.
+ *   2. Tap 2 -> lookup B in flight.
+ *   3. A resolves with the Keycloak end-session URL -> signOut() ->
+ *      `location.href = <keycloak>`. The browser BEGINS navigating, async.
+ *   4. B resolves. The app session was dropped by step 3, so the route takes
+ *      its `!idToken` branch and returns `<origin>/auth/signin`. The second
+ *      invocation assigns that, OVERRIDING the pending Keycloak navigation.
+ *
+ * Net result: app cookie gone, Keycloak SSO session alive, vendor parked on the
+ * sign-in page where one click re-enters the dashboard with no prompt. Exactly
+ * the P0 this branch exists to close.
+ *
+ * The fixture models step 4 faithfully — the SECOND lookup answers with the app
+ * path, because by then there is genuinely no id_token to hint with.
+ */
+describe("vendorLogout — a second tap cannot cancel the first (CR-02)", () => {
+  const END_SESSION =
+    "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/logout?id_token_hint=ID"
+  const APP_PATH = "http://localhost:3000/auth/signin"
+
+  /** Call 1 answers with the IdP URL; every later call answers as a dead session would. */
+  function sessionDroppingFetch() {
+    let call = 0
+    return jest.fn(async () => {
+      const url = call++ === 0 ? END_SESSION : APP_PATH
+      return { ok: true, json: async () => ({ url }) } as Response
+    })
+  }
+
+  it("returns the FIRST call's destination to both callers and never re-navigates", async () => {
+    const fetchMock = sessionDroppingFetch()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const [first, second] = await Promise.all([vendorLogout(), vendorLogout()])
+
+    // The decisive assertion: the second tap must not be able to name a
+    // different destination, because naming one is how it overrides the first.
+    expect(first).toBe(END_SESSION)
+    expect(second).toBe(END_SESSION)
+    expect(second).not.toBe(APP_PATH)
+    // And it never even asked — one lookup, one local sign-out.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(mockSignOut).toHaveBeenCalledTimes(1)
+  })
+
+  it("holds the latch for a THIRD tap arriving after the first has resolved", async () => {
+    // The in-flight window is not the only exposure: `location.href` only
+    // SCHEDULES a navigation, so the document stays live and tappable for the
+    // whole commit window — which on a bad connection is the slow part.
+    const fetchMock = sessionDroppingFetch()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const first = await vendorLogout()
+    const later = await vendorLogout()
+
+    expect(first).toBe(END_SESSION)
+    expect(later).toBe(END_SESSION)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("CONTROL: the fixture really does answer differently on the second call", async () => {
+    // Without this, both arms above would be equally satisfied by a fixture
+    // that returns the SAME url every time — the override could not have been
+    // reproduced and the assertions would prove nothing.
+    const fetchMock = sessionDroppingFetch()
+    const a = await (await fetchMock()).json()
+    const b = await (await fetchMock()).json()
+    expect(a.url).toBe(END_SESSION)
+    expect(b).toEqual({ url: APP_PATH })
   })
 })

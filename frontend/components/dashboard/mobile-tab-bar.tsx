@@ -75,6 +75,13 @@ export function MobileTabBar({ className }: { className?: string }) {
   // re-measures when the viewport crosses the breakpoint.
   const barRef = useRef<HTMLElement>(null)
   useBottomChromeHeight(barRef)
+  // CR-02: see the matching note in sidebar.tsx. Never reset — a sign-out
+  // button's terminal state is "busy until this page goes away".
+  const [signingOut, setSigningOut] = useState(false)
+  const handleSignOut = () => {
+    setSigningOut(true)
+    void vendorLogout()
+  }
 
   const tabClass = (active: boolean) =>
     cn(
@@ -174,7 +181,9 @@ export function MobileTabBar({ className }: { className?: string }) {
             <Button
               variant="ghost"
               className="w-full justify-start gap-3 text-slate-700 dark:text-slate-200"
-              onClick={() => vendorLogout()}
+              onClick={handleSignOut}
+              disabled={signingOut}
+              aria-busy={signingOut}
             >
               <LogOut className="h-5 w-5" />
               Sign Out

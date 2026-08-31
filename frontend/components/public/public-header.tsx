@@ -63,14 +63,15 @@ export function PublicHeader() {
   // cross-disable a control the shopper can actually see — and two independent
   // flags would be the kind of near-duplicate that drifts, which is exactly
   // what #457 already cost this pair of headers once.
+  // WR-06: NO `finally { setSigningOut(false) }` — see the matching note in
+  // storefront-nav.tsx. `customerLogout()` resolves immediately after it
+  // ASSIGNS `location.href`, which only schedules a navigation, so resetting
+  // there re-enabled the button for the whole commit window: exactly the window
+  // the busy state exists to cover.
   const [signingOut, setSigningOut] = useState(false)
   const handleSignOut = async () => {
     setSigningOut(true)
-    try {
-      await customerLogout()
-    } finally {
-      setSigningOut(false)
-    }
+    await customerLogout()
   }
 
   const isActive = (href: string) =>
