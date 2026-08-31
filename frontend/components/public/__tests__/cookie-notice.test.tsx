@@ -258,6 +258,68 @@ describe("the dormant consent banner", () => {
     }
   })
 
+  /**
+   * WR-03 (code review, 2026-08-31) — the banner bypassed the whole R-07 fix.
+   *
+   * `CookieNotice` returns `<ConsentBanner />` and exits BEFORE any of the R-07
+   * work whenever a non-essential category is registered, and the banner was
+   * still `fixed inset-x-0 bottom-0 z-40` with no pointer-events split and no
+   * offset. Every one of the five measured symptoms returned on that branch —
+   * including the storefront cart bar painting over the dismiss control, which
+   * on a CONSENT surface makes the banner permanently un-dismissable and the
+   * choice unrecordable.
+   *
+   * It was dormant only by accident. These arms are the reason the next person
+   * to register an analytics category does not discover it in production.
+   */
+  it("carries the SAME bottom-chrome contract as the cookie notice", () => {
+    const unregister = register(FIXTURE)
+    try {
+      render(<ConsentBanner />)
+      const banner = screen.getByRole("region", { name: "Cookie choices" })
+
+      expect(banner.className).toMatch(/pointer-events-none/)
+      expect(banner.getAttribute("style") ?? "").toContain(BOTTOM_CHROME_VAR)
+      expect(banner.className).toMatch(/\bz-40\b/)
+      expect(banner.className).toMatch(/\bfixed\b/)
+
+      // The controls live on a card that takes pointer events back.
+      const accept = screen.getByRole("button", { name: "Accept all" })
+      const card = accept.closest(".pointer-events-auto")
+      expect(card).not.toBeNull()
+      expect(card).not.toBe(banner)
+      expect(banner.contains(card)).toBe(true)
+    } finally {
+      unregister()
+    }
+  })
+
+  it("shares ONE shell with the notice — asserted by comparing the two", () => {
+    // The finding was not "the banner has the wrong classes"; it was "there are
+    // two copies and only one got fixed". So this asserts the thing that
+    // actually prevents recurrence: both surfaces resolve to the same wrapper
+    // contract. A future edit to one alone reds here.
+    const noticeWrapper = render(<CookieNotice />).container.querySelector(
+      '[aria-label="Cookie notice"]'
+    )
+    const unregister = register(FIXTURE)
+    try {
+      const bannerWrapper = render(<ConsentBanner />).container.querySelector(
+        '[aria-label="Cookie choices"]'
+      )
+      expect(noticeWrapper).not.toBeNull()
+      expect(bannerWrapper).not.toBeNull()
+      expect(bannerWrapper!.className).toBe(noticeWrapper!.className)
+      expect(bannerWrapper!.getAttribute("style")).toBe(
+        noticeWrapper!.getAttribute("style")
+      )
+      // And that shared value is a real contract, not two matching blanks.
+      expect(noticeWrapper!.className).toMatch(/pointer-events-none/)
+    } finally {
+      unregister()
+    }
+  })
+
   it("presents 'Reject all' as the SAME component at the SAME size as 'Accept all'", () => {
     const unregister = register(FIXTURE)
     try {

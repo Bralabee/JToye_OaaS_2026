@@ -1,11 +1,10 @@
 "use client"
 
-import { m } from "framer-motion"
 import Link from "next/link"
 import { useEffect, useState } from "react"
 
 import { cn } from "@/lib/utils"
-import { BOTTOM_CHROME_VAR } from "@/hooks/use-bottom-chrome-height"
+import { BottomNoticeShell } from "./bottom-notice-shell"
 import {
   acknowledgeCookieNotice,
   choosableCategories,
@@ -38,86 +37,48 @@ import { ConsentBanner } from "./consent-banner"
  * there saying "nothing to accept" while a real choice is pending.
  */
 
-/** ZERO LAYOUT SHIFT — the mechanism, so it is not mistaken for a claim.
+/** POSITIONING, STACKING AND ZERO CLS all live in `BottomNoticeShell` now — see
+ *  that file for the full R-07 record. Kept here in summary because this file is
+ *  where the reasoning was first written and a reader arrives here first:
  *
- *  `fixed` takes the notice OUT OF DOCUMENT FLOW, so no sibling ever moves when
- *  it mounts or unmounts. Being fixed IS the property; nothing is "reserved" and
- *  nothing needs to be. Same mechanism as `mobile-tab-bar.tsx` and the
- *  storefront `FloatingCartBar`, neither of which reserves space either.
- *  UNCHANGED by R-07: still fixed, still out of flow, still never
- *  server-rendered.
- *
- *  The corollary that makes it airtight: the notice never renders on the server
+ *  ZERO LAYOUT SHIFT. `fixed` takes the notice OUT OF DOCUMENT FLOW, so no
+ *  sibling ever moves when it mounts or unmounts. The corollary that makes it
+ *  airtight: the notice never renders on the server
  *  (`shouldShowCookieNotice()` returns false without a `window`) and appears only
  *  after mount. For an in-flow element that would be a guaranteed shift; for a
- *  fixed one it costs nothing, which is why the SSR guard and the CLS property
- *  reinforce each other rather than trading off.
+ *  fixed one it costs nothing. UNCHANGED throughout R-07 and WR-03.
  *
- *  ── THE STACKING DECISION (no precedent existed in the tree) ────────────────
- *  `FloatingCartBar` (shop-detail-client.tsx) and `mobile-tab-bar.tsx` both sit
- *  at `z-50`, bottom-anchored. On a 375x667 viewport they occupy the same corner
- *  as this notice and nothing in the codebase resolved that collision, so this
- *  is designed rather than copied.
+ *  THE STACKING DECISION. `FloatingCartBar` and `mobile-tab-bar.tsx` both sit at
+ *  `z-50`, bottom-anchored, and on a 375x667 viewport they occupy this corner.
+ *  The notice takes `z-40`, deliberately BELOW both: the basket bar is a
+ *  transactional control on the path to checkout and the tab bar is primary
+ *  navigation; an informational notice must never occlude either. UNCHANGED.
  *
- *  DECISION: the notice takes `z-40` — deliberately BELOW both. The basket bar
- *  is a transactional control on the critical path to checkout and the tab bar
- *  is primary navigation; an informational notice must never occlude either.
- *  THAT DECISION IS UNCHANGED and still correct.
- *
- *  ── WHAT R-07 ADDS, AND WHY AN OFFSET IS NOW ACCEPTABLE HERE ────────────────
- *  Four of five lanes of the 2026-08-31 audit found this notice independently.
+ *  WHAT R-07 ADDED. Four of five audit lanes found this notice independently.
  *  Five measured symptoms: (1) it covered the vendor sidebar's bottom-rail Sign
- *  Out — `elementFromPoint` returned the notice; (2) on a mobile storefront with
- *  a non-empty basket the z-50 cart bar painted over "Got it", so the notice was
- *  permanently UN-DISMISSABLE and the acknowledgement never written; (3) it
- *  covered the mobile "Browse all kitchens" zero-result escape hatch; (4) it hid
- *  ~80% of the landing "Order food near you" CTA at 390x844; (5) its own copy
- *  truncated in the mobile band.
+ *  Out; (2) on a mobile storefront with a non-empty basket the z-50 cart bar
+ *  painted over "Got it", so the notice was permanently UN-DISMISSABLE and the
+ *  acknowledgement never written; (3) it covered the mobile "Browse all
+ *  kitchens" escape hatch; (4) it hid ~80% of the landing CTA at 390x844;
+ *  (5) its own copy truncated. The z-ranking never reasoned about the REVERSE
+ *  direction — those bars occluding the notice's own dismiss control — and no
+ *  z-index can fix that, because either ordering breaks one of the two. The
+ *  shell's pointer-events split and published offset are the answer.
  *
- *  The z-ranking above did not reason about the REVERSE direction — those bars
- *  occluding the notice's OWN dismiss control — and symptom (2) is exactly that.
- *  No z-index can fix it: either ordering breaks one of the two. The notice has
- *  to stop SHARING THE BAND. Two mechanisms, both structural:
- *
- *   - POINTER-EVENTS SPLIT. The positioning wrapper is `pointer-events-none` and
- *     the card is `pointer-events-auto`, so the notice can no longer intercept a
- *     click on anything it is not itself drawn over. That closes (1), (3) and
- *     (4) as a CLASS rather than one at a time — including the next such
- *     collision, which nobody has found yet.
- *   - A PUBLISHED BOTTOM OFFSET. `var(--jt-bottom-chrome, 0px)` lifts the notice
- *     clear of whichever bar is mounted, closing (2).
- *
- *  The comment above rejected an offset, and that rejection was right about the
- *  offset it had in mind: a TUNED CONSTANT has to be re-tuned every time either
- *  bar changes height, and a stale one fails silently as a covered CTA. This
- *  offset is a different thing. The bar PUBLISHES its own measured height at the
- *  moment it appears (`hooks/use-bottom-chrome-height.ts`) and clears it when it
- *  goes, so there is no constant here to go stale. The `0px` fallback is the
- *  no-bar case and needs no coordination at all.
- *
- *  `pb-[max(0.75rem,env(safe-area-inset-bottom))]` copies `FloatingCartBar`'s
- *  form on purpose: a plain `pb-[env(safe-area-inset-bottom)]` collapses to 0 on
- *  every non-notch device, putting the controls flush against the screen edge.
+ *  WHAT THE SPLIT ACTUALLY BUYS (WR-02 — this wording was previously too
+ *  strong). `pointer-events-none` removes CLICK INTERCEPTION; it does not make
+ *  the card transparent, and a control the card is drawn OVER remains hidden.
+ *  An earlier version of this comment claimed it "closes (1), (3) and (4) as a
+ *  CLASS", which overstated the mechanism and would have told the next reader to
+ *  stop looking. Precisely: the split closes the interception class everywhere,
+ *  and closes (1) outright because the card is right-aligned from `sm` up and so
+ *  sits beside rather than over the bottom-LEFT rail. Clearing a control the
+ *  card physically covers is the OFFSET's job, and the offset only acts where a
+ *  publisher exists — today the dashboard tab bar and the storefront cart bar,
+ *  so `/` and `/shop` still fall back to `bottom: 0px`. Symptoms (3) and (4)
+ *  therefore rest on the smaller, inset, right-aligned card rather than on the
+ *  offset, and their proof is the orchestrator's browser pass at 390x844.
  */
-const WRAPPER_CLASS = cn(
-  // `bottom` is an INLINE style rather than a class, because Tailwind cannot
-  // express `var(--jt-bottom-chrome, 0px)` as an arbitrary value that also
-  // survives the JIT's class extraction reliably.
-  "fixed inset-x-0 z-40 pointer-events-none"
-)
-
-/** The drawn surface. Everything the visitor can actually click lives here. */
-const CARD_CLASS = cn(
-  "pointer-events-auto border border-white/15 bg-oxblood text-cream shadow-lg",
-  "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between",
-  // Inset from the edges on mobile so it reads as a card rather than a band…
-  "mx-3 mb-3 rounded-xl",
-  // …and right-aligned with a capped measure from `sm` up, so on the desktop
-  // dashboard it sits nowhere near the bottom-LEFT sidebar rail (symptom 1).
-  "sm:ml-auto sm:mr-4 sm:max-w-md",
-  "px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
-  "sm:pt-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]"
-)
 
 /** Cream ring: `--ring` is orange-700, and orange-700 on #3A0B0D is a weak
  *  boundary. Ring visibility is itself a 3:1 requirement, so the surface gets
@@ -145,22 +106,11 @@ export function CookieNotice() {
   if (!show) return null
 
   return (
-    <m.section
-      aria-label="Cookie notice"
-      // 200ms fade + 8px translate-Y. framer-motion rather than a CSS
-      // transition because `MotionConfig reducedMotion="user"`
-      // (motion-provider.tsx) already governs it app-wide, so the
-      // reduced-motion duty is inherited; a raw CSS transition would need its
-      // own @media block in globals.css, which another plan owns this wave.
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
-      className={WRAPPER_CLASS}
-      // R-07 symptom (2): sit ABOVE whatever bottom-fixed bar is mounted. The
-      // value is published by the bar itself; `0px` is the no-bar case.
-      style={{ bottom: `var(${BOTTOM_CHROME_VAR}, 0px)` }}
+    <BottomNoticeShell
+      label="Cookie notice"
+      cardClassName="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
     >
-      <div className={CARD_CLASS}>
+      <>
         <div className="min-w-0">
           {/* h2, at the same 14px/600 as the actions: this is chrome, and it
               must not compete with the page's own <h1>. */}
@@ -202,7 +152,7 @@ export function CookieNotice() {
             Cookie policy
           </Link>
         </div>
-      </div>
-    </m.section>
+      </>
+    </BottomNoticeShell>
   )
 }
