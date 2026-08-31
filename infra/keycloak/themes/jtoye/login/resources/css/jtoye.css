@@ -1,0 +1,444 @@
+/* =============================================================================
+   J'Toye login theme
+   =============================================================================
+
+   Loaded AFTER the parent theme's css/login.css and after the PatternFly
+   stylesheets, so these rules win on equal specificity. Where a stock rule is
+   more specific (PatternFly ships plenty of them) the selector here is matched
+   to it deliberately rather than reached for with !important; the few
+   !important uses left are marked with why.
+
+   Every colour below is copied from a shipped brand surface, not invented:
+
+     oxblood        #3A0B0D   frontend/tailwind.config.ts  colors.oxblood.DEFAULT
+     oxblood-700    #571417   frontend/tailwind.config.ts  colors.oxblood.700
+     oxblood-600    #6E1D21   frontend/tailwind.config.ts  colors.oxblood.600
+     oxblood-deep   #1F0F28   frontend/tailwind.config.ts  colors.oxblood.deep
+     cream          #FBF6F0   frontend/tailwind.config.ts  colors.cream.DEFAULT
+     cream-100      #F4EBE1   frontend/tailwind.config.ts  colors.cream.100
+     gold           #E8B04B   frontend/tailwind.config.ts  colors.gold
+     primary        #C2410C   frontend/app/globals.css     --primary 17.5 88.3% 40.4%
+                              (orange-700; the approved dashboard primary, decision #451)
+     primary-fg     #FAFAF9   frontend/app/globals.css     --primary-foreground
+     radius         0.5rem    frontend/app/globals.css     --radius
+
+   The apostrophe in "J'Toye" is why the header's stock uppercase transform is
+   removed: the wordmark is cased, not shouted.
+   ========================================================================== */
+
+@font-face {
+  font-family: "Work Sans";
+  /* Self-hosted rather than pulled from fonts.googleapis.com: a login page is
+     exactly the surface that should not make a third-party request, and this
+     keeps the theme working with no outbound network and no CSP/CORS surface. */
+  src: url("../fonts/work-sans-latin.woff2") format("woff2");
+  font-weight: 100 900; /* variable */
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --jtoye-oxblood: #3a0b0d;
+  --jtoye-oxblood-700: #571417;
+  --jtoye-oxblood-600: #6e1d21;
+  --jtoye-oxblood-deep: #1f0f28;
+  --jtoye-cream: #fbf6f0;
+  --jtoye-cream-100: #f4ebe1;
+  --jtoye-gold: #e8b04b;
+  --jtoye-primary: #c2410c;
+  --jtoye-primary-hover: #9a3412; /* orange-800, the shipped hover step */
+  --jtoye-primary-fg: #fafaf9;
+  --jtoye-ink: #1c1917;
+  --jtoye-muted: #57534e;
+  --jtoye-radius: 0.5rem;
+  --jtoye-font: "Work Sans", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+
+/* ---------------------------------------------------------------- page shell */
+
+/* The stock theme paints a dark grey low-poly PNG here. Replaced with a warm
+   cream field carrying two soft brand-tinted washes — no image request at all. */
+.login-pf body {
+  background: var(--jtoye-cream) !important; /* stock rule is equally specific and would otherwise win the cascade race by source order */
+  background-image: radial-gradient(
+      ellipse 80% 60% at 50% -10%,
+      rgba(232, 176, 75, 0.22),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 70% 50% at 50% 108%,
+      rgba(58, 11, 13, 0.1),
+      transparent 62%
+    ) !important;
+  background-repeat: no-repeat !important;
+  background-attachment: fixed !important;
+  background-size: cover !important;
+  font-family: var(--jtoye-font);
+  color: var(--jtoye-ink);
+}
+
+.login-pf {
+  background: none;
+}
+
+body,
+input,
+button,
+select,
+textarea,
+.pf-c-form-control,
+.pf-c-button {
+  font-family: var(--jtoye-font);
+}
+
+/* ------------------------------------------------------------------- header */
+
+#kc-header {
+  color: var(--jtoye-oxblood);
+}
+
+/* The stock header is 29px, uppercase, 3px tracking — designed for a word, not a
+   wordmark. "J'Toye" is a cased name and reads as shouting in the stock form. */
+#kc-header-wrapper {
+  font-family: var(--jtoye-font);
+  font-size: 2rem;
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: -0.01em;
+  color: var(--jtoye-oxblood);
+  padding: 3.25rem 1rem 1.25rem;
+}
+
+#kc-header-wrapper span {
+  /* the realm's displayNameHtml already carries the brand colour; keep it from
+     fighting the heading treatment above */
+  letter-spacing: inherit !important;
+}
+
+/* --------------------------------------------------------------------- card */
+
+.login-pf-page .card-pf {
+  background: #ffffff;
+  border: 1px solid var(--jtoye-cream-100);
+  border-radius: calc(var(--jtoye-radius) * 2);
+  box-shadow: 0 1px 2px rgba(31, 15, 40, 0.04),
+    0 12px 32px -8px rgba(31, 15, 40, 0.14);
+  padding: 2rem 2rem 1.5rem;
+  margin-bottom: 2rem;
+  /* the stock card has a hard blue 4px top rule; the brand uses a warm hairline */
+  border-top: 3px solid var(--jtoye-oxblood);
+}
+
+#kc-page-title {
+  font-family: var(--jtoye-font);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--jtoye-ink);
+  margin-bottom: 0.25rem;
+}
+
+/* ------------------------------------------------------------------- labels */
+
+.pf-c-form__label,
+.pf-c-form__label-text,
+#kc-form-options span,
+label {
+  font-family: var(--jtoye-font);
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--jtoye-ink);
+}
+
+/* ------------------------------------------------------------------- inputs */
+
+.pf-c-form-control {
+  font-family: var(--jtoye-font);
+  font-size: 1rem;
+  min-height: 2.75rem; /* 44px touch target */
+  border: 1px solid #d6cec6;
+  border-bottom-color: #d6cec6; /* PatternFly styles the bottom edge separately */
+  border-radius: var(--jtoye-radius);
+  background: #fff;
+  color: var(--jtoye-ink);
+  padding: 0.5rem 0.75rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pf-c-form-control:hover {
+  border-color: #bdb2a8;
+  border-bottom-color: #bdb2a8;
+}
+
+.pf-c-form-control:focus,
+.pf-c-form-control:focus-visible {
+  outline: none;
+  border-color: var(--jtoye-primary);
+  border-bottom-color: var(--jtoye-primary);
+  box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.18);
+}
+
+/* PatternFly draws focus as a thick bottom border via a generated element */
+.pf-c-form-control:focus::after,
+.pf-c-form-control:hover::after {
+  border-bottom-color: var(--jtoye-primary) !important; /* generated content: no other hook */
+}
+
+/* the show/hide password affordance sits in an input group beside the field */
+.pf-c-input-group .pf-c-button.pf-m-control {
+  border: 1px solid #d6cec6;
+  border-left: 0;
+  border-radius: 0 var(--jtoye-radius) var(--jtoye-radius) 0;
+  background: #fff;
+  color: var(--jtoye-muted);
+  min-height: 2.75rem;
+}
+
+.pf-c-input-group .pf-c-form-control {
+  border-radius: var(--jtoye-radius) 0 0 var(--jtoye-radius);
+}
+
+.pf-c-input-group .pf-c-button.pf-m-control:hover {
+  color: var(--jtoye-oxblood);
+  background: var(--jtoye-cream);
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+/* Stock PatternFly primary is a saturated blue — the single most off-brand
+   element on the page. */
+.pf-c-button.pf-m-primary,
+input[type="submit"].pf-m-primary {
+  background: var(--jtoye-primary);
+  color: var(--jtoye-primary-fg);
+  border: 1px solid transparent;
+  border-radius: 9999px; /* the storefront's pill CTA */
+  font-family: var(--jtoye-font);
+  font-weight: 600;
+  font-size: 1rem;
+  min-height: 3rem;
+  letter-spacing: 0.01em;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pf-c-button.pf-m-primary:hover,
+.pf-c-button.pf-m-primary:focus,
+input[type="submit"].pf-m-primary:hover {
+  background: var(--jtoye-primary-hover);
+  color: var(--jtoye-primary-fg);
+}
+
+.pf-c-button.pf-m-primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.35);
+}
+
+.pf-c-button.pf-m-primary:disabled,
+.pf-c-button.pf-m-primary.pf-m-disabled {
+  background: #e7ddd4;
+  color: #8a8078;
+}
+
+/* secondary / control buttons (e.g. "Back to Login" on some flows) */
+.pf-c-button.pf-m-secondary {
+  border-radius: 9999px;
+  border: 1px solid var(--jtoye-oxblood);
+  color: var(--jtoye-oxblood);
+  background: transparent;
+  font-weight: 600;
+  min-height: 3rem;
+}
+
+.pf-c-button.pf-m-secondary:hover {
+  background: var(--jtoye-cream);
+  color: var(--jtoye-oxblood-700);
+}
+
+/* -------------------------------------------------------------------- links */
+
+.login-pf a,
+#kc-info-wrapper a,
+#kc-registration a,
+#kc-form-options a,
+a {
+  color: var(--jtoye-oxblood);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.login-pf a:hover,
+#kc-registration a:hover,
+a:hover {
+  color: var(--jtoye-primary);
+  text-decoration: underline;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--jtoye-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------- checkbox / misc */
+
+/* The native checkbox otherwise renders in the browser's default blue — the last
+   stock-coloured control on the update-password and sign-in pages. */
+.pf-c-check__input,
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--jtoye-primary);
+}
+
+.pf-c-check__input:focus-visible,
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--jtoye-primary);
+  outline-offset: 2px;
+}
+
+.pf-c-check__label,
+#kc-form-options .checkbox label {
+  font-weight: 500;
+  color: var(--jtoye-muted);
+}
+
+/* --------------------------------------------------------- footer / sign-up */
+
+/* The "New user? Register" strip that sits INSIDE the card, full-bleed to its edges.
+   The stock theme achieves that with `margin: 0 -40px`, which exactly cancels the
+   stock card's 40px horizontal padding. This theme sets a different card padding, so
+   the negative margin MUST be restated to match — leaving the stock -40px made the
+   strip 2 x 22px wider than the card at 390px and pushed the document to 411px,
+   measured as a real horizontal overflow. The two values are coupled: change the
+   card padding and this must change with it. */
+#kc-info {
+  margin-top: 0;
+  margin-left: -2rem; /* == .card-pf padding-left */
+  margin-right: -2rem; /* == .card-pf padding-right */
+}
+
+#kc-info-wrapper {
+  background: var(--jtoye-cream-100);
+  border-top: 1px solid #e6dbd0;
+  border-radius: 0 0 calc(var(--jtoye-radius) * 2) calc(var(--jtoye-radius) * 2);
+  color: var(--jtoye-muted);
+  font-size: 0.9375rem;
+  padding: 1rem 2rem;
+}
+
+/* ------------------------------------------------------------------- alerts */
+
+/* Feedback blocks appear on reset-credentials ("check your email"), on
+   update-password validation, and on the error page. */
+.pf-c-alert.pf-m-inline {
+  border-radius: var(--jtoye-radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid transparent;
+}
+
+.pf-c-alert__title,
+.kc-feedback-text {
+  font-family: var(--jtoye-font);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.alert-success,
+.pf-m-success {
+  background: #f0f7ef;
+  border-color: #cfe6cb;
+  color: #2c5a28;
+}
+
+.alert-success .pf-c-alert__title,
+.pf-m-success .pf-c-alert__title {
+  color: #2c5a28;
+}
+
+.alert-error,
+.pf-m-danger {
+  background: #fdf2f2;
+  border-color: #f3d0d0;
+}
+
+.alert-error .pf-c-alert__title,
+.pf-m-danger .pf-c-alert__title {
+  color: var(--jtoye-oxblood);
+}
+
+.alert-warning,
+.pf-m-warning {
+  background: #fdf7ea;
+  border-color: #f0dcb4;
+}
+
+/* validation text under a field */
+.pf-c-form__helper-text.pf-m-error,
+.kc-feedback-text.pf-m-error,
+#input-error,
+#input-error-password,
+#input-error-password-confirm {
+  color: var(--jtoye-oxblood);
+  font-weight: 600;
+}
+
+/* ------------------------------------------- error / info pages (We are sorry) */
+
+#kc-error-message .instruction,
+p.instruction {
+  font-family: var(--jtoye-font);
+  color: var(--jtoye-muted);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+/* ------------------------------------------------------------- mobile first */
+
+/* The card must not overflow at 390px. The stock grid gives the card a
+   percentage width inside a fluid container; at small widths the padding is what
+   pushes it over, so it is reduced rather than the width overridden. */
+@media (max-width: 480px) {
+  #kc-header-wrapper {
+    font-size: 1.625rem;
+    padding: 2rem 1rem 1rem;
+  }
+
+  .login-pf-page .card-pf {
+    padding: 1.25rem 1.125rem 1rem;
+    border-radius: var(--jtoye-radius);
+    /* a gutter so the rounded corners are not clipped flush against the viewport
+       edge; kept small, and the no-overflow assertion is re-run after this */
+    margin-left: 0.75rem;
+    margin-right: 0.75rem;
+  }
+
+  /* kept in lockstep with the mobile .card-pf padding above (1.125rem) */
+  #kc-info {
+    margin-left: -1.125rem;
+    margin-right: -1.125rem;
+  }
+
+  #kc-info-wrapper {
+    padding: 0.875rem 1.125rem;
+    border-radius: 0 0 var(--jtoye-radius) var(--jtoye-radius);
+  }
+
+  #kc-page-title {
+    font-size: 1.25rem;
+  }
+
+  .login-pf-page .container,
+  .login-pf .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* honour a reduced-motion preference for the few transitions above */
+@media (prefers-reduced-motion: reduce) {
+  .pf-c-form-control,
+  .pf-c-button.pf-m-primary {
+    transition: none;
+  }
+}
