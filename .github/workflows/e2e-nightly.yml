@@ -344,6 +344,27 @@ jobs:
       - name: Enforce the declared skip budget
         run: bash scripts/check-e2e-skip-budget.sh
 
+      # R-16 / #459. WHY HERE AND NOT IN ci-cd.yaml: `frontend-e2e` there is
+      # deliberately stack-free, and this script drives TWO real Keycloak
+      # registrations against a live realm plus a placed order. The nightly is
+      # the only lane with that stack.
+      #
+      # WHY AT ALL: it previously ran in no workflow, gate or npm script — it was
+      # manual-only, and it had been silently unrunnable since PR #522 moved one
+      # paragraph from `text-slate-500` to `text-slate-600`. A guard nothing
+      # executes decays without anyone learning it decayed.
+      #
+      # Deliberately NO `continue-on-error` — that string appears nowhere in this
+      # file on purpose (see the header). The script fails closed on its own:
+      # exit 1 on any failed check, exit 2 when KC_SEED_USER_PASSWORD is unset,
+      # and every arm pushes a failing result from its catch so a thrown
+      # exception can never read as a pass.
+      - name: Gate — cart identity boundary (#459 / R-16)
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+          NODE_PATH: frontend/node_modules
+        run: node --env-file=.env frontend/e2e/cart-identity-boundary.verify.mjs
+
       - name: Upload Playwright report and traces
         if: always()
         uses: actions/upload-artifact@v7

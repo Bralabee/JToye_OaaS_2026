@@ -12,25 +12,44 @@
 //   NODE_PATH=frontend/node_modules PLAYWRIGHT_BASE_URL=http://localhost:3000 \
 //     node --env-file=.env frontend/e2e/cart-identity-boundary.verify.mjs
 //
-// FOUR criteria. Two of them are REGRESSION GUARDS on behaviour that is correct
-// before the fix, so this script is meant to be run on both sides of the change:
+// FIVE criteria. Three of them are REGRESSION GUARDS on behaviour that is
+// correct before the fix, so this script is meant to be run on both sides of
+// the change:
 //
 //   C1  after A signs out and B signs in, B does not see A's basket   (the fix)
+//   C1c an anonymous render does not ERASE the owner stamp, so the next
+//       registration inherits nothing                     (R-16, the fix)
 //   C2  an anonymous basket IS carried forward into that same person's
 //       sign-in                                     (what a naive fix breaks)
 //   C3  the cross-shop guard still holds                       (control today)
 //   C4  the post-order clear still works                       (control today)
 //
+// WHAT C1c COVERS THAT C1b CANNOT. C1b (in sharedBrowserFlow) seeds a basket
+// owned by A into a browser where B is ALREADY signed in, so it exercises the
+// READ boundary and nothing else. It never performs the step that does the
+// damage: a signed-OUT render of the shop page, which re-persists the basket
+// and — before R-16 — stamped it `owner: null`. A null owner is adoptable by
+// anyone, so by the time B arrives there is no boundary left to enforce and
+// C1b's own precondition (a payload still owned by A) no longer exists in the
+// wild. C1c performs that render for real and then reads the stamp back.
+//
 // Every criterion carries its own fail arm, because each one has a shape that
 // would otherwise pass for the wrong reason:
 //   - C1 would pass if the sign-in simply failed, so B's subject id is read
 //     back from the session endpoint and asserted DIFFERENT from A's.
+//   - C1c would pass if the page never hydrated at all (no render, no write,
+//     stamp trivially unchanged), so the seeded item is asserted to RENDER
+//     first; and its consequence half would pass if B's registration failed,
+//     so B's session is asserted authenticated with a sub distinct from A's.
 //   - C2 would pass if we never actually signed in, so A's authenticated
 //     session is asserted before the basket is looked at.
 //   - C3 would pass if the cart page were always empty, so the same seed with
 //     a MATCHING slug is asserted to render the item.
 //   - C4 would pass if the basket were empty all along, so it is asserted
-//     non-empty immediately before the order is placed.
+//     non-empty immediately before the order is placed; and the allergen
+//     acknowledgement it must tick first is asserted TICKED, so a refused
+//     submit reads as "the order was never placed" rather than as a basket
+//     that failed to clear.
 //
 // Secrets: the registration password comes from KC_SEED_USER_PASSWORD in .env
 // and is never printed. Only booleans, pass/fail lines and generated test
@@ -90,7 +109,27 @@ async function cartPageState(page, slug) {
     return { empty: true, itemCount: 0, titles: [] }
   }
   const titles = await page.locator("article h3, h3.text-sm").allTextContents()
-  const countText = await page.locator("p.text-sm.text-slate-500").first().textContent()
+  // The item-count line, located by its CONTENT rather than by a colour utility
+  // class. The previous selector was `p.text-sm.text-slate-500`, and PR #522
+  // (a11y contrast pass) moved that paragraph to `text-slate-600` — after which
+  // it matched nothing, `.textContent()` waited out its full 30s default and
+  // every arm that reads a non-empty basket THREW. Nobody noticed, because this
+  // script ran in no workflow, gate or npm script; the CI wiring added alongside
+  // this repair is the actual fix for that. A guard that dies when a palette
+  // token changes is not a guard.
+  //
+  // Bounded and non-throwing: an unreadable count degrades to -1, which fails
+  // every `itemCount >= 1` fail arm CLOSED and is announced, rather than
+  // exploding the arm or — worse — reading as an empty basket.
+  const countText = await page
+    .locator("p")
+    .filter({ hasText: /^\s*\d+\s+items?\s*$/ })
+    .first()
+    .textContent({ timeout: 5000 })
+    .catch(() => null)
+  if (countText === null) {
+    console.log("        [instrument] item-count line not found — count reported as -1")
+  }
   return {
     empty: false,
     itemCount: Number((countText || "").match(/(\d+)\s+item/)?.[1] ?? -1),
@@ -331,6 +370,104 @@ async function sharedBrowserFlow(browser) {
 }
 
 // ---------------------------------------------------------------------------
+// C1c — R-16. A signed-OUT render must not erase the owner stamp, and the next
+// person to register must not inherit the basket it protects.
+// ---------------------------------------------------------------------------
+async function anonymousDowngradeGuard(browser) {
+  console.log("\nC1c — a signed-out render must not downgrade owner:A to owner:null (R-16)")
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  // A's identity is an OPAQUE Keycloak subject id, and the downgrade is a
+  // signed-OUT render — so this half needs no Keycloak at all. An arbitrary
+  // string is exactly the shape of the thing being preserved, and using one
+  // keeps the arm cheap enough to run on both sides of the change.
+  const FAKE_A = "sub-absent-customer-a"
+  const emailB = `cust-r16-${Date.now()}@example.com`
+  console.log(`  customer B: ${emailB}`)
+
+  try {
+    // Seed from /shop — a provider-FREE page. The slug layout mounts
+    // CartProvider, which hydrates and writes its own payload back within a few
+    // hundred ms, so seeding there overwrites the seed. Measured; see the same
+    // note in crossShopGuard.
+    await page.goto(`${BASE}/shop`, { waitUntil: "domcontentloaded" })
+    await page.evaluate(
+      ([k, payload]) => window.localStorage.setItem(k, payload),
+      [
+        cartKey(SHOP),
+        JSON.stringify({ shopSlug: SHOP, owner: FAKE_A, items: [seedItem("owned-by-a")] }),
+      ]
+    )
+
+    // THE DOWNGRADING RENDER. This navigation is the whole defect: nobody is
+    // signed in, the provider hydrates, and its write effect re-persists the
+    // basket. Everything below reads the result of THIS.
+    await page.goto(`${BASE}/shop/${SHOP}`, { waitUntil: "domcontentloaded" })
+    await page.waitForTimeout(1500)
+
+    // FAIL ARM FIRST: without this, "the owner is unchanged" is satisfied by a
+    // page that never hydrated and therefore never wrote anything.
+    const seeded = await cartPageState(page, SHOP)
+    check(
+      "C1c.0",
+      "the seeded basket DOES render while signed out (fail arm: proves the write effect ran)",
+      !seeded.empty && seeded.titles.some((t) => t.includes("owned-by-a")),
+      `empty=${seeded.empty} items=${seeded.itemCount} titles=${JSON.stringify(seeded.titles)}`
+    )
+
+    const afterAnon = await storedCart(page, SHOP)
+    console.log(`        stored after the signed-out render: ${describeStored(afterAnon)}`)
+    check(
+      "C1c.1",
+      "the owner stamp SURVIVES a signed-out render (only sign-out removes it)",
+      afterAnon.payload !== null && afterAnon.payload.owner === FAKE_A,
+      `owner=${JSON.stringify(afterAnon.payload?.owner)} expected=${JSON.stringify(FAKE_A)}`
+    )
+
+    // --- A BRAND-NEW CUSTOMER REGISTERS on this browser profile.
+    await registerCustomer(page, emailB, `/shop/${SHOP}`)
+    const sessB = await session(page)
+    check(
+      "C1c.2",
+      "customer B really registered and is a different identity from A (fail arm for C1c)",
+      sessB.authenticated === true &&
+        typeof sessB?.profile?.sub === "string" &&
+        sessB.profile.sub.length > 0 &&
+        sessB.profile.sub !== FAKE_A,
+      `authenticated=${sessB.authenticated} email=${sessB?.profile?.email ?? "-"} distinct=${sessB?.profile?.sub !== FAKE_A}`
+    )
+
+    const asB = await cartPageState(page, SHOP)
+    check(
+      "C1c",
+      "a newly registered customer does NOT inherit the previous account's basket",
+      asB.empty && asB.itemCount === 0 && !asB.titles.some((t) => t.includes("owned-by-a")),
+      `empty=${asB.empty} items=${asB.itemCount} titles=${JSON.stringify(asB.titles)}`
+    )
+
+    // REVERSE-LEAK GUARD. Preservation must not become "the first owner wins
+    // forever": a stamp still reading A here would mean every item B adds from
+    // now on is stored under A's name — the same leak, running backwards.
+    const asBStored = await storedCart(page, SHOP)
+    console.log(`        stored after B registered: ${describeStored(asBStored)} (B.sub=${sessB?.profile?.sub ?? "-"})`)
+    check(
+      "C1c.3",
+      "the signed-in writer TAKES the slot, so B's items cannot leak back to A",
+      asBStored.payload !== null &&
+        typeof sessB?.profile?.sub === "string" &&
+        asBStored.payload.owner === sessB.profile.sub,
+      `owner=${JSON.stringify(asBStored.payload?.owner)} B.sub=${sessB?.profile?.sub ?? "-"}`
+    )
+  } catch (err) {
+    const msg = err && err.message ? err.message : String(err)
+    console.log(`  FAIL  C1c threw: ${msg}`)
+    results.push({ id: "C1c", name: "exception", ok: false })
+  } finally {
+    await context.close()
+  }
+}
+
+// ---------------------------------------------------------------------------
 // C3 — the cross-shop guard. Correct today; this is a regression guard.
 // ---------------------------------------------------------------------------
 async function crossShopGuard(browser) {
@@ -414,6 +551,27 @@ async function postOrderClear(browser) {
     await page.locator("#name").fill("Post Order")
     await page.locator("#email").fill(`order-${Date.now()}@example.com`)
     await page.locator("#phone").fill("07700900123")
+
+    // The pre-submit allergen acknowledgement (Phase 31 / D-02). Added long
+    // after this script was written, and the submit handler REFUSES before any
+    // network call while it is unticked — so C4 sat waiting 45s for an "Order
+    // confirmed" heading that was never coming. Asserted rather than merely
+    // clicked: a silent no-op here would put the timeout back, and a timeout
+    // says "the basket did not clear" when the truth is "the order was never
+    // placed". Radix renders it as role=checkbox, not a native input.
+    const ack = page
+      .locator('[data-testid="allergen-ack-row"]')
+      .getByRole("checkbox")
+      .first()
+    await ack.waitFor({ state: "visible", timeout: 20000 })
+    await ack.click()
+    check(
+      "C4.1",
+      "the allergen acknowledgement is ticked (fail arm: an unticked box refuses the order)",
+      (await ack.getAttribute("aria-checked")) === "true",
+      `aria-checked=${await ack.getAttribute("aria-checked")}`
+    )
+
     const submit = page.getByRole("button", { name: /place order/i }).first()
     await submit.waitFor({ state: "visible", timeout: 20000 })
     await submit.click()
@@ -448,6 +606,7 @@ async function main() {
   try {
     await crossShopGuard(browser)
     await postOrderClear(browser)
+    await anonymousDowngradeGuard(browser)
     await sharedBrowserFlow(browser)
   } finally {
     await browser.close()
