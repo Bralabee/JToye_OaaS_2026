@@ -26,6 +26,16 @@ import { vendorLogout } from "@/lib/vendor-logout"
  * `vendorLogout` is mocked here. This file is about what the BUTTON does; what
  * the function does is that file's job, and letting the real one run would put
  * a network call and a jsdom navigation into a rendering test for no gain.
+ *
+ * WHY THE TWO AFFORDANCES ARE SPELLED OUT RATHER THAN TABLE-DRIVEN. A
+ * `describe.each` was written first and `scripts/count-test-blocks.mjs`
+ * correctly REFUSED it (rc=2, VOID): the counter greps literal `it(` tokens and
+ * cannot statically resolve how many blocks a `describe.each` multiplies, so
+ * the table would have contributed two literal tokens for four executed tests
+ * and `docs/metrics.json` would have quietly under-counted. Four literal `it(`
+ * blocks make the counted number and the executed number the same number, which
+ * is the whole contract that gate exists to enforce. The shared setup lives in
+ * `mountSidebar` / `mountTabBar` instead.
  */
 
 jest.mock("@/lib/vendor-logout", () => ({
@@ -45,60 +55,70 @@ beforeEach(() => {
   mockVendorLogout.mockClear()
 })
 
+function mountSidebar() {
+  // The sidebar hosts the shop-context switcher, which reads this context and
+  // throws without it.
+  render(
+    <ShopSwitcherProvider>
+      <Sidebar />
+    </ShopSwitcherProvider>
+  )
+}
+
+function mountTabBar() {
+  render(<MobileTabBar />)
+  // The sign-out control lives inside the "More" sheet, so it has to be opened.
+  fireEvent.click(screen.getByRole("button", { name: /more/i }))
+}
+
 /**
- * Both affordances, driven through the SAME table. They are two code paths for
- * one contract, and the dashboard has already paid once for letting a pair like
- * this drift (hence the shared `navigation` array both import).
+ * CONTROL, shared by both affordances. Without it, the busy assertions would be
+ * equally satisfied by a button that is disabled from the very first paint —
+ * which would be a worse defect than the one being fixed, and invisible to a
+ * check taken only after a click.
  */
-const affordances: Array<[string, () => void]> = [
-  [
-    "desktop sidebar",
-    () =>
-      render(
-        // The sidebar hosts the shop-context switcher, which reads this
-        // context and throws without it.
-        <ShopSwitcherProvider>
-          <Sidebar />
-        </ShopSwitcherProvider>
-      ),
-  ],
-  [
-    "mobile More sheet",
-    () => {
-      render(<MobileTabBar />)
-      // The sign-out control lives inside the sheet, so it has to be opened.
-      fireEvent.click(screen.getByRole("button", { name: /more/i }))
-    },
-  ],
-]
+function expectIdle() {
+  const button = screen.getByRole("button", { name: /sign out/i })
+  expect(button).toBeEnabled()
+  expect(button).not.toHaveAttribute("aria-busy", "true")
+}
 
-describe.each(affordances)("vendor Sign Out — %s", (_label, mount) => {
+async function expectBusyAndStaysBusy() {
+  const button = screen.getByRole("button", { name: /sign out/i })
+
+  fireEvent.click(button)
+
+  await waitFor(() => expect(button).toBeDisabled())
+  expect(button).toHaveAttribute("aria-busy", "true")
+  expect(mockVendorLogout).toHaveBeenCalledTimes(1)
+
+  // A second tap reaches nothing. The mocked logout never settles, which is the
+  // real shape: `location.href` only SCHEDULES a navigation, so the document
+  // stays live and tappable for the whole commit window.
+  fireEvent.click(button)
+  expect(mockVendorLogout).toHaveBeenCalledTimes(1)
+}
+
+describe("vendor Sign Out — desktop sidebar", () => {
   it("is enabled and not busy before it is used", () => {
-    mount()
-    const button = screen.getByRole("button", { name: /sign out/i })
-
-    // CONTROL. Without it, the assertions below would be equally satisfied by a
-    // button that is disabled from the very first paint — which would be a
-    // worse defect than the one being fixed, and invisible to a busy-state
-    // assertion taken only after a click.
-    expect(button).toBeEnabled()
-    expect(button).not.toHaveAttribute("aria-busy", "true")
+    mountSidebar()
+    expectIdle()
   })
 
   it("goes disabled and aria-busy on the first tap, and STAYS that way", async () => {
-    mount()
-    const button = screen.getByRole("button", { name: /sign out/i })
+    mountSidebar()
+    await expectBusyAndStaysBusy()
+  })
+})
 
-    fireEvent.click(button)
+describe("vendor Sign Out — mobile More sheet", () => {
+  it("is enabled and not busy before it is used", () => {
+    mountTabBar()
+    expectIdle()
+  })
 
-    await waitFor(() => expect(button).toBeDisabled())
-    expect(button).toHaveAttribute("aria-busy", "true")
-    expect(mockVendorLogout).toHaveBeenCalledTimes(1)
-
-    // A second tap reaches nothing. The mocked logout never settles, which is
-    // the real shape: `location.href` only SCHEDULES a navigation, so the
-    // document stays live and tappable for the whole commit window.
-    fireEvent.click(button)
-    expect(mockVendorLogout).toHaveBeenCalledTimes(1)
+  it("goes disabled and aria-busy on the first tap, and STAYS that way", async () => {
+    mountTabBar()
+    await expectBusyAndStaysBusy()
   })
 })
