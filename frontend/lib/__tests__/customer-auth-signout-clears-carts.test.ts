@@ -1,6 +1,7 @@
 import {
   customerLogout,
   getCustomerSession,
+  handleCallback,
   isLoggedIn,
   LOGOUT_FETCH_TIMEOUT_MS,
 } from "@/lib/customer-auth"
@@ -259,6 +260,62 @@ describe("signing in as a DIFFERENT customer", () => {
     expect(basketItems(SLUG)).toHaveLength(1)
     expect(basketItems(OTHER)).toHaveLength(1)
     expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBe("sub-a")
+  })
+
+  /**
+   * WR-02, the path that CREATES the ambiguous state rather than reacting to
+   * it. `handleCallback` built `sub: payload.sub ?? ""`, and
+   * `rememberCustomerId("")` returns early on a falsy sub — so a sub-less ID
+   * token established a LIVE cookie session with no recorded identity. Every
+   * later cart write then took the "preserve the prior owner" branch and
+   * stamped this customer's items with the previous one's id.
+   *
+   * Rejected the same way a bad nonce already is, and BEFORE the login POST, so
+   * no session is established at all. Keycloak always issues `sub`, so this is
+   * hardening — but the fix's correctness depended on that silently, and a
+   * dependency you rely on should be enforced, not assumed.
+   */
+  it("rejects an id token with NO sub instead of establishing an unrecorded session", async () => {
+    const NONCE = "nonce-abc"
+    sessionStorage.setItem("jtoye-pkce-verifier", "verifier-abc")
+    sessionStorage.setItem("jtoye-oauth-state", "state-abc")
+    sessionStorage.setItem("jtoye-oauth-nonce", NONCE)
+
+    // A well-formed id token that is valid in every way EXCEPT that it carries
+    // no subject — so nothing but the sub check can reject it.
+    const claims = { email: "nosub@example.com", name: "No Sub", nonce: NONCE }
+    const payload = btoa(JSON.stringify(claims))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "")
+    const idToken = `header.${payload}.signature`
+
+    const calls: string[] = []
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.includes("openid-connect/token")) {
+        return {
+          ok: true,
+          json: async () => ({
+            access_token: "at",
+            refresh_token: "rt",
+            id_token: idToken,
+            expires_in: 300,
+          }),
+        } as Response
+      }
+      return { ok: true, json: async () => ({}) } as Response
+    }) as unknown as typeof fetch
+
+    const profile = await handleCallback("the-code", "state-abc")
+
+    expect(profile).toBeNull()
+    // No cookie session may be established: the login POST must never happen.
+    expect(calls.some((u) => u.includes("/api/customer-auth/login"))).toBe(false)
+    // ...and no marker, so nothing later reads this as "somebody is signed in".
+    expect(isLoggedIn()).toBe(false)
+    expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBeNull()
   })
 
   it("does NOT clear when the session carries NO sub", async () => {

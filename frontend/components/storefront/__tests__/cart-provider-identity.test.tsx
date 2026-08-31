@@ -1,6 +1,12 @@
 import { render, act } from "@testing-library/react"
 import { CartProvider, useCart, type CartItem } from "../cart-provider"
-import { CUSTOMER_ID_KEY, cartStorageKey } from "@/lib/cart-identity"
+import {
+  CUSTOMER_ID_KEY,
+  CUSTOMER_EXPIRES_KEY,
+  CUSTOMER_MARKER_KEY,
+  cartStorageKey,
+  clearStoredCarts,
+} from "@/lib/cart-identity"
 
 /**
  * Issue #459 — the basket is bound to whoever wrote it.
@@ -38,6 +44,26 @@ function seed(owner: string | null | undefined, ids: string[]) {
 function signedInAs(sub: string | null) {
   if (sub === null) localStorage.removeItem(CUSTOMER_ID_KEY)
   else localStorage.setItem(CUSTOMER_ID_KEY, sub)
+}
+
+/**
+ * Write an ARBITRARY payload, including shapes this app would never produce.
+ * `seed()` above cannot express them — its `owner` is typed — and the whole
+ * point of WR-01 is that R-16 turned `owner` from state we recompute into state
+ * we read back and re-persist, so a value we did not write now SURVIVES.
+ */
+function seedRaw(payload: Record<string, unknown>) {
+  localStorage.setItem(cartStorageKey(SLUG), JSON.stringify(payload))
+}
+
+/**
+ * A live session marker with NO recorded identity — the WR-02 state.
+ * Deliberately does not touch CUSTOMER_ID_KEY: that absence IS the condition.
+ */
+function sessionLiveButUnrecorded() {
+  localStorage.setItem(CUSTOMER_MARKER_KEY, "true")
+  localStorage.setItem(CUSTOMER_EXPIRES_KEY, String(Math.floor(Date.now() / 1000) + 3600))
+  localStorage.removeItem(CUSTOMER_ID_KEY)
 }
 
 function storedPayload() {
@@ -291,6 +317,80 @@ describe("CartProvider identity boundary", () => {
       signedInAs(B)
       const { getByTestId } = renderCart()
       expect(getByTestId("ids").textContent).toBe("")
+      expect(storedPayload()?.owner).toBe(B)
+    })
+
+    it("does NOT preserve an empty-string owner, which is adoptable by anyone", () => {
+      // WR-01. `""` is falsy but NOT nullish, so `prior ?? null` waves it
+      // through — and `canAdoptCart` opens with `if (!owner) return true`, so
+      // the slot becomes adoptable by any signed-in customer. That IS the R-16
+      // end state. Before R-16 every write recomputed the stamp and repaired
+      // it; preserve-semantics make it PERMANENT, which is why validation
+      // belongs on the new read path and not in the caller.
+      seedRaw({ shopSlug: SLUG, owner: "", items: [item("a-suya")] })
+      signedInAs(null)
+      renderCart()
+      expect(storedPayload()?.owner).toBeNull()
+    })
+
+    it("does NOT preserve a non-string owner", () => {
+      // The other half of WR-01. `{}` is truthy, so `owner === current` is
+      // never true and the slot becomes permanently UNREADABLE to every
+      // signed-in customer while still rendering to anonymous ones.
+      seedRaw({ shopSlug: SLUG, owner: { sub: "a" }, items: [item("a-suya")] })
+      signedInAs(null)
+      renderCart()
+      expect(storedPayload()?.owner).toBeNull()
+    })
+
+    it("does NOT inherit a prior owner when a session is live but the identity was never recorded", () => {
+      // WR-02. `getCurrentCustomerId()` returns null for two different facts.
+      // "Nobody is signed in" must preserve (the 300s lapse). "Signed in, but
+      // we never recorded who" must NOT: the person shopping is not the person
+      // on the stamp, and preserving would store THEIR items under the previous
+      // customer's identity — the reverse leak through a side door.
+      //
+      // Resolving to null makes the basket adoptable, which is the lesser harm:
+      // an unknown writer must not be able to make an authoritative ownership
+      // claim on someone else's behalf.
+      seed(A, ["a-egusi"])
+      sessionLiveButUnrecorded()
+      renderCart()
+      expect(storedPayload()?.owner).toBeNull()
+    })
+
+    it("does NOT let another shop's payload donate its owner to this slot", () => {
+      // WR-05. The write path's cross-shop guard had no test at all: deleting
+      // it left the whole suite green while a foreign payload's owner leaked
+      // into this slot. Read and write now share ONE parse helper, so this arm
+      // covers both copies because there is only one.
+      seedRaw({ shopSlug: "some-other-shop", owner: A, items: [] })
+      signedInAs(null)
+      renderCart()
+      expect(storedPayload()?.owner).toBeNull()
+    })
+
+    it("drops in-memory items when the baskets are cleared in THIS document", () => {
+      // WR-03. `clearStoredCarts()` is reached from inside the [slug] subtree
+      // (the 1s session poll, focus, checkout), and a SAME-document
+      // localStorage write raises no `storage` event — so the provider kept
+      // rendering the outgoing customer's items and the next setItems
+      // re-persisted them stamped with the NEW customer's sub. That is the leak
+      // made permanent and legitimate-looking.
+      seed(A, ["a-suya"])
+      signedInAs(A)
+      const { getByTestId } = renderCart()
+      expect(getByTestId("ids").textContent).toBe("a-suya")
+
+      act(() => {
+        // Exactly what setMarker's account-switch backstop does, in order.
+        signedInAs(B)
+        clearStoredCarts()
+      })
+
+      expect(getByTestId("ids").textContent).toBe("")
+      // ...and what gets re-persisted is B's own EMPTY basket, never A's items.
+      expect(storedPayload()?.items).toEqual([])
       expect(storedPayload()?.owner).toBe(B)
     })
 

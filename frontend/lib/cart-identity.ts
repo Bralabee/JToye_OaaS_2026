@@ -61,6 +61,51 @@ export function cartStorageKey(slug: string): string {
  */
 export const CUSTOMER_ID_KEY = "jtoye-customer-id"
 
+/**
+ * The non-sensitive "a session exists" marker and its expiry, owned here rather
+ * than in `customer-auth.ts` so this module holds the WHOLE localStorage
+ * identity keyspace — `CART_KEY_PREFIX`, `CUSTOMER_ID_KEY` and these two — in
+ * one place. Two copies of a key string is how a "clear everything" quietly
+ * starts missing keys; the same argument that put `CART_KEY_PREFIX` here.
+ *
+ * `customer-auth.ts` imports them (never the reverse — that would be a cycle)
+ * and `isLoggedIn()` delegates to `hasActiveSessionMarker()` below.
+ */
+export const CUSTOMER_MARKER_KEY = "jtoye-customer-logged-in"
+export const CUSTOMER_EXPIRES_KEY = "jtoye-customer-expires-at"
+
+/**
+ * Does this browser believe a customer session is LIVE — independent of whether
+ * we managed to record WHO it belongs to?
+ *
+ * That independence is the entire point (WR-02). `getCurrentCustomerId()`
+ * returns null for two different facts, and they demand opposite treatment on a
+ * cart write:
+ *
+ *   nobody is signed in            -> preserve the prior owner. Correct: this is
+ *                                     the 300s token lapse R-16 is about.
+ *   signed in, identity unrecorded -> preserving is WRONG. The prior owner is a
+ *                                     DIFFERENT person from the one now
+ *                                     shopping, and stamping their items with
+ *                                     it is the reverse leak through a side
+ *                                     door.
+ *
+ * This function is what tells the two apart. It is deliberately a read of the
+ * marker and its expiry — never of `CUSTOMER_ID_KEY` — so it stays true exactly
+ * when the id is missing, which is the case it exists to detect.
+ */
+export function hasActiveSessionMarker(): boolean {
+  if (typeof window === "undefined") return false
+  try {
+    if (window.localStorage.getItem(CUSTOMER_MARKER_KEY) !== "true") return false
+    const exp = Number(window.localStorage.getItem(CUSTOMER_EXPIRES_KEY) || "0")
+    if (!exp) return false
+    return exp > Math.floor(Date.now() / 1000)
+  } catch {
+    return false
+  }
+}
+
 /** The customer this browser currently believes is signed in, or null. */
 export function getCurrentCustomerId(): string | null {
   if (typeof window === "undefined") return null

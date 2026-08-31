@@ -16,9 +16,12 @@
  */
 
 import {
+  CUSTOMER_EXPIRES_KEY,
+  CUSTOMER_MARKER_KEY,
   clearStoredCarts,
   forgetCustomerId,
   getCurrentCustomerId,
+  hasActiveSessionMarker,
   rememberCustomerId,
 } from "@/lib/cart-identity"
 
@@ -34,8 +37,11 @@ const KC_BASE =
 const CLIENT_ID = "storefront-client"
 const REDIRECT_URI = typeof window !== "undefined" ? `${window.location.origin}/shop/auth/callback` : ""
 
-const MARKER_KEY = "jtoye-customer-logged-in"
-const EXPIRES_KEY = "jtoye-customer-expires-at"
+// The identity keyspace lives in cart-identity.ts — one owner for every
+// localStorage key that says who this browser belongs to. Aliased rather than
+// re-declared so there is exactly one definition of each string.
+const MARKER_KEY = CUSTOMER_MARKER_KEY
+const EXPIRES_KEY = CUSTOMER_EXPIRES_KEY
 
 export interface CustomerProfile {
   sub: string
@@ -202,15 +208,11 @@ export async function fetchWithTimeout(
  * marker. UI-only — cannot be trusted for security decisions.
  */
 export function isLoggedIn(): boolean {
-  if (typeof window === "undefined") return false
-  try {
-    if (localStorage.getItem(MARKER_KEY) !== "true") return false
-    const exp = Number(localStorage.getItem(EXPIRES_KEY) || "0")
-    if (!exp) return false
-    return exp > Math.floor(Date.now() / 1000)
-  } catch {
-    return false
-  }
+  // One implementation, in cart-identity.ts, because the cart write path needs
+  // exactly this fact — "a session is live" independent of "we know who" — to
+  // tell a lapsed token from an unrecorded sign-in (WR-02). A second copy here
+  // would be the two-copies-of-a-key problem one level up.
+  return hasActiveSessionMarker()
 }
 
 // Generate a URL-safe token with 32 bytes of CSPRNG entropy. Shared by the PKCE
