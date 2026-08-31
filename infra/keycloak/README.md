@@ -76,6 +76,94 @@ rendered into the import at container start, never committed).
 
 This mapper extracts the `tenant_id` attribute from the user's groups and injects it into the JWT token claims.
 
+## Email (SMTP) and login-page branding
+
+Both realm templates carry an `smtpServer` block and three branding keys. They were added
+together because they close the same audit finding: the customer "Forgot password" flow was a
+dead end *and* an account-enumeration oracle, on pages headed with the raw realm id.
+
+### `smtpServer` — points at the dev stack's Mailhog
+
+```json
+"smtpServer" : {
+  "host" : "mailhog",
+  "port" : "1025",
+  "from" : "no-reply@jtoye.local",
+  "fromDisplayName" : "J'Toye",
+  "auth" : "false",
+  "ssl" : "false",
+  "starttls" : "false"
+}
+```
+
+Every value is a **string**, including the port and the three booleans — that is Keycloak's
+format for this map, and a JSON number or bare boolean here is not accepted. `from` must be a
+syntactically valid address or Keycloak refuses to send. `host` is the literal compose service
+name because Keycloak and Mailhog share the same compose network, so service-name DNS resolves
+from inside the Keycloak container.
+
+**Why these are literals and not `${ENVSUBST}` placeholders.** The realm JSONs are rendered at
+three independent sites — the full-stack compose file (which renders both realms, each with its
+own explicit allow-list) and the two composes under `infra/`. envsubst leaves any name that is
+**not** in the invocation's allow-list completely untouched, so a placeholder missing from a
+single one of those lists renders the literal `${NAME}` token into that realm's JSON, and
+Keycloak then uses that token as the SMTP host. Beyond that risk, neither compose under `infra/`
+has a Mailhog service at all and one of them uses host networking, so no single environment
+value would be correct across all three sites — a placeholder would relocate the wrongness
+rather than remove it. Reusing the existing `SMTP_HOST` name is worse still: the example env
+file points it at a public example domain, so anyone who copied the example would render a dead
+external host into their realm.
+
+**Staging and production do not consume these templates.** No k8s manifest mounts the rendered
+realm JSONs; the overlays configure Keycloak on their own. Any SMTP or branding override for a
+deployed environment is a k8s-side change, and editing these files will not reach it.
+
+### Branding keys
+
+```json
+"displayName"     : "J'Toye",
+"displayNameHtml" : "<span style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em\">J'Toye</span>",
+"loginTheme"      : "keycloak"
+```
+
+`displayName` supplies the page title, `displayNameHtml` the login-page header. The header value
+is raw HTML rendered into the page, so it is deliberately a fixed operator-controlled literal
+containing only a `<span>` and a style attribute — no script, no interpolation, and nothing
+derived from request data. Do not build this value from user input. The realm's own
+Content-Security-Policy does not restrict `style-src`, so the inline style renders; it does keep
+`object-src 'none'`.
+
+`loginTheme` is pinned to `keycloak`, which is a **built-in** theme — there is no custom theme in
+this repository, no FTL templates and no theme jar. It is set explicitly rather than left unset
+so that a future Keycloak upgrade which changes the default login theme cannot silently restyle
+these pages.
+
+**No `_note_*` keys at realm top level.** The free-form annotation trick used inside an identity
+provider's `config` map works there because Keycloak models that as a plain string map it ignores.
+Realm top-level keys are deserialised into a typed representation instead, so an unknown key risks
+failing the import outright. Rationale for these keys lives here in the README, not in the JSON.
+
+### Verifying a change to either block
+
+Read the value back **out of the running server**, not off the rendered file — the realm is
+Postgres-backed, so a correct file and a stale server is exactly the state that fools you.
+
+Use the full representation, not a projection:
+
+```bash
+docker exec jtoye-keycloak /opt/keycloak/bin/kcadm.sh get realms/jtoye-customers | jq '.smtpServer'
+```
+
+**Do not verify a nested map with `kcadm.sh get --fields`.** That projection renders any nested
+object as an empty `{ }` regardless of its real contents — `smtpServer` and
+`browserSecurityHeaders` both read as empty through it while the full representation shows them
+correctly populated. A `--fields` read of those keys cannot distinguish a working config from an
+empty one.
+
+Then exercise the real path, because a config read is not a delivery proof: submit "Forgot
+password" for a known account and confirm a message arrives in Mailhog at
+`http://localhost:8025` addressed to that account.
+
 ## Importing the Realm
 
 ### Method 1: Docker Compose (Automatic)
@@ -126,6 +214,17 @@ with no warning — and the running realm is unchanged. Nothing in any log says 
 
 Two routes actually work.
 
+> **Which route: if the realm has live users, use Route 2 (Admin API).** A full
+> `kc.sh import --override true` replaces the realm *wholesale*. The customer realm's
+> template ships an empty `users` array, so a full import of `jtoye-customers` **deletes every
+> storefront self-registration** in the running realm — every real customer account. The Admin
+> API is a GET-merge-PUT: it touches only the fields you name and leaves users, clients and
+> rotated secrets alone. Reserve Route 1 for a fresh or empty stack, or for the vendor realm
+> whose users are all seeded from the template anyway.
+>
+> After any realm write, re-read the customer user list from the Admin API and diff it against
+> the list you took before. A shrunk list means something did a full import.
+
 ### Route 1 — `kc.sh import --override true`, server stopped
 
 Import writes to the database directly, so the server must not be running.
@@ -137,9 +236,12 @@ docker compose -f docker-compose.full-stack.yml up keycloak-realm-render
 # 2. Stop Keycloak — kc.sh import needs exclusive access
 docker compose -f docker-compose.full-stack.yml stop keycloak
 
-# 3. Import with --override, which is the flag --import-realm does not have
+# 3. Import with --override, which is the flag --import-realm does not have.
+#    NOTE the path: the keycloak service mounts the rendered realms at
+#    /opt/keycloak/data/import/. There is NO /keycloak directory on this service —
+#    that is the render sidecar's mount point, and a --file pointing there fails.
 docker compose -f docker-compose.full-stack.yml run --rm --no-deps --entrypoint /opt/keycloak/bin/kc.sh \
-  keycloak import --file /keycloak/realm-export-customers.json --override true
+  keycloak import --file /opt/keycloak/data/import/realm-export-customers.json --override true
 
 # 4. Start it again
 docker compose -f docker-compose.full-stack.yml start keycloak
