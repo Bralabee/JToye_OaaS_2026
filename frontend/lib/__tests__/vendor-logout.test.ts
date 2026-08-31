@@ -54,7 +54,7 @@ describe("vendorLogout", () => {
   it("fetches the end-session URL, clears the app session, and navigates to the IdP", async () => {
     const END_SESSION =
       "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/logout?id_token_hint=ID"
-    const fetchMock = jest.fn(async () =>
+    const fetchMock = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       ({ ok: true, json: async () => ({ url: END_SESSION }) }) as Response
     )
     global.fetch = fetchMock as unknown as typeof fetch
