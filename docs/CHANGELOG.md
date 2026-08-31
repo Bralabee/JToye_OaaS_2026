@@ -14,9 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   real reset submit returned HTTP 500 "Failed to send email"; now the message is
   delivered and its link opens the update-password page (full journey,
   browser-driven).
-- **Account-enumeration oracle closed**: the existing-vs-nonexistent reset
-  responses, previously distinguishable (70-line token-stripped diff plus
-  differing HTTP codes), are now byte-identical.
+- **Account-enumeration oracle closed while SMTP is reachable**: the
+  existing-vs-nonexistent reset responses, previously distinguishable (70-line
+  token-stripped diff plus differing HTTP codes), are now identical. This is a
+  side effect of SMTP working, not a property that is enforced: Keycloak returns
+  500 on a send failure, so if SMTP becomes unreachable — Mailhog stopped, a
+  stack with no Mailhog service, a `.env` change — the 500-vs-200 divergence
+  returns and the oracle re-opens silently. The 500-on-send-failure behaviour is
+  upstream Keycloak's, not something this change introduces or can remove. No
+  executable check guards this yet; it is asserted by the evidence recorded in
+  the task summary, not by a gate.
 - **Branded login pages**: a custom CSS-only theme `jtoye`
   (`infra/keycloak/themes/`, `parent=keycloak`, self-hosted Work Sans, oxblood
   wordmark, orange-700 buttons) mounted on all three compose files and applied

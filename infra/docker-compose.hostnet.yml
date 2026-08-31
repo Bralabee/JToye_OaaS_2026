@@ -31,9 +31,15 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD must be set}
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
-      # Custom `jtoye` login theme — the realms set loginTheme=jtoye, so without this
-      # mount the theme name would dangle on this stack and Keycloak would fall back
+      # Custom `jtoye` login theme — the imported realm sets loginTheme=jtoye, so without
+      # this mount the theme name would dangle on this stack and Keycloak would fall back
       # to the built-in theme. Path is relative to infra/, this file's context.
+      #
+      # NOTE: that same imported realm carries `smtpServer.host: "mailhog"`, which cannot
+      # resolve here at all — this stack defines no mailhog service AND uses
+      # network_mode: host, where compose service-name DNS does not exist; even a mailhog
+      # published on 127.0.0.1:1025 would need `localhost`. Inert rather than broken today
+      # because jtoye-dev has resetPasswordAllowed=false and sends no mail.
       - ./keycloak/themes:/opt/keycloak/themes:ro
     network_mode: host
     depends_on:
