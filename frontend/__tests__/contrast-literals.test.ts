@@ -169,6 +169,14 @@ function scan(): Map<string, Site> {
     "text-[a-z]+-[0-9]{2,3}",
     "--include=*.tsx",
     "--include=*.ts",
+    // Co-located test files are NOT shipped surfaces: an assertion like
+    // `toHaveClass("text-amber-300")` names a colour without rendering it, and
+    // ledgering test files would dilute the debt ledger with non-debt. First
+    // hit: floating-cart-bar.test.tsx asserting the (ledgered) amber shortfall
+    // label on the oxblood cart bar. The exclusion is by filename contract
+    // (jest's testMatch), so a *rendered* component can never fall under it.
+    "--exclude=*.test.tsx",
+    "--exclude=*.test.ts",
     ...SCAN_ROOTS,
   ])
   const sites = new Map<string, Site>()

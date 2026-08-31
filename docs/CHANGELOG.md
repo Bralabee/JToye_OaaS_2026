@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Cart bar branded from the first add — the grey below-minimum state becomes an amber shortfall label (#718) — 2026-08-31
+
+- **The floating basket bar is oxblood from the customer's very first basket
+  interaction.** It used to render `bg-slate-700` whenever the basket total was
+  below the shop's minimum order and only turn brand oxblood once the minimum
+  was crossed — with the seeded shop (£8.99 item, £10 minimum) that made the
+  first add-to-basket popup grey and the second branded, and grey-on-first-touch
+  reads as a dead control (owner complaint 2026-08-31). Investigation ruled out
+  the "old CSS remnant"/toast hypotheses: the storefront fires no toasts; the
+  two-state colour ternary was written this way when the bar was introduced.
+- **The below-minimum signal is kept, expressed in words instead of colour:** an
+  amber active-voice label shows the computed shortfall ("Add £1.01 to order")
+  in place of the old grey "Min £10.00". Checkout's own minimum-order
+  enforcement is untouched.
+- **First real test coverage of the bar:** a 4-test suite
+  (`floating-cart-bar.test.tsx`) committed failing against the old markup
+  first. The contrast-literal scanner now excludes co-located `*.test.ts(x)`
+  files — an assertion naming a colour is not a rendered surface, and the
+  component's own `text-amber-300`-on-oxblood pairing was already ledgered.
+
 ### Cart identity: a write may ADD or CONFIRM an owner, never ERASE one — R-16 (#715) — 2026-08-31
 
 - **A newly registered customer no longer inherits the previous account's
