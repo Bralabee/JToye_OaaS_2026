@@ -5,7 +5,7 @@ import { gsap, ScrollTrigger, useGSAP } from "@/lib/gsap"
 import {
   canEnhance,
   DESKTOP_MOTION_QUERY,
-  entranceIsSafe,
+  entranceIsSafeForMount,
   splitWords,
 } from "@/lib/gsap-gate"
 
@@ -35,13 +35,15 @@ import {
  * bundle arrived in time for an entrance to still BE an entrance.
  *
  * LATE-ARRIVAL contract (R-03), which is the OPPOSITE of the No-FOUC one above
- * and needs the opposite defence: past `ENTRANCE_BUDGET_MS` the two entrance
- * blocks are SKIPPED, because their `autoAlpha: 0` would hide content the
- * visitor is already reading. Everything else in the scene is scroll-triggered
- * and cannot blank a first paint, so it is untouched. The no-JS path (nothing
- * runs) and the reduced-motion / mobile path (the query does not match) are
- * both already CORRECT and are likewise untouched — this fix must not regress
- * either to close the third.
+ * and needs the opposite defence: on the FIRST mount after a document load,
+ * past `ENTRANCE_BUDGET_MS` the two entrance blocks are SKIPPED, because their
+ * `autoAlpha: 0` would hide content the visitor is already reading. On a SOFT
+ * NAVIGATION to `/` the entrance always plays (WR-01): nothing was painted
+ * before this scene existed, so there is nothing to blank. Everything else in
+ * the scene is scroll-triggered and cannot blank a first paint, so it is
+ * untouched. The no-JS path (nothing runs) and the reduced-motion / mobile path
+ * (the query does not match) are both already CORRECT and are likewise
+ * untouched — this fix must not regress either to close the third.
  */
 export function HeroScene({ children }: { children: ReactNode }) {
   const scope = useRef<HTMLDivElement>(null)
@@ -52,25 +54,34 @@ export function HeroScene({ children }: { children: ReactNode }) {
       const root = scope.current
       if (!root) return
 
+      // R-03 (2026-08-31 customer-surface audit). The two ENTRANCE blocks below
+      // open by HIDING content (`autoAlpha: 0`) and then bringing it in. That
+      // is correct while there is nothing on screen yet — and a regression once
+      // there is. On a throttled load this bundle hydrates ~2.5s after first
+      // paint, so the `set` RETROACTIVELY BLANKED an h1 and the persona CTAs
+      // the visitor had already been reading (~800ms of blank). The file's
+      // No-FOUC contract above guards the opposite failure ("the JS never
+      // arrives") and cannot see this one.
+      //
+      // DECIDED ONCE PER MOUNT, OUTSIDE `matchMedia` (WR-01). Two reasons:
+      //  - `entranceIsSafeForMount` consumes the per-document first-mount
+      //    latch, and the matchMedia callback re-fires on every breakpoint
+      //    change, which is not a new mount and must not be counted as one;
+      //  - a breakpoint change therefore reuses this mount's verdict instead of
+      //    re-playing an entrance over content that is already on screen.
+      //
+      // The argument is `performance.now()` — ms since the document's TIME
+      // ORIGIN — and it is the right clock for the FIRST mount only. The gate
+      // owns that distinction; see its docblock for why a soft navigation must
+      // not be measured against it.
+      const animateEntrance = entranceIsSafeForMount(
+        typeof performance !== "undefined" ? performance.now() : 0
+      )
+
       const mm = gsap.matchMedia()
       mm.add(DESKTOP_MOTION_QUERY, () => {
         root.setAttribute("data-motion-active", "desktop")
         root.setAttribute("data-motion-decided", "scene")
-
-        // R-03 (2026-08-31 customer-surface audit). The two ENTRANCE blocks
-        // below open by HIDING content (`autoAlpha: 0`) and then bringing it
-        // in. That is correct while there is nothing on screen yet — and a
-        // regression once there is. On a throttled load this bundle hydrates
-        // ~2.5s after first paint, so the `set` RETROACTIVELY BLANKED an h1 and
-        // the persona CTAs the visitor had already been reading (~800ms of
-        // blank). The file's No-FOUC contract above guards the opposite failure
-        // ("the JS never arrives") and cannot see this one.
-        //
-        // `performance.now()` is ms since navigation start, which is exactly
-        // the clock this question needs.
-        const animateEntrance = entranceIsSafe(
-          typeof performance !== "undefined" ? performance.now() : 0
-        )
         // INERT marker so the orchestrator's throttled-profile pass can observe
         // which way the decision went. Inert means inert: no stylesheet rule
         // reads it and no logic here branches on it.

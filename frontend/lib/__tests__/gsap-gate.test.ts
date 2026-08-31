@@ -3,8 +3,10 @@ import {
   DESKTOP_MOTION_QUERY,
   ENTRANCE_BUDGET_MS,
   entranceIsSafe,
+  entranceIsSafeForMount,
   prefersDesktopMotion,
   splitWords,
+  __resetEntranceMountGateForTests,
 } from "@/lib/gsap-gate"
 
 const HEADLINE = "Order from local kitchens. Or run yours."
@@ -143,5 +145,77 @@ describe("gsap-gate — entranceIsSafe (R-03)", () => {
     // pass while asserting nothing about a real timing decision.
     expect(Number.isFinite(ENTRANCE_BUDGET_MS)).toBe(true)
     expect(ENTRANCE_BUDGET_MS).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * WR-01 (code review, 2026-08-31) — the budget was measured against the wrong
+ * clock, and the landing entrance was dead on every soft navigation.
+ *
+ * `performance.now()` counts from the document's TIME ORIGIN, set once at page
+ * load and NOT reset by client-side routing. `/` is reachable by `next/link`
+ * from every public surface (the wordmark "ALWAYS goes to /"), so a visitor who
+ * browsed `/shop` for 30 s and clicked the wordmark mounted the hero at
+ * `performance.now() ≈ 30000` and the entrance was refused — permanently, for
+ * the rest of the session, however fast the bundle had arrived. And
+ * `data-entrance="skipped"` reported it as a correct decision, so a
+ * throttled-profile observation pass read green either way.
+ *
+ * The budget answers ONE question: "was something painted before this code ran,
+ * such that hiding it now blanks what the visitor is reading?" That only has a
+ * yes on the FIRST mount after a document load.
+ */
+describe("gsap-gate — entranceIsSafeForMount (WR-01)", () => {
+  beforeEach(() => {
+    __resetEntranceMountGateForTests()
+  })
+
+  it("applies the budget on the FIRST mount — a slow hydration still skips", () => {
+    // The R-03 case, and the whole reason the budget exists. This must keep
+    // working: it is the defect the previous commit was written to close.
+    expect(entranceIsSafeForMount(2500)).toBe(false)
+  })
+
+  it("plays the entrance on the first mount when hydration was fast", () => {
+    expect(entranceIsSafeForMount(300)).toBe(true)
+  })
+
+  it("SOFT NAV: a later mount plays the entrance even far past the budget", () => {
+    // THE LOAD-BEARING ARM. First mount consumes the latch (fast, so `true`);
+    // the second is a client-side route change 30 s into the session, where
+    // nothing was painted before this scene existed.
+    expect(entranceIsSafeForMount(300)).toBe(true)
+    expect(entranceIsSafeForMount(30_000)).toBe(true)
+  })
+
+  it("SOFT NAV after a SKIPPED first mount also plays", () => {
+    // The combination the session actually produces: a throttled first load
+    // (entrance correctly skipped), then a soft nav back to `/`. Without this
+    // the fix could be latching the VERDICT rather than the first-mount fact.
+    expect(entranceIsSafeForMount(2500)).toBe(false)
+    expect(entranceIsSafeForMount(2500)).toBe(true)
+  })
+
+  it("every mount from the third onwards is a soft nav too", () => {
+    entranceIsSafeForMount(2500)
+    expect(entranceIsSafeForMount(99_999)).toBe(true)
+    expect(entranceIsSafeForMount(99_999)).toBe(true)
+  })
+
+  it("CONTROL: the reset really does re-arm the latch", () => {
+    // Without this, every arm above could be passing because the latch was
+    // already consumed by an earlier file-level import, and "first mount"
+    // would never actually be under test.
+    expect(entranceIsSafeForMount(2500)).toBe(false)
+    expect(entranceIsSafeForMount(2500)).toBe(true)
+    __resetEntranceMountGateForTests()
+    expect(entranceIsSafeForMount(2500)).toBe(false)
+  })
+
+  it("the pure predicate is UNCHANGED and still available on its own", () => {
+    // `entranceIsSafe` stays exported and stateless; the latch wraps it rather
+    // than replacing it, so the boundary arms above still describe live code.
+    expect(entranceIsSafe(ENTRANCE_BUDGET_MS)).toBe(true)
+    expect(entranceIsSafe(ENTRANCE_BUDGET_MS + 1)).toBe(false)
   })
 })

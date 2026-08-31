@@ -74,6 +74,75 @@ export function entranceIsSafe(elapsedMs: number): boolean {
   return elapsedMs <= ENTRANCE_BUDGET_MS
 }
 
+/**
+ * Has the first scene of this document already mounted? Latched per document.
+ *
+ * This is the module's ONLY mutable state. It carries no side effect at module
+ * scope, no `"use client"` and no `gsap` import, so the two properties the
+ * docblock above actually depends on — jsdom-testability, and staying out of
+ * the GSAP route chunk — are untouched. Keeping the latch HERE rather than in
+ * `hero-scene.tsx` is what makes the rule below testable at all: jsdom has no
+ * `matchMedia`, so `canEnhance()` is false and the scene branch that would own
+ * the flag is unreachable from a component test.
+ */
+let firstMountPending = true
+
+/**
+ * Is it safe to play the entrance for a scene mounting RIGHT NOW — WR-01.
+ *
+ * `entranceIsSafe` alone was measured against the wrong clock.
+ * `performance.now()` is milliseconds since the document's TIME ORIGIN, which
+ * is set once at the initial page load and is **not** reset by client-side
+ * routing. `HeroScene` is mounted by `app/page.tsx`, and `/` is reachable by
+ * soft navigation from every public surface — `public-header.tsx`'s own
+ * docblock states the wordmark "ALWAYS goes to `/`" via `next/link`.
+ *
+ * So a visitor who landed on `/shop`, browsed for 30 s and clicked the wordmark
+ * mounted the hero at `performance.now() ≈ 30000` and the entrance was refused.
+ * The entrance was therefore **dead for the whole rest of the session** after
+ * the first 1.2 s, however fast the bundle had arrived — and `data-entrance`
+ * faithfully reported `"skipped"`, so an observation pass read green either way.
+ * That is a regression by omission under the Incremental Betterment Doctrine: a
+ * working good traded away to fix the late-hydration case.
+ *
+ * The budget answers exactly ONE question — "was content painted before this
+ * code ran, such that hiding it now would blank something the visitor is
+ * already reading?" — and that question only has a yes on the FIRST mount after
+ * a document load, where the server-rendered hero was painted at first paint.
+ * On a soft navigation the hero's DOM did not exist a moment ago; nothing was
+ * painted to blank, so the entrance is always safe.
+ *
+ * REJECTED ALTERNATIVE, because it is the obvious one and it is silently wrong:
+ * capturing `mountedAt = performance.now()` in the effect and testing
+ * `performance.now() - mountedAt`. Both readings sit in the same synchronous
+ * effect body, so the delta is MEASURED at 0.001–0.010 ms — always inside any
+ * budget. The guard would be permanently open, `data-entrance` would always
+ * report `"played"`, and R-03 would be undone while the code still looked as
+ * though it had a budget.
+ *
+ * DEV CAVEAT, stated rather than discovered later: React StrictMode
+ * double-invokes effects in development, so the second invoke consumes the
+ * latch and reads as a soft navigation. Production mounts once. Dev hydration
+ * is slow enough that the entrance would usually be skipped there anyway, so
+ * the difference is dev-only and cosmetic.
+ */
+export function entranceIsSafeForMount(elapsedMs: number): boolean {
+  if (!firstMountPending) return true
+  firstMountPending = false
+  return entranceIsSafe(elapsedMs)
+}
+
+/**
+ * Re-arm the first-mount latch. TEST ONLY.
+ *
+ * Jest keeps one module registry per FILE, so the latch outlives an individual
+ * `it`. Same escape hatch, and the same reason, as
+ * `lib/customer-session-store.__resetForTests`.
+ */
+export function __resetEntranceMountGateForTests(): void {
+  firstMountPending = true
+}
+
 const WORD_CLASS = "gsap-word"
 
 /**
