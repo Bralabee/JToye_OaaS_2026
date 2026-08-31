@@ -23,6 +23,19 @@ export function StorefrontNav() {
   // reads the same one so the two headers can never disagree (#457).
   const { profile } = useCustomerSession()
   const [menuOpen, setMenuOpen] = useState(false)
+  // R-04: a sign-out is now bounded at 3s per round-trip, so it can take a
+  // visible moment on a bad connection. Without a busy state the shopper gets
+  // no acknowledgement at all and taps again — which is how a sign-out that
+  // silently did nothing went unreported for so long.
+  const [signingOut, setSigningOut] = useState(false)
+  const handleSignOut = async () => {
+    setSigningOut(true)
+    try {
+      await customerLogout()
+    } finally {
+      setSigningOut(false)
+    }
+  }
   const pathname = usePathname()
   const params = useParams<{ slug?: string }>()
   const slug = params?.slug
@@ -153,8 +166,10 @@ export function StorefrontNav() {
             <User className="h-3.5 w-3.5" />
           </div>
           <button
-            onClick={() => customerLogout()}
-            className="flex items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            aria-busy={signingOut}
+            className="flex items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-60"
             title="Sign out"
           >
             <LogOut className="h-3.5 w-3.5" />

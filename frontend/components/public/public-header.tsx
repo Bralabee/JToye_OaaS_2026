@@ -57,6 +57,21 @@ export function PublicHeader() {
   // from /shop to / or /track showed "Sign in" to someone who was signed in and
   // read as "the site logged me out". Same hook as StorefrontNav — one source.
   const { profile } = useCustomerSession()
+  // R-04: one busy flag for BOTH sign-out affordances in this file (the
+  // desktop icon button and the mobile sheet's labelled one). Only one of the
+  // two is ever mounted at a given breakpoint, so a shared flag cannot
+  // cross-disable a control the shopper can actually see — and two independent
+  // flags would be the kind of near-duplicate that drifts, which is exactly
+  // what #457 already cost this pair of headers once.
+  const [signingOut, setSigningOut] = useState(false)
+  const handleSignOut = async () => {
+    setSigningOut(true)
+    try {
+      await customerLogout()
+    } finally {
+      setSigningOut(false)
+    }
+  }
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`)
@@ -157,8 +172,10 @@ export function PublicHeader() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => customerLogout()}
-                    className="flex items-center gap-1 text-slate-400 transition-colors hover:text-slate-600"
+                    onClick={handleSignOut}
+                    disabled={signingOut}
+                    aria-busy={signingOut}
+                    className="flex items-center gap-1 text-slate-400 transition-colors hover:text-slate-600 disabled:opacity-60"
                     title="Sign out"
                   >
                     <LogOut className="h-3.5 w-3.5" />
@@ -245,8 +262,10 @@ export function PublicHeader() {
                       <SheetClose asChild>
                         <button
                           type="button"
-                          onClick={() => customerLogout()}
-                          className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                          onClick={handleSignOut}
+                          disabled={signingOut}
+                          aria-busy={signingOut}
+                          className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-60"
                         >
                           <LogOut className="h-4 w-4" />
                           Sign out
