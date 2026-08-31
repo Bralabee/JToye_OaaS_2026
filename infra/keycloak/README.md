@@ -133,15 +133,92 @@ derived from request data. Do not build this value from user input. The realm's 
 Content-Security-Policy does not restrict `style-src`, so the inline style renders; it does keep
 `object-src 'none'`.
 
-`loginTheme` is pinned to `keycloak`, which is a **built-in** theme — there is no custom theme in
-this repository, no FTL templates and no theme jar. It is set explicitly rather than left unset
-so that a future Keycloak upgrade which changes the default login theme cannot silently restyle
-these pages.
+`loginTheme` is `jtoye`, the custom theme in this repository — see the next section.
+
+> **History.** These keys first shipped with `loginTheme` pinned to the built-in `keycloak`
+> theme, on the reasoning that realm-level keys alone were a small enough lever to brand the
+> pages. Review rejected that: with the stock theme's dark low-poly background, blue PatternFly
+> buttons and uppercased header, a brand-coloured wordmark on an otherwise stock page does not
+> read as J'Toye. The `jtoye` theme below replaced it. The original reason for pinning the value
+> explicitly still holds and still applies — an unset `loginTheme` lets a Keycloak upgrade change
+> the default out from under these pages.
 
 **No `_note_*` keys at realm top level.** The free-form annotation trick used inside an identity
 provider's `config` map works there because Keycloak models that as a plain string map it ignores.
 Realm top-level keys are deserialised into a typed representation instead, so an unknown key risks
 failing the import outright. Rationale for these keys lives here in the README, not in the JSON.
+
+## The `jtoye` login theme
+
+`infra/keycloak/themes/jtoye/login/` — a **CSS-only** overlay on the built-in `keycloak` login
+theme. It brands every login-flow page (sign-in, register, reset-credentials, update-password,
+info and error) from one stylesheet.
+
+```
+infra/keycloak/themes/jtoye/login/
+  theme.properties
+  resources/css/jtoye.css
+  resources/fonts/work-sans-latin.woff2
+```
+
+**No FTL template overrides, deliberately.** Forking a template would pin us to that Keycloak
+version's markup and silently rot at the next upgrade. Every rule reaches the parent theme's
+existing class and id hooks instead, so an upgrade changes the markup underneath us and the
+branding follows.
+
+**`styles` must repeat the parent's stylesheet.** In `theme.properties`, `styles` *replaces* the
+inherited value rather than appending to it, so it reads `css/login.css css/jtoye.css`. Dropping
+the first entry renders the page unstyled — worse than the stock theme, and it fails silently.
+The parent's value was read out of the shipped themes jar, not guessed. `stylesCommon` is
+deliberately not restated: it is inherited, and it is what supplies PatternFly.
+
+**Brand values are copied, not invented.** The palette comes from `frontend/tailwind.config.ts`
+(oxblood, cream, gold) and the primary and radius from the CSS custom properties in
+`frontend/app/globals.css`, so the login pages track the same tokens as the app. Each one is
+named in a comment at the top of the stylesheet with the file it came from.
+
+**Work Sans is self-hosted**, copied into `resources/fonts/` and declared with `@font-face`,
+rather than pulled from a font CDN: a login page is precisely the surface that should not make a
+third-party request, and self-hosting keeps the theme working with no outbound network and no
+extra CSP or CORS surface.
+
+**Coupled values to keep in step.** The `#kc-info` negative margins exist to make the footer
+strip span the card edge to edge, and they must equal the card's horizontal padding. The stock
+theme's `-40px` matches the stock `40px` padding; this theme sets its own padding, so both the
+desktop and the mobile rule restate the margin. Changing one without the other pushed the
+document 21px wider than a 390px viewport.
+
+**Mounting.** The theme is bind-mounted read-only at `/opt/keycloak/themes`. In the Quarkus
+distribution that directory ships only a README — the built-in themes live inside a jar — so the
+mount shadows nothing. All three compose files that define a Keycloak service mount it, because
+the realms name `loginTheme=jtoye`; on a stack without the mount the theme name dangles and
+Keycloak silently falls back.
+
+Adding or changing the mount needs a recreate, not a restart:
+
+```bash
+docker compose -f docker-compose.full-stack.yml up -d --force-recreate --no-deps keycloak
+```
+
+Realm state survives that (it is in Postgres), but the admin CLI's cached login does not —
+re-run `kcadm.sh config credentials` afterwards.
+
+**Iterating on the CSS.** This stack runs Keycloak in `start-dev`, which does not cache themes,
+so a stylesheet edit is served on the next request with no restart. Under `start` the theme cache
+is on and each change needs a restart.
+
+**Verify the theme is actually applied, by content.** A screenshot cannot distinguish a served
+page from a cached one:
+
+```bash
+# the page must link the theme stylesheet ...
+curl -s "<login-page-url>" | grep -o 'href="[^"]*jtoye\.css"'
+# ... and that stylesheet must serve, carrying a brand value
+curl -s -o /tmp/t.css -w '%{http_code}\n' "http://localhost:8085/resources/<v>/login/jtoye/css/jtoye.css"
+```
+
+If `css/login.css` disappears from the page's stylesheet list, `styles` in `theme.properties` has
+been shortened and the base styling is gone.
 
 ### Verifying a change to either block
 
