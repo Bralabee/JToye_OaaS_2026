@@ -2,12 +2,10 @@
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react"
 import Link from "next/link"
-import { m, AnimatePresence } from "framer-motion"
-import { springPop } from "@/lib/motion"
 import {
   MapPin, Clock, Phone, Mail, ArrowLeft, Store,
   Flame, Leaf, Star, Timer, ChevronRight, AlertTriangle,
-  ShoppingBag, Plus as PlusIcon, Minus, UtensilsCrossed, Loader2
+  Plus as PlusIcon, Minus, UtensilsCrossed, Loader2
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import {
@@ -20,7 +18,7 @@ import { PublicShop, PublicProduct, ProductsByCategory, Review, ShopDetail } fro
 import type { PublicPromotion, PublicAnnouncement } from "@/types/storefront"
 import { ALLERGENS, hasAllergen } from "@/types/api"
 import { useCart } from "@/components/storefront/cart-provider"
-import { useBottomChromeHeight } from "@/hooks/use-bottom-chrome-height"
+import { FloatingCartBar } from "@/components/storefront/floating-cart-bar"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Badge } from "@/components/ui/badge"
 import { ProductDetailModal } from "@/components/storefront/product-detail-modal"
@@ -797,63 +795,10 @@ export function ShopDetailClient({
 
       {/* Floating cart bar. A null wire minimum is coerced to 0 — "no minimum"
           — which is what the > 0 gates below already made of it (review WR-04
-          made the nullability visible to the compiler; behaviour unchanged). */}
+          made the nullability visible to the compiler; behaviour unchanged).
+          Extracted to its own module (#718 review F-5) so its Jest suite no
+          longer has to stub THIS file's unrelated module-level imports. */}
       <FloatingCartBar slug={slug} minimumOrderPennies={shop.minimumOrderPennies ?? 0} />
     </div>
-  )
-}
-
-// Exported for the Jest suite (app/shop/__tests__/floating-cart-bar.test.tsx) only.
-export function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumOrderPennies: number }) {
-  const { itemCount, totalPennies } = useCart()
-  // R-07: publish this bar's height as `--jt-bottom-chrome` so the cookie
-  // notice sits ABOVE it and its "Got it" control stays clickable. THIS
-  // component is mounted unconditionally and never unmounts; the ref-bearing
-  // element below is inside <AnimatePresence> and gated on `itemCount > 0`, so
-  // the two lifecycles are decoupled and the hook deliberately carries no
-  // dependency array (see hooks/use-bottom-chrome-height.ts).
-  const barRef = useRef<HTMLDivElement>(null)
-  useBottomChromeHeight(barRef)
-
-  const belowMinimum = minimumOrderPennies > 0 && totalPennies < minimumOrderPennies
-
-  return (
-    <AnimatePresence>
-      {itemCount > 0 && (
-        <m.div
-          ref={barRef}
-          initial={{ y: 96, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 96, opacity: 0 }}
-          transition={springPop}
-          className="fixed bottom-0 left-0 right-0 z-50 p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-[max(1rem,env(safe-area-inset-bottom))]"
-        >
-          <div className="mx-auto max-w-4xl">
-            <Link
-              href={`/shop/${slug}/cart`}
-              className="flex items-center justify-between rounded-2xl px-5 py-3.5 shadow-lg transition-all active:scale-[0.98] bg-oxblood hover:bg-oxblood-700 text-white"
-            >
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <ShoppingBag className="h-5 w-5" />
-                  <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-xs font-bold text-oxblood">
-                    {itemCount}
-                  </span>
-                </div>
-                <span className="text-sm font-medium">View basket</span>
-              </div>
-              <div className="text-right">
-                <span className="text-sm font-bold">{formatPrice(totalPennies)}</span>
-                {belowMinimum && (
-                  <p className="text-xs text-amber-300">
-                    Add {formatPrice(minimumOrderPennies - totalPennies)} to order
-                  </p>
-                )}
-              </div>
-            </Link>
-          </div>
-        </m.div>
-      )}
-    </AnimatePresence>
   )
 }
