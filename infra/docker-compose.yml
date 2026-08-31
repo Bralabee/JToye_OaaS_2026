@@ -72,6 +72,15 @@ services:
       - "${JTOYE_BIND_HOST:-127.0.0.1}:8085:8080"
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      # Custom `jtoye` login theme — the imported realm sets loginTheme=jtoye, so without
+      # this mount the theme name would dangle on this stack and Keycloak would fall back
+      # to the built-in theme. Path is relative to infra/, this file's context.
+      #
+      # NOTE: that same imported realm also carries `smtpServer.host: "mailhog"`, and this
+      # stack defines NO mailhog service — the value is inert here. Latent rather than
+      # broken, because jtoye-dev has resetPasswordAllowed=false so nothing sends mail;
+      # it becomes real if that flag is flipped or required-action mail is triggered.
+      - ./keycloak/themes:/opt/keycloak/themes:ro
     networks:
       - jtoye-net
     depends_on:

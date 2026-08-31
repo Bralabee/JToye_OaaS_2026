@@ -172,6 +172,13 @@ services:
       # Phase 18: second realm import (jtoye-customers). --import-realm creates realms
       # that do not yet exist and leaves the existing jtoye-dev realm untouched.
       - ./infra/keycloak/realm-export-customers.json:/opt/keycloak/data/import/realm-export-customers.json:ro
+      # Custom `jtoye` login theme. /opt/keycloak/themes in the Quarkus distribution
+      # ships only a README — the built-in themes live inside the themes jar — so
+      # mounting over this directory hides nothing and shadows no built-in theme.
+      # Read-only: the server never needs to write here.
+      # NOTE: adding this mount requires `up -d --force-recreate keycloak`; a plain
+      # `restart` does not pick up a new bind mount.
+      - ./infra/keycloak/themes:/opt/keycloak/themes:ro
       - keycloak_data:/opt/keycloak/data
     depends_on:
       postgres:

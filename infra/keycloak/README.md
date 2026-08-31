@@ -76,6 +76,246 @@ rendered into the import at container start, never committed).
 
 This mapper extracts the `tenant_id` attribute from the user's groups and injects it into the JWT token claims.
 
+## Email (SMTP) and login-page branding
+
+Both realm templates carry an `smtpServer` block and three branding keys. They were added
+together because they address the same audit finding: the customer "Forgot password" flow was a
+dead end *and* an account-enumeration oracle, on pages headed with the raw realm id.
+
+> **The enumeration oracle is suppressed, not fixed — know the difference.** Keycloak returns
+> HTTP 500 "Failed to send email" when a send fails, and only for an address that *has* an
+> account; an unknown address short-circuits to the generic 200 "check your email" page. Wiring
+> SMTP removes the failing branch, so both responses become identical — but that identity is a
+> **side effect of SMTP being reachable**, not an enforced property. Stop Mailhog, run one of the
+> two `infra/` stacks that has none, or break the host, and the 500-vs-200 divergence returns
+> silently with nothing to catch it. The 500-on-failure behaviour is upstream Keycloak's. There is
+> no executable gate for this today; if you touch SMTP config, re-run the existing-vs-nonexistent
+> comparison by hand.
+
+### `smtpServer` — points at the dev stack's Mailhog
+
+```json
+"smtpServer" : {
+  "host" : "mailhog",
+  "port" : "1025",
+  "from" : "no-reply@jtoye.local",
+  "fromDisplayName" : "J'Toye",
+  "auth" : "false",
+  "ssl" : "false",
+  "starttls" : "false"
+}
+```
+
+Every value is a **string**, including the port and the three booleans — that is Keycloak's
+format for this map, and a JSON number or bare boolean here is not accepted. `from` must be a
+syntactically valid address or Keycloak refuses to send.
+
+**`host` resolves on `docker-compose.full-stack.yml` ONLY, and that is deliberate.** There,
+Keycloak and Mailhog are services on the same compose network, so the literal service name
+`mailhog` resolves by service-name DNS from inside the Keycloak container. On the other two
+stacks it does not resolve and the value is **inert by design**:
+
+| Stack | Mailhog service | `smtpServer.host: "mailhog"` |
+|---|---|---|
+| `docker-compose.full-stack.yml` | yes, on the shared network | resolves — mail is delivered |
+| `infra/docker-compose.yml` | **none** | dead — nothing to resolve |
+| `infra/docker-compose.hostnet.yml` | **none**, and `network_mode: host` | dead — compose service-name DNS does not exist under host networking at all; even a Mailhog published on `127.0.0.1:1025` would need `localhost` |
+
+No Mailhog service is being added to those two stacks — the boundary is recorded rather than
+papered over. **This is latent, not a live outage:** both import only `realm-export.json`
+(`jtoye-dev`), and that realm has `resetPasswordAllowed: false`, so no reachable path sends mail
+there today. It becomes real the moment someone flips that flag, or triggers required-action mail
+(`UPDATE_PASSWORD`, `VERIFY_EMAIL`) or an admin-initiated reset on one of those stacks. If you
+need working mail there, add a Mailhog service **and** point the host at it — do not assume the
+value already works because it works locally.
+
+**Why these are literals and not `${ENVSUBST}` placeholders.** The realm JSONs are rendered at
+three independent sites — the full-stack compose file (which renders both realms, each with its
+own explicit allow-list) and the two composes under `infra/`. envsubst leaves any name that is
+**not** in the invocation's allow-list completely untouched, so a placeholder missing from a
+single one of those lists renders the literal `${NAME}` token into that realm's JSON, and
+Keycloak then uses that token as the SMTP host. Beyond that risk, neither compose under `infra/`
+has a Mailhog service at all and one of them uses host networking, so no single environment
+value would be correct across all three sites — a placeholder would relocate the wrongness
+rather than remove it. Reusing the existing `SMTP_HOST` name is worse still: the example env
+file points it at a public example domain, so anyone who copied the example would render a dead
+external host into their realm.
+
+**Staging and production do not consume these templates.** No k8s manifest mounts the rendered
+realm JSONs; the overlays configure Keycloak on their own. Any SMTP or branding override for a
+deployed environment is a k8s-side change, and editing these files will not reach it.
+
+**No `connectionTimeout` / `timeout` keys — Keycloak 24.0.5 does not read them.** A review raised
+that an unbounded SMTP send could park a request thread on the public `reset-credentials`
+endpoint. That concern does not apply to this version, verified in the shipped bytecode rather
+than assumed. Disassembling `org.keycloak.email.DefaultEmailSenderProvider` out of
+`org.keycloak.keycloak-services-24.0.5.jar` in the running image shows both JavaMail timeouts set
+from a **constant**, not from the realm map:
+
+```
+ldc  #79   // String mail.smtp.timeout
+ldc  #81   // String 10000
+invokevirtual Properties.setProperty
+ldc  #83   // String mail.smtp.connectiontimeout
+ldc  #81   // String 10000
+invokevirtual Properties.setProperty
+```
+
+Both are hardcoded to 10 s, and the class's constant pool contains no standalone `timeout` or
+`connectionTimeout` string at all — so there is no realm key to set. Adding one would be dead
+config that reads as protection while doing nothing. **Do not add these keys to the templates on
+this version.** If Keycloak is upgraded, re-run the check before assuming either way.
+
+**`from` uses `.local`, which is fine here and not promotable.** `.local` is reserved for
+multicast DNS (RFC 6762). Mailhog accepts anything, and these templates are dev-only, but a real
+relay will reject or bounce the address — change it before reusing this block anywhere real.
+
+**`emailTheme` is deliberately unset.** The reset email itself therefore renders in Keycloak's
+stock email theme, unbranded. `jtoye` ships a `login/` type only, so pointing `emailTheme` at it
+would dangle. Branding the email is follow-up work, not an oversight.
+
+### Branding keys
+
+```json
+"displayName"     : "J'Toye",
+"displayNameHtml" : "<span style=\"color:#3A0B0D;font-weight:700;letter-spacing:0.01em\">J'Toye</span>",
+"loginTheme"      : "jtoye"
+```
+
+`displayName` supplies the page title, `displayNameHtml` the login-page header. The header value
+is raw HTML rendered into the page, so it is deliberately a fixed operator-controlled literal
+containing only a `<span>` and a style attribute — no script, no interpolation, and nothing
+derived from request data. Do not build this value from user input. The realm's own
+Content-Security-Policy does not restrict `style-src`, so the inline style renders; it does keep
+`object-src 'none'`.
+
+`loginTheme` is `jtoye`, the custom theme in this repository — see the next section.
+
+> **History.** These keys first shipped with `loginTheme` pinned to the built-in `keycloak`
+> theme, on the reasoning that realm-level keys alone were a small enough lever to brand the
+> pages. Review rejected that: with the stock theme's dark low-poly background, blue PatternFly
+> buttons and uppercased header, a brand-coloured wordmark on an otherwise stock page does not
+> read as J'Toye. The `jtoye` theme below replaced it. The original reason for pinning the value
+> explicitly still holds and still applies — an unset `loginTheme` lets a Keycloak upgrade change
+> the default out from under these pages.
+
+**No `_note_*` keys at realm top level.** The free-form annotation trick used inside an identity
+provider's `config` map works there because Keycloak models that as a plain string map it ignores.
+Realm top-level keys are deserialised into a typed representation instead, so an unknown key risks
+failing the import outright. Rationale for these keys lives here in the README, not in the JSON.
+
+## The `jtoye` login theme
+
+`infra/keycloak/themes/jtoye/login/` — a **CSS-only** overlay on the built-in `keycloak` login
+theme. It brands every login-flow page (sign-in, register, reset-credentials, update-password,
+info and error) from one stylesheet.
+
+```
+infra/keycloak/themes/jtoye/login/
+  theme.properties
+  resources/css/jtoye.css
+  resources/fonts/work-sans-latin.woff2
+```
+
+**No FTL template overrides, deliberately.** Forking a template would pin us to that Keycloak
+version's markup and silently rot at the next upgrade. Every rule reaches the parent theme's
+existing class and id hooks instead, so an upgrade changes the markup underneath us and the
+branding follows.
+
+**`styles` must repeat the parent's stylesheet.** In `theme.properties`, `styles` *replaces* the
+inherited value rather than appending to it, so it reads `css/login.css css/jtoye.css`. Dropping
+the first entry renders the page unstyled — worse than the stock theme, and it fails silently.
+The parent's value was read out of the shipped themes jar, not guessed. `stylesCommon` is
+deliberately not restated: it is inherited, and it is what supplies PatternFly.
+
+**Brand values are copied, not invented.** The palette comes from `frontend/tailwind.config.ts`
+(oxblood, cream, gold) and the primary and radius from the CSS custom properties in
+`frontend/app/globals.css`, so the login pages track the same tokens as the app. Each one is
+named in a comment at the top of the stylesheet with the file it came from.
+
+**Work Sans is self-hosted**, copied into `resources/fonts/` and declared with `@font-face`,
+rather than pulled from a font CDN: a login page is precisely the surface that should not make a
+third-party request, and self-hosting keeps the theme working with no outbound network and no
+extra CSP or CORS surface.
+
+**Coupled values to keep in step.** The `#kc-info` negative margins make the footer strip span the
+card edge to edge, so each one must cancel the corresponding `.card-pf` padding — at **both**
+breakpoints, since the padding differs between them.
+
+This is an invariant the overlay **chooses**; it is not inherited from upstream. Measured in the
+shipped themes jar, stock is `#kc-info { margin: 20px -40px -30px }` against
+`.card-pf { padding: 0 20px }` — those do not cancel, so there is no stock precedent to appeal to.
+(An earlier version of this note claimed stock was `-40px` against `40px` padding. That was wrong,
+and it mattered: a maintainer checking the premise would have "corrected" the margin back.)
+
+Two traps, both of which have actually fired here:
+
+- **Use the shorthand, not longhands.** Stock's is a three-value shorthand carrying
+  `margin-bottom: -30px`. Overriding only top/left/right leaves that `-30px` alive, which pulled
+  the strip below the card's border box at every width — visible as a cream lip under the rounded
+  corner, since nothing clips it.
+- **Match the stock theme's breakpoint, which is 767px, not 480px.** Stock's phone block sets
+  `max-width: none; margin-left: 0; margin-right: 0` on the card. Scoping the overlay's gutter to
+  480px left 481–767px rendering the card full-bleed with rounded corners and shadow clipped flush
+  at both viewport edges — a whole device class, invisible to a 390px screenshot.
+
+**Mounting.** The theme is bind-mounted read-only at `/opt/keycloak/themes`. In the Quarkus
+distribution that directory ships only a README — the built-in themes live inside a jar — so the
+mount shadows nothing. All three compose files that define a Keycloak service mount it, because
+the realms name `loginTheme=jtoye`; on a stack without the mount the theme name dangles and
+Keycloak silently falls back.
+
+Adding or changing the mount needs a recreate, not a restart:
+
+```bash
+docker compose -f docker-compose.full-stack.yml up -d --force-recreate --no-deps keycloak
+```
+
+Realm state survives that (it is in Postgres), but the admin CLI's cached login does not —
+re-run `kcadm.sh config credentials` afterwards.
+
+**Iterating on the CSS.** This stack runs Keycloak in `start-dev`, which does not cache themes,
+so a stylesheet edit is served on the next request with no restart. Under `start` the theme cache
+is on and each change needs a restart.
+
+**Verify the theme is actually applied, by content.** A screenshot cannot distinguish a served
+page from a cached one:
+
+```bash
+# Port 8085 is docker-compose.full-stack.yml and infra/docker-compose.yml.
+# infra/docker-compose.hostnet.yml starts Keycloak with --http-port=8081 — use that instead there.
+KC=http://localhost:8085
+
+# the page must link the theme stylesheet ...
+curl -s "<login-page-url>" | grep -o 'href="[^"]*jtoye\.css"'
+# ... and that stylesheet must serve, carrying a brand value
+curl -s -o /tmp/t.css -w '%{http_code}\n' "$KC/resources/<v>/login/jtoye/css/jtoye.css"
+```
+
+If `css/login.css` disappears from the page's stylesheet list, `styles` in `theme.properties` has
+been shortened and the base styling is gone.
+
+### Verifying a change to either block
+
+Read the value back **out of the running server**, not off the rendered file — the realm is
+Postgres-backed, so a correct file and a stale server is exactly the state that fools you.
+
+Use the full representation, not a projection:
+
+```bash
+docker exec jtoye-keycloak /opt/keycloak/bin/kcadm.sh get realms/jtoye-customers | jq '.smtpServer'
+```
+
+**Do not verify a nested map with `kcadm.sh get --fields`.** That projection renders any nested
+object as an empty `{ }` regardless of its real contents — `smtpServer` and
+`browserSecurityHeaders` both read as empty through it while the full representation shows them
+correctly populated. A `--fields` read of those keys cannot distinguish a working config from an
+empty one.
+
+Then exercise the real path, because a config read is not a delivery proof: submit "Forgot
+password" for a known account and confirm a message arrives in Mailhog at
+`http://localhost:8025` addressed to that account.
+
 ## Importing the Realm
 
 ### Method 1: Docker Compose (Automatic)
@@ -126,6 +366,17 @@ with no warning — and the running realm is unchanged. Nothing in any log says 
 
 Two routes actually work.
 
+> **Which route: if the realm has live users, use Route 2 (Admin API).** A full
+> `kc.sh import --override true` replaces the realm *wholesale*. The customer realm's
+> template ships an empty `users` array, so a full import of `jtoye-customers` **deletes every
+> storefront self-registration** in the running realm — every real customer account. The Admin
+> API is a GET-merge-PUT: it touches only the fields you name and leaves users, clients and
+> rotated secrets alone. Reserve Route 1 for a fresh or empty stack, or for the vendor realm
+> whose users are all seeded from the template anyway.
+>
+> After any realm write, re-read the customer user list from the Admin API and diff it against
+> the list you took before. A shrunk list means something did a full import.
+
 ### Route 1 — `kc.sh import --override true`, server stopped
 
 Import writes to the database directly, so the server must not be running.
@@ -137,9 +388,12 @@ docker compose -f docker-compose.full-stack.yml up keycloak-realm-render
 # 2. Stop Keycloak — kc.sh import needs exclusive access
 docker compose -f docker-compose.full-stack.yml stop keycloak
 
-# 3. Import with --override, which is the flag --import-realm does not have
+# 3. Import with --override, which is the flag --import-realm does not have.
+#    NOTE the path: the keycloak service mounts the rendered realms at
+#    /opt/keycloak/data/import/. There is NO /keycloak directory on this service —
+#    that is the render sidecar's mount point, and a --file pointing there fails.
 docker compose -f docker-compose.full-stack.yml run --rm --no-deps --entrypoint /opt/keycloak/bin/kc.sh \
-  keycloak import --file /keycloak/realm-export-customers.json --override true
+  keycloak import --file /opt/keycloak/data/import/realm-export-customers.json --override true
 
 # 4. Start it again
 docker compose -f docker-compose.full-stack.yml start keycloak

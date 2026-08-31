@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Keycloak realm SMTP + branded login theme, audit R-05/R-06/R-11 (#713) — 2026-08-31
+
+- **Customer password reset now works**: both realms' empty `smtpServer` is wired
+  to the dev stack's Mailhog on the templates and the running realms. Before, a
+  real reset submit returned HTTP 500 "Failed to send email"; now the message is
+  delivered and its link opens the update-password page (full journey,
+  browser-driven).
+- **Account-enumeration oracle closed while SMTP is reachable**: the
+  existing-vs-nonexistent reset responses, previously distinguishable (70-line
+  token-stripped diff plus differing HTTP codes), are now identical. This is a
+  side effect of SMTP working, not a property that is enforced: Keycloak returns
+  500 on a send failure, so if SMTP becomes unreachable — Mailhog stopped, a
+  stack with no Mailhog service, a `.env` change — the 500-vs-200 divergence
+  returns and the oracle re-opens silently. The 500-on-send-failure behaviour is
+  upstream Keycloak's, not something this change introduces or can remove. No
+  executable check guards this yet; it is asserted by the evidence recorded in
+  the task summary, not by a gate.
+- **Branded login pages**: a custom CSS-only theme `jtoye`
+  (`infra/keycloak/themes/`, `parent=keycloak`, self-hosted Work Sans, oxblood
+  wordmark, orange-700 buttons) mounted on all three compose files and applied
+  to both realms — the wordmark-only first pass was rejected at the human gate
+  and reworked. Login-page copy stays stock (no FTL overrides, deliberate).
+- Running realms were updated via kcadm GET-merge-PUT, never a full
+  `--override true` import (the customer template ships `users: []`, so an
+  override import would delete every live storefront self-registration); the
+  README documents this rule, the SMTP literal-vs-placeholder decision, and a
+  corrected Route-1 `--file` path.
+
 ### Customer-surface P0/P1 fixes from the 2026-08-31 utilisation audit (#711) — 2026-08-31
 
 - **P0 — vendor Sign Out now ends the Keycloak SSO session.** A new
