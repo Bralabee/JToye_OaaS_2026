@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Cart identity: a write may ADD or CONFIRM an owner, never ERASE one — R-16 (#715) — 2026-08-31
+
+- **A newly registered customer no longer inherits the previous account's
+  basket.** The access cookie lives 300s and the session probe runs on mount, on
+  a 1s poll and on focus; a "not authenticated" answer forgot the customer id,
+  and the very next shop-page render re-persisted the basket stamped
+  `owner: null`. A null owner is adoptable by anyone, so the next sign-in on
+  that browser adopted it and checkout posted those items under the new
+  session's name and email. #459 built the identity stamp and applied its
+  argument to the READ path only; the WRITE erased the marker on an event that
+  is not a sign-out.
+- **The rule is now `current ?? prior ?? null`** (`resolveCartOwner`, with the
+  provider supplying the prior value). A non-null current identity always wins,
+  so a customer taking over a slot a previous one used re-stamps to them and
+  their later items cannot leak backwards; a null current preserves what is on
+  disk. A guest basket still carries forward into sign-in or registration — the
+  good this fix deliberately does not trade away. A second layer clears every
+  basket when a session response brings a genuinely different `sub`; it requires
+  BOTH identities non-empty, because an absent profile is "unknown", not "a
+  different person", and is vacuous on the reported repro by itself.
+- **The browser guard now runs somewhere.** `cart-identity-boundary.verify.mjs`
+  was referenced by no workflow, gate or npm script, and had silently stopped
+  working: PR #522 moved one paragraph from `text-slate-500` to
+  `text-slate-600`, after which every arm reading a non-empty basket hung its
+  full 30s and threw; and its post-order arm never ticked the pre-submit
+  allergen acknowledgement added by Phase 31, so it waited 45s for an
+  "Order confirmed" that was never coming. Both repaired, a new C1c
+  anonymous-downgrade arm added, and the script wired into `e2e-nightly.yml`
+  with no `continue-on-error`.
+- **New standing quality contract** (the sixth): any surface persisting
+  user-scoped state client-side owns its identity-lifecycle transitions, tested
+  THROUGH the transition and asserted on the stored stamp BY CONTENT rather than
+  on the rendered view — the mistake that let this ship past its own regression
+  suite.
+- Every new guard was observed failing first: three jsdom assertions red on the
+  committed pre-fix tree, and C1c.1 / C1c red in a real browser against the
+  pre-rebuild container, with their own fail arms passing on the same run.
+  Green afterwards against a frontend rebuilt from the branch (18/18 checks;
+  runtime-freshness 4/4 FRESH, 0 unverified).
+
 ### Keycloak realm SMTP + branded login theme, audit R-05/R-06/R-11 (#713) — 2026-08-31
 
 - **Customer password reset now works**: both realms' empty `smtpServer` is wired
