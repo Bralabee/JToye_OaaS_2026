@@ -107,6 +107,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
   // then nothing refetched and the EmailPrompt branch was skipped).
   // fetchStatus() no-ops (and clears loading) while the email is still empty.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     fetchStatus()
   }, [email]) // eslint-disable-line react-hooks/exhaustive-deps
 

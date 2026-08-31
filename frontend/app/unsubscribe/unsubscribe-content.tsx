@@ -56,6 +56,7 @@ export function UnsubscribeContent() {
     // A malformed link (missing any part) can never verify — show invalid
     // without hitting the network or leaking which part was missing.
     if (!tenant || !email || !category || !token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: malformed-link short-circuit: the invalid state must land before (and instead of) any network call
       setState("invalid")
       return
     }

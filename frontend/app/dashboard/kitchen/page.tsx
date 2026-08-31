@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef, useSyncExternalStore } from "react"
 import { m, AnimatePresence } from "framer-motion"
 import apiClient from "@/lib/api-client"
 import { useStomp } from "@/hooks/use-stomp"
@@ -196,6 +196,17 @@ function KdsBoardSkeleton() {
   )
 }
 
+// #709: stable subscribe for the `online` external store — module scope so the
+// reference never changes and useSyncExternalStore never resubscribes.
+function subscribeToConnectivity(onStoreChange: () => void): () => void {
+  window.addEventListener("online", onStoreChange)
+  window.addEventListener("offline", onStoreChange)
+  return () => {
+    window.removeEventListener("online", onStoreChange)
+    window.removeEventListener("offline", onStoreChange)
+  }
+}
+
 export default function KitchenPage() {
   const { toast } = useToast()
 
@@ -219,11 +230,15 @@ export default function KitchenPage() {
     return false
   })
 
-  // Tick counter for re-rendering elapsed times and the last-updated age.
+  // Clock beat for re-rendering elapsed times and the last-updated age.
   // Was 30s; now KITCHEN_CLOCK_TICK_MS (10s) because the staleness stamp added for
   // #106 has to be truthful to within a glance, and a 30s-granular "2m ago" on a
   // board someone is deciding to trust is not.
-  const [tick, setTick] = useState(0)
+  // #709 (react-hooks 7.1): the beat CARRIES the timestamp instead of a bare
+  // counter, so consumers (the feed-state memo) read `tick` as "now" without
+  // calling Date.now() during render. Same 10s granularity as before — the memo
+  // only ever recomputed on the beat anyway.
+  const [tick, setTick] = useState(() => Date.now())
 
   // Loading state
   const [loading, setLoading] = useState(true)
@@ -236,7 +251,13 @@ export default function KitchenPage() {
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null)
   const [syncFailed, setSyncFailed] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [online, setOnline] = useState(true)
+  // #709: connectivity is an external store, not component state — see the
+  // "Browser connectivity" block below for the measured behaviour this keeps.
+  const online = useSyncExternalStore(
+    subscribeToConnectivity,
+    () => navigator.onLine,
+    () => true
+  )
 
   // --- #485: the board is showing only part of this shop's orders ---
   const [ordersTruncated, setOrdersTruncated] = useState(false)
@@ -387,6 +408,7 @@ export default function KitchenPage() {
       // Switching shops loads a different board — reseed the glow set from
       // that board's first batch instead of glowing every carried-over card.
       seenIdsRef.current = null
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch-on-change effect; the traced sync setRefreshing/setLoading prefix IS the loading-UI contract. One extra render accepted.
       fetchOrders()
     }
   }, [selectedShopId, fetchOrders])
@@ -394,7 +416,7 @@ export default function KitchenPage() {
   // --- Timer for elapsed time + last-updated age (#106) ---
 
   useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), KITCHEN_CLOCK_TICK_MS)
+    const interval = setInterval(() => setTick(Date.now()), KITCHEN_CLOCK_TICK_MS)
     return () => clearInterval(interval)
   }, [])
 
@@ -417,27 +439,20 @@ export default function KitchenPage() {
   // --- Browser connectivity (#106) ---
   //
   // `navigator.onLine` flips synchronously on the browser's own events, so this
-  // reaches the operator long before a socket timeout would. Read after mount so SSR
-  // and the first client render agree.
+  // reaches the operator long before a socket timeout would. #709 (react-hooks
+  // 7.1): `online` moved from mount-synced useState to useSyncExternalStore —
+  // the sanctioned shape for exactly this ("SSR and the first client render
+  // agree" is what the server-snapshot argument is for). The re-read effect
+  // below keeps the measured behaviour that used to live in goOnline: after a
+  // 110-second offline spell the board sat on "Not updating" for the rest of
+  // the minute even though the network was back, because `syncFailed` is only
+  // cleared by a successful read and the next one was up to 60s away. A board
+  // that keeps warning after the problem is fixed teaches the kitchen to
+  // ignore the warning — so re-read IMMEDIATELY when connectivity returns.
   useEffect(() => {
-    setOnline(navigator.onLine)
-    const goOffline = () => setOnline(false)
-    const goOnline = () => {
-      setOnline(true)
-      // Re-read IMMEDIATELY rather than waiting out the poll interval. Measured
-      // before this line existed: after a 110-second offline spell the board sat on
-      // "Not updating" for the rest of the minute even though the network was back,
-      // because `syncFailed` is only cleared by a successful read and the next one was
-      // up to 60s away. A board that keeps warning after the problem is fixed teaches
-      // the kitchen to ignore the warning.
-      fetchOrders()
-    }
+    const goOnline = () => fetchOrders()
     window.addEventListener("online", goOnline)
-    window.addEventListener("offline", goOffline)
-    return () => {
-      window.removeEventListener("online", goOnline)
-      window.removeEventListener("offline", goOffline)
-    }
+    return () => window.removeEventListener("online", goOnline)
   }, [fetchOrders])
 
   // --- Derive WebSocket topic ---
@@ -588,9 +603,10 @@ export default function KitchenPage() {
         reconnecting,
         lastSyncedAt,
         lastSyncFailed: syncFailed,
-        now: Date.now(),
+        // `tick` IS the clock reading (set from Date.now() on each 10s beat) —
+        // pure w.r.t. render, same freshness as the old in-memo Date.now().
+        now: tick,
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `tick` is the clock beat; Date.now() is read fresh on each one
     [online, connected, reconnecting, lastSyncedAt, syncFailed, tick]
   )
 
@@ -832,6 +848,7 @@ export default function KitchenPage() {
           className={`grid ${BOARD_RESERVE} grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`}
         >
           <AnimatePresence mode="popLayout">
+            {/* eslint-disable-next-line react-hooks/refs -- #709: the ember-glow check below deliberately reads the LAST COMMITTED seen-set (the effect at the seenIdsRef declaration commits it after paint, so the keyframe plays exactly once per new id). Converting to state would itself be a set-state-in-effect and add a render per batch; staleness here is the mechanism, and the stakes are one card animation. */}
             {sortedOrders.map((order) => {
               const config = statusConfig[order.status]
               const action = bumpActions[order.status]

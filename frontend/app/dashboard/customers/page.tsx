@@ -99,12 +99,7 @@ export default function CustomersPage() {
     resolver: zodResolver(customerSchema),
   })
 
-  useEffect(() => {
-    fetchCustomers()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage])
-
-  const fetchCustomers = async () => {
+  async function fetchCustomers() {
     try {
       setLoading(true)
       const response = await apiClient.get(
@@ -128,6 +123,12 @@ export default function CustomersPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
+    fetchCustomers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage])
 
   const openCreateDialog = () => {
     setEditingCustomer(null)

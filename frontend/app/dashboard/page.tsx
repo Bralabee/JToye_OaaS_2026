@@ -135,21 +135,8 @@ export default function DashboardPage() {
   // stay group-wide (products has no server-side shop filter yet — WR-04).
   const { contextShopId } = useShopContext()
 
-  // Onboarding banner is shop-independent — fetch once on mount.
-  useEffect(() => {
-    fetchOnboardingStatus()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Re-fetch dashboard data whenever the selected shop changes so the order
-  // activity always reflects the switcher (VSA-03).
-  useEffect(() => {
-    fetchDashboardData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextShopId])
-
   // Non-critical: a failed /me fetch must never break the dashboard render.
-  const fetchOnboardingStatus = async () => {
+  async function fetchOnboardingStatus() {
     try {
       const res = await apiClient.get("/api/v1/onboarding/me")
       setOnboardingBanner((res.data?.status as OnboardingState) ?? "NONE")
@@ -159,7 +146,7 @@ export default function DashboardPage() {
     }
   }
 
-  const fetchDashboardData = async () => {
+  async function fetchDashboardData() {
     try {
       setLoading(true)
 
@@ -208,6 +195,21 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }
+
+  // Onboarding banner is shop-independent — fetch once on mount.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
+    fetchOnboardingStatus()
+     
+  }, [])
+
+  // Re-fetch dashboard data whenever the selected shop changes so the order
+  // activity always reflects the switcher (VSA-03).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
+    fetchDashboardData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextShopId])
 
   // Compute order status distribution
   const statusDistribution = Object.entries(

@@ -184,18 +184,6 @@ function TrackOrderContent() {
   // failure mode as WR-07 on the per-shop tracking page. It now runs when the
   // email ARRIVES, guarded by a ref so it still fires exactly once.
   const autoSearched = useRef(false)
-  useEffect(() => {
-    if (autoSearched.current) return
-    // Already opened on one of the customer's own orders — nothing to look up.
-    if (order) {
-      autoSearched.current = true
-      return
-    }
-    if (!searchParams.get("order") || !email) return
-    autoSearched.current = true
-    handleSearch()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email, order])
 
   const handleSearch = async (e?: React.FormEvent) => {
     e?.preventDefault()
@@ -217,6 +205,20 @@ function TrackOrderContent() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (autoSearched.current) return
+    // Already opened on one of the customer's own orders — nothing to look up.
+    if (order) {
+      autoSearched.current = true
+      return
+    }
+    if (!searchParams.get("order") || !email) return
+    autoSearched.current = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
+    handleSearch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email, order])
 
   // Auto-refresh for active orders (15s).
   useEffect(() => {
