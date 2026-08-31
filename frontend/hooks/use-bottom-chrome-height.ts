@@ -63,7 +63,14 @@ const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect
 
 export function useBottomChromeHeight(ref: RefObject<HTMLElement | null>): void {
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- NO dependency array, deliberately: see the docblock. The bar's ref is attached by a CONDITIONAL child inside <AnimatePresence>, so a `[]` array would run once against a null ref and never publish anything.
+  // NO dependency array, deliberately — see the docblock. The bar's ref is
+  // attached by a CONDITIONAL child inside <AnimatePresence>, so a `[]` array
+  // would run once against a null ref and never publish anything.
+  //
+  // (An `eslint-disable-next-line react-hooks/exhaustive-deps` was written here
+  // first and MEASURED UNNECESSARY: the rule does not fire when there is no
+  // array at all, so the directive itself became an "Unused eslint-disable
+  // directive" warning. Do not re-add it.)
   useIsomorphicLayoutEffect(() => {
     const publish = () => {
       // Read FRESH — never a value captured at mount.
