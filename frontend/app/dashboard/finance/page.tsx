@@ -71,12 +71,7 @@ export default function FinancePage() {
   const [totalElements, setTotalElements] = useState(0)
   const { toast } = useToast()
 
-  useEffect(() => {
-    fetchData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage])
-
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       setLoading(true)
       const [summaryRes, txRes] = await Promise.all([
@@ -109,6 +104,12 @@ export default function FinancePage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
+    fetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage])
 
   /*
    * WIDTH TIER — Index, and this was a decision rather than a default.

@@ -245,6 +245,7 @@ export default function OnboardingPage() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     loadOnboarding(true)
     fetchShops()
   }, [loadOnboarding, fetchShops])
@@ -268,6 +269,7 @@ export default function OnboardingPage() {
   // background re-poll of the same application never overwrites in-progress typing).
   const onboardingId = onboarding?.id ?? null
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     setEditCompanyNumber(onboarding?.companyNumber ?? "")
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboardingId])

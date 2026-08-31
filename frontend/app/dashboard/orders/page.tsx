@@ -254,7 +254,7 @@ function OrdersPageInner() {
   // setters below are retained so the existing modal JSX still type-checks
   // and so a follow-up cleanup phase can delete the modal without touching
   // unrelated code.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<OrderDetail | null>(null)

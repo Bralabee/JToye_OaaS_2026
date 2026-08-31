@@ -131,6 +131,6 @@ export function useOrderEvents(
 
     return () => abortCtrl.abort()
     // The stream endpoint is constant; onEvent updates flow through the ref.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 }

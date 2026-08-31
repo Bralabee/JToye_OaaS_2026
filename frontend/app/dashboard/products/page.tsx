@@ -145,22 +145,6 @@ export default function ProductsPage() {
   // would be left staring at an out-of-range empty page.
   const prevShopRef = useRef<string | null | undefined>(undefined)
 
-  useEffect(() => {
-    // A switcher change must refetch so the list narrows live (no reload).
-    const shopChanged =
-      prevShopRef.current !== undefined && prevShopRef.current !== contextShopId
-    prevShopRef.current = contextShopId
-    if (shopChanged && currentPage !== 0) {
-      // Re-enters this effect with currentPage 0; deliberately does NOT fetch
-      // here, so the shop change costs exactly one request, not two.
-      setCurrentPage(0)
-      return
-    }
-    fetchProducts()
-    fetchShops()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, contextShopId])
-
   const fetchShops = async () => {
     try {
       // #485 (call site :158): was a single `/api/v1/shops?size=100`, whose first
@@ -172,18 +156,6 @@ export default function ProductsPage() {
       // Shops are optional — fail silently
     }
   }
-
-  useEffect(() => {
-    if (searchQuery.length >= 2) {
-      const timer = setTimeout(() => searchProducts(searchQuery), 300)
-      return () => clearTimeout(timer)
-    } else if (searchQuery.length === 0) {
-      fetchProducts()
-    }
-    // contextShopId is a dependency so switching shop mid-search re-runs the
-    // search against the new shop rather than leaving stale rows on screen.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, contextShopId])
 
   const fetchProducts = async () => {
     try {
@@ -236,6 +208,35 @@ export default function ProductsPage() {
       setLoadErrorMessage(describeLoadError(error).message)
     }
   }
+
+  useEffect(() => {
+    // A switcher change must refetch so the list narrows live (no reload).
+    const shopChanged =
+      prevShopRef.current !== undefined && prevShopRef.current !== contextShopId
+    prevShopRef.current = contextShopId
+    if (shopChanged && currentPage !== 0) {
+      // Re-enters this effect with currentPage 0; deliberately does NOT fetch
+      // here, so the shop change costs exactly one request, not two.
+      setCurrentPage(0)
+      return
+    }
+    fetchProducts()
+    fetchShops()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, contextShopId])
+
+  useEffect(() => {
+    if (searchQuery.length >= 2) {
+      const timer = setTimeout(() => searchProducts(searchQuery), 300)
+      return () => clearTimeout(timer)
+    } else if (searchQuery.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
+      fetchProducts()
+    }
+    // contextShopId is a dependency so switching shop mid-search re-runs the
+    // search against the new shop rather than leaving stale rows on screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, contextShopId])
 
   const retryLoad = () => {
     if (searchQuery.length >= 2) searchProducts(searchQuery)

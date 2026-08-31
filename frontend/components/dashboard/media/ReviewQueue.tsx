@@ -112,6 +112,7 @@ export function ReviewQueue() {
   }, [toast])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: reset-on-open for a controlled surface; one post-open render is the contract
     void load()
   }, [load])
 

@@ -84,7 +84,7 @@ describe("CartProvider", () => {
   it("returns reference-equal value object when nothing changed", () => {
     const captured: Array<ReturnType<typeof useCart>> = []
     function Capture() {
-      // eslint-disable-next-line react-hooks/rules-of-hooks
+       
       const ctx = useCart()
       useEffect(() => {
         captured.push(ctx)
@@ -325,7 +325,7 @@ describe("useCart", () => {
   it("throws when used outside a CartProvider", () => {
     function Orphan() {
       const ctx = useContext(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         (useCart as any)
       )
       return <div>{String(ctx)}</div>

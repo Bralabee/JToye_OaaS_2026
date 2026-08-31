@@ -139,6 +139,7 @@ export default function OnboardingApprovalsPage() {
   }, [toast])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     void loadQueue()
   }, [loadQueue])
 

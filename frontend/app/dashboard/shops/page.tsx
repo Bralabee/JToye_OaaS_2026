@@ -97,21 +97,6 @@ export default function ShopsPage() {
     resolver: zodResolver(shopSchema),
   })
 
-  useEffect(() => {
-    fetchShops()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage])
-
-  useEffect(() => {
-    if (searchQuery.length >= 2) {
-      const timer = setTimeout(() => searchShops(searchQuery), 300)
-      return () => clearTimeout(timer)
-    } else if (searchQuery.length === 0) {
-      fetchShops()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery])
-
   const fetchShops = async () => {
     try {
       setLoading(true)
@@ -148,6 +133,23 @@ export default function ShopsPage() {
       setLoadErrorMessage(describeLoadError(error, "Failed to search shops").message)
     }
   }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
+    fetchShops()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage])
+
+  useEffect(() => {
+    if (searchQuery.length >= 2) {
+      const timer = setTimeout(() => searchShops(searchQuery), 300)
+      return () => clearTimeout(timer)
+    } else if (searchQuery.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
+      fetchShops()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
 
   const retryLoad = () => {
     if (searchQuery.length >= 2) searchShops(searchQuery)

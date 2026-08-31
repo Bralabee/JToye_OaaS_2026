@@ -343,6 +343,7 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
   }, [fetchShops])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     setPage(0)
   }, [searchQuery])
 
