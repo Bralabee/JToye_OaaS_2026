@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch 005 — Landing Appetite Uplift</title>
+<link rel="stylesheet" href="../themes/default.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800;900&family=Caveat:wght@600&display=swap" rel="stylesheet">
+<style>
+  /* ── Sketch 005 tokens — brand thread: oxblood #3A0B0D + Work Sans + amber/orange appetite ── */
+  :root {
+    --ox: #3A0B0D;          /* oxblood anchor */
+    --ox-600: #5C1A1E;
+    --ox-deep: #1C0405;     /* night-market ground */
+    --cream: #FBF6EE;
+    --cream-100: #F0E4D3;
+    --amber: #F59E0B;
+    --orange: #F97316;
+    --orange-700: #C2410C;  /* --primary, locked #451 */
+    --gold: #D9A441;
+    --ink: #241A17;
+    --mut: #6B5E57;
+    --emerald: #059669;
+    --ws: 'Work Sans', system-ui, sans-serif;
+    --hand: 'Caveat', cursive;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: var(--ws); color: var(--ink); background: var(--cream); padding-top: 46px; }
+  img { max-width: 100%; display: block; }
+  a { text-decoration: none; color: inherit; }
+
+  /* variant tab bar */
+  #variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: #fff;
+    border-bottom: 1px solid #e8ddca; padding: 7px 10px; display: flex; gap: 6px; overflow-x: auto;
+    font-family: var(--ws); }
+  .variant-tab { border: 1px solid #e0d5c2; background: #faf6ee; border-radius: 999px; font: 600 12px var(--ws);
+    padding: 6px 12px; cursor: pointer; white-space: nowrap; color: #6b5e57; }
+  .variant-tab.active { background: var(--ox); color: #fff; border-color: var(--ox); }
+  .variant { display: none; }
+  .variant.active { display: block; }
+
+  /* viewport constrain (toolbar) */
+  .vp { margin: 0 auto; transition: max-width .25s; box-shadow: 0 0 0 1px #00000010; min-height: calc(100vh - 46px); overflow-x: hidden; background: inherit; }
+
+  /* shared bits */
+  .wrap { max-width: 1280px; margin: 0 auto; padding-left: 20px; padding-right: 20px; }
+  .eyebrow { font: 700 11px/1 var(--ws); letter-spacing: .16em; text-transform: uppercase; }
+  .chiprow { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .chiprow::-webkit-scrollbar { display: none; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; font-weight: 700; cursor: pointer; }
+  .searchpill { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 999px;
+    padding: 6px 6px 6px 18px; box-shadow: 0 10px 30px rgba(28,4,5,.18); }
+  .searchpill input { border: 0; outline: 0; flex: 1; font: 500 15px var(--ws); background: transparent; color: var(--ink); min-width: 0; }
+  .searchpill .go { background: var(--orange-700); color: #fff; border: 0; border-radius: 999px; padding: 12px 20px; font: 700 14px var(--ws); cursor: pointer; }
+  .imgbox { position: relative; overflow: hidden; background: linear-gradient(135deg,#fbe9d4,#f6dcd8); }
+  .imgbox img { width: 100%; height: 100%; object-fit: cover; }
+  .imgbox .fallback { position: absolute; inset: 0; display: none; place-items: center; font-size: 44px; }
+  .imgbox.dead img { display: none; } .imgbox.dead .fallback { display: grid; }
+  .steps3 { display: grid; gap: 18px; }
+  @media (min-width: 720px) { .steps3 { grid-template-columns: 1fr 1fr 1fr; } }
+  .trust { display: flex; flex-wrap: wrap; gap: 10px; }
+  .trust span { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; padding: 8px 14px; font: 600 13px var(--ws); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .marq-track, .heat, .tick-items, .drift { animation: none !important; }
+  }
+
+  /* ════════ VARIANT A — GOLDEN HOUR (photographic full-bleed) ════════ */
+  .va { background: var(--cream); }
+  .va .hero { position: relative; min-height: 88vh; display: flex; align-items: flex-end; color: #fff; }
+  .va .hero .bgimg { position: absolute; inset: 0; }
+  .va .hero .scrim { position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(28,4,5,.28) 0%, rgba(28,4,5,.10) 35%, rgba(58,11,13,.82) 78%, #3A0B0D 100%); }
+  .va .hero-inner { position: relative; width: 100%; padding-bottom: 34px; padding-top: 120px; }
+  .va h1 { font: 900 clamp(2.4rem, 7vw, 4.4rem)/1.02 var(--ws); letter-spacing: -.02em; text-wrap: balance; }
+  .va .sub { margin-top: 12px; font: 500 16px/1.5 var(--ws); color: #f6e9da; max-width: 34rem; }
+  .va .searchpill { margin-top: 22px; max-width: 560px; }
+  .va .glasschip { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.28); color: #fff;
+    backdrop-filter: blur(6px); border-radius: 999px; padding: 8px 14px; font: 600 13px var(--ws); white-space: nowrap; }
+  .va .glasschip:active { transform: scale(.97); }
+  .va .doors { display: grid; gap: 10px; margin-top: 20px; }
+  @media (min-width: 640px) { .va .doors { grid-template-columns: auto auto; justify-content: start; } }
+  .va .door-c { background: var(--orange-700); color: #fff; padding: 14px 22px; }
+  .va .door-o { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.35); color: #fff; padding: 14px 22px; }
+  .va .dishes { padding: 44px 0 10px; }
+  .va .dishgrid { display: grid; grid-auto-flow: column; grid-auto-columns: 78%; gap: 14px; overflow-x: auto; padding: 18px 20px; scroll-snap-type: x proximity; }
+  @media (min-width: 860px) { .va .dishgrid { grid-auto-flow: row; grid-template-columns: repeat(4,1fr); overflow: visible; padding: 18px 0; } }
+  .va .dcard { border-radius: 18px; overflow: hidden; background: #fff; box-shadow: 0 6px 24px rgba(58,11,13,.10); scroll-snap-align: start; transition: transform .2s, box-shadow .2s; }
+  .va .dcard:hover { transform: translateY(-4px); box-shadow: 0 16px 36px rgba(58,11,13,.16); }
+  .va .dcard .imgbox { aspect-ratio: 4/3; }
+  .va .price { position: absolute; right: 10px; bottom: 10px; background: #fff; border-radius: 999px; padding: 5px 11px; font: 800 13px var(--ws); color: var(--ox); box-shadow: 0 3px 10px rgba(0,0,0,.18); }
+  .va .dmeta { padding: 13px 15px 15px; }
+  .va .dmeta .shop { font: 700 15px var(--ws); }
+  .va .dmeta .cui { margin-top: 3px; font: 500 12.5px var(--ws); color: var(--mut); }
+  .va .how { background: #fff; padding: 48px 0 42px; }
+  .va .opband { background: var(--ox); color: #fff; padding: 52px 0; }
+  .va .opband .gold { color: var(--gold); }
+
+  /* ════════ VARIANT B — MARKET DAY (hand-made street market) ════════ */
+  .vb { background: var(--cream);
+    background-image: radial-gradient(#d8c4a422 1px, transparent 1.2px); background-size: 22px 22px; }
+  .vb .ticker { background: var(--ox); color: var(--cream); overflow: hidden; font: 800 12px/1 var(--ws); letter-spacing: .18em; }
+  .vb .marq-track { display: inline-flex; gap: 34px; padding: 9px 0; white-space: nowrap; animation: marq 26s linear infinite; }
+  @keyframes marq { to { transform: translateX(-50%); } }
+  .vb .hero { padding: 40px 0 34px; position: relative; }
+  .vb h1 { font: 900 clamp(2.3rem, 7vw, 4.2rem)/1.03 var(--ws); letter-spacing: -.02em; color: var(--ox); }
+  .vb h1 .uline { position: relative; white-space: nowrap; }
+  .vb h1 .uline svg { position: absolute; left: 0; right: 0; bottom: -.18em; width: 100%; height: .32em; }
+  .vb .handnote { font: 600 22px var(--hand); color: var(--orange-700); transform: rotate(-3deg); display: inline-block; }
+  .vb .sticker { background: #fff; border: 2px solid var(--ox); border-radius: 999px; padding: 9px 15px;
+    font: 700 13.5px var(--ws); color: var(--ox); box-shadow: 3px 3px 0 var(--ox); white-space: nowrap; transition: transform .15s; }
+  .vb .sticker:nth-child(odd) { transform: rotate(-1.6deg); } .vb .sticker:nth-child(even) { transform: rotate(1.4deg); }
+  .vb .sticker:hover { transform: rotate(0) translateY(-2px); background: #FFF3DF; }
+  .vb .searchpill { border: 2px solid var(--ox); box-shadow: 5px 5px 0 var(--ox); }
+  .vb .polas { display: grid; grid-auto-flow: column; grid-auto-columns: 66%; gap: 20px; overflow-x: auto; padding: 26px 20px 30px; scroll-snap-type: x proximity; }
+  @media (min-width: 860px) { .vb .polas { grid-auto-flow: row; grid-template-columns: repeat(4,1fr); overflow: visible; padding: 26px 0 10px; } }
+  .vb .pola { background: #fff; padding: 10px 10px 14px; border-radius: 6px; box-shadow: 0 10px 26px rgba(58,11,13,.14);
+    scroll-snap-align: start; transition: transform .2s; }
+  .vb .pola:nth-child(odd) { transform: rotate(-1.8deg); } .vb .pola:nth-child(even) { transform: rotate(1.6deg); }
+  .vb .pola:hover { transform: rotate(0) scale(1.02); }
+  .vb .pola .imgbox { aspect-ratio: 1/1; border-radius: 3px; }
+  .vb .pola .cap { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 4px 0; }
+  .vb .pola .cap b { font: 700 14.5px var(--ws); color: var(--ox); }
+  .vb .pola .cap i { font: 600 19px var(--hand); color: var(--orange-700); }
+  .vb .wavy { display: block; width: 100%; height: 26px; }
+  .vb .how { background: #fff; padding: 44px 0 40px; }
+  .vb .opband { background: var(--amber); padding: 46px 0; position: relative; }
+  .vb .opband .card { background: var(--ox); color: var(--cream); border-radius: 18px; padding: 28px; box-shadow: 6px 6px 0 #00000025; }
+
+  /* ════════ VARIANT C — EMBER (oxblood night market) ════════ */
+  .vc { background: linear-gradient(180deg, #140304 0%, var(--ox-deep) 30%, #2A0708 100%); color: #F6E9DA; }
+  .vc .hero { padding: 56px 0 30px; position: relative; overflow: hidden; }
+  .vc .emberwash { position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(90% 60% at 80% 0%, rgba(217,164,65,.18) 0%, transparent 60%),
+                radial-gradient(70% 50% at 10% 100%, rgba(194,65,12,.22) 0%, transparent 65%); }
+  .vc h1 { font: 900 clamp(2.4rem, 7vw, 4.6rem)/1.02 var(--ws); letter-spacing: -.02em; color: #fff; position: relative; }
+  .vc h1 em { font-style: normal; color: var(--gold); }
+  .vc .sub { margin-top: 12px; color: #D9BFA8; font: 500 16px/1.5 var(--ws); max-width: 33rem; position: relative; }
+  .vc .searchpill { background: rgba(255,255,255,.07); border: 1px solid rgba(217,164,65,.35); box-shadow: 0 12px 40px rgba(0,0,0,.5); margin-top: 22px; max-width: 560px; position: relative; }
+  .vc .searchpill input { color: #fff; } .vc .searchpill input::placeholder { color: #B08D6E; }
+  .vc .goldchip { border: 1px solid rgba(217,164,65,.4); color: var(--gold); border-radius: 999px; padding: 8px 14px; font: 600 13px var(--ws); white-space: nowrap; background: rgba(217,164,65,.06); }
+  .vc .goldchip:hover { background: rgba(217,164,65,.14); }
+  .vc .plates { display: grid; grid-auto-flow: column; grid-auto-columns: 62%; gap: 26px; overflow-x: auto; padding: 34px 20px 40px; scroll-snap-type: x proximity; }
+  @media (min-width: 860px) { .vc .plates { grid-auto-flow: row; grid-template-columns: repeat(4,1fr); overflow: visible; padding: 34px 0 30px; } }
+  .vc .plate { text-align: center; scroll-snap-align: start; }
+  .vc .plate .imgbox { aspect-ratio: 1/1; border-radius: 50%; margin: 0 auto; width: min(100%, 240px);
+    box-shadow: 0 0 0 1px rgba(217,164,65,.35), 0 18px 60px rgba(194,65,12,.35), 0 4px 24px rgba(0,0,0,.6); transition: transform .25s, box-shadow .25s; }
+  .vc .plate:hover .imgbox { transform: translateY(-6px) scale(1.02); box-shadow: 0 0 0 1px rgba(217,164,65,.6), 0 26px 80px rgba(194,65,12,.5), 0 4px 24px rgba(0,0,0,.6); }
+  .vc .plate b { display: block; margin-top: 14px; font: 700 15.5px var(--ws); color: #fff; }
+  .vc .plate span { display: block; margin-top: 3px; font: 500 12.5px var(--ws); color: #C79B71; }
+  .vc .openpill { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font: 700 11px var(--ws); letter-spacing: .1em; text-transform: uppercase; color: #7CE0B0; }
+  .vc .openpill i { width: 7px; height: 7px; border-radius: 50%; background: #34D399; box-shadow: 0 0 10px #34D399; }
+  .vc .how { border-top: 1px solid rgba(217,164,65,.18); padding: 46px 0; }
+  .vc .how h3 { color: #fff; } .vc .how p { color: #C9AC90; }
+  .vc .opband { background: linear-gradient(135deg, #D9A441 0%, #C2410C 100%); color: var(--ox-deep); padding: 50px 0; }
+
+  /* ════════ VARIANT D — MARKET HEAT LIVE (motion-led) ════════ */
+  .vd { background: var(--cream); }
+  .vd .hero { position: relative; padding: 46px 0 10px; overflow: hidden; }
+  .vd .heat { position: absolute; inset: -20% -10%; pointer-events: none; filter: blur(40px); opacity: .55;
+    background: radial-gradient(40% 34% at 76% 18%, #FDBA74 0%, transparent 70%),
+                radial-gradient(34% 30% at 88% 60%, #FCA5A5 0%, transparent 70%),
+                radial-gradient(30% 30% at 62% 40%, #FDE68A 0%, transparent 70%);
+    animation: heatdrift 14s ease-in-out infinite alternate; }
+  @keyframes heatdrift { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(-3%,4%,0) scale(1.06); } }
+  .vd h1 { font: 900 clamp(2.4rem, 7vw, 4.4rem)/1.02 var(--ws); letter-spacing: -.02em; color: var(--ox); position: relative; }
+  .vd .sub { margin-top: 12px; color: var(--mut); font: 500 16px/1.5 var(--ws); max-width: 33rem; position: relative; }
+  .vd .livewrap { position: relative; margin-top: 24px; }
+  .vd .livecard { background: #fff; border-radius: 16px; box-shadow: 0 12px 34px rgba(58,11,13,.12); padding: 14px 16px; max-width: 460px; }
+  .vd .livecard .lhead { display: flex; align-items: center; gap: 8px; font: 800 11px var(--ws); letter-spacing: .14em; text-transform: uppercase; color: var(--orange-700); }
+  .vd .livecard .lhead i { width: 8px; height: 8px; border-radius: 50%; background: #EF4444; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 #ef444466; } 50% { box-shadow: 0 0 0 7px #ef444400; } }
+  .vd .tickmask { height: 66px; overflow: hidden; margin-top: 10px; position: relative; }
+  .vd .tick-items { animation: tickup 12s infinite; }
+  @keyframes tickup { 0%,22% { transform: translateY(0); } 25%,47% { transform: translateY(-66px); }
+    50%,72% { transform: translateY(-132px); } 75%,97% { transform: translateY(-198px); } 100% { transform: translateY(-264px); } }
+  .vd .tk { height: 66px; display: flex; gap: 11px; align-items: center; }
+  .vd .tk .em { font-size: 26px; }
+  .vd .tk b { font: 700 14px var(--ws); color: var(--ink); display: block; }
+  .vd .tk span { font: 500 12.5px var(--ws); color: var(--mut); }
+  .vd .stats { display: flex; gap: 26px; margin-top: 26px; position: relative; flex-wrap: wrap; }
+  .vd .stat b { font: 900 30px var(--ws); color: var(--ox); display: block; letter-spacing: -.02em; }
+  .vd .stat span { font: 600 12px var(--ws); color: var(--mut); text-transform: uppercase; letter-spacing: .1em; }
+  .vd .marqband { margin-top: 34px; overflow: hidden; transform: rotate(-1.2deg); }
+  .vd .drift { display: inline-flex; gap: 14px; animation: marq 32s linear infinite; padding: 8px 0; white-space: nowrap; }
+  .vd .drift .imgbox { width: 190px; aspect-ratio: 4/3; border-radius: 14px; display: inline-block; box-shadow: 0 8px 22px rgba(58,11,13,.16); }
+  .vd .how { background: #fff; padding: 46px 0 42px; margin-top: -10px; }
+  .vd .opband { background: var(--ox); color: #fff; padding: 50px 0; }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <button class="variant-tab active" onclick="showVariant('a', this)">A: Golden Hour — photographic</button>
+  <button class="variant-tab" onclick="showVariant('b', this)">B: Market Day — hand-made</button>
+  <button class="variant-tab" onclick="showVariant('c', this)">C: Ember — night market</button>
+  <button class="variant-tab" onclick="showVariant('d', this)">D: Market Heat — live</button>
+</div>
+
+<!-- ════════════════════════ VARIANT A ════════════════════════ -->
+<div id="variant-a" class="variant active va"><div class="vp">
+  <section class="hero">
+    <div class="bgimg imgbox">
+      <img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=70" alt="" onerror="deadimg(this)">
+      <div class="fallback" style="font-size:120px">🥘</div>
+    </div>
+    <div class="scrim"></div>
+    <div class="hero-inner wrap">
+      <span class="eyebrow" style="color:#FBD38D">🇬🇧 Independent UK kitchens</span>
+      <h1>Good food is<br>cooking near you.</h1>
+      <p class="sub">Order from independent local kitchens in minutes — or take your own kitchen online and go live in a day.</p>
+      <div class="searchpill" role="search">
+        <span aria-hidden>📍</span>
+        <input placeholder="Postcode or a craving — “jollof”, “B14”…">
+        <button class="go">Search</button>
+      </div>
+      <div class="chiprow" style="margin-top:14px">
+        <a class="glasschip" href="#">🍗 Grill</a><a class="glasschip" href="#">🍚 Jollof</a>
+        <a class="glasschip" href="#">🥘 Caribbean</a><a class="glasschip" href="#">🍛 South Asian</a>
+        <a class="glasschip" href="#">🥗 Vegan</a><a class="glasschip" href="#">🍰 Desserts</a>
+      </div>
+      <div class="doors">
+        <a class="btn door-c" href="#">Order food near you →</a>
+        <a class="btn door-o" href="#">🏪 Run your food business</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="dishes">
+    <div class="wrap">
+      <span class="eyebrow" style="color:var(--orange-700)">Cooking now</span>
+      <h2 style="font:800 26px var(--ws); color:var(--ox); margin-top:6px">Dishes cooking near you</h2>
+    </div>
+    <div class="dishgrid wrap" style="padding-left:20px;padding-right:20px">
+      <a class="dcard" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🍔</div><span class="price">£9.50</span></div>
+        <div class="dmeta"><div class="shop">Mama Efe’s Kitchen</div><div class="cui">Nigerian · Smoky party jollof · ⭐ 4.8</div></div></a>
+      <a class="dcard" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=700&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🍖</div><span class="price">£11.00</span></div>
+        <div class="dmeta"><div class="shop">Yard Vibes</div><div class="cui">Caribbean · Jerk chicken, rice &amp; peas · ⭐ 4.7</div></div></a>
+      <a class="dcard" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1574484284002-952d92456975?auto=format&fit=crop&w=700&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🍛</div><span class="price">£12.50</span></div>
+        <div class="dmeta"><div class="shop">Spice Route</div><div class="cui">South Asian · Lamb karahi · ⭐ 4.9</div></div></a>
+      <a class="dcard" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=700&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🥗</div><span class="price">£8.00</span></div>
+        <div class="dmeta"><div class="shop">Green Bowl</div><div class="cui">Vegan · Rainbow buddha bowl · ⭐ 4.6</div></div></a>
+    </div>
+  </section>
+
+  <section class="how">
+    <div class="wrap">
+      <h2 style="font:800 26px var(--ws); color:var(--ox)">How it works</h2>
+      <div class="steps3" style="margin-top:22px">
+        <div><div style="font-size:26px">🔍</div><h3 style="font:700 17px var(--ws); margin-top:8px">Browse</h3><p style="color:var(--mut); font-size:14px; margin-top:5px">Find independent kitchens near you and explore their menus.</p></div>
+        <div><div style="font-size:26px">🛍️</div><h3 style="font:700 17px var(--ws); margin-top:8px">Order &amp; pay</h3><p style="color:var(--mut); font-size:14px; margin-top:5px">Check out securely — delivery or collection.</p></div>
+        <div><div style="font-size:26px">📍</div><h3 style="font:700 17px var(--ws); margin-top:8px">Track live</h3><p style="color:var(--mut); font-size:14px; margin-top:5px">Follow your order from the kitchen to your door.</p></div>
+      </div>
+      <div class="trust" style="margin-top:26px">
+        <span style="background:var(--cream); color:#374151">✅ UK food-hygiene verified</span>
+        <span style="background:var(--cream); color:#374151">✅ Allergen info on every item</span>
+        <span style="background:var(--cream); color:#374151">✅ No app to download</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="opband">
+    <div class="wrap">
+      <span class="eyebrow gold" style="color:var(--gold)">For food businesses</span>
+      <h2 style="font:800 clamp(1.6rem,4vw,2.2rem) var(--ws); margin-top:8px">Your kitchen, online by dinner time.</h2>
+      <p style="color:#EBD9C4; margin-top:8px; max-width:36rem">Take orders, manage your kitchen and get paid — everything in one place.</p>
+      <a class="btn" style="background:var(--gold); color:var(--ox); padding:13px 22px; margin-top:18px" href="#">Start selling →</a>
+    </div>
+  </section>
+</div></div>
+
+<!-- ════════════════════════ VARIANT B ════════════════════════ -->
+<div id="variant-b" class="variant vb"><div class="vp">
+  <div class="ticker" aria-hidden><div class="marq-track">
+    <span>MARKET DAY</span><span>◆</span><span>FRESH FROM LOCAL KITCHENS</span><span>◆</span><span>ORDER IN MINUTES</span><span>◆</span><span>NO APP NEEDED</span><span>◆</span>
+    <span>MARKET DAY</span><span>◆</span><span>FRESH FROM LOCAL KITCHENS</span><span>◆</span><span>ORDER IN MINUTES</span><span>◆</span><span>NO APP NEEDED</span><span>◆</span>
+  </div></div>
+
+  <section class="hero">
+    <div class="wrap">
+      <span class="handnote">psst — dinner’s sorted ↓</span>
+      <h1 style="margin-top:6px">Your local <span class="uline">food market,<svg viewBox="0 0 200 14" preserveAspectRatio="none" aria-hidden><path d="M3 10 Q 50 2 100 8 T 197 6" fill="none" stroke="#F59E0B" stroke-width="6" stroke-linecap="round"/></svg></span><br>open on your phone.</h1>
+      <p style="margin-top:16px; color:var(--mut); font:500 16px/1.5 var(--ws); max-width:32rem">Independent kitchens cooking real food near you — order in minutes, or set up your own stall and go live in a day.</p>
+      <div class="searchpill" style="margin-top:22px; max-width:540px" role="search">
+        <span aria-hidden>🔍</span><input placeholder="What are you hungry for?"><button class="go">Find food</button>
+      </div>
+      <div class="chiprow" style="margin-top:18px; padding:6px 2px 10px">
+        <a class="sticker" href="#">🍗 Grill</a><a class="sticker" href="#">🍚 Jollof</a><a class="sticker" href="#">🥘 Caribbean</a>
+        <a class="sticker" href="#">🍛 South Asian</a><a class="sticker" href="#">🥗 Vegan</a><a class="sticker" href="#">🍰 Desserts</a>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap" style="display:flex; align-items:baseline; justify-content:space-between">
+      <h2 style="font:800 26px var(--ws); color:var(--ox)">Fresh out the pot</h2>
+      <span class="handnote" style="font-size:19px">today’s picks!</span>
+    </div>
+    <div class="polas wrap" style="padding-left:20px;padding-right:20px">
+      <a class="pola" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🍔</div></div>
+        <div class="cap"><b>Mama Efe’s Kitchen</b><i>£9.50</i></div></a>
+      <a class="pola" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=700&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🍖</div></div>
+        <div class="cap"><b>Yard Vibes</b><i>£11</i></div></a>
+      <a class="pola" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1574484284002-952d92456975?auto=format&fit=crop&w=700&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🍛</div></div>
+        <div class="cap"><b>Spice Route</b><i>£12.50</i></div></a>
+      <a class="pola" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=700&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🥗</div></div>
+        <div class="cap"><b>Green Bowl</b><i>£8</i></div></a>
+    </div>
+  </section>
+
+  <svg class="wavy" viewBox="0 0 1200 26" preserveAspectRatio="none" aria-hidden><path d="M0 13 Q 75 0 150 13 T 300 13 T 450 13 T 600 13 T 750 13 T 900 13 T 1050 13 T 1200 13 V 26 H 0 Z" fill="#ffffff"/></svg>
+
+  <section class="how" style="margin-top:-1px">
+    <div class="wrap">
+      <h2 style="font:800 26px var(--ws); color:var(--ox)">How it works</h2>
+      <div class="steps3" style="margin-top:22px">
+        <div><span class="handnote" style="font-size:20px">step 1</span><h3 style="font:700 17px var(--ws)">Browse the stalls</h3><p style="color:var(--mut); font-size:14px; margin-top:5px">Find independent kitchens near you and explore their menus.</p></div>
+        <div><span class="handnote" style="font-size:20px">step 2</span><h3 style="font:700 17px var(--ws)">Order &amp; pay</h3><p style="color:var(--mut); font-size:14px; margin-top:5px">Check out securely — delivery or collection.</p></div>
+        <div><span class="handnote" style="font-size:20px">step 3</span><h3 style="font:700 17px var(--ws)">Track it home</h3><p style="color:var(--mut); font-size:14px; margin-top:5px">Follow your order from the kitchen to your door.</p></div>
+      </div>
+      <div class="trust" style="margin-top:26px">
+        <span style="background:var(--cream); border:1.5px solid var(--cream-100); color:#374151">✅ UK food-hygiene verified</span>
+        <span style="background:var(--cream); border:1.5px solid var(--cream-100); color:#374151">✅ Allergen info on every item</span>
+        <span style="background:var(--cream); border:1.5px solid var(--cream-100); color:#374151">✅ No app to download</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="opband">
+    <div class="wrap"><div class="card">
+      <span class="handnote" style="color:var(--gold)">got a kitchen?</span>
+      <h2 style="font:800 clamp(1.5rem,4vw,2rem) var(--ws); margin-top:4px">Set up your stall. Go live by dinner.</h2>
+      <p style="color:#EBD9C4; margin-top:8px; max-width:34rem">Take orders, manage your kitchen and get paid — one platform, no faff.</p>
+      <a class="btn" style="background:var(--gold); color:var(--ox); padding:12px 20px; margin-top:16px" href="#">Start selling →</a>
+    </div></div>
+  </section>
+</div></div>
+
+<!-- ════════════════════════ VARIANT C ════════════════════════ -->
+<div id="variant-c" class="variant vc"><div class="vp">
+  <section class="hero">
+    <div class="emberwash"></div>
+    <div class="wrap">
+      <span class="eyebrow" style="color:var(--gold)">🇬🇧 Independent UK kitchens · open late</span>
+      <h1 style="margin-top:10px">Tonight’s dinner is<br>already <em>sizzling.</em></h1>
+      <p class="sub">Real kitchens, real cooks, minutes away. Order in — or fire up your own kitchen on J’Toye.</p>
+      <div class="searchpill" role="search">
+        <span aria-hidden>📍</span><input placeholder="Postcode or craving…"><button class="go" style="background:var(--gold); color:var(--ox-deep)">Search</button>
+      </div>
+      <div class="chiprow" style="margin-top:16px">
+        <a class="goldchip" href="#">🍗 Grill</a><a class="goldchip" href="#">🍚 Jollof</a><a class="goldchip" href="#">🥘 Caribbean</a>
+        <a class="goldchip" href="#">🍛 South Asian</a><a class="goldchip" href="#">🥗 Vegan</a><a class="goldchip" href="#">🍰 Desserts</a>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2 style="font:800 24px var(--ws); color:#fff">On the pass right now</h2>
+    </div>
+    <div class="plates wrap" style="padding-left:20px;padding-right:20px">
+      <a class="plate" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=600&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🍔</div></div>
+        <b>Mama Efe’s Kitchen</b><span>Nigerian · from £9.50</span><br><span class="openpill"><i></i>Open now</span></a>
+      <a class="plate" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🍖</div></div>
+        <b>Yard Vibes</b><span>Caribbean · from £11</span><br><span class="openpill"><i></i>Open now</span></a>
+      <a class="plate" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1574484284002-952d92456975?auto=format&fit=crop&w=600&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🍛</div></div>
+        <b>Spice Route</b><span>South Asian · from £12.50</span><br><span class="openpill"><i></i>Open now</span></a>
+      <a class="plate" href="#"><div class="imgbox"><img src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&q=70" alt="" onerror="deadimg(this)"><div class="fallback">🥗</div></div>
+        <b>Green Bowl</b><span>Vegan · from £8</span><br><span class="openpill"><i></i>Open now</span></a>
+    </div>
+  </section>
+
+  <section class="how">
+    <div class="wrap">
+      <h2 style="font:800 24px var(--ws); color:#fff">How it works</h2>
+      <div class="steps3" style="margin-top:22px">
+        <div><div style="font-size:24px">🔍</div><h3 style="font:700 16px var(--ws); margin-top:8px">Browse</h3><p style="font-size:14px; margin-top:5px">Find kitchens near you, explore menus.</p></div>
+        <div><div style="font-size:24px">🛍️</div><h3 style="font:700 16px var(--ws); margin-top:8px">Order &amp; pay</h3><p style="font-size:14px; margin-top:5px">Secure checkout — delivery or collection.</p></div>
+        <div><div style="font-size:24px">📍</div><h3 style="font:700 16px var(--ws); margin-top:8px">Track live</h3><p style="font-size:14px; margin-top:5px">Kitchen to your door, in real time.</p></div>
+      </div>
+      <div class="trust" style="margin-top:26px">
+        <span style="background:rgba(255,255,255,.06); border:1px solid rgba(217,164,65,.25); color:#EBD9C4">✅ UK food-hygiene verified</span>
+        <span style="background:rgba(255,255,255,.06); border:1px solid rgba(217,164,65,.25); color:#EBD9C4">✅ Allergen info on every item</span>
+        <span style="background:rgba(255,255,255,.06); border:1px solid rgba(217,164,65,.25); color:#EBD9C4">✅ No app to download</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="opband">
+    <div class="wrap">
+      <span class="eyebrow" style="color:var(--ox)">For food businesses</span>
+      <h2 style="font:900 clamp(1.6rem,4vw,2.2rem) var(--ws); margin-top:8px">Run the kitchen. We run the rest.</h2>
+      <p style="margin-top:8px; max-width:34rem; font-weight:600">Orders, kitchen display, payments — live in a day.</p>
+      <a class="btn" style="background:var(--ox-deep); color:var(--gold); padding:13px 22px; margin-top:18px" href="#">Start selling →</a>
+    </div>
+  </section>
+</div></div>
+
+<!-- ════════════════════════ VARIANT D ════════════════════════ -->
+<div id="variant-d" class="variant vd"><div class="vp">
+  <section class="hero">
+    <div class="heat"></div>
+    <div class="wrap">
+      <span class="eyebrow" style="color:var(--orange-700); position:relative">🇬🇧 Independent UK kitchens</span>
+      <h1 style="margin-top:10px">Order from local kitchens.<br>Or run yours.</h1>
+      <p class="sub">J’Toye connects hungry customers with independent food businesses — order in minutes, or go live in a day.</p>
+      <div class="searchpill" style="margin-top:22px; max-width:540px; position:relative" role="search">
+        <span aria-hidden>🔍</span><input placeholder="Postcode or a craving…"><button class="go">Search</button>
+      </div>
+      <div class="livewrap">
+        <div class="livecard">
+          <div class="lhead"><i></i> Live from the kitchens</div>
+          <div class="tickmask"><div class="tick-items">
+            <div class="tk"><span class="em">🍚</span><div><b>Party jollof just ordered</b><span>Mama Efe’s Kitchen · Kings Heath · 40s ago</span></div></div>
+            <div class="tk"><span class="em">🍗</span><div><b>Jerk chicken on the grill</b><span>Yard Vibes · Moseley · 2 min ago</span></div></div>
+            <div class="tk"><span class="em">🍛</span><div><b>Lamb karahi out for delivery</b><span>Spice Route · Sparkhill · 3 min ago</span></div></div>
+            <div class="tk"><span class="em">🥗</span><div><b>New kitchen just went live</b><span>Green Bowl · Digbeth · 5 min ago</span></div></div>
+            <div class="tk"><span class="em">🍚</span><div><b>Party jollof just ordered</b><span>Mama Efe’s Kitchen · Kings Heath · 40s ago</span></div></div>
+          </div></div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b>27</b><span>kitchens live</span></div>
+        <div class="stat"><b>4.8★</b><span>avg rating</span></div>
+        <div class="stat"><b>12 min</b><span>avg to accept</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="marqband" aria-hidden><div class="drift">
+    <span class="imgbox"><img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=500&q=60" alt="" onerror="deadimg(this)"><span class="fallback">🍔</span></span>
+    <span class="imgbox"><img src="https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=500&q=60" alt="" onerror="deadimg(this)"><span class="fallback">🍖</span></span>
+    <span class="imgbox"><img src="https://images.unsplash.com/photo-1574484284002-952d92456975?auto=format&fit=crop&w=500&q=60" alt="" onerror="deadimg(this)"><span class="fallback">🍛</span></span>
+    <span class="imgbox"><img src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=60" alt="" onerror="deadimg(this)"><span class="fallback">🥗</span></span>
+    <span class="imgbox"><img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=500&q=60" alt="" onerror="deadimg(this)"><span class="fallback">🥘</span></span>
+    <span class="imgbox"><img src="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=500&q=60" alt="" onerror="deadimg(this)"><span class="fallback">🍔</span></span>
+    <span class="imgbox"><img src="https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=500&q=60" alt="" onerror="deadimg(this)"><span class="fallback">🍖</span></span>
+    <span class="imgbox"><img src="https://images.unsplash.com/photo-1574484284002-952d92456975?auto=format&fit=crop&w=500&q=60" alt="" onerror="deadimg(this)"><span class="fallback">🍛</span></span>
+    <span class="imgbox"><img src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=60" alt="" onerror="deadimg(this)"><span class="fallback">🥗</span></span>
+    <span class="imgbox"><img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=500&q=60" alt="" onerror="deadimg(this)"><span class="fallback">🥘</span></span>
+  </div></div>
+
+  <section class="how">
+    <div class="wrap">
+      <h2 style="font:800 26px var(--ws); color:var(--ox)">How it works</h2>
+      <div class="steps3" style="margin-top:22px">
+        <div><div style="font-size:26px">🔍</div><h3 style="font:700 17px var(--ws); margin-top:8px">Browse</h3><p style="color:var(--mut); font-size:14px; margin-top:5px">Find independent kitchens near you and explore their menus.</p></div>
+        <div><div style="font-size:26px">🛍️</div><h3 style="font:700 17px var(--ws); margin-top:8px">Order &amp; pay</h3><p style="color:var(--mut); font-size:14px; margin-top:5px">Check out securely — delivery or collection.</p></div>
+        <div><div style="font-size:26px">📍</div><h3 style="font:700 17px var(--ws); margin-top:8px">Track live</h3><p style="color:var(--mut); font-size:14px; margin-top:5px">Follow your order from the kitchen to your door.</p></div>
+      </div>
+      <div class="trust" style="margin-top:26px">
+        <span style="background:var(--cream); color:#374151">✅ UK food-hygiene verified</span>
+        <span style="background:var(--cream); color:#374151">✅ Allergen info on every item</span>
+        <span style="background:var(--cream); color:#374151">✅ No app to download</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="opband">
+    <div class="wrap">
+      <span class="eyebrow" style="color:var(--gold)">For food businesses</span>
+      <h2 style="font:800 clamp(1.6rem,4vw,2.2rem) var(--ws); margin-top:8px">Join the kitchens cooking on J’Toye.</h2>
+      <p style="color:#EBD9C4; margin-top:8px; max-width:36rem">Take orders, manage your kitchen and get paid — live in a day.</p>
+      <a class="btn" style="background:var(--gold); color:var(--ox); padding:13px 22px; margin-top:18px" href="#">Start selling →</a>
+    </div>
+  </section>
+</div></div>
+
+<!-- sketch toolbar -->
+<div id="sketch-tools" style="position:fixed;bottom:12px;right:12px;z-index:9999;font-family:system-ui;font-size:12px;background:rgba(0,0,0,.75);color:#fff;padding:8px 12px;border-radius:8px;opacity:.45;transition:opacity .2s;display:flex;gap:8px;align-items:center"
+     onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='.45'">
+  <span style="opacity:.7">viewport</span>
+  <button onclick="setVp('390px')" style="cursor:pointer">📱 390</button>
+  <button onclick="setVp('768px')" style="cursor:pointer">tablet</button>
+  <button onclick="setVp('none')" style="cursor:pointer">🖥 full</button>
+</div>
+
+<script>
+function showVariant(id, btn) {
+  document.querySelectorAll('.variant').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.variant-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('variant-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+function setVp(w) {
+  document.querySelectorAll('.vp').forEach(v => v.style.maxWidth = (w === 'none' ? '' : w));
+}
+function deadimg(img) { img.closest('.imgbox').classList.add('dead'); }
+</script>
+</body>
+</html>
