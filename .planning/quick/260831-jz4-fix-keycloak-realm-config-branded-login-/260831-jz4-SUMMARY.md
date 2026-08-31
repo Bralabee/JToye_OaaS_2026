@@ -844,6 +844,160 @@ Both via `-F`, read back with `git log -1 --format=%B`, no trailer anywhere on t
 
 ---
 
+## Code review fixes (PR #713 — 0 Critical, 9 Warnings, 6 Info)
+
+Review: `.planning/quick/260831-jz4-fix-keycloak-realm-config-branded-login-/260831-jz4-REVIEW.md`.
+Commits `c243effa` (CSS) and `ee2b5724` (docs + compose), pushed to the PR.
+
+**The review found two real rendering defects, and both came from the same root cause: I wrote
+the overlay against a mis-remembered stock stylesheet and then wrote confident comments asserting
+the mistaken values.** The comments made the bugs unfindable by reading. Every stock value below
+was re-extracted from `org.keycloak.keycloak-themes-24.0.5.jar` and is now quoted verbatim in the
+CSS.
+
+| ID | Disposition | Evidence |
+|---|---|---|
+| WR-01 | **Fixed** | `#kc-info` margin-bottom was `-30px` at every width — measured 390→1440 |
+| WR-02 | **Fixed** | card full-bleed at 481/600/767 — measured, invisible to a 390px capture |
+| WR-03 | **Fixed** | comment/README premise was fabricated; restated with measured values |
+| WR-04 | **Fixed** | README block said `"keycloak"`, templates ship `"jtoye"` |
+| WR-05 | **Fixed (documented, no service added)** | per-stack table; boundary recorded in both composes |
+| WR-06 | **Not applied — premise false on KC 24.0.5** | bytecode shows both timeouts hardcoded |
+| WR-07 | **Fixed (reworded)** | CHANGELOG + README now state the condition |
+| WR-08 | **Fixed** | inline links `underline`; buttons exempt |
+| WR-09 | **Fixed** | transparent outline + ring alpha 0.18 → 0.45 |
+| IN-01 | **Fixed** | dead `::after` rule deleted |
+| IN-02 | **Fixed** | "the realms" → "the imported realm" |
+| IN-03 / IN-04 | **Noted, not changed** | `emailTheme` and `.local` recorded as boundaries |
+| IN-05 | **Fixed** | snippet names 8085 vs hostnet's 8081 |
+| IN-06 | **Not done** | see below |
+
+### WR-01 / WR-02 — measured before and after
+
+The stock values the overlay was written against, read out of the jar:
+
+```
+login.css:167   #kc-info { margin: 20px -40px -30px; }      <- three-value shorthand
+login.css:514   .card-pf { padding: 0 20px; max-width: 500px; }
+login.css:524   @media (max-width: 767px) { .login-pf-page .card-pf {
+                  max-width: none; margin-left: 0; margin-right: 0; ... } }
+```
+
+My comment had claimed stock was `margin: 0 -40px` cancelling `40px` padding. Both halves false,
+and the breakpoint was 767px, not the 480px I had used.
+
+**Before (defect):**
+
+```
+w    | kcInfo mb | OVERHANG | card w | ml/mr    | radius
+390  | -30px     | 13       | 366    | 12px/12px | 8px    <-- WR-01
+480  | -30px     | 13       | 456    | 12px/12px | 8px    <-- WR-01
+481  | -30px     | 5        | 481    | 0px/0px  | 16px   <-- WR-01 + WR-02 full-bleed
+600  | -30px     | 5        | 600    | 0px/0px  | 16px   <-- WR-01 + WR-02 full-bleed
+767  | -30px     | 5        | 767    | 0px/0px  | 16px   <-- WR-01 + WR-02 full-bleed
+768  | -30px     | 5        | 500    | 134px    | 16px   <-- WR-01
+1440 | -30px     | 5        | 500    | 470px    | 16px   <-- WR-01
+```
+
+**After:**
+
+```
+w    | kcInfo mb | OVERHANG | card w | ml/mr    | radius
+390  | -16px     | -1       | 366    | 12px/12px | 8px
+480  | -16px     | -1       | 456    | 12px/12px | 8px
+481  | -24px     | -1       | 457    | 12px/12px | 8px
+600  | -24px     | -1       | 576    | 12px/12px | 8px
+767  | -24px     | -1       | 743    | 12px/12px | 8px
+768  | -24px     | -1       | 500    | 134px    | 16px
+1440 | -24px     | -1       | 500    | 470px    | 16px
+```
+
+`-1px` is the card's 1px bottom border, i.e. the strip is flush inside it.
+
+**I went further than the review's literal snippet, on the review's own criterion.** It proposed
+`margin: 0 -2rem`, which removes the `-30px` bug but leaves the strip floating 25px above the
+card's bottom with a band of white beneath — failing the review's stated acceptance test that
+"the strip's bottom edge and the card's bottom edge coincide". The negative bottom margin now
+cancels the card's own `padding-bottom` at each breakpoint.
+
+### WR-06 — not applied, because the premise does not hold on this version
+
+The review asked for `connectionTimeout`/`timeout` keys, on the basis that Keycloak copies them
+into JavaMail "only when the corresponding realm keys are present" and that JavaMail defaults to
+no timeout. Verified in the shipped bytecode instead of assumed —
+`org.keycloak.email.DefaultEmailSenderProvider` from
+`org.keycloak.keycloak-services-24.0.5.jar` in the running image:
+
+```
+202: ldc  #79   // String mail.smtp.timeout
+204: ldc  #81   // String 10000
+206: invokevirtual Properties.setProperty
+212: ldc  #83   // String mail.smtp.connectiontimeout
+214: ldc  #81   // String 10000
+216: invokevirtual Properties.setProperty
+```
+
+Both are `ldc` of a **constant**, not a lookup against the realm map, and the class's constant
+pool contains **no standalone `timeout` or `connectionTimeout` string** (`grep -x` → rc=1). KC
+24.0.5 already bounds both at 10 s and exposes no realm key for them. Adding the keys would be
+dead config that reads as protection while doing nothing, so they were not added; the
+disassembly and a re-check-on-upgrade instruction are in the README.
+
+### WR-08 / WR-09 — verified by computed style
+
+```
+customers @390 / @600 / @1440: inlineLinkDecoration=underline  buttonDecoration=none
+```
+
+Focus now carries `outline: 2px solid transparent; outline-offset: 2px` alongside the box-shadow,
+so `forced-colors: active` has something to repaint, and the ring alpha went 0.18 → 0.45.
+
+### IN-06 — not done, and it is the right call to flag
+
+The review proposes a `check-keycloak-theme-contract.sh` asserting that `styles=` retains
+`css/login.css` and that each `#kc-info` margin matches its breakpoint's card padding. **It is
+correct in principle and WR-01 is direct evidence for it** — the prose rule failed in the very
+commit that wrote it, which is exactly this project's "a script that fails loudly, not a firmer
+instruction" doctrine. It is not in this change because a gate must be shown to fail before it is
+trusted, and doing that properly (fixture with a shortened `styles=`, a de-coupled margin, wiring
+into `ops-contracts`, passing `check-gate-enforcement.sh`) is more than a docs-fix increment.
+**Recommend filing it as a follow-up issue rather than treating it as closed.**
+
+### Regression sweep after the fixes
+
+```
+served jtoye.css == COMMITTED file (16316 bytes)   [cmp; control confirmed cmp can detect a diff]
+both login pages: <title>Sign in to J&#39;Toye</title>
+reset journey: mailhog 14 -> 15 (delta=1), To=lane3-reverify-…@example.com, http=200
+verify-env.sh                    rc=0  (baseline 0)
+check-infra-exposure.sh          rc=0  (baseline 0)
+check-container-config-drift.sh  rc=0  (baseline 0)
+check-doc-metrics / citations / docs-freshness  rc=0 / 0 / 0
+no horizontal overflow at 390, 600, 1440 on sign-in and reset — FAILURES: 0
+```
+
+**One check needed its own instrument questioned.** A naive brace count read the CSS as
+unbalanced (57/55). Stripping comments first gave 53/53 BALANCED — the new comments quote stock
+CSS containing unclosed `{`, which accounts for the difference exactly (4 open / 2 close in
+comments). A deliberately broken fixture confirmed the code-only counter still detects a real
+imbalance.
+
+**And one gate failure that was not mine.** `docker compose config` on both `infra/` composes
+returns rc=1 — because `infra/` has no `.env` (it lives at the repo root), not because of the
+edit. Proven by running the *pre-edit* file from `git show` under the same conditions (also
+rc=1 without `.env`, rc=0 with it) and then the *edited* files with `.env` present: both rc=0,
+with the theme mount resolving `read_only: true`.
+
+### New screenshots (post-review)
+
+| Page | 390 | 600 (the WR-02 band) | 1440 |
+|---|---|---|---|
+| customers sign-in | `evidence/shots/30-customers-signin-390.png` | `30-customers-signin-600.png` | `30-customers-signin-1440.png` |
+| vendor sign-in | `30-dev-signin-390.png` | `30-dev-signin-600.png` | `30-dev-signin-1440.png` |
+| reset-credentials | `31-customers-reset-390.png` | `31-customers-reset-600.png` | `31-customers-reset-1440.png` |
+
+---
+
 ## Self-Check
 
 Files claimed modified, existence checked:
@@ -869,6 +1023,8 @@ FOUND: 9fc63383
 FOUND: c869bc8f
 FOUND: 4fed2bcb
 FOUND: 4d0e2d6c
+FOUND: c243effa
+FOUND: ee2b5724
 ```
 
 ## Self-Check: PASSED
