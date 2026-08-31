@@ -803,7 +803,8 @@ export function ShopDetailClient({
   )
 }
 
-function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumOrderPennies: number }) {
+// Exported for the Jest suite (app/shop/__tests__/floating-cart-bar.test.tsx) only.
+export function FloatingCartBar({ slug, minimumOrderPennies }: { slug: string; minimumOrderPennies: number }) {
   const { itemCount, totalPennies } = useCart()
   // R-07: publish this bar's height as `--jt-bottom-chrome` so the cookie
   // notice sits ABOVE it and its "Got it" control stays clickable. THIS
