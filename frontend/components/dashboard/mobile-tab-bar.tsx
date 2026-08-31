@@ -3,7 +3,11 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { signOut, useSession } from "next-auth/react"
+import { useSession } from "next-auth/react"
+// R-01 (P0): see the note in sidebar.tsx — a bare next-auth `signOut` leaves
+// the Keycloak SSO session alive. Both dashboard affordances share one helper
+// so they cannot drift, exactly as they share one `navigation` array.
+import { vendorLogout } from "@/lib/vendor-logout"
 import { cn } from "@/lib/utils"
 import { Menu, LogOut, Moon, Sun } from "lucide-react"
 // Single source of truth: the SAME navigation array the desktop sidebar renders.
@@ -161,7 +165,7 @@ export function MobileTabBar({ className }: { className?: string }) {
             <Button
               variant="ghost"
               className="w-full justify-start gap-3 text-slate-700 dark:text-slate-200"
-              onClick={() => signOut({ callbackUrl: "/auth/signin" })}
+              onClick={() => vendorLogout()}
             >
               <LogOut className="h-5 w-5" />
               Sign Out

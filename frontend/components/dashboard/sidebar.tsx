@@ -21,7 +21,12 @@ import {
   Moon,
   Sun,
 } from "lucide-react"
-import { signOut, useSession } from "next-auth/react"
+import { useSession } from "next-auth/react"
+// R-01 (P0): NOT a bare next-auth `signOut`. That drops the app cookie and
+// leaves every Keycloak SSO cookie alive, so the next "Sign in with Keycloak"
+// re-entered this dashboard as the departed user. `vendorLogout` fetches the
+// end-session URL first, then clears the app session, then navigates to the IdP.
+import { vendorLogout } from "@/lib/vendor-logout"
 import { Button } from "@/components/ui/button"
 import { ShopSwitcher, shopSwitcherApplies } from "@/components/dashboard/shop-switcher"
 import { useTheme } from "@/hooks/use-theme"
@@ -135,7 +140,7 @@ export function Sidebar() {
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
-          onClick={() => signOut({ callbackUrl: "/auth/signin" })}
+          onClick={() => vendorLogout()}
         >
           <LogOut className="h-5 w-5" />
           Sign Out

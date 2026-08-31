@@ -130,6 +130,52 @@ function clearSignedOutState() {
 }
 
 /**
+ * How long a sign-out round-trip is allowed to take before the local teardown
+ * stops waiting for it. Shared by the customer path below and by
+ * `lib/vendor-logout.ts` (R-01), which imports `fetchWithTimeout` from here
+ * rather than growing a second copy.
+ */
+export const LOGOUT_FETCH_TIMEOUT_MS = 3000
+
+/**
+ * `fetch` with a hard deadline — R-04 (2026-08-31 customer-surface audit).
+ *
+ * WHY NOT `AbortSignal.timeout(ms)` ALONE, which is the obvious simplification
+ * and would silently re-break the test that guards this: its internal timer is
+ * owned by the platform and is NOT driven by jest fake timers, so the
+ * never-settling arm would HANG for the jest timeout instead of asserting.
+ *
+ * So: a race that an `AbortController` backs. The `setTimeout` is a plain one,
+ * which IS what fake timers control, and the `abort()` genuinely cancels a real
+ * in-flight request rather than merely abandoning it. Both halves are needed —
+ * the abort is what makes it correct in a browser, the plain timer is what
+ * makes it deterministic under test even when a mocked `fetch` ignores the
+ * signal entirely.
+ */
+export async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs: number = LOGOUT_FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(new Error(`Request timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([
+      fetch(input, { ...init, signal: controller.signal }),
+      deadline,
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
  * Synchronous "am I probably logged in" check based on the localStorage
  * marker. UI-only — cannot be trusted for security decisions.
  */
