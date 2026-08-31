@@ -9,13 +9,20 @@ root causes in frontend code — the **P0**: vendor Sign Out never ended the Key
 race, the hero paint-then-vanish, the non-fail-safe customer signout teardown, and the systemic
 cookie-notice overlay. All six browser-verified fail→pass in two rounds with the audit's own repro
 scripts. Full record: `.planning/quick/260831-gnm-fix-p0-p1-customer-surface-audit-finding/` and
-the memory file `project_customer_surface_audit_20260831.md`. **Still open from that audit**:
-Keycloak realm config (no login theme on either realm — stock `JTOYE-DEV` pages — and
-`smtpServer: {}`, so customer password reset is a dead end AND an enumeration oracle; this is an
-`infra/keycloak/` + re-import task, see [[reference_keycloak_realm_reimport]] semantics), the
+the memory file `project_customer_surface_audit_20260831.md`.
+**Same-day follow-ups (later on 2026-08-31):** the Keycloak realm half (R-05/R-06/R-11) shipped —
+SMTP via Mailhog + a custom `jtoye` login theme, quick task 260831-jz4, merged as `44bf842e`; the
+owner then found **R-16**, the "anonymous downgrade" cart-ownership leak (a newly registered
+customer inherited the previous account's basket — a signed-out render re-stamps `owner: null`,
+which any next sign-in adopts), fixed in quick task 260831-lxf via PR #715 with the lesson
+institutionalised (memory `trap_identity_transition_state_laundering`, qa-discover
+identity-transition sweep, three agent charters via jtoye-orgos PR #29 — that PR awaits an
+owner-side GitHub Actions billing fix, then `make agents-all`). **Still open from the audit**: the
 Work Sans fallback `size-adjust` CLS fix (100% of landing CLS is the font swap, misattributed to
 hydration in `frontend/e2e/perf-budgets.ts` docs), vendor back-channel logout (front-channel only
-today), and the P2/P3 register. Known residuals recorded in PR #711's description.
+today), the P2/P3 register, and two filed follow-ups: #714 (Keycloak theme-contract gate) and the
+sibling-`.verify.mjs` wiring gap issue from the #715 review. Known residuals recorded in the PR
+descriptions of #711, #713 and #715.
 **Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
 the 2026-08-24 session broke it once itself (see "The truncating filter", below).
 

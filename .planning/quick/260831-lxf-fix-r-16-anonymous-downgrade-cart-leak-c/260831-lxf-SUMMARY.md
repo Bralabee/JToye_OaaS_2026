@@ -50,12 +50,18 @@ decisions:
   - "D-05 deferred: the Playwright .spec.ts cross-identity test"
 
 metrics:
-  duration_minutes: 42
+  duration_minutes: 95
   tasks_completed: 3
-  commits: 5
-  jest_blocks_delta: +7
-  total_logical_invocations: "3555 -> 3562"
+  commits: 8
+  jest_blocks_delta: +13
+  total_logical_invocations: "3555 -> 3568"
   completed: 2026-08-31
+
+review:
+  report: .planning/quick/260831-lxf-fix-r-16-anonymous-downgrade-cart-leak-c/260831-lxf-REVIEW.md
+  findings: "0 critical / 4 major / 6 minor / 3 info"
+  fixed: [WR-01, WR-02, WR-03, WR-04, WR-05, WR-07, WR-08, WR-09, WR-10, IN-01, IN-02, IN-03]
+  referred_out: [WR-06]
 ---
 
 # Quick Task 260831-lxf: R-16 Anonymous-Downgrade Cart Leak — Summary
@@ -445,6 +451,138 @@ present in the stored text.
 
 All modified files present on disk; all five commit hashes resolve in `git log`; PR #715 open with
 the body stored verbatim.
+
+---
+
+# Addendum — PR #715 code review, dispositions
+
+Review: `260831-lxf-REVIEW.md` — **0 Critical / 4 Major / 6 Minor / 3 Info**. The central
+invariant held under attack: the reviewer traced the reported repro end to end and could not break
+it, and confirmed the OAuth callback route is a *static* segment so `CartProvider` is not mounted
+while `handleCallback` runs.
+
+The finding underneath three of the four Majors is one sentence, and it is the right one:
+**R-16 changed `owner` from state RECOMPUTED on every write into state READ BACK and re-persisted,
+and nothing on the new read path validated it.** Everything else follows from that change of
+character.
+
+| ID | Sev | Disposition |
+|---|---|---|
+| WR-01 | Major | **Fixed** — `validOwner`: a non-empty string or nothing |
+| WR-02 | Major | **Fixed** — sub-less token hard-rejected; `hasActiveSessionMarker()` as a required third fact |
+| WR-03 | Major | **Fixed** — `jtoye:carts-cleared` same-document broadcast + provider listener |
+| WR-04 | Major | **Fixed** — explicit `if:` keyed on the seed step; trade-off documented; nightly dispatched on this branch |
+| WR-05 | Minor | **Fixed** — one shared `parsePayload`, plus the missing arm; falsified |
+| WR-06 | Minor | **NOT fixed — referred out.** See below |
+| WR-07 | Minor | **Fixed** — `NODE_PATH` removed; falsified by running without it |
+| WR-08 | Minor | **Fixed** — changelog claim qualified |
+| WR-09 | Minor | **Fixed** — `data-testid="cart-item-count"` |
+| WR-10 | Minor | **Fixed** — sleep replaced by a condition, and the condition proved discriminating |
+| IN-01 | Info | **Fixed** — `EXPECTED_CHECKS` floor, exits 2/VOID |
+| IN-02 | Info | **Fixed** — header now names the subject ids it prints |
+| IN-03 | Info | **Fixed** — doc corrected; it stated a nullish rule the code does not implement |
+
+## Review fixes: fail directions
+
+Five of the six new arms were red on the committed tree `1387c837`:
+
+```
+does NOT preserve an empty-string owner, which is adoptable by anyone
+    expect(received).toBeNull()   Received: ""
+does NOT preserve a non-string owner
+    expect(received).toBeNull()   Received: {"sub": "a"}
+does NOT inherit a prior owner when a session is live but the identity was never recorded
+    expect(received).toBeNull()   Received: "sub-customer-a"
+drops in-memory items when the baskets are cleared in THIS document
+    expect(received).toBe(expected)   Expected: ""   Received: "a-suya"
+rejects an id token with NO sub instead of establishing an unrecorded session
+    expect(received).toBeNull()
+    Received: {"email": "nosub@example.com", "emailVerified": false, "name": "No Sub", "sub": ""}
+
+Test Suites: 2 failed, 2 total
+Tests:       5 failed, 23 passed, 28 total
+```
+
+That last `Received` is the `?? ""` construction the review named — printed by the test, not quoted
+from the source.
+
+**The sixth arm (WR-05) passed on the pre-fix tree**, because the guard it covers already existed
+and was merely untested. Reported as such rather than dressed up as a red. It was falsified by a
+deliberate break arm instead — removing the cross-shop guard from the shared `parsePayload`:
+
+| arm | precondition | result |
+|---|---|---|
+| CLEAN 1 | guard present | rc=0, 18/18 |
+| BREAK | `rg -uu -c "BREAK ARM…"` rc=0 count=1 | **rc=1, exactly one test red**: `does NOT let another shop's payload donate its owner to this slot` — `Received: "sub-customer-a"` |
+| CLEAN 2 | break token absent (rc=1 count=0), guard restored (rc=0 count=1) | rc=0, 18/18 |
+
+**WR-10's new condition was itself falsified.** The review's suggested condition (`shopSlug === slug`)
+would have been satisfied by the seed and just as vacuous as the sleep, so the seed now carries a
+`_seed` key the app never emits and the wait is for its *disappearance*. A control seeded that
+payload on the provider-free `/shop` and ran the identical wait:
+
+```
+WR-10 CONTROL rc=0 (0 = condition discriminates)
+TIMED OUT — the condition DISCRIMINATES (page.waitForFunction: Timeout 8000ms exceeded.)
+```
+
+**WR-07 was falsified by removal**: the browser run below was executed with **no `NODE_PATH` set at
+all** and passed 18/18, confirming the variable was inert and the import resolves by directory walk.
+
+## A defect the fixes introduced, caught by a VOID rather than by a red
+
+The WR-09 testid comment originally *named* the old colour token in prose. That reddened
+`__tests__/contrast-literals.test.ts`, which scans the file for Tailwind literals and cannot tell a
+live class from a comment:
+
+```
+"app/shop/[slug]/cart/page.tsx:49 uses text-slate-500 (#64748b) — 4.76 on white,
+ 4.43 on cream (AA needs 4.5)"
+```
+
+It surfaced as `check-test-count-oracle.sh` **rc=2 (VOID)** — not as a failing assertion — which is
+the whole reason that gate fails closed on "the runner did not produce a usable answer". This is the
+project's own recorded trap: *a doc/lint rule that must name the token it forbids*. The comment now
+explains why the token is deliberately unnamed.
+
+## Post-review verification
+
+| Check | rc | Notes |
+|---|---|---|
+| `npx jest` (full) | 0 | 145 suites, **1579 tests** |
+| `npm run build` | 0 | |
+| `npm run lint` | 0 | 0 errors, 32 pre-existing warnings |
+| `cart-identity-boundary.verify.mjs` | 0 | **18/18 ALL PASS**, run **without `NODE_PATH`** |
+| `check-runtime-freshness.sh` | 0 | 4/4 FRESH, 0 unverified |
+| `check-alert-metrics.sh` | 0 | no reseed needed — C4 placed a real order |
+| `docs-freshness.sh` / `check-doc-metrics.sh` / `check-test-count-oracle.sh` | 0 | metrics 3562 → **3568**, jest_blocks 1573 → **1579** |
+| `check-changelog-contract.sh` / `check-changelog-cites-pr.sh` | 0 | |
+| `check-gate-enforcement.sh` | 0 | |
+| `check-branch-behind-base.sh` | 0 | |
+
+Runtime parity needed the recorded `--build` re-tag remedy again, and it fired exactly as the
+memory note says: `up -d --build frontend` re-tagged core-java, whose container then held the older
+image ID (`DRIFT [container-not-recreated]`). `up -d --force-recreate core-java` cleared it to 4/4.
+The frontend image ID changed `5011cd21` → `bccc60c2`, so the browser green is against a genuinely
+new build.
+
+## WR-06 — NOT fixed, referred back for an issue
+
+`frontend/e2e/customer-realm-split.verify.mjs`, `customer-signout-idp-session.verify.mjs` and
+`track-operator-persona.verify.mjs` still run nowhere, and `check-gate-enforcement.sh` is
+structurally blind to the class — it enumerates `scripts/check-*.sh` at maxdepth 1 only, which is
+the measured negative recorded earlier in this SUMMARY. This PR fixes **one instance by hand**; the
+class stays open, and per this project's own doctrine the fix for a recurring failure is a script
+that fails loudly, not a hand repair. Deliberately out of scope here (it would change a gate that
+every PR depends on) and handed back to the coordinator to file, the same route IN-06 took to #714.
+
+## Review-fix commits
+
+| # | Hash | Message |
+|---|---|---|
+| 6 | `1387c837` | `test(cart)`: review WR-01/WR-02/WR-03/WR-05 arms, committed **RED** |
+| 7 | `8dc3995e` | `fix(cart)`: validate the persisted owner, refuse to inherit it for an unrecorded session, make a clear visible in its own document |
+| 8 | `4ef56aa6` | `fix(e2e)`: run the gate even when the suite is red, and stop the arm proving itself with a sleep |
 
 ## CI on #715 — settled
 
