@@ -100,6 +100,13 @@ describe("CartProvider identity boundary", () => {
     signedInAs(null)
     const { getByTestId } = renderCart()
     expect(getByTestId("ids").textContent).toBe("a-egusi")
+    // R-16 — THE DEFECT, STATED. Showing the basket is only half the promise.
+    // The very same render re-persists it, and until this line existed nothing
+    // looked at what was written: the stamp came back `null`, and the next
+    // person to sign in on this browser adopted A's basket. Asserting the
+    // RENDER while the WRITE silently downgraded the payload is exactly how
+    // this shipped past its own regression suite.
+    expect(storedPayload()?.owner).toBe(A)
   })
 
   it("stamps the writer's identity on every persist", () => {
@@ -128,6 +135,12 @@ describe("CartProvider identity boundary", () => {
   })
 
   it("writes owner: null while anonymous, so the next person can still adopt it", () => {
+    // NOTE (R-16): the rule this asserts is "a FRESH basket written anonymously
+    // is stamped null" — storage is empty here, so there is nothing to preserve.
+    // It is NOT the broader "an anonymous write always stamps null", which is
+    // false and was the defect. The two cases are separated explicitly in the
+    // `owner preservation` describe below; this block is kept as-is so the
+    // guest carry-forward it protects is never traded away.
     signedInAs(null)
     const captured: Array<ReturnType<typeof useCart>> = []
     function Capture() {
@@ -194,5 +207,101 @@ describe("CartProvider identity boundary", () => {
     } finally {
       Storage.prototype.setItem = realSetItem
     }
+  })
+
+  /**
+   * R-16 (2026-08-31 customer-surface audit) — the anonymous DOWNGRADE.
+   *
+   * The access cookie lives 300s and the session probe runs on mount, on a 1s
+   * poll and on focus, so `jtoye-customer-id` disappears routinely under a
+   * shopper who never went anywhere. Before this, the very next shop-page render
+   * re-persisted their basket stamped `owner: null` — and a null owner is
+   * adoptable by ANYONE (`canAdoptCart`). A newly registered customer inherited
+   * the previous account's basket and checked out with it under their own name.
+   *
+   * The rule is `current ?? prior ?? null`: a write ADDS or CONFIRMS ownership,
+   * and only an explicit sign-out REMOVES it. These four blocks pin all three
+   * directions of that rule, including the two that must NOT change.
+   */
+  describe("owner preservation across a lapsed session", () => {
+    function renderWithCapture() {
+      const captured: Array<ReturnType<typeof useCart>> = []
+      function Capture() {
+        const ctx = useCart()
+        captured.push(ctx)
+        return <div data-testid="ids">{ctx.items.map((i) => i.productId).join(",")}</div>
+      }
+      const utils = render(
+        <CartProvider shopSlug={SLUG}>
+          <Capture />
+        </CartProvider>
+      )
+      return { ...utils, latest: () => captured[captured.length - 1] }
+    }
+
+    it("stamps a FRESH guest basket null, because there is nothing to preserve", () => {
+      // THE CONTROL that stops the fix being over-applied. If preservation were
+      // written as "never write null", a genuine guest basket would inherit a
+      // stale owner and the anonymous -> sign-in carry-forward would break.
+      // Passes BEFORE the fix as well as after; that is the point.
+      signedInAs(null)
+      const { latest } = renderWithCapture()
+      act(() => {
+        latest().addItem({
+          productId: "guest-akara",
+          title: "Akara",
+          pricePennies: 300,
+          imageUrl: null,
+          category: null,
+        })
+      })
+      expect(storedPayload()?.owner).toBeNull()
+      expect(storedPayload()?.items.map((i) => i.productId)).toEqual(["guest-akara"])
+    })
+
+    it("does NOT erase an existing owner when the writer is anonymous", () => {
+      // The defect itself. A lapsed session is overwhelmingly more often the
+      // SAME person mid-shop than a new one, and sign-out is the only moment
+      // where "a different person may be next" is unambiguous.
+      seed(A, ["a-egusi"])
+      signedInAs(null)
+      const { latest } = renderWithCapture()
+      act(() => {
+        latest().addItem({
+          productId: "a-moi-moi",
+          title: "Moi moi",
+          pricePennies: 450,
+          imageUrl: null,
+          category: null,
+        })
+      })
+      expect(storedPayload()?.owner).toBe(A)
+      // ...and the item added while anonymous is genuinely theirs, not dropped.
+      expect(storedPayload()?.items.map((i) => i.productId)).toEqual([
+        "a-egusi",
+        "a-moi-moi",
+      ])
+    })
+
+    it("hands the slot to B when B writes over a basket A owned", () => {
+      // The branch that is easy to get wrong. Preservation must not become
+      // "the first owner wins forever": a stamp still reading A here would mean
+      // every item B adds is stored under A's name — the same leak, reversed.
+      seed(A, ["a-suya"])
+      signedInAs(B)
+      const { getByTestId } = renderCart()
+      expect(getByTestId("ids").textContent).toBe("")
+      expect(storedPayload()?.owner).toBe(B)
+    })
+
+    it("adopts a legacy owner-less payload for the signed-in customer", () => {
+      // `undefined` (field absent) must normalise to "no prior owner", never to
+      // a preserved `undefined` that would leave the payload unstamped forever.
+      seed(undefined, ["legacy-jollof"])
+      signedInAs(A)
+      const { getByTestId } = renderCart()
+      expect(getByTestId("ids").textContent).toBe("legacy-jollof")
+      expect(storedPayload()?.owner).toBe(A)
+    })
   })
 })

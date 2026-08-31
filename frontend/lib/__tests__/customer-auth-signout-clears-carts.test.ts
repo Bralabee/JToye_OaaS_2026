@@ -204,3 +204,77 @@ describe("a session that simply went away", () => {
     expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBe("sub-renewed")
   })
 })
+
+/**
+ * R-16 (2026-08-31 customer-surface audit) — the ACCOUNT SWITCH backstop.
+ *
+ * Kept in THIS file rather than a new one on purpose: sign-out, session lapse
+ * and account switch are one ownership-lifecycle story told by one module, and
+ * splitting them across files is precisely how the distinction between "the
+ * session went away" and "a different person is here" gets collapsed by a later
+ * edit. The three cases sit side by side so the collapse is loud.
+ *
+ * This is a BACKSTOP, not the cure. On the reported repro it is vacuous on its
+ * own: the anonymous downgrade has already nulled the basket's owner before any
+ * sign-in reads it, and the recorded identity is gone too. The cure is the
+ * provider-side preservation rule (lib/cart-identity.ts `resolveCartOwner`).
+ * What this covers is the switch that happens while the marker survives.
+ */
+describe("signing in as a DIFFERENT customer", () => {
+  function sessionResponse(profile: Record<string, unknown> | undefined) {
+    global.fetch = jest.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          authenticated: true,
+          expiresAt: Math.floor(Date.now() / 1000) + 300,
+          profile,
+        }),
+      }) as Response
+    ) as unknown as typeof fetch
+  }
+
+  it("clears every basket when the incoming sub differs from the recorded one", async () => {
+    seedSignedIn() // records sub-a
+    seedBaskets() // both owned by sub-a
+    sessionResponse({ sub: "sub-b", email: "b@example.com", name: "B", emailVerified: true })
+
+    await getCustomerSession()
+
+    // Asserted on ITEMS, never on key presence — see `basketItems`.
+    expect(basketItems(SLUG)).toHaveLength(0)
+    expect(basketItems(OTHER)).toHaveLength(0)
+    expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBe("sub-b")
+  })
+
+  it("does NOT clear when the SAME customer's session is renewed", async () => {
+    // CONTROL. A renewal is the common case and fires on a 1s poll; clearing
+    // here would empty a live basket several times a minute.
+    seedSignedIn()
+    seedBaskets()
+    sessionResponse({ sub: "sub-a", email: "a@example.com", name: "A", emailVerified: true })
+
+    await getCustomerSession()
+
+    expect(basketItems(SLUG)).toHaveLength(1)
+    expect(basketItems(OTHER)).toHaveLength(1)
+    expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBe("sub-a")
+  })
+
+  it("does NOT clear when the session carries NO sub", async () => {
+    // T-R16-04, the fail-DESTRUCTIVE hazard. An unknown identity is not a
+    // different person. A one-sided check (`previous !== sub`) is true for
+    // `undefined` too, so it would destroy a live basket every time a session
+    // response arrived without a profile — a self-inflicted denial of service
+    // that would look like "the basket randomly empties itself".
+    seedSignedIn()
+    seedBaskets()
+    sessionResponse(undefined)
+
+    await getCustomerSession()
+
+    expect(basketItems(SLUG)).toHaveLength(1)
+    expect(basketItems(OTHER)).toHaveLength(1)
+    expect(localStorage.getItem(CUSTOMER_ID_KEY)).toBe("sub-a")
+  })
+})
