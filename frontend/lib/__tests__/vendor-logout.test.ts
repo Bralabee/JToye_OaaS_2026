@@ -103,6 +103,43 @@ describe("vendorLogout", () => {
     }
   })
 
+  /**
+   * CR-01 (code review, 2026-08-31) — the hole the other four arms could not see.
+   *
+   * The lookup was bounded; `signOut` was not. `next-auth/react`'s `signOut`
+   * makes two un-timeouted fetches (`/api/auth/csrf`, `/api/auth/signout`), and
+   * because it is awaited INSIDE the `finally`, a stall there means the
+   * `window.location.href` assignment on the next line NEVER RUNS. The vendor
+   * stays on the dashboard with the app session and every Keycloak SSO cookie
+   * alive, and the button gives no feedback — the R-04 defect verbatim, left on
+   * the P0 path.
+   *
+   * The three arms above cover a lookup that stalls, a lookup that rejects, and
+   * a signOut that REJECTS. None covers a signOut that never answers, which is
+   * what a phone leaving a wifi cell actually produces.
+   */
+  it("still navigates when NextAuth's signOut NEVER SETTLES", async () => {
+    jest.useFakeTimers()
+    try {
+      const END_SESSION = "http://localhost:8085/realms/jtoye-dev/protocol/openid-connect/logout?id_token_hint=ID"
+      // A HEALTHY lookup, so the only thing under test is the local teardown.
+      global.fetch = jest.fn(async () =>
+        ({ ok: true, json: async () => ({ url: END_SESSION }) }) as Response
+      ) as unknown as typeof fetch
+      mockSignOut.mockImplementation(() => new Promise(() => {}))
+
+      const pending = vendorLogout()
+      await jest.advanceTimersByTimeAsync(VENDOR_LOGOUT_TIMEOUT_MS + 1)
+
+      // Navigating to the Keycloak end-session URL is the thing that matters;
+      // the local cookie drop is a best-effort second, and the redirect back to
+      // /auth/signin re-evaluates it anyway.
+      await expect(pending).resolves.toBe(END_SESSION)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
   it("does not strand the vendor when NextAuth's own signOut throws", async () => {
     global.fetch = jest.fn(async () =>
       ({ ok: true, json: async () => ({ url: "http://kc.example/logout" }) }) as Response
