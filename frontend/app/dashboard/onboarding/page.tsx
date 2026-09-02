@@ -81,7 +81,10 @@ const STATE_SUBTITLE: Record<OnboardingState, string> = {
   VERIFYING:
     "Running your compliance checks. This usually takes under a minute — you can leave this page and come back.",
   ACTION_REQUIRED: "One or more checks need your attention before you can go live.",
-  PENDING_APPROVAL: "Your checks passed — approval is being finalised.",
+  // INT-5 / A13: name the real approver. Under the Phase 21 interim there is no separate
+  // J'Toye reviewer — an administrator on the vendor's OWN account approves from Approvals.
+  PENDING_APPROVAL:
+    "Your checks passed. Under the current interim process, an administrator on your own account approves the application from Onboarding → Approvals.",
   APPROVED: "You're ready to publish your storefront.",
   LIVE: "Your storefront is live and visible to customers.",
   SUSPENDED: "Your storefront has been suspended. Contact support for details.",
@@ -121,29 +124,66 @@ const GATE_STATUS_FALLBACK = {
 // link (D-08): BUSINESS_VERIFIED -> the inline company-number edit (#company-number),
 // ALLERGEN_DATA_COMPLETE -> the products screen, FOOD_HYGIENE_RATING -> the shop edit
 // screen. An unmapped (gateType, status) falls back to a neutral render — never crashes.
+// INT-14 (QA council 20260902-134741): each `what` describes the CORRECTION only. The closing
+// instruction is composed per lifecycle state by nextStepFor() below, because the state
+// machine declares RESUBMIT from ACTION_REQUIRED only — telling a vendor in VERIFYING to
+// "re-run your checks" named an action that state cannot perform and had no control for.
 const REMEDIATION: Partial<
   Record<`${GateType}:${GateStatus}`, { why: string; what: string; href: string; cta: string }>
 > = {
   "BUSINESS_VERIFIED:FAILED": {
     why: "We couldn't verify your business against Companies House.",
-    what:
-      "Check your Companies House number is right — or clear it if you trade as a sole trader — then re-run your checks.",
+    what: "Check your Companies House number is right — or clear it if you trade as a sole trader.",
     href: "#company-number",
     cta: "Edit company number",
   },
   "ALLERGEN_DATA_COMPLETE:FAILED": {
     why: "Some of your products are missing the allergen information the law requires.",
-    what: "Add the missing allergen data to the products listed above, then re-run your checks.",
+    what: "Add the missing allergen data to the products listed above.",
     href: "/dashboard/products",
     cta: "Fix these products",
   },
   "FOOD_HYGIENE_RATING:MANUAL_REVIEW": {
     why: "We couldn't automatically match your shop to a Food Standards Agency hygiene rating.",
-    what:
-      "Make sure your shop's registered name and address match your premises exactly, then re-run your checks.",
+    what: "Make sure your shop's registered name and address match your premises exactly.",
     href: "/dashboard/shops",
     cta: "Edit shop details",
   },
+}
+
+// INT-14 (+ INT-1 F-1a): the action ACTUALLY available for a flagged gate in this state.
+// Mirrors VendorOnboardingStateMachineConfig: SUBMIT is DRAFT -> VERIFYING and RESUBMIT is
+// ACTION_REQUIRED -> VERIFYING; no other state has a vendor-side re-run, so no other state
+// may say so. A parked (MANUAL_REVIEW) gate in ACTION_REQUIRED is ALSO visible to the
+// account's administrator (INT-1 widened the review queue), so the sequencing is stated.
+function nextStepFor(status: OnboardingState, gateStatus: GateStatus): string {
+  if (status === "ACTION_REQUIRED") {
+    return gateStatus === "MANUAL_REVIEW"
+      ? "An administrator on your account can also resolve this from Onboarding → Approvals — their decision is kept when you re-run. Fix the failed items, then re-run your checks."
+      : "Then re-run your checks."
+  }
+  if (status === "DRAFT") {
+    return "Then submit your application for verification."
+  }
+  if (status === "VERIFYING") {
+    return gateStatus === "MANUAL_REVIEW"
+      ? "A reviewer is looking at this now — anything you correct will be seen. There is nothing to re-run at this stage."
+      : "Your checks are still running — there is nothing to re-run at this stage."
+  }
+  return ""
+}
+
+function attentionCardDescription(status: OnboardingState): string {
+  switch (status) {
+    case "ACTION_REQUIRED":
+      return "Fix the items below, then re-run your checks."
+    case "DRAFT":
+      return "Fix the items below, then submit your application."
+    case "VERIFYING":
+      return "A reviewer is looking at the items below. Anything you correct now will be seen — there is nothing to re-run at this stage."
+    default:
+      return "These checks are not green yet."
+  }
 }
 
 // The 5 pre-live states the state machine wires WITHDRAW from (D-05) — a vendor
@@ -406,7 +446,11 @@ export default function OnboardingPage() {
       setOnboarding(res.data)
       toast({
         title: "Company number updated",
-        description: "Re-run your checks to verify it.",
+        // INT-14: name the action this state actually has (SUBMIT in DRAFT, RESUBMIT otherwise).
+        description:
+          onboarding?.status === "DRAFT"
+            ? "Submit your application to verify it."
+            : "Re-run your checks to verify it.",
       })
     } catch (err: unknown) {
       toast({
@@ -563,13 +607,20 @@ export default function OnboardingPage() {
 
   // ONBD-03: an honest "in review" state the moment a human is needed. `reviewPending`
   // is derived server-side; the SLA copy is config-injected (no "N days" literal here).
+  // INT-5 / A13: the reviewer is named truthfully. Under the owner-ratified Phase 21
+  // interim (D-01/D-02) there is no separate J'Toye team — an administrator on the
+  // vendor's OWN account resolves parked checks from Onboarding → Approvals. INT-4: the
+  // update email goes to the account's contact address or, failing that, to whoever
+  // submitted the application (the fallback added with this copy), so the promise is kept.
   const inReview = onboarding.reviewPending === true
   const reviewSlaDays = process.env.NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS?.trim()
   const badgeLabel = inReview ? "In review" : stateMeta.label
+  const reviewerSentence =
+    "Under the current interim process there is no separate J'Toye reviewer: an administrator on your own account resolves them from Onboarding → Approvals"
   const subtitle = inReview
     ? reviewSlaDays
-      ? `Your checks are with our team for review. A reviewer looks at these within ${reviewSlaDays} business days — we'll email you when there's an update, so you can safely leave this page.`
-      : `Your checks are with our team for review. A reviewer is looking at these now — we'll email you when there's an update, so you can safely leave this page.`
+      ? `Your checks are parked for a manual review. ${reviewerSentence}, typically within ${reviewSlaDays} business days. We'll email you when there's an update, and you can safely leave this page.`
+      : `Your checks are parked for a manual review. ${reviewerSentence}. We'll email you when there's an update, and you can safely leave this page.`
     : STATE_SUBTITLE[onboarding.status] ?? ""
 
   // ONBD-05: config-injected support channel for REJECTED/SUSPENDED — the email
@@ -690,12 +741,12 @@ export default function OnboardingPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">What needs your attention</CardTitle>
-            <CardDescription>Fix the items below, then re-run your checks.</CardDescription>
+            <CardDescription>{attentionCardDescription(onboarding.status)}</CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="space-y-4">
               {actionableGates.map((gate) => (
-                <RemediationRow key={gate.gateType} gate={gate} />
+                <RemediationRow key={gate.gateType} gate={gate} status={onboarding.status} />
               ))}
             </ul>
           </CardContent>
@@ -709,8 +760,10 @@ export default function OnboardingPage() {
           <CardHeader>
             <CardTitle className="text-lg">Company details</CardTitle>
             <CardDescription>
-              Correct your Companies House number here, then re-run your checks. Leave it blank if
-              you trade as a sole trader.
+              {/* INT-14: SUBMIT in DRAFT, RESUBMIT in ACTION_REQUIRED — this card renders only there. */}
+              {onboarding.status === "DRAFT"
+                ? "Correct your Companies House number here, then submit your application. Leave it blank if you trade as a sole trader."
+                : "Correct your Companies House number here, then re-run your checks. Leave it blank if you trade as a sole trader."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -854,11 +907,12 @@ export default function OnboardingPage() {
 // what-to-do -> a button that goes there (deep link). Unmapped gates render a
 // neutral instruction and never crash.
 
-function RemediationRow({ gate }: { gate: GateDto }) {
+function RemediationRow({ gate, status }: { gate: GateDto; status: OnboardingState }) {
   const label = (GATE_META[gate.gateType] ?? GATE_FALLBACK).label
   const remediation =
     REMEDIATION[`${gate.gateType}:${gate.status}` as `${GateType}:${GateStatus}`]
   const isInternal = remediation?.href.startsWith("/") ?? false
+  const nextStep = nextStepFor(status, gate.status)
 
   return (
     <li className="rounded-lg border border-slate-100 p-4">
@@ -869,7 +923,7 @@ function RemediationRow({ gate }: { gate: GateDto }) {
       </p>
       {remediation ? (
         <>
-          <p className="mt-2 text-sm text-slate-600">{remediation.what}</p>
+          <p className="mt-2 text-sm text-slate-600">{`${remediation.what} ${nextStep}`.trim()}</p>
           <div className="mt-3">
             {isInternal ? (
               <Link href={remediation.href}>
@@ -890,7 +944,7 @@ function RemediationRow({ gate }: { gate: GateDto }) {
         </>
       ) : (
         <p className="mt-2 text-sm text-slate-500">
-          Update the flagged information, then re-run your checks.
+          {`Update the flagged information. ${nextStep}`.trim()}
         </p>
       )}
     </li>

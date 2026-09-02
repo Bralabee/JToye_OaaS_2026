@@ -331,9 +331,11 @@ describe("Onboarding Page", () => {
     // Honest, config-driven SLA copy — the dishonest "under a minute" is gone.
     expect(screen.getByText(/within 2 business days/i)).toBeInTheDocument()
     expect(screen.queryByText(/under a minute/i)).not.toBeInTheDocument()
-    // Phase 22: onboarding state-change events now email the vendor
-    // (onboarding.events → onboarding.notifications consumer), so the in-review copy
-    // promises the email again — the QA ONB-3 "deferred consumer" premise is now met.
+    // Phase 22 bound the onboarding.notifications consumer, and INT-4 (QA council
+    // 20260902-134741) added the fallback recipient: the mail goes to tenants.contact_email
+    // or, when that is blank, to the submitting user's directory email. This assertion is
+    // about the COPY only — delivery is proven server-side (NotificationDispatchServiceTest,
+    // OnboardingSubmitterResolverIntegrationTest) and live in Mailhog, never by this render.
     expect(screen.getByText(/email you/i)).toBeInTheDocument()
     expect(screen.queryByText(/check back here for an update/i)).not.toBeInTheDocument()
     // The "In review" badge is shown instead of "Running checks".
@@ -352,6 +354,126 @@ describe("Onboarding Page", () => {
     expect(me).toHaveBeenCalledTimes(2)
 
     jest.useRealTimers()
+  })
+
+  // --- INT-5 (QA council 20260902-134741 / A13): honest actor copy ----------
+  // Under the owner-ratified interim (Phase 21 D-01/D-02) there is no separate J'Toye
+  // reviewer: the tenant's OWN realm admin resolves gates and approves from
+  // /dashboard/onboarding/approvals. The copy must name that actor and route, and must
+  // never imply an independent "team". Authority code is deliberately unchanged (A13).
+
+  it("in-review copy names the real reviewer (an administrator on your own account, via Approvals) — never 'our team'", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("VERIFYING", {
+          reviewPending: true,
+          gates: gatesWith("FOOD_HYGIENE_RATING", "MANUAL_REVIEW", "Awaiting a reviewer."),
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("In review")).toBeInTheDocument()
+    })
+    expect(screen.getByText(/an administrator on your own account/i)).toBeInTheDocument()
+    expect(screen.getByText(/Approvals/)).toBeInTheDocument()
+    expect(screen.queryByText(/our team/i)).not.toBeInTheDocument()
+  })
+
+  it("PENDING_APPROVAL copy names the real approver instead of a passive 'being finalised'", async () => {
+    routeGet(() =>
+      Promise.resolve({ data: onboarding("PENDING_APPROVAL", { gates: gates("PASSED") }) })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Awaiting approval")).toBeInTheDocument()
+    })
+    expect(screen.getByText(/an administrator on your own account/i)).toBeInTheDocument()
+    expect(screen.queryByText(/approval is being finalised/i)).not.toBeInTheDocument()
+  })
+
+  // --- INT-14 (QA council 20260902-134741): "re-run your checks" only where RESUBMIT exists
+  // The state machine declares RESUBMIT from ACTION_REQUIRED only. The instruction must
+  // therefore render there and nowhere else; every other state names the action it has.
+
+  it("VERIFYING (in review) never says 're-run your checks', names the reviewer, and keeps the deep link", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("VERIFYING", {
+          reviewPending: true,
+          gates: gatesWith("FOOD_HYGIENE_RATING", "MANUAL_REVIEW", "No confident FHRS match."),
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("What needs your attention")).toBeInTheDocument()
+    })
+    // Affordance by ROLE, not text: there is no Re-run control in VERIFYING.
+    expect(screen.queryByRole("button", { name: /re-run checks/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/re-run your checks/i)).not.toBeInTheDocument()
+    expect(screen.getAllByText(/reviewer is looking/i).length).toBeGreaterThan(0)
+    expect(screen.getByRole("link", { name: /edit shop details/i })).toHaveAttribute(
+      "href",
+      "/dashboard/shops"
+    )
+  })
+
+  it("CONTROL — ACTION_REQUIRED still says 're-run your checks' and offers the Re-run control", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("ACTION_REQUIRED", {
+          gates: gatesWith("ALLERGEN_DATA_COMPLETE", "FAILED", "Missing allergen data on SKU-1"),
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /re-run checks/i })).toBeInTheDocument()
+    })
+    expect(screen.getAllByText(/re-run your checks/i).length).toBeGreaterThan(0)
+  })
+
+  it("ACTION_REQUIRED with a parked (manual-review) gate beside a failed one states the sequencing: an administrator can resolve it now, then re-run", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("ACTION_REQUIRED", {
+          gates: [
+            { gateType: "BUSINESS_VERIFIED", status: "PASSED", mandatory: true, reason: null, checkedAt: null },
+            { gateType: "FOOD_HYGIENE_RATING", status: "MANUAL_REVIEW", mandatory: true, reason: "No confident FHRS match.", checkedAt: null },
+            { gateType: "ALLERGEN_DATA_COMPLETE", status: "FAILED", mandatory: true, reason: "Missing allergen data on SKU-1", checkedAt: null },
+          ],
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("What needs your attention")).toBeInTheDocument()
+    })
+    expect(screen.getByText(/administrator on your account can also resolve/i)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /re-run checks/i })).toBeInTheDocument()
+  })
+
+  it("DRAFT names 'submit', not 're-run', on the company-details card", async () => {
+    routeGet(() => Promise.resolve({ data: onboarding("DRAFT", { companyNumber: "445790" }) }))
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Companies House number")).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/re-run your checks/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/then submit your application/i)).toBeInTheDocument()
   })
 
   // --- ONBD-01: withdraw confirm dialog + terminal copy ----------------------
