@@ -296,6 +296,41 @@ describe("Onboarding Approvals Page", () => {
     ).toBeInTheDocument()
   })
 
+  // INT-6 / FE-6 (QA council 20260902-134741): the admin surface shares the gate vocabulary.
+  it("INT-6/FE-6: a slice-2 gate type gets a named Resolve control (never 'Resolve check'), and WAIVED reads 'Not applicable'", async () => {
+    routeQueues(
+      () => Promise.resolve({ data: [] }),
+      () =>
+        Promise.resolve({
+          data: [
+            reviewApplication({
+              id: "rev-3",
+              shopName: "Chop Bar",
+              gates: [
+                { gateType: "FOOD_BUSINESS_REGISTRATION" as GateDto["gateType"], status: "MANUAL_REVIEW", mandatory: true, reason: "Attestation pending", checkedAt: null },
+                { gateType: "BUSINESS_VERIFIED", status: "WAIVED", mandatory: true, reason: "no company number — sole trader", checkedAt: null },
+                { gateType: "ALLERGEN_DATA_COMPLETE", status: "PASSED", mandatory: true, reason: null, checkedAt: null },
+              ],
+            }),
+          ],
+        })
+    )
+
+    render(<OnboardingApprovalsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Chop Bar")).toBeInTheDocument()
+    })
+    expect(
+      screen.getByRole("button", { name: /resolve food business registration/i })
+    ).toBeInTheDocument()
+    // With the dialog closed, the only "Resolve check" would be the fallback for a gate
+    // type with no copy — there must be none.
+    expect(screen.queryByRole("button", { name: /^resolve check$/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/Not applicable/)).toBeInTheDocument()
+    expect(screen.queryByText(/Not required/)).not.toBeInTheDocument()
+  })
+
   it("resolves a stuck gate: posts {decision, reason} to the resolve endpoint and refreshes", async () => {
     routeQueues(
       () => Promise.resolve({ data: [] }),

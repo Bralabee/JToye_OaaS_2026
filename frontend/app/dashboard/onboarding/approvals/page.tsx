@@ -26,10 +26,15 @@ import {
   AlertTriangle,
   Building2,
   CheckCircle2,
+  ClipboardCheck,
+  CreditCard,
+  FileCheck,
   Inbox,
+  ListChecks,
   Loader2,
   MinusCircle,
   ShieldCheck,
+  UserCheck,
   UtensilsCrossed,
   Wheat,
   XCircle,
@@ -54,10 +59,16 @@ const MODEL_META: Record<OnboardingModel, { label: string; badge: string }> = {
   WHITE_LABEL: { label: "White label", badge: "bg-slate-100 text-slate-600 hover:bg-slate-100" },
 }
 
+// INT-6: one entry per backend GateType — same vocabulary as the vendor page (see there).
 const GATE_META: Record<GateType, { label: string; icon: LucideIcon }> = {
   BUSINESS_VERIFIED: { label: "Business verification", icon: Building2 },
   FOOD_HYGIENE_RATING: { label: "Food hygiene rating", icon: UtensilsCrossed },
+  FOOD_BUSINESS_REGISTRATION: { label: "Food business registration", icon: ClipboardCheck },
+  IDENTITY_KYC: { label: "Identity verification", icon: UserCheck },
+  PAYMENTS_CONNECTED: { label: "Payments connected", icon: CreditCard },
+  AGREEMENT_SIGNED: { label: "Agreement signed", icon: FileCheck },
   ALLERGEN_DATA_COMPLETE: { label: "Allergen data", icon: Wheat },
+  MENU_MINIMUM: { label: "Menu minimum", icon: ListChecks },
 }
 
 const GATE_STATUS_META: Record<GateStatus, { label: string; badge: string; icon: LucideIcon }> = {
@@ -65,7 +76,8 @@ const GATE_STATUS_META: Record<GateStatus, { label: string; badge: string; icon:
   PASSED: { label: "Passed", badge: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100", icon: CheckCircle2 },
   FAILED: { label: "Failed", badge: "bg-red-100 text-red-700 hover:bg-red-100", icon: XCircle },
   MANUAL_REVIEW: { label: "Manual review", badge: "bg-amber-100 text-amber-700 hover:bg-amber-100", icon: AlertTriangle },
-  WAIVED: { label: "Not required", badge: "bg-slate-100 text-slate-600 hover:bg-slate-100", icon: MinusCircle },
+  // FE-6: the outcome word, not "Not required" (which collided with the "Required" label).
+  WAIVED: { label: "Not applicable", badge: "bg-slate-100 text-slate-600 hover:bg-slate-100", icon: MinusCircle },
 }
 
 // Defensive fallbacks — an unknown gateType/status renders neutral slate, never crashes.

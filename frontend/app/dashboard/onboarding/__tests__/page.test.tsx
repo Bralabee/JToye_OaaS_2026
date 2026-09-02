@@ -476,6 +476,123 @@ describe("Onboarding Page", () => {
     expect(screen.getByText(/then submit your application/i)).toBeInTheDocument()
   })
 
+  // --- INT-6 / FE-6 (QA council 20260902-134741): every GateType has copy; WAIVED reads honestly
+
+  it("INT-6: renders every backend GateType with its own label — the literal 'Check' fallback never appears", async () => {
+    const ALL_TYPES = [
+      "BUSINESS_VERIFIED",
+      "FOOD_HYGIENE_RATING",
+      "FOOD_BUSINESS_REGISTRATION",
+      "IDENTITY_KYC",
+      "PAYMENTS_CONNECTED",
+      "AGREEMENT_SIGNED",
+      "ALLERGEN_DATA_COMPLETE",
+      "MENU_MINIMUM",
+    ] as const
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("VERIFYING", {
+          gates: ALL_TYPES.map((gateType) => ({
+            gateType: gateType as GateType,
+            status: "PENDING" as GateStatus,
+            mandatory: true,
+            reason: null,
+            checkedAt: null,
+          })),
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Compliance checks")).toBeInTheDocument()
+    })
+    for (const label of [
+      "Business verification",
+      "Food hygiene rating",
+      "Food business registration",
+      "Identity verification",
+      "Payments connected",
+      "Agreement signed",
+      "Allergen data",
+      "Menu minimum",
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
+    expect(screen.queryAllByText(/^Check$/)).toHaveLength(0)
+  })
+
+  it("FE-6: a WAIVED gate's badge reads 'Not applicable' — never 'Not required' beside the 'Required' label", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("VERIFYING", {
+          gates: gatesWith("BUSINESS_VERIFIED", "WAIVED", "no company number — sole trader"),
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("Business verification")).toBeInTheDocument()
+    })
+    expect(screen.getByText("Not applicable")).toBeInTheDocument()
+    expect(screen.queryByText("Not required")).not.toBeInTheDocument()
+    // The requirement axis is untouched: the row still says Required.
+    expect(screen.getAllByText("Required").length).toBeGreaterThan(0)
+  })
+
+  it("INT-6: BUSINESS_VERIFIED in MANUAL_REVIEW (the keyless-stack default) has remediation copy, and no dangling company-number CTA in VERIFYING", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("VERIFYING", {
+          reviewPending: true,
+          companyNumber: "00445790",
+          gates: gatesWith(
+            "BUSINESS_VERIFIED",
+            "MANUAL_REVIEW",
+            "Business register temporarily unavailable — a reviewer will check this manually"
+          ),
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("What needs your attention")).toBeInTheDocument()
+    })
+    // Rendered in the gate breakdown AND the remediation card.
+    expect(screen.getAllByText("Business verification").length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(/8 characters/i)).toBeInTheDocument()
+    // The inline company-number card is DRAFT/ACTION_REQUIRED only, so the deep link
+    // must not be offered where its target does not exist.
+    expect(screen.queryByRole("button", { name: /edit company number/i })).not.toBeInTheDocument()
+  })
+
+  it("INT-6: the same BUSINESS_VERIFIED manual-review remediation offers the company-number CTA in ACTION_REQUIRED, where the target exists", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("ACTION_REQUIRED", {
+          companyNumber: "445790",
+          gates: [
+            { gateType: "BUSINESS_VERIFIED", status: "MANUAL_REVIEW", mandatory: true, reason: "Business register temporarily unavailable — a reviewer will check this manually", checkedAt: null },
+            { gateType: "FOOD_HYGIENE_RATING", status: "PASSED", mandatory: true, reason: null, checkedAt: null },
+            { gateType: "ALLERGEN_DATA_COMPLETE", status: "FAILED", mandatory: true, reason: "Missing allergen data on SKU-1", checkedAt: null },
+          ],
+        }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("What needs your attention")).toBeInTheDocument()
+    })
+    expect(screen.getByRole("button", { name: /edit company number/i })).toBeInTheDocument()
+  })
+
   // --- ONBD-01: withdraw confirm dialog + terminal copy ----------------------
 
   it("withdraws from a confirm dialog (POST /withdraw) and shows the terminal WITHDRAWN copy", async () => {

@@ -36,13 +36,18 @@ import {
   Building2,
   CheckCircle2,
   Circle,
+  ClipboardCheck,
+  CreditCard,
   ExternalLink,
+  FileCheck,
   LifeBuoy,
+  ListChecks,
   Loader2,
   LogOut,
   MinusCircle,
   Pencil,
   Store,
+  UserCheck,
   UtensilsCrossed,
   Wheat,
   XCircle,
@@ -92,10 +97,18 @@ const STATE_SUBTITLE: Record<OnboardingState, string> = {
   WITHDRAWN: "This application has been withdrawn.",
 }
 
+// INT-6: one entry per backend GateType (Record<GateType, …> now enforces it, because the
+// union in types/api.ts carries all eight). The five slice-2 gates used to fall through to
+// GATE_FALLBACK and render the literal word "Check".
 const GATE_META: Record<GateType, { label: string; icon: LucideIcon }> = {
   BUSINESS_VERIFIED: { label: "Business verification", icon: Building2 },
   FOOD_HYGIENE_RATING: { label: "Food hygiene rating", icon: UtensilsCrossed },
+  FOOD_BUSINESS_REGISTRATION: { label: "Food business registration", icon: ClipboardCheck },
+  IDENTITY_KYC: { label: "Identity verification", icon: UserCheck },
+  PAYMENTS_CONNECTED: { label: "Payments connected", icon: CreditCard },
+  AGREEMENT_SIGNED: { label: "Agreement signed", icon: FileCheck },
   ALLERGEN_DATA_COMPLETE: { label: "Allergen data", icon: Wheat },
+  MENU_MINIMUM: { label: "Menu minimum", icon: ListChecks },
 }
 
 const GATE_STATUS_META: Record<
@@ -106,7 +119,10 @@ const GATE_STATUS_META: Record<
   PASSED: { label: "Passed", badge: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
   FAILED: { label: "Failed", badge: "bg-red-100 text-red-700", icon: XCircle },
   MANUAL_REVIEW: { label: "Manual review", badge: "bg-amber-100 text-amber-700", icon: AlertTriangle },
-  WAIVED: { label: "Not required", badge: "bg-slate-100 text-slate-600", icon: MinusCircle },
+  // FE-6: the OUTCOME word. "Not required" collided with the "Required" requirement label
+  // on the same row under "Every mandatory check must pass"; WAIVED means precisely "does
+  // not apply to you", so the badge says so.
+  WAIVED: { label: "Not applicable", badge: "bg-slate-100 text-slate-600", icon: MinusCircle },
 }
 
 // Defensive fallbacks — an unknown gateType/status renders neutral slate,
@@ -148,6 +164,16 @@ const REMEDIATION: Partial<
     what: "Make sure your shop's registered name and address match your premises exactly.",
     href: "/dashboard/shops",
     cta: "Edit shop details",
+  },
+  // INT-6: on a stack with no Companies House key this is the MOST COMMON real state — the
+  // gate parks every present number for a human. INT-7 also routes a genuine register 404
+  // here (never WAIVED), and pads purely numeric numbers to the 8-char key.
+  "BUSINESS_VERIFIED:MANUAL_REVIEW": {
+    why: "We couldn't confirm your business against the Companies House register automatically.",
+    what:
+      "Check the number is your registered company number — 8 characters, with older numbers zero-padded (e.g. 00445790) — or clear it if you trade as a sole trader.",
+    href: "#company-number",
+    cta: "Edit company number",
   },
 }
 
@@ -913,6 +939,11 @@ function RemediationRow({ gate, status }: { gate: GateDto; status: OnboardingSta
     REMEDIATION[`${gate.gateType}:${gate.status}` as `${GateType}:${GateStatus}`]
   const isInternal = remediation?.href.startsWith("/") ?? false
   const nextStep = nextStepFor(status, gate.status)
+  // INT-6: the "#company-number" anchor targets the inline edit card, which renders only in
+  // DRAFT / ACTION_REQUIRED (server-enforced). Offer that CTA only where its target exists;
+  // internal route links (/dashboard/…) are always valid.
+  const ctaAvailable =
+    isInternal || status === "DRAFT" || status === "ACTION_REQUIRED"
 
   return (
     <li className="rounded-lg border border-slate-100 p-4">
@@ -924,6 +955,7 @@ function RemediationRow({ gate, status }: { gate: GateDto; status: OnboardingSta
       {remediation ? (
         <>
           <p className="mt-2 text-sm text-slate-600">{`${remediation.what} ${nextStep}`.trim()}</p>
+          {ctaAvailable && (
           <div className="mt-3">
             {isInternal ? (
               <Link href={remediation.href}>
@@ -941,6 +973,7 @@ function RemediationRow({ gate, status }: { gate: GateDto; status: OnboardingSta
               </a>
             )}
           </div>
+          )}
         </>
       ) : (
         <p className="mt-2 text-sm text-slate-500">
