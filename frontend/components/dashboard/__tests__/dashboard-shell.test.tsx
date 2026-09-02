@@ -274,3 +274,52 @@ describe("Sidebar navigation", () => {
     expect(link).toHaveAttribute("href", "/dashboard/onboarding")
   })
 })
+
+/**
+ * QA council 20260902-134741 — A11Y-1, WCAG 2.4.1 Bypass Blocks.
+ *
+ * The shell's first child was <Sidebar/> and <main> carried no id, so there
+ * was no bypass control: probes/a11y/23 measured 17 Tab presses to reach page
+ * content on every dashboard load, against 2 on the public shell. The fix is
+ * the fourth copy of the exact skip-link markup already shipped by
+ * public-shell.tsx, app/shop/layout.tsx and app/auth/signin/page.tsx — same
+ * class string, same target id — placed FIRST in the shell, with id="main" on
+ * the landmark it targets. A skip link rendered after the sidebar would still
+ * cost every one of those presses, so document order is asserted, not just
+ * presence.
+ */
+describe("DashboardShell — skip link (A11Y-1)", () => {
+  it("renders a 'Skip to main content' link as the FIRST link in the document, targeting #main", () => {
+    const { container } = render(
+      <DashboardShell>
+        <div>content</div>
+      </DashboardShell>
+    )
+    const firstLink = container.querySelector("a")
+    expect(firstLink).not.toBeNull()
+    expect(firstLink).toHaveTextContent("Skip to main content")
+    expect(firstLink).toHaveAttribute("href", "#main")
+  })
+
+  it("the skip link's target is the <main> landmark", () => {
+    render(
+      <DashboardShell>
+        <div>content</div>
+      </DashboardShell>
+    )
+    const target = document.getElementById("main")
+    expect(target).not.toBeNull()
+    expect(target).toBe(screen.getByRole("main"))
+  })
+
+  it("keeps the link visually hidden until focused (the public shell's own class contract)", () => {
+    render(
+      <DashboardShell>
+        <div>content</div>
+      </DashboardShell>
+    )
+    const link = screen.getByRole("link", { name: "Skip to main content" })
+    expect(link).toHaveClass("sr-only")
+    expect(link).toHaveClass("focus:not-sr-only")
+  })
+})
