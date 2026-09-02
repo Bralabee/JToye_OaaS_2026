@@ -9,18 +9,40 @@ import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.shop.ShopService;
+import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.sync.dto.BatchSyncRequest;
 import uk.jtoye.core.sync.dto.BatchSyncResponse;
+import uk.jtoye.core.sync.dto.SyncItem;
 
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
  * Service for handling data synchronization from Edge services.
  * Provides batch processing with upsert logic for Shops and Products.
+ *
+ * <p><strong>Authorization lives HERE, next to the lookup (QA-council 20260902 Cluster A —
+ * issue #648, findings SEC-5 / API-13).</strong> {@code SyncController.batchSync} gates the
+ * endpoint on {@code SCOPE_catalog:write} (the machine half); this class decides the
+ * within-tenant half — WHICH shop the caller may touch — because that can only be known after
+ * the row is resolved. {@link #upsertProduct} resolves by SKU, which is unique per tenant
+ * (V3), so an attacker-supplied SKU names exactly one product anywhere in the tenant; the
+ * write is therefore gated on that product's OWNING shop via
+ * {@link ShopAccessService#require(UUID, ShopRole)} with {@code SHOP_MANAGER} — the
+ * {@code ProductService.updateProduct} pattern (VSA-02 / D-02) — BEFORE anything is mutated.
+ * A brand-new SKU or a legacy {@code shop_id IS NULL} product has no shop to bind to and is a
+ * tenant-wide resource: {@code require(null, …)} makes that GROUP_ADMIN-only (CR-04 write
+ * half). {@link #upsertShop} gates an update on the shop itself and routes a CREATE through
+ * {@link ShopService#createShop} — the normal path — so the batch inherits its GROUP_ADMIN
+ * gate, its slug derivation (the branch used to 400 on {@code shops.slug NOT NULL} on every
+ * attempt, API-13) and the sole-writer invariant that a new shop is never born published.
+ * The tenant wall itself is unchanged: the tenant comes from {@link TenantContext}, never
+ * from the body, and RLS still scopes every query.
  */
 @Service
 @Transactional
@@ -31,6 +53,8 @@ public class SyncService {
     private final ShopRepository shopRepository;
     private final ProductRepository productRepository;
     private final TenantCacheEvictor cacheEvictor;
+    private final ShopAccessService shopAccessService;
+    private final ShopService shopService;
 
     /**
      * Processes a batch of items from the Edge service.
@@ -59,6 +83,10 @@ public class SyncService {
      * as wide as the rest of the batch, for a concurrent read to repopulate the entry from the
      * uncommitted old row.
      *
+     * <p>Items arrive already range-validated ({@link SyncItem} bounds via {@code @Valid} on the
+     * request — API-2); a denied item throws the typed shop-access 403 and, because the whole
+     * batch is one transaction, nothing from the batch is committed.
+     *
      * @param request the batch sync request
      * @return response with status and processed count
      */
@@ -72,7 +100,7 @@ public class SyncService {
 
         int count = 0;
         if (request.getItems() != null) {
-            for (Map<String, Object> item : request.getItems()) {
+            for (SyncItem item : request.getItems()) {
                 if (processItem(item, tenantId)) {
                     count++;
                 }
@@ -85,8 +113,8 @@ public class SyncService {
                 .build();
     }
 
-    private boolean processItem(Map<String, Object> item, UUID tenantId) {
-        String type = (String) item.get("type");
+    private boolean processItem(SyncItem item, UUID tenantId) {
+        String type = item.getType();
         if (type == null) {
             log.warn("Item missing 'type' field, skipping");
             return false;
@@ -94,7 +122,7 @@ public class SyncService {
 
         switch (type.toLowerCase()) {
             case "shop":
-                return upsertShop(item, tenantId);
+                return upsertShop(item);
             case "product":
                 return upsertProduct(item, tenantId);
             default:
@@ -103,45 +131,64 @@ public class SyncService {
         }
     }
 
-    private boolean upsertShop(Map<String, Object> item, UUID tenantId) {
-        String name = (String) item.get("name");
+    private boolean upsertShop(SyncItem item) {
+        String name = item.getName();
         if (name == null) return false;
 
         Optional<Shop> existing = shopRepository.findByName(name);
-        Shop shop = existing.orElseGet(Shop::new);
+        if (existing.isEmpty()) {
+            // API-13: a bare `shopRepository.save(new Shop())` never set `slug` (NOT NULL), so this
+            // branch had failed on every attempt (zero rows ever). Creating through
+            // ShopService.createShop — the path the dashboard uses — derives the slug the same
+            // way, enforces GROUP_ADMIN-only creation (VSA-02 / D-02) and forces published=false
+            // (sole-writer invariant T-18-05-T). A create has no prior cache key to evict (#483/#287).
+            CreateShopRequest request = new CreateShopRequest();
+            request.setName(name);
+            request.setAddress(item.getAddress());
+            shopService.createShop(request);
+            return true;
+        }
 
-        shop.setTenantId(tenantId);
+        Shop shop = existing.get();
+        // SEC-5: an UPDATE mutates a shop the caller must manage. For a GROUP_ADMIN, require()
+        // also proves the shop belongs to the caller's tenant (FC-1) — `findByName` runs under the
+        // shops_public_read policy and could otherwise surface a PUBLISHED foreign shop of the same name.
+        shopAccessService.require(shop.getId(), ShopRole.SHOP_MANAGER);
         shop.setName(name);
-        shop.setAddress((String) item.get("address"));
-
+        shop.setAddress(item.getAddress());
         shopRepository.save(shop);
 
         // Only an UPDATE can stale a cache entry; a create has no prior key (#483/#287).
-        existing.map(Shop::getId)
-                .ifPresent(id -> cacheEvictor.evictEntityAfterCommit("shops", "getShopById", id));
+        cacheEvictor.evictEntityAfterCommit("shops", "getShopById", shop.getId());
         return true;
     }
 
-    private boolean upsertProduct(Map<String, Object> item, UUID tenantId) {
-        String sku = (String) item.get("sku");
+    private boolean upsertProduct(SyncItem item, UUID tenantId) {
+        String sku = item.getSku();
         if (sku == null) return false;
 
         Optional<Product> existing = productRepository.findBySku(sku);
+        // SEC-5 / #648: gate on the OWNING shop of whatever the SKU resolved to, BEFORE any setter
+        // runs (ProductService.updateProduct:354 pattern). An existing product with no shop and a
+        // brand-new SKU (this path never assigns shop_id) both yield null -> tenant-wide resource
+        // -> GROUP_ADMIN-only (CR-04 write half). Under strict-scoping OFF an ungranted day-one
+        // user is the implicit GROUP_ADMIN and passes; a user holding ANY explicit grant is scoped
+        // and is denied the typed shop-access 403 here.
+        shopAccessService.require(existing.map(Product::getShopId).orElse(null), ShopRole.SHOP_MANAGER);
+
         Product product = existing.orElseGet(Product::new);
 
         product.setTenantId(tenantId);
         product.setSku(sku);
-        product.setTitle((String) item.get("title"));
-        product.setIngredientsText((String) item.get("ingredientsText"));
+        product.setTitle(item.getTitle());
+        product.setIngredientsText(item.getIngredientsText());
 
-        Object allergenMask = item.get("allergenMask");
-        if (allergenMask instanceof Integer) {
-            product.setAllergenMask((Integer) allergenMask);
+        if (item.getAllergenMask() != null) {
+            product.setAllergenMask(item.getAllergenMask());
         }
 
-        Object pricePennies = item.get("pricePennies");
-        if (pricePennies instanceof Number) {
-            product.setPricePennies(((Number) pricePennies).longValue());
+        if (item.getPricePennies() != null) {
+            product.setPricePennies(item.getPricePennies());
         }
 
         productRepository.save(product);

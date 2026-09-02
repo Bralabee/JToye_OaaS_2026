@@ -379,10 +379,7 @@
         "properties" : {
           "items" : {
             "items" : {
-              "additionalProperties" : {
-                "type" : "object"
-              },
-              "type" : "object"
+              "$ref" : "#/components/schemas/SyncItem"
             },
             "type" : "array"
           },
@@ -3877,6 +3874,66 @@
           },
           "userId" : {
             "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "SyncItem" : {
+        "description" : "One shop or product to upsert. Which fields apply depends on `type`.",
+        "properties" : {
+          "address" : {
+            "description" : "Shop address",
+            "example" : "Unit 4, Brixton Village, London",
+            "type" : "string"
+          },
+          "allergenMask" : {
+            "description" : "UK FSA 14-bit allergen bitmask (Natasha's Law)",
+            "example" : 0,
+            "format" : "int32",
+            "maximum" : 16383,
+            "minimum" : 0,
+            "type" : "integer"
+          },
+          "ingredientsText" : {
+            "description" : "Full ingredients list (Natasha's Law)",
+            "example" : "Wheat flour, **milk**, sugar",
+            "maxLength" : 2000,
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "name" : {
+            "description" : "Shop name — the shop upsert key",
+            "example" : "Mama Ade's Kitchen",
+            "maxLength" : 255,
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "pricePennies" : {
+            "description" : "Product price in pennies",
+            "example" : 999,
+            "format" : "int64",
+            "maximum" : 1000000000,
+            "minimum" : 0,
+            "type" : "integer"
+          },
+          "sku" : {
+            "description" : "Stock Keeping Unit (unique per tenant) — the product upsert key",
+            "example" : "YAM-5KG",
+            "maxLength" : 100,
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "title" : {
+            "description" : "Product title",
+            "example" : "Yam 5kg",
+            "maxLength" : 255,
+            "minLength" : 1,
+            "type" : "string"
+          },
+          "type" : {
+            "description" : "Item kind, case-insensitive: `shop` or `product`",
+            "example" : "product",
             "type" : "string"
           }
         },
