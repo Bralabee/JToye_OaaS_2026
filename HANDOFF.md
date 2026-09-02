@@ -1,6 +1,6 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution) and 2026-08-31 (customer-surface fixes). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes) and 2026-09-02 (QA council `20260902-134741` planned). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
 **2026-08-31 delta — customer-surface P0/P1 fixes (PR #711, quick task 260831-gnm).** A five-lane
 human-like utilisation audit of the customer surfaces found 15 defects; PR #711 fixed the six with
@@ -18,9 +18,11 @@ which any next sign-in adopts), fixed in quick task 260831-lxf via PR #715 with 
 institutionalised (memory `trap_identity_transition_state_laundering`, qa-discover
 identity-transition sweep, three agent charters via jtoye-orgos PR #29 — that PR awaits an
 owner-side GitHub Actions billing fix, then `make agents-all`). **Still open from the audit**: the
-Work Sans fallback `size-adjust` CLS fix (100% of landing CLS is the font swap, misattributed to
-hydration in `frontend/e2e/perf-budgets.ts` docs), vendor back-channel logout (front-channel only
-today), the P2/P3 register, and two filed follow-ups: #714 (Keycloak theme-contract gate) and the
+`/shop` CLS 0.1616 breach — **not** a `size-adjust` fix: measured 2026-09-02, the running build
+already ships `size-adjust:111.93%` for the Work Sans fallback, and the cause is the flex-wrap
+chip row at `frontend/app/shop/shop-discovery-client.tsx:524` (20+12+2 chip + 8 gap = 42 px exactly);
+`frontend/e2e/perf-budgets.ts`'s docstring still misattributes landing CLS to hydration —
+vendor back-channel logout (front-channel only today), the P2/P3 register, and two filed follow-ups: #714 (Keycloak theme-contract gate) and the
 sibling-`.verify.mjs` wiring gap issue from the #715 review. Known residuals recorded in the PR
 descriptions of #711, #713 and #715.
 **2026-08-31 evening delta — basket bar branded + landing redesign parked.** The owner reported the
@@ -39,6 +41,31 @@ parked for later, not rejected** (PR #722 records it in the sketch MANIFEST; do 
 unprompted). PR #721 fixed the STATE.md row that cited a pre-squash sha. Residual filed in STATE:
 dashboard toasts are still stock-shadcn white (`--secondary/--muted/--accent` never got the brand
 refresh) plus two upstream `use-toast` staleness bugs.
+**2026-09-02 delta — QA council run `20260902-134741` discovered and planned; remediation is the
+next command.** Full `/qa-discover` + `/qa-plan` against `1833fd3b` on the proven-fresh 4/4 stack
+(gate sweep 41: 39 PASS / 2 FAIL, both pre-existing — `check-alert-metrics` post-restart, and the
+`check-dependency-horizons` **RabbitMQ 4.3 EOL 2026-11-30** amber the manifest predicted, which
+reds CI on 2026-12-01 with no issue filed). **97 findings (C:2 H:23 M:36 L:36)**, 83 probes each
+with a recorded fail arm, regression-by-omission NONE. The Criticals: **API-1** — the documented
+read-only `integration-catalog-ro` credential writes the catalogue via `POST /api/v1/sync/batch`
+(`SyncController` has no `@PreAuthorize`; the human BOLA is live for any explicitly-granted user
+per `ShopAccessService:326-328`) — and **FE-1** — vendor Sign Out leaves the NextAuth cookie valid
+because `@auth/core` re-issues the JWT on every session GET and `frontend/lib/api-client.ts:31`
+fires ~24 per dashboard load; the other half of #711. Plan state `planned`: 20 HIGH ids, 52 LOW, 14 opt-in, 11
+deferred; 26 adjudications; a separate refuter (5 REFUTED / 14 WEAKENED / 9 SURVIVES, every
+REFUTED re-verified by the orchestrator — two would have been outages: a Redis allowlist missing
+`java.lang.`, and a Companies House 404→FAILED remap with no zero-padding). Owner resolutions:
+**E-1 yes** (vendors take delivery orders by phone/API/MCP → COR-1 ships as Fix A+B, Fix A alone
+forbidden); **E-2** the target is a payment request to the customer's registered *confirmed* phone
+(= #461, which now depends on #462; INT-9's interim string is `"Unpaid"`); **E-5** fail-safe —
+config-injected `post_logout_redirect_uri` + new `scripts/check-keycloak-logout-uri.sh` +
+`VENDOR_LOGOUT_COMPLETE_ENABLED` off outside compose. Everything lives in the git-excluded
+`.qa-council/20260902-134741/` (`plan.md`, `findings.json`, `refutation.md`, `RETROSPECTIVE.md`)
+and memory `project_qa_council_20260902.md`; the procedure lessons went into
+`~/.claude/commands/qa-*.md` (dotfiles PR). **Not yet done — an owner checkpoint:** nothing is
+filed (2 Criticals, the top Highs, a docs epic, amendments to #648/#453/#711, the RabbitMQ
+horizon, and 9 new defects the refuter surfaced), and `/qa-remediate 20260902-134741` has not run.
+The 41-gate expectation at "Resume here" is unchanged.
 
 **Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
 the 2026-08-24 session broke it once itself (see "The truncating filter", below).
