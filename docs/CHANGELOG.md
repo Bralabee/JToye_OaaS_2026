@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Dependency-horizon gate: dated deferral for rabbitmq/4.3 so Operational Contracts stops redding every PR (#725) — 2026-09-02
+
+- **The Operational Contracts job turned red on every PR on 2026-09-02 with no
+  code change.** `scripts/check-dependency-horizons.sh` rule H-3 fails any row
+  inside the 90-day warn window, and rabbitmq/4.3's vendor community-support
+  horizon (30 Nov 2026) crossed it today, 89 days out. The gate's own header
+  predicted this moment ("turns AMBER ~2026-09-01 ... Intended. Not an outage.
+  Not a broken gate."). PR #723 and every PR after it were blocked by a required
+  check that no tree could pass.
+- **No upgrade target exists, so the remedy is a dated, tracked exemption**, in
+  the same shape the spring-boot row uses (#706): endoflife.date lists 4.3 as the
+  newest cycle (4.3.5 latest) and Docker Hub has no 4.4 tag (both measured
+  2026-09-02). The `rabbitmq` row in `infra/dependency-horizons.yaml` gains an
+  `exemption:` block with `expires: "2026-11-30"` and `tracked_by: "#724"`. The
+  expiry sits ON the horizon, not after it: on 2026-12-01 the row is past EOL and
+  the block is expired, so the gate reds again with no commit unless #724 (the
+  4.3 → 4.4 broker upgrade) has shipped. The 4.3.4 → 4.3.5 patch was deliberately
+  left out: it moves no date and it is a runtime change on the eve of a QA
+  remediation round.
+- **`--refresh` absorbed, inspected first:** 17 `sites:` line numbers had drifted
+  (the advisory H-5 NOTEs); the diff touches no `eol_date`.
+- **Proof, both directions:** `origin/main` rc=1 naming `H-3 rabbitmq`; branch
+  rc=0 (`H-3 EXEMPT rabbitmq ... until 2026-11-30 [#724]`); break arm A
+  (`expires` 2026-09-01) rc=1 "exemption EXPIRED"; break arm B (blank
+  `tracked_by`) rc=1 "H-4 ... no tracked_by"; both restores verified by file
+  hash; closing clean run rc=0.
+
 ### Cart bar branded from the first add — the grey below-minimum state becomes an amber shortfall label (#718) — 2026-08-31
 
 - **The floating basket bar is oxblood from the customer's very first basket
