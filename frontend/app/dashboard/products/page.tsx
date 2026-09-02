@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react"
 import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import * as z from "zod"
 import apiClient from "@/lib/api-client"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import { describeLoadError } from "@/lib/human-error"
@@ -53,20 +52,9 @@ import {
   getAllergenNames,
 } from "@/types/api"
 
-const productSchema = z.object({
-  sku: z.string().min(1, "SKU is required").max(50, "SKU too long"),
-  title: z.string().min(1, "Title is required").max(200, "Title too long"),
-  ingredientsText: z
-    .string()
-    .min(1, "Ingredients are required")
-    .max(1000, "Ingredients text too long"),
-  pricePounds: z
-    .string()
-    .min(1, "Price is required")
-    .refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, "Price must be a non-negative number"),
-})
-
-type ProductFormData = z.infer<typeof productSchema>
+// The form schema lives in its own module so it can be unit-tested — a Next
+// App Router page.tsx may not export non-route symbols (A11Y-8 / A11Y-11).
+import { productSchema, toPricePennies, type ProductFormData } from "./product-form-schema"
 
 function AiSuggestionRow({ label, value, onAccept }: { label: string; value: string; onAccept: () => void }) {
   return (
@@ -301,7 +289,7 @@ export default function ProductsPage() {
         title: data.title,
         ingredientsText: data.ingredientsText,
         allergenMask,
-        pricePennies: Math.round(parseFloat(data.pricePounds) * 100),
+        pricePennies: toPricePennies(data.pricePounds),
         available,
         featured,
         description: descEl?.value || undefined,
@@ -659,13 +647,16 @@ export default function ProductsPage() {
               {/* A11Y-7 (QA council 20260902-134741; WCAG 3.3.1): errors were visual
                   only. Mirrors the checkout form — aria-invalid + aria-describedby to
                   the message id, both conditional on the error existing. */}
+
               <Input
                 id="sku"
                 placeholder="e.g., PROD-001"
                 aria-invalid={errors.sku ? "true" : undefined}
                 aria-describedby={errors.sku ? "sku-error" : undefined}
                 {...register("sku")}
+
               />
+
               {errors.sku && (
                 <p id="sku-error" className="text-sm text-red-600">{errors.sku.message}</p>
               )}
@@ -675,9 +666,13 @@ export default function ProductsPage() {
               <Label htmlFor="title">Product Title</Label>
               <Input
                 id="title"
+
                 placeholder="e.g., Chocolate Chip Cookies"
+
                 aria-invalid={errors.title ? "true" : undefined}
+
                 aria-describedby={errors.title ? "title-error" : undefined}
+
                 {...register("title")}
               />
               {errors.title && (
@@ -710,8 +705,11 @@ export default function ProductsPage() {
                 step="0.01"
                 min="0"
                 placeholder="e.g., 12.50"
+
                 aria-invalid={errors.pricePounds ? "true" : undefined}
+
                 aria-describedby={errors.pricePounds ? "pricePounds-error" : undefined}
+
                 {...register("pricePounds")}
               />
               {errors.pricePounds && (
