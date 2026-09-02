@@ -64,16 +64,18 @@
 # EXEMPTIONS
 #
 #   Six rows are past horizon today. Each carries a non-empty reason, a dated `expires`, and
-#   a `tracked_by`. An expired exemption is a FAIL, and an exemption on a row that is NOT
-#   past horizon is a FAIL (STALE) — so this file cannot silently become a permanent
+#   a `tracked_by`. An expired exemption is a FAIL, and an exemption on a row that is neither
+#   past horizon nor inside the 90-day warn window is a FAIL (STALE) — so this file cannot silently become a permanent
 #   allowlist in either direction.
 #
-# WHEN CI GOES AMBER AND RED WITH NO CODE CHANGE — INTENDED, STATED IN ADVANCE
+# WHEN CI GOES RED WITH NO CODE CHANGE — INTENDED, STATED IN ADVANCE
 #
 #   rabbitmq 4.3 (the only viable upgrade target) carries a vendor community-support horizon
 #   of 2026-11-30. With HORIZON_WARN_DAYS=90 this manifest turns the `ops-contracts` job
-#   AMBER on ~2026-09-01 and RED on 2026-12-01 with no commit in between. That is the
-#   mechanism working, not an outage. Do not diagnose it as a broken gate.
+#   RED on ~2026-09-01 — H-3 fails INSIDE the window, there is no warning-only state — and,
+#   once the dated exemption answering it expires, RED again on 2026-12-01, with no commit
+#   in between. That is the mechanism working, not an outage. Do not diagnose it as a broken
+#   gate. (Measured 2026-09-02: red at 89 days; deferred under #724 until the horizon.)
 
 version: 1
 
@@ -171,11 +173,11 @@ dependencies:
       (the old 3.12 case, 2024-02-21 vs 2024-02-29); catalogue `false`/`null`/boolean where the
       vendor publishes a DATE -> FAIL (exit 1), naming the row and both values.
 
-      4.3's community window closes 2026-11-30, so at HORIZON_WARN_DAYS=90 this row goes AMBER
-      ~2026-09-01 and RED on 2026-12-01 with no commit in between. Intended, and already stated
+      4.3's community window closes 2026-11-30, so at HORIZON_WARN_DAYS=90 this row goes RED
+      ~2026-09-01 (in-window) and RED again on 2026-12-01 (past EOL) with no commit in between. Intended, and already stated
       in this file's header. It is a treadmill, and the mechanism is what makes it survivable.
 
-      2026-09-02: the predicted amber arrived — 89 days to the horizon, Operational Contracts red on
+      2026-09-02: the predicted in-window breach arrived — 89 days to the horizon, Operational Contracts red on
       every PR with no code change. Deferred under the exemption below; tracked in #724.
     exemption:
       reason: >-
