@@ -816,90 +816,88 @@ export default function MarketingPage() {
                   onClear={() => setStatusFilter("all")}
                 />
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Label</TableHead>
-                        <TableHead>Discount</TableHead>
-                        <TableHead>Shop</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Valid From</TableHead>
-                        <TableHead>Valid Until</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredPromotions.map((promo) => {
-                        const status = getPromotionStatus(promo)
-                        return (
-                          <m.tr
-                            key={promo.id}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="group"
-                          >
-                            <TableCell className="font-medium">{promo.label}</TableCell>
-                            <TableCell>{formatDiscount(promo)}</TableCell>
-                            <TableCell className="text-slate-600">
-                              {shopName(promo.shopId)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge className={statusBadgeClass(status)}>
-                                {statusLabel(status)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              <div className="flex items-center gap-2">
-                                <Calendar className="h-4 w-4" />
-                                <div>
-                                  <div>{formatDate(promo.validFrom)}</div>
-                                  <div className="text-xs text-slate-400">
-                                    {formatDateRelative(promo.validFrom)}
-                                  </div>
+                <Table containerLabel="Promotions table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Label</TableHead>
+                      <TableHead>Discount</TableHead>
+                      <TableHead>Shop</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Valid From</TableHead>
+                      <TableHead>Valid Until</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredPromotions.map((promo) => {
+                      const status = getPromotionStatus(promo)
+                      return (
+                        <m.tr
+                          key={promo.id}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="group"
+                        >
+                          <TableCell className="font-medium">{promo.label}</TableCell>
+                          <TableCell>{formatDiscount(promo)}</TableCell>
+                          <TableCell className="text-slate-600">
+                            {shopName(promo.shopId)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={statusBadgeClass(status)}>
+                              {statusLabel(status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-slate-600">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="h-4 w-4" />
+                              <div>
+                                <div>{formatDate(promo.validFrom)}</div>
+                                <div className="text-xs text-slate-400">
+                                  {formatDateRelative(promo.validFrom)}
                                 </div>
                               </div>
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              <div className="flex items-center gap-2">
-                                <Calendar className="h-4 w-4" />
-                                <div>
-                                  <div>{formatDate(promo.validUntil)}</div>
-                                  <div className="text-xs text-slate-400">
-                                    {formatDateRelative(promo.validUntil)}
-                                  </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-slate-600">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="h-4 w-4" />
+                              <div>
+                                <div>{formatDate(promo.validUntil)}</div>
+                                <div className="text-xs text-slate-400">
+                                  {formatDateRelative(promo.validUntil)}
                                 </div>
                               </div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openEditPromo(promo)}
-                                  className="h-8 w-8 p-0"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    setDeletingPromotion(promo)
-                                    setPromoDeleteDialogOpen(true)
-                                  }}
-                                  className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </m.tr>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEditPromo(promo)}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setDeletingPromotion(promo)
+                                  setPromoDeleteDialogOpen(true)
+                                }}
+                                className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </m.tr>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
               )}
               <Pagination
                 currentPage={promoPage}
@@ -983,104 +981,102 @@ export default function MarketingPage() {
                   onClear={() => setAnnouncementStatusFilter("all")}
                 />
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Title</TableHead>
-                        <TableHead>Body</TableHead>
-                        <TableHead>Shop</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Valid From</TableHead>
-                        <TableHead>Valid Until</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredAnnouncements.map((ann) => {
-                        const status = getAnnouncementStatus(ann)
-                        return (
-                          <m.tr
-                            key={ann.id}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="group"
-                          >
-                            <TableCell className="font-medium">{ann.title}</TableCell>
-                            <TableCell className="max-w-[200px] truncate text-slate-600">
-                              {ann.body
-                                ? ann.body.length > 80
-                                  ? ann.body.slice(0, 80) + "..."
-                                  : ann.body
-                                : ""}
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              {shopName(ann.shopId)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge className={statusBadgeClass(status)}>
-                                {statusLabel(status)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              {ann.validFrom ? (
-                                <div className="flex items-center gap-2">
-                                  <Calendar className="h-4 w-4" />
-                                  <div>
-                                    <div>{formatDate(ann.validFrom)}</div>
-                                    <div className="text-xs text-slate-400">
-                                      {formatDateRelative(ann.validFrom)}
-                                    </div>
+                <Table containerLabel="Announcements table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Title</TableHead>
+                      <TableHead>Body</TableHead>
+                      <TableHead>Shop</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Valid From</TableHead>
+                      <TableHead>Valid Until</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAnnouncements.map((ann) => {
+                      const status = getAnnouncementStatus(ann)
+                      return (
+                        <m.tr
+                          key={ann.id}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="group"
+                        >
+                          <TableCell className="font-medium">{ann.title}</TableCell>
+                          <TableCell className="max-w-[200px] truncate text-slate-600">
+                            {ann.body
+                              ? ann.body.length > 80
+                                ? ann.body.slice(0, 80) + "..."
+                                : ann.body
+                              : ""}
+                          </TableCell>
+                          <TableCell className="text-slate-600">
+                            {shopName(ann.shopId)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={statusBadgeClass(status)}>
+                              {statusLabel(status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-slate-600">
+                            {ann.validFrom ? (
+                              <div className="flex items-center gap-2">
+                                <Calendar className="h-4 w-4" />
+                                <div>
+                                  <div>{formatDate(ann.validFrom)}</div>
+                                  <div className="text-xs text-slate-400">
+                                    {formatDateRelative(ann.validFrom)}
                                   </div>
                                 </div>
-                              ) : (
-                                <span className="text-slate-400">Always</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-slate-600">
-                              {ann.validUntil ? (
-                                <div className="flex items-center gap-2">
-                                  <Calendar className="h-4 w-4" />
-                                  <div>
-                                    <div>{formatDate(ann.validUntil)}</div>
-                                    <div className="text-xs text-slate-400">
-                                      {formatDateRelative(ann.validUntil)}
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-slate-400">No end</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openEditAnnouncement(ann)}
-                                  className="h-8 w-8 p-0"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    setDeletingAnnouncement(ann)
-                                    setAnnouncementDeleteDialogOpen(true)
-                                  }}
-                                  className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
                               </div>
-                            </TableCell>
-                          </m.tr>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
+                            ) : (
+                              <span className="text-slate-400">Always</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-slate-600">
+                            {ann.validUntil ? (
+                              <div className="flex items-center gap-2">
+                                <Calendar className="h-4 w-4" />
+                                <div>
+                                  <div>{formatDate(ann.validUntil)}</div>
+                                  <div className="text-xs text-slate-400">
+                                    {formatDateRelative(ann.validUntil)}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">No end</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEditAnnouncement(ann)}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setDeletingAnnouncement(ann)
+                                  setAnnouncementDeleteDialogOpen(true)
+                                }}
+                                className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </m.tr>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
               )}
               <Pagination
                 currentPage={announcementsPage}

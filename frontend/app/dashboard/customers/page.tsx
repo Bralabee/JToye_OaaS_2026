@@ -301,117 +301,115 @@ export default function CustomersPage() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Contact</TableHead>
-                      <TableHead>Allergen Restrictions</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {customers.map((customer) => {
-                      const allergenNames = getAllergenNames(
-                        customer.allergenRestrictions
-                      )
-                      return (
-                        <m.tr
-                          key={customer.id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="group"
-                        >
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-pink-500 text-white font-semibold">
-                                {customer.name.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="font-medium">{customer.name}</div>
-                              </div>
+              <Table containerLabel="Customers table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead>Allergen Restrictions</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {customers.map((customer) => {
+                    const allergenNames = getAllergenNames(
+                      customer.allergenRestrictions
+                    )
+                    return (
+                      <m.tr
+                        key={customer.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="group"
+                      >
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-pink-500 text-white font-semibold">
+                              {customer.name.charAt(0).toUpperCase()}
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
+                            <div>
+                              <div className="font-medium">{customer.name}</div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 text-sm text-slate-600">
+                              <Mail className="h-3 w-3" />
+                              {customer.email}
+                            </div>
+                            {customer.phone && (
                               <div className="flex items-center gap-2 text-sm text-slate-600">
-                                <Mail className="h-3 w-3" />
-                                {customer.email}
+                                <Phone className="h-3 w-3" />
+                                {customer.phone}
                               </div>
-                              {customer.phone && (
-                                <div className="flex items-center gap-2 text-sm text-slate-600">
-                                  <Phone className="h-3 w-3" />
-                                  {customer.phone}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {allergenNames.length === 0 ? (
-                                <span className="text-sm text-muted-foreground">
-                                  No restrictions
-                                </span>
-                              ) : (
-                                allergenNames.map((name) => {
-                                  const allergen = ALLERGENS.find(
-                                    (a) => a.name === name
-                                  )
-                                  return (
-                                    <Badge
-                                      key={name}
-                                      variant="outline"
-                                      className="bg-red-50 text-red-700 border-red-200"
-                                    >
-                                      {name}
-                                    </Badge>
-                                  )
-                                })
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-slate-600">
-                            <div className="flex items-center gap-2">
-                              <Calendar className="h-4 w-4" />
-                              {formatDistanceToNow(new Date(customer.createdAt), {
-                                addSuffix: true,
-                              })}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Link href={`/dashboard/orders?customer=${customer.id}`}>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                                  title="View orders"
-                                  aria-label={`View orders for ${customer.name}`}
-                                >
-                                  <ShoppingCart className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                              <IconButton
-                                onClick={() => openEditDialog(customer)}
-                                label={`Edit customer ${customer.name}`}
-                                icon={<Pencil className="h-4 w-4" />}
-                              />
-                              <IconButton
-                                onClick={() => openDeleteDialog(customer)}
-                                className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                label={`Delete customer ${customer.name}`}
-                                icon={<Trash2 className="h-4 w-4" />}
-                              />
-                            </div>
-                          </TableCell>
-                        </m.tr>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {allergenNames.length === 0 ? (
+                              <span className="text-sm text-muted-foreground">
+                                No restrictions
+                              </span>
+                            ) : (
+                              allergenNames.map((name) => {
+                                const allergen = ALLERGENS.find(
+                                  (a) => a.name === name
+                                )
+                                return (
+                                  <Badge
+                                    key={name}
+                                    variant="outline"
+                                    className="bg-red-50 text-red-700 border-red-200"
+                                  >
+                                    {name}
+                                  </Badge>
+                                )
+                              })
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-slate-600">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4" />
+                            {formatDistanceToNow(new Date(customer.createdAt), {
+                              addSuffix: true,
+                            })}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Link href={`/dashboard/orders?customer=${customer.id}`}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                                title="View orders"
+                                aria-label={`View orders for ${customer.name}`}
+                              >
+                                <ShoppingCart className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <IconButton
+                              onClick={() => openEditDialog(customer)}
+                              label={`Edit customer ${customer.name}`}
+                              icon={<Pencil className="h-4 w-4" />}
+                            />
+                            <IconButton
+                              onClick={() => openDeleteDialog(customer)}
+                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                              label={`Delete customer ${customer.name}`}
+                              icon={<Trash2 className="h-4 w-4" />}
+                            />
+                          </div>
+                        </TableCell>
+                      </m.tr>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
             <Pagination
               currentPage={currentPage}

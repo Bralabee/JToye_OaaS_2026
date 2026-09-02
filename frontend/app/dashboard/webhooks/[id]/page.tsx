@@ -475,10 +475,10 @@ export default function WebhookDetailPage() {
             <>
               {/* sm+ : table scrolls inside its own container */}
               <div
-                className="hidden overflow-x-auto sm:block"
+                className="hidden sm:block"
                 data-testid="deliveries-table"
               >
-                <Table>
+                <Table containerLabel="Deliveries table">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Event type</TableHead>

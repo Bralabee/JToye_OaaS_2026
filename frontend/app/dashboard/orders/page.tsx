@@ -647,128 +647,126 @@ function OrdersPageInner() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Order ID</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visibleOrders.filter(o => statusFilter === "ALL" || o.status === statusFilter).map((order) => {
-                      const config = statusConfig[order.status]
-                      const StatusIcon = config.icon
-                      const transitions = getAvailableTransitions(order.status)
-                      const isProcessing = processingOrderId === order.id
+              <Table containerLabel="Orders table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Order ID</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleOrders.filter(o => statusFilter === "ALL" || o.status === statusFilter).map((order) => {
+                    const config = statusConfig[order.status]
+                    const StatusIcon = config.icon
+                    const transitions = getAvailableTransitions(order.status)
+                    const isProcessing = processingOrderId === order.id
 
-                      return (
-                        <m.tr
-                          key={order.id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="group cursor-pointer hover:bg-slate-50"
-                          // Phase 17-04 (VOPS-01): row click navigates to the
-                          // dedicated detail route so vendors can issue refunds
-                          // and use the full detail panel. The inline detail
-                          // Dialog below is kept for v2.2 per 17-CONTEXT
-                          // (deferred deprecation — frontend cleanup TBD).
-                          onClick={(e) => {
-                            // A click that started inside the actions cell is a
-                            // button press, not a request to open the order.
-                            if (
-                              (e.target as HTMLElement).closest("[data-row-actions]")
-                            ) {
-                              return
-                            }
-                            router.push(`/dashboard/orders/${order.id}`)
-                          }}
-                        >
-                          <TableCell className="font-mono text-xs">
-                            {/* QA-council FIX-5 (L1): customers quote the ORD-…
-                                number from their receipt — show it here so a
-                                vendor can match a phone enquiry to a row.
-                                Legacy orders without a number keep the
-                                truncated-UUID fallback. */}
-                            {order.orderNumber ?? `${order.id.substring(0, 8)}...`}
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">
-                                {order.customerName || "N/A"}
+                    return (
+                      <m.tr
+                        key={order.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="group cursor-pointer hover:bg-slate-50"
+                        // Phase 17-04 (VOPS-01): row click navigates to the
+                        // dedicated detail route so vendors can issue refunds
+                        // and use the full detail panel. The inline detail
+                        // Dialog below is kept for v2.2 per 17-CONTEXT
+                        // (deferred deprecation — frontend cleanup TBD).
+                        onClick={(e) => {
+                          // A click that started inside the actions cell is a
+                          // button press, not a request to open the order.
+                          if (
+                            (e.target as HTMLElement).closest("[data-row-actions]")
+                          ) {
+                            return
+                          }
+                          router.push(`/dashboard/orders/${order.id}`)
+                        }}
+                      >
+                        <TableCell className="font-mono text-xs">
+                          {/* QA-council FIX-5 (L1): customers quote the ORD-…
+                              number from their receipt — show it here so a
+                              vendor can match a phone enquiry to a row.
+                              Legacy orders without a number keep the
+                              truncated-UUID fallback. */}
+                          {order.orderNumber ?? `${order.id.substring(0, 8)}...`}
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">
+                              {order.customerName || "N/A"}
+                            </div>
+                            {order.customerEmail && (
+                              <div className="text-xs text-slate-500">
+                                {order.customerEmail}
                               </div>
-                              {order.customerEmail && (
-                                <div className="text-xs text-slate-500">
-                                  {order.customerEmail}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={`${config.bgColor} flex w-fit items-center gap-1 text-white`}
-                            >
-                              <StatusIcon className="h-3 w-3" />
-                              {config.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-semibold">
-                            £{((order.totalAmountPennies || 0) / 100).toFixed(2)}
-                          </TableCell>
-                          <TableCell className="text-slate-600">
-                            {formatDistanceToNow(new Date(order.createdAt), {
-                              addSuffix: true,
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={`${config.bgColor} flex w-fit items-center gap-1 text-white`}
+                          >
+                            <StatusIcon className="h-3 w-3" />
+                            {config.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-semibold">
+                          £{((order.totalAmountPennies || 0) / 100).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-slate-600">
+                          {formatDistanceToNow(new Date(order.createdAt), {
+                            addSuffix: true,
+                          })}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {/* `data-row-actions`, not an onClick shield. The
+                              shield was `onClick={e => e.stopPropagation()}`
+                              on a plain <div> — a `no-static-element-interactions`
+                              defect whose whole job was to suppress an
+                              ancestor. The row's own handler now declines to
+                              navigate when the click originated inside this
+                              container, which is the same rule expressed once,
+                              at the element that owns the decision
+                              (31-02 / LGL-02). */}
+                          <div className="flex justify-end gap-2" data-row-actions>
+                            {transitions.map((transition) => {
+                              const TransitionIcon = transition.icon
+                              return (
+                                <Button
+                                  key={transition.action}
+                                  size="sm"
+                                  className={`${transition.color} text-white h-8`}
+                                  onClick={() =>
+                                    handleStateTransition(
+                                      order.id,
+                                      transition.endpoint,
+                                      transition.action
+                                    )
+                                  }
+                                  disabled={isProcessing}
+                                >
+                                  <TransitionIcon className="mr-1 h-3 w-3" />
+                                  {transition.action}
+                                </Button>
+                              )
                             })}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {/* `data-row-actions`, not an onClick shield. The
-                                shield was `onClick={e => e.stopPropagation()}`
-                                on a plain <div> — a `no-static-element-interactions`
-                                defect whose whole job was to suppress an
-                                ancestor. The row's own handler now declines to
-                                navigate when the click originated inside this
-                                container, which is the same rule expressed once,
-                                at the element that owns the decision
-                                (31-02 / LGL-02). */}
-                            <div className="flex justify-end gap-2" data-row-actions>
-                              {transitions.map((transition) => {
-                                const TransitionIcon = transition.icon
-                                return (
-                                  <Button
-                                    key={transition.action}
-                                    size="sm"
-                                    className={`${transition.color} text-white h-8`}
-                                    onClick={() =>
-                                      handleStateTransition(
-                                        order.id,
-                                        transition.endpoint,
-                                        transition.action
-                                      )
-                                    }
-                                    disabled={isProcessing}
-                                  >
-                                    <TransitionIcon className="mr-1 h-3 w-3" />
-                                    {transition.action}
-                                  </Button>
-                                )
-                              })}
-                              {transitions.length === 0 && (
-                                <span className="text-xs text-slate-400">
-                                  No actions
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                        </m.tr>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                            {transitions.length === 0 && (
+                              <span className="text-xs text-slate-400">
+                                No actions
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                      </m.tr>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
             <Pagination
               currentPage={currentPage}
@@ -1024,7 +1022,7 @@ function OrdersPageInner() {
                 </h3>
                 {selectedOrderDetail.items && selectedOrderDetail.items.length > 0 ? (
                   <div className="overflow-hidden rounded-lg border">
-                    <Table>
+                    <Table containerLabel="Order items table">
                       <TableHeader>
                         <TableRow>
                           <TableHead>Product</TableHead>

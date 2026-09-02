@@ -486,153 +486,144 @@ export default function ProductsPage() {
                 </Button>
               </div>
             ) : (
-              // A11Y-3 (axe scrollable-region-focusable, serious): a
-              // horizontally-overflowing region with no focusable element and
-              // no visible scrollbar affordance is unreachable by keyboard.
-              // `tabIndex={0}` + `role="region"` + an accessible name make it
-              // a landmark a keyboard/screen-reader user can find and pan.
-              <div
-                className="overflow-x-auto"
-                tabIndex={0}
-                role="region"
-                aria-label="Products table, scroll horizontally for more columns"
-              >
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Title</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Allergens</TableHead>
-                      <TableHead className="text-right">Price</TableHead>
-                      <TableHead className="text-center">Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {products.map((product) => {
-                      const allergenNames = getAllergenNames(product.allergenMask)
-                      return (
-                        <m.tr
-                          key={product.id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="group"
-                        >
-                          <TableCell className="font-mono text-sm font-medium">
-                            {product.sku}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <SafeImage
-                                src={product.imageUrl}
-                                alt={product.title}
-                                className="h-8 w-8 rounded-lg object-cover"
-                                fallbackClassName="h-8 w-8 rounded-lg bg-blue-100"
-                                fallbackIcon={<Package className="h-4 w-4 text-blue-600" />}
-                              />
-                              <div>
-                                <div className="font-medium">{product.title}</div>
-                                <IngredientText
-                                  text={product.ingredientsText}
-                                  className="line-clamp-1 block text-xs text-slate-500"
-                                />
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1.5">
-                              {product.category ? (
-                                <Badge variant="outline" className="text-xs">{product.category}</Badge>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">—</span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {allergenNames.length === 0 ? (
-                                <span className="text-sm text-muted-foreground">
-                                  No allergens
-                                </span>
-                              ) : (
-                                allergenNames.map((name) => {
-                                  const allergen = ALLERGENS.find(
-                                    (a) => a.name === name
-                                  )
-                                  return (
-                                    <Badge
-                                      key={name}
-                                      variant="outline"
-                                      className="bg-orange-50 text-orange-700 border-orange-200"
-                                    >
-                                      {name}
-                                    </Badge>
-                                  )
-                                })
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {product.pricePennies != null
-                              ? `£${(product.pricePennies / 100).toFixed(2)}`
-                              : "—"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {product.available ? (
-                                <span title="Available"><Eye className="h-3.5 w-3.5 text-emerald-500" /></span>
-                              ) : (
-                                <span title="Unavailable"><EyeOff className="h-3.5 w-3.5 text-slate-300" /></span>
-                              )}
-                              {product.featured && (
-                                <span title="Featured"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" /></span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={async () => {
-                                  try {
-                                    const res = await apiClient.get(`/api/v1/products/${product.id}/label`, { responseType: "blob" })
-                                    const url = URL.createObjectURL(res.data)
-                                    const a = document.createElement("a")
-                                    a.href = url
-                                    a.download = `label-${product.sku}.pdf`
-                                    a.click()
-                                    URL.revokeObjectURL(url)
-                                  } catch {
-                                    toast({ variant: "destructive", title: "Error", description: "Failed to download label" })
-                                  }
-                                }}
-                                className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                                title="Download allergen label"
-                                aria-label={`Download allergen label for ${product.title}`}
-                              >
-                                <FileText className="h-4 w-4" />
-                              </Button>
-                              <IconButton
-                                onClick={() => openEditDialog(product)}
-                                label={`Edit product ${product.title}`}
-                                icon={<Pencil className="h-4 w-4" />}
-                              />
-                              <IconButton
-                                onClick={() => openDeleteDialog(product)}
-                                className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                label={`Delete product ${product.title}`}
-                                icon={<Trash2 className="h-4 w-4" />}
+              // The Table primitive's own overflow div is the named, focusable region
+              // (A11Y-5, QA council 20260902-134741); the wrapper that used to sit here
+              // nested a second scroll container inside it.
+              <Table containerLabel="Products table, scroll horizontally for more columns">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>SKU</TableHead>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Allergens</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {products.map((product) => {
+                    const allergenNames = getAllergenNames(product.allergenMask)
+                    return (
+                      <m.tr
+                        key={product.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="group"
+                      >
+                        <TableCell className="font-mono text-sm font-medium">
+                          {product.sku}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <SafeImage
+                              src={product.imageUrl}
+                              alt={product.title}
+                              className="h-8 w-8 rounded-lg object-cover"
+                              fallbackClassName="h-8 w-8 rounded-lg bg-blue-100"
+                              fallbackIcon={<Package className="h-4 w-4 text-blue-600" />}
+                            />
+                            <div>
+                              <div className="font-medium">{product.title}</div>
+                              <IngredientText
+                                text={product.ingredientsText}
+                                className="line-clamp-1 block text-xs text-slate-500"
                               />
                             </div>
-                          </TableCell>
-                        </m.tr>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            {product.category ? (
+                              <Badge variant="outline" className="text-xs">{product.category}</Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {allergenNames.length === 0 ? (
+                              <span className="text-sm text-muted-foreground">
+                                No allergens
+                              </span>
+                            ) : (
+                              allergenNames.map((name) => {
+                                const allergen = ALLERGENS.find(
+                                  (a) => a.name === name
+                                )
+                                return (
+                                  <Badge
+                                    key={name}
+                                    variant="outline"
+                                    className="bg-orange-50 text-orange-700 border-orange-200"
+                                  >
+                                    {name}
+                                  </Badge>
+                                )
+                              })
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          {product.pricePennies != null
+                            ? `£${(product.pricePennies / 100).toFixed(2)}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {product.available ? (
+                              <span title="Available"><Eye className="h-3.5 w-3.5 text-emerald-500" /></span>
+                            ) : (
+                              <span title="Unavailable"><EyeOff className="h-3.5 w-3.5 text-slate-300" /></span>
+                            )}
+                            {product.featured && (
+                              <span title="Featured"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" /></span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={async () => {
+                                try {
+                                  const res = await apiClient.get(`/api/v1/products/${product.id}/label`, { responseType: "blob" })
+                                  const url = URL.createObjectURL(res.data)
+                                  const a = document.createElement("a")
+                                  a.href = url
+                                  a.download = `label-${product.sku}.pdf`
+                                  a.click()
+                                  URL.revokeObjectURL(url)
+                                } catch {
+                                  toast({ variant: "destructive", title: "Error", description: "Failed to download label" })
+                                }
+                              }}
+                              className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                              title="Download allergen label"
+                              aria-label={`Download allergen label for ${product.title}`}
+                            >
+                              <FileText className="h-4 w-4" />
+                            </Button>
+                            <IconButton
+                              onClick={() => openEditDialog(product)}
+                              label={`Edit product ${product.title}`}
+                              icon={<Pencil className="h-4 w-4" />}
+                            />
+                            <IconButton
+                              onClick={() => openDeleteDialog(product)}
+                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                              label={`Delete product ${product.title}`}
+                              icon={<Trash2 className="h-4 w-4" />}
+                            />
+                          </div>
+                        </TableCell>
+                      </m.tr>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
             <Pagination
               currentPage={currentPage}

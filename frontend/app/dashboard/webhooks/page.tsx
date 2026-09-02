@@ -320,10 +320,10 @@ export default function WebhooksPage() {
             <>
               {/* sm+ : table (wide content scrolls inside its own container) */}
               <div
-                className="hidden overflow-x-auto sm:block"
+                className="hidden sm:block"
                 data-testid="webhooks-table"
               >
-                <Table>
+                <Table containerLabel="Webhook endpoints table">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Endpoint URL</TableHead>

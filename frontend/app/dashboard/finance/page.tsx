@@ -318,55 +318,53 @@ export default function FinancePage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>VAT Rate</TableHead>
-                      <TableHead>VAT Amount</TableHead>
-                      <TableHead>Created</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((tx) => {
-                      const config = vatRateConfig[tx.vatRate]
-                      return (
-                        <TableRow key={tx.id}>
-                          <TableCell className="font-medium">
-                            {tx.description || tx.id.substring(0, 8) + "..."}
-                          </TableCell>
-                          <TableCell
-                            className={`font-semibold ${
-                              tx.amountPennies >= 0
-                                ? "text-green-700"
-                                : "text-red-700"
-                            }`}
+              <Table containerLabel="Financial transactions table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Reference</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>VAT Rate</TableHead>
+                    <TableHead>VAT Amount</TableHead>
+                    <TableHead>Created</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {transactions.map((tx) => {
+                    const config = vatRateConfig[tx.vatRate]
+                    return (
+                      <TableRow key={tx.id}>
+                        <TableCell className="font-medium">
+                          {tx.description || tx.id.substring(0, 8) + "..."}
+                        </TableCell>
+                        <TableCell
+                          className={`font-semibold ${
+                            tx.amountPennies >= 0
+                              ? "text-green-700"
+                              : "text-red-700"
+                          }`}
+                        >
+                          {formatPennies(tx.amountPennies)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={`${config.color} text-white text-xs`}
                           >
-                            {formatPennies(tx.amountPennies)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={`${config.color} text-white text-xs`}
-                            >
-                              {config.label} ({config.rate})
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {formatPennies(tx.vatAmountPennies)}
-                          </TableCell>
-                          <TableCell className="text-slate-600">
-                            {formatDistanceToNow(new Date(tx.createdAt), {
-                              addSuffix: true,
-                            })}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                            {config.label} ({config.rate})
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {formatPennies(tx.vatAmountPennies)}
+                        </TableCell>
+                        <TableCell className="text-slate-600">
+                          {formatDistanceToNow(new Date(tx.createdAt), {
+                            addSuffix: true,
+                          })}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
             <Pagination
               currentPage={currentPage}
