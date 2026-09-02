@@ -98,7 +98,12 @@ public class NotificationDispatchService {
 
         List<Recipient> recipients = recipientResolver.forEvent(eventType, tenantId, payload);
         if (recipients.isEmpty()) {
-            log.debug("event=notification_dispatch_no_recipients eventType={} tenant={}", eventType, tenantId);
+            // INT-4: WARN, not DEBUG. Both runtime tenants had a blank tenants.contact_email,
+            // so every vendor-directed email was dropped here invisibly at the default INFO
+            // level. A dropped notification is an operator-visible event.
+            log.warn("event=notification_dispatch_no_recipients eventType={} tenant={} "
+                    + "hint=tenants.contact_email is blank and no fallback recipient resolved",
+                    eventType, tenantId);
             return;
         }
 

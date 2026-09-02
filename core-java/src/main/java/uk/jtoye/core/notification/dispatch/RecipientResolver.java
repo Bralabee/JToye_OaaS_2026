@@ -2,6 +2,8 @@ package uk.jtoye.core.notification.dispatch;
 
 import org.springframework.stereotype.Component;
 import uk.jtoye.core.notification.template.RecipientRole;
+import uk.jtoye.core.onboarding.OnboardingStateChangeEvent;
+import uk.jtoye.core.onboarding.OnboardingSubmitterResolver;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.payment.PaymentEvent;
@@ -31,11 +33,18 @@ import java.util.UUID;
  *       platform operator — {@code arch_no_platform_operator}).</li>
  * </ul>
  *
- * <p><b>Vendor recipient = {@code tenants.contact_email} ONLY (D-04).</b> There
- * is NO separate "onboarding-contact" email field in the codebase
- * ({@code VendorOnboarding} has no email column), so there is deliberately no
- * fallback field: when {@code contact_email} is null/blank the vendor recipient
- * is simply omitted (no send). The customer recipient is the order's own email.
+ * <p><b>Vendor recipient = {@code tenants.contact_email} (D-04), with ONE fallback for the
+ * onboarding family (INT-4, QA council 20260902-134741).</b> There is no separate
+ * "onboarding-contact" email field ({@code VendorOnboarding} has no email column) and none
+ * is added. When {@code contact_email} is null/blank, {@code onboarding.state.*} falls back
+ * to the email of the user who submitted the application, resolved at dispatch time by
+ * {@link OnboardingSubmitterResolver} from data the system already records (the Envers
+ * revision's JWT subject + the tenant-scoped {@code user_directory}). Measured on the
+ * runtime: both tenants had a blank {@code contact_email}, so every onboarding email was
+ * silently dropped while the vendor page promised one. The fallback is onboarding-only —
+ * order/refund/payment events have no "submitter" and their vendor leg is unchanged
+ * (omitted, now logged at WARN by the dispatcher). The customer recipient is the order's
+ * own email.
  *
  * <p>Every read is tenant-scoped: the caller ({@code NotificationDispatchService}
  * via the listeners) has already pinned {@code TenantContext} + the RLS GUC from
@@ -48,10 +57,14 @@ public class RecipientResolver {
 
     private final TenantRepository tenantRepository;
     private final OrderRepository orderRepository;
+    private final OnboardingSubmitterResolver submitterResolver;
 
-    public RecipientResolver(TenantRepository tenantRepository, OrderRepository orderRepository) {
+    public RecipientResolver(TenantRepository tenantRepository,
+                             OrderRepository orderRepository,
+                             OnboardingSubmitterResolver submitterResolver) {
         this.tenantRepository = tenantRepository;
         this.orderRepository = orderRepository;
+        this.submitterResolver = submitterResolver;
     }
 
     /** A resolved destination + the audience axis the template renders for. */
@@ -97,7 +110,9 @@ public class RecipientResolver {
         Family family = Family.classify(eventType);
         return switch (family) {
             // Vendor-only: the customer stays on the legacy path (no duplicate).
-            case ORDER_STATE, ONBOARDING -> vendorOnly(tenantId);
+            case ORDER_STATE -> vendorOnly(tenantId);
+            // Vendor-only too, with the INT-4 submitter fallback when contact_email is blank.
+            case ONBOARDING -> onboardingVendor(tenantId, payload);
             // Both audiences (both new — refund/payment had no email consumer).
             case ORDER_REFUND, PAYMENT -> customerAndVendor(tenantId, payload);
             case OTHER -> List.of();
@@ -107,6 +122,23 @@ public class RecipientResolver {
     private List<Recipient> vendorOnly(UUID tenantId) {
         String vendor = vendorEmail(tenantId);
         return vendor == null ? List.of() : List.of(new Recipient(vendor, RecipientRole.VENDOR));
+    }
+
+    /**
+     * INT-4: {@code tenants.contact_email} first; when blank, the submitting user's directory
+     * email (same VENDOR role — the template audience is unchanged). Empty when neither exists.
+     */
+    private List<Recipient> onboardingVendor(UUID tenantId, Object payload) {
+        List<Recipient> vendor = vendorOnly(tenantId);
+        if (!vendor.isEmpty()) {
+            return vendor;
+        }
+        if (payload instanceof OnboardingStateChangeEvent event) {
+            return submitterResolver.submitterEmail(event.onboardingId(), tenantId)
+                    .map(email -> List.of(new Recipient(email, RecipientRole.VENDOR)))
+                    .orElse(List.of());
+        }
+        return List.of();
     }
 
     private List<Recipient> customerAndVendor(UUID tenantId, Object payload) {

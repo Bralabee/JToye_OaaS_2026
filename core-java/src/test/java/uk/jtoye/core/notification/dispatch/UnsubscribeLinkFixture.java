@@ -71,7 +71,8 @@ final class UnsubscribeLinkFixture {
 
         NotificationProperties props = properties(appOrigin, oneClickOrigin);
         NotificationDispatchService service = new NotificationDispatchService(
-                new RecipientResolver(tenantRepository, orderRepository),
+                new RecipientResolver(tenantRepository, orderRepository,
+                        org.mockito.Mockito.mock(uk.jtoye.core.onboarding.OnboardingSubmitterResolver.class)),
                 consentGate,
                 new EmailTemplateRenderer(),
                 new UnsubscribeTokenService(SECRET),

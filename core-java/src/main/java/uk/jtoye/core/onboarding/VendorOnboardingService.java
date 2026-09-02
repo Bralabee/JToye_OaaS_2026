@@ -2,6 +2,9 @@ package uk.jtoye.core.onboarding;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -13,6 +16,7 @@ import uk.jtoye.core.onboarding.dto.AdminOnboardingDto;
 import uk.jtoye.core.onboarding.dto.GateDto;
 import uk.jtoye.core.onboarding.dto.OnboardingDto;
 import uk.jtoye.core.onboarding.gate.AllergenCompletenessGate;
+import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopService;
@@ -48,6 +52,7 @@ public class VendorOnboardingService {
     private final ShopRepository shopRepository;
     private final GateChainRunner gateChainRunner;
     private final AllergenCompletenessGate allergenCompletenessGate;
+    private final UserDirectoryRepository userDirectoryRepository;
 
     public VendorOnboardingService(VendorOnboardingRepository onboardingRepository,
                                    VendorOnboardingGateRepository gateRepository,
@@ -55,7 +60,8 @@ public class VendorOnboardingService {
                                    ShopService shopService,
                                    ShopRepository shopRepository,
                                    GateChainRunner gateChainRunner,
-                                   AllergenCompletenessGate allergenCompletenessGate) {
+                                   AllergenCompletenessGate allergenCompletenessGate,
+                                   UserDirectoryRepository userDirectoryRepository) {
         this.onboardingRepository = onboardingRepository;
         this.gateRepository = gateRepository;
         this.stateMachineService = stateMachineService;
@@ -63,6 +69,7 @@ public class VendorOnboardingService {
         this.shopRepository = shopRepository;
         this.gateChainRunner = gateChainRunner;
         this.allergenCompletenessGate = allergenCompletenessGate;
+        this.userDirectoryRepository = userDirectoryRepository;
     }
 
     /**
@@ -114,6 +121,7 @@ public class VendorOnboardingService {
         VendorOnboarding onboarding = requireOnboarding(tenantId);
 
         transition(onboarding, OnboardingEvent.SUBMIT);
+        recordSubmitterInDirectory(tenantId);
 
         gateChainRunner.materialise(onboarding);
         kickGateChainAfterCommit(onboarding.getId(), tenantId);
@@ -135,6 +143,7 @@ public class VendorOnboardingService {
         VendorOnboarding onboarding = requireOnboarding(tenantId);
 
         transition(onboarding, OnboardingEvent.RESUBMIT);
+        recordSubmitterInDirectory(tenantId);
 
         UUID onboardingId = onboarding.getId();
         for (VendorOnboardingGate gate : gateRepository.findByOnboardingId(onboardingId)) {
@@ -476,6 +485,48 @@ public class VendorOnboardingService {
 
         onboardingRepository.save(onboarding);
         log.info("Onboarding {} transitioned {} -> {} via {}", onboarding.getId(), oldState, newState, event);
+    }
+
+    /**
+     * INT-4 (QA council 20260902-134741): make the submitter reachable. Envers already records
+     * WHO submitted ({@code revinfo.user_id} = the JWT subject, via {@code TenantRevisionListener});
+     * this refreshes the caller's tenant-scoped {@code user_directory} row from the same JWT so
+     * {@link OnboardingSubmitterResolver} can turn that subject into an EMAIL when
+     * {@code tenants.contact_email} is blank. The directory is otherwise populated only on
+     * shop-scoped write paths ({@code ShopAccessService}), which a vendor who only ever calls the
+     * onboarding endpoints never touches — so without this the fallback would be empty exactly
+     * when it is needed. Same D-09 throttled upsert, same "only the caller's own {@code sub}"
+     * property (T-23-02-01); {@code cutoff = now()} so the address is current at submit time.
+     * Best-effort and fail-closed: no JWT principal, a non-UUID subject, or a missing/oversize
+     * email claim means nothing is written — never a guess, never a failed submit.
+     */
+    private void recordSubmitterInDirectory(UUID tenantId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
+            return;
+        }
+        UUID subject;
+        try {
+            subject = UUID.fromString(jwt.getSubject());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return;
+        }
+        String email = jwt.getClaimAsString("email");
+        if (email == null || email.isBlank() || email.length() > 320) {
+            return; // nothing usable to route to — the column is VARCHAR(320)
+        }
+        String displayName = jwt.getClaimAsString("name");
+        if (displayName == null || displayName.isBlank()) {
+            displayName = jwt.getClaimAsString("preferred_username");
+        }
+        if (displayName != null && displayName.length() > 255) {
+            displayName = displayName.substring(0, 255);
+        }
+        try {
+            userDirectoryRepository.upsertSeen(tenantId, subject, email.trim(), displayName, OffsetDateTime.now());
+        } catch (RuntimeException ex) {
+            log.warn("Submitter directory refresh skipped (best-effort) for tenant {}: {}", tenantId, ex.getMessage());
+        }
     }
 
     /**
