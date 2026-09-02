@@ -82,7 +82,7 @@ dependencies:
   # ------------------------------------------------------------------ runtime images
   - id: postgres
     pin: "postgres:15-alpine"
-    sites: ["docker-compose.full-stack.yml:14"]
+    sites: ["docker-compose.full-stack.yml:43"]
     kind: image
     owner: maintainer
     eol_slug: postgresql
@@ -91,7 +91,7 @@ dependencies:
 
   - id: alpine
     pin: "alpine:3.20"
-    sites: ["docker-compose.full-stack.yml:48"]
+    sites: ["docker-compose.full-stack.yml:96"]
     kind: image
     owner: maintainer
     eol_slug: alpine-linux
@@ -109,7 +109,7 @@ dependencies:
 
   - id: keycloak
     pin: "quay.io/keycloak/keycloak:24.0.5"
-    sites: ["docker-compose.full-stack.yml:81"]
+    sites: ["docker-compose.full-stack.yml:145"]
     kind: image
     owner: maintainer
     eol_slug: keycloak
@@ -128,7 +128,7 @@ dependencies:
 
   - id: redis
     pin: "redis:7-alpine"
-    sites: ["docker-compose.full-stack.yml:126"]
+    sites: ["docker-compose.full-stack.yml:200"]
     kind: image
     owner: maintainer
     eol_slug: redis
@@ -143,7 +143,7 @@ dependencies:
 
   - id: rabbitmq
     pin: "rabbitmq:4.3.4-management-alpine"
-    sites: ["docker-compose.full-stack.yml:149"]
+    sites: ["docker-compose.full-stack.yml:224"]
     kind: image
     owner: maintainer
     eol_slug: rabbitmq
@@ -175,9 +175,25 @@ dependencies:
       ~2026-09-01 and RED on 2026-12-01 with no commit in between. Intended, and already stated
       in this file's header. It is a treadmill, and the mechanism is what makes it survivable.
 
+      2026-09-02: the predicted amber arrived — 89 days to the horizon, Operational Contracts red on
+      every PR with no code change. Deferred under the exemption below; tracked in #724.
+    exemption:
+      reason: >-
+        Vendor community support for 4.3 ends 2026-11-30 and this row entered the 90-day window on
+        2026-09-02, exactly as the header of check-dependency-horizons.sh predicted. There is
+        nothing to upgrade TO: endoflife.date lists 4.3 as the newest cycle (latest 4.3.5) and
+        Docker Hub has no rabbitmq:4.4* tag (measured 2026-09-02; vendor cadence puts 4.4 around
+        October 2026). This exemption ends ON the horizon, not after it: on 2026-12-01 the row is
+        past EOL AND this block is expired, so the gate goes red again with no commit. That is the
+        treadmill working; the tracking issue is the work that steps off it. The 4.3.4 -> 4.3.5
+        patch is deliberately NOT bundled: it moves no date, it is a runtime change, and this PR
+        unblocks merges on the eve of a QA remediation round.
+      expires: "2026-11-30"
+      tracked_by: "#724"
+
   - id: minio
     pin: "minio/minio:${MINIO_IMAGE_TAG:-latest}"
-    sites: ["docker-compose.full-stack.yml:407"]
+    sites: ["docker-compose.full-stack.yml:553"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -192,7 +208,7 @@ dependencies:
 
   - id: minio-mc
     pin: "minio/mc:${MINIO_MC_IMAGE_TAG:-latest}"
-    sites: ["docker-compose.full-stack.yml:429"]
+    sites: ["docker-compose.full-stack.yml:584"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -207,8 +223,8 @@ dependencies:
   - id: ollama
     pin: "ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}"
     sites:
-      - "docker-compose.full-stack.yml:449"
-      - "docker-compose.full-stack.yml:510"
+      - "docker-compose.full-stack.yml:621"
+      - "docker-compose.full-stack.yml:686"
     kind: image
     owner: maintainer
     eol_slug: null
@@ -223,7 +239,7 @@ dependencies:
 
   - id: mailhog
     pin: "mailhog/mailhog:v1.0.1"
-    sites: ["docker-compose.full-stack.yml:526"]
+    sites: ["docker-compose.full-stack.yml:702"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -241,7 +257,7 @@ dependencies:
   #  so the omission is closed here rather than inherited.
   - id: prometheus
     pin: "prom/prometheus:v2.48.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:8"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:35"]
     kind: image
     owner: maintainer
     eol_slug: prometheus
@@ -260,7 +276,7 @@ dependencies:
 
   - id: grafana
     pin: "grafana/grafana:10.2.2"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:50"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:84"]
     kind: image
     owner: maintainer
     eol_slug: grafana
@@ -278,7 +294,7 @@ dependencies:
 
   - id: alertmanager
     pin: "prom/alertmanager:v0.27.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:81"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:115"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -294,7 +310,7 @@ dependencies:
 
   - id: redis-exporter
     pin: "oliver006/redis_exporter:v1.58.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:129"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:163"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -310,7 +326,7 @@ dependencies:
 
   - id: postgres-exporter
     pin: "prometheuscommunity/postgres-exporter:v0.15.0"
-    sites: ["infra/monitoring/docker-compose.monitoring.yml:149"]
+    sites: ["infra/monitoring/docker-compose.monitoring.yml:183"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -360,7 +376,7 @@ dependencies:
     pin: "node:24-alpine"
     sites:
       - "frontend/Dockerfile:5"
-      - "frontend/Dockerfile:129"
+      - "frontend/Dockerfile:148"
       - "mcp-server/Dockerfile:7"
       - "mcp-server/Dockerfile:21"
     kind: image
@@ -382,7 +398,7 @@ dependencies:
 
   - id: scratch
     pin: "scratch"
-    sites: ["edge-go/Dockerfile:33"]
+    sites: ["edge-go/Dockerfile:34"]
     kind: pseudo
     owner: maintainer
     eol_slug: null
