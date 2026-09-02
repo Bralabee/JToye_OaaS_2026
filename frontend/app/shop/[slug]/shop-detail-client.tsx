@@ -37,7 +37,20 @@ function DietaryBadge({ tag }: { tag: string }) {
   return <span className="inline-flex items-center rounded-md bg-cream px-1.5 py-0.5 text-xs font-medium text-oxblood-600 ring-1 ring-cream-100">{tag.trim()}</span>
 }
 
-function ProductCard({ product, promo }: { product: PublicProduct; promo?: PublicPromotion }) {
+/**
+ * `inFeaturedRail`: a featured dish renders twice (the Popular rail and its
+ * category list). The rail copy suffixes its add-to-basket name so the two
+ * controls do not share one accessible name (A11Y-4).
+ */
+function ProductCard({
+  product,
+  promo,
+  inFeaturedRail = false,
+}: {
+  product: PublicProduct
+  promo?: PublicPromotion
+  inFeaturedRail?: boolean
+}) {
   const [modalOpen, setModalOpen] = useState(false)
   const { addItem, items, updateQuantity } = useCart()
   const dietaryTags = product.dietaryTags?.split(",").filter(Boolean) || []
@@ -134,6 +147,11 @@ function ProductCard({ product, promo }: { product: PublicProduct; promo?: Publi
               ) : quantity === 0 ? (
                 <button
                   onClick={(e) => handleAddToCart(e)}
+                  // A11Y-4 (QA council 20260902-134741; WCAG 2.4.6): nine cards on one page
+                  // exposed the identical name "Add", and a name-driven actor added the
+                  // wrong dish. Visible text stays "Add"; the name says which dish, the
+                  // same way the +/- stepper beside it already does.
+                  aria-label={`Add ${product.title} to basket${inFeaturedRail ? " (featured)" : ""}`}
                   className="relative z-10 inline-flex items-center gap-1 rounded-full bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-ink hover:bg-amber-400 active:scale-95 transition-all"
                 >
                   <PlusIcon className="h-3 w-3" />
@@ -751,6 +769,7 @@ export function ShopDetailClient({
                 <ProductCard
                   key={product.id}
                   product={product}
+                  inFeaturedRail
                   promo={product.category ? promotionsByCategory.get(product.category) : undefined}
                 />
               ))}
