@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
@@ -67,6 +68,15 @@ import java.util.stream.Collectors;
 public class PublicStorefrontService {
     private static final Logger log = LoggerFactory.getLogger(PublicStorefrontService.class);
 
+    /**
+     * The logical operation id the guest checkout reserves under in the V50 {@code idempotency_keys}
+     * store (QA council 20260902-134741, Cluster E / adjudication A3). Deliberately NOT
+     * {@code orders.create}: the store is shared with the dashboard create, which persists its
+     * response body, and this path persists none — the same key arriving on both endpoints must
+     * never resolve to one row.
+     */
+    public static final String GUEST_ORDER_ENDPOINT = "storefront.orders.create";
+
     private final ShopRepository shopRepository;
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
@@ -75,6 +85,7 @@ public class PublicStorefrontService {
     private final PaymentService paymentService;
     private final ShopPromotionRepository promotionRepository;
     private final ShopAnnouncementRepository announcementRepository;
+    private final IdempotencyService idempotencyService;
 
     /**
      * The offline postcode geocoder (33-02), consulted FIRST for every {@code q} by
@@ -118,6 +129,7 @@ public class PublicStorefrontService {
                                    EntityManager entityManager, PaymentService paymentService,
                                    ShopPromotionRepository promotionRepository,
                                    ShopAnnouncementRepository announcementRepository,
+                                   IdempotencyService idempotencyService,
                                    PostcodeGeocoder postcodeGeocoder,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
@@ -129,6 +141,7 @@ public class PublicStorefrontService {
         this.paymentService = paymentService;
         this.promotionRepository = promotionRepository;
         this.announcementRepository = announcementRepository;
+        this.idempotencyService = idempotencyService;
         this.postcodeGeocoder = postcodeGeocoder;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
@@ -644,318 +657,405 @@ public class PublicStorefrontService {
      * DRAFT order whose PaymentIntent creation subsequently failed.
      */
     @Transactional
-    public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request) {
+    public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request,
+                                                   String headerIdempotencyKey) {
         log.debug("Creating guest order for shop: {}", slug);
 
         // SEC-01 tenant-match gate BEFORE any write (Phase 13) — rejects
         // cross-tenant spoof with 403 before Order/OrderItem rows are minted.
         Shop shop = resolvePublicShopForSlug(slug);
-
-        // Enforce opening hours — reject orders when shop is closed
-        validateShopIsOpen(shop);
-
-        UUID tenantId = shop.getTenantId();
         try {
-            // Idempotency check — return existing order if same key was already submitted
-            String idempotencyKey = request.getIdempotencyKey();
-            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-                Optional<Order> existing = orderRepository.findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey);
-                if (existing.isPresent()) {
-                    Order existingOrder = existing.get();
-                    log.info("Idempotent duplicate detected for key '{}', returning existing order {}",
-                            idempotencyKey, existingOrder.getOrderNumber());
-                    // WR-02: the paymentReference is the Stripe PaymentIntent ID
-                    // (pi_...), NOT a client secret — returning it in the
-                    // clientSecret slot mounted Stripe Elements with an unusable
-                    // value AND disclosed the raw PI id to the guest. For a
-                    // still-payable DRAFT order, re-fetch the REAL client secret
-                    // from Stripe so the retry resumes payment; otherwise return
-                    // null and the client renders the placed-order confirmation.
-                    String existingClientSecret = null;
-                    if (existingOrder.getStatus() == OrderStatus.DRAFT
-                            && existingOrder.getPaymentReference() != null
-                            && paymentService.isConfigured()) {
-                        try {
-                            existingClientSecret = paymentService.retrieveClientSecret(
-                                    existingOrder.getPaymentReference());
-                        } catch (com.stripe.exception.StripeException e) {
-                            log.warn("Could not re-fetch client secret for idempotent retry of order {}",
-                                    existingOrder.getOrderNumber(), e);
-                        }
-                    }
-                    return new GuestOrderConfirmation(
-                            existingOrder.getOrderNumber(),
-                            existingOrder.getStatus().name(),
-                            existingOrder.getSubtotalPennies(),
-                            existingOrder.getDeliveryFeePennies(),
-                            existingOrder.getVatRate().name(),
-                            existingOrder.getVatAmountPennies(),
-                            existingOrder.getTotalAmountPennies(),
-                            shop.getName(),
-                            existingOrder.getItemCount(),
-                            existingClientSecret,
-                            List.of()
-                    );
-                }
+            // Enforce opening hours — reject orders when shop is closed
+            validateShopIsOpen(shop);
+
+            String idempotencyKey = resolveGuestIdempotencyKey(request.getIdempotencyKey(), headerIdempotencyKey);
+            if (idempotencyKey == null) {
+                // No key from either source: the pre-existing, non-idempotent create (census).
+                return placeGuestOrder(shop, request, null);
             }
 
-            Order order = new Order();
-            order.setTenantId(tenantId);
-            order.setShopId(shop.getId());
-            order.setOrderNumber(generateOrderNumber(tenantId));
-            order.setStatus(OrderStatus.DRAFT);
-            order.setPaymentStatus(PaymentStatus.PENDING);
-            order.setCustomerName(request.getCustomerName());
-            order.setCustomerEmail(request.getCustomerEmail());
-            order.setCustomerPhone(request.getCustomerPhone());
-            order.setNotes(request.getNotes());
-            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-                order.setIdempotencyKey(idempotencyKey);
-            }
-            order.setUpdatedAt(OffsetDateTime.now());
-
-            // Resolve fulfilment type server-side (UIX-04). The client sends the
-            // enum string; an unknown value is a 400, not a silent DELIVERY.
-            FulfilmentType fulfilmentType = parseFulfilmentType(request.getFulfilmentType());
-            order.setFulfilmentType(fulfilmentType);
-            if (fulfilmentType == FulfilmentType.DELIVERY) {
-                // Conditional-required: a delivery order MUST carry a UK address.
-                if (isBlank(request.getAddressLine1())
-                        || isBlank(request.getAddressCity())
-                        || isBlank(request.getAddressPostcode())) {
-                    throw new IllegalArgumentException(
-                            "Delivery address (line 1, city and postcode) is required for delivery orders.");
-                }
-                order.setAddressLine1(request.getAddressLine1());
-                order.setAddressLine2(request.getAddressLine2());
-                order.setAddressCity(request.getAddressCity());
-                order.setAddressPostcode(request.getAddressPostcode());
-            }
-            // COLLECTION: no address persisted; the delivery fee is forced to £0 below.
-
-            // Add items with server-side price lookup.
-            //
-            // allergenWarnings stays on the confirmation DTO and is always empty as of
-            // 2026-07-30: the customer-supplied allergen mask that populated it was
-            // special-category data (Art. 9) taken over an unauthenticated endpoint with
-            // no consent capture, and was removed. The field is retained as the seam a
-            // future *consented* warning path plugs into — the checkout UI already guards
-            // on length, so an empty list renders nothing. See
-            // docs/legal/article-9-allergen-basis.md.
-            List<String> allergenWarnings = new ArrayList<>();
-            // Collect each line's VAT-inclusive gross + server-resolved rate so
-            // the order's predominant liability can be computed (Issue #81 BUG 2).
-            // The client cannot supply a rate (no rate field on the request) —
-            // it is always resolved from product.vat_rate server-side.
-            List<VatCalculator.LineRate> lineRates = new ArrayList<>();
-
-            for (GuestOrderItemRequest itemReq : request.getItems()) {
-                Product product = productRepository.findById(itemReq.getProductId())
-                        .orElseThrow(() -> new ResourceNotFoundException(
-                                "Product not found: " + itemReq.getProductId()));
-
-                // UIX-05 invariant (CR-01): an order for shop X may only contain
-                // shop X's products. RLS scopes findById to the TENANT, not the
-                // shop, so without this check an unauthenticated client could
-                // order any product of the tenant — including items quarantined
-                // into the unpublished archive shop — through this storefront.
-                // Deliberately the SAME exception type + message shape as the
-                // absent-row case above so the response does not disclose that a
-                // product exists in another shop (no title, no shop id).
-                if (!shop.getId().equals(product.getShopId())) {
-                    throw new ResourceNotFoundException(
-                            "Product not found: " + itemReq.getProductId());
-                }
-
-                if (!Boolean.TRUE.equals(product.getAvailable())) {
-                    throw new IllegalArgumentException("Product is not available: " + product.getTitle());
-                }
-
-                // Validate stock
-                if (!product.hasStock(itemReq.getQuantity())) {
-                    throw new IllegalArgumentException(
-                            "Insufficient stock for '" + product.getTitle() + "': requested "
-                                    + itemReq.getQuantity() + ", available " + product.getQuantityInStock());
-                }
-
-                OrderItem item = new OrderItem(
-                        product.getId(),
-                        itemReq.getQuantity(),
-                        product.getPricePennies() // Server-side price — never trust client
-                );
-                item.setTenantId(tenantId);
-                // UIX-03 root-cause fix: snapshot the REAL product title (server-side,
-                // authoritative) so OrderItem.productName never persists its
-                // "Unknown Product" default onto the kitchen display / order detail.
-                item.setProductName(product.getTitle());
-                // LGL-03 / V63: the allergen mask is snapshotted for the SAME reason the title
-                // is, at the same moment. A vendor who edits a product's allergen data after this
-                // order is placed must not be able to change what the customer is recorded as
-                // having acknowledged, or what the kitchen ticket shows. Under a read-time join
-                // back to Product they would: the customer acknowledges set A, the kitchen sees
-                // set B, and no record of A survives anywhere. The advisory reconciliation flags
-                // are stored beside the declaration, never folded into it.
-                OrderAllergenSnapshot.capture(item, product.getTitle(),
-                        product.getAllergenMask(), product.getIngredientsText());
-                order.addItem(item);
-                lineRates.add(new VatCalculator.LineRate(
-                        item.getTotalPricePennies(), product.getVatRate()));
-            }
-
-            // Resolve the order's single predominant VAT rate from the basket
-            // (replaces the former hardcoded STANDARD). Delivery VAT then follows
-            // this predominant liability via calculateTotal().
-            order.setVatRate(VatCalculator.predominantRate(lineRates));
-
-            // Calculate delivery fee — server-authoritative (client value is
-            // preview-only and NEVER read). COLLECTION always costs £0; DELIVERY
-            // uses the shop's fee, waived when the subtotal clears the free-delivery
-            // threshold. Tampering with fulfilmentType to underpay is neutralised
-            // because the total is recomputed here, not taken from the request.
-            long itemSubtotal = order.getItems().stream()
-                    .mapToLong(item -> item.getTotalPricePennies())
-                    .sum();
-
-            // WR-01: enforce the shop's advertised minimum order value on the
-            // item subtotal (delivery fee excluded), server-side. The storefront
-            // renders "Min order £X" and the checkout disables submit below it,
-            // but those are advisory — this is the authoritative gate.
-            if (shop.getMinimumOrderPennies() != null && shop.getMinimumOrderPennies() > 0
-                    && itemSubtotal < shop.getMinimumOrderPennies()) {
-                throw new IllegalArgumentException(String.format(java.util.Locale.ROOT,
-                        "Order is below this shop's minimum order value of £%.2f.",
-                        shop.getMinimumOrderPennies() / 100.0));
-            }
-
-            long deliveryFee;
-            if (fulfilmentType == FulfilmentType.COLLECTION) {
-                deliveryFee = 0L;
-            } else {
-                deliveryFee = shop.getDeliveryFeePennies() != null ? shop.getDeliveryFeePennies() : 0L;
-                if (shop.getFreeDeliveryThresholdPennies() != null
-                        && itemSubtotal >= shop.getFreeDeliveryThresholdPennies()) {
-                    deliveryFee = 0L;
-                }
-            }
-            order.setDeliveryFeePennies(deliveryFee);
-
-            order.calculateTotal();
-
-            // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
-            // If not configured, fall back to COD — order goes straight to PENDING.
-            String clientSecret = null;
-            if (paymentService.isConfigured()) {
-                // ORDERING (issue #538) — PERSIST BEFORE PAYING.
-                //
-                // createPaymentIntent stamps this order's UUID into the intent's
-                // `order_id` metadata; that metadata is the ONLY link the
-                // payment_intent.succeeded webhook has back to this row. So the
-                // row must have an identity before Stripe is asked to reference
-                // it. Creating the intent first dereferenced a null id and 500'd
-                // every checkout on every Stripe-configured environment — a defect
-                // that stayed invisible because no deployed stack sets a key, so
-                // every one of them silently took the COD branch below.
-                //
-                // saveAndFlush, not save: the INSERT (and with it the partial
-                // unique index on (tenant_id, idempotency_key) from V24) is
-                // resolved against the database BEFORE we ask Stripe for money,
-                // so a racing duplicate checkout is rejected by Postgres rather
-                // than turning into a second PaymentIntent.
-                order = orderRepository.saveAndFlush(order);
-                try {
-                    PaymentIntentResult intent = paymentService.createPaymentIntent(order);
-                    clientSecret = intent.clientSecret();
-                    // Persist the Stripe object id (dirty-checked into this same
-                    // transaction). Two things depend on it: the WR-02 idempotent
-                    // retry above, which can only re-fetch a client secret when
-                    // paymentReference is set — it was NEVER set on this path
-                    // before, so a retried card checkout could never resume
-                    // payment — and reconciliation, which until now had no local
-                    // column tying an unpaid order to its Stripe intent.
-                    // The webhook later writes the same id (PaymentService
-                    // handlePaymentIntentSucceeded/Failed), so this is not a new
-                    // value, only an earlier one.
-                    order.setPaymentReference(intent.paymentIntentId());
-                } catch (com.stripe.exception.StripeException e) {
-                    log.error("Failed to create PaymentIntent for order {}", order.getOrderNumber(), e);
-                    // DELIBERATE: this unchecked throw rolls the order back.
-                    //
-                    // createGuestOrder is @Transactional and PublicStorefrontController
-                    // is not, so this is the OUTERMOST transaction boundary and Spring's
-                    // default rollback-on-RuntimeException applies to the saveAndFlush
-                    // above. Keeping the DRAFT row would be strictly worse than losing
-                    // it: the customer has not been charged (intent creation failed), but
-                    // the row carries their idempotency key, so their retry would hit the
-                    // short-circuit at the top of this method and get that order back with
-                    // no client secret — an order they can never pay for and we can never
-                    // fulfil. Rolling back lets the retry mint a fresh order and a fresh
-                    // intent. Proven by GuestCheckoutOnlinePaymentIntegrationTest
-                    // .cardCheckout_failedPaymentIntent_rollsBackTheOrder.
-                    //
-                    // Asymmetric-failure caveat: if Stripe actually created the intent and
-                    // the failure was on the response leg, that intent is orphaned. It is
-                    // harmless — its client secret never reaches a browser, so it is never
-                    // confirmed, and it expires uncaptured. No money moves.
-                    throw new RuntimeException("Payment processing unavailable. Please try again later.");
-                }
-            } else {
-                // COD fallback — no online payment. UNCHANGED by #538: this
-                // branch still mutates in place and is persisted by the single
-                // save below, exactly as before.
-                order.setStatus(OrderStatus.PENDING);
-                order.setPaymentStatus(PaymentStatus.NONE);
-                order.setPaymentMethod("Cash on Delivery");
-            }
-
-            order = orderRepository.save(order);
-
-            // Issue #85 [P1-3]: NO eager stock decrement here.
-            // The former "Deduct stock" for-loop was a naked read-modify-write with
-            // no @Version retry — it double-decremented (once here, once again at
-            // CONFIRM via OrderService.transitionOrder -> StockService.decrementForOrder)
-            // and surfaced concurrent-checkout contention as a customer-facing 500.
-            // Stock is now decremented EXACTLY ONCE at the CONFIRMED transition
-            // through the retry-safe StockService (CQ-01), matching the admin
-            // OrderService.createOrder path and restoring cancel-path restock
-            // symmetry (restore fires only for oldStatus >= CONFIRMED, which is now
-            // where the decrement also lives). The read-only product.hasStock(...)
-            // guard above stays as an early UX availability check — it is NOT a
-            // reservation.
-
-            // Publish event for COD orders (Stripe orders get event on webhook).
-            // Issue #93: OrderEventPublisher is outbox-backed — the event row
-            // joins THIS transaction and the flusher only publishes committed
-            // rows, so the former afterCommit TransactionSynchronization
-            // wrapper is no longer needed (and would run the outbox INSERT
-            // outside the transaction it must join).
-            if (clientSecret == null) {
-                eventPublisher.publishStateChange(
-                        order.getId(), order.getTenantId(), order.getShopId(), order.getOrderNumber(),
-                        OrderStatus.DRAFT, OrderStatus.PENDING);
-            }
-
-            log.info("Created guest order {} with {} items, total: {} pennies (VAT: {} {}) for shop {}{}",
-                    order.getOrderNumber(), order.getItems().size(),
-                    order.getTotalAmountPennies(), order.getVatAmountPennies(),
-                    order.getVatRate(), shop.getName(),
-                    clientSecret != null ? " (awaiting payment)" : " (COD)");
-
-            return new GuestOrderConfirmation(
-                    order.getOrderNumber(),
-                    order.getStatus().name(),
-                    order.getSubtotalPennies(),
-                    order.getDeliveryFeePennies(),
-                    order.getVatRate().name(),
-                    order.getVatAmountPennies(),
-                    order.getTotalAmountPennies(),
-                    shop.getName(),
-                    order.getItems().size(),
-                    clientSecret,
-                    allergenWarnings
-            );
+            // Cluster E (API-3 / API-4 / INT-15, adjudication A3): the keyed path goes through the
+            // platform's V50 store in its credential-safe form. The reservation row is the
+            // serialisation point (a concurrent same-key request waits on it and then REPLAYS,
+            // or is refused with the typed 409 — never the raw idx_orders_idempotency violation),
+            // the request hash is what turns "same key, different basket" into a 422, and the
+            // response body is never persisted: GuestOrderConfirmation.clientSecret is a Stripe
+            // credential, re-fetched live on replay (WR-02). The reservation joins THIS
+            // transaction, so a failed create (Stripe outage, stock, validation) rolls the key
+            // back with the order and a genuine retry succeeds.
+            return idempotencyService.executeWithoutStoringResponse(
+                    GUEST_ORDER_ENDPOINT, idempotencyKey, request,
+                    () -> placeGuestOrder(shop, request, idempotencyKey),
+                    () -> replayGuestOrder(shop, idempotencyKey)).value();
         } finally {
+            // Owned HERE, at the outermost boundary, and deliberately NOT inside placeGuestOrder:
+            // the store's completion UPDATE runs after the work returns and goes through
+            // JdbcTemplate, whose TenantSetLocalAspect advice re-reads TenantContext. Cleared
+            // any earlier, that advice would issue SET LOCAL app.current_tenant_id TO DEFAULT
+            // first and, under FORCE RLS on the non-superuser runtime role, the stamp would
+            // match zero rows — the reservation would stay "in-flight" and every retry a 409.
+            // The Testcontainers superuser cannot show that; IdempotencyService asserts the
+            // stamped row count so the runtime role would fail loudly rather than silently.
             TenantContext.clear();
         }
+    }
+
+    /**
+     * Two-argument form: no {@code Idempotency-Key} header (existing callers and tests). The body
+     * field, when present, is still honoured — see {@link #createGuestOrder(String, GuestOrderRequest, String)}.
+     */
+    @Transactional
+    public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request) {
+        return createGuestOrder(slug, request, null);
+    }
+
+    /**
+     * Which key identifies this order intent. The request-body {@code idempotencyKey} is the
+     * convention the storefront has always used and stays AUTHORITATIVE; the platform's
+     * {@code Idempotency-Key} header (API-3) is an ADDITIVE source consulted only when the body
+     * carries none. Neither present ⇒ {@code null}, the keyless create.
+     *
+     * <p>Package-private for direct unit-test access within {@code uk.jtoye.core.storefront}.
+     */
+    static String resolveGuestIdempotencyKey(String bodyKey, String headerKey) {
+        if (bodyKey != null && !bodyKey.isBlank()) {
+            if (headerKey != null && !headerKey.isBlank() && !headerKey.equals(bodyKey)) {
+                log.debug("Guest order carries both a body idempotencyKey and a differing Idempotency-Key header; the body value is authoritative");
+            }
+            return bodyKey;
+        }
+        if (headerKey != null && !headerKey.isBlank()) {
+            return headerKey;
+        }
+        return null;
+    }
+
+    /**
+     * The replay half of the credential-safe store: the reservation for {@code idempotencyKey} is
+     * complete with a matching hash, so the confirmation is re-derived from the ORDER ROW rather
+     * than read back from the store (which holds no body). The order was written in the same
+     * transaction that completed the reservation, so its absence is an invariant violation, not
+     * a case to create afresh — creating here would mint the very duplicate the key exists to stop.
+     */
+    private GuestOrderConfirmation replayGuestOrder(Shop shop, String idempotencyKey) {
+        Order existingOrder = orderRepository.findByTenantIdAndIdempotencyKey(shop.getTenantId(), idempotencyKey)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Completed idempotency reservation has no order row for the guest key"));
+        log.info("Idempotent replay for key '{}', returning existing order {}",
+                idempotencyKey, existingOrder.getOrderNumber());
+        return replayConfirmation(shop, existingOrder);
+    }
+
+    /**
+     * WR-02: the paymentReference is the Stripe PaymentIntent ID (pi_...), NOT a client secret —
+     * returning it in the clientSecret slot mounted Stripe Elements with an unusable value AND
+     * disclosed the raw PI id to the guest. For a still-payable DRAFT order, re-fetch the REAL
+     * client secret from Stripe so the retry resumes payment; otherwise return null and the
+     * client renders the placed-order confirmation. This live re-fetch is WHY the store never
+     * persists this DTO (adjudication A3).
+     */
+    private GuestOrderConfirmation replayConfirmation(Shop shop, Order existingOrder) {
+        String existingClientSecret = null;
+        if (existingOrder.getStatus() == OrderStatus.DRAFT
+                && existingOrder.getPaymentReference() != null
+                && paymentService.isConfigured()) {
+            try {
+                existingClientSecret = paymentService.retrieveClientSecret(
+                        existingOrder.getPaymentReference());
+            } catch (com.stripe.exception.StripeException e) {
+                log.warn("Could not re-fetch client secret for idempotent retry of order {}",
+                        existingOrder.getOrderNumber(), e);
+            }
+        }
+        return new GuestOrderConfirmation(
+                existingOrder.getOrderNumber(),
+                existingOrder.getStatus().name(),
+                existingOrder.getSubtotalPennies(),
+                existingOrder.getDeliveryFeePennies(),
+                existingOrder.getVatRate().name(),
+                existingOrder.getVatAmountPennies(),
+                existingOrder.getTotalAmountPennies(),
+                shop.getName(),
+                existingOrder.getItemCount(),
+                existingClientSecret,
+                List.of()
+        );
+    }
+
+    /**
+     * The create itself — runs inside {@link #createGuestOrder(String, GuestOrderRequest, String)}'s
+     * transaction, as the reserved WORK when a key is present and directly when none is.
+     * Does NOT touch {@code TenantContext}: the caller owns set and clear.
+     */
+    private GuestOrderConfirmation placeGuestOrder(Shop shop, GuestOrderRequest request, String idempotencyKey) {
+        UUID tenantId = shop.getTenantId();
+        // Legacy lookup on orders.idempotency_key (V24), RETAINED inside the reserved work.
+        // Two reasons: an order placed with a key BEFORE the V50 reservation existed has no
+        // store row, so its retry lands here and must still replay rather than collide on
+        // idx_orders_idempotency; and it is the arm the WR-02 unit tests exercise.
+        if (idempotencyKey != null) {
+            Optional<Order> existing = orderRepository.findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey);
+            if (existing.isPresent()) {
+                log.info("Idempotent duplicate detected for key '{}', returning existing order {}",
+                        idempotencyKey, existing.get().getOrderNumber());
+                return replayConfirmation(shop, existing.get());
+            }
+        }
+
+        Order order = new Order();
+        order.setTenantId(tenantId);
+        order.setShopId(shop.getId());
+        order.setOrderNumber(generateOrderNumber(tenantId));
+        order.setStatus(OrderStatus.DRAFT);
+        order.setPaymentStatus(PaymentStatus.PENDING);
+        order.setCustomerName(request.getCustomerName());
+        order.setCustomerEmail(request.getCustomerEmail());
+        order.setCustomerPhone(request.getCustomerPhone());
+        order.setNotes(request.getNotes());
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            order.setIdempotencyKey(idempotencyKey);
+        }
+        order.setUpdatedAt(OffsetDateTime.now());
+
+        // Resolve fulfilment type server-side (UIX-04). The client sends the
+        // enum string; an unknown value is a 400, not a silent DELIVERY.
+        FulfilmentType fulfilmentType = parseFulfilmentType(request.getFulfilmentType());
+        order.setFulfilmentType(fulfilmentType);
+        if (fulfilmentType == FulfilmentType.DELIVERY) {
+            // Conditional-required: a delivery order MUST carry a UK address.
+            if (isBlank(request.getAddressLine1())
+                    || isBlank(request.getAddressCity())
+                    || isBlank(request.getAddressPostcode())) {
+                throw new IllegalArgumentException(
+                        "Delivery address (line 1, city and postcode) is required for delivery orders.");
+            }
+            order.setAddressLine1(request.getAddressLine1());
+            order.setAddressLine2(request.getAddressLine2());
+            order.setAddressCity(request.getAddressCity());
+            order.setAddressPostcode(request.getAddressPostcode());
+        }
+        // COLLECTION: no address persisted; the delivery fee is forced to £0 below.
+
+        // Add items with server-side price lookup.
+        //
+        // allergenWarnings stays on the confirmation DTO and is always empty as of
+        // 2026-07-30: the customer-supplied allergen mask that populated it was
+        // special-category data (Art. 9) taken over an unauthenticated endpoint with
+        // no consent capture, and was removed. The field is retained as the seam a
+        // future *consented* warning path plugs into — the checkout UI already guards
+        // on length, so an empty list renders nothing. See
+        // docs/legal/article-9-allergen-basis.md.
+        List<String> allergenWarnings = new ArrayList<>();
+        // Collect each line's VAT-inclusive gross + server-resolved rate so
+        // the order's predominant liability can be computed (Issue #81 BUG 2).
+        // The client cannot supply a rate (no rate field on the request) —
+        // it is always resolved from product.vat_rate server-side.
+        List<VatCalculator.LineRate> lineRates = new ArrayList<>();
+
+        for (GuestOrderItemRequest itemReq : request.getItems()) {
+            Product product = productRepository.findById(itemReq.getProductId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Product not found: " + itemReq.getProductId()));
+
+            // UIX-05 invariant (CR-01): an order for shop X may only contain
+            // shop X's products. RLS scopes findById to the TENANT, not the
+            // shop, so without this check an unauthenticated client could
+            // order any product of the tenant — including items quarantined
+            // into the unpublished archive shop — through this storefront.
+            // Deliberately the SAME exception type + message shape as the
+            // absent-row case above so the response does not disclose that a
+            // product exists in another shop (no title, no shop id).
+            if (!shop.getId().equals(product.getShopId())) {
+                throw new ResourceNotFoundException(
+                        "Product not found: " + itemReq.getProductId());
+            }
+
+            if (!Boolean.TRUE.equals(product.getAvailable())) {
+                throw new IllegalArgumentException("Product is not available: " + product.getTitle());
+            }
+
+            // Validate stock
+            if (!product.hasStock(itemReq.getQuantity())) {
+                throw new IllegalArgumentException(
+                        "Insufficient stock for '" + product.getTitle() + "': requested "
+                                + itemReq.getQuantity() + ", available " + product.getQuantityInStock());
+            }
+
+            OrderItem item = new OrderItem(
+                    product.getId(),
+                    itemReq.getQuantity(),
+                    product.getPricePennies() // Server-side price — never trust client
+            );
+            item.setTenantId(tenantId);
+            // UIX-03 root-cause fix: snapshot the REAL product title (server-side,
+            // authoritative) so OrderItem.productName never persists its
+            // "Unknown Product" default onto the kitchen display / order detail.
+            item.setProductName(product.getTitle());
+            // LGL-03 / V63: the allergen mask is snapshotted for the SAME reason the title
+            // is, at the same moment. A vendor who edits a product's allergen data after this
+            // order is placed must not be able to change what the customer is recorded as
+            // having acknowledged, or what the kitchen ticket shows. Under a read-time join
+            // back to Product they would: the customer acknowledges set A, the kitchen sees
+            // set B, and no record of A survives anywhere. The advisory reconciliation flags
+            // are stored beside the declaration, never folded into it.
+            OrderAllergenSnapshot.capture(item, product.getTitle(),
+                    product.getAllergenMask(), product.getIngredientsText());
+            order.addItem(item);
+            lineRates.add(new VatCalculator.LineRate(
+                    item.getTotalPricePennies(), product.getVatRate()));
+        }
+
+        // Resolve the order's single predominant VAT rate from the basket
+        // (replaces the former hardcoded STANDARD). Delivery VAT then follows
+        // this predominant liability via calculateTotal().
+        order.setVatRate(VatCalculator.predominantRate(lineRates));
+
+        // Calculate delivery fee — server-authoritative (client value is
+        // preview-only and NEVER read). COLLECTION always costs £0; DELIVERY
+        // uses the shop's fee, waived when the subtotal clears the free-delivery
+        // threshold. Tampering with fulfilmentType to underpay is neutralised
+        // because the total is recomputed here, not taken from the request.
+        long itemSubtotal = order.getItems().stream()
+                .mapToLong(item -> item.getTotalPricePennies())
+                .sum();
+
+        // WR-01: enforce the shop's advertised minimum order value on the
+        // item subtotal (delivery fee excluded), server-side. The storefront
+        // renders "Min order £X" and the checkout disables submit below it,
+        // but those are advisory — this is the authoritative gate.
+        if (shop.getMinimumOrderPennies() != null && shop.getMinimumOrderPennies() > 0
+                && itemSubtotal < shop.getMinimumOrderPennies()) {
+            throw new IllegalArgumentException(String.format(java.util.Locale.ROOT,
+                    "Order is below this shop's minimum order value of £%.2f.",
+                    shop.getMinimumOrderPennies() / 100.0));
+        }
+
+        long deliveryFee;
+        if (fulfilmentType == FulfilmentType.COLLECTION) {
+            deliveryFee = 0L;
+        } else {
+            deliveryFee = shop.getDeliveryFeePennies() != null ? shop.getDeliveryFeePennies() : 0L;
+            if (shop.getFreeDeliveryThresholdPennies() != null
+                    && itemSubtotal >= shop.getFreeDeliveryThresholdPennies()) {
+                deliveryFee = 0L;
+            }
+        }
+        order.setDeliveryFeePennies(deliveryFee);
+
+        order.calculateTotal();
+
+        // If Stripe is configured, create PaymentIntent (order stays DRAFT until payment succeeds).
+        // If not configured, fall back to COD — order goes straight to PENDING.
+        String clientSecret = null;
+        if (paymentService.isConfigured()) {
+            // ORDERING (issue #538) — PERSIST BEFORE PAYING.
+            //
+            // createPaymentIntent stamps this order's UUID into the intent's
+            // `order_id` metadata; that metadata is the ONLY link the
+            // payment_intent.succeeded webhook has back to this row. So the
+            // row must have an identity before Stripe is asked to reference
+            // it. Creating the intent first dereferenced a null id and 500'd
+            // every checkout on every Stripe-configured environment — a defect
+            // that stayed invisible because no deployed stack sets a key, so
+            // every one of them silently took the COD branch below.
+            //
+            // saveAndFlush, not save: the INSERT (and with it the partial
+            // unique index on (tenant_id, idempotency_key) from V24) is
+            // resolved against the database BEFORE we ask Stripe for money,
+            // so a racing duplicate checkout is rejected by Postgres rather
+            // than turning into a second PaymentIntent.
+            order = orderRepository.saveAndFlush(order);
+            try {
+                PaymentIntentResult intent = paymentService.createPaymentIntent(order);
+                clientSecret = intent.clientSecret();
+                // Persist the Stripe object id (dirty-checked into this same
+                // transaction). Two things depend on it: the WR-02 idempotent
+                // retry above, which can only re-fetch a client secret when
+                // paymentReference is set — it was NEVER set on this path
+                // before, so a retried card checkout could never resume
+                // payment — and reconciliation, which until now had no local
+                // column tying an unpaid order to its Stripe intent.
+                // The webhook later writes the same id (PaymentService
+                // handlePaymentIntentSucceeded/Failed), so this is not a new
+                // value, only an earlier one.
+                order.setPaymentReference(intent.paymentIntentId());
+            } catch (com.stripe.exception.StripeException e) {
+                log.error("Failed to create PaymentIntent for order {}", order.getOrderNumber(), e);
+                // DELIBERATE: this unchecked throw rolls the order back.
+                //
+                // createGuestOrder is @Transactional and PublicStorefrontController
+                // is not, so this is the OUTERMOST transaction boundary and Spring's
+                // default rollback-on-RuntimeException applies to the saveAndFlush
+                // above. Keeping the DRAFT row would be strictly worse than losing
+                // it: the customer has not been charged (intent creation failed), but
+                // the row carries their idempotency key, so their retry would hit the
+                // short-circuit at the top of this method and get that order back with
+                // no client secret — an order they can never pay for and we can never
+                // fulfil. Rolling back lets the retry mint a fresh order and a fresh
+                // intent. Proven by GuestCheckoutOnlinePaymentIntegrationTest
+                // .cardCheckout_failedPaymentIntent_rollsBackTheOrder.
+                //
+                // Asymmetric-failure caveat: if Stripe actually created the intent and
+                // the failure was on the response leg, that intent is orphaned. It is
+                // harmless — its client secret never reaches a browser, so it is never
+                // confirmed, and it expires uncaptured. No money moves.
+                throw new RuntimeException("Payment processing unavailable. Please try again later.");
+            }
+        } else {
+            // COD fallback — no online payment. UNCHANGED by #538: this
+            // branch still mutates in place and is persisted by the single
+            // save below, exactly as before.
+            order.setStatus(OrderStatus.PENDING);
+            order.setPaymentStatus(PaymentStatus.NONE);
+            order.setPaymentMethod("Cash on Delivery");
+        }
+
+        order = orderRepository.save(order);
+
+        // Issue #85 [P1-3]: NO eager stock decrement here.
+        // The former "Deduct stock" for-loop was a naked read-modify-write with
+        // no @Version retry — it double-decremented (once here, once again at
+        // CONFIRM via OrderService.transitionOrder -> StockService.decrementForOrder)
+        // and surfaced concurrent-checkout contention as a customer-facing 500.
+        // Stock is now decremented EXACTLY ONCE at the CONFIRMED transition
+        // through the retry-safe StockService (CQ-01), matching the admin
+        // OrderService.createOrder path and restoring cancel-path restock
+        // symmetry (restore fires only for oldStatus >= CONFIRMED, which is now
+        // where the decrement also lives). The read-only product.hasStock(...)
+        // guard above stays as an early UX availability check — it is NOT a
+        // reservation.
+
+        // Publish event for COD orders (Stripe orders get event on webhook).
+        // Issue #93: OrderEventPublisher is outbox-backed — the event row
+        // joins THIS transaction and the flusher only publishes committed
+        // rows, so the former afterCommit TransactionSynchronization
+        // wrapper is no longer needed (and would run the outbox INSERT
+        // outside the transaction it must join).
+        if (clientSecret == null) {
+            eventPublisher.publishStateChange(
+                    order.getId(), order.getTenantId(), order.getShopId(), order.getOrderNumber(),
+                    OrderStatus.DRAFT, OrderStatus.PENDING);
+        }
+
+        log.info("Created guest order {} with {} items, total: {} pennies (VAT: {} {}) for shop {}{}",
+                order.getOrderNumber(), order.getItems().size(),
+                order.getTotalAmountPennies(), order.getVatAmountPennies(),
+                order.getVatRate(), shop.getName(),
+                clientSecret != null ? " (awaiting payment)" : " (COD)");
+
+        return new GuestOrderConfirmation(
+                order.getOrderNumber(),
+                order.getStatus().name(),
+                order.getSubtotalPennies(),
+                order.getDeliveryFeePennies(),
+                order.getVatRate().name(),
+                order.getVatAmountPennies(),
+                order.getTotalAmountPennies(),
+                shop.getName(),
+                order.getItems().size(),
+                clientSecret,
+                allergenWarnings
+        );
     }
 
     /**

@@ -1,9 +1,11 @@
 package uk.jtoye.core.storefront;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -15,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import uk.jtoye.core.common.idempotency.Idempotent;
 import uk.jtoye.core.review.ReviewService;
 import uk.jtoye.core.security.CustomerJwtVerifier;
 import uk.jtoye.core.review.dto.CreateReviewRequest;
@@ -190,11 +193,29 @@ public class PublicStorefrontController {
     }
 
     @PostMapping("/shops/{slug}/orders")
-    @Operation(summary = "Place a guest order", description = "Create an order as a guest customer. Prices are calculated server-side.")
+    @Idempotent(endpoint = PublicStorefrontService.GUEST_ORDER_ENDPOINT)
+    @Operation(summary = "Place a guest order",
+            description = "Create an order as a guest customer. Prices are calculated server-side. "
+                    + "Supply an Idempotency-Key header to make a retried POST safe: the same key with the "
+                    + "same body replays the original confirmation and never creates a second order; the same "
+                    + "key with a different body is refused 422 (errors/idempotency-payload-mismatch); a "
+                    + "concurrent request on the same key that is still in flight is refused 409 "
+                    + "(errors/idempotency-conflict). The legacy request-body field idempotencyKey is still "
+                    + "honoured and is authoritative when both are present.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Order created (or the original confirmation replayed for a repeated key)"),
+            @ApiResponse(responseCode = "409", description = "A request with this Idempotency-Key is in flight"),
+            @ApiResponse(responseCode = "422", description = "Idempotency-Key reused with a different payload")
+    })
     public ResponseEntity<GuestOrderConfirmation> createGuestOrder(
             @PathVariable String slug,
-            @Valid @RequestBody GuestOrderRequest request) {
-        GuestOrderConfirmation confirmation = storefrontService.createGuestOrder(slug, request);
+            @Valid @RequestBody GuestOrderRequest request,
+            // Hidden from springdoc: IdempotencyHeaderCustomizer advertises the rich
+            // Idempotency-Key parameter off @Idempotent, so documenting the raw header
+            // here too would double-list it (the OrderController / DsarIntakeController convention).
+            @Parameter(hidden = true)
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        GuestOrderConfirmation confirmation = storefrontService.createGuestOrder(slug, request, idempotencyKey);
         return ResponseEntity.status(HttpStatus.CREATED).body(confirmation);
     }
 
