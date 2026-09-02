@@ -77,11 +77,13 @@
 #   exemption whose width is never measured is an exemption that quietly covers everything,
 #   so AC-5.16 breaks each boundary and confirms the neighbouring rules still fire.
 #
-# WHEN THIS GOES AMBER AND RED WITH NO CODE CHANGE — SAY IT BEFORE IT HAPPENS
+# WHEN THIS GOES RED WITH NO CODE CHANGE — SAY IT BEFORE IT HAPPENS
 #
 #   rabbitmq 4.3 is the only viable upgrade target and its vendor community-support horizon
-#   is 2026-11-30. At the default 90-day window this job turns AMBER ~2026-09-01 and RED on
-#   2026-12-01 with no commit in between. Intended. Not an outage. Not a broken gate.
+#   is 2026-11-30. At the default 90-day window this job turns RED on ~2026-09-01 — H-3 fails
+#   INSIDE the window; there is no warning-only state — and, once the dated exemption that
+#   answers it expires, RED again on 2026-12-01, with no commit in between. Intended. Not an
+#   outage. Not a broken gate. (Measured 2026-09-02: red at 89 days; deferred under #724.)
 #
 # USAGE
 #   bash scripts/check-dependency-horizons.sh            # check mode
