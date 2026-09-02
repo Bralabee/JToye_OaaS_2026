@@ -872,13 +872,20 @@ export default function MarketingPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
+                              {/* A11Y-3 (QA council 20260902-134741; WCAG 4.1.2): icon-only
+                                  controls had no accessible name — a destructive action a
+                                  screen-reader user could not identify. Entity-qualified, not a
+                                  bare "Edit"/"Delete", or N rows share one name (A11Y-4 shape). */}
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => openEditPromo(promo)}
                                 className="h-8 w-8 p-0"
+                                aria-label={`Edit promotion ${promo.label}`}
+
                               >
-                                <Pencil className="h-4 w-4" />
+                                <Pencil className="h-4 w-4" aria-hidden="true" />
+
                               </Button>
                               <Button
                                 variant="ghost"
@@ -888,8 +895,11 @@ export default function MarketingPage() {
                                   setPromoDeleteDialogOpen(true)
                                 }}
                                 className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                aria-label={`Delete promotion ${promo.label}`}
+
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 className="h-4 w-4" aria-hidden="true" />
+
                               </Button>
                             </div>
                           </TableCell>
@@ -1056,8 +1066,11 @@ export default function MarketingPage() {
                                 size="sm"
                                 onClick={() => openEditAnnouncement(ann)}
                                 className="h-8 w-8 p-0"
+                                aria-label={`Edit announcement ${ann.title}`}
+
                               >
-                                <Pencil className="h-4 w-4" />
+                                <Pencil className="h-4 w-4" aria-hidden="true" />
+
                               </Button>
                               <Button
                                 variant="ghost"
@@ -1067,8 +1080,11 @@ export default function MarketingPage() {
                                   setAnnouncementDeleteDialogOpen(true)
                                 }}
                                 className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                aria-label={`Delete announcement ${ann.title}`}
+
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 className="h-4 w-4" aria-hidden="true" />
+
                               </Button>
                             </div>
                           </TableCell>
