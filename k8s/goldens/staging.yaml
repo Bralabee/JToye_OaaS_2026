@@ -10,6 +10,7 @@ metadata:
 ---
 apiVersion: v1
 data:
+  access.strict-scoping: "false"
   api.internal.url: http://core-java:9090
   api.url: https://api-staging.olajay.co.uk
   cors.allowed-origins: https://app-staging.olajay.co.uk
@@ -533,6 +534,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: webhook.target.block-private-ranges
+              name: app-config
+        - name: ACCESS_STRICT_SCOPING
+          valueFrom:
+            configMapKeyRef:
+              key: access.strict-scoping
               name: app-config
         image: ghcr.io/bralabee/jtoye-core-java:2.1.0
         imagePullPolicy: IfNotPresent
