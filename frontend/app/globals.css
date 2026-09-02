@@ -148,6 +148,18 @@
   .kds-press {
     transition-duration: 0ms;
   }
+  /* A11Y-12 (QA council 20260902-134741; WCAG 2.2.2). MotionConfig
+     reducedMotion="user" gates every framer-motion animation but cannot touch
+     a Tailwind keyframe: the "Open now" dot and the /shop skeletons ran an
+     infinite 2s pulse identically with the preference on and off (probe 15).
+     Under no-preference this rule is inert, so the default render is
+     byte-identical; under reduce a skeleton still draws as a grey block and a
+     status dot still shows its colour — nothing is lost, it just stops moving.
+     Equal specificity to the utility; wins because it is emitted after
+     @tailwind utilities (asserted in __tests__/reduced-motion-css.test.ts). */
+  .animate-pulse {
+    animation: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
