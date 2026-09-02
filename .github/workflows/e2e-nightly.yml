@@ -284,6 +284,19 @@ jobs:
       - name: Gate — the committed OpenAPI contract vs the RUNNING service
         run: bash scripts/check-openapi-snapshot-fresh.sh
 
+      # FE-1 / E-5 (QA council 20260902-134741). The vendor sign-out's Keycloak return
+      # leg is /api/vendor-auth/logout-complete (VENDOR_LOGOUT_COMPLETE_ENABLED is "true"
+      # in docker-compose.full-stack.yml), and that URI is only safe where the realm has
+      # it registered: an UNREGISTERED post_logout_redirect_uri makes Keycloak answer 400
+      # WITHOUT ending the SSO session (#504), handing the P0 back. This is the only
+      # workflow with a running Keycloak, so the compose realm's registration is proven
+      # here on every nightly, with its two control arms (garbage host / wrong port must
+      # 400 — a realm that accepts anything fails). The deploy jobs in ci-cd.yaml run the
+      # same script against the DEPLOYED realm. Defaults are the compose values
+      # (localhost:8085, jtoye-dev, core-api, http://localhost:3000/...). Exit 2 is VOID.
+      - name: Gate — Keycloak accepts the vendor post-logout redirect URI (FE-1 / E-5)
+        run: bash scripts/check-keycloak-logout-uri.sh
+
       # DemoDataSeeder (@Profile("dev"), ApplicationRunner) has already created the demo
       # tenant's shops/products/customers against the fresh DB. This adds only what the
       # suite would otherwise SKIP over: the DRAFT order and the in-window promotion.

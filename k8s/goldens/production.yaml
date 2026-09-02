@@ -62,6 +62,7 @@ data:
   stomp.broker.relay-port: "61613"
   stripe.connect.refresh-url: https://app.olajay.co.uk/dashboard/payments/connect/refresh
   stripe.connect.return-url: https://app.olajay.co.uk/dashboard/payments/connect/return
+  vendor.logout-complete.enabled: "false"
   webhook.delivery.max-attempts: "8"
   webhook.delivery.retention-days: "30"
   webhook.target.block-private-ranges: "true"
@@ -777,6 +778,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: frontend.url
+              name: app-config
+        - name: VENDOR_LOGOUT_COMPLETE_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              key: vendor.logout-complete.enabled
               name: app-config
         - name: NEXTAUTH_SECRET
           valueFrom:

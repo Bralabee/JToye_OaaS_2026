@@ -165,6 +165,31 @@ export function resolveKitchenOrdersPageSize(raw?: string): number {
     : DEFAULT_KITCHEN_ORDERS_PAGE_SIZE;
 }
 
+/**
+ * `VENDOR_LOGOUT_COMPLETE_ENABLED` — FE-1 / E-5 (QA council 20260902-134741).
+ *
+ * Decides whether the vendor sign-out's Keycloak return leg is the server-side
+ * session clear (`/api/vendor-auth/logout-complete`) or today's `/auth/signin`
+ * landing. A plain server-side runtime env (not `NEXT_PUBLIC_*`), read at
+ * REQUEST time by `lib/vendor-logout-complete.ts`; supplied by compose ("true")
+ * and by every k8s overlay ("false", via app-config
+ * `vendor.logout-complete.enabled`). Like the two page-size knobs above it is
+ * deliberately in neither `requiredEnvVars` nor `optionalEnvVars`: its absence
+ * is a valid, safe configuration, not a misconfiguration worth an operator
+ * signal.
+ *
+ * OFF UNLESS EXPLICITLY ON, and only two spellings count. This is the E-5
+ * fail-safe in miniature: a wrong ON sends Keycloak a `post_logout_redirect_uri`
+ * the deployed realm may not have registered, and Keycloak answers that with a
+ * 400 WITHOUT terminating the SSO session (#504) — strictly worse than the
+ * defect the flag closes. A wrong OFF is the documented defect, no worse. So
+ * "yes", "on", "enabled" and every other truthy-looking value resolve to OFF.
+ */
+export function resolveVendorLogoutCompleteEnabled(raw?: string): boolean {
+  const value = raw?.trim().toLowerCase();
+  return value === 'true' || value === '1';
+}
+
 export function validateEnvironment(): void {
   const missing: string[] = [];
   const missingOptional: string[] = [];

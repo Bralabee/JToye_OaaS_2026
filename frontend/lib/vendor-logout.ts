@@ -49,10 +49,25 @@ import { fetchWithTimeout } from "@/lib/customer-auth"
  *
  * Both are now bounded, and the NAVIGATION IS BEYOND THE REACH OF EITHER.
  * Ordering the priorities explicitly, because they are not equal: reaching the
- * Keycloak end-session URL is what closes the P0; dropping the local cookie is
- * a best-effort second, and the redirect back to `/auth/signin` re-evaluates
- * the app session anyway. So a `signOut` that will not answer must never be
- * allowed to hold the navigation hostage.
+ * Keycloak end-session URL is what closes the P0; the client-side cookie drop
+ * below is a best-effort second. So a `signOut` that will not answer must never
+ * be allowed to hold the navigation hostage.
+ *
+ * ── THE APP COOKIE IS CLEARED SERVER-SIDE ON THE RETURN LEG (FE-1) ─────────
+ * An earlier version of this comment claimed that "the redirect back to
+ * `/auth/signin` re-evaluates the app session anyway". That was FALSE for a
+ * stateless JWT session, and measurably so (QA council 20260902-134741, FE-1):
+ * "re-evaluating" is `@auth/core`'s session action, which RE-ISSUES the cookie
+ * with a fresh 30-day expiry on every `/api/auth/session` GET; `lib/api-client.ts`
+ * fires ~24 of those per dashboard load, and the `signOut()` below lost the race
+ * to them 9/12 times — the departed vendor re-opened `/dashboard` with no
+ * prompt. The deterministic clear now lives in
+ * `app/api/vendor-auth/logout-complete/route.ts`, which is Keycloak's
+ * `post_logout_redirect_uri` (behind `VENDOR_LOGOUT_COMPLETE_ENABLED`, see
+ * `lib/vendor-logout-complete.ts`): by the time it answers, the dashboard
+ * document is gone and no in-flight session GET can resurrect anything. The
+ * bounded `signOut()` below is KEPT for the case where the browser never
+ * completes the Keycloak navigation; it is no longer what the P0 rests on.
  *
  * ── WHY IT RETURNS THE URL ──────────────────────────────────────────────────
  * Not decoration. jsdom refuses to navigate, reports it through the virtual
