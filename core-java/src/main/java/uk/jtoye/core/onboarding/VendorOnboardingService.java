@@ -251,9 +251,31 @@ public class VendorOnboardingService {
     }
 
     /**
-     * Admin review queue (ONBD-03 / D-04): onboardings parked in VERIFYING because a
-     * gate needs a human — i.e. VERIFYING with at least one MANUAL_REVIEW gate row.
-     * This is the black-hole state the existing {@link #listPendingApproval() /pending}
+     * The lifecycle states in which a MANUAL_REVIEW gate can exist and a reviewer can act
+     * on it: VERIFYING (the park), and ACTION_REQUIRED (INT-1 — the same park when another
+     * mandatory gate FAILED in the same run, because {@link GateChainRunner} fires
+     * GATE_FAILED before it considers the MANUAL_REVIEW park). Shared by
+     * {@link #listReviewPending()} and the {@link #resolveGate} guard so the queue never
+     * lists an item whose only control would 400 (the "structural green over a dead
+     * feature" trap).
+     */
+    static final List<OnboardingState> REVIEWABLE_STATES =
+            List.of(OnboardingState.VERIFYING, OnboardingState.ACTION_REQUIRED);
+
+    /**
+     * Admin review queue (ONBD-03 / D-04): every onboarding carrying at least one
+     * MANUAL_REVIEW gate row — i.e. a gate that needs a human. Membership is decided by the
+     * PRESENCE of a parked gate, not by a single lifecycle state (INT-1, QA council
+     * 20260902-134741 / A15): with no Companies House API key the BUSINESS_VERIFIED gate
+     * always parks at MANUAL_REVIEW, and whenever another mandatory gate FAILED in the same
+     * run the runner demotes to ACTION_REQUIRED first — under the old VERIFYING-only filter
+     * that parked gate vanished from the reviewer's queue while the vendor page told the
+     * vendor a reviewer was on it. The vendor-facing {@code reviewPending} flag on
+     * {@code OnboardingDto} is a DIFFERENT predicate (VERIFYING only, no PENDING gate) and is
+     * deliberately not widened — the vendor must never be told "in review" while a failed
+     * check is theirs to fix.
+     *
+     * <p>This is the black-hole state the existing {@link #listPendingApproval() /pending}
      * approve/reject queue never showed; per D-04/A4 it is a NEW queue (Incremental
      * Betterment — the /pending contract is untouched). Runs under RLS, so the list is
      * scoped to the caller's tenant (same interim-resolver boundary as gate-resolve;
@@ -263,7 +285,7 @@ public class VendorOnboardingService {
     @Transactional(readOnly = true)
     public List<AdminOnboardingDto> listReviewPending() {
         CurrentTenant.require();
-        return onboardingRepository.findByStatusOrderBySubmittedAtAsc(OnboardingState.VERIFYING).stream()
+        return onboardingRepository.findByStatusInOrderBySubmittedAtAsc(REVIEWABLE_STATES).stream()
                 .filter(o -> gateRepository.existsByOnboardingIdAndStatus(o.getId(), GateStatus.MANUAL_REVIEW))
                 .map(o -> toAdminDto(o, gateRepository.findByOnboardingId(o.getId())))
                 .toList();
@@ -323,14 +345,21 @@ public class VendorOnboardingService {
      * foreign onboarding is a clean 404, no existence oracle). A real J'Toye
      * platform-operator console is a deferred phase.
      *
-     * <p><strong>VERIFYING-only guard (WR-01):</strong> a gate can only be resolved while
-     * the onboarding is in {@code VERIFYING}. {@code runAndRecompute} advances the state
-     * machine ONLY from VERIFYING, so resolving a gate once the onboarding has already left
-     * that state (PENDING_APPROVAL / APPROVED / LIVE) would mutate a gate row the recompute
-     * can never act on — silently stranding the application until a later {@code /approve}
-     * fails with an unexplained gate-guard veto. Resolving outside VERIFYING is therefore
-     * rejected with {@link InvalidStateTransitionException} → HTTP 400, and no gate row is
-     * touched.
+     * <p><strong>Review-window guard (WR-01, widened by INT-1 / A15):</strong> a gate can
+     * be resolved only while the onboarding is in {@link #REVIEWABLE_STATES} — VERIFYING or
+     * ACTION_REQUIRED. {@code runAndRecompute} advances the state machine ONLY from
+     * VERIFYING, so resolving a gate once the onboarding has left the review window
+     * (PENDING_APPROVAL / APPROVED / LIVE) would mutate a gate row the recompute can never
+     * act on — silently stranding the application until a later {@code /approve} fails with
+     * an unexplained gate-guard veto. That is still rejected with
+     * {@link InvalidStateTransitionException} → HTTP 400, no gate row touched.
+     * ACTION_REQUIRED is admitted because a MANUAL_REVIEW gate parked beside a FAILED one
+     * lands there (the runner fires GATE_FAILED before the park), and the VERIFYING-only
+     * guard then 400'd the reviewer's only control — the third lockout mechanism behind
+     * the two-actor dead-end. Resolving in ACTION_REQUIRED is NOT stranding: the row is
+     * written and audited, the after-commit recompute returns early (state unchanged), and
+     * the vendor's {@link #resubmit()} — which resets only FAILED/MANUAL_REVIEW rows and
+     * preserves PASSED/WAIVED — carries the reviewer's decision into the next VERIFYING run.
      *
      * <p>The gate write is Envers-audited automatically ({@code VendorOnboardingGate}
      * is {@code @Audited} → {@code vendor_onboarding_gate_aud}). A FAIL decision
@@ -342,16 +371,18 @@ public class VendorOnboardingService {
         UUID tenantId = CurrentTenant.require();
         VendorOnboarding onboarding = requireOnboardingById(onboardingId);
 
-        // WR-01: gate resolution is VERIFYING-only. The recompute this method dispatches
-        // (GateChainRunner.runAndRecompute) advances the state machine ONLY from VERIFYING;
-        // resolving a gate on an onboarding already at PENDING_APPROVAL/APPROVED/LIVE would
-        // silently mutate a gate row the recompute can never act on, stranding the onboarding
-        // and surfacing later as an unexplained APPROVE guard veto. Reject up front instead.
-        if (onboarding.getStatus() != OnboardingState.VERIFYING) {
+        // WR-01 (window widened by INT-1): gate resolution is valid only inside the review
+        // window — VERIFYING, or ACTION_REQUIRED when a parked gate sits beside a FAILED one.
+        // The recompute this method dispatches (GateChainRunner.runAndRecompute) advances the
+        // state machine ONLY from VERIFYING; resolving a gate on an onboarding already at
+        // PENDING_APPROVAL/APPROVED/LIVE would silently mutate a gate row the recompute can
+        // never act on, stranding the onboarding and surfacing later as an unexplained
+        // APPROVE guard veto. Reject up front instead.
+        if (!REVIEWABLE_STATES.contains(onboarding.getStatus())) {
             throw new InvalidStateTransitionException(
                     "Gate " + gateType + " cannot be resolved while onboarding " + onboardingId
                     + " is in state " + onboarding.getStatus()
-                    + " — gate resolution is only valid during manual review (VERIFYING)");
+                    + " — gate resolution is only valid during manual review (VERIFYING or ACTION_REQUIRED)");
         }
 
         if (decision == GateDecision.FAIL && (reason == null || reason.isBlank())) {

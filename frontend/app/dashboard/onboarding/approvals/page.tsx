@@ -93,8 +93,9 @@ export default function OnboardingApprovalsPage() {
   const { toast } = useToast()
 
   const [applications, setApplications] = useState<AdminOnboardingDto[]>([])
-  // ONBD-03: review-pending queue (VERIFYING + a MANUAL_REVIEW gate) — an addition
-  // alongside the existing approve/reject queue (Incremental Betterment).
+  // ONBD-03: review-pending queue (any application carrying a MANUAL_REVIEW gate —
+  // VERIFYING, or ACTION_REQUIRED when a failed check sits beside it; INT-1 / A15) — an
+  // addition alongside the existing approve/reject queue (Incremental Betterment).
   const [reviews, setReviews] = useState<AdminOnboardingDto[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
@@ -308,8 +309,10 @@ export default function OnboardingApprovalsPage() {
     <div data-width-tier="index" className="space-y-8">
       <Header />
 
-      {/* Manual-review queue (ONBD-03): VERIFYING + MANUAL_REVIEW applications an
-          admin can unstick by resolving the flagged gate (interim resolver, D-01). */}
+      {/* Manual-review queue (ONBD-03): applications carrying a MANUAL_REVIEW gate an
+          admin can unstick by resolving the flagged gate (interim resolver, D-01). Listed
+          in VERIFYING and — since INT-1 — in ACTION_REQUIRED too, where the parked gate
+          used to vanish from this page whenever another check had FAILED. */}
       {reviews.length > 0 && (
         <section className="space-y-4">
           <div>
@@ -634,6 +637,15 @@ function ReviewCard({
               )
             })}
           </div>
+          {/* INT-1: honest sequencing. In ACTION_REQUIRED the vendor still owns a FAILED
+              check; your decision here is recorded now and carried forward when they
+              re-run the checks — the application does not advance on your action alone. */}
+          {app.status === "ACTION_REQUIRED" && (
+            <p className="text-sm text-slate-600">
+              The vendor still has a failed check to fix. Resolve the parked check now — your
+              decision is kept when they re-run their checks.
+            </p>
+          )}
           {resolvable.length > 0 && (
             <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
               {resolvable.map((gate) => (

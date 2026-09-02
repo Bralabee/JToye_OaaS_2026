@@ -257,6 +257,45 @@ describe("Onboarding Approvals Page", () => {
     expect(screen.queryByText("No applications waiting")).not.toBeInTheDocument()
   })
 
+  // INT-1 (QA council 20260902-134741 / A15): a MANUAL_REVIEW gate parked beside a FAILED
+  // one lands the application in ACTION_REQUIRED. The queue now lists it and the reviewer
+  // keeps the Resolve control — with an honest note that the vendor also has work to do.
+  it("lists an ACTION_REQUIRED application that still carries a manual-review gate, with the resolve control and a vendor-fixing note", async () => {
+    routeQueues(
+      () => Promise.resolve({ data: [] }),
+      () =>
+        Promise.resolve({
+          data: [
+            reviewApplication({
+              id: "rev-2",
+              status: "ACTION_REQUIRED",
+              shopName: "Suya Spot",
+              gates: [
+                { gateType: "BUSINESS_VERIFIED", status: "MANUAL_REVIEW", mandatory: true, reason: "Business register temporarily unavailable — a reviewer will check this manually", checkedAt: null },
+                { gateType: "FOOD_HYGIENE_RATING", status: "PASSED", mandatory: true, reason: null, checkedAt: null },
+                { gateType: "ALLERGEN_DATA_COMPLETE", status: "FAILED", mandatory: true, reason: "Missing allergen data on SKU-9", checkedAt: null },
+              ],
+            }),
+          ],
+        })
+    )
+
+    render(<OnboardingApprovalsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText("In manual review")).toBeInTheDocument()
+    })
+    expect(screen.getByText("Suya Spot")).toBeInTheDocument()
+    // The reviewer's control is present for the parked gate (the guard accepts ACTION_REQUIRED).
+    expect(
+      screen.getByRole("button", { name: /resolve business verification/i })
+    ).toBeInTheDocument()
+    // Honest sequencing: the vendor still owns the failed check and re-runs afterwards.
+    expect(
+      screen.getByText(/vendor still has a failed check to fix/i)
+    ).toBeInTheDocument()
+  })
+
   it("resolves a stuck gate: posts {decision, reason} to the resolve endpoint and refreshes", async () => {
     routeQueues(
       () => Promise.resolve({ data: [] }),
