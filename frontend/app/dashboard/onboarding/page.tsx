@@ -538,7 +538,7 @@ export default function OnboardingPage() {
                     onChange={(e) => setCompanyNumber(e.target.value)}
                     placeholder="e.g. 01234567"
                   />
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-600">
                     Companies House number — leave blank if you&apos;re a sole trader.
                   </p>
                 </div>
@@ -911,10 +911,10 @@ function GateRow({ gate }: { gate: GateDto }) {
       <div className="flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-slate-900">{typeMeta.label}</span>
-          <span className="text-xs text-slate-400">{gate.mandatory ? "Required" : "Optional"}</span>
+          <span className="text-xs text-slate-600">{gate.mandatory ? "Required" : "Optional"}</span>
         </div>
         {gate.reason && <p className="mt-1 text-sm text-slate-600">{gate.reason}</p>}
-        <p className="mt-1 text-xs text-slate-400">{checkedAtLabel(gate.checkedAt)}</p>
+        <p className="mt-1 text-xs text-slate-600">{checkedAtLabel(gate.checkedAt)}</p>
       </div>
       <Badge className={`${statusMeta.badge} pointer-events-none shrink-0`}>
         <StatusIcon className={`mr-1 h-3 w-3 ${gate.status === "PENDING" ? "animate-spin" : ""}`} />

@@ -97,31 +97,37 @@ const statusConfig: Record<
   CONFIRMED: {
     label: "Confirmed",
     color: "text-blue-700",
-    bgColor: "bg-blue-500",
+    // A11Y-6 (QA council 20260902-134741): white text on a solid fill needs
+    // 4.5:1. Measured from tailwindcss/colors — blue-500 3.68, blue-600 5.17;
+    // amber-500 2.15 -> amber-700 5.02; green-500 2.28 -> green-700 5.02;
+    // emerald-600 3.77 -> emerald-700 5.48; red-500 3.76 -> red-600 4.83;
+    // orange-500 2.80 -> orange-700 5.18. Asserted generically over this map
+    // in __tests__/cluster-g-contrast-sites.test.ts. Not a token change (A26).
+    bgColor: "bg-blue-600",
     icon: CheckCircle2,
   },
   PREPARING: {
     label: "Preparing",
     color: "text-amber-700",
-    bgColor: "bg-amber-500",
+    bgColor: "bg-amber-700",
     icon: ChefHat,
   },
   READY: {
     label: "Ready",
     color: "text-green-700",
-    bgColor: "bg-green-500",
+    bgColor: "bg-green-700",
     icon: PackageIcon,
   },
   COMPLETED: {
     label: "Completed",
     color: "text-emerald-700",
-    bgColor: "bg-emerald-600",
+    bgColor: "bg-emerald-700",
     icon: FileCheck,
   },
   CANCELLED: {
     label: "Cancelled",
     color: "text-red-700",
-    bgColor: "bg-red-500",
+    bgColor: "bg-red-600",
     icon: XCircle,
   },
   REFUNDED: {
@@ -130,7 +136,7 @@ const statusConfig: Record<
     // the existing food-delivery palette (per `feedback_design_direction.md`).
     label: "Refunded",
     color: "text-orange-700",
-    bgColor: "bg-orange-500",
+    bgColor: "bg-orange-700",
     icon: RefreshCcw,
   },
 }
@@ -189,7 +195,8 @@ const getAvailableTransitions = (
         endpoint: "start-preparation",
         nextStatus: "PREPARING",
         icon: ChefHat,
-        color: "bg-amber-600 hover:bg-amber-700",
+        // A11Y-6: amber-600 is 3.19 with white text; -700 is 5.02, -800 7.09.
+        color: "bg-amber-700 hover:bg-amber-800",
       },
       {
         action: "Cancel",
@@ -205,7 +212,7 @@ const getAvailableTransitions = (
         endpoint: "mark-ready",
         nextStatus: "READY",
         icon: PackageIcon,
-        color: "bg-green-600 hover:bg-green-700",
+        color: "bg-green-700 hover:bg-green-800",
       },
     ],
     READY: [
@@ -214,7 +221,7 @@ const getAvailableTransitions = (
         endpoint: "complete",
         nextStatus: "COMPLETED",
         icon: FileCheck,
-        color: "bg-emerald-600 hover:bg-emerald-700",
+        color: "bg-emerald-700 hover:bg-emerald-800",
       },
     ],
     COMPLETED: [],
@@ -756,7 +763,7 @@ function OrdersPageInner() {
                               )
                             })}
                             {transitions.length === 0 && (
-                              <span className="text-xs text-slate-400">
+                              <span className="text-xs text-slate-600">
                                 No actions
                               </span>
                             )}

@@ -853,7 +853,7 @@ export default function MarketingPage() {
                               <Calendar className="h-4 w-4" />
                               <div>
                                 <div>{formatDate(promo.validFrom)}</div>
-                                <div className="text-xs text-slate-400">
+                                <div className="text-xs text-slate-600">
                                   {formatDateRelative(promo.validFrom)}
                                 </div>
                               </div>
@@ -864,7 +864,7 @@ export default function MarketingPage() {
                               <Calendar className="h-4 w-4" />
                               <div>
                                 <div>{formatDate(promo.validUntil)}</div>
-                                <div className="text-xs text-slate-400">
+                                <div className="text-xs text-slate-600">
                                   {formatDateRelative(promo.validUntil)}
                                 </div>
                               </div>
@@ -1035,13 +1035,13 @@ export default function MarketingPage() {
                                 <Calendar className="h-4 w-4" />
                                 <div>
                                   <div>{formatDate(ann.validFrom)}</div>
-                                  <div className="text-xs text-slate-400">
+                                  <div className="text-xs text-slate-600">
                                     {formatDateRelative(ann.validFrom)}
                                   </div>
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-slate-400">Always</span>
+                              <span className="text-slate-600">Always</span>
                             )}
                           </TableCell>
                           <TableCell className="text-slate-600">
@@ -1050,13 +1050,13 @@ export default function MarketingPage() {
                                 <Calendar className="h-4 w-4" />
                                 <div>
                                   <div>{formatDate(ann.validUntil)}</div>
-                                  <div className="text-xs text-slate-400">
+                                  <div className="text-xs text-slate-600">
                                     {formatDateRelative(ann.validUntil)}
                                   </div>
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-slate-400">No end</span>
+                              <span className="text-slate-600">No end</span>
                             )}
                           </TableCell>
                           <TableCell className="text-right">

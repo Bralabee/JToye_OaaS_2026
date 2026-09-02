@@ -392,7 +392,7 @@ export default function ShopsPage() {
                             <Globe className="h-3 w-3 mr-1" />Published
                           </Badge>
                         ) : (
-                          <Badge variant="secondary" className="text-slate-500">Draft</Badge>
+                          <Badge variant="secondary" className="text-slate-600">Draft</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-slate-600">

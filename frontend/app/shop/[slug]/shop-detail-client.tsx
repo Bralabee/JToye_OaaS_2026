@@ -668,12 +668,15 @@ export function ShopDetailClient({
               <div key={i} className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
                 <span className="text-sm font-medium text-amber-800">{promo.label}</span>
                 {promo.discountType === "PERCENTAGE" && promo.discountPercent !== null && (
-                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
+                  // A11Y-6 (QA council 20260902-134741, A26): white on amber-500 is 2.15:1;
+                  // amber-ink (#3A2400) on it is 6.83 — the pairing the Add button on this
+                  // page already uses. Dark text, not a darker amber.
+                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-amber-ink">
                     {promo.discountPercent}% off
                   </span>
                 )}
                 {promo.discountType === "FLAT_AMOUNT" && promo.discountAmountPennies !== null && (
-                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
+                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-amber-ink">
                     £{(promo.discountAmountPennies / 100).toFixed(2)} off
                   </span>
                 )}
