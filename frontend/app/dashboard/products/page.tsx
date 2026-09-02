@@ -656,13 +656,18 @@ export default function ProductsPage() {
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Product Details</h4>
             <div className="space-y-2">
               <Label htmlFor="sku">SKU</Label>
+              {/* A11Y-7 (QA council 20260902-134741; WCAG 3.3.1): errors were visual
+                  only. Mirrors the checkout form — aria-invalid + aria-describedby to
+                  the message id, both conditional on the error existing. */}
               <Input
                 id="sku"
                 placeholder="e.g., PROD-001"
+                aria-invalid={errors.sku ? "true" : undefined}
+                aria-describedby={errors.sku ? "sku-error" : undefined}
                 {...register("sku")}
               />
               {errors.sku && (
-                <p className="text-sm text-red-600">{errors.sku.message}</p>
+                <p id="sku-error" className="text-sm text-red-600">{errors.sku.message}</p>
               )}
             </div>
 
@@ -671,10 +676,12 @@ export default function ProductsPage() {
               <Input
                 id="title"
                 placeholder="e.g., Chocolate Chip Cookies"
+                aria-invalid={errors.title ? "true" : undefined}
+                aria-describedby={errors.title ? "title-error" : undefined}
                 {...register("title")}
               />
               {errors.title && (
-                <p className="text-sm text-red-600">{errors.title.message}</p>
+                <p id="title-error" className="text-sm text-red-600">{errors.title.message}</p>
               )}
             </div>
 
@@ -684,10 +691,12 @@ export default function ProductsPage() {
                 id="ingredientsText"
                 placeholder="e.g., Flour, sugar, butter, chocolate chips..."
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-invalid={errors.ingredientsText ? "true" : undefined}
+                aria-describedby={errors.ingredientsText ? "ingredientsText-error" : undefined}
                 {...register("ingredientsText")}
               />
               {errors.ingredientsText && (
-                <p className="text-sm text-red-600">
+                <p id="ingredientsText-error" className="text-sm text-red-600">
                   {errors.ingredientsText.message}
                 </p>
               )}
@@ -701,10 +710,12 @@ export default function ProductsPage() {
                 step="0.01"
                 min="0"
                 placeholder="e.g., 12.50"
+                aria-invalid={errors.pricePounds ? "true" : undefined}
+                aria-describedby={errors.pricePounds ? "pricePounds-error" : undefined}
                 {...register("pricePounds")}
               />
               {errors.pricePounds && (
-                <p className="text-sm text-red-600">{errors.pricePounds.message}</p>
+                <p id="pricePounds-error" className="text-sm text-red-600">{errors.pricePounds.message}</p>
               )}
             </div>
 
