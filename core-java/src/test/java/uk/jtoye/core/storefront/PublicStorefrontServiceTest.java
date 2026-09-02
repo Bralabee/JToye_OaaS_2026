@@ -14,6 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
+import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
@@ -47,6 +49,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,6 +68,7 @@ class PublicStorefrontServiceTest {
     @Mock private uk.jtoye.core.shop.ShopPromotionRepository promotionRepository;
     @Mock private ShopAnnouncementRepository announcementRepository;
     @Mock private PostcodeGeocoder postcodeGeocoder;
+    @Mock private IdempotencyService idempotencyService;
 
     private PublicStorefrontService service;
 
@@ -87,7 +91,19 @@ class PublicStorefrontServiceTest {
         // this unit test exercises the same ceiling behaviour the running service has.
         // 33-08: postcodeGeocoder drives the THIRD search tier and is reached only when both text
         // tiers return empty, so most arms in this file never touch it.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, postcodeGeocoder, 5.0, 50.0);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, 5.0, 50.0);
+
+        // Cluster E (API-3/API-4/INT-15): a keyed guest order is routed through the V50 store's
+        // credential-safe variant. This unit test has no database, so the mock simply runs the
+        // supplied work — the reservation / hash / replay semantics are proven against real
+        // Postgres in GuestCheckoutIdempotencyIntegrationTest and
+        // IdempotencyServiceUnstoredResponseIntegrationTest. Running the WORK (not the replay)
+        // keeps the pre-existing WR-02 retry arms meaningful: the legacy in-work lookup on
+        // orders.idempotency_key is what they exercise.
+        lenient().doAnswer(inv -> {
+            Supplier<?> work = inv.getArgument(3);
+            return new IdempotencyOutcome<>(201, work.get());
+        }).when(idempotencyService).executeWithoutStoringResponse(any(), any(), any(), any(), any());
 
         tenantId = UUID.randomUUID();
         publishedShop = new Shop();
@@ -587,6 +603,65 @@ class PublicStorefrontServiceTest {
         verify(orderRepository, never()).save(any(Order.class));
     }
 
+    // ---- Cluster E (QA council 20260902-134741, API-3 / API-4 / INT-15) ----
+
+    @Test
+    @DisplayName("resolveGuestIdempotencyKey: the body field stays authoritative when both sources are present (census)")
+    void resolveGuestIdempotencyKey_bodyWinsOverHeader() {
+        assertEquals("body-key", PublicStorefrontService.resolveGuestIdempotencyKey("body-key", "header-key"));
+    }
+
+    @Test
+    @DisplayName("resolveGuestIdempotencyKey: the Idempotency-Key header is honoured when the body carries no key (API-3)")
+    void resolveGuestIdempotencyKey_headerUsedWhenBodyAbsent() {
+        assertEquals("header-key", PublicStorefrontService.resolveGuestIdempotencyKey(null, "header-key"));
+        assertEquals("header-key", PublicStorefrontService.resolveGuestIdempotencyKey("   ", "header-key"));
+    }
+
+    @Test
+    @DisplayName("resolveGuestIdempotencyKey: neither source -> null, the pre-existing keyless create")
+    void resolveGuestIdempotencyKey_neitherIsNull() {
+        assertNull(PublicStorefrontService.resolveGuestIdempotencyKey(null, null));
+        assertNull(PublicStorefrontService.resolveGuestIdempotencyKey("", " "));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder with a key routes through the V50 store under the storefront-namespaced endpoint, hashing the request (API-4)")
+    void createGuestOrder_withKey_routesThroughTheIdempotencyStore() throws Exception {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Egusi", 1200L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        GuestOrderRequest request = deliveryRequest(product);
+        request.setIdempotencyKey("intent-42");
+
+        service.createGuestOrder("test-shop-abc12345", request, null);
+
+        verify(idempotencyService).executeWithoutStoringResponse(
+                eq(PublicStorefrontService.GUEST_ORDER_ENDPOINT), eq("intent-42"), same(request), any(), any());
+        assertEquals("storefront.orders.create", PublicStorefrontService.GUEST_ORDER_ENDPOINT,
+                "namespaced away from orders.create so a dashboard key can never collide with a guest key");
+        verify(orderRepository).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder without any key bypasses the store — the keyless create is unchanged (census)")
+    void createGuestOrder_withoutKey_bypassesTheIdempotencyStore() throws Exception {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Egusi", 1200L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createGuestOrder("test-shop-abc12345", deliveryRequest(product), null);
+
+        verifyNoInteractions(idempotencyService);
+        verify(orderRepository).save(any(Order.class));
+    }
+
     @Test
     @DisplayName("createGuestOrder rejects an order below the shop's minimum order value (WR-01)")
     void createGuestOrder_rejectsBelowMinimumOrder() {
@@ -1009,7 +1084,7 @@ class PublicStorefrontServiceTest {
         private PublicStorefrontService serviceWithRadii(double defaultRadiusKm, double maxRadiusKm) {
             return new PublicStorefrontService(shopRepository, productRepository, orderRepository,
                     eventPublisher, entityManager, paymentService, promotionRepository,
-                    announcementRepository, postcodeGeocoder, defaultRadiusKm, maxRadiusKm);
+                    announcementRepository, idempotencyService, postcodeGeocoder, defaultRadiusKm, maxRadiusKm);
         }
 
         @Test

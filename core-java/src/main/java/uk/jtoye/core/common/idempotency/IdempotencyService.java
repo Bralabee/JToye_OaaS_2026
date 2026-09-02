@@ -19,6 +19,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -56,6 +57,19 @@ import java.util.function.Supplier;
  * true)} at the top of the transaction (mirroring
  * {@code OrderStateChangeListener}). Trivial cost; removes the entire class of
  * silent-RLS-hide failures.
+ *
+ * <p><b>Credential-bearing responses (QA council 20260902-134741, adjudication
+ * A3).</b> {@link #execute} persists {@code serialize(result)} unconditionally,
+ * which is unusable when the response carries a credential — the guest
+ * checkout's {@code GuestOrderConfirmation.clientSecret} is a Stripe
+ * PaymentIntent client secret, and the storefront deliberately re-fetches a
+ * LIVE one on replay (WR-02). {@link #executeWithoutStoringResponse} is the
+ * {@code persistResponse=false} variant: identical reservation, request-hash,
+ * in-flight-409 and mismatch-422 semantics, but {@code response_body} stays
+ * NULL and the replay value is re-derived by a caller-supplied supplier. The
+ * table is shared; callers MUST namespace their {@code endpoint} away from any
+ * body-storing adopter (a stored NULL body under a storing endpoint would be
+ * undeserialisable on replay).
  *
  * <p><b>Status.</b> All current adopters are creates, so a first request stamps
  * 201; a replay echoes the stored status. Parameterizing a non-201 status is a
@@ -104,6 +118,44 @@ public class IdempotencyService {
                                              Object requestBody,
                                              Class<T> responseType,
                                              Supplier<T> work) {
+        return run(endpoint, key, requestBody, work, true,
+                storedBody -> deserialize(storedBody, responseType));
+    }
+
+    /**
+     * Execute {@code work} under the {@code Idempotency-Key} contract WITHOUT persisting the
+     * response body — the {@code persistResponse=false} variant (adjudication A3, see the class
+     * Javadoc). Use it when the response carries a credential or anything else that must not
+     * be archived at rest. On a matching replay the store supplies nothing; {@code replay}
+     * re-derives the value from the system of record (e.g. re-reads the order and re-fetches a
+     * live payment client secret).
+     *
+     * @param endpoint    the logical operation id — MUST be distinct from any body-storing adopter
+     * @param key         the client-supplied {@code Idempotency-Key} (1..64 chars)
+     * @param requestBody the request payload — hashed to detect same-key/different-body reuse
+     * @param work        the create to run exactly once for this key
+     * @param replay      re-derives the response for a completed reservation with a matching hash
+     * @param <T>         the response DTO type
+     * @return the fresh or replayed outcome (status + value)
+     * @throws IllegalArgumentException           blank key or key longer than 64 chars
+     * @throws IdempotencyConflictException       first request for this key still in-flight (409)
+     * @throws IdempotencyPayloadMismatchException same key reused with a different body (422)
+     */
+    @Transactional
+    public <T> IdempotencyOutcome<T> executeWithoutStoringResponse(String endpoint,
+                                                                   String key,
+                                                                   Object requestBody,
+                                                                   Supplier<T> work,
+                                                                   Supplier<T> replay) {
+        return run(endpoint, key, requestBody, work, false, ignoredNullBody -> replay.get());
+    }
+
+    private <T> IdempotencyOutcome<T> run(String endpoint,
+                                          String key,
+                                          Object requestBody,
+                                          Supplier<T> work,
+                                          boolean persistResponse,
+                                          Function<String, T> onReplay) {
         if (key == null || key.isBlank() || key.length() > MAX_KEY_LENGTH) {
             throw new IllegalArgumentException("Idempotency-Key must be 1.." + MAX_KEY_LENGTH + " chars");
         }
@@ -125,12 +177,30 @@ public class IdempotencyService {
             // First request: run the work inside this transaction, then stamp the
             // response onto the reserved row. Both commit/roll back together.
             T result = work.get();
-            jdbcTemplate.update(
-                    "UPDATE idempotency_keys SET response_status = ?, response_body = ? "
-                            + "WHERE tenant_id = ? AND endpoint = ? AND idempotency_key = ?",
-                    CREATE_STATUS, serialize(result), tenantId, endpoint, key);
-            log.info("Idempotency reserve+complete: endpoint={} key={} status={}",
-                    endpoint, key, CREATE_STATUS);
+            int stamped;
+            if (persistResponse) {
+                stamped = jdbcTemplate.update(
+                        "UPDATE idempotency_keys SET response_status = ?, response_body = ? "
+                                + "WHERE tenant_id = ? AND endpoint = ? AND idempotency_key = ?",
+                        CREATE_STATUS, serialize(result), tenantId, endpoint, key);
+            } else {
+                // response_body is left exactly as reserved: NULL. Never write it here.
+                stamped = jdbcTemplate.update(
+                        "UPDATE idempotency_keys SET response_status = ? "
+                                + "WHERE tenant_id = ? AND endpoint = ? AND idempotency_key = ?",
+                        CREATE_STATUS, tenantId, endpoint, key);
+            }
+            if (stamped != 1) {
+                // Under FORCE RLS a lost tenant GUC makes this UPDATE match ZERO rows and
+                // succeed silently, leaving the reservation permanently "in-flight" — every
+                // later retry would be a 409 and the create would still have committed.
+                // Failing here rolls the whole unit back instead (the Testcontainers
+                // superuser bypasses RLS, so only the runtime role can reach this branch).
+                throw new IllegalStateException("Idempotency completion stamped " + stamped
+                        + " rows for endpoint=" + endpoint + " — tenant GUC lost before completion");
+            }
+            log.info("Idempotency reserve+complete: endpoint={} key={} status={} storedBody={}",
+                    endpoint, key, CREATE_STATUS, persistResponse);
             return new IdempotencyOutcome<>(CREATE_STATUS, result);
         }
 
@@ -156,7 +226,7 @@ public class IdempotencyService {
 
         int status = ((Number) storedStatus).intValue();
         String storedBody = (String) row.get("response_body");
-        T value = deserialize(storedBody, responseType);
+        T value = onReplay.apply(storedBody);
         log.info("Idempotency replay: endpoint={} key={} status={}", endpoint, key, status);
         return new IdempotencyOutcome<>(status, value);
     }

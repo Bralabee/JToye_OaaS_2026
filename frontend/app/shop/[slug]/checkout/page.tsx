@@ -317,7 +317,19 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     () => items.map((i) => `${i.productId}:${i.quantity}`).join("|"),
     [items]
   )
+  // QA 20260902 Cluster E (API-4): the server now refuses the same key with a DIFFERENT body
+  // (422 errors/idempotency-payload-mismatch). The key therefore has to follow the ORDER INTENT,
+  // not the page mount: a basket edited between two submits — a line removed as out of stock, a
+  // quantity changed through the cart drawer — must mint a fresh key, or a correct server refusal
+  // becomes a hard error with no recovery path. An UNCHANGED basket keeps its key so a retry
+  // replays rather than duplicates. The mount-time key is kept on the first run (nothing has been
+  // submitted under it yet, and hydration would otherwise discard it for no reason).
+  const lastBasketSignatureRef = useRef(basketSignature)
   useEffect(() => {
+    if (lastBasketSignatureRef.current !== basketSignature) {
+      lastBasketSignatureRef.current = basketSignature
+      idempotencyKeyRef.current = crypto.randomUUID()
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     setAcknowledged(false)
     setAckError(false)
@@ -427,6 +439,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     setSubmitting(true)
 
     try {
+      // One read, used for BOTH the header and the body field, so the two can never disagree.
+      const idempotencyKey = idempotencyKeyRef.current
       // Server contract (GuestOrderRequest, plan 19-01) is FLAT: fulfilmentType +
       // addressLine1/2 + addressCity + addressPostcode (NOT a nested address obj).
       const payload = {
@@ -434,7 +448,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         customerEmail: customerEmail.trim(),
         customerPhone: customerPhone.trim(),
         notes: notes.trim() || undefined,
-        idempotencyKey: idempotencyKeyRef.current,
+        idempotencyKey,
         fulfilmentType,
         ...(fulfilmentType === "DELIVERY"
           ? {
@@ -450,9 +464,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         })),
       }
 
+      // QA 20260902 Cluster E (API-3): the Idempotency-Key HEADER is the platform contract every
+      // other mutating endpoint speaks; the body field is the storefront's working legacy
+      // convention and stays authoritative server-side. Both are sent (additive — nothing
+      // displaced), carrying the same value.
       const res = await publicApiClient.post<OrderConfirmation>(
         `/public/shops/${slug}/orders`,
-        payload
+        payload,
+        { headers: { "Idempotency-Key": idempotencyKey } }
       )
 
       const confirmation = res.data
