@@ -44,8 +44,9 @@ refresh) plus two upstream `use-toast` staleness bugs.
 **2026-09-02 delta — QA council run `20260902-134741` discovered and planned; remediation is the
 next command.** Full `/qa-discover` + `/qa-plan` against `1833fd3b` on the proven-fresh 4/4 stack
 (gate sweep 41: 39 PASS / 2 FAIL, both pre-existing — `check-alert-metrics` post-restart, and the
-`check-dependency-horizons` **RabbitMQ 4.3 EOL 2026-11-30** amber the manifest predicted, which
-reds CI on 2026-12-01 with no issue filed). **97 findings (C:2 H:23 M:36 L:36)**, 83 probes each
+`check-dependency-horizons` **RabbitMQ 4.3 EOL 2026-11-30** in-window breach the manifest predicted —
+since filed as #724 and deferred to the horizon by PR #725, merged 2026-09-02 evening, so the gate
+is green again until 2026-12-01). **97 findings (C:2 H:23 M:36 L:36)**, 83 probes each
 with a recorded fail arm, regression-by-omission NONE. The Criticals: **API-1** — the documented
 read-only `integration-catalog-ro` credential writes the catalogue via `POST /api/v1/sync/batch`
 (`SyncController` has no `@PreAuthorize`; the human BOLA is live for any explicitly-granted user
@@ -63,8 +64,9 @@ config-injected `post_logout_redirect_uri` + new `scripts/check-keycloak-logout-
 `.qa-council/20260902-134741/` (`plan.md`, `findings.json`, `refutation.md`, `RETROSPECTIVE.md`)
 and memory `project_qa_council_20260902.md`; the procedure lessons went into
 `~/.claude/commands/qa-*.md` (dotfiles PR). **Not yet done — an owner checkpoint:** nothing is
-filed (2 Criticals, the top Highs, a docs epic, amendments to #648/#453/#711, the RabbitMQ
-horizon, and 9 new defects the refuter surfaced), and `/qa-remediate 20260902-134741` has not run.
+filed except the RabbitMQ horizon (#724, deferred to 2026-11-30 by PR #725) — still unfiled: 2
+Criticals, the top Highs, a docs epic, amendments to #648/#453/#711, and 9 new defects the refuter
+surfaced — and `/qa-remediate 20260902-134741` has not run.
 The 41-gate expectation at "Resume here" is unchanged.
 
 **Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
