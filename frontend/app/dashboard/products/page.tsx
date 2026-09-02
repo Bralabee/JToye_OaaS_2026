@@ -524,7 +524,10 @@ export default function ProductsPage() {
                               fallbackIcon={<Package className="h-4 w-4 text-blue-600" />}
                             />
                             <div>
-                              <div className="font-medium">{product.title}</div>
+                              {/* A11Y-10 / #702: a 224-char title took the row from 72px to 189px;
+                                  two lines (a title is the row's identifier), break-words so an
+                                  unbreakable token wraps instead of overflowing the table. */}
+                              <div className="font-medium line-clamp-2 break-words">{product.title}</div>
                               <IngredientText
                                 text={product.ingredientsText}
                                 className="line-clamp-1 block text-xs text-slate-500"
