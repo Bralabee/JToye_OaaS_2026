@@ -523,13 +523,14 @@ public class VendorOnboardingService {
                 });
     }
 
-    /** WR-02: trim + uppercase a company number; a blank/whitespace value becomes null. */
+    /**
+     * WR-02 + INT-7/A14: canonical company number — trim, uppercase, blank → null (sole
+     * trader), and left-zero-pad a purely numeric value to the 8-character register key
+     * ({@code 445790} → {@code 00445790}). Delegates to {@link CompanyNumbers#normalise} so
+     * the gate's lookup key and the stored aggregate can never disagree.
+     */
     private static String normaliseCompanyNumber(String companyNumber) {
-        if (companyNumber == null) {
-            return null;
-        }
-        String normalised = companyNumber.trim().toUpperCase();
-        return normalised.isEmpty() ? null : normalised;
+        return CompanyNumbers.normalise(companyNumber);
     }
 
     private VendorOnboarding requireOnboarding(UUID tenantId) {
