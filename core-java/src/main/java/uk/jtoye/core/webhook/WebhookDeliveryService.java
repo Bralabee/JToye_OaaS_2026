@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.webhook.dto.WebhookDeliveryView;
 import uk.jtoye.core.webhook.dto.WebhookSubscriptionDto;
 
@@ -45,6 +46,15 @@ import java.util.UUID;
  * {@code WebhookDeliveryLogIntegrationTest} proving that another tenant's row
  * filed under this subscription id is excluded is a genuine test of the database
  * boundary rather than a restatement of a WHERE clause.
+ *
+ * <p><strong>GROUP_ADMIN only (QA-council 20260902 SEC-1).</strong> {@code webhook_delivery.payload}
+ * is the serialized event envelope whose {@code data} is the full {@code OrderDto} — customer
+ * name, email and phone — and V56 carries no {@code shop_id}, so the log is a TENANT-WIDE
+ * order-event store. Both entry points therefore call {@link ShopAccessService#requireGroupAdmin()}
+ * (the {@code StaffManagementService} precedent) immediately after {@link #requireTenant()} and
+ * BEFORE the subscription-ownership lookup: a scoped caller gets the typed shop-access 403 and
+ * never learns whether the subscription exists. The tenant check stays FIRST so the documented
+ * "no tenant established → loud {@code missing-tenant-context} 500" contract above is unchanged.
  */
 @Service
 @Transactional
@@ -54,17 +64,21 @@ public class WebhookDeliveryService {
 
     private final WebhookDeliveryRepository deliveryRepository;
     private final WebhookSubscriptionService subscriptionService;
+    private final ShopAccessService shopAccessService;
 
     public WebhookDeliveryService(WebhookDeliveryRepository deliveryRepository,
-                                  WebhookSubscriptionService subscriptionService) {
+                                  WebhookSubscriptionService subscriptionService,
+                                  ShopAccessService shopAccessService) {
         this.deliveryRepository = deliveryRepository;
         this.subscriptionService = subscriptionService;
+        this.shopAccessService = shopAccessService;
     }
 
     /**
      * Paged delivery log for one owned subscription, newest first, with optional
      * status + event-type filters (both {@code null} = unfiltered).
      *
+     * @throws uk.jtoye.core.exception.ShopAccessDeniedException the caller is not a GROUP_ADMIN (403)
      * @throws ResourceNotFoundException     the subscription does not exist for this tenant (404)
      * @throws MissingTenantContextException no tenant is established for the request (500)
      */
@@ -74,6 +88,7 @@ public class WebhookDeliveryService {
                                           String eventType,
                                           Pageable pageable) {
         requireTenant();
+        shopAccessService.requireGroupAdmin();
         requireOwnedSubscription(subscriptionId);
         return deliveryRepository.findLog(subscriptionId, status, eventType, pageable)
                 .map(WebhookDeliveryView::from);
@@ -94,6 +109,7 @@ public class WebhookDeliveryService {
      */
     public WebhookDeliveryView replay(UUID subscriptionId, UUID deliveryId) {
         requireTenant();
+        shopAccessService.requireGroupAdmin();
         requireOwnedSubscription(subscriptionId);
 
         WebhookDelivery original = deliveryRepository.findByIdAndSubscriptionId(deliveryId, subscriptionId)
