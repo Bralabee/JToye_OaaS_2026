@@ -39,7 +39,7 @@ J'Toye OaaS uses a modern containerized architecture with three main services:
 | Service | Technology | Port | Image Size | Startup Time |
 |---------|-----------|------|------------|--------------|
 | **core-java** | Spring Boot 3 + JDK 25 | 9090 | ~880MB | ~30s |
-| **edge-go** | Go 1.26 (static binary) | 8089 (Docker) / 8080 (Local) | ~47MB | ~1s |
+| **edge-go** | Go 1.27 (static binary) | 8089 (Docker) / 8080 (Local) | ~47MB | ~1s |
 | **frontend** | Next.js 16 (standalone) | 3000 | ~272MB | ~5s |
 
 **Infrastructure:**
@@ -58,7 +58,7 @@ J'Toye OaaS uses a modern containerized architecture with three main services:
 # Required
 - Java 25 (Eclipse Temurin recommended) — build with the bundled Gradle 9.7.1 wrapper
 - Node.js 24+ (with npm)
-- Go 1.26+
+- Go 1.27+
 - Docker 24+ with Docker Compose
 - Git
 

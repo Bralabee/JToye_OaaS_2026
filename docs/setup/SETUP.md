@@ -29,7 +29,7 @@ docker compose -f docker-compose.full-stack.yml down
 ### Prerequisites
 - **Java 25** (Eclipse Temurin recommended) — the bundled Gradle 9.7.1 wrapper is required (JDK 25 needs Gradle >= 9.1). Always invoke `./gradlew`, never a system `gradle`.
 - **Node.js 24+** (for frontend)
-- **Go 1.26+** (for edge-go)
+- **Go 1.27+** (for edge-go)
 - **Docker & Docker Compose** (for infrastructure)
 
 ### 1. Start Infrastructure Services

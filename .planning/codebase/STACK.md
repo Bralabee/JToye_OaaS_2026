@@ -20,7 +20,7 @@
 - JVM — Java 25 (Temurin), Core API execution. `gradle.properties` enables toolchain auto-detect/auto-download.
 - Node.js 24 — Frontend build/runtime (`frontend/Dockerfile` builder+runner both `node:24-alpine`; CI `node-version: '24'`) and MCP server runtime (`mcp-server/Dockerfile` `node:24-alpine`).
 - Go 1.27 runtime — Edge gateway, statically linked (`CGO_ENABLED=0`), deployed on a `scratch` base image (`edge-go/Dockerfile`).
-- PostgreSQL 15-alpine — Database (`docker-compose.full-stack.yml:43` `postgres:15-alpine`; `infra/docker-compose.yml:13` `postgres:15`; `infra/backups/Dockerfile` uses `postgres:15-bookworm` for pg_dump tooling).
+- PostgreSQL 15-alpine — Database (`docker-compose.full-stack.yml:43` `postgres:15-alpine`; `infra/docker-compose.yml:13-14` `image: postgres:15` for `jtoye-postgres`; `infra/backups/Dockerfile` uses `postgres:15-bookworm` for pg_dump tooling).
 
 **Package Manager:**
 - Gradle 9.7.1 (Kotlin DSL) — `gradle/wrapper/gradle-wrapper.properties` pins `distributionUrl` to `gradle-9.7.1-bin.zip`. Lockfile: none (Gradle doesn't use one by default here); dependency versions pinned via `io.spring.dependency-management` BOM + explicit `implementation(...)` coordinates in `core-java/build.gradle.kts`.
@@ -46,7 +46,7 @@
 - JUnit 5 (via `spring-boot-starter-test`) — Java unit/integration tests.
 - Testcontainers 1.21.4 (`testcontainers`, `postgresql`, `rabbitmq`, `junit-jupiter` modules) — real Postgres + RLS and real-broker fan-out proofs; run via the dedicated `integrationTest` Gradle task, tagged `testcontainers`, excluded from the default `test` task.
 - H2 (`com.h2database:h2`) — lightweight in-memory unit tests.
-- JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:362`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
+- JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:362` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
 - Jest 29.7.0 + @testing-library/react 16.3.0 + jest-environment-jsdom 30.4.1 — Frontend unit/component tests.
 - jest-axe 11.0.0 + @axe-core/playwright 4.13.0 + axe-core 4.13.0 — Accessibility testing.
 - @playwright/test 1.62.1 — E2E browser automation (`frontend/playwright.config.ts`).
@@ -75,7 +75,7 @@
 
 **Infrastructure:**
 - com.rabbitmq:amqp-client — pinned to 5.33.1 via the `rabbit-amqp-client.version` Gradle extra property (NOT a direct dependency; see extensive in-file rationale) to close 6 HIGH/MEDIUM CVEs Boot's own 5.25.0 BOM pin would otherwise ship.
-- Resilience4j 2.4.0 (`resilience4j-spring-boot3`) — circuit breakers for Stripe, FHRS, Companies House, email, AI, webhook egress (config in `application.yml:724-775`).
+- Resilience4j 2.4.0 (`resilience4j-spring-boot3`) — circuit breakers for Stripe, FHRS, Companies House, email, AI, webhook egress (config in `core-java/src/main/resources/application.yml:724-775`, `resilience4j:` at 724).
 - Bucket4j 8.10.1 (`bucket4j-core`, `bucket4j-redis`) — Redis-backed token-bucket rate limiting.
 - Micrometer Prometheus + Micrometer Tracing (Brave/Zipkin bridge) — metrics + distributed tracing.
 - com.sksamuel.scrimage 4.6.7 (`scrimage-core`, `scrimage-webp`) + TwelveMonkeys ImageIO 3.14.0 (`imageio-webp`, `imageio-core`) — image decode/resize/WebP transcode pipeline (Phase 24 media pipeline); scrimage-webp's bundled `cwebp` is glibc-linked and does NOT run on the Alpine (musl) runtime image, so the Dockerfile installs `libwebp-tools` and points the JVM at `/usr/bin` via `-Dcom.sksamuel.scrimage.webp.binary.dir`.

@@ -40,7 +40,7 @@ the four services talk to Core directly — the "edge gateway" fronts almost not
                                                │  Redis · Rabbit  │
      ┌──────────────────┐                      │  MinIO · Keycloak│
      │  edge-go :8089   │  POST /sync/batch ──▶│  Ollama          │
-     │  Gin/Go 1.26     │  (the ONE JWT route) │                  │
+     │  Gin/Go 1.27     │  (the ONE JWT route) │                  │
      │  + WhatsApp HMAC │  WhatsApp → orders ─▶│                  │
      └──────────────────┘                      └──────────────────┘
 ```
@@ -196,7 +196,7 @@ carries a per-request CSP nonce (built in `middleware.ts` — which explicitly d
 
 ## 4. Edge-Go and MCP-Server
 
-**edge-go** (Gin, Go 1.26; 23 files): JWT validation is solid and fail-closed (RSA-only, split-horizon
+**edge-go** (Gin, Go 1.27; 23 files): JWT validation is solid and fail-closed (RSA-only, split-horizon
 issuer, audience always enforced with a `core-api` default, mandatory tenant claim); an unknown-`kid`
 triggers a **concurrent** (not serialised) JWKS refetch per request — a real amplification vector
 bounded only by the 20-rps limiter. The rate limiter is a **process-wide** DoS valve (not per-tenant —

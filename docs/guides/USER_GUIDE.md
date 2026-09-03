@@ -5,7 +5,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 
 ### Core Components
 *   **core-java**: Spring Boot 3 service (System of Record). Handles business logic, data persistence, and RLS enforcement.
-*   **edge-go**: Go 1.26 Gin service (System of Engagement). Provides rate limiting, circuit breaking, and batch synchronization.
+*   **edge-go**: Go 1.27 Gin service (System of Engagement). Provides rate limiting, circuit breaking, and batch synchronization.
 *   **frontend**: Next.js 14 application with NextAuth.js and Keycloak integration.
 *   **Keycloak**: OIDC provider for identity and access management.
 *   **PostgreSQL**: Relational database with RLS policies for tenant isolation.
@@ -15,7 +15,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 ## 2. Quick Start
 
 ### Prerequisites
-*   Java 25 (build with the bundled Gradle 9.7.1 wrapper, `./gradlew`), Go 1.26+, Node.js 24+
+*   Java 25 (build with the bundled Gradle 9.7.1 wrapper, `./gradlew`), Go 1.27+, Node.js 24+
 *   Docker & Docker Compose
 
 ### Option A: Full-Stack Docker (Recommended)

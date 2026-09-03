@@ -75,7 +75,7 @@ Postgres **5433**, Keycloak **8085**, Grafana **3002**.
 
 ## The stack (fixed — do not migrate without a decision)
 
-Spring Boot 3.5.16 · JDK 21 (JDK 25 breaks Gradle 8.10) · Next.js 16.2.12 / React 19 · Go 1.26 /
+Spring Boot 3.5.16 · JDK 21 (JDK 25 breaks Gradle 8.10) · Next.js 16.2.12 / React 19 · Go 1.27 /
 Gin · PostgreSQL 15 · Redis 7 · RabbitMQ 4.3.4 · Keycloak 24.0.5 · MinIO · Ollama.
 
 ## The culture, in one line

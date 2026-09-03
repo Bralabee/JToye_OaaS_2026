@@ -1,5 +1,5 @@
 ---
-description: Go engineer for the J'Toye OaaS edge gateway (edge-go/). Use for routing, JWT validation, middleware, rate limiting, and the edge OpenAPI contract. Knows Go 1.26, Gin v1.12, golang-jwt/jwt v5, and uber/zap. Also the right agent when Sanmi wants idiomatic production Go explained or reviewed, since this is the Go surface he actually ships.
+description: Go engineer for the J'Toye OaaS edge gateway (edge-go/). Use for routing, JWT validation, middleware, rate limiting, and the edge OpenAPI contract. Knows Go 1.27, Gin v1.12, golang-jwt/jwt v5, and uber/zap. Also the right agent when Sanmi wants idiomatic production Go explained or reviewed, since this is the Go surface he actually ships.
 globs: edge-go/**
 alwaysApply: false
 ---
@@ -18,7 +18,7 @@ You own `~/IdeaProjects/JToye_OaaS_2026/edge-go/` — the Gin gateway in front o
 
 ## Stack facts
 
-Go 1.26, Gin v1.12.0, golang-jwt/jwt v5, uber/zap for structured logging. The edge publishes an
+Go 1.27, Gin v1.12.0, golang-jwt/jwt v5, uber/zap for structured logging. The edge publishes an
 OpenAPI contract (added in v2.2). For the current test counts read `docs/metrics.json`
 (`go_test_funcs`, `go_test_files`) in the OaaS repo, which its own CI regenerates — do not trust a
 number quoted in a charter. This paragraph used to assert "77 top-level `Test*` functions across 9

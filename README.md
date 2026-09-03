@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Bralabee/JToye_OaaS_2026/actions)
-[![Tests](https://img.shields.io/badge/tests-3572%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-3912%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -19,7 +19,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 |-------|------------|
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS, NextAuth.js v5 |
 | **Backend** | Spring Boot 3, Java 25, MapStruct 1.6.3, Redis Caching, Spring State Machine |
-| **Edge** | Go 1.26, Gin, Circuit Breakers, Rate Limiting |
+| **Edge** | Go 1.27, Gin, Circuit Breakers, Rate Limiting |
 | **Database** | PostgreSQL 15 with Row-Level Security (RLS) |
 | **Auth** | Keycloak 24 (OAuth2/OIDC) |
 | **Infrastructure** | Docker, Kubernetes, Redis, RabbitMQ |
@@ -288,14 +288,14 @@ inert placeholder — every deploy re-pins to `:<git-sha>` and a premortem guard
 that static default ever survives to an `apply`, so it is intentionally not version-tracked.
 
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
-- Backend (Java): 1730 `@Test` methods across 275 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
+- Backend (Java): 1869 `@Test` methods across 295 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
 - Edge (Go): 84 `Test*` functions across 11 files ✅
-- Frontend (Jest): 1583 `it/test` blocks across 146 files ✅
+- Frontend (Jest): 1779 `it/test` blocks across 169 files ✅
 - Frontend E2E (Playwright): 127 `test()` blocks across 27 specs ✅
-- MCP server (vitest): 48 `it/test` blocks across 8 files ✅
-- **Total: 3572 logical test invocations** ✅
+- MCP server (vitest): 53 `it/test` blocks across 8 files ✅
+- **Total: 3912 logical test invocations** ✅
 
-Database schema version: **V64** (Flyway).
+Database schema version: **V66** (Flyway).
 
 > These numbers are guarded end-to-end by two CI gates in
 > `.github/workflows/docs-freshness.yml`: `scripts/docs-freshness.sh` asserts
@@ -328,7 +328,7 @@ Database schema version: **V64** (Flyway).
 
 - **Java 25** (Eclipse Temurin recommended); the bundled Gradle 9.7.1 wrapper is required (JDK 25 needs Gradle ≥ 9.1).
 - **Node.js 24+** (with npm)
-- **Go 1.26+** (`edge-go/go.mod` declares `go 1.26.0`)
+- **Go 1.27+** (`edge-go/go.mod` declares `go 1.27.0`)
 - **Docker** with **Compose v2** (`docker compose`, not the standalone `docker-compose` v1 binary)
 
 ### Project Structure
