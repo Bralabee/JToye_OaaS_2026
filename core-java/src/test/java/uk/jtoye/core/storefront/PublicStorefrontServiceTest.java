@@ -576,6 +576,74 @@ class PublicStorefrontServiceTest {
         assertNull(saved.getAddressLine1(), "COLLECTION order must not persist an address");
     }
 
+    /**
+     * INT-9 (QA-council 20260902-134741, owner ruling E-2). The COD fallback wrote
+     * {@code payment_method = "Cash on Delivery"} unconditionally, with no reference to the
+     * fulfilment type resolved 187 lines earlier — so on this runtime 39 COLLECTION orders
+     * carried a literal that names a delivery that will never happen. It is a vendor-finance
+     * label: nothing in the codebase branches on the string (census in plan-money-orders.md).
+     *
+     * <p>The replacement is {@code "Unpaid"}, ruled by the owner (E-2). "Pay on collection" and
+     * "Cash on Collection" are BOTH forbidden — issue #461 records the owner's ruling that
+     * pay-on-collection is not an allowed policy, so encoding it here would inscribe a
+     * prohibited state into the vendor's finance view. "Unpaid" is the only value truthful
+     * today: no payment has been taken and no payment request has been sent, and the string must
+     * not claim a request is pending.
+     */
+    @Test
+    @DisplayName("INT-9: the COD fallback labels a COLLECTION order 'Unpaid', never 'Cash on Delivery'")
+    void createGuestOrder_codFallbackLabelsCollectionOrderUnpaid() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Puff Puff", 300L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        // No Stripe key -> the COD branch, which is the only writer of this literal.
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Ada Lovelace");
+        request.setCustomerEmail("ada@example.com");
+        request.setCustomerPhone("07700900002");
+        request.setFulfilmentType("COLLECTION");
+        request.setItems(List.of(itemFor(product, 1)));
+
+        service.createGuestOrder("test-shop-abc12345", request);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        Order saved = captor.getValue();
+
+        assertEquals(FulfilmentType.COLLECTION, saved.getFulfilmentType());
+        assertEquals("Unpaid", saved.getPaymentMethod(),
+                "INT-9/E-2: a COLLECTION order must not be labelled with a delivery payment method");
+        assertEquals(OrderStatus.PENDING, saved.getStatus());
+    }
+
+    /**
+     * INT-9 companion arm: the label is fulfilment-NEUTRAL by design. It states what is true of
+     * the order (nothing has been paid) and needs no branch on the fulfilment type, so a DELIVERY
+     * order gets the same string — a second branch would be a second thing to get wrong, and the
+     * old literal's whole defect was that it asserted a fulfilment mode it never consulted.
+     */
+    @Test
+    @DisplayName("INT-9: the COD label is fulfilment-neutral — a DELIVERY order reads 'Unpaid' too")
+    void createGuestOrder_codFallbackLabelIsFulfilmentNeutral() {
+        publishedShop.setDeliveryFeePennies(0L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createGuestOrder("test-shop-abc12345", deliveryRequest(product));
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        assertEquals("Unpaid", captor.getValue().getPaymentMethod());
+    }
+
     @Test
     @DisplayName("createGuestOrder charges the shop's server-side delivery fee for DELIVERY (client value never trusted)")
     void createGuestOrder_deliveryUsesServerFee() throws Exception {

@@ -915,7 +915,26 @@ public class PublicStorefrontService {
                 // save below, exactly as before.
                 order.setStatus(OrderStatus.PENDING);
                 order.setPaymentStatus(PaymentStatus.NONE);
-                order.setPaymentMethod("Cash on Delivery");
+                // INT-9 (QA-council 20260902-134741) / owner ruling E-2. This literal used to be
+                // "Cash on Delivery" and was written unconditionally, with no reference to the
+                // fulfilment type resolved earlier in this method — so 39 COLLECTION orders on
+                // the dev runtime carried a label naming a delivery that will never happen. It
+                // is a vendor-finance label; nothing in the codebase branches on the string.
+                //
+                // "Unpaid" is the owner-ruled replacement and the ONLY value truthful today: no
+                // payment has been taken and no payment request has been sent, so the string
+                // must not claim one is pending. "Pay on collection" / "Cash on Collection" are
+                // explicitly forbidden — issue #461 records the ruling that pay-on-collection is
+                // not an allowed policy, so the obvious rename would inscribe a prohibited state
+                // into the vendor's finance view. The value is deliberately fulfilment-NEUTRAL:
+                // a branch here would be a second thing to get wrong, and asserting a fulfilment
+                // mode this line never consulted was the original defect.
+                //
+                // #461 STAYS FULLY OPEN. This satisfies none of its acceptance criteria — the
+                // customer-visible "Pay on collection" copy is client-derived in the storefront
+                // checkout page and pinned by Jest, and the COD fallback itself is still an
+                // ungated silent default. This is a vendor-finance labelling fix only.
+                order.setPaymentMethod("Unpaid");
             }
 
             order = orderRepository.save(order);
