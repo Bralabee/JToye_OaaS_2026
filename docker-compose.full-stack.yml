@@ -308,6 +308,15 @@ services:
       # The SA still passes the VSA-02 gate via the strict-scoping-OFF implicit-GA
       # path, so NO permanent opaque-UUID GROUP_ADMIN row lands in shop_staff (WR-09).
       ACCESS_MACHINE_CLIENT_IDS: integration-orders-rw
+      # Vendor shop-scoping posture (Phase 23 D-12; QA-council 20260902 SEC-2). Declared
+      # EXPLICITLY as false — a recorded design decision (23-DISCUSSION-LOG D-12, 23-REVIEW
+      # CR-07), not an omission: under OFF an ungranted tenant user is an implicit tenant-wide
+      # GROUP_ADMIN and every JIT grant is honoured; core-java WARN-logs this at startup.
+      # DO NOT FLIP HERE: arming is blocked on #285 (bulk-revoke of JIT rows), the /sync/batch
+      # shop predicate (SEC-5 / #648), and integration-orders-rw above — its UUID subject means
+      # isDeclaredMachineClient never fires, so its GROUP_ADMIN comes solely from the strict-OFF
+      # implicit-admin rule and arming breaks MCP create_order.
+      ACCESS_STRICT_SCOPING: ${ACCESS_STRICT_SCOPING:-false}
       # Keycloak user deprovisioning on offboard (issue #102 remainder). OFF by
       # default; when enabled the core service disables an offboarded tenant's
       # Keycloak users. base-url is the INTERNAL host (like KC_ISSUER_URI above),
