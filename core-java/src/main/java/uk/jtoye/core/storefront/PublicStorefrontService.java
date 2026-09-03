@@ -16,6 +16,7 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.geo.GeoBounds;
 import uk.jtoye.core.geo.PostcodeGeocoder;
+import uk.jtoye.core.order.FulfilmentPolicy;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderAllergenSnapshot;
@@ -737,14 +738,12 @@ public class PublicStorefrontService {
             // enum string; an unknown value is a 400, not a silent DELIVERY.
             FulfilmentType fulfilmentType = parseFulfilmentType(request.getFulfilmentType());
             order.setFulfilmentType(fulfilmentType);
+            // Conditional-required: a delivery order MUST carry a UK address. COR-1 moved the
+            // check itself into FulfilmentPolicy so the vendor/REST/MCP path raises the identical
+            // message; the message text is unchanged.
+            FulfilmentPolicy.requireDeliveryAddress(fulfilmentType, request.getAddressLine1(),
+                    request.getAddressCity(), request.getAddressPostcode());
             if (fulfilmentType == FulfilmentType.DELIVERY) {
-                // Conditional-required: a delivery order MUST carry a UK address.
-                if (isBlank(request.getAddressLine1())
-                        || isBlank(request.getAddressCity())
-                        || isBlank(request.getAddressPostcode())) {
-                    throw new IllegalArgumentException(
-                            "Delivery address (line 1, city and postcode) is required for delivery orders.");
-                }
                 order.setAddressLine1(request.getAddressLine1());
                 order.setAddressLine2(request.getAddressLine2());
                 order.setAddressCity(request.getAddressCity());
@@ -846,16 +845,13 @@ public class PublicStorefrontService {
                         shop.getMinimumOrderPennies() / 100.0));
             }
 
-            long deliveryFee;
-            if (fulfilmentType == FulfilmentType.COLLECTION) {
-                deliveryFee = 0L;
-            } else {
-                deliveryFee = shop.getDeliveryFeePennies() != null ? shop.getDeliveryFeePennies() : 0L;
-                if (shop.getFreeDeliveryThresholdPennies() != null
-                        && itemSubtotal >= shop.getFreeDeliveryThresholdPennies()) {
-                    deliveryFee = 0L;
-                }
-            }
+            // COR-1: the rule now lives in FulfilmentPolicy, called by BOTH order-creation
+            // paths. It is byte-for-byte the rule that was here — COLLECTION £0, otherwise the
+            // shop's fee waived at or above the free-delivery threshold — with the null handling
+            // made explicit (a null threshold is "no waiver configured", not "always free").
+            long deliveryFee = FulfilmentPolicy.deliveryFeePennies(
+                    fulfilmentType, itemSubtotal,
+                    shop.getDeliveryFeePennies(), shop.getFreeDeliveryThresholdPennies());
             order.setDeliveryFeePennies(deliveryFee);
 
             order.calculateTotal();
@@ -1045,16 +1041,15 @@ public class PublicStorefrontService {
      * fee-bearing choice); an unknown value is rejected with a 400 rather than
      * silently coerced.
      */
+    /**
+     * COR-1: delegates to the shared {@link FulfilmentPolicy}. Behaviour is unchanged — this
+     * endpoint's fallback is DELIVERY, matching the V45 column default and what this endpoint has
+     * always done. The fallback is passed EXPLICITLY rather than hard-coded in the policy,
+     * because the vendor/REST/MCP path's fallback is COLLECTION and burying one answer in the
+     * shared rule would silently move the other.
+     */
     private static FulfilmentType parseFulfilmentType(String raw) {
-        if (isBlank(raw)) {
-            return FulfilmentType.DELIVERY;
-        }
-        try {
-            return FulfilmentType.valueOf(raw.trim().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid fulfilment type: " + raw
-                    + " (expected DELIVERY or COLLECTION)");
-        }
+        return FulfilmentPolicy.resolve(raw, FulfilmentType.DELIVERY);
     }
 
     private static boolean isBlank(String s) {

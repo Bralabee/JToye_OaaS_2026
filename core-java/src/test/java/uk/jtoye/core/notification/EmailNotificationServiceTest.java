@@ -160,6 +160,11 @@ class EmailNotificationServiceTest {
      * so null is unreachable through the schema \u2014 but if it ever were, the copy
      * must not fall back to "come and collect", which is the actively harmful
      * answer when the fulfilment mode is unknown.
+     *
+     * <p>COR-1 note (2026-09-02): since both order-creation paths now set the fulfilment
+     * type explicitly ({@code FulfilmentPolicy}), the column default is a history device
+     * only. This arm asserts a safety property on an unreachable input; that is its value,
+     * and it is recorded here so nobody deletes it as "dead".
      */
     @Test
     @DisplayName("sendOrderReady - null fulfilment type falls back to DELIVERY copy (#502)")

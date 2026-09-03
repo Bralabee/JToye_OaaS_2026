@@ -147,6 +147,39 @@ public class OrderService {
         }
         order.setUpdatedAt(OffsetDateTime.now());
 
+        // ------------------------------------------------------------------------------------
+        // COR-1 (adjudication A8 + owner ruling E-1): say how this order is fulfilled.
+        //
+        // This method used to set NEITHER fulfilmentType NOR deliveryFeePennies, so the V45
+        // entity default stood and every vendor / REST / MCP order persisted as DELIVERY with a
+        // £0 fee and no address. That produced a delivery kitchen ticket with nowhere to deliver
+        // to, an empty "Delivery address" block on the vendor's screen, and a READY email
+        // promising a delivery to a customer who had given no address.
+        //
+        // COLLECTION is the fallback because that is what this path's request captures by
+        // default. It is NOT the only option: E-1 records that vendors take delivery orders by
+        // phone, API and MCP, so an explicit DELIVERY (with the address block) is fully
+        // supported and priced. Defaulting alone was explicitly rejected — it would have made
+        // DELIVERY unreachable off the storefront, which is a capability removal.
+        //
+        // The three rules below live in FulfilmentPolicy, shared verbatim with
+        // PublicStorefrontService.createGuestOrder. A second copy of a money rule is exactly
+        // what let these two paths disagree for four months.
+        // ------------------------------------------------------------------------------------
+        FulfilmentType fulfilmentType =
+                FulfilmentPolicy.resolve(request.getFulfilmentType(), FulfilmentType.COLLECTION);
+        order.setFulfilmentType(fulfilmentType);
+        FulfilmentPolicy.requireDeliveryAddress(fulfilmentType, request.getAddressLine1(),
+                request.getAddressCity(), request.getAddressPostcode());
+        if (fulfilmentType == FulfilmentType.DELIVERY) {
+            order.setAddressLine1(request.getAddressLine1());
+            order.setAddressLine2(request.getAddressLine2());
+            order.setAddressCity(request.getAddressCity());
+            order.setAddressPostcode(request.getAddressPostcode());
+        }
+        // COLLECTION deliberately persists NO address even when one is sent: the fulfilment type
+        // decides what the order is, not the payload.
+
         // Add order items with stock validation. Collect each line's
         // VAT-inclusive gross + server-resolved rate for predominant-liability
         // resolution (Issue #81 BUG 2 — closes silent zero-rating on the admin
@@ -190,6 +223,18 @@ public class OrderService {
 
         // Resolve the order's single predominant VAT rate before totalling.
         order.setVatRate(VatCalculator.predominantRate(lineRates));
+
+        // COR-1: the delivery fee, server-authoritative and computed from the SHOP's own
+        // configuration — never from anything the caller sent. COLLECTION is £0; DELIVERY is the
+        // shop's fee, waived once the item subtotal clears the shop's free-delivery threshold.
+        // It must be set BEFORE calculateTotal(), which adds it to the total and derives VAT from
+        // the combined gross (Order.calculateTotal / HMRC VAT Notice 700 s17.5-17.6).
+        long itemSubtotalPennies = order.getItems().stream()
+                .mapToLong(OrderItem::getTotalPricePennies)
+                .sum();
+        order.setDeliveryFeePennies(FulfilmentPolicy.deliveryFeePennies(
+                fulfilmentType, itemSubtotalPennies,
+                shop.getDeliveryFeePennies(), shop.getFreeDeliveryThresholdPennies()));
 
         // Calculate total
         order.calculateTotal();

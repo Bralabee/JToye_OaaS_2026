@@ -221,6 +221,12 @@ export interface Order {
   customerId?: string
   totalAmountPennies: number
   itemCount: number
+  // COR-1 (QA-council 20260902-134741): backend OrderDto now exposes how the order is fulfilled
+  // and what delivery cost, so the vendor LIST can see the classification — it could not before,
+  // which is how 4 live orders sat mis-classified as DELIVERY-with-no-address with nothing on
+  // screen contradicting itself. Optional for old-backend tolerance: an older API omits both.
+  fulfilmentType?: FulfilmentType
+  deliveryFeePennies?: number | null
   createdAt: string
   updatedAt: string
 }
