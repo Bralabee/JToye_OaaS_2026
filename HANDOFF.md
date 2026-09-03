@@ -86,7 +86,7 @@ the 2026-08-24 session broke it once itself (see "The truncating filter", below)
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 41 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 43 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
