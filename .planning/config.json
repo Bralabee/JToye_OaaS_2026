@@ -71,5 +71,8 @@
   },
   "executor": {
     "stall_threshold_minutes": 5
+  },
+  "graphify": {
+    "enabled": true
   }
 }
