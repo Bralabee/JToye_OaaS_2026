@@ -266,6 +266,79 @@ class PublicStorefrontServiceTest {
         assertEquals(1500L, result.getTotalAmountPennies());
     }
 
+    /**
+     * COR-7 (QA-council 20260902-134741). {@code PublicOrderStatus} declares 11 fields;
+     * {@code trackOrder} assigned 8. {@code subtotalPennies} / {@code vatRate} /
+     * {@code vatAmountPennies} serialised as {@code null} on every 200, so a machine consumer
+     * reading this unauthenticated endpoint saw "no VAT" where VAT exists.
+     *
+     * <p>The distinction the assertion protects is the V63 NULL-vs-0 rule applied to money:
+     * "this order carries no VAT" and "this endpoint did not disclose the VAT" are different
+     * claims, and a null collapses them into the cheaper, wrong one. {@code getCustomerOrders}
+     * — the sibling reader 40 lines above in the same service — has always populated all three,
+     * so this was an omission on one of two paths, not a decision about the contract.
+     */
+    @Test
+    @DisplayName("COR-7: trackOrder populates subtotal, vatRate and vatAmount — a null is not 'no VAT'")
+    void trackOrder_populatesTheMoneyBreakdown() {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setOrderNumber("ORD-COR7-20260902-A1");
+        order.setCustomerEmail("cor7@example.com");
+        order.setStatus(OrderStatus.PREPARING);
+        order.setShopId(publishedShop.getId());
+        order.setSubtotalPennies(1200L);
+        order.setVatRate(VatRate.STANDARD);
+        order.setVatAmountPennies(250L);
+        order.setTotalAmountPennies(1500L);
+        order.setUpdatedAt(OffsetDateTime.now());
+
+        when(orderRepository.findByOrderNumberAndCustomerEmail("ORD-COR7-20260902-A1", "cor7@example.com"))
+                .thenReturn(Optional.of(order));
+        when(shopRepository.findById(publishedShop.getId()))
+                .thenReturn(Optional.of(publishedShop));
+
+        var result = service.trackOrder("ORD-COR7-20260902-A1", "cor7@example.com");
+
+        assertEquals(1200L, result.getSubtotalPennies(),
+                "COR-7: subtotalPennies is declared on the DTO and must be disclosed, not null");
+        assertEquals("STANDARD", result.getVatRate(),
+                "COR-7: the order's resolved VAT rate must reach the tracking response");
+        assertEquals(250L, result.getVatAmountPennies(),
+                "COR-7: a null vatAmountPennies reads as 'no VAT' — it must carry the real figure");
+    }
+
+    /**
+     * COR-7 fallback arm. A pre-VAT order row can genuinely hold a null {@code vat_rate} /
+     * {@code vat_amount_pennies}; the response must use the SAME defaults the sibling
+     * {@code getCustomerOrders} reader already uses ("ZERO" / 0) rather than throwing or
+     * emitting null, so the two customer surfaces cannot disagree about the same order.
+     */
+    @Test
+    @DisplayName("COR-7: a null vatRate/vatAmount on the row falls back exactly as getCustomerOrders does")
+    void trackOrder_nullVatFallsBackLikeTheHistoryReader() {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setOrderNumber("ORD-COR7-20260902-A2");
+        order.setCustomerEmail("cor7@example.com");
+        order.setStatus(OrderStatus.PENDING);
+        order.setShopId(publishedShop.getId());
+        order.setVatRate(null);
+        order.setVatAmountPennies(null);
+        order.setTotalAmountPennies(900L);
+        order.setUpdatedAt(OffsetDateTime.now());
+
+        when(orderRepository.findByOrderNumberAndCustomerEmail("ORD-COR7-20260902-A2", "cor7@example.com"))
+                .thenReturn(Optional.of(order));
+        when(shopRepository.findById(publishedShop.getId()))
+                .thenReturn(Optional.of(publishedShop));
+
+        var result = service.trackOrder("ORD-COR7-20260902-A2", "cor7@example.com");
+
+        assertEquals("ZERO", result.getVatRate());
+        assertEquals(0L, result.getVatAmountPennies());
+    }
+
     @Test
     @DisplayName("trackOrder throws when order not found")
     void trackOrder_notFound() {

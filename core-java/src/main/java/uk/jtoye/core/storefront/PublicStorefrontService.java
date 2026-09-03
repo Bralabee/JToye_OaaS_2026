@@ -618,6 +618,17 @@ public class PublicStorefrontService {
         status.setStatus(order.getStatus().name());
         status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
         status.setShopName(shopName);
+        // COR-7 (QA-council 20260902-134741): these three are DECLARED on PublicOrderStatus
+        // (and therefore in the OpenAPI contract) but were never assigned here, so every 200 from
+        // the tracking endpoint serialised them as null. A machine consumer reads a null
+        // vatAmountPennies as "no VAT", which is a different claim from "not disclosed here" —
+        // the same NULL-vs-0 distinction V63 is built on, applied to money. The sibling reader
+        // getCustomerOrders above has always populated all three from the same entity; the
+        // fallbacks below are copied from it verbatim so the two customer surfaces cannot
+        // disagree about the same order.
+        status.setSubtotalPennies(order.getSubtotalPennies());
+        status.setVatRate(order.getVatRate() != null ? order.getVatRate().name() : "ZERO");
+        status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
         status.setTotalAmountPennies(order.getTotalAmountPennies());
         status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
         status.setCreatedAt(order.getCreatedAt());
