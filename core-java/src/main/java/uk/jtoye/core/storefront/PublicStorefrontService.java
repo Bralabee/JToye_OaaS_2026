@@ -586,6 +586,10 @@ public class PublicStorefrontService {
             status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
             status.setTotalAmountPennies(order.getTotalAmountPennies());
             status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
+            // COR-4: units, passed through AS-IS. No null coalescing — null means the row
+            // predates V66 and was never recorded, which is a different statement from 0 and from
+            // the line count. The customer surface renders the count only when it is present.
+            status.setUnitCount(order.getUnitCount());
             status.setCreatedAt(order.getCreatedAt());
             status.setUpdatedAt(order.getUpdatedAt());
             return status;
@@ -639,6 +643,8 @@ public class PublicStorefrontService {
         status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
         status.setTotalAmountPennies(order.getTotalAmountPennies());
         status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
+        // COR-4: units, passed through AS-IS (see the note on the history reader above).
+        status.setUnitCount(order.getUnitCount());
         status.setCreatedAt(order.getCreatedAt());
         status.setUpdatedAt(order.getUpdatedAt());
         return status;

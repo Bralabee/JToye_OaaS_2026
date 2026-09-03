@@ -34,6 +34,12 @@ public class OrderDto {
     private FulfilmentType fulfilmentType;
     private Long deliveryFeePennies;
     private Integer itemCount;
+    /**
+     * COR-4 (V66): UNITS on the order — SUM(order_items.quantity) — beside {@code itemCount},
+     * which stays LINES. Nullable, and null means NOT RECORDED (the row predates V66). Never read
+     * null as 0 and never substitute {@code itemCount} for it.
+     */
+    private Integer unitCount;
     private PaymentStatus paymentStatus;
     private String paymentReference;
     private String paymentMethod;
@@ -96,6 +102,9 @@ public class OrderDto {
 
     public Long getDeliveryFeePennies() { return deliveryFeePennies; }
     public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
+
+    public Integer getUnitCount() { return unitCount; }
+    public void setUnitCount(Integer unitCount) { this.unitCount = unitCount; }
 
     public Integer getItemCount() { return itemCount; }
     public void setItemCount(Integer itemCount) { this.itemCount = itemCount; }

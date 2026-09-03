@@ -221,6 +221,16 @@ export interface Order {
   customerId?: string
   totalAmountPennies: number
   itemCount: number
+  /**
+   * COR-4 (V66): UNITS on the order — what the customer counted in the basket. `itemCount` is
+   * LINES and is what this surface used to render under the word "items", so a 6-Zobo order read
+   * "1 item" here and "6 items" on the basket minutes earlier.
+   *
+   * Optional AND nullable, and the two absences mean the same thing: NOT RECORDED. Absent = an
+   * older backend; null = a row written before V66. Neither may be coalesced to 0 or replaced by
+   * `itemCount` — the count is simply not rendered when it is not known.
+   */
+  unitCount?: number | null
   // COR-1 (QA-council 20260902-134741): backend OrderDto now exposes how the order is fulfilled
   // and what delivery cost, so the vendor LIST can see the classification — it could not before,
   // which is how 4 live orders sat mis-classified as DELIVERY-with-no-address with nothing on
@@ -279,6 +289,10 @@ export interface OrderDetail {
   customerPhone?: string
   notes?: string
   totalAmountPennies: number
+  // COR-4 (V66): UNITS on the order, beside the LINES the `items` array already gives. Optional
+  // and nullable: both absences mean NOT RECORDED (older backend / pre-V66 row) and neither may
+  // be coalesced to 0 or to items.length.
+  unitCount?: number | null
   items: OrderItem[]
   createdAt: string
   updatedAt: string

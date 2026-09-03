@@ -135,7 +135,11 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
             </div>
             <p className="text-sm font-semibold text-slate-900">{order.shopName}</p>
             <p className="text-xs text-slate-600 mt-0.5">
-              {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot; {formatPrice(order.totalAmountPennies)}
+              {/* COR-4: units when recorded; when not (a pre-V66 row), the price alone. */}
+              {order.unitCount != null && (
+                <>{order.unitCount} item{order.unitCount !== 1 ? "s" : ""} &middot; </>
+              )}
+              {formatPrice(order.totalAmountPennies)}
             </p>
             <p className="text-xs text-slate-400 mt-1">{formatDate(order.createdAt)}</p>
           </div>

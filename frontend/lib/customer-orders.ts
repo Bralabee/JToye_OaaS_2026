@@ -24,6 +24,16 @@ export interface OrderSummary {
   shopName: string
   totalAmountPennies: number
   itemCount: number
+  /**
+   * COR-4 (V66): UNITS on the order — what the customer counted in the basket. `itemCount` is
+   * LINES and is what this surface used to render under the word "items", so a 6-Zobo order read
+   * "1 item" here and "6 items" on the basket minutes earlier.
+   *
+   * Optional AND nullable, and the two absences mean the same thing: NOT RECORDED. Absent = an
+   * older backend; null = a row written before V66. Neither may be coalesced to 0 or replaced by
+   * `itemCount` — the count is simply not rendered when it is not known.
+   */
+  unitCount?: number | null
   createdAt: string
   updatedAt: string
 }
