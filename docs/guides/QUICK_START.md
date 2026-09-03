@@ -44,7 +44,7 @@ docker compose -f docker-compose.full-stack.yml down
 **Best for:** Active development, debugging, IDE integration
 
 **Prerequisites:**
-- Java 21 (JDK 25 is incompatible with Gradle 8.10), Node.js 24+, Go 1.26+
+- Java 25 (Eclipse Temurin recommended) — the bundled Gradle 9.7.1 wrapper is required (JDK 25 needs Gradle >= 9.1); Node.js 24+; Go 1.26+
 - Docker with **Compose v2** (`docker compose`) — for the backing services only
 
 #### Step 1: Environment Setup

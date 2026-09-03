@@ -15,7 +15,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 ## 2. Quick Start
 
 ### Prerequisites
-*   Java 21, Go 1.26+, Node.js 24+
+*   Java 25 (build with the bundled Gradle 9.7.1 wrapper, `./gradlew`), Go 1.26+, Node.js 24+
 *   Docker & Docker Compose
 
 ### Option A: Full-Stack Docker (Recommended)

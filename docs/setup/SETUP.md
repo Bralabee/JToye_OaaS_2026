@@ -27,7 +27,7 @@ docker compose -f docker-compose.full-stack.yml down
 ## Developer Setup (Local Development)
 
 ### Prerequisites
-- **Java 21** (for core-java)
+- **Java 25** (Eclipse Temurin recommended) — the bundled Gradle 9.7.1 wrapper is required (JDK 25 needs Gradle >= 9.1). Always invoke `./gradlew`, never a system `gradle`.
 - **Node.js 24+** (for frontend)
 - **Go 1.26+** (for edge-go)
 - **Docker & Docker Compose** (for infrastructure)
@@ -133,8 +133,11 @@ The application uses the following ports:
 
 ## Database Migrations
 
-Flyway migrations are applied automatically on startup. Current migrations:
-- V1: Base schema (tables, types)
-- V2: RLS policies
-- V3: Unique constraints
-- V4: Envers audit tables
+Flyway migrations are applied automatically on startup.
+
+This guide deliberately does **not** enumerate them: the schema head is a gated number and is
+recorded once, in `README.md` ("Database schema version"), which `scripts/check-doc-metrics.sh`
+checks against `docs/metrics.json` on every build. Restating it here would create a second copy
+that nothing checks — the exact drift that left this file claiming "V1..V4".
+
+The migration files themselves are in `core-java/src/main/resources/db/migration/`.

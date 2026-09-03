@@ -76,7 +76,7 @@ Run Configuration Window:
 When configured correctly, you should see in the logs:
 ```
 Database: jdbc:postgresql://localhost:5433/jtoye (PostgreSQL 15.13)
-Successfully validated 4 migrations
+Successfully validated N migrations        # N = the current schema head; see README.md
 Tomcat started on port 9090 (http) with context path '/'
 Started CoreApplication in X.XXX seconds
 ```
