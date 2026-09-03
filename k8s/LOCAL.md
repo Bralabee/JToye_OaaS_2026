@@ -28,8 +28,12 @@ never exercises the relay at all).
 Jest/Playwright suites, iterating on a page — use Docker Compose:
 
 ```bash
-scripts/start-dev.sh        # the canonical local dev + E2E runtime
+docker compose -f docker-compose.full-stack.yml up -d   # the canonical local dev + E2E runtime
 ```
+
+(`scripts/start-dev.sh` is a different, hybrid runtime — `infra/` compose plus host processes —
+paired with `scripts/stop-dev.sh`. It is not the canonical stack and does not read
+`docker-compose.full-stack.yml`.)
 
 Compose remains canonical for development and E2E (`CLAUDE.md` § "Runtime & deploy topology");
 Kubernetes remains the staging/production deploy target. **Neither layer is retired.** This cluster

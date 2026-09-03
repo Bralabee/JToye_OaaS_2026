@@ -94,6 +94,34 @@ cd frontend && npm install && npm run dev
 > same host ports (5433, 8085), so it collides with the canonical stack, and it starts neither Redis
 > nor RabbitMQ — which `application.yml` expects on `localhost`.
 
+### Option 3: Hybrid — `scripts/start-dev.sh` (Postgres + Keycloak in Docker, app on the host)
+
+`scripts/start-dev.sh` does **not** start the canonical full-stack runtime, and it does not read
+`docker-compose.full-stack.yml` at all. It runs `cd infra && docker compose up -d` (Postgres +
+Keycloak only), then `./gradlew :core-java:bootRun` and `npm run dev` as **host processes**.
+`scripts/stop-dev.sh` is the matching teardown for exactly this mode.
+
+```bash
+cp infra/.env.example infra/.env   # REQUIRED — see below
+./scripts/start-dev.sh             # teardown: ./scripts/stop-dev.sh
+```
+
+> **`infra/.env` is a hard prerequisite of this mode and of nothing else.**
+> `infra/docker-compose.yml` reads `infra/.env` — **not** the repo-root `.env` — and declares
+> seven `${VAR:?}` guards (`DB_PASSWORD`, `KEYCLOAK_CLIENT_SECRET`, `EDGE_API_CLIENT_SECRET`,
+> `KC_SEED_USER_PASSWORD`, `INTEGRATION_CATALOG_RO_SECRET`, `INTEGRATION_ORDERS_RW_SECRET`,
+> `KC_ADMIN_PASSWORD`). Without the file, step 1 of `start-dev.sh` exits non-zero on all seven.
+> Note the asymmetry: the script's own preflight (`scripts/verify-env.sh`) validates the
+> **repo-root** `.env`, so a green preflight does not mean the compose file can render.
+
+Never run this mode alongside Option 1 or 2: `infra/docker-compose.yml` re-declares
+`jtoye-postgres` / `jtoye-keycloak` on the same host ports (5433, 8085), and it starts neither
+Redis nor RabbitMQ, which `application.yml` expects on `localhost`.
+
+`scripts/start-dev.sh` takes no flags of its own — every argument is forwarded to
+`scripts/verify-env.sh` and the stack is started regardless, so `start-dev.sh --help` **starts
+services**.
+
 📖 **Detailed Guide:** See [docs/guides/QUICK_START.md](docs/guides/QUICK_START.md)
 
 ---

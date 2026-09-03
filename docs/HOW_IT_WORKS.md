@@ -189,7 +189,13 @@ Verification is a first-class subsystem, not an afterthought.
 
 ```bash
 # Bring up the canonical Compose runtime (dev + E2E)
-scripts/start-dev.sh                 # runs verify-env.sh preflight, then compose up
+docker compose -f docker-compose.full-stack.yml up -d --build
+
+# Hybrid ALTERNATIVE, not the same thing: scripts/start-dev.sh runs verify-env.sh against the
+# repo-root .env, then `cd infra && docker compose up -d` (Postgres + Keycloak only, reading
+# infra/.env), then bootRun and `npm run dev` as HOST processes. Never run it alongside the
+# line above — they collide on host ports 5433 and 8085. Teardown: scripts/stop-dev.sh
+#   scripts/start-dev.sh
 
 # After ANY code change, rebuild the affected images BEFORE E2E — `start` does not rebuild:
 docker compose -f docker-compose.full-stack.yml up -d --build core-java frontend
