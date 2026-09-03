@@ -11,6 +11,22 @@ public class PublicProductDto {
     private String ingredientsText;
     private Integer allergenMask;
     private Long pricePennies;
+    /**
+     * COR-6 (QA-council 20260902-134741): this product's VAT rate, as the enum-string form of
+     * {@link uk.jtoye.core.finance.VatRate} (STANDARD | REDUCED | ZERO | EXEMPT).
+     *
+     * <p>Without it the checkout page could not resolve the rate AT ALL, so it hardcoded
+     * {@code gross * 20 / 120} and a "VAT (incl. 20%)" label. On a zero-rated basket — most
+     * cold takeaway food is zero-rated (HMRC VAT Notice 709/1) — the customer was shown a VAT
+     * figure before paying and a contradicting one on the confirmation screen a moment later.
+     * The server has resolved the real rate since Issue #81 BUG 2
+     * ({@code VatCalculator.predominantRate}); the client was simply never given the input.
+     *
+     * <p>Additive: an older client that ignores the field is unaffected. The client mirror is a
+     * PREVIEW only — {@code VatCalculator} remains authoritative and the order's VAT is
+     * recomputed server-side at write time.
+     */
+    private String vatRate;
     private String category;
     private String dietaryTags;
     private Integer preparationTimeMinutes;
@@ -32,6 +48,8 @@ public class PublicProductDto {
     public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
     public Long getPricePennies() { return pricePennies; }
     public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
+    public String getVatRate() { return vatRate; }
+    public void setVatRate(String vatRate) { this.vatRate = vatRate; }
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
     public String getDietaryTags() { return dietaryTags; }

@@ -1149,6 +1149,10 @@ public class PublicStorefrontService {
         dto.setIngredientsText(product.getIngredientsText());
         dto.setAllergenMask(product.getAllergenMask());
         dto.setPricePennies(product.getPricePennies());
+        // COR-6: the client needs the rate to preview VAT correctly. Null-safe: products.vat_rate
+        // is NOT NULL (V40) but a detached/partially-built Product in a test is not, and a null
+        // here must stay null ("not disclosed") rather than become a fabricated "STANDARD".
+        dto.setVatRate(product.getVatRate() != null ? product.getVatRate().name() : null);
         dto.setCategory(product.getCategory());
         dto.setDietaryTags(product.getDietaryTags());
         dto.setPreparationTimeMinutes(product.getPreparationTimeMinutes());

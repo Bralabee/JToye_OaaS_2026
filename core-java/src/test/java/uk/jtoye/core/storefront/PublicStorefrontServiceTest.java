@@ -242,6 +242,50 @@ class PublicStorefrontServiceTest {
         assertEquals(899L, result.get("Mains").get(0).getPricePennies());
     }
 
+    /**
+     * COR-6 (QA-council 20260902-134741). {@code PublicProductDto} carried 13 fields and no VAT
+     * rate, so the checkout page could not resolve one and hardcoded {@code gross * 20 / 120}
+     * with a "VAT (incl. 20%)" label. Most cold takeaway food is ZERO-rated (HMRC VAT Notice
+     * 709/1, re-read 2026-09-03), so on such a basket the customer was shown a VAT figure before
+     * paying and a contradicting figure on the confirmation screen a moment later. The server has
+     * resolved the real rate since Issue #81 BUG 2 — the client was simply never given the input.
+     *
+     * <p>The ZERO arm is the falsifiable one: all 22 products on the dev DB are STANDARD, so an
+     * assertion exercised only against seeded data cannot fail.
+     */
+    @Test
+    @DisplayName("COR-6: the public product DTO exposes vatRate so the client can preview VAT correctly")
+    void publicProductDtoExposesVatRate() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        Product zeroRated = availableProduct("Cold Meat Pie", 1200L);
+        zeroRated.setCategory("Mains");
+        zeroRated.setVatRate(VatRate.ZERO);
+        Product standardRated = availableProduct("Hot Jollof Rice", 899L);
+        standardRated.setCategory("Mains");
+        standardRated.setVatRate(VatRate.STANDARD);
+        when(productRepository.findAvailableByShopOrderedByCategory(publishedShop.getId()))
+                .thenReturn(List.of(zeroRated, standardRated));
+
+        Map<String, List<PublicProductDto>> byCategory =
+                service.getShopProducts("test-shop-abc12345");
+
+        List<PublicProductDto> all = byCategory.values().stream().flatMap(List::stream).toList();
+        assertEquals(2, all.size());
+        PublicProductDto cold = all.stream()
+                .filter(p -> "Cold Meat Pie".equals(p.getTitle())).findFirst().orElseThrow();
+        PublicProductDto hot = all.stream()
+                .filter(p -> "Hot Jollof Rice".equals(p.getTitle())).findFirst().orElseThrow();
+
+        assertEquals("ZERO", cold.getVatRate(),
+                "COR-6: a zero-rated line must reach the client as ZERO, not as an assumed 20%");
+        assertEquals("STANDARD", hot.getVatRate());
+        // Non-vacuity: if the two carried the same value the assertion could not tell a real
+        // pass-through from a hardcoded constant.
+        assertNotEquals(cold.getVatRate(), hot.getVatRate());
+    }
+
     @Test
     @DisplayName("trackOrder returns status when order number and email match")
     void trackOrder_success() {
