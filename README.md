@@ -203,9 +203,9 @@ services**.
 - `/api/v1/products` - Product catalog with allergen tracking
 - `/api/v1/orders` - Order lifecycle with state machine
 - `/api/v1/customers` - Customer profiles
-- `/api/v1/financial-transactions` - Transaction tracking
+- `/api/v1/financial-transactions` - Transaction tracking (role-gated: the seed user `tenant-a-user` lacks the finance authority and correctly gets **403**)
 - `/api/v1/sync/batch` - High-volume data synchronization
-- `/api/v1/onboarding` - Vendor onboarding state machine
+- `/api/v1/onboarding` - Vendor onboarding state machine (no GET collection on this path: a bare `GET` is **405**. Use `POST /api/v1/onboarding` and `GET /api/v1/onboarding/{id}`)
 
 Not under the prefix (these 404 if you add it):
 
@@ -357,8 +357,15 @@ cd edge-go && go test ./...
 # Deploy to Kubernetes
 ./scripts/deploy.sh staging
 
-# Run smoke tests
-./scripts/smoke-test.sh
+# Run smoke tests against the environment you just deployed.
+# Both toggles default to the HARDENED PROD posture, so a bare invocation asserts that
+# Swagger and the actuator are NOT publicly reachable. Mirrors .github/workflows/ci-cd.yaml.
+EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://api-staging.olajay.co.uk   # staging
+./scripts/smoke-test.sh https://api.olajay.co.uk                               # production
+
+# Against the LOCAL compose stack both surfaces are deliberately published, so say so --
+# a bare `./scripts/smoke-test.sh` here fails 6 of 10 checks by design, not by fault:
+EXPECT_SWAGGER=true EXPECT_PUBLIC_ACTUATOR=true ./scripts/smoke-test.sh
 ```
 
 ---
