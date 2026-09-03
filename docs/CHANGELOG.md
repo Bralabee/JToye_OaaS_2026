@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### QA council `20260902-134741` remediated: 2 Criticals, the High tier, and the doc/gate drift behind them (#726) — 2026-09-03
+
+- **A documented read-only credential could write the catalogue (API-1, Critical).**
+  `SyncController` carried no `@PreAuthorize`, so `POST /api/v1/sync/batch` accepted
+  writes from the `integration-catalog-ro` credential, with a live human BOLA for any
+  explicitly-granted user. Now gated by scope + shop grant, with items validated and the
+  shop slug derived rather than trusted (also API-2, SEC-5, API-13).
+- **Vendor Sign Out left the session usable (FE-1, Critical).** `@auth/core` re-issues the
+  JWT on every session GET and the dashboard fires roughly 24 per load, so the NextAuth
+  cookie survived logout. The app session is now cleared server-side on the Keycloak
+  return leg, flagged and pre-flighted — the other half of #711.
+- **V65 closes a write-side tenant hole in the audit chain (SEC-6/N-3).** The six legacy
+  Envers `_aud` INSERT policies were `WITH CHECK (true)`; a session pinned to tenant A
+  could stamp an audit row tenant B, in the Article-17 erasure evidence chain. Read-side
+  was always tenant-scoped. The new predicate keeps an `IS NULL` arm and that arm is
+  load-bearing: Envers DELETE revisions carry `tenant_id` NULL by construction, so the
+  naive form would break every product, order and customer DELETE — the outage V11 had
+  already widened to `true` to escape.
+- **V66 separates units from lines (COR-4).** `orders.item_count` means lines, the basket
+  means units, and both rendered "{n} item(s)" — one order read "6 items" at checkout and
+  "1 item" on tracking. `unit_count` is added beside an untouched `item_count`; no
+  backfill, so NULL means "not recorded" and must never be read as 0.
+- **Also**: the VAT preview follows the basket's real rate instead of a hardcoded 20%
+  (COR-6); a malformed sort parameter is a 400 rather than a 500 (API-7); 401 answers with
+  the same RFC 7807 document as every other error (API-10); Companies House 404 parks for
+  review instead of waiving, with numbers zero-padded (INT); and the A11Y tier covers focus
+  restoration, control naming, and error association.
+- **Docs and gates, closing drift this run exposed.** `docs/metrics.json` was stale — the
+  branch added tests without regenerating it — now 3,912 logical invocations (was 3,572)
+  with 22 prose claims reconciled. `.planning/codebase/` remapped, four of its seven
+  documents having dated to 2026-04-18. `scripts/check-doc-versions.sh` gained a `Go` row:
+  it read Gin out of `go.mod` from the day it was written but never the Go directive, so it
+  passed 119 claims while every doc said Go 1.26 and the module had been on 1.27 since
+  #674 — coverage is now 147 claims across 7 docs, and the row was proven able to fail
+  before being trusted. Three pre-existing `check-doc-citations` violations in
+  `k8s/LOCAL.md` fixed; that gate runs in CI and was already red on this branch.
+
 ### Dependency-horizon gate: dated deferral for rabbitmq/4.3 so Operational Contracts stops redding every PR (#725) — 2026-09-02
 
 - **The Operational Contracts job turned red on every PR on 2026-09-02 with no
