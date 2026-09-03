@@ -31,6 +31,18 @@ package uk.jtoye.core.exception;
  * the refusal is about WHO may make the transition and WHEN, not about the value
  * being unprocessable — and because the remedy is a different endpoint
  * ({@code POST /onboarding/go-live}), which the {@code detail} names.
+ *
+ * <p><b>The detail names only remedies a caller can reach (INT-2 / INT-3, QA council
+ * 20260902-134741, adjudication A16).</b> It used to add "or the onboarding
+ * suspend/reinstate transitions to unpublish". {@code OnboardingEvent.SUSPEND} and
+ * {@code REINSTATE} are declared in the state machine and their side effects exist in
+ * {@code VendorOnboardingService.transition}, but nothing fires them — no controller, no
+ * service method, no UI — and their status is UNRECORDED (#178 closed without a rationale).
+ * A LIVE vendor who wanted to stop trading was therefore refused here, sent to a remedy that
+ * does not exist, and found no endpoint. There is currently no self-service unpublish; the
+ * detail now says so and points at support. When (and if) the endpoints ship they must be
+ * named here again; {@code PublishStateNotAcceptedExceptionTest} asserts that every path the
+ * detail names exists.
  */
 public class PublishStateNotAcceptedException extends RuntimeException {
 
@@ -41,9 +53,10 @@ public class PublishStateNotAcceptedException extends RuntimeException {
         super(("Shop.published is written only by the onboarding state machine and cannot be changed "
                 + "through this endpoint. Requested published=%s, shop is currently published=%s; the "
                 + "shop's publish state was NOT changed and no other field in this request was applied. "
-                + "Use POST /api/v1/onboarding/go-live to publish, or the onboarding "
-                + "suspend/reinstate transitions to unpublish. Re-send this update with "
-                + "published=%s (or omit the field) to save your other changes.")
+                + "To publish, use POST /api/v1/onboarding/go-live (APPROVED -> LIVE). There is currently "
+                + "no self-service unpublish: taking a live storefront down is handled by J'Toye support "
+                + "- contact support. Re-send this update with published=%s (or omit the field) to save "
+                + "your other changes.")
                 .formatted(requestedPublished, currentPublished, currentPublished));
         this.requestedPublished = requestedPublished;
         this.currentPublished = currentPublished;

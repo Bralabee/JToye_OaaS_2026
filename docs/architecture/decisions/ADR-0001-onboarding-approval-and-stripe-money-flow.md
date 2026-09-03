@@ -36,6 +36,8 @@ The two commercial models have different risk profiles:
 - **MARKETPLACE** — J'Toye is the merchant of record and hosts the storefront, so the
   platform carries the commercial and reputational risk of every vendor it lists. A human
   approval gate is warranted before a marketplace vendor can transact.
+  *(See the 2026-09-02 amendment below: under the current interim that human is an
+  employee of the applicant, so this rationale is not yet met by an independent approver.)*
 
 ### Options Considered
 
@@ -51,7 +53,8 @@ The two commercial models have different risk profiles:
 
 - **WHITE_LABEL** auto-approves (`PENDING_APPROVAL → APPROVED`) once all mandatory gates are
   `PASSED`/`WAIVED`.
-- **MARKETPLACE** always requires human approval.
+- **MARKETPLACE** always requires human approval — *performed, under the Phase 21 interim,
+  by the applicant tenant's own realm `admin` (amendment below).*
 - New config `onboarding.auto-approve-models` (default `[WHITE_LABEL]`) expresses the per-model
   policy. `onboarding.auto-approve` is retained as a **global force-on override**: when `true`,
   every model auto-approves; when `false` (the default), per-model policy applies.
@@ -70,6 +73,42 @@ The two commercial models have different risk profiles:
   skips the human review step for a fully-green application.
 - A vetoed auto-APPROVE is swallowed (WR-01): the onboarding parks at `PENDING_APPROVAL` and all
   committed gate evidence survives.
+
+### Amendment (2026-09-02, QA council 20260902-134741 — INT-5, adjudication A13)
+
+**What the rationale above assumes, and what actually runs.** Decision 1 justifies the
+MARKETPLACE human-approval gate on the grounds that "the platform carries the commercial and
+reputational risk". As shipped, the human who performs that step is **not independent of the
+applicant**:
+
+- `POST /api/v1/onboarding/admin/{id}/approve`, `/reject` and
+  `/gates/{gateType}/resolve` are gated by `@PreAuthorize("hasRole('admin')")` — the Keycloak
+  realm role — and every JWT carries a single `tenant_id` that FORCE-RLS pins all reads to.
+  There is no cross-tenant platform-operator identity, so the only actor who can approve a
+  tenant's application, or PASS its Companies House / FHRS gates, is an `admin` **of that same
+  tenant**. The compliance chain is therefore self-certified end to end (measured live: the
+  applicant's own admin took an application with an unmatchable company number and no FSA
+  match to `LIVE`, and the shop appeared on `GET /api/v1/public/shops`).
+- This is an **owner-ratified interim**, not an oversight:
+  `.planning/phases/21-onboarding-blocker-ux/21-CONTEXT.md` D-01 ("Seams now, J'Toye console
+  later" — *interim resolver = the existing tenant `admin` role*, documented explicitly as
+  interim) and D-02 (the J'Toye platform console is deferred to its own phase because it needs
+  platform-operator RBAC plus a cross-tenant RLS bypass). The Phase 21 discussion log scoped
+  that interim to *gate resolution*; it did not record that the same realm role also holds
+  `/approve`, and hence that **this Decision's risk rationale is inert until the operator console
+  ships.** That is the gap this amendment closes on paper.
+- **No authority change is made here, deliberately.** Gating approve/resolve on
+  `OPERATOR`-sourced `shop_staff` grants was weighed and rejected on measurement: zero `OPERATOR`
+  grants exist on the runtime (tenant 1 holds one `JIT` grant, tenant 2 holds none), so the gate
+  would lock **2 of 2** tenants out of ever approving anything. Refusing resolution after a
+  definitive external no-match was likewise rejected for FHRS (fuzzy name/address search — a
+  legitimate new premises is a no-match) and redirected to the Companies House gate's own
+  mapping (404 → MANUAL_REVIEW, never WAIVED; see `CompaniesHouseGate`).
+- What changes with this amendment: the vendor-facing copy on `/dashboard/onboarding` names
+  the real actor and route ("an administrator on your own account … Onboarding → Approvals")
+  instead of "our team", and this ADR now states the limitation. The independent approver
+  remains **tracked as open work in GitHub #453** (P1), which carries the operator-console
+  deferral and the reviewer-notification gap as sub-items.
 
 ---
 

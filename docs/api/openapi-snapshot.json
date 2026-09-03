@@ -5901,7 +5901,7 @@
     },
     "/api/v1/onboarding/admin/reviews" : {
       "get" : {
-        "description" : "Onboardings in VERIFYING with a MANUAL_REVIEW gate for the caller's tenant, oldest submission first, each with its gate breakdown. Distinct from /pending. Requires admin.",
+        "description" : "Onboardings carrying a MANUAL_REVIEW gate for the caller's tenant — in VERIFYING, or in ACTION_REQUIRED when another mandatory gate also FAILED — oldest submission first, each with its gate breakdown. Distinct from /pending. Requires admin.",
         "operationId" : "reviews",
         "responses" : {
           "200" : {
@@ -6016,7 +6016,7 @@
     },
     "/api/v1/onboarding/admin/{id}/gates/{gateType}/resolve" : {
       "post" : {
-        "description" : "Overrides a gate row (PASS/WAIVE/FAIL) then lets the existing recompute advance the state machine. FAIL requires a reason. Interim resolver = the tenant's own admin (D-01).",
+        "description" : "Overrides a gate row (PASS/WAIVE/FAIL) then lets the existing recompute advance the state machine. Valid while the onboarding is VERIFYING or ACTION_REQUIRED (400 otherwise). FAIL requires a reason. Interim resolver = the tenant's own admin (D-01).",
         "operationId" : "resolveGate",
         "parameters" : [
           {

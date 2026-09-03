@@ -1,9 +1,14 @@
 package uk.jtoye.core.notification.dispatch;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 import uk.jtoye.core.notification.NotificationProperties;
 import uk.jtoye.core.notification.consent.ConsentGate;
 import uk.jtoye.core.notification.consent.NotificationCategory;
@@ -16,6 +21,7 @@ import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.onboarding.OnboardingState;
 import uk.jtoye.core.onboarding.OnboardingStateChangeEvent;
+import uk.jtoye.core.onboarding.OnboardingSubmitterResolver;
 import uk.jtoye.core.payment.PaymentEvent;
 import uk.jtoye.core.payment.RefundEvent;
 import uk.jtoye.core.tenant.Tenant;
@@ -51,6 +57,8 @@ class NotificationDispatchServiceTest {
     private static final String VENDOR_EMAIL = "vendor@shop.test";
     private static final String CUSTOMER_EMAIL = "customer@buyer.test";
 
+    private Tenant tenant;
+    private OnboardingSubmitterResolver submitterResolver;
     private TenantRepository tenantRepository;
     private OrderRepository orderRepository;
     private ConsentGate consentGate;
@@ -66,7 +74,7 @@ class NotificationDispatchServiceTest {
         emailChannel = mock(EmailChannel.class);
         whatsAppSmsChannel = mock(WhatsAppSmsChannel.class);
 
-        Tenant tenant = mock(Tenant.class);
+        tenant = mock(Tenant.class);
         when(tenant.getContactEmail()).thenReturn(VENDOR_EMAIL);
         when(tenantRepository.findById(TENANT)).thenReturn(Optional.of(tenant));
 
@@ -82,7 +90,8 @@ class NotificationDispatchServiceTest {
         props.getUnsubscribe().setSigningSecret("unit-test-secret");
         props.getUnsubscribe().setBaseUrl("http://localhost:3000");
 
-        RecipientResolver resolver = new RecipientResolver(tenantRepository, orderRepository);
+        submitterResolver = mock(OnboardingSubmitterResolver.class);
+        RecipientResolver resolver = new RecipientResolver(tenantRepository, orderRepository, submitterResolver);
         service = new NotificationDispatchService(
                 resolver, consentGate, renderer, tokenService, props, emailChannel, whatsAppSmsChannel);
     }
@@ -199,6 +208,80 @@ class NotificationDispatchServiceTest {
                 .allSatisfy(m -> assertThat(m.email().html().toLowerCase()).contains("received"));
     }
 
+    // ------------------------------------------------------------------
+    // INT-4 (QA council 20260902-134741): the zero-recipient case must be OBSERVABLE.
+    // Both runtime tenants have an empty tenants.contact_email, so every vendor-directed
+    // email was dropped at DEBUG level - invisible at the default INFO - while the
+    // onboarding page promised "we'll email you".
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("INT-4: no resolvable recipient logs a WARN naming the event type and tenant (was DEBUG - silent at INFO)")
+    void noRecipient_logsWarn_notDebug() {
+        when(tenant.getContactEmail()).thenReturn("   ");
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(NotificationDispatchService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        serviceLogger.addAppender(appender);
+        Level previous = serviceLogger.getLevel();
+        serviceLogger.setLevel(Level.DEBUG);
+        try {
+            service.dispatch("order.state.changed", TENANT, orderEvent());
+        } finally {
+            serviceLogger.setLevel(previous);
+            serviceLogger.detachAppender(appender);
+        }
+
+        verify(emailChannel, never()).deliver(any());
+        assertThat(appender.list)
+                .as("the empty-recipient outcome must be a WARN, not a DEBUG")
+                .anySatisfy(e -> {
+                    assertThat(e.getLevel()).isEqualTo(Level.WARN);
+                    assertThat(e.getFormattedMessage())
+                            .contains("notification_dispatch_no_recipients")
+                            .contains("order.state.changed")
+                            .contains(TENANT.toString());
+                });
+    }
+
+    @Test
+    @DisplayName("INT-4: onboarding with a blank contact_email falls back to the SUBMITTING user's email (VENDOR role)")
+    void onboardingEvent_blankContactEmail_fallsBackToSubmitter() {
+        when(consentGate.allows(any(), any(), any())).thenReturn(true);
+        when(tenant.getContactEmail()).thenReturn("   ");
+        UUID onboardingId = UUID.randomUUID();
+        when(submitterResolver.submitterEmail(onboardingId, TENANT)).thenReturn(Optional.of("owner@shop.test"));
+        OnboardingStateChangeEvent event = new OnboardingStateChangeEvent(onboardingId, TENANT, SHOP_ID,
+                OnboardingState.VERIFYING, "Manual review required", OffsetDateTime.now());
+
+        service.dispatch("onboarding.state.changed", TENANT, event);
+
+        ArgumentCaptor<NotificationMessage> cap = ArgumentCaptor.forClass(NotificationMessage.class);
+        verify(emailChannel, times(1)).deliver(cap.capture());
+        assertThat(cap.getValue().recipient()).isEqualTo("owner@shop.test");
+    }
+
+    @Test
+    @DisplayName("INT-4: contact_email present wins — the submitter fallback is never consulted")
+    void onboardingEvent_contactEmailPresent_noFallbackLookup() {
+        when(consentGate.allows(any(), any(), any())).thenReturn(true);
+
+        service.dispatch("onboarding.state.changed", TENANT, onboardingEvent());
+
+        verify(submitterResolver, never()).submitterEmail(any(), any());
+    }
+
+    @Test
+    @DisplayName("INT-4: the fallback is onboarding-only — an order event with a blank contact_email sends nothing and never asks for a submitter")
+    void orderEvent_blankContactEmail_hasNoSubmitterFallback() {
+        when(tenant.getContactEmail()).thenReturn("");
+
+        service.dispatch("order.state.changed", TENANT, orderEvent());
+
+        verify(emailChannel, never()).deliver(any());
+        verify(submitterResolver, never()).submitterEmail(any(), any());
+    }
+
     @Test
     @DisplayName("a suppressed recipient (consent gate false) is NEVER delivered to")
     void suppressedRecipient_notDelivered() {
@@ -305,7 +388,7 @@ class NotificationDispatchServiceTest {
     @Test
     @DisplayName("order.state.* resolves exactly one VENDOR recipient; onboarding resolves exactly one vendor recipient")
     void recipientResolver_vendorOnlyFamilies() {
-        RecipientResolver resolver = new RecipientResolver(tenantRepository, orderRepository);
+        RecipientResolver resolver = new RecipientResolver(tenantRepository, orderRepository, submitterResolver);
 
         List<RecipientResolver.Recipient> order =
                 resolver.forEvent("order.state.changed", TENANT, orderEvent());
