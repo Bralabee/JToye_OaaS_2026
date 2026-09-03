@@ -82,7 +82,8 @@ cp edge-go/.env.example edge-go/.env
 # 2. Start the backing services only (Postgres, Keycloak, Redis, RabbitMQ)
 docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 
-# 3. Start backend (reads .env; runs as jtoye_app, never the jtoye superuser)
+# 3. Start backend (reads .env; connects as jtoye_runtime — jtoye_app is the Flyway migrator,
+#    jtoye the superuser; core-java refuses to boot as either)
 ./scripts/run-app.sh
 
 # 4. Start frontend (new terminal)
@@ -93,6 +94,34 @@ cd frontend && npm install && npm run dev
 > `infra/docker-compose.yml` declares its own `jtoye-postgres` / `jtoye-keycloak` containers on the
 > same host ports (5433, 8085), so it collides with the canonical stack, and it starts neither Redis
 > nor RabbitMQ — which `application.yml` expects on `localhost`.
+
+### Option 3: Hybrid — `scripts/start-dev.sh` (Postgres + Keycloak in Docker, app on the host)
+
+`scripts/start-dev.sh` does **not** start the canonical full-stack runtime, and it does not read
+`docker-compose.full-stack.yml` at all. It runs `cd infra && docker compose up -d` (Postgres +
+Keycloak only), then `./gradlew :core-java:bootRun` and `npm run dev` as **host processes**.
+`scripts/stop-dev.sh` is the matching teardown for exactly this mode.
+
+```bash
+cp infra/.env.example infra/.env   # REQUIRED — see below
+./scripts/start-dev.sh             # teardown: ./scripts/stop-dev.sh
+```
+
+> **`infra/.env` is a hard prerequisite of this mode and of nothing else.**
+> `infra/docker-compose.yml` reads `infra/.env` — **not** the repo-root `.env` — and declares
+> seven `${VAR:?}` guards (`DB_PASSWORD`, `KEYCLOAK_CLIENT_SECRET`, `EDGE_API_CLIENT_SECRET`,
+> `KC_SEED_USER_PASSWORD`, `INTEGRATION_CATALOG_RO_SECRET`, `INTEGRATION_ORDERS_RW_SECRET`,
+> `KC_ADMIN_PASSWORD`). Without the file, step 1 of `start-dev.sh` exits non-zero on all seven.
+> Note the asymmetry: the script's own preflight (`scripts/verify-env.sh`) validates the
+> **repo-root** `.env`, so a green preflight does not mean the compose file can render.
+
+Never run this mode alongside Option 1 or 2: `infra/docker-compose.yml` re-declares
+`jtoye-postgres` / `jtoye-keycloak` on the same host ports (5433, 8085), and it starts neither
+Redis nor RabbitMQ, which `application.yml` expects on `localhost`.
+
+`scripts/start-dev.sh` takes no flags of its own — every argument is forwarded to
+`scripts/verify-env.sh` and the stack is started regardless, so `start-dev.sh --help` **starts
+services**.
 
 📖 **Detailed Guide:** See [docs/guides/QUICK_START.md](docs/guides/QUICK_START.md)
 
@@ -174,9 +203,9 @@ cd frontend && npm install && npm run dev
 - `/api/v1/products` - Product catalog with allergen tracking
 - `/api/v1/orders` - Order lifecycle with state machine
 - `/api/v1/customers` - Customer profiles
-- `/api/v1/financial-transactions` - Transaction tracking
+- `/api/v1/financial-transactions` - Transaction tracking (role-gated: the seed user `tenant-a-user` lacks the finance authority and correctly gets **403**)
 - `/api/v1/sync/batch` - High-volume data synchronization
-- `/api/v1/onboarding` - Vendor onboarding state machine
+- `/api/v1/onboarding` - Vendor onboarding state machine (no GET collection on this path: a bare `GET` is **405**. Use `POST /api/v1/onboarding` and `GET /api/v1/onboarding/{id}`)
 
 Not under the prefix (these 404 if you add it):
 
@@ -328,8 +357,15 @@ cd edge-go && go test ./...
 # Deploy to Kubernetes
 ./scripts/deploy.sh staging
 
-# Run smoke tests
-./scripts/smoke-test.sh
+# Run smoke tests against the environment you just deployed.
+# Both toggles default to the HARDENED PROD posture, so a bare invocation asserts that
+# Swagger and the actuator are NOT publicly reachable. Mirrors .github/workflows/ci-cd.yaml.
+EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://api-staging.olajay.co.uk   # staging
+./scripts/smoke-test.sh https://api.olajay.co.uk                               # production
+
+# Against the LOCAL compose stack both surfaces are deliberately published, so say so --
+# a bare `./scripts/smoke-test.sh` here fails 6 of 10 checks by design, not by fault:
+EXPECT_SWAGGER=true EXPECT_PUBLIC_ACTUATOR=true ./scripts/smoke-test.sh
 ```
 
 ---

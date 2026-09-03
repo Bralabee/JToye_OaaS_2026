@@ -256,7 +256,7 @@ export function validateEnvironment(): void {
     console.warn('\n[INFO] For production use:');
     console.warn('  1. Copy frontend/.env.local.example to frontend/.env.local');
     console.warn('  2. Update values as needed');
-    console.warn('  3. See docs/ENVIRONMENT_SETUP.md for detailed guide\n');
+    console.warn('  3. See docs/guides/ENVIRONMENT_SETUP.md for detailed guide\n');
   }
 
   if (missingOptional.length > 0) {

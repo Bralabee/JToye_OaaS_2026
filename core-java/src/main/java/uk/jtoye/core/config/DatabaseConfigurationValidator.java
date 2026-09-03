@@ -112,8 +112,12 @@ public class DatabaseConfigurationValidator {
                 "CRITICAL SECURITY ERROR: Application is using PostgreSQL superuser '%s'. " +
                 "Superusers BYPASS Row-Level Security policies, making multi-tenant isolation IMPOSSIBLE. " +
                 "This creates a critical data breach vulnerability. " +
-                "Solution: Change DB_USER to 'jtoye_app' in your configuration. " +
-                "Files to update: docker-compose.full-stack.yml, core-java/.env, core-java/src/main/resources/application.yml",
+                "Solution: set DB_USER to the non-owner runtime role (jtoye_runtime), which holds " +
+                "DML grants and owns nothing; Flyway keeps the owner/migrator role via DB_MIGRATION_USER. " +
+                "NOT jtoye_app: it OWNS every public table, and validateNotTableOwner() below rejects a " +
+                "table owner for the same class of reason. Provision the role with " +
+                "infra/db/create-runtime-role.sql. " +
+                "Files to update: .env, docker-compose.full-stack.yml, k8s/base/secrets-template.yaml.example",
                 dbUsername
             );
             throw new SecurityConfigurationException(error);

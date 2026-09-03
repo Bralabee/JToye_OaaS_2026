@@ -594,5 +594,5 @@ The `tenant_id` claim is used by the backend for multi-tenant data isolation via
 
 - [Main Setup Guide](../../docs/setup/SETUP.md)
 - [Credentials Document](../../docs/CREDENTIALS.md)
-- [Docker Quick Start](../../docs/DOCKER_QUICK_START.md)
+- [Docker Quick Start](../../docs/guides/DOCKER_QUICK_START.md)
 - [Keycloak Official Docs](https://www.keycloak.org/documentation)

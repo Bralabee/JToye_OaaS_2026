@@ -15,7 +15,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 ## 2. Quick Start
 
 ### Prerequisites
-*   Java 21, Go 1.26+, Node.js 24+
+*   Java 25 (build with the bundled Gradle 9.7.1 wrapper, `./gradlew`), Go 1.26+, Node.js 24+
 *   Docker & Docker Compose
 
 ### Option A: Full-Stack Docker (Recommended)
@@ -33,17 +33,18 @@ See [DOCKER_QUICK_START.md](DOCKER_QUICK_START.md) for details.
 1.  **Configure Environment Variables**:
     ```bash
     # Copy templates (see ENVIRONMENT_SETUP.md for details)
+    cp .env.example .env          # repo root — docker-compose.full-stack.yml reads this
     cp frontend/.env.local.example frontend/.env.local
     cp core-java/.env.example core-java/.env
     cp edge-go/.env.example edge-go/.env
-    cp infra/.env.example infra/.env
+    # cp infra/.env.example infra/.env   # only for the hybrid runtime (scripts/start-dev.sh)
     ```
 
 2.  **Start Infrastructure**:
     ```bash
     docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
     ```
-    *Note: This uses `infra/.env` file. Postgres will take a few seconds to initialize on first run.*
+    *Note: `docker-compose.full-stack.yml` reads the **repo-root** `.env`, not `infra/.env`. Postgres takes a few seconds to initialise on first run.*
 
 3.  **Run Backend (Core)**:
     ```bash

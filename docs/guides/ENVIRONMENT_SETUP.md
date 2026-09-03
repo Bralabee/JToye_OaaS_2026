@@ -86,11 +86,17 @@ docker compose -f docker-compose.full-stack.yml up postgres keycloak redis rabbi
 ```bash
 # Prerequisites:
 # - PostgreSQL 15+ installed and running on port 5432
-# - Database 'jtoye' created with user 'jtoye_app'
+# - Database 'jtoye' created with the runtime role 'jtoye_runtime' (DB_USER) and the
+#   owner/migrator role 'jtoye_app' (DB_MIGRATION_USER) — infra/db/create-runtime-role.sql
 # - Keycloak installed and running on port 8085
 
-# Run core-java locally (default profile uses port 5432)
-./gradlew bootRun
+# Run core-java locally. Use the launcher — it sources .env then core-java/.env and
+# fails loudly on a missing/forbidden DB_USER, which a bare bootRun does not.
+./scripts/run-app.sh
+
+# Equivalent by hand (all three are required; DB_PORT alone leaves the base default
+# role and an EMPTY password, which does not authenticate):
+#   DB_PORT=5432 DB_USER=jtoye_runtime DB_PASSWORD="$DB_PASSWORD" ./gradlew :core-java:bootRun
 ```
 
 ### Configuration Summary
@@ -100,11 +106,15 @@ docker compose -f docker-compose.full-stack.yml up postgres keycloak redis rabbi
 | **Spring Profile** | `local` | (none/default) |
 | **DB_HOST** | `localhost` | `localhost` |
 | **DB_PORT** | `5433` | `5432` |
-| **DB_USER** | `jtoye_app` ⚠️ | `jtoye_app` ⚠️ |
+| **DB_USER** | `jtoye_runtime` | `jtoye_runtime` |
+| **DB_MIGRATION_USER** | `jtoye_app` (Flyway only) | `jtoye_app` (Flyway only) |
 | **PostgreSQL** | Docker container | Local installation |
 | **Keycloak** | Docker container (8085) | Local installation (8085) |
 
-⚠️ **CRITICAL SECURITY:** Never use `jtoye` superuser for application - it bypasses RLS!
+⚠️ **CRITICAL SECURITY:** Never use the `jtoye` superuser for the application — it bypasses RLS.
+And do not use `jtoye_app` either: it OWNS the public tables, and `DatabaseConfigurationValidator`
+refuses to boot as a table owner. The application role is `jtoye_runtime`; `jtoye_app` is reached
+only through `DB_MIGRATION_USER`, by Flyway.
 
 ---
 
@@ -250,8 +260,10 @@ NEXTAUTH_SECRET=your-nextauth-secret-change-in-production
 DB_HOST=localhost
 DB_PORT=5433
 DB_NAME=jtoye
-DB_USER=jtoye_app
+DB_USER=jtoye_runtime
 DB_PASSWORD=CHANGE_ME
+DB_MIGRATION_USER=jtoye_app
+DB_MIGRATION_PASSWORD=CHANGE_ME
 
 # Server
 SERVER_PORT=9090
@@ -300,8 +312,10 @@ PORT=8080
 DB_HOST=postgres
 DB_PORT=5432
 DB_NAME=jtoye
-DB_USER=jtoye_app
+DB_USER=jtoye_runtime
 DB_PASSWORD=CHANGE_ME
+DB_MIGRATION_USER=jtoye_app
+DB_MIGRATION_PASSWORD=CHANGE_ME
 
 # Keycloak
 KC_ADMIN=admin
@@ -353,12 +367,12 @@ docker compose -f docker-compose.full-stack.yml up
 
 **Option B: Local Development**
 ```bash
-# 1. Start infrastructure
-cd infra
-docker compose up -d
+# 1. Start the backing services from the CANONICAL compose file.
+#    Not `cd infra && docker compose up -d` — that profile collides on ports
+#    5433/8085 and starts neither Redis nor RabbitMQ (see Mode 1 above, and README.md).
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 
 # 2. Start backend (uses core-java/.env)
-cd ..
 ./scripts/run-app.sh
 
 # 3. Start frontend (uses frontend/.env.local)
@@ -402,7 +416,7 @@ Connection refused: localhost:5433
    docker ps | grep postgres
    ```
 2. Check `DB_PORT=5433` in `core-java/.env`
-3. Ensure `infra/docker-compose.yml` is running:
+3. Ensure the backing services are running:
    ```bash
    docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
    ```
@@ -460,7 +474,7 @@ unknown variable
 
 **Solution:**
 1. For `docker-compose.full-stack.yml`: create the repo-root `.env` from `.env.example` — 18 variables are hard-required
-2. For `infra/docker-compose.yml`: Create `infra/.env`
+2. For `infra/docker-compose.yml` (the hybrid runtime `scripts/start-dev.sh` drives): create `infra/.env` from `infra/.env.example`
 3. Check file encoding is UTF-8 (not UTF-16)
 
 ---

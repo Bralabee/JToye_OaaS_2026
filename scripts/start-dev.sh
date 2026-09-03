@@ -1,6 +1,22 @@
 #!/bin/bash
-# Start J'Toye OaaS Development Environment
-# This script starts all services in the correct order
+# Start the J'Toye OaaS HYBRID development runtime.
+#
+# This is NOT the canonical full-stack Compose runtime and it never reads
+# docker-compose.full-stack.yml. It starts:
+#   1. infra/docker-compose.yml  — Postgres + Keycloak ONLY, in Docker.
+#                                  That file reads infra/.env, NOT the repo-root .env,
+#                                  and declares seven ${VAR:?} guards; without infra/.env
+#                                  step 1 fails. The preflight below validates the
+#                                  REPO-ROOT .env, so a green preflight does not prove
+#                                  the compose file can render.
+#   2. ./gradlew :core-java:bootRun  — as a HOST process.
+#   3. npm run dev (frontend)        — as a HOST process.
+# Teardown: scripts/stop-dev.sh (its "HYBRID" arm pairs with this script).
+# Never run alongside docker-compose.full-stack.yml: both bind host ports 5433 and 8085.
+#
+# FLAGS: this script has none of its own. Every argument is forwarded to
+# scripts/verify-env.sh (see below) and the stack is then started REGARDLESS, so
+# `start-dev.sh --help` STARTS SERVICES. Adding real flag handling is tracked separately.
 
 set -e
 

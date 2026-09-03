@@ -145,7 +145,7 @@ Environment Configuration & Profiles
   - `core-java/.env` (from `core-java/.env.example`)
   - `edge-go/.env` (from `edge-go/.env.example`)
   - `infra/.env` (from `infra/.env.example`)
-- 📋 See `docs/ENVIRONMENT_SETUP.md` for comprehensive setup instructions
+- 📋 See `docs/guides/ENVIRONMENT_SETUP.md` for comprehensive setup instructions
 - 🚫 NEVER commit `.env`, `.env.local`, or any file containing actual credentials
 - ✅ ALWAYS commit `.env.example`, `.env.local.example` templates
 - Frontend has environment validation at startup (`frontend/instrumentation.ts`) - fails fast if config missing
