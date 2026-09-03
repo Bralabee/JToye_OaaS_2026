@@ -54,7 +54,13 @@ cd "$ROOT"
 # Gradle rows below existed NOTHING anywhere checked a JDK claim, including README's
 # correct one. ORDERING MATTERS: the rows come first. Added to DOCS before the rows exist,
 # both files yield ZERO claims and the vacuity guard VOIDs the whole gate -- measured.
-DOCS=(CLAUDE.md AGENTS.md .planning/codebase/STACK.md README.md docs/setup/SETUP.md docs/guides/QUICK_START.md)
+# docs/architecture/ESSENTIAL_ARCHITECTURE.md was added 2026-09-03, alongside the Go row
+# below. Its stack section carried "JDK 21 (JDK 25 breaks Gradle 8.10)" and "Next.js 16.2.12"
+# under a heading reading "The stack (fixed -- do not migrate without a decision)", and its
+# opening summary called the core JDK 21 -- three stale claims in the one doc a reader is
+# most likely to treat as authoritative, none of them checked by anything. Adding the file
+# took the gate from 119 claims over 6 docs to 147 over 7.
+DOCS=(CLAUDE.md AGENTS.md .planning/codebase/STACK.md README.md docs/setup/SETUP.md docs/guides/QUICK_START.md docs/architecture/ESSENTIAL_ARCHITECTURE.md)
 
 GRADLE="core-java/build.gradle.kts"
 ROOT_GRADLE="build.gradle.kts"
@@ -109,6 +115,25 @@ gin_version() {
 		head -1 | sed 's/.* v//'
 }
 
+go_version() {
+	# The `go` DIRECTIVE in edge-go/go.mod, reported as MAJOR.MINOR.
+	#
+	# WHY THIS ROW EXISTS. This gate read Gin out of go.mod from the day it was written but
+	# never the Go version itself, so on 2026-09-03 it passed 119 claims across 6 docs while
+	# every one of those docs said "Go 1.26" and the module had been on 1.27 since 5c1bb364
+	# (#674, merged 2026-08-30). 31 stale references across 14 files, past a green gate --
+	# the same shape as the Java/Gradle hole INT-18 closed a few hours earlier, and the same
+	# shape as the Axios hole the -i widening found. A gate is blind to exactly what it was
+	# never told to look at.
+	#
+	# TWO-PART NORMALISATION IS THE WHOLE TRICK. go.mod carries three parts (`go 1.27.0`)
+	# while every consumer of the fact carries two -- the docs ("Go 1.27", "Go 1.27+"), the
+	# Dockerfile tag (`golang:1.27-alpine`, written "Go: 1.27-alpine" in the stack lists) and
+	# the actions/setup-go pin ('1.27'). Reporting MAJOR.MINOR lets ONE row cover every form
+	# the prose actually uses; a three-part actual would have failed each two-part claim.
+	command grep -oE '^go [0-9]+\.[0-9]+' "$GOMOD" | head -1 | sed 's/^go //'
+}
+
 # --- the claim table ---------------------------------------------------------
 #
 # Each row: label | ERE matching the doc claim | actual version.
@@ -128,6 +153,14 @@ SPECS=(
 	# lower than the pin is correct rather than stale.
 	"Java|(Java|JDK) [0-9]+|$(java_toolchain)"
 	"Gradle|Gradle [0-9]+\.[0-9]+\.[0-9]+|$(gradle_wrapper_version)"
+	# The Go row (2026-09-03). Accepts the three forms the docs use -- "Go 1.27",
+	# "Go 1.27+" and "Go: 1.27-alpine" -- because the ERE stops at MAJOR.MINOR and the
+	# comparison normalises to the last whitespace-delimited token. UNLIKE the Gradle row
+	# the floor form IS matched: "Go 1.27+" reduces to 1.27, which is a true claim today and
+	# a claim worth re-reading the day the pin moves. `:?` covers the "Go: 1.27-alpine" list
+	# form; matching is already case-insensitive, so the lowercase `go 1.27.0` in README's
+	# go.mod citation is caught by the same row.
+	"Go|Go:? [0-9]+\.[0-9]+|$(go_version)"
 	"Spring Boot|Spring Boot[ A-Za-z]*:? ?[0-9]+\.[0-9]+\.[0-9]+|$(boot_version)"
 	"Testcontainers|Testcontainers [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.testcontainers:testcontainers')"
 	"MapStruct|MapStruct [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.mapstruct:mapstruct')"

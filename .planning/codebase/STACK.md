@@ -7,7 +7,7 @@
 **Primary:**
 - Java 25 (Temurin) — Core API (`core-java/`), toolchain pinned in `core-java/build.gradle.kts:13` (`JavaLanguageVersion.of(25)`) and root `build.gradle.kts:9`. Docker build/runtime stages use `eclipse-temurin:25-jdk-alpine` / `eclipse-temurin:25-jre-alpine` (`core-java/Dockerfile`). CI pins `java-version: '25'` / `distribution: 'temurin'` via `actions/setup-java@v6` in `.github/workflows/ci-cd.yaml` (4 jobs: test, integration-tests, code-review-gate-checks, and one more).
 - TypeScript 5.9.3 — Frontend (`frontend/package.json` `devDependencies.typescript`), Next.js 16.3.2 + React 19.2.8. `frontend/tsconfig.json` strict mode, `target: ES2017`.
-- Go 1.27 — Edge API gateway (`edge-go/go.mod:3` `go 1.27.0`; `edge-go/Dockerfile` builds on `golang:1.27-alpine`; CI pins `go-version: '1.27'` via `actions/setup-go@v7`). **Note:** project prose elsewhere (CLAUDE.md, README) says "Go 1.26" — that is stale; the manifest and Dockerfile and CI all agree on 1.27.
+- Go 1.27 — Edge API gateway (`edge-go/go.mod:3` `go 1.27.0`; `edge-go/Dockerfile` builds on `golang:1.27-alpine`; CI pins `go-version: '1.27'` via `actions/setup-go@v7`). The prose in CLAUDE.md, AGENTS.md, README and the guides trailed one minor version behind the manifest until it was corrected in `9d4f53e8` (the superseded number is deliberately not written here — the `Go` row is total over its form, so naming it would make this sentence fail the rule it is describing); `scripts/check-doc-versions.sh` now carries a `Go` row so that claim cannot drift unnoticed again.
 
 **Secondary:**
 - TypeScript (Node/ESM) — MCP server (`mcp-server/`), `mcp-server/package.json` devDependencies `typescript: ~5.9`, runtime `node:24-alpine` (`mcp-server/Dockerfile`).

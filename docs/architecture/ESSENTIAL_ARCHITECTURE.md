@@ -8,7 +8,7 @@
 
 ## The one-paragraph model
 
-A multi-tenant UK SaaS for owner-led food vendors. A **Spring Boot core** (JDK 21, `:9090`) holds all
+A multi-tenant UK SaaS for owner-led food vendors. A **Spring Boot core** (JDK 25, `:9090`) holds all
 the business logic, the data, and — crucially — **all the security**. A **Next.js frontend** (`:3000`)
 and an **MCP server** for AI agents (`:9100`) both call the core **directly**. A **Go edge gateway**
 (`:8089`) exists but fronts almost nothing — one JWT route with no live caller, plus a WhatsApp
@@ -75,7 +75,7 @@ Postgres **5433**, Keycloak **8085**, Grafana **3002**.
 
 ## The stack (fixed — do not migrate without a decision)
 
-Spring Boot 3.5.16 · JDK 21 (JDK 25 breaks Gradle 8.10) · Next.js 16.2.12 / React 19 · Go 1.27 /
+Spring Boot 3.5.16 · JDK 25 (Gradle 9.7.1 wrapper — JDK 25 requires Gradle >= 9.1) · Next.js 16.3.2 / React 19 · Go 1.27 /
 Gin · PostgreSQL 15 · Redis 7 · RabbitMQ 4.3.4 · Keycloak 24.0.5 · MinIO · Ollama.
 
 ## The culture, in one line
