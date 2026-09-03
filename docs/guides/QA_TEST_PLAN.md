@@ -192,10 +192,12 @@ git status
 **Step 2: Start Infrastructure**
 
 ```bash
-cd infra
-docker compose up -d
-cd ..
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 ```
+
+> Not `cd infra && docker compose up -d`: that profile re-declares `jtoye-postgres` /
+> `jtoye-keycloak` on the same host ports (5433, 8085) and starts neither Redis nor RabbitMQ.
+> It is the hybrid runtime `scripts/start-dev.sh` drives, not the canonical one.
 
 **Verification:**
 ```bash

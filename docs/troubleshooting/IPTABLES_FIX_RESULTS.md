@@ -182,7 +182,7 @@ Update `docs/FRESH_CLONE_TEST_RESULTS.md` with:
 During testing, we encountered an issue with `docker-compose.full-stack.yml` where Keycloak failed to connect to Postgres with "Acquisition timeout" errors. This appears to be a Keycloak 24.x connection pool issue unrelated to the iptables fix.
 
 **Workaround:**
-- Start infrastructure separately: `cd infra && docker compose up -d`
+- Start infrastructure separately. Use the canonical file — `docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq` — not `cd infra && docker compose up -d`, which collides with it on host ports 5433/8085 and starts neither Redis nor RabbitMQ
 - Then start backend/frontend services individually
 - This approach is more debuggable and follows microservices principles
 

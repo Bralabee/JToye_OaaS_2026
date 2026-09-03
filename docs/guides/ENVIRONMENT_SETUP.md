@@ -353,12 +353,12 @@ docker compose -f docker-compose.full-stack.yml up
 
 **Option B: Local Development**
 ```bash
-# 1. Start infrastructure
-cd infra
-docker compose up -d
+# 1. Start the backing services from the CANONICAL compose file.
+#    Not `cd infra && docker compose up -d` — that profile collides on ports
+#    5433/8085 and starts neither Redis nor RabbitMQ (see Mode 1 above, and README.md).
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 
 # 2. Start backend (uses core-java/.env)
-cd ..
 ./scripts/run-app.sh
 
 # 3. Start frontend (uses frontend/.env.local)
@@ -402,7 +402,7 @@ Connection refused: localhost:5433
    docker ps | grep postgres
    ```
 2. Check `DB_PORT=5433` in `core-java/.env`
-3. Ensure `infra/docker-compose.yml` is running:
+3. Ensure the backing services are running:
    ```bash
    docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
    ```
@@ -460,7 +460,7 @@ unknown variable
 
 **Solution:**
 1. For `docker-compose.full-stack.yml`: create the repo-root `.env` from `.env.example` — 18 variables are hard-required
-2. For `infra/docker-compose.yml`: Create `infra/.env`
+2. For `infra/docker-compose.yml` (the hybrid runtime `scripts/start-dev.sh` drives): create `infra/.env` from `infra/.env.example`
 3. Check file encoding is UTF-8 (not UTF-16)
 
 ---
