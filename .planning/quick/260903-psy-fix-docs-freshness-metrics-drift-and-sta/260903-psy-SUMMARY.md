@@ -64,17 +64,57 @@ STACK.md / INTEGRATIONS.md), 3 were pre-existing line drift in `k8s/LOCAL.md`
 (`configmap.yaml:145`->`166`, `application.yml:442`->`456` x2 — the claimed
 content had simply moved). All 7 fixed.
 
-## Known gate blind spot (NOT closed — needs a decision)
+## Gate blind spot — CLOSED in follow-up `26adae32`
 
-`scripts/check-doc-versions.sh` reads Gin from `edge-go/go.mod` but never the Go
-version itself, which is why 119 version claims passed while every doc said 1.26.
-Nothing prevents this regressing. A rule would close it; not added unasked.
+`scripts/check-doc-versions.sh` read Gin from `edge-go/go.mod` but never the Go
+directive, which is why 119 version claims passed while every doc said 1.26.
 
-## Adjacent stale claims found, NOT fixed (out of scope)
+`go_version()` + a `Go` SPECS row now close it. The row reports MAJOR.MINOR, and
+that normalisation is the whole trick: go.mod carries three parts (`go 1.27.0`)
+while every consumer carries two — the docs (`Go 1.27`, `Go 1.27+`), the
+Dockerfile tag (`golang:1.27-alpine`, written `Go: 1.27-alpine` in stack lists)
+and the `actions/setup-go` pin. One row covers every form; a three-part actual
+would have failed each two-part claim. Unlike the Gradle row the floor form IS
+matched, since `Go 1.27+` reduces to 1.27.
 
-- `docs/architecture/ESSENTIAL_ARCHITECTURE.md:78` — "JDK 21 (JDK 25 breaks
-  Gradle 8.10)" and "Next.js 16.2.12". The tree is JDK 25 / Gradle 9.7.1 /
-  Next 16.3.2. Only the Go clause on that line was corrected.
-- `.github/workflows/base-image-freshness.yml:9` — still names
-  `eclipse-temurin:21-jre-alpine`; `core-java/Dockerfile:27` is `25-jre-alpine`.
-- `docs/architecture/ARCHITECTURE.md:265` — "63 migrations" in a dated row.
+**It found a real defect on its first run**, which is the only reason to trust it:
+`STACK.md` still carried the superseded number inside a note *about* the stale
+prose. The row is total over its form, so a sentence naming the old version fails
+the rule it describes — the "a doc rule must not name the token it forbids" shape.
+The note now states the fact without writing the number, and says why.
+
+### Proof bracket — clean → 3 arms → clean, restores verified by content hash
+
+Run AFTER committing, so the restore target was a committed state.
+
+| Step | Expect | Got |
+|---|---|---|
+| opening clean | rc=0 | rc=0 |
+| arm A — `CLAUDE.md` plain form `Go 1.27` → 1.26 | rc=1 | rc=1, `DRIFT Go doc=1.26 actual=1.27` under `== CLAUDE.md ==` |
+| arm B — `AGENTS.md` list form `Go: 1.27-alpine` → 1.26 | rc=1 | rc=1, same row (proves the `:?` form is matched, not just the plain one) |
+| arm C — newly-added doc's `JDK 25` → 21 | rc=1 | rc=1, `DRIFT Java doc=21 actual=25` (proves the new DOCS entry is really read) |
+| closing clean | rc=0 | rc=0 |
+
+Restores confirmed by sha256 against pre-arm baselines (`7ab6068d5ed4a518`,
+`c50f46ca662429bc`, `22f4271a8a9b76e4`), never by `git diff --stat`.
+
+## Adjacent stale claims — FIXED in follow-up `26adae32`
+
+- `docs/architecture/ESSENTIAL_ARCHITECTURE.md` — "JDK 21 (JDK 25 breaks Gradle
+  8.10)" → "JDK 25 (Gradle 9.7.1 wrapper — JDK 25 requires Gradle >= 9.1)", and
+  "Next.js 16.2.12" → 16.3.2. A THIRD stale claim surfaced only once the doc was
+  put under the gate: its opening summary called the core JDK 21. Three wrong
+  claims in the doc a reader is most likely to treat as authoritative, under a
+  heading reading "The stack (fixed — do not migrate without a decision)".
+  The file now sits in the gate's `DOCS` list: coverage 119 claims/6 docs → 147/7.
+- `.github/workflows/base-image-freshness.yml:9` — `eclipse-temurin:21-jre-alpine`
+  → `25-jre-alpine` (`core-java/Dockerfile:27`).
+
+### Still NOT fixed, deliberately
+
+- `docs/architecture/ARCHITECTURE.md:265` — "63 migrations" sits in a row under
+  the header "Reality (measured 2026-08-19)", the same dated-measurement class as
+  the Go references left alone above. Correct as of its stated date.
+- `docs/architecture/ARCHITECTURE.md` is NOT in the gate's `DOCS` list, because it
+  deliberately contains historical version rows that a total-over-form rule would
+  flag. Bringing it in needs a per-row exclusion first, not a one-word edit.
