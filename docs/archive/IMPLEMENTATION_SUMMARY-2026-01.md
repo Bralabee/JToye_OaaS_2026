@@ -1,5 +1,15 @@
 # Implementation Summary - Production-Ready Enhancements
 
+> **⚠ Historical record (superseded — do not follow the "Verify Implementation" commands).**
+>
+> This is a point-in-time report, not a live guide. Its verification block calls
+> `scripts/dev.sh` (which does not exist) and targets ports 8080 / 8081 / 8090, which are now
+> 9090 / 8085 / 8089, without the `/api/v1` prefix the business API is served under.
+>
+> Kept for provenance. For the live first-run path see `README.md` § Quick Start and
+> `docs/guides/QUICK_START.md`.
+
+
 ## Overview
 All recommended actions from the comprehensive project review have been successfully implemented, transforming the J'Toye OaaS scaffolding into a **production-ready, secure, multi-tenant UK retail SaaS platform**.
 

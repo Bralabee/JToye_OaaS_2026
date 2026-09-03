@@ -185,7 +185,7 @@ history, and prefer the current docs above when they disagree.
 |---|---|---|
 | [status/](status/) | 9 | Point-in-time implementation summaries, session handoffs, project-status snapshots |
 | [planning/](planning/) | 9 | Superseded roadmaps and phase plans. **Live planning is `.planning/` at the repo root**, not here |
-| [setup/](setup/) | 5 (2 indexed above) | Historic setup verification, test results, implementation summaries |
+| [setup/](setup/) | 2 (both indexed above) | Machine and IDE setup. The three point-in-time documents that used to live here (a verification checklist, a 2025-12-30 test-run record and an implementation summary) were moved to `archive/` by QA run 20260902-134741: their commands targeted retired ports and a script that no longer exists |
 | [reports/](reports/) | 5 (4 indexed above) | `GAP_ANALYSIS.md` and `QA_IMPLEMENTATION_V1.0.0.md` are dated snapshots |
 | [archive/](archive/) | — | Explicitly archived documentation |
 
