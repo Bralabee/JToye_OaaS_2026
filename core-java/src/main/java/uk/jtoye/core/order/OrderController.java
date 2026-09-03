@@ -66,6 +66,34 @@ public class OrderController {
     @PostMapping
     @Idempotent(endpoint = "orders.create")
     @Operation(summary = "Create a new order", description = "Creates an order with items for the authenticated tenant. Supply an Idempotency-Key header to make a retried POST safe: a repeated key replays the original order and never creates a duplicate row.")
+    @ApiResponses(value = {
+            // API-5 (QA council 20260902-134741): the declared set was springdoc's inferred
+            // "200" alone, while this endpoint has never returned 200. Every code below was
+            // read off the handler and GlobalExceptionHandler, not copied from a template.
+            @ApiResponse(responseCode = "201",
+                    description = "Order created. A repeated Idempotency-Key replays the original "
+                            + "order and echoes this same 201 - never a second row."),
+            @ApiResponse(responseCode = "400",
+                    description = "Request validation failed (errors/validation), or a rejected value "
+                            + "such as ordering more units than the product has in stock "
+                            + "(errors/invalid-argument)"),
+            @ApiResponse(responseCode = "401",
+                    description = "No bearer token, or one that is expired or invalid "
+                            + "(errors/unauthorized)"),
+            @ApiResponse(responseCode = "403",
+                    description = "Token lacks the orders:write scope (errors/forbidden), or the caller "
+                            + "holds no SHOP_MANAGER grant on the target shop "
+                            + "(errors/shop-access-denied)"),
+            @ApiResponse(responseCode = "404",
+                    description = "The shop, customer or a product in the basket does not exist for "
+                            + "this tenant (errors/not-found)"),
+            @ApiResponse(responseCode = "409",
+                    description = "A request with this Idempotency-Key is still in flight "
+                            + "(errors/idempotency-conflict)"),
+            @ApiResponse(responseCode = "422",
+                    description = "Idempotency-Key reused with a different payload "
+                            + "(errors/idempotency-payload-mismatch)")
+    })
     public ResponseEntity<OrderDto> createOrder(
             @Valid @RequestBody CreateOrderRequest request,
             // Hidden from springdoc: IdempotencyHeaderCustomizer advertises the rich
