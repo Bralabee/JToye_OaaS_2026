@@ -168,10 +168,15 @@ ORD-a1b2c3d4-e5f6-7890-abcd-ef1234567890
 
 ## Benefits Analysis
 
-### 1. Tenant Awareness ✅
+### 1. Tenant Awareness ✅ (with one caveat — COR-8, 2026-09-02)
 - **Before:** No way to identify tenant from order number
 - **After:** First 8 hex chars immediately identify tenant
 - **Use Case:** Customer support can quickly identify which tenant owns an order
+- **Caveat, so nobody tests this benefit on dev and concludes it works:** the seeded dev/compose
+  tenants are `00000000-0000-…-0001` and `00000000-0000-…-0002`, so **both share the prefix
+  `00000000`** and the prefix discriminates nothing there. The benefit is real only with the
+  random tenant UUIDs a real deployment mints. See also the Security Considerations section: this
+  prefix is a **customer-facing public** value, not an internal one.
 
 ### 2. Chronological Sorting ✅
 - **Before:** Random UUID provided no ordering
@@ -317,8 +322,24 @@ assertTrue(result.isPresent()); // ✅ PASSES
 ### Information Disclosure
 - **Risk:** Tenant prefix reveals partial tenant UUID
 - **Mitigation:** Only first 8 characters exposed (out of 32)
-- **Assessment:** Low risk - tenant IDs are internal identifiers
-- **Recommendation:** Acceptable for internal system
+- **Assessment:** Low risk — 32 bits of a 128-bit identifier, which is not a credential; RLS is
+  the actual tenant boundary, and tenant ids already travel in `X-Tenant-Id` and in JWT claims.
+- **~~Recommendation: Acceptable for internal system~~ — CORRECTED (COR-8, 2026-09-02).** The
+  order number is **not on an internal system**. It is:
+  1. returned by the **unauthenticated** `GET /api/v1/public/orders/{orderNumber}`;
+  2. in the **subject line of every notification email** (`EmailNotificationService` — Received,
+     Confirmed, Preparing, Ready, Completed, Cancelled);
+  3. in **every tracking deep-link**, as a URL query parameter (`/track?order=...`).
+
+  The **conclusion (low risk) stands** and is re-affirmed here; only the reasoning was wrong. The
+  correction matters because a future format decision that starts from "this is internal" would
+  start from a false premise. Recommendation, restated: **acceptable for a customer-facing public
+  identifier**, on the grounds above — not because it is internal.
+- **Format change: rejected, not deferred (adjudication A11).** Every parser of `ORD-…` is blast
+  radius: two live unique constraints over existing rows, `probes/oracle-ordernumber.sh`'s
+  `^ORD-[0-9A-F]{8}-[0-9]{8}-[0-9A-F]{8}$` assertion, every email subject, the tracking deep-link,
+  and any vendor's own records. That is a high-cost change bought for a risk this section already
+  assessed as low and accepted.
 
 ### Predictability
 - **Risk:** Date component is predictable
