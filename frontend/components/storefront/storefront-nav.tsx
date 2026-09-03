@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { useParams, usePathname } from "next/navigation"
 import { m } from "framer-motion"
@@ -9,7 +9,25 @@ import { cn } from "@/lib/utils"
 import { springPop } from "@/lib/motion"
 import { useCartCount } from "@/hooks/use-cart-count"
 import { useCustomerSession } from "@/hooks/use-customer-session"
-import { customerLogout } from "@/lib/customer-auth"
+import { customerIdpSignOut, customerLogout } from "@/lib/customer-auth"
+import { hasRememberedSignIn } from "@/lib/cart-identity"
+
+/**
+ * FE-5 — subscribe to the "a sign-in happened here and nobody signed out since"
+ * stamp so it can be read SYNCHRONOUSLY during render (no mount-time setState,
+ * the same reason `lib/customer-session-store` is an external store). `storage`
+ * fires only in OTHER documents of the origin; same-document changes arrive
+ * through re-renders the session store already causes, and `getSnapshot` is
+ * re-read on each of those. The server snapshot is a literal `false`: every
+ * render here is a server render first, and the server cannot know this
+ * browser's history — nor may it emit anything that looks as if it does.
+ */
+function subscribeToStorage(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {}
+  window.addEventListener("storage", onChange)
+  return () => window.removeEventListener("storage", onChange)
+}
+const noRememberedSignInOnServer = () => false
 import {
   Sheet,
   SheetClose,
@@ -42,6 +60,27 @@ export function StorefrontNav() {
   const handleSignOut = async () => {
     setSigningOut(true)
     await customerLogout()
+  }
+  // FE-5 (QA council 20260902-134741): "Not you? Sign out". Offered only when
+  // the session is UNAUTHENTICATED and this browser remembers a sign-in nobody
+  // explicitly signed out of — the honest proxy for "the previous person's
+  // Keycloak SSO cookies are probably still alive on the IdP host", which
+  // nothing on this origin can read directly. Without it, the next person's
+  // "Create an account" dead-ended on Keycloak's "already authenticated as
+  // different user" page (0 links, 0 buttons, 0 forms, A's email shown).
+  // An EXPLICIT sign-out: `customerIdpSignOut` tears down the stamp and the
+  // baskets (#459) — a lapse alone never reaches it, so R-16 holds.
+  // Same busy contract as `handleSignOut` (WR-06): busy until the document
+  // goes away, never reset on promise resolution.
+  const rememberedSignIn = useSyncExternalStore(
+    subscribeToStorage,
+    hasRememberedSignIn,
+    noRememberedSignInOnServer
+  )
+  const offerNotYou = !profile && rememberedSignIn
+  const handleIdpSignOut = async () => {
+    setSigningOut(true)
+    await customerIdpSignOut("/shop/signin")
   }
   const pathname = usePathname()
   const params = useParams<{ slug?: string }>()
@@ -183,18 +222,38 @@ export function StorefrontNav() {
           </button>
         </div>
       ) : (
-        // A Link to the sign-in page, not a button firing customerLogin() at
-        // Keycloak. The bare redirect left a shopper with no landing destination:
-        // nothing to bookmark, nothing to come back to when a session expired, and
-        // no visible route to the vendor page if they had guessed wrong. `pathname`
-        // comes from usePathname() rather than window so it is stable during SSR.
-        <Link
-          href={`/shop/signin?next=${encodeURIComponent(pathname || "/shop")}`}
-          className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors"
-        >
-          <User className="h-3 w-3" />
-          Sign in
-        </Link>
+        <div className="flex items-center gap-3">
+          {/* FE-5: the explicit way out of a previous person's lingering SSO
+              session. Desktop row only (>=sm) — the sheet below carries the
+              mobile copy, the same split as every other secondary control
+              here. Subordinate by design: plain text beside the Sign-in pill,
+              never a competing button. No `title="Sign out"`: the e2e scripts
+              locate the SIGNED-IN control by that title and must not find this. */}
+          {offerNotYou && (
+            <button
+              type="button"
+              onClick={handleIdpSignOut}
+              disabled={signingOut}
+              aria-busy={signingOut}
+              className="hidden sm:inline-flex items-center gap-1 text-xs text-slate-500 hover:text-oxblood transition-colors disabled:opacity-60"
+            >
+              <LogOut className="h-3 w-3" aria-hidden="true" />
+              Not you? Sign out
+            </button>
+          )}
+          {/* A Link to the sign-in page, not a button firing customerLogin() at
+              Keycloak. The bare redirect left a shopper with no landing destination:
+              nothing to bookmark, nothing to come back to when a session expired, and
+              no visible route to the vendor page if they had guessed wrong. `pathname`
+              comes from usePathname() rather than window so it is stable during SSR. */}
+          <Link
+            href={`/shop/signin?next=${encodeURIComponent(pathname || "/shop")}`}
+            className="inline-flex items-center gap-1.5 rounded-full bg-oxblood px-3 py-1.5 text-xs font-medium text-white hover:bg-oxblood-700 transition-colors"
+          >
+            <User className="h-3 w-3" />
+            Sign in
+          </Link>
+        </div>
       )}
 
       {/* Mobile hamburger (<sm) — same idiom as PublicHeader. The sheet is a
@@ -247,6 +306,22 @@ export function StorefrontNav() {
                     Track order
                   </Link>
                 </SheetClose>
+                {/* FE-5 — the mobile copy of "Not you? Sign out" (the desktop
+                    row's is `hidden` below sm). The sheet stays open on purpose:
+                    the tap navigates the whole document away, and closing first
+                    would only flash the page underneath. */}
+                {offerNotYou && (
+                  <button
+                    type="button"
+                    onClick={handleIdpSignOut}
+                    disabled={signingOut}
+                    aria-busy={signingOut}
+                    className={cn(mobileLink(false), "w-full gap-2 text-left disabled:opacity-60")}
+                  >
+                    <LogOut className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                    Not you? Sign out
+                  </button>
+                )}
               </>
             )}
             {profile && (
