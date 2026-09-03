@@ -235,7 +235,7 @@ export function StorefrontNav() {
               onClick={handleIdpSignOut}
               disabled={signingOut}
               aria-busy={signingOut}
-              className="hidden sm:inline-flex items-center gap-1 text-xs text-slate-500 hover:text-oxblood transition-colors disabled:opacity-60"
+              className="hidden sm:inline-flex items-center gap-1 text-xs text-slate-600 hover:text-oxblood transition-colors disabled:opacity-60"
             >
               <LogOut className="h-3 w-3" aria-hidden="true" />
               Not you? Sign out
