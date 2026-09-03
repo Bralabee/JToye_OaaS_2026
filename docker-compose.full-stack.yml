@@ -489,6 +489,19 @@ services:
       # renders the failure as an empty state.
       CORE_API_INTERNAL_URL: http://core-java:9090
       NEXTAUTH_URL: http://localhost:3000
+      # FE-1 / E-5 (QA council 20260902-134741): the vendor sign-out's Keycloak
+      # return leg is /api/vendor-auth/logout-complete, which ends the Auth.js
+      # session SERVER-SIDE in the last response the browser processes (the
+      # client-side clear lost a race to ~24 in-flight session GETs 9/12 times).
+      # ON here because this realm's core-api client registers
+      # http://localhost:3000/* with post.logout.redirect.uris "+" and
+      # scripts/check-keycloak-logout-uri.sh measures a 302 for the URI (400 on
+      # a garbage host and on a wrong port). OFF in every k8s overlay until that
+      # gate is green against the deployed realm: an unregistered URI makes
+      # Keycloak answer 400 WITHOUT terminating the SSO session (#504), which is
+      # strictly worse than the defect the flag closes. With the flag off the
+      # route keeps today's /auth/signin landing. Only "true"/"1" read as ON.
+      VENDOR_LOGOUT_COMPLETE_ENABLED: "true"
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET must be set}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET must be set}

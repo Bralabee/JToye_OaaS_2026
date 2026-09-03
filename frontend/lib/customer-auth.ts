@@ -20,9 +20,11 @@ import {
   CUSTOMER_MARKER_KEY,
   clearStoredCarts,
   forgetCustomerId,
+  forgetLastSignIn,
   getCurrentCustomerId,
   hasActiveSessionMarker,
   rememberCustomerId,
+  rememberLastSignIn,
 } from "@/lib/cart-identity"
 
 // Phase 18: customer identity lives in its own realm (jtoye-customers), decoupled
@@ -142,6 +144,12 @@ function setMarker(expiresAt: number, sub?: string | null) {
   // (#459). Its own try/catch, so a storage failure on the marker above cannot
   // skip it and leave the two out of step.
   rememberCustomerId(sub)
+  // FE-5 — and remember that a sign-in HAPPENED here, until an explicit
+  // sign-out says otherwise. This is the write side of the "Not you? Sign out"
+  // offer; `clearMarker()` below deliberately does NOT undo it, because a
+  // lapsed session is precisely the state the offer exists for. Blank subs are
+  // ignored inside, same rule as `rememberCustomerId`.
+  rememberLastSignIn(sub)
 }
 
 function clearMarker() {
@@ -172,6 +180,9 @@ function clearMarker() {
 function clearSignedOutState() {
   clearMarker()
   clearStoredCarts()
+  // FE-5: an EXPLICIT sign-out is the one moment "somebody signed in here"
+  // stops being true. Only here — never in clearMarker().
+  forgetLastSignIn()
 }
 
 /**
@@ -550,6 +561,90 @@ export async function customerLogout() {
       window.location.href = logoutUrl
     }
   }
+}
+
+/**
+ * "Not you? Sign out" — the EXPLICIT sign-out from the ANONYMOUS state (FE-5,
+ * QA council 20260902-134741).
+ *
+ * THE STATE IT SERVES. A customer's app session lapsed without a sign-out (the
+ * three HttpOnly cookies stopped being valid) while their Keycloak SSO cookies
+ * survived on the IdP host. The storefront reads as anonymous and, until this,
+ * offered no way to end that SSO session — so the next person's "Create an
+ * account" hit Keycloak's "already authenticated as different user" dead-end
+ * (0 links, 0 buttons, 0 forms, the previous customer's email on screen).
+ * `customerLogout()` cannot help here: with no id cookie, `logout-url` returns
+ * an app path and the Keycloak leg is skipped entirely.
+ *
+ * WHAT IT DOES, in order, each step bounded:
+ *   1. Asks `logout-url` anyway. If an id cookie DOES still exist (the session
+ *      lapsed for a reason other than cookie loss), it answers with the
+ *      `id_token_hint` end-session URL and that is used verbatim — the better
+ *      form, no confirmation page.
+ *   2. `POST /api/customer-auth/logout` — the app half, which also runs the
+ *      back-channel revoke in `lib/customer-idp-logout.ts` (best-effort;
+ *      "skipped" when there is no refresh token, which is the lapsed case).
+ *   3. `clearSignedOutState()` — this IS an explicit sign-out, so the marker,
+ *      the baskets (#459) and the last-sign-in stamp all go. A LAPSE never
+ *      reaches this function; R-16's "a lapsed session is not a new person"
+ *      holds because only a tap on the control gets here.
+ *   4. Navigates to the `client_id` + `post_logout_redirect_uri` end-session
+ *      form — OIDC RP-Initiated Logout without an `id_token_hint`, which
+ *      Keycloak 24 accepts and, when a session exists, answers with its own
+ *      logout CONFIRMATION page (a button, not a dead end) before returning to
+ *      `returnTo`. Built client-side from the same `KC_BASE` / `CLIENT_ID` and
+ *      `window.location.origin` that `customerLogin` / `customerRegister` use:
+ *      the browser is the one party that knows the public origin, so the
+ *      bind-address trap `lib/public-origin.ts` exists for does not arise. The
+ *      customers realm registers `<origin>/*` (`post.logout.redirect.uris "+"`),
+ *      measured 302 on compose; the deployed realm is #299's open gap.
+ *
+ * Steps 3-4 sit in a `finally` for the R-04 reason `customerLogout` gives: a
+ * request that never answers must not turn a deliberate "that was not me" into
+ * a silent no-op that leaves the previous customer's SSO alive.
+ *
+ * RETURNS the URL it navigated to, for the same reason `vendorLogout` does:
+ * jsdom refuses to navigate, so the return value is the tests' only honest
+ * handle on the destination.
+ */
+export async function customerIdpSignOut(returnTo: string = "/shop/signin"): Promise<string> {
+  const postLogoutRedirectUri =
+    typeof window !== "undefined" ? `${window.location.origin}${safeReturnTo(returnTo)}` : safeReturnTo(returnTo)
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    post_logout_redirect_uri: postLogoutRedirectUri,
+  })
+  let destination = `${KC_BASE}/protocol/openid-connect/logout?${params}`
+  try {
+    try {
+      const urlRes = await fetchWithTimeout(
+        `/api/customer-auth/logout-url?redirect=${encodeURIComponent(safeReturnTo(returnTo))}`,
+        { credentials: "include", cache: "no-store" }
+      )
+      if (urlRes.ok) {
+        const data = (await urlRes.json()) as { url?: string }
+        // Only a real end-session URL (an id cookie still existed) replaces the
+        // client_id form. An app path means "nothing to hint with" — keep ours.
+        if (data.url && data.url.includes("/protocol/openid-connect/logout")) destination = data.url
+      }
+    } catch {
+      /* ignore — the client_id form needs nothing from the server */
+    }
+
+    await fetchWithTimeout("/api/customer-auth/logout", {
+      method: "POST",
+      credentials: "include",
+    })
+  } catch {
+    /* The server round-trip failed or timed out. The user asked to end the
+       session, so the teardown and the navigation happen regardless. */
+  } finally {
+    clearSignedOutState()
+    if (typeof window !== "undefined") {
+      window.location.href = destination
+    }
+  }
+  return destination
 }
 
 /**

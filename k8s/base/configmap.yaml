@@ -21,6 +21,27 @@ data:
   frontend.url: "https://app.olajay.co.uk"
 
   # ---------------------------------------------------------------------------
+  # FE-1 / E-5 (QA council 20260902-134741) — the vendor sign-out return leg.
+  #
+  # "true" makes <frontend.url>/api/vendor-auth/logout-complete the
+  # post_logout_redirect_uri Keycloak returns a signing-out vendor to; that route
+  # ends the Auth.js session SERVER-SIDE in the last response the browser
+  # processes (the client-side clear lost a race to ~24 in-flight session GETs
+  # 9/12 times, re-opening /dashboard as the departed vendor with no prompt).
+  #
+  # OFF here and restated as OFF in EVERY overlay, deliberately: the URI must be
+  # registered on the vendor client of the DEPLOYED realm, which is external and
+  # not verifiable from this repository, and an unregistered URI makes Keycloak
+  # answer 400 WITHOUT terminating the SSO session (#504) — strictly worse than
+  # the defect the flag closes. With the flag off the frontend keeps today's
+  # /auth/signin landing. Flip an overlay to "true" only after
+  # scripts/check-keycloak-logout-uri.sh (run in that overlay's deploy job,
+  # ENFORCED once the flag is on) is green against its realm. Compose runs ON.
+  # Consumed by frontend-deployment.yaml -> VENDOR_LOGOUT_COMPLETE_ENABLED.
+  # ---------------------------------------------------------------------------
+  vendor.logout-complete.enabled: "false"
+
+  # ---------------------------------------------------------------------------
   # Postgres port — the RENDER-TIME declaration (issue #271)
   #
   # WHAT CONSUMES THIS: nothing injects it as an env var. It exists so the

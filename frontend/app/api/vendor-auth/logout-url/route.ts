@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { resolvePublicOrigin } from "@/lib/public-origin"
+import {
+  VENDOR_LOGOUT_COMPLETE_PATH,
+  isVendorLogoutCompleteEnabled,
+} from "@/lib/vendor-logout-complete"
+import { clearVendorSessionInto } from "@/lib/vendor-session-clear"
 
 /**
  * GET /api/vendor-auth/logout-url?redirect=/auth/signin
@@ -127,7 +132,7 @@ export async function GET(req: NextRequest) {
   // separate, separately-tested change. Recorded so the next reader of the
   // vendor path does not have to rediscover it.
   const origin = resolvePublicOrigin(req)
-  const postLogoutRedirectUri = origin ? `${origin}${redirect}` : null
+  const returnUri = origin ? `${origin}${redirect}` : null
 
   const base = keycloakBase()
   if (!idToken || !base) {
@@ -135,11 +140,32 @@ export async function GET(req: NextRequest) {
     // build, so bounce back to the redirect target. With no trustworthy origin
     // the RELATIVE path is strictly safer and equally correct: the browser
     // resolves it against the page it is already on, which is this app.
-    return NextResponse.json(
-      { url: postLogoutRedirectUri ?? redirect },
-      { headers: NO_STORE_HEADERS }
+    //
+    // FE-1: no Keycloak leg means no return leg, so the logout-complete route
+    // is deliberately NOT named here even with the flag on; the best-effort
+    // clear below is the only server-side help this branch gets.
+    return withBestEffortClear(
+      NextResponse.json({ url: returnUri ?? redirect }, { headers: NO_STORE_HEADERS })
     )
   }
+
+  // FE-1 (QA council 20260902-134741): with the flag ON, Keycloak returns the
+  // vendor to `/api/vendor-auth/logout-complete` — the route that ends the
+  // Auth.js session SERVER-SIDE in the last response the browser processes —
+  // instead of straight to the sanitized redirect. CONFIG-INJECTED from the
+  // same resolved origin as before (E-5 point 1: never a literal), and with NO
+  // query string (plan R2: the realm check must be "does the path match the
+  // registered /* wildcard", never "does the matcher tolerate a query"). The
+  // sanitized `redirect` is not lost — logout-complete lands on the same
+  // `/auth/signin` every caller passes today. With the flag OFF this is
+  // byte-identical to the pre-FE-1 URL, which is the E-5 fail-safe: a deployed
+  // realm that has not registered the new URI can never turn a working sign-out
+  // into a Keycloak 400 with SSO alive.
+  const postLogoutRedirectUri = origin
+    ? isVendorLogoutCompleteEnabled()
+      ? `${origin}${VENDOR_LOGOUT_COMPLETE_PATH}`
+      : returnUri
+    : null
 
   const params = new URLSearchParams({ id_token_hint: idToken })
   if (postLogoutRedirectUri) {
@@ -152,8 +178,24 @@ export async function GET(req: NextRequest) {
   // redirect uri errors WITHOUT terminating anything. Losing the return journey
   // is a cosmetic degradation; losing the sign-out is the security defect.
   // Never trade the second away to keep the first.
-  return NextResponse.json(
-    { url: `${base}/protocol/openid-connect/logout?${params.toString()}` },
-    { headers: NO_STORE_HEADERS }
+  return withBestEffortClear(
+    NextResponse.json(
+      { url: `${base}/protocol/openid-connect/logout?${params.toString()}` },
+      { headers: NO_STORE_HEADERS }
+    )
   )
+}
+
+/**
+ * FE-1 (a) — the EARLY, best-effort leg. Not the fix: this response answers at
+ * dt≈107-168 ms, inside the very window the in-flight `/api/auth/session` GETs
+ * occupy, so a re-issue can still land after it. But it is harmless and strictly
+ * additive — the same server `signOut` the return leg uses, its clearing cookies
+ * carried on THIS response as well — and it helps precisely when the browser
+ * never completes the Keycloak navigation. `clearVendorSessionInto` never
+ * throws, so the end-session URL (the P0 path) cannot be lost to it.
+ */
+async function withBestEffortClear(res: NextResponse): Promise<NextResponse> {
+  await clearVendorSessionInto(res, "logout-url")
+  return res
 }

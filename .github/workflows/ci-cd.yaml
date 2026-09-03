@@ -1545,6 +1545,47 @@ jobs:
           fi
           echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/staging app-config api.url ($RENDER_API_URL)"
 
+      # FE-1 / E-5 (QA council 20260902-134741): before deploying, ask the DEPLOYED realm
+      # whether it accepts the post_logout_redirect_uri this overlay's vendor sign-out
+      # will send. Every input is read from the render produced by the step above —
+      # never typed here — so the check tracks the overlay:
+      #   issuer = app-config keycloak.public.issuer.uri (the browser-facing realm)
+      #   client = app-config keycloak.client-id
+      #   uri    = <frontend.url>/api/vendor-auth/logout-complete when
+      #            vendor.logout-complete.enabled is "true", else <frontend.url>/auth/signin
+      # ENFORCED only when the flag is "true": an unregistered URI makes Keycloak answer
+      # 400 WITHOUT ending the SSO session (#504), strictly worse than the defect the flag
+      # closes, so a flag that is on must never deploy past a red gate. With the flag off
+      # the verdict (including a VOID for a realm the runner cannot reach — cf. #299, the
+      # same blind spot for the customer realm) is printed as ADVICE and the deploy
+      # proceeds on today's behaviour, so flipping the flag is a one-line change whose
+      # precondition has already been measured here on every prior deploy.
+      - name: Pre-flight — the deployed realm accepts this overlay's vendor post-logout redirect URI (FE-1 / E-5)
+        run: |
+          set -uo pipefail
+          RENDER=/tmp/staging-render.yaml
+          # Exact first-field match on the rendered `key: "value"` line; awk reads a
+          # FILE, so there is no pipe and no SIGPIPE-under-pipefail risk.
+          val() { awk -v k="$1:" '$1 == k { v = $2; gsub(/^"|"$/, "", v); print v; exit }' "$RENDER"; }
+          ISSUER="$(val keycloak.public.issuer.uri)"
+          CLIENT="$(val keycloak.client-id)"
+          FRONTEND_URL="$(val frontend.url)"
+          FLAG="$(val vendor.logout-complete.enabled)"
+          if [ -z "$ISSUER" ] || [ -z "$CLIENT" ] || [ -z "$FRONTEND_URL" ] || [ -z "$FLAG" ]; then
+            echo "FATAL: could not read keycloak.public.issuer.uri / keycloak.client-id / frontend.url / vendor.logout-complete.enabled from the k8s/staging render — this pre-flight is blind, so it fails closed." >&2
+            exit 2
+          fi
+          if [ "$FLAG" = "true" ]; then URI="${FRONTEND_URL%/}/api/vendor-auth/logout-complete"; else URI="${FRONTEND_URL%/}/auth/signin"; fi
+          KC_ISSUER="$ISSUER" KC_CLIENT_ID="$CLIENT" POST_LOGOUT_REDIRECT_URI="$URI" bash scripts/check-keycloak-logout-uri.sh; rc=$?
+          if [ "$FLAG" = "true" ]; then
+            if [ "$rc" -ne 0 ]; then
+              echo "FATAL: vendor.logout-complete.enabled is \"true\" for k8s/staging but the realm did not accept $URI (rc=$rc). Refusing to deploy a return leg Keycloak would answer with a 400 that leaves the SSO session alive." >&2
+              exit "$rc"
+            fi
+          elif [ "$rc" -ne 0 ]; then
+            echo "ADVISORY (flag off, deploy proceeds on today's /auth/signin leg): the staging realm did not cleanly accept $URI (rc=$rc; 2 = unreachable/VOID). Register <frontend.url>/api/vendor-auth/logout-complete on client $CLIENT and re-run before flipping vendor.logout-complete.enabled."
+          fi
+
       - name: Configure kubeconfig
         run: |
           mkdir -p $HOME/.kube
@@ -1707,6 +1748,33 @@ jobs:
             exit 1
           fi
           echo "OK: baked NEXT_PUBLIC_API_URL matches k8s/production app-config api.url ($RENDER_API_URL)"
+
+      # FE-1 / E-5: identical pre-flight to deploy-staging's — see the long rationale
+      # there. Inputs come from the production render; enforced only while
+      # vendor.logout-complete.enabled is "true", advisory otherwise.
+      - name: Pre-flight — the deployed realm accepts this overlay's vendor post-logout redirect URI (FE-1 / E-5)
+        run: |
+          set -uo pipefail
+          RENDER=/tmp/production-render.yaml
+          val() { awk -v k="$1:" '$1 == k { v = $2; gsub(/^"|"$/, "", v); print v; exit }' "$RENDER"; }
+          ISSUER="$(val keycloak.public.issuer.uri)"
+          CLIENT="$(val keycloak.client-id)"
+          FRONTEND_URL="$(val frontend.url)"
+          FLAG="$(val vendor.logout-complete.enabled)"
+          if [ -z "$ISSUER" ] || [ -z "$CLIENT" ] || [ -z "$FRONTEND_URL" ] || [ -z "$FLAG" ]; then
+            echo "FATAL: could not read keycloak.public.issuer.uri / keycloak.client-id / frontend.url / vendor.logout-complete.enabled from the k8s/production render — this pre-flight is blind, so it fails closed." >&2
+            exit 2
+          fi
+          if [ "$FLAG" = "true" ]; then URI="${FRONTEND_URL%/}/api/vendor-auth/logout-complete"; else URI="${FRONTEND_URL%/}/auth/signin"; fi
+          KC_ISSUER="$ISSUER" KC_CLIENT_ID="$CLIENT" POST_LOGOUT_REDIRECT_URI="$URI" bash scripts/check-keycloak-logout-uri.sh; rc=$?
+          if [ "$FLAG" = "true" ]; then
+            if [ "$rc" -ne 0 ]; then
+              echo "FATAL: vendor.logout-complete.enabled is \"true\" for k8s/production but the realm did not accept $URI (rc=$rc). Refusing to deploy a return leg Keycloak would answer with a 400 that leaves the SSO session alive." >&2
+              exit "$rc"
+            fi
+          elif [ "$rc" -ne 0 ]; then
+            echo "ADVISORY (flag off, deploy proceeds on today's /auth/signin leg): the production realm did not cleanly accept $URI (rc=$rc; 2 = unreachable/VOID). Register <frontend.url>/api/vendor-auth/logout-complete on client $CLIENT and re-run before flipping vendor.logout-complete.enabled."
+          fi
 
       - name: Configure kubeconfig
         run: |
