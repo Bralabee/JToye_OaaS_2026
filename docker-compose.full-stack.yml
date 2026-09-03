@@ -4,9 +4,9 @@
 # Requires a .env file — copy .env.example to .env and fill in values.
 #
 # USAGE:
-#   docker-compose -f docker-compose.full-stack.yml up
+#   docker compose -f docker-compose.full-stack.yml up      (Compose v2; the v1 `docker-compose` binary is not installed)
 #
-# See docs/DOCKER_QUICK_START.md for detailed instructions
+# See docs/guides/DOCKER_QUICK_START.md for detailed instructions
 #
 # PUBLISHED-PORT BIND ADDRESS (issues #438 / #441)
 # ------------------------------------------------
