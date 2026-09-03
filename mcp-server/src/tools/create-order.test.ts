@@ -222,6 +222,21 @@ describe("create_order input schema", () => {
     ).toBe(true);
   });
 
+  // The COLLECTION arm is NOT redundant with the omission arm above. Removing "COLLECTION"
+  // from the enum was run as a deliberate break arm and the suite stayed GREEN without this
+  // assertion: omission, DELIVERY and the invalid-value arms all still passed. A schema value
+  // that no test ever parses is a value no test protects.
+  it("COR-1: accepts an EXPLICIT COLLECTION order — the value must be in the enum, not only the default", () => {
+    expect(
+      schema.safeParse({
+        shopId: "7f000001-0000-4000-8000-000000000002",
+        items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 1 }],
+        idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
+        fulfilmentType: "COLLECTION",
+      }).success,
+    ).toBe(true);
+  });
+
   it("COR-1: accepts a DELIVERY order carrying the UK address block", () => {
     expect(
       schema.safeParse({
