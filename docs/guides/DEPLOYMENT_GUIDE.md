@@ -169,7 +169,8 @@ docker compose -f docker-compose.full-stack.yml down -v
 export SPRING_PROFILES_ACTIVE=dev
 export DB_HOST=localhost
 export DB_PORT=5433
-export DB_USER=jtoye_app
+export DB_USER=jtoye_runtime          # application role: DML only, owns nothing
+export DB_MIGRATION_USER=jtoye_app   # Flyway only: owns the tables, has CREATE
 export DB_PASSWORD=CHANGE_ME
 export KC_ISSUER_URI=http://localhost:8085/realms/jtoye-dev
 

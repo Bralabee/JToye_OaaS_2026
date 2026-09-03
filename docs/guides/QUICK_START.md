@@ -105,10 +105,13 @@ docker ps | grep jtoye
 ./scripts/run-app.sh
 ```
 
-**Or manually:**
+**Or manually** — `DB_PORT` alone is not enough. `application.yml` resolves `${DB_USER:jtoye_app}`
+and `${DB_PASSWORD:}`, so a bare `DB_PORT=5433` boots with the migrator role and an EMPTY
+password and fails authentication:
 ```bash
-DB_PORT=5433 ./gradlew :core-java:bootRun
+DB_PORT=5433 DB_USER=jtoye_runtime DB_PASSWORD="$DB_PASSWORD" ./gradlew :core-java:bootRun
 ```
+`scripts/run-app.sh` exists precisely to set these; prefer it.
 
 **Verify:**
 ```bash

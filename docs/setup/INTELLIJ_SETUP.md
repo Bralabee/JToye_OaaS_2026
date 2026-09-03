@@ -128,7 +128,7 @@ You can also set:
 - `SERVER_PORT=9090` (API port, default is 9090)
 - `DB_HOST=localhost` (database host)
 - `DB_NAME=jtoye` (database name)
-- `DB_USER=jtoye` (database user)
+- `DB_USER=jtoye_runtime` (application role — **never** `jtoye`, the superuser: it bypasses RLS and `DatabaseConfigurationValidator` refuses to start; and never `jtoye_app`, which OWNS the tables and is refused for the same reason)
 - `DB_PASSWORD` (database password — take the value from your `.env`, do not type a literal)
 
 But **`DB_PORT=5433` is the critical one** that must be set!

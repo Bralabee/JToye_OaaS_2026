@@ -82,7 +82,8 @@ cp edge-go/.env.example edge-go/.env
 # 2. Start the backing services only (Postgres, Keycloak, Redis, RabbitMQ)
 docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 
-# 3. Start backend (reads .env; runs as jtoye_app, never the jtoye superuser)
+# 3. Start backend (reads .env; connects as jtoye_runtime — jtoye_app is the Flyway migrator,
+#    jtoye the superuser; core-java refuses to boot as either)
 ./scripts/run-app.sh
 
 # 4. Start frontend (new terminal)

@@ -89,7 +89,10 @@ The application uses these database settings (from `application.yml`):
 - **Host**: `localhost` (override with `DB_HOST`)
 - **Port**: `5432` (override with `DB_PORT=5433` ⚠️ **REQUIRED**)
 - **Database**: `jtoye` (override with `DB_NAME`)
-- **Username**: `jtoye_app` (override with `DB_USER`)
+- **Username**: `jtoye_runtime` (set via `DB_USER`; this is what `.env.example` ships)
+- **Migrator**: `jtoye_app` (set via `DB_MIGRATION_USER`) — used by Flyway only. It OWNS the
+  public tables, and `DatabaseConfigurationValidator.validateNotTableOwner()` refuses to boot
+  the application as a role that owns tables, so it is not a substitute for `DB_USER`.
 - **Password**: *empty* (you **must** supply `DB_PASSWORD`)
 
 ⚠️ Do not set `DB_USER=jtoye`. `jtoye` is a PostgreSQL superuser; superusers bypass row-level
