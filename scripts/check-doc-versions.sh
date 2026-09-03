@@ -47,15 +47,24 @@ cd "$ROOT"
 # Seeding that same MapStruct drift into README while it was UNGATED left this
 # gate green, which is what makes the omission worth a comment rather than a
 # silent one-word edit.
-DOCS=(CLAUDE.md AGENTS.md .planning/codebase/STACK.md README.md)
+# docs/setup/SETUP.md and docs/guides/QUICK_START.md were added 2026-09-03 (QA run
+# 20260902-134741, finding INT-18). They declared "Java 21" and "Java 21 (JDK 25 is
+# incompatible with Gradle 8.10)" against a build.gradle.kts on JavaLanguageVersion.of(25)
+# and a 9.7.1 wrapper -- for four weeks, with every gate green, because until the Java and
+# Gradle rows below existed NOTHING anywhere checked a JDK claim, including README's
+# correct one. ORDERING MATTERS: the rows come first. Added to DOCS before the rows exist,
+# both files yield ZERO claims and the vacuity guard VOIDs the whole gate -- measured.
+DOCS=(CLAUDE.md AGENTS.md .planning/codebase/STACK.md README.md docs/setup/SETUP.md docs/guides/QUICK_START.md)
 
 GRADLE="core-java/build.gradle.kts"
+ROOT_GRADLE="build.gradle.kts"
+WRAPPER="gradle/wrapper/gradle-wrapper.properties"
 PKG="frontend/package.json"
 GOMOD="edge-go/go.mod"
 
 void() { echo "VOID: $*" >&2; exit 2; }
 
-for f in "$GRADLE" "$PKG" "$GOMOD"; do
+for f in "$GRADLE" "$PKG" "$GOMOD" "$ROOT_GRADLE" "$WRAPPER"; do
 	[ -r "$ROOT/$f" ] || void "cannot read $f — cannot resolve actual versions"
 done
 
@@ -79,6 +88,22 @@ boot_version() {
 		head -1 | command grep -oE '"[0-9][0-9.]*"$' | tr -d '"'
 }
 
+java_toolchain() {
+	# The toolchain the whole build is pinned to. Both build files declare it; the ROOT one
+	# is authoritative because it configures every subproject. `head -1` is safe here and
+	# only here: this is a single-valued pin, not a coordinate list.
+	command grep -oE 'JavaLanguageVersion\.of\([0-9]+\)' "$ROOT_GRADLE" |
+		head -1 | command grep -oE '[0-9]+'
+}
+
+gradle_wrapper_version() {
+	# The WRAPPER version, not any installed gradle. `./gradlew` is the only supported
+	# invocation, so the wrapper's distributionUrl is what a documented "Gradle N" claim
+	# is a claim ABOUT.
+	command grep -oE 'gradle-[0-9]+\.[0-9]+(\.[0-9]+)?-(bin|all)\.zip' "$WRAPPER" |
+		head -1 | sed -E 's/^gradle-//; s/-(bin|all)\.zip$//'
+}
+
 gin_version() {
 	command grep -oE 'github.com/gin-gonic/gin v[0-9][0-9.]*' "$GOMOD" |
 		head -1 | sed 's/.* v//'
@@ -91,6 +116,18 @@ gin_version() {
 # match is the claimed version (leading non-digits are stripped, so "v1.12.0"
 # and "(2.49.2" both normalise correctly).
 SPECS=(
+	# The TOOLCHAIN rows, added 2026-09-03 (INT-18). Until they existed this gate had no
+	# Java and no Gradle row at all, so no doc's JDK claim was checked ANYWHERE -- which is
+	# how docs/setup/SETUP.md and docs/guides/QUICK_START.md sat on "Java 21" for four weeks
+	# after #707 moved the build to 25.
+	#
+	# Both accept the two forms the docs actually use ("Java 25" and "JDK 25"; "Gradle 9.7.1"),
+	# and both are TOTAL over their form -- every occurrence is checked, per the rule at the
+	# top of this file. Two-part forms ("Gradle 9.7+", "Gradle >= 9.1") are deliberately NOT
+	# matched: they are floors, not claims about the pinned version, and a floor that is
+	# lower than the pin is correct rather than stale.
+	"Java|(Java|JDK) [0-9]+|$(java_toolchain)"
+	"Gradle|Gradle [0-9]+\.[0-9]+\.[0-9]+|$(gradle_wrapper_version)"
 	"Spring Boot|Spring Boot[ A-Za-z]*:? ?[0-9]+\.[0-9]+\.[0-9]+|$(boot_version)"
 	"Testcontainers|Testcontainers [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.testcontainers:testcontainers')"
 	"MapStruct|MapStruct [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.mapstruct:mapstruct')"
@@ -141,6 +178,34 @@ for doc in "${DOCS[@]}"; do
 	doc_drift=0
 	absent=""
 
+	# HISTORICAL-CLAUSE EXCLUSION, added with the toolchain rows 2026-09-03 (INT-18).
+	#
+	# CLAUDE.md and AGENTS.md carry "(migrated from JDK 21/Gradle 8.10.2, 2026-08-31)" — a
+	# dated record of the SUPERSEDED toolchain, correct as history. The rows above are
+	# deliberately TOTAL (every occurrence is checked, which is what caught a stale
+	# "Spring Boot Gradle Plugin 3.4.2" sitting three lines under a correct 3.5.16), so
+	# without this the Java and Gradle rows would demand those two docs delete their own
+	# history to go green. That is the same argument .planning/PROJECT.md is excluded on at
+	# the top of this file; here the exclusion is one CLAUSE rather than one FILE.
+	#
+	# SCOPE, stated so it is not mistaken for a general escape hatch: text inside a
+	# "(migrated from ...)" parenthetical is skipped for EVERY row, on the ground that the
+	# phrase means "what this used to be". A stale claim hidden there is out of scope BY
+	# DESIGN. Nothing else is skipped.
+	#
+	# NARROWING WAS MEASURED, NOT ASSUMED (same discipline as the -i widening below).
+	# Per-doc claim counts on an identical tree, with and without the filter:
+	#     CLAUDE.md 37 -> 35 · AGENTS.md 47 -> 45 · STACK.md 32 -> 32 · README.md 5 -> 5
+	#     docs/setup/SETUP.md 3 -> 3 · docs/guides/QUICK_START.md 3 -> 3   (127 -> 123 total)
+	# Exactly FOUR claims removed, all four inside the two parentheticals, all four the
+	# superseded JDK 21 / Gradle 8.10.2 pair. No other row lost a match.
+	#
+	# It cannot cause a false GREEN if it stops working: a filter that fails to apply leaves
+	# the historical versions in the text and the gate goes RED. The count is PRINTED below,
+	# never silent.
+	doc_text=$(sed -E 's/\(migrated from [^)]*\)//g' "$ROOT/$doc")
+	hist_skipped=$(sed -nE 's/.*(\(migrated from [^)]*\)).*/\1/p' "$ROOT/$doc" | wc -l)
+
 	for spec in "${SPECS[@]}"; do
 		label="${spec%%|*}"
 		rest="${spec#*|}"
@@ -177,7 +242,7 @@ for doc in "${DOCS[@]}"; do
 		# No other row matched anything it did not match before — a larger delta
 		# would have meant a rule had started matching prose.
 		mapfile -t claims < <(
-			command grep -oiE "$claim_re" "$doc" 2>/dev/null |
+			command grep -oiE "$claim_re" <<< "$doc_text" 2>/dev/null |
 				awk '{print $NF}' | sed -E 's/^[^0-9]*//'
 		)
 
@@ -199,6 +264,7 @@ for doc in "${DOCS[@]}"; do
 	[ "$doc_checked" -gt 0 ] || void "$doc yielded ZERO version claims — the stack section is missing or its format changed"
 
 	[ -n "$absent" ] && echo "  (not claimed in this doc:$absent)"
+	[ "$hist_skipped" -gt 0 ] && echo "  (skipped $hist_skipped dated '(migrated from ...)' clause(s) — history, not claims)"
 	echo "  checked=$doc_checked drift=$doc_drift"
 	total_checked=$((total_checked + doc_checked))
 	total_drift=$((total_drift + doc_drift))
