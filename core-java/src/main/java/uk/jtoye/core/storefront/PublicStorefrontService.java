@@ -21,6 +21,7 @@ import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderAllergenSnapshot;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
+import uk.jtoye.core.order.OrderNumberGenerator;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
@@ -110,6 +111,7 @@ public class PublicStorefrontService {
      * unusable radius fails the context, it does not wait for a customer to find it. See
      * {@link #requireUsableRadius}.
      */
+    private final OrderNumberGenerator orderNumberGenerator;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -119,6 +121,7 @@ public class PublicStorefrontService {
                                    ShopPromotionRepository promotionRepository,
                                    ShopAnnouncementRepository announcementRepository,
                                    PostcodeGeocoder postcodeGeocoder,
+                                   OrderNumberGenerator orderNumberGenerator,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -130,6 +133,10 @@ public class PublicStorefrontService {
         this.promotionRepository = promotionRepository;
         this.announcementRepository = announcementRepository;
         this.postcodeGeocoder = postcodeGeocoder;
+        // COR-5: injected, not re-implemented. The generator used to be a byte-identical
+        // private copy of OrderService's — two definitions of a customer-visible identifier,
+        // and neither had a fault-injection seam.
+        this.orderNumberGenerator = orderNumberGenerator;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -713,7 +720,8 @@ public class PublicStorefrontService {
             Order order = new Order();
             order.setTenantId(tenantId);
             order.setShopId(shop.getId());
-            order.setOrderNumber(generateOrderNumber(tenantId));
+            // COR-5: one generator, shared with the vendor/API/MCP path (OrderNumberGenerator).
+            order.setOrderNumber(orderNumberGenerator.generate(tenantId));
             order.setStatus(OrderStatus.DRAFT);
             order.setPaymentStatus(PaymentStatus.PENDING);
             order.setCustomerName(request.getCustomerName());
@@ -1051,13 +1059,6 @@ public class PublicStorefrontService {
 
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
-    }
-
-    private String generateOrderNumber(UUID tenantId) {
-        String tenantPrefix = tenantId.toString().replace("-", "").substring(0, 8).toUpperCase();
-        String datePart = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
-        String randomSuffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
-        return String.format("ORD-%s-%s-%s", tenantPrefix, datePart, randomSuffix);
     }
 
     private PublicShopDto toPublicShopDto(Shop shop) {

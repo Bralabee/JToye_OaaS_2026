@@ -71,6 +71,7 @@ public class OrderService {
     private final StockService stockService;
     private final RefundService refundService;
     private final ShopAccessService shopAccessService;
+    private final OrderNumberGenerator orderNumberGenerator;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
@@ -82,7 +83,8 @@ public class OrderService {
                        FinancialTransactionService financialTransactionService,
                        StockService stockService,
                        RefundService refundService,
-                       ShopAccessService shopAccessService) {
+                       ShopAccessService shopAccessService,
+                       OrderNumberGenerator orderNumberGenerator) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -94,6 +96,7 @@ public class OrderService {
         this.stockService = stockService;
         this.refundService = refundService;
         this.shopAccessService = shopAccessService;
+        this.orderNumberGenerator = orderNumberGenerator;
     }
 
     /**
@@ -122,7 +125,8 @@ public class OrderService {
         Order order = new Order();
         order.setTenantId(tenantId);
         order.setShopId(shop.getId());
-        order.setOrderNumber(generateOrderNumber(tenantId));
+        // COR-5: one generator, shared with the storefront path (OrderNumberGenerator).
+        order.setOrderNumber(orderNumberGenerator.generate(tenantId));
         order.setStatus(OrderStatus.DRAFT);
         order.setNotes(request.getNotes());
 
@@ -534,41 +538,6 @@ public class OrderService {
 
         log.info("Deleting order {}", order.getOrderNumber());
         orderRepository.delete(order);
-    }
-
-    /**
-     * Generate unique order number for tenant.
-     * <p>
-     * Format: ORD-{tenant-prefix}-{YYYYMMDD}-{random-suffix}
-     * Example: ORD-A1B2C3D4-20260116-E5F6G7H8
-     * <p>
-     * Structure:
-     * - ORD: Constant prefix for easy identification
-     * - tenant-prefix: First 8 characters of tenant UUID (uppercase) for tenant isolation
-     * - YYYYMMDD: ISO date for chronological sorting and filtering
-     * - random-suffix: 8-character random hex for collision-proof uniqueness
-     * <p>
-     * Benefits:
-     * - Tenant-aware: Customer support can identify tenant at a glance
-     * - Sortable: Date component enables chronological ordering
-     * - Debuggable: Human-readable format with clear structure
-     * - Collision-proof: Random suffix ensures uniqueness without sequence coordination
-     * - Backward compatible: Existing orders retain their old format
-     *
-     * @param tenantId the tenant UUID for prefix generation
-     * @return unique order number string
-     */
-    private String generateOrderNumber(UUID tenantId) {
-        // Extract first 8 characters of tenant UUID for prefix (compact yet unique)
-        String tenantPrefix = tenantId.toString().replace("-", "").substring(0, 8).toUpperCase();
-
-        // Add date for sorting/filtering (YYYYMMDD format)
-        String datePart = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
-
-        // Add random suffix for uniqueness (8 hex characters, no hyphens)
-        String randomSuffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
-
-        return String.format("ORD-%s-%s-%s", tenantPrefix, datePart, randomSuffix);
     }
 
 }

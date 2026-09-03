@@ -7,6 +7,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -80,6 +81,20 @@ class OrderServiceTest {
 
     @Mock
     private ShopAccessService shopAccessService;
+
+    /**
+     * COR-5: a REAL generator, deliberately @Spy and not @Mock.
+     *
+     * <p>The order number is now minted by {@link OrderNumberGenerator} rather than by a private
+     * method on the service. A @Mock here would return null and the format assertions below
+     * ("Contains tenant prefix", "Contains current date", "Random suffix provides collision
+     * resistance", "1000 orders generate unique numbers") would have to be deleted or weakened to
+     * a verify() — which is exactly the kind of "assert the call happened" substitution those
+     * tests exist to avoid. A @Spy keeps every one of them exercising the real arithmetic, so the
+     * extraction is proven behaviour-preserving rather than merely compiling.
+     */
+    @Spy
+    private OrderNumberGenerator orderNumberGenerator = new OrderNumberGenerator();
 
     @InjectMocks
     private OrderService orderService;

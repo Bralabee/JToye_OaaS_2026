@@ -183,10 +183,49 @@ ORD-a1b2c3d4-e5f6-7890-abcd-ef1234567890
 - **After:** Structured format is human-readable and memorable
 - **Use Case:** Engineers can discuss specific orders verbally
 
-### 4. Collision Resistance ✅
+### 4. Collision Resistance ✅ — with the proof corrected (COR-5, 2026-09-02)
 - **Before:** UUID provided collision resistance
 - **After:** 8-character random suffix (4.3 billion combinations)
-- **Proof:** 1000 orders generated in 170ms, all unique
+- **~~Proof:~~ Retracted claim:** "1000 orders generated in 170ms, all unique" is a proof with
+  **no power at the width that shipped**. Measured by `.qa-council/20260902-134741/probes/oracle-ordernumber.sh`:
+  a 1,000-sample uniqueness test detected **0 of 400** injected collisions at an 8-hex suffix, and
+  **400 of 400** when the suffix was narrowed to 4 hex. The test discriminates — it just cannot
+  fail at 8 hex, so passing it says nothing. A uniqueness loop is not evidence about collision
+  resistance; the arithmetic is.
+- **Actual bound (birthday problem, N = 16^8 = 4,294,967,296 suffixes per tenant per day):**
+
+  | orders/tenant/day | P(≥1 collision that day) | expected days between |
+  |---|---|---|
+  | 100 | 1.15e-06 | ~868,000 |
+  | 500 | 2.91e-05 | ~34,400 |
+  | 1,000 | 1.16e-04 | ~8,600 |
+  | 10,000 | 1.16e-02 | ~86 |
+  | 100,000 | 6.88e-01 | ~1.5 |
+
+  For a UK takeaway tenant (tens to low hundreds of orders/day) the hazard is negligible. The
+  defect this section carried was a **false proof, not a live hazard**.
+- **The two database constraints this report never mentioned.** Both are live on `orders`:
+  `uq_orders_tenant_number UNIQUE (tenant_id, order_number)` **and the global**
+  `uk_orders_order_number UNIQUE (order_number)` (V7). The global one is the tighter of the two
+  and can reject an insert against a row the inserting tenant **cannot see under RLS** — not
+  hypothetical on the dev runtime, where both tenants share the prefix `00000000`.
+- **What a collision actually does — measured, not assumed.** Postgres raises SQLSTATE 23505;
+  Spring translates it to `DataIntegrityViolationException`; `GlobalExceptionHandler` answers
+  **HTTP 409 "Duplicate Entry"** — *not* a 500, and not a lost order. On the storefront path the
+  whole transaction rolls back with it, so a retry carrying the same idempotency key finds no
+  persisted order and mints a fresh number: the failure is **self-recovering**. The residual
+  defect is the unhelpful generic message, not data loss.
+- **No regeneration-on-clash is implemented, deliberately** (adjudication A10). An
+  `existsByOrderNumber` pre-check cannot work — it is RLS-blind under the DML-only
+  `jtoye_runtime` role, both dev tenants share a prefix, and it is a TOCTOU race the constraint
+  must still catch. A retry loop needs `Propagation.REQUIRES_NEW`, which would move the
+  transaction boundary of the entire money path including issue #538's persist-before-pay ordering.
+  Deferred with that reason recorded.
+- **One implementation, one seam.** The generator was a byte-identical private method in
+  `OrderService` **and** `PublicStorefrontService`; it is now the single
+  `uk.jtoye.core.order.OrderNumberGenerator` with an injectable suffix supplier, so the collision
+  path is exercised deterministically by `OrderNumberGeneratorTest` instead of being reasoned
+  about.
 
 ### 5. Backward Compatibility ✅
 - **Before:** N/A (new implementation)

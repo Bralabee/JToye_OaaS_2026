@@ -23,6 +23,7 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
+import uk.jtoye.core.order.OrderNumberGenerator;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.payment.PaymentIntentResult;
@@ -87,7 +88,7 @@ class PublicStorefrontServiceTest {
         // this unit test exercises the same ceiling behaviour the running service has.
         // 33-08: postcodeGeocoder drives the THIRD search tier and is reached only when both text
         // tiers return empty, so most arms in this file never touch it.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, postcodeGeocoder, 5.0, 50.0);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, postcodeGeocoder, new OrderNumberGenerator(), 5.0, 50.0);
 
         tenantId = UUID.randomUUID();
         publishedShop = new Shop();
@@ -1150,7 +1151,8 @@ class PublicStorefrontServiceTest {
         private PublicStorefrontService serviceWithRadii(double defaultRadiusKm, double maxRadiusKm) {
             return new PublicStorefrontService(shopRepository, productRepository, orderRepository,
                     eventPublisher, entityManager, paymentService, promotionRepository,
-                    announcementRepository, postcodeGeocoder, defaultRadiusKm, maxRadiusKm);
+                    announcementRepository, postcodeGeocoder, new OrderNumberGenerator(),
+                    defaultRadiusKm, maxRadiusKm);
         }
 
         @Test
