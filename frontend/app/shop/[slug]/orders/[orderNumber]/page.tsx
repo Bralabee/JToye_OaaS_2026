@@ -7,7 +7,7 @@ import { m } from "framer-motion"
 import { springPop } from "@/lib/motion"
 import {
   CheckCircle2, Store, Copy, ArrowLeft, Clock,
-  ChefHat, Package, CircleDot, XCircle, Loader2
+  ChefHat, Package, CircleDot, XCircle, Loader2, RefreshCw
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
@@ -29,6 +29,9 @@ const STEPS = [
   { key: "READY", label: "Ready", icon: Package, desc: "Ready for collection" },
   { key: "COMPLETED", label: "Completed", icon: CheckCircle2, desc: "Order complete" },
 ]
+
+/** Statuses no further update can follow — the poller stops on these (INT-8). */
+const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED", "REFUNDED"]
 
 function getStepIndex(status: string): number {
   const idx = STEPS.findIndex((s) => s.key === status)
@@ -111,9 +114,13 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
     fetchStatus()
   }, [email]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh every 15 seconds for active orders
+  // Auto-refresh every 15 seconds for active orders.
+  //
+  // INT-8: REFUNDED was in neither the stop list nor the STEPS array, so a
+  // refunded order polled this endpoint every 15 seconds for as long as the tab
+  // stayed open, and rendered "Order in Progress" while doing it.
   useEffect(() => {
-    if (!order || order.status === "COMPLETED" || order.status === "CANCELLED") return
+    if (!order || TERMINAL_STATUSES.includes(order.status)) return
     const interval = setInterval(fetchStatus, 15000)
     return () => clearInterval(interval)
   }, [order, fetchStatus])
@@ -125,6 +132,10 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
   }
 
   const isCancelled = order?.status === "CANCELLED"
+  // INT-8: REFUNDED is terminal and is NOT in STEPS, so without its own branch
+  // getStepIndex returns -1 and this page told a refunded customer their order
+  // was "Order in Progress", under a pulsing amber clock.
+  const isRefunded = order?.status === "REFUNDED"
   const currentStep = order ? getStepIndex(order.status) : -1
 
   if (loading) {
@@ -153,6 +164,10 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
               <XCircle className="h-8 w-8 text-red-500" />
             </div>
+          ) : isRefunded ? (
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">
+              <RefreshCw className="h-8 w-8 text-orange-700" />
+            </div>
           ) : currentStep >= 4 ? (
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
               <CheckCircle2 className="h-8 w-8 text-emerald-600" />
@@ -163,7 +178,13 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
             </div>
           )}
           <h1 className="mt-4 text-xl font-bold text-slate-900">
-            {isCancelled ? "Order Cancelled" : currentStep >= 4 ? "Order Complete!" : "Order in Progress"}
+            {isCancelled
+              ? "Order Cancelled"
+              : isRefunded
+                ? "Order Refunded"
+                : currentStep >= 4
+                  ? "Order Complete!"
+                  : "Order in Progress"}
           </h1>
           <p className="mt-1 text-sm text-slate-600">{order.shopName}</p>
         </div>
@@ -204,7 +225,7 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
       )}
 
       {/* Progress tracker */}
-      {order && !isCancelled && (
+      {order && !isCancelled && !isRefunded && (
         <div className="rounded-xl bg-white border border-slate-100 p-5 shadow-sm mb-6">
           <div className="space-y-0">
             {STEPS.map((step, i) => {
@@ -281,8 +302,20 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
         </div>
       )}
 
+      {/* Refunded state (INT-8). Stated plainly, with the same shape as the
+          cancelled panel: a refund is terminal and the customer should not be
+          left reading a progress stepper about it. */}
+      {order && isRefunded && (
+        <div className="rounded-xl bg-orange-50 border border-orange-100 p-5 mb-6 text-center">
+          <p className="text-sm text-orange-700">
+            This order was refunded. If you have any questions about the refund,
+            please contact the shop.
+          </p>
+        </div>
+      )}
+
       {/* Auto-refresh indicator */}
-      {order && !isCancelled && currentStep < 4 && (
+      {order && !isCancelled && !isRefunded && currentStep < 4 && (
         <p className="text-center text-xs text-slate-400 mb-6">
           <span className="inline-flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />

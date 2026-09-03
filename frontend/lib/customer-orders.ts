@@ -17,6 +17,7 @@
  * the empty state is only reachable through `state: "ok"`. A failure cannot be
  * spelled as an empty list, because a failure has no list to be empty.
  */
+import type { OrderStatus } from "@/types/api"
 
 export interface OrderSummary {
   orderNumber: string
@@ -66,22 +67,50 @@ export const ORDERS_FETCH_SIZE = 100
 
 export const ORDERS_PAGE_SIZE = 10
 
+/**
+ * Every server status, plus the ALL sentinel (INT-8).
+ *
+ * DRAFT and REFUNDED were missing, so a refunded order could not be filtered
+ * for at all — it was not merely mislabelled, it was unfindable. The type-level
+ * assertion below makes the next added status a COMPILE error here, in the same
+ * spirit as `STATUS_CONFIG`'s `Record<OrderStatus, …>` on the badge map.
+ */
 export const ORDER_STATUS_OPTIONS = [
   "ALL",
+  "DRAFT",
   "PENDING",
   "CONFIRMED",
   "PREPARING",
   "READY",
   "COMPLETED",
   "CANCELLED",
+  "REFUNDED",
 ] as const
 
 export type OrderStatusFilter = typeof ORDER_STATUS_OPTIONS[number]
 
-const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED"]
+/**
+ * Compile-time completeness: `never` unless every `OrderStatus` is offered.
+ * Deleting a status from the list above makes this line fail `tsc`, which is
+ * what `npm run build` runs — jest cannot see it (it does not type-check).
+ */
+const _everyStatusIsFilterable: Exclude<OrderStatus, OrderStatusFilter> extends never
+  ? true
+  : never = true
+void _everyStatusIsFilterable
+
+/**
+ * Statuses an order can never leave.
+ *
+ * REFUNDED was absent, so a refunded order was neither active nor terminal:
+ * the card kept its pulsing "live" dot and "Track" CTA, and the 15-second
+ * poller on the My-Orders page polled it forever. It is terminal on the server
+ * too — `OrderStateMachineConfig` declares `.end(OrderStatus.REFUNDED)`.
+ */
+const TERMINAL_STATUSES: OrderStatus[] = ["COMPLETED", "CANCELLED", "REFUNDED"]
 
 export function isActiveOrder(order: OrderSummary): boolean {
-  return !TERMINAL_STATUSES.includes(order.status)
+  return !TERMINAL_STATUSES.includes(order.status as OrderStatus)
 }
 
 /** True when the customer has more orders than this page is holding. */

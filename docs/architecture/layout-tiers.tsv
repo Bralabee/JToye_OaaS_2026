@@ -154,6 +154,13 @@ frontend/components/public/public-shell.tsx	N/A
 # Recorded rather than dropped, because an unstated boundary reads as covered.
 frontend/app/legal/page.tsx	N/A
 
+# The GLOBAL 404 (FE-2, added by the QA-council remediation of 20260902-134741). Held at
+# max-w-2xl: it is a signpost with one heading, one line of copy and three links, and a
+# wider band would put those links further apart with nothing between them. EXAMINED and
+# left untiered for the same ceiling-not-target reason as the surfaces below; the shell
+# chrome around it is PublicShell, which carries its own row above.
+frontend/app/not-found.tsx	N/A
+
 # The /shop/[slug] family. All three are N/A — the surface has not been ASSIGNED a tier
 # (PATTERNS A-11 deferred: a tier is a ceiling not a target, 896 is within prose-measure
 # territory for a scannable list of dish rows, and the surface is absent from CONTEXT's

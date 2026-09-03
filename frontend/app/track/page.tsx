@@ -7,7 +7,7 @@ import { m } from "framer-motion"
 import { springPop } from "@/lib/motion"
 import {
   Package, Search, Loader2, CheckCircle2, Clock,
-  ChefHat, CircleDot, XCircle, Store
+  ChefHat, CircleDot, XCircle, Store, RefreshCw
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
@@ -33,6 +33,13 @@ const STEPS = [
 
 /** Statuses that are still in flight — what a shopper actually came here for. */
 export const ACTIVE_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY"]
+
+/**
+ * Statuses no further update can follow, so the 15-second poller stops (INT-8).
+ * REFUNDED was in neither this set nor STEPS: the stepper rendered the raw enum
+ * string "REFUNDED" as its label and the poll ran for as long as the tab lived.
+ */
+const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED", "REFUNDED"]
 
 /**
  * Which of a signed-in customer's own orders should the tracking view open on?
@@ -222,7 +229,7 @@ function TrackOrderContent() {
 
   // Auto-refresh for active orders (15s).
   useEffect(() => {
-    if (!order || order.status === "COMPLETED" || order.status === "CANCELLED") return
+    if (!order || TERMINAL_STATUSES.includes(order.status)) return
     const interval = setInterval(async () => {
       try {
         const res = await publicApiClient.get<OrderStatus>(
@@ -237,6 +244,7 @@ function TrackOrderContent() {
 
   const currentStep = order ? STEPS.findIndex((s) => s.key === order.status) : -1
   const isCancelled = order?.status === "CANCELLED"
+  const isRefunded = order?.status === "REFUNDED"
 
   // A signed-in customer is shown their order, not a form. The form is still
   // one tap away (they may be chasing a guest order placed on another address).
@@ -400,6 +408,10 @@ function TrackOrderContent() {
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
                   <XCircle className="h-3 w-3" /> Cancelled
                 </span>
+              ) : isRefunded ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700">
+                  <RefreshCw className="h-3 w-3" /> Refunded
+                </span>
               ) : currentStep >= 4 ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
                   <CheckCircle2 className="h-3 w-3" /> Complete
@@ -421,7 +433,7 @@ function TrackOrderContent() {
           </div>
 
           {/* Progress */}
-          {!isCancelled && (
+          {!isCancelled && !isRefunded && (
             <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
               <div className="flex items-center justify-between gap-1">
                 {STEPS.map((step, i) => {
