@@ -1,6 +1,8 @@
 package uk.jtoye.core.sync;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -44,6 +46,12 @@ public class SyncController {
     @PostMapping("/batch")
     @PreAuthorize("hasAuthority('SCOPE_catalog:write')")
     @Operation(summary = "Batch Sync", description = "Receives a batch of data for synchronization from an Edge service")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Batch accepted; per-item results in the response"),
+            @ApiResponse(responseCode = "400", description = "Batch validation failed (errors/validation)"),
+            @ApiResponse(responseCode = "401", description = "No bearer token, or one that is expired or invalid (errors/unauthorized)"),
+            @ApiResponse(responseCode = "403", description = "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no grant on the target shop (errors/shop-access-denied)")
+    })
     public ResponseEntity<BatchSyncResponse> batchSync(@Valid @RequestBody BatchSyncRequest request) {
         BatchSyncResponse response = syncService.processBatch(request);
         return ResponseEntity.ok(response);
