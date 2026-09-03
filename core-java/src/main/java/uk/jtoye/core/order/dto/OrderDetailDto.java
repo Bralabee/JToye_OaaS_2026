@@ -20,6 +20,12 @@ public class OrderDetailDto {
     private String customerPhone;
     private String notes;
     private Long totalAmountPennies;
+    /**
+     * COR-4 (V66): UNITS on the order — SUM(order_items.quantity) — beside {@code itemCount},
+     * which stays LINES. Nullable, and null means NOT RECORDED (the row predates V66). Never read
+     * null as 0 and never substitute {@code itemCount} for it.
+     */
+    private Integer unitCount;
     private List<OrderItemDto> items;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
@@ -90,6 +96,9 @@ public class OrderDetailDto {
 
     public Long getTotalAmountPennies() { return totalAmountPennies; }
     public void setTotalAmountPennies(Long totalAmountPennies) { this.totalAmountPennies = totalAmountPennies; }
+
+    public Integer getUnitCount() { return unitCount; }
+    public void setUnitCount(Integer unitCount) { this.unitCount = unitCount; }
 
     public List<OrderItemDto> getItems() { return items; }
     public void setItems(List<OrderItemDto> items) { this.items = items; }

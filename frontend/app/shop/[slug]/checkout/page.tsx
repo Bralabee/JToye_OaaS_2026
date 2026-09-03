@@ -14,6 +14,7 @@ import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { describeOrderError } from "@/lib/order-error"
 import { minimumShortfallPennies } from "@/lib/minimum-order"
+import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/vat"
 import publicApiClient from "@/lib/public-api-client"
 import { getAllergenNames } from "@/types/api"
 import { PublicShop, PublicProduct } from "@/types/storefront"
@@ -732,9 +733,25 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const minimumOrderPennies = shop?.minimumOrderPennies ?? 0
   const minimumShortfall = minimumShortfallPennies(subtotalPennies, minimumOrderPennies)
   const belowMinimum = minimumShortfall !== null
-  // VAT-inclusive fraction already contained within the gross (UK retail idiom,
-  // unchanged): gross * 20 / 120, rounded down.
-  const vatPreviewPennies = Math.floor((previewTotalPennies * 20) / 120)
+  // COR-6: the VAT preview follows the BASKET's resolved rate, not a hardcoded 20%.
+  //
+  // This used to be Math.floor((previewTotalPennies * 20) / 120) with a "VAT (incl. 20%)" label,
+  // because PublicProductDto carried no rate and the client structurally could not resolve one.
+  // Most cold takeaway food is ZERO-rated (HMRC VAT Notice 709/1), so on such a basket the
+  // customer was shown a VAT figure before paying and a contradicting figure on the confirmation
+  // screen one screen later. The server has resolved the real rate since Issue #81 BUG 2.
+  //
+  // lib/vat.ts mirrors VatCalculator clause for clause: predominantRate over the line grosses,
+  // then vatFromGross over the COMBINED total (subtotal + delivery), which is the single
+  // truncation Order.calculateTotal performs. Preview only — the server recomputes and remains
+  // authoritative, so nothing here can change what is charged.
+  const basketVatRate = predominantRate(
+    items.map((item) => ({
+      grossPennies: item.pricePennies * item.quantity,
+      rate: asVatRate(item.vatRate),
+    }))
+  )
+  const vatPreviewPennies = vatFromGross(previewTotalPennies, basketVatRate)
   const inputBase =
     "w-full rounded-lg border px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400"
 
@@ -954,10 +971,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </div>
             <div className="flex items-center justify-between text-sm">
               {/* Prices are VAT-inclusive (UK retail): VAT is the fraction already
-                  contained within the gross total, not an add-on. Extracted at the
-                  standard rate (gross*20/120, round down) to match the post-order
-                  confirmation screen's vatAmountPennies. */}
-              <span className="text-slate-600">VAT (incl. 20%)</span>
+                  contained within the gross total, not an add-on. COR-6: the rate is the
+                  basket's RESOLVED predominant rate, so this line matches the post-order
+                  confirmation screen's vatAmountPennies on a zero- or reduced-rated basket
+                  too — it did not before. */}
+              <span className="text-slate-600">VAT ({vatRateLabel(basketVatRate)})</span>
               <span className="text-slate-900">{formatPrice(vatPreviewPennies)}</span>
             </div>
             <div className="flex items-center justify-between pt-1.5">

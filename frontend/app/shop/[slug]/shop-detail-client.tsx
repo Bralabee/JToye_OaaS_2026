@@ -73,6 +73,9 @@ function ProductCard({
       pricePennies: product.pricePennies,
       imageUrl: product.imageUrl,
       category: product.category,
+      // COR-6: carry the rate into the basket so checkout previews the VAT the server will
+      // actually charge, instead of assuming 20% on a zero-rated cold-food basket.
+      vatRate: product.vatRate ?? null,
     })
   }
 

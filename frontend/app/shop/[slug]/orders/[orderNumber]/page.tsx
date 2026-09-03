@@ -18,6 +18,16 @@ interface OrderStatus {
   shopName: string
   totalAmountPennies: number
   itemCount: number
+  /**
+   * COR-4 (V66): UNITS on the order — what the customer counted in the basket. `itemCount` is
+   * LINES and is what this surface used to render under the word "items", so a 6-Zobo order read
+   * "1 item" here and "6 items" on the basket minutes earlier.
+   *
+   * Optional AND nullable, and the two absences mean the same thing: NOT RECORDED. Absent = an
+   * older backend; null = a row written before V66. Neither may be coalesced to 0 or replaced by
+   * `itemCount` — the count is simply not rendered when it is not known.
+   */
+  unitCount?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -205,7 +215,10 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
         </div>
         {order && (
           <div className="mt-2 flex items-center justify-center gap-3 text-xs text-slate-600">
-            <span>{order.itemCount} item{order.itemCount !== 1 ? "s" : ""}</span>
+            {/* COR-4: units when recorded, nothing when not — see the note on the interface. */}
+            {order.unitCount != null && (
+              <span>{order.unitCount} item{order.unitCount !== 1 ? "s" : ""}</span>
+            )}
             <span>{formatPrice(order.totalAmountPennies)}</span>
           </div>
         )}

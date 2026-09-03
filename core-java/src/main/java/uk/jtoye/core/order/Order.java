@@ -106,8 +106,33 @@ public class Order {
     @Column(name = "total_amount_pennies", nullable = false)
     private Long totalAmountPennies = 0L;
 
+    /**
+     * Number of LINES on this order — {@code COUNT(order_items)}. Deliberately NOT changed to
+     * units (COR-4 / adjudication A9): redefining a persisted column's meaning for every existing
+     * row leaves nothing to tell migrated rows from unmigrated ones, breaks three public contracts
+     * with no OpenAPI diff, and reds the shared money-conservation invariant I5. See
+     * {@link #unitCount} for the number the CUSTOMER counts.
+     */
     @Column(name = "item_count", nullable = false)
     private Integer itemCount = 0;
+
+    /**
+     * Number of UNITS on this order — {@code SUM(order_items.quantity)}, V66.
+     *
+     * <p>This is the number the customer is shown in the basket, the checkout header and the cart
+     * drawer ({@code cart-provider.tsx} reduces over quantity), and until COR-4 nothing on the
+     * server held it — so the tracking page, the per-shop order page and My Orders rendered
+     * {@link #itemCount} under the same English word and told the same customer "1 item" for the
+     * 6 Zobos they had just been shown as "6 items". Live on 24 of 60 dev orders.
+     *
+     * <p><b>NULLABLE, and null means NOT RECORDED.</b> V66 backfills nothing, so every row written
+     * before it stays null. Null must never be read as 0 and must never be silently replaced by
+     * {@link #itemCount}: a fabricated count is indistinguishable from a real one, and this is a
+     * figure a customer was or was not shown. The customer surfaces render the count only when it
+     * is present.
+     */
+    @Column(name = "unit_count")
+    private Integer unitCount;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", length = 20)
@@ -183,6 +208,9 @@ public class Order {
         this.totalAmountPennies = this.subtotalPennies + this.deliveryFeePennies;
         this.vatAmountPennies = VatCalculator.vatFromGross(this.totalAmountPennies, this.vatRate);
         this.itemCount = items.size();
+        // COR-4: units, beside lines — never instead of them. Set on EVERY calculateTotal(), so
+        // both order-creation paths and any later recalculation populate it together.
+        this.unitCount = items.stream().mapToInt(OrderItem::getQuantity).sum();
     }
 
     // Getters and Setters
@@ -293,6 +321,14 @@ public class Order {
 
     public Integer getItemCount() {
         return itemCount;
+    }
+
+    public Integer getUnitCount() {
+        return unitCount;
+    }
+
+    public void setUnitCount(Integer unitCount) {
+        this.unitCount = unitCount;
     }
 
     public void setItemCount(Integer itemCount) {

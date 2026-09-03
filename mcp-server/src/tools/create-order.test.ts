@@ -83,6 +83,28 @@ describe("create_order handler", () => {
     });
   });
 
+  it("COR-1: forwards fulfilmentType + the address block verbatim in the body", async () => {
+    vi.mocked(corePost).mockResolvedValue(created201);
+
+    await createOrderHandler("tok")({
+      ...validArgs(),
+      fulfilmentType: "DELIVERY",
+      addressLine1: "12 Coldharbour Lane",
+      addressCity: "London",
+      addressPostcode: "SW9 8LF",
+    });
+
+    const [, , body] = vi.mocked(corePost).mock.calls[0]!;
+    expect(body).toMatchObject({
+      fulfilmentType: "DELIVERY",
+      addressLine1: "12 Coldharbour Lane",
+      addressCity: "London",
+      addressPostcode: "SW9 8LF",
+    });
+    // Still not in the body — the tool-only key is split to the header regardless.
+    expect(body).not.toHaveProperty("idempotencyKey");
+  });
+
   it("delegates a 403 no-scope problem+json to toToolError (sanitized, no stack)", async () => {
     vi.mocked(corePost).mockResolvedValue({
       ok: false,
@@ -186,6 +208,62 @@ describe("create_order input schema", () => {
         idempotencyKey: "k",
       }).success,
     ).toBe(false);
+  });
+
+  // COR-1 (owner ruling E-1): fulfilmentType + the UK address block are OPTIONAL tool inputs.
+  // Omitting them is the COLLECTION case and must stay valid — every pre-COR-1 caller does that.
+  it("COR-1: accepts an order with NO fulfilmentType — omission is the COLLECTION case", () => {
+    expect(
+      schema.safeParse({
+        shopId: "7f000001-0000-4000-8000-000000000002",
+        items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 1 }],
+        idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
+      }).success,
+    ).toBe(true);
+  });
+
+  // The COLLECTION arm is NOT redundant with the omission arm above. Removing "COLLECTION"
+  // from the enum was run as a deliberate break arm and the suite stayed GREEN without this
+  // assertion: omission, DELIVERY and the invalid-value arms all still passed. A schema value
+  // that no test ever parses is a value no test protects.
+  it("COR-1: accepts an EXPLICIT COLLECTION order — the value must be in the enum, not only the default", () => {
+    expect(
+      schema.safeParse({
+        shopId: "7f000001-0000-4000-8000-000000000002",
+        items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 1 }],
+        idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
+        fulfilmentType: "COLLECTION",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("COR-1: accepts a DELIVERY order carrying the UK address block", () => {
+    expect(
+      schema.safeParse({
+        shopId: "7f000001-0000-4000-8000-000000000002",
+        items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 1 }],
+        idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
+        fulfilmentType: "DELIVERY",
+        addressLine1: "12 Coldharbour Lane",
+        addressLine2: "Flat 3",
+        addressCity: "London",
+        addressPostcode: "SW9 8LF",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("COR-1: rejects a fulfilmentType outside the enum — an agent gets the error here, not a 400", () => {
+    const base = {
+      shopId: "7f000001-0000-4000-8000-000000000002",
+      items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 1 }],
+      idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
+    };
+    expect(schema.safeParse({ ...base, fulfilmentType: "TELEPORT" }).success).toBe(false);
+    // Lower case is NOT accepted at the tool boundary: the enum is the contract an agent reads,
+    // and core would normalise it anyway. Being strict here makes the tool self-describing.
+    expect(schema.safeParse({ ...base, fulfilmentType: "delivery" }).success).toBe(false);
+    // The V45 column widths are enforced before the request leaves the agent.
+    expect(schema.safeParse({ ...base, addressPostcode: "X".repeat(13) }).success).toBe(false);
   });
 
   it("accepts a valid order with a 1..64 idempotencyKey", () => {

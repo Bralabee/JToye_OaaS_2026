@@ -43,6 +43,10 @@ public interface OrderMapper {
     @Mapping(target = "customerPhone", source = "customerPhone")
     @Mapping(target = "notes", source = "notes")
     @Mapping(target = "totalAmountPennies", source = "totalAmountPennies")
+    // COR-1: the vendor list must be able to SEE the classification and the fee. Scalar columns
+    // on the order row — no extra query, no collection load.
+    @Mapping(target = "fulfilmentType", source = "fulfilmentType")
+    @Mapping(target = "deliveryFeePennies", source = "deliveryFeePennies")
     @Mapping(target = "createdAt", source = "createdAt")
     @Mapping(target = "updatedAt", source = "updatedAt")
     OrderDto toDto(Order order);

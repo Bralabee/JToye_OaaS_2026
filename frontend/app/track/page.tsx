@@ -19,6 +19,16 @@ export interface OrderStatus {
   shopName: string
   totalAmountPennies: number
   itemCount: number
+  /**
+   * COR-4 (V66): UNITS on the order — what the customer counted in the basket. `itemCount` is
+   * LINES and is what this surface used to render under the word "items", so a 6-Zobo order read
+   * "1 item" here and "6 items" on the basket minutes earlier.
+   *
+   * Optional AND nullable, and the two absences mean the same thing: NOT RECORDED. Absent = an
+   * older backend; null = a row written before V66. Neither may be coalesced to 0 or replaced by
+   * `itemCount` — the count is simply not rendered when it is not known.
+   */
+  unitCount?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -400,7 +410,14 @@ function TrackOrderContent() {
               <div>
                 <p className="text-sm font-semibold text-slate-900">{order.shopName}</p>
                 <p className="text-xs text-slate-600">
-                  {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot; {formatPrice(order.totalAmountPennies)}
+                  {/* COR-4: units when recorded; when not (a pre-V66 row), the price alone.
+                      Falling back to itemCount would print the LINE count under the word
+                      "items" — the defect — and coalescing null to 0 would claim an empty
+                      order. Not rendering a number is the only honest third option. */}
+                  {order.unitCount != null && (
+                    <>{order.unitCount} item{order.unitCount !== 1 ? "s" : ""} &middot; </>
+                  )}
+                  {formatPrice(order.totalAmountPennies)}
                 </p>
                 <p className="mt-1 font-mono text-xs text-slate-300">{order.orderNumber}</p>
               </div>

@@ -50,6 +50,36 @@ export const createOrderInputSchema = {
   customerEmail: z.string().email().optional().describe("Walk-in customer email (optional)"),
   customerPhone: z.string().optional().describe("Walk-in customer phone (optional)"),
   notes: z.string().optional().describe("Order notes (optional)"),
+  // COR-1 (QA-council 20260902-134741, owner ruling E-1). Optional, mirroring
+  // CreateOrderRequest.fulfilmentType. OMITTING it means COLLECTION — which is what a
+  // vendor/API/MCP order actually is unless an address is supplied. Before COR-1 the field did
+  // not exist and core silently persisted every such order as DELIVERY with a GBP 0.00 fee and no
+  // address, which produced a delivery kitchen ticket with nowhere to deliver to and a READY
+  // email promising a delivery. Sending DELIVERY makes the three address fields REQUIRED (core
+  // answers 400 otherwise) and applies the shop's delivery fee server-side.
+  fulfilmentType: z
+    .enum(["DELIVERY", "COLLECTION"])
+    .optional()
+    .describe(
+      "How the order is fulfilled. Optional; omitted means COLLECTION. DELIVERY REQUIRES " +
+        "addressLine1, addressCity and addressPostcode, and applies the shop's delivery fee.",
+    ),
+  addressLine1: z
+    .string()
+    .max(255)
+    .optional()
+    .describe("UK delivery address line 1 — required when fulfilmentType is DELIVERY"),
+  addressLine2: z.string().max(255).optional().describe("UK delivery address line 2 (optional)"),
+  addressCity: z
+    .string()
+    .max(120)
+    .optional()
+    .describe("UK delivery city — required when fulfilmentType is DELIVERY"),
+  addressPostcode: z
+    .string()
+    .max(12)
+    .optional()
+    .describe("UK delivery postcode — required when fulfilmentType is DELIVERY"),
   items: z
     .array(z.object({ productId: z.string().uuid(), quantity: z.number().int().min(1) }))
     .min(1)
@@ -70,6 +100,11 @@ interface CreateOrderArgs {
   customerEmail?: string;
   customerPhone?: string;
   notes?: string;
+  fulfilmentType?: "DELIVERY" | "COLLECTION";
+  addressLine1?: string;
+  addressLine2?: string;
+  addressCity?: string;
+  addressPostcode?: string;
   items: { productId: string; quantity: number }[];
   idempotencyKey: string;
 }
@@ -112,7 +147,9 @@ export function registerCreateOrder(server: McpServer, bearer: string): void {
       description:
         "Create an order for the calling tenant (RLS-scoped by the token) at a shop you " +
         "manage. Requires a stable idempotencyKey — REUSE the same key on any retry so a " +
-        "replay returns the original order, never a duplicate.",
+        "replay returns the original order, never a duplicate. fulfilmentType is optional and " +
+        "defaults to COLLECTION; pass DELIVERY with addressLine1/addressCity/addressPostcode to " +
+        "place a delivery order, which is priced with the shop's delivery fee.",
       inputSchema: createOrderInputSchema,
     },
     createOrderHandler(bearer),

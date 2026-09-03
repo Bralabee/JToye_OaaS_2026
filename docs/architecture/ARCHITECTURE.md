@@ -141,7 +141,9 @@ non-disclosing 404.
 (`:847`): with a Stripe key it saves the order *before* creating the intent (the order UUID must
 exist for `order_id` metadata — the #538 defect), routes MARKETPLACE orders as **destination charges**
 with an application fee of `platform-fee-bps` (default 0); **without** a key it takes the
-**cash-on-delivery** branch (`:903-908`, `PaymentStatus.NONE`, `paymentMethod="Cash on Delivery"`).
+**unpaid COD** branch (`PaymentStatus.NONE`, `paymentMethod="Unpaid"` — INT-9 / owner ruling E-2:
+the former `"Cash on Delivery"` named a delivery on orders this same branch writes as COLLECTION;
+`"Unpaid"` is fulfilment-neutral and is the only claim true today, since no payment request is sent).
 `isConfigured()` is simply "`stripe.api-key` non-blank", which defaults empty everywhere — so **every
 out-of-the-box runtime silently takes COD**, and a `@PostConstruct` WARN is logged at boot. Webhooks
 (`/public/payments/webhook`) verify the Stripe signature, dedupe on `processed_stripe_events` *before*

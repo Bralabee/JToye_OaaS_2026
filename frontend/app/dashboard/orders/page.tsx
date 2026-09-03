@@ -67,12 +67,43 @@ import type { Order, OrderDetail, OrderStatus, Shop, Product } from "@/types/api
 import { formatDistanceToNow, format } from "date-fns"
 import { Trash2 } from "lucide-react"
 
-const orderSchema = z.object({
-  shopId: z.string().min(1, "Shop is required"),
-  customerName: z.string().min(1, "Customer name is required").max(100),
-  customerEmail: z.string().email("Invalid email").max(255),
-  customerPhone: z.string().max(20).optional(),
-})
+// COR-1 (QA-council 20260902-134741, owner ruling E-1). The dialog had NO fulfilment control, so
+// every order it created took the backend's V45 entity default and persisted as DELIVERY with a
+// GBP 0.00 fee and no address — a delivery kitchen ticket with nowhere to deliver to.
+//
+// COLLECTION is the default because that is what this dialog captures: a walk-in / phone ticket.
+// DELIVERY stays reachable (E-1: vendors take delivery orders by phone) and then REQUIRES the
+// address, mirroring the server's FulfilmentPolicy.requireDeliveryAddress. The client check is a
+// UX affordance only — the server is authoritative and answers 400 on its own.
+const orderSchema = z
+  .object({
+    shopId: z.string().min(1, "Shop is required"),
+    customerName: z.string().min(1, "Customer name is required").max(100),
+    customerEmail: z.string().email("Invalid email").max(255),
+    customerPhone: z.string().max(20).optional(),
+    // No .default() here: zod's default makes the INPUT optional while the OUTPUT stays
+    // required, and react-hook-form's Resolver types then refuse to line up. The default is
+    // supplied by useForm({ defaultValues }) instead, which is where the form's initial state
+    // belongs anyway.
+    fulfilmentType: z.enum(["COLLECTION", "DELIVERY"]),
+    addressLine1: z.string().max(255).optional(),
+    addressLine2: z.string().max(255).optional(),
+    addressCity: z.string().max(120).optional(),
+    addressPostcode: z.string().max(12).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.fulfilmentType !== "DELIVERY") return
+    const required = [
+      ["addressLine1", "Address line 1 is required for a delivery order"],
+      ["addressCity", "City is required for a delivery order"],
+      ["addressPostcode", "Postcode is required for a delivery order"],
+    ] as const
+    for (const [field, message] of required) {
+      if (!data[field]?.trim()) {
+        ctx.addIssue({ code: "custom", message, path: [field] })
+      }
+    }
+  })
 
 type OrderFormData = z.infer<typeof orderSchema>
 
@@ -283,9 +314,12 @@ function OrdersPageInner() {
     watch,
   } = useForm<OrderFormData>({
     resolver: zodResolver(orderSchema),
+    // COR-1: the fulfilment control opens on COLLECTION, which is what this dialog captures.
+    defaultValues: { fulfilmentType: "COLLECTION" },
   })
 
   const selectedShopId = watch("shopId")
+  const selectedFulfilment = watch("fulfilmentType")
 
   // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
   const { contextShopId } = useShopContext()
@@ -405,6 +439,13 @@ function OrdersPageInner() {
       customerName: "",
       customerEmail: "",
       customerPhone: "",
+      // COR-1: reset must restore the fulfilment default too, or the dialog opens with no
+      // selection and the first order of the session goes out unclassified again.
+      fulfilmentType: "COLLECTION",
+      addressLine1: "",
+      addressLine2: "",
+      addressCity: "",
+      addressPostcode: "",
     })
     setOrderItems([])
     setDialogOpen(true)
@@ -449,11 +490,17 @@ function OrdersPageInner() {
 
       setSubmitting(true)
 
-      // Add items to form data
-      const payload = {
-        ...data,
-        items: orderItems,
-      }
+      // Add items to form data.
+      //
+      // COR-1: the address block is sent ONLY for a DELIVERY order. The server ignores it on a
+      // COLLECTION order anyway (FulfilmentPolicy decides from the type, never from the payload),
+      // but posting a set of empty strings would put a delivery address on the wire for an order
+      // that has none, and any future audit of the request body would read it as one.
+      const { addressLine1, addressLine2, addressCity, addressPostcode, ...rest } = data
+      const payload =
+        data.fulfilmentType === "DELIVERY"
+          ? { ...rest, addressLine1, addressLine2, addressCity, addressPostcode, items: orderItems }
+          : { ...rest, items: orderItems }
 
       await apiClient.post("/api/v1/orders", payload)
       toast({
@@ -462,7 +509,7 @@ function OrdersPageInner() {
       })
 
       setDialogOpen(false)
-      reset()
+      reset({ fulfilmentType: "COLLECTION" })
       setOrderItems([])
       if (currentPage === 0) fetchData()
       else setCurrentPage(0)
@@ -870,6 +917,84 @@ function OrdersPageInner() {
                 </p>
               )}
             </div>
+
+            {/* COR-1 / E-1: how is this order fulfilled? Without this control every order the
+                dialog created was silently a DELIVERY order with no address and no fee. */}
+            <div className="space-y-2">
+              <Label htmlFor="fulfilmentType">Fulfilment</Label>
+              <Select
+                value={selectedFulfilment ?? "COLLECTION"}
+                onValueChange={(value) =>
+                  setValue("fulfilmentType", value as "COLLECTION" | "DELIVERY", {
+                    shouldValidate: true,
+                  })
+                }
+              >
+                <SelectTrigger id="fulfilmentType" aria-label="How this order is fulfilled">
+                  <SelectValue placeholder="Collection" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="COLLECTION">Collection — customer picks it up</SelectItem>
+                  <SelectItem value="DELIVERY">Delivery — to the address below</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                {selectedFulfilment === "DELIVERY"
+                  ? "The shop's delivery fee is applied by the server, and waived above the shop's free-delivery threshold."
+                  : "No delivery fee. Choose Delivery to take a phone order for delivery."}
+              </p>
+            </div>
+
+            {selectedFulfilment === "DELIVERY" && (
+              <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <Label className="text-sm font-semibold">Delivery address</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="addressLine1" className="text-xs">Address line 1</Label>
+                  <Input
+                    id="addressLine1"
+                    className="bg-white"
+                    placeholder="e.g., 12 Coldharbour Lane"
+                    {...register("addressLine1")}
+                  />
+                  {errors.addressLine1 && (
+                    <p className="text-sm text-red-600">{errors.addressLine1.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="addressLine2" className="text-xs">Address line 2 (optional)</Label>
+                  <Input
+                    id="addressLine2"
+                    className="bg-white"
+                    placeholder="e.g., Flat 3"
+                    {...register("addressLine2")}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="addressCity" className="text-xs">City</Label>
+                  <Input
+                    id="addressCity"
+                    className="bg-white"
+                    placeholder="e.g., London"
+                    {...register("addressCity")}
+                  />
+                  {errors.addressCity && (
+                    <p className="text-sm text-red-600">{errors.addressCity.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="addressPostcode" className="text-xs">Postcode</Label>
+                  <Input
+                    id="addressPostcode"
+                    className="bg-white"
+                    placeholder="e.g., SW9 8LF"
+                    {...register("addressPostcode")}
+                  />
+                  {errors.addressPostcode && (
+                    <p className="text-sm text-red-600">{errors.addressPostcode.message}</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Order Items Section */}
             <div className="space-y-3 border-t pt-4">

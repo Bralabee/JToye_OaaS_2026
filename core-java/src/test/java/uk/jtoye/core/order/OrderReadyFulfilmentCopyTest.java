@@ -156,6 +156,13 @@ class OrderReadyFulfilmentCopyTest {
      * is not reachable through the schema — but the branch must not fall back to
      * collection copy if it ever were, because "come and collect" is the actively
      * harmful answer. Null resolves the same way the column default does.
+     *
+     * <p>COR-1 note (2026-09-02): the entity default is now only a HISTORY device. Both
+     * writers set the value explicitly — the storefront from the customer's choice, the
+     * vendor / REST / MCP path from an optional request field defaulting to COLLECTION
+     * ({@code FulfilmentPolicy}). This arm therefore covers a genuinely unreachable input,
+     * which is exactly why it is worth keeping: the fallback direction is a safety property,
+     * not a live path, and nothing else asserts it.
      */
     @Test
     @DisplayName("#502: a null fulfilment type falls back to the DELIVERY copy, never collection")

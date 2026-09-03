@@ -53,7 +53,9 @@ the GUC aspect, all inside the core. Two things defend each layer, so a single m
    then reaches the decision point: **`if (paymentService.isConfigured())`**.
 3. `isConfigured()` is just "is `stripe.api-key` non-blank?" — and it defaults **empty** on every
    stack. So the code takes the **cash-on-delivery else-branch**: status `PENDING`, `PaymentStatus.NONE`,
-   `paymentMethod = "Cash on Delivery"`, and the order event is published in-transaction via the
+   `paymentMethod = "Unpaid"` (INT-9 / E-2 — fulfilment-neutral: the branch never consulted the
+   fulfilment type, so the old `"Cash on Delivery"` label was wrong on every COLLECTION order),
+   and the order event is published in-transaction via the
    outbox. A boot-time WARN records that payments are unconfigured.
 4. **If a key were present**, the order is `saveAndFlush`-ed *before* the Stripe intent is created (the
    order UUID must exist for the `order_id` metadata — omitting this was the #538 defect), MARKETPLACE

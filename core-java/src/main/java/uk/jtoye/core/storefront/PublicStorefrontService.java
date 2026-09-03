@@ -17,11 +17,13 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.geo.GeoBounds;
 import uk.jtoye.core.geo.PostcodeGeocoder;
+import uk.jtoye.core.order.FulfilmentPolicy;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderAllergenSnapshot;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
+import uk.jtoye.core.order.OrderNumberGenerator;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
@@ -121,6 +123,7 @@ public class PublicStorefrontService {
      * unusable radius fails the context, it does not wait for a customer to find it. See
      * {@link #requireUsableRadius}.
      */
+    private final OrderNumberGenerator orderNumberGenerator;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -131,6 +134,7 @@ public class PublicStorefrontService {
                                    ShopAnnouncementRepository announcementRepository,
                                    IdempotencyService idempotencyService,
                                    PostcodeGeocoder postcodeGeocoder,
+                                   OrderNumberGenerator orderNumberGenerator,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -143,6 +147,10 @@ public class PublicStorefrontService {
         this.announcementRepository = announcementRepository;
         this.idempotencyService = idempotencyService;
         this.postcodeGeocoder = postcodeGeocoder;
+        // COR-5: injected, not re-implemented. The generator used to be a byte-identical
+        // private copy of OrderService's — two definitions of a customer-visible identifier,
+        // and neither had a fault-injection seam.
+        this.orderNumberGenerator = orderNumberGenerator;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -591,6 +599,10 @@ public class PublicStorefrontService {
             status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
             status.setTotalAmountPennies(order.getTotalAmountPennies());
             status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
+            // COR-4: units, passed through AS-IS. No null coalescing — null means the row
+            // predates V66 and was never recorded, which is a different statement from 0 and from
+            // the line count. The customer surface renders the count only when it is present.
+            status.setUnitCount(order.getUnitCount());
             status.setCreatedAt(order.getCreatedAt());
             status.setUpdatedAt(order.getUpdatedAt());
             return status;
@@ -631,8 +643,21 @@ public class PublicStorefrontService {
         status.setStatus(order.getStatus().name());
         status.setPaymentStatus(order.getPaymentStatus() != null ? order.getPaymentStatus().name() : "NONE");
         status.setShopName(shopName);
+        // COR-7 (QA-council 20260902-134741): these three are DECLARED on PublicOrderStatus
+        // (and therefore in the OpenAPI contract) but were never assigned here, so every 200 from
+        // the tracking endpoint serialised them as null. A machine consumer reads a null
+        // vatAmountPennies as "no VAT", which is a different claim from "not disclosed here" —
+        // the same NULL-vs-0 distinction V63 is built on, applied to money. The sibling reader
+        // getCustomerOrders above has always populated all three from the same entity; the
+        // fallbacks below are copied from it verbatim so the two customer surfaces cannot
+        // disagree about the same order.
+        status.setSubtotalPennies(order.getSubtotalPennies());
+        status.setVatRate(order.getVatRate() != null ? order.getVatRate().name() : "ZERO");
+        status.setVatAmountPennies(order.getVatAmountPennies() != null ? order.getVatAmountPennies() : 0L);
         status.setTotalAmountPennies(order.getTotalAmountPennies());
         status.setItemCount(order.getItemCount() != null ? order.getItemCount() : 0);
+        // COR-4: units, passed through AS-IS (see the note on the history reader above).
+        status.setUnitCount(order.getUnitCount());
         status.setCreatedAt(order.getCreatedAt());
         status.setUpdatedAt(order.getUpdatedAt());
         return status;
@@ -805,7 +830,8 @@ public class PublicStorefrontService {
         Order order = new Order();
         order.setTenantId(tenantId);
         order.setShopId(shop.getId());
-        order.setOrderNumber(generateOrderNumber(tenantId));
+        // COR-5: one generator, shared with the vendor/API/MCP path (OrderNumberGenerator).
+        order.setOrderNumber(orderNumberGenerator.generate(tenantId));
         order.setStatus(OrderStatus.DRAFT);
         order.setPaymentStatus(PaymentStatus.PENDING);
         order.setCustomerName(request.getCustomerName());
@@ -821,14 +847,12 @@ public class PublicStorefrontService {
         // enum string; an unknown value is a 400, not a silent DELIVERY.
         FulfilmentType fulfilmentType = parseFulfilmentType(request.getFulfilmentType());
         order.setFulfilmentType(fulfilmentType);
+        // Conditional-required: a delivery order MUST carry a UK address. COR-1 moved the
+        // check itself into FulfilmentPolicy so the vendor/REST/MCP path raises the identical
+        // message; the message text is unchanged.
+        FulfilmentPolicy.requireDeliveryAddress(fulfilmentType, request.getAddressLine1(),
+                request.getAddressCity(), request.getAddressPostcode());
         if (fulfilmentType == FulfilmentType.DELIVERY) {
-            // Conditional-required: a delivery order MUST carry a UK address.
-            if (isBlank(request.getAddressLine1())
-                    || isBlank(request.getAddressCity())
-                    || isBlank(request.getAddressPostcode())) {
-                throw new IllegalArgumentException(
-                        "Delivery address (line 1, city and postcode) is required for delivery orders.");
-            }
             order.setAddressLine1(request.getAddressLine1());
             order.setAddressLine2(request.getAddressLine2());
             order.setAddressCity(request.getAddressCity());
@@ -930,16 +954,12 @@ public class PublicStorefrontService {
                     shop.getMinimumOrderPennies() / 100.0));
         }
 
-        long deliveryFee;
-        if (fulfilmentType == FulfilmentType.COLLECTION) {
-            deliveryFee = 0L;
-        } else {
-            deliveryFee = shop.getDeliveryFeePennies() != null ? shop.getDeliveryFeePennies() : 0L;
-            if (shop.getFreeDeliveryThresholdPennies() != null
-                    && itemSubtotal >= shop.getFreeDeliveryThresholdPennies()) {
-                deliveryFee = 0L;
-            }
-        }
+        // COR-1: the rule now lives in FulfilmentPolicy, called by BOTH order-creation paths.
+        // It is byte-for-byte the rule that was here, with the null handling made explicit
+        // (a null threshold is "no waiver configured", not "always free").
+        long deliveryFee = FulfilmentPolicy.deliveryFeePennies(
+                fulfilmentType, itemSubtotal,
+                shop.getDeliveryFeePennies(), shop.getFreeDeliveryThresholdPennies());
         order.setDeliveryFeePennies(deliveryFee);
 
         order.calculateTotal();
@@ -1007,7 +1027,16 @@ public class PublicStorefrontService {
             // save below, exactly as before.
             order.setStatus(OrderStatus.PENDING);
             order.setPaymentStatus(PaymentStatus.NONE);
-            order.setPaymentMethod("Cash on Delivery");
+            // INT-9 (QA-council 20260902-134741) / owner ruling E-2. This literal used to be
+            // "Cash on Delivery", written unconditionally with no reference to the fulfilment type
+            // resolved earlier, so COLLECTION orders carried a label naming a delivery that will
+            // never happen. It is a vendor-finance label; nothing branches on the string.
+            // "Unpaid" is the owner-ruled replacement and the ONLY value truthful today: no
+            // payment has been taken and no request has been sent, so it must not claim one is
+            // pending. "Pay on collection" is explicitly forbidden -- #461 records that
+            // pay-on-collection is not an allowed policy. #461 STAYS FULLY OPEN: this satisfies
+            // none of its acceptance criteria.
+            order.setPaymentMethod("Unpaid");
         }
 
         order = orderRepository.save(order);
@@ -1107,27 +1136,19 @@ public class PublicStorefrontService {
      * fee-bearing choice); an unknown value is rejected with a 400 rather than
      * silently coerced.
      */
+    /**
+     * COR-1: delegates to the shared {@link FulfilmentPolicy}. Behaviour is unchanged — this
+     * endpoint's fallback is DELIVERY, matching the V45 column default and what this endpoint has
+     * always done. The fallback is passed EXPLICITLY rather than hard-coded in the policy,
+     * because the vendor/REST/MCP path's fallback is COLLECTION and burying one answer in the
+     * shared rule would silently move the other.
+     */
     private static FulfilmentType parseFulfilmentType(String raw) {
-        if (isBlank(raw)) {
-            return FulfilmentType.DELIVERY;
-        }
-        try {
-            return FulfilmentType.valueOf(raw.trim().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid fulfilment type: " + raw
-                    + " (expected DELIVERY or COLLECTION)");
-        }
+        return FulfilmentPolicy.resolve(raw, FulfilmentType.DELIVERY);
     }
 
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
-    }
-
-    private String generateOrderNumber(UUID tenantId) {
-        String tenantPrefix = tenantId.toString().replace("-", "").substring(0, 8).toUpperCase();
-        String datePart = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
-        String randomSuffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
-        return String.format("ORD-%s-%s-%s", tenantPrefix, datePart, randomSuffix);
     }
 
     private PublicShopDto toPublicShopDto(Shop shop) {
@@ -1217,6 +1238,10 @@ public class PublicStorefrontService {
         dto.setIngredientsText(product.getIngredientsText());
         dto.setAllergenMask(product.getAllergenMask());
         dto.setPricePennies(product.getPricePennies());
+        // COR-6: the client needs the rate to preview VAT correctly. Null-safe: products.vat_rate
+        // is NOT NULL (V40) but a detached/partially-built Product in a test is not, and a null
+        // here must stay null ("not disclosed") rather than become a fabricated "STANDARD".
+        dto.setVatRate(product.getVatRate() != null ? product.getVatRate().name() : null);
         dto.setCategory(product.getCategory());
         dto.setDietaryTags(product.getDietaryTags());
         dto.setPreparationTimeMinutes(product.getPreparationTimeMinutes());
