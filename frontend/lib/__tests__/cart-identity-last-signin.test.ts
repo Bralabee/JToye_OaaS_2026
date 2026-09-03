@@ -35,11 +35,11 @@ describe("jtoye-customer-last-signin", () => {
     expect(hasRememberedSignIn()).toBe(true)
   })
 
-  it.each<[string | null | undefined, string]>([
-    ["", "blank"],
-    [null, "null"],
-    [undefined, "undefined"],
-  ])("ignores a %j (%s) subject rather than writing an empty stamp", (sub, _label) => {
+  it.each([
+    { sub: "" as string | null | undefined, label: "blank" },
+    { sub: null as string | null | undefined, label: "null" },
+    { sub: undefined as string | null | undefined, label: "undefined" },
+  ])("ignores a $label subject rather than writing an empty stamp", ({ sub }) => {
     rememberLastSignIn("sub-a")
     rememberLastSignIn(sub)
     expect(getLastSignIn()).toBe("sub-a")
