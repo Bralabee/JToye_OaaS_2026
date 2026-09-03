@@ -1,233 +1,146 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-04-18
+**Analysis Date:** 2026-09-03
+
+This is a REFRESH of a document last written 2026-04-18. The codebase has grown
+substantially since (Java tests alone went from ~390 to 1730 methods per
+`docs/metrics.json`); this version reflects the tree as of commit `0eed4f66`
+on `feature/qa-remediate-20260902`.
 
 ## Naming Patterns
 
-**Files (Frontend / TypeScript):**
-- Page routes: `page.tsx` (Next.js app-router convention) — e.g. `frontend/app/shop/[shopSlug]/page.tsx`
+**Files (Frontend / TypeScript, `frontend/`):**
+- Page routes: `page.tsx` (Next.js App Router) — e.g. `frontend/app/shop/[shopSlug]/page.tsx`
 - Route handlers: `route.ts` — e.g. `frontend/app/api/customer-auth/route.ts`
-- Components: PascalCase — e.g. `CartProvider.tsx`, `SafeImage.tsx`, `RequireCustomerAuth.tsx`
-- Utilities / helpers: kebab-case filenames, camelCase exports — e.g. `api-client.ts`, `customer-auth.ts`, `use-toast.ts`
-- Hooks: `use-<name>.ts` files exporting `use<Name>()` functions — e.g. `use-stomp.ts` → `useStomp()`
-- Test files: co-located in `__tests__/` directories with `*.test.ts` / `*.test.tsx` suffix
-- E2E specs: `*.spec.ts` under `frontend/e2e/`
+- Components: PascalCase — e.g. `frontend/components/cart/CartProvider.tsx`, `frontend/components/safe-image.tsx` (component name `SafeImage`, filename can be kebab-case even when the export is PascalCase — verify per-directory)
+- Utilities/helpers: kebab-case filenames, camelCase exports — e.g. `frontend/lib/api-client.ts`, `frontend/lib/customer-auth.ts`
+- Hooks: `use-<name>.ts` files exporting `use<Name>()` — e.g. `frontend/hooks/use-toast.ts` → `useToast()`, `frontend/hooks/use-theme.ts` → `useTheme()`
+- Test files: co-located `__tests__/` directories, `*.test.ts`/`*.test.tsx` suffix — e.g. `frontend/app/__tests__/landing.test.tsx`, `frontend/lib/__tests__/delivery-fee.test.tsx`
+- E2E specs: `*.spec.ts` under `frontend/e2e/` — e.g. `frontend/e2e/storefront-flows.spec.ts`, `frontend/e2e/csp-no-violations.spec.ts`
 
-**Files (Backend Java):**
+**Files (Backend Java, `core-java/src/main/java/uk/jtoye/core/`):**
 - Entity classes: PascalCase — `Shop.java`, `Product.java`, `Order.java`
-- Service classes: `<Entity>Service.java` — `ShopService.java`, `OrderService.java`, `PublicStorefrontService.java`
-- Controller classes: `<Entity>Controller.java` — `ShopController.java`, `PublicStorefrontController.java`
+- Service classes: `<Entity>Service.java` — `ShopService.java`, `OrderService.java`
+- Controller classes: `<Entity>Controller.java` — `ShopController.java`, `PromotionController.java`
 - Repository interfaces: `<Entity>Repository.java` — `ShopRepository.java`
-- DTO records / classes: `<Entity>Dto.java`; request bodies: `<Action><Entity>Request.java` (e.g. `CreateShopRequest`)
-- Mapper interfaces: `<Entity>Mapper.java` annotated `@Mapper(componentModel = "spring")` (MapStruct)
-- Exception classes: `<Reason>Exception.java` under `uk.jtoye.core.exception/`
-- Test classes: `<Class>Test.java` for unit, `<Class>IntegrationTest.java` for Testcontainers-tagged
-- Config: `<Feature>Config.java` under feature package or `uk.jtoye.core.config/`
+- DTO classes: `<Entity>Dto.java` in a `dto/` subpackage — `core-java/src/main/java/uk/jtoye/core/shop/dto/ShopDto.java`, `dto/CreateShopRequest.java`
+- Mapper interfaces: `<Entity>Mapper.java` (MapStruct, `@Mapper(componentModel = "spring")`) — `ShopMapper.java`
+- Exception classes: `<Reason>Exception.java`, all under `core-java/src/main/java/uk/jtoye/core/exception/` (domain-specific exceptions may live under a domain's own `exception` subpackage, e.g. `uk.jtoye.core.media.exception.DecompressionBombException`)
+- Package markers: `package-info.java` per domain package, annotated `@NonNullApi` (Spring's `org.springframework.lang.NonNullApi`) — e.g. `core-java/src/main/java/uk/jtoye/core/shop/package-info.java`
+- Test classes mirror the production class one-to-one: `ShopService.java` → `core-java/src/test/java/uk/jtoye/core/shop/ShopServiceTest.java`
 
-**Files (Go):**
-- Package layout: `edge-go/internal/<domain>/` (one directory per bounded context — `middleware`, `core`, `ratelimit`, `whatsapp`)
-- Cmd layout: `edge-go/cmd/edge/main.go` is the entrypoint
-- Test files: `<module>_test.go` sibling to source (e.g. `jwt_test.go`, `client_test.go`)
+**Files (Go, `edge-go/`):**
+- Package structure: `internal/<domain>/` — `internal/auth/`, `internal/core/`, `internal/middleware/`, `internal/whatsapp/`
+- Test files: `*_test.go` suffix, co-located with the source — e.g. `internal/whatsapp/parser_test.go`, `cmd/edge/main_test.go`
 
-**Functions / Methods:**
-- TypeScript: camelCase — `addItem()`, `updateQuantity()`, `getCustomerSession()`
-- Java: camelCase — `getShopById()`, `createShop()`, `transitionOrder()`
-- Go: PascalCase for exported identifiers, camelCase for unexported — `SearchProducts()`, `CreateOrder()`, `ForwardWebhook()`, `extractBearerToken()`
+**Files (MCP server, `mcp-server/src/`):**
+- Tool handlers under `src/tools/`, one file per tool — `create-order.ts`, `list-shops.ts`, `read-orders.ts`
+- Test files co-located, `*.test.ts` suffix — `src/tools/create-order.test.ts`, `src/core-client.test.ts`, `src/errors.test.ts`
+
+**Functions:**
+- TypeScript/JavaScript: camelCase — `addItem()`, `refreshSessionOnce()`
+- Java: camelCase — `getShopById()`, `createShop()`
+- Go: camelCase exported / lowercase unexported — `NewClient()`, `parseMessage` internals
 
 **Variables:**
-- TypeScript: camelCase — `itemCount`, `totalPennies`, `shopSlug`
+- TypeScript: camelCase — `itemCount`, `totalPennies`
 - Java: camelCase — `tenantId`, `productId`, `isPublished`
-- Database columns: snake_case — `created_at`, `delivery_fee_pennies`, `opening_hours`
+- Database columns: snake_case — `created_at`, `delivery_fee_pennies`
 
-**Types / Interfaces:**
-- TypeScript: PascalCase — `CartItem`, `CartContextValue`, `SafeImageProps`, `RequireCustomerAuthProps`
-- Java: PascalCase; DTO suffix `Dto` (`ShopDto`, `OrderDto`)
-- Go: PascalCase — `CreateOrderRequest`, `ProductSearchResult`
+**Types:**
+- TypeScript: PascalCase — `CartItem`, `PublicShop`, `SafeImageProps`
+- Java: PascalCase for classes/records; DTOs suffixed `Dto` — `ShopDto`, `OrderDto`
+- Constants: TypeScript UPPER_SNAKE_CASE (e.g. `MAX_RETRIES`, `RETRY_DELAYS_MS` in `frontend/lib/api-client.ts`); Java `static final` UPPER_SNAKE_CASE
 
-**Constants:**
-- TypeScript: UPPER_SNAKE_CASE — `TOAST_LIMIT`, `TOAST_REMOVE_DELAY`
-- Java: UPPER_SNAKE_CASE `static final`
-- Spring cache keys: string literals in annotations — `@Cacheable(value = "shops")`, `@CacheEvict(value = "products", allEntries = true)`
+**Java test method naming — verified pattern:**
+`test<Method>_<Scenario>` — e.g. `testCreateShop_Success`, `testCreateShop_MissingTenant`, `testGetShopById_NotFound` (see `core-java/src/test/java/uk/jtoye/core/shop/ShopServiceTest.java:163,192,255`). `@DisplayName` is used selectively on classes and complex test methods for human-readable descriptions, not as a substitute for the naming convention.
 
 ## Code Style
 
-**Formatting:**
-- Frontend: ESLint (`frontend/.eslintrc.json` extends `next/core-web-vitals` + `next/typescript`)
-- Backend: Spring Boot / Gradle default, 4-space indentation, no dedicated Checkstyle config
-- Go: `gofmt` (tabs, standard layout)
+**Indentation — verified against real files, not assumed:**
+- Java: **4 spaces** — verified in `core-java/src/main/java/uk/jtoye/core/shop/ShopService.java:33-40` (`cat -A` shows literal space characters, no tabs)
+- TypeScript/JavaScript: **2 spaces** — verified in `frontend/lib/api-client.ts:21-24`
+- Go: **tabs** — verified in `edge-go/internal/core/client.go:20-22` (`cat -A` shows `^I` tab markers)
 
-**Linting:**
-- Frontend: `npm run lint` (Next.js ESLint)
-- Backend: Gradle compile-time checks + Spring Boot conventions
-- Secrets scan: `scripts/pre-commit-gitleaks.sh` (new v2.1) + `.github/workflows/gitleaks.yml`
+**No repo-wide formatter is enforced for Java or Go.** There is no `.editorconfig`, no `checkstyle.xml`, and no Spotless plugin wired in `core-java/build.gradle.kts` — indentation is convention-only, held by review rather than a tool. Frontend has no `.prettierrc` either; formatting is whatever the ESLint flat config catches plus author discipline.
 
-**Indentation:**
-- TypeScript / JavaScript: 2 spaces
-- Java: 4 spaces
-- Go: tabs
+**Frontend linting:**
+- ESLint **9, flat config** at `frontend/eslint.config.mjs`, run as `eslint .` via `npm run lint` (`package.json` script). Next.js 16 removed `next lint`, so there is no Next-managed lint step and no legacy `.eslintrc` — the flat config is the only linter.
+- The config spreads `eslint-config-next/core-web-vitals` and `eslint-config-next/typescript` **directly** (`...nextCoreWebVitals`, `...nextTypescript`) — it does **NOT** wrap them in `FlatCompat`. `eslint-config-next@16` ships native flat-config arrays at those subpaths; wrapping them crashes with a circular-structure error (documented in the file's own header comment, confirmed by reading `frontend/eslint.config.mjs:1-13`).
+- A dedicated block layers the full `jsx-a11y` `recommended` rule set at `error` (31-02/LGL-02) on top of the six rules Next's own config enables at `warn`. One rule (`jsx-a11y/control-has-associated-label`) is deliberately left off — the file documents a measured false positive at `app/shop/shop-discovery-client.tsx:390` rather than silently omitting it.
+- Two scoped overrides: `**/__tests__/**`, `**/*.test.*`, `**/*.spec.*` relax `@typescript-eslint/no-explicit-any`; `jest.config.js`/`jest.setup.js` relax `@typescript-eslint/no-require-imports` (CommonJS, and `jest.setup.js`'s `require` is load-bearing — see Testing patterns).
+
+**Backend:**
+- Gradle/Spring Boot standard formatting, 4-space indentation, held by convention.
+- `core-java/build.gradle.kts` is heavily commented with measurement-backed rationale for build/test task wiring (see TESTING.md) — this is itself a project convention: non-obvious build decisions carry a dated, measured justification inline rather than being left to institutional memory.
 
 ## Import Organization
 
-**TypeScript / React (observed order):**
-1. React / Next.js framework: `import { useState } from "react"`, `import { useRouter } from "next/navigation"`
-2. External libraries: `import axios from "axios"`, `import { signIn } from "next-auth/react"`
-3. UI primitives: `import { Button } from "@/components/ui/button"`, `import { Store } from "lucide-react"`
-4. Internal components / hooks: `import { CartProvider } from "@/components/storefront/cart-provider"`
-5. Internal utilities / types: `import apiClient from "@/lib/api-client"`, `import type { CartItem } from "@/types/cart"`
+**TypeScript:**
+- `@/` path alias points at the frontend root (`frontend/tsconfig.json`) — used throughout as `@/components/`, `@/lib/`, `@/hooks/`, `@/types/`.
+- No enforced import-order rule (no `eslint-plugin-import` ordering block observed in `eslint.config.mjs`) — order is by convention: external packages, then `@/` aliases, then relative imports.
 
-**Path Aliases:**
-- `@/*` → `frontend/*` (tsconfig `paths`). Used uniformly: `@/app`, `@/components`, `@/lib`, `@/hooks`, `@/types`.
-
-**Java (observed order):**
-1. JDK: `java.time.*`, `java.util.*`
-2. Jakarta / Spring: `jakarta.persistence.*`, `org.springframework.*`
-3. Project: `uk.jtoye.core.*`
-4. Static imports (tests only): `static org.mockito.Mockito.*`, `static org.assertj.core.api.Assertions.*`
+**Java:**
+- Package declaration, then imports grouped by nothing more than the IDE default (alphabetical within `import` block, no explicit third-party/first-party separation observed) — e.g. `core-java/src/main/java/uk/jtoye/core/shop/ShopService.java:1-27` mixes `org.springframework.*` and `uk.jtoye.core.*` imports alphabetically, with a blank line before `java.util.*` imports.
+- Static imports (`import static ...`) grouped at the end of the import block in test files — see `core-java/src/test/java/uk/jtoye/core/shop/ShopServiceTest.java:29-31`.
 
 **Go:**
-- Standard library first, then third-party (`github.com/...`), then internal (`github.com/jtoye/edge-go/internal/...`), separated by blank lines (goimports enforced).
+- Standard-library imports first, third-party after a blank line — `edge-go/internal/core/client.go:3-14` (`bytes`, `context`, `encoding/json`, `fmt`, `io`, `net/http`, `time`, then `github.com/sony/gobreaker`, `go.uber.org/zap`).
 
 ## Error Handling
 
-**Frontend Patterns:**
-- Try / catch around all async network calls
-- Axios interceptors in `frontend/lib/api-client.ts`:
-  - Request interceptor attaches bearer token from NextAuth session
-  - Response interceptor: 401 → redirect to `/auth/signin`; other errors propagated to caller
-- Toast notifications via `useToast()` for user-visible failures
-- **Customer-auth guard (v2.1):** `frontend/components/storefront/require-customer-auth.tsx` wraps storefront routes that require a logged-in customer; shows sign-in CTA instead of the protected UI when `getCustomerSession()` resolves null. Used by cart / checkout / orders pages.
+**Java — RFC 7807 Problem Details, centralized:**
+- `core-java/src/main/java/uk/jtoye/core/common/GlobalExceptionHandler.java` (724 lines) is the single `@RestControllerAdvice` for the whole API. Every domain exception gets its own `@ExceptionHandler` method building a `ProblemDetail` with a `title`, a `type` URI under `https://jtoye.uk/errors/<kind>`, and the appropriate `HttpStatus`.
+- Custom exception hierarchy lives entirely under `core-java/src/main/java/uk/jtoye/core/exception/` (17 files) — `ResourceNotFoundException` (404), `InvalidStateTransitionException` (400), `MissingTenantContextException` (500 — a security-configuration fault, not a client error), `ShopAccessDeniedException`, `IdempotencyConflictException`, `InsufficientStockException`, etc. Some domains (e.g. `media`) keep their own `exception` subpackage rather than the shared one — `uk.jtoye.core.media.exception.DecompressionBombException`, `PayloadTooLargeException`.
+- **Convention documented inline**: a handler's status choice carries a written rationale when it is non-obvious. Example — `MissingTenantContextException` maps to 500 (not 400) because a missing tenant context indicates the JWT/tenant filter chain failed server-side, not a client mistake; the doc comment at `GlobalExceptionHandler.java:83-90` states this explicitly so a future edit doesn't "fix" it back to 400.
+- Generic exceptions (`IllegalArgumentException` → 400, `IllegalStateException` → 400) are caught too, but every new domain fault gets its own typed exception in preference to reusing a generic one, precisely so its status/detail can diverge from the generic default when needed (see the `MissingTenantContextException` and `MisconfiguredPlatformRadiusException` comments contrasting themselves with the generic `IllegalStateException` handler).
+- Server-fault exceptions log at ERROR before returning a generic detail to the client — internal specifics never leak into the response body (`GlobalExceptionHandler.java:84-90`, `:99-105`).
 
-**Backend Patterns (Java):**
-- Custom exception hierarchy under `uk.jtoye.core.exception/`:
-  - `ResourceNotFoundException` → 404
-  - `InvalidStateTransitionException` → 400
-  - `ForbiddenException` → 403
-  - `ConflictException` → 409
-- Global handler: `@RestControllerAdvice GlobalExceptionHandler` with `@ExceptionHandler` per type; returns RFC 7807 `ProblemDetail` (`title`, `detail`, `type`, `status`, per-field errors for validation)
-- Validation: `@Valid` on `@RequestBody` triggers `MethodArgumentNotValidException` → 400 with field map
-- Security: `AuthenticationException` → 401, `AccessDeniedException` → 403, `DataIntegrityViolationException` → 409
-- Services throw, controllers never catch; exceptions bubble to the advice
+**Go — wrapped errors, explicit status checks:**
+- `fmt.Errorf("context: %w", err)` preserves the error chain — verified throughout `edge-go/internal/core/client.go` (10 call sites, e.g. `:111,116,126,144`).
+- HTTP status is checked explicitly against the numeric code (`httpResp.StatusCode >= 400`, `:134`), not via a status-code library abstraction.
+- Circuit breaker (`sony/gobreaker`) wraps outbound calls to Core; on the edge there is **no fallback** — breaker-open or a transport error returns 502 directly to the caller (`edge-go/internal/core/client.go`). The frontend and `mcp-server` bypass the edge entirely and call Core directly, so this 502-only behavior is scoped to edge-routed traffic only.
 
-**Go Patterns:**
-- Error wrapping: `fmt.Errorf("forward to core: %w", err)` preserves chain for `errors.Is` / `errors.As`
-- HTTP status inspection: `if resp.StatusCode >= 400 { return nil, fmt.Errorf(...) }`
-- Circuit breaker: `c.breaker.Execute(func() (interface{}, error) { ... })` wraps remote calls (`sony/gobreaker`)
-- Bearer extraction: `extractBearerToken(authHeader)` returns `(token, error)` — never panics
-- Errors returned upward; logging done by caller via `zap` with contextual fields
+**TypeScript — Axios interceptors + typed responses:**
+- `frontend/lib/api-client.ts` centralizes request/response handling: a request interceptor injects the Bearer token and `X-Tenant-Id`; a response interceptor retries 5xx/network errors (max 2 retries, 250ms/500ms backoff — **4xx is never retried**) and debounces concurrent 401s onto a single `getSession()` refresh promise (module-level `refreshPromise` singleton) rather than stampeding the auth endpoint.
+- MCP server (`mcp-server/src/errors.ts`) has its own `toToolError` mapping from Core's RFC 7807 responses to MCP tool errors — exercised for real (not mocked) in tool tests like `mcp-server/src/tools/create-order.test.ts` so the delegation path is proven end to end.
 
 ## Logging
 
-**Frameworks:**
-- Frontend: `console.log/error` for dev only; production telemetry via backend
-- Java: SLF4J + Logback (Spring Boot default) — `private static final Logger log = LoggerFactory.getLogger(X.class);`
-- Go: `go.uber.org/zap` — structured, field-based (`logger.Info("msg", zap.String("tenant_id", tid))`)
+**Java:** SLF4J via `LoggerFactory`, one `private static final Logger log` per class (e.g. `ShopService.java:33`, `GlobalExceptionHandler.java:57`).
+- DEBUG: method entry, intermediate calculations.
+- INFO: business-significant operations (create/update/delete).
+- WARN: recoverable issues.
+- ERROR: exceptions before rethrow/handling — always paired with a generic client-facing detail when the log carries internals (see Error Handling above).
 
-**Java Patterns:**
-```java
-log.debug("Looking up shop {} for tenant {}", shopId, tenantId);
-log.info("Created shop {} for tenant {}", shop.getId(), tenantId);
-log.warn("Rate limit exceeded for tenant {}", tenantId);
-log.error("Failed to publish order event", ex);
-```
+**Go:** `go.uber.org/zap` structured logging — fields via `zap.String(...)`, e.g. `edge-go/internal/core/client.go` circuit-breaker state-change logging (`logger.Info("Circuit breaker state changed", zap.String(...))`).
 
-**When to Log:**
-- Service layer — entry / exit of business operations
-- State transitions (order status changes, payment confirmations)
-- Security events (auth failures, rate limits, RLS denials) — WARN or higher
-- Caught exceptions before rethrow at boundary layers
-
-**Log Levels:**
-- DEBUG: intermediate flow, parameter snapshots
-- INFO: create / update / delete, state changes
-- WARN: recoverable issues, deprecations, rate-limit hits
-- ERROR: exceptions, integration failures
+**Frontend:** `console.log`/`console.error` in the browser; no structured logging framework. MCP server uses `pino` (`mcp-server/package.json` dependency) — tests explicitly assert PII (order DTOs, customer data) is **never** logged, by hoisting a shared spy over the `pino` mock and asserting on its call args (`mcp-server/src/tools/create-order.test.ts:1-16`, T-25-09).
 
 ## Comments
 
-**Frontend:**
-- JSDoc comment block on exported components / utilities describing purpose (see `safe-image.tsx`, `require-customer-auth.tsx`)
-- Inline comments reserved for non-obvious business rules (slug generation, penny-based currency math)
-- Workaround markers: `// TODO(v2.2):` or `// HACK:` with owner/context
-
-**Java:**
-- Controllers: OpenAPI annotations (`@Operation(summary = ...)`, `@ApiResponse`) replace Javadoc
-- Services: brief Javadoc on public methods — "what + why", not "how"
-- Exceptions: one-line Javadoc stating when thrown and the resulting HTTP status
-- Avoid restating field names in getters / setters
-
-**Go:**
-- Doc comments on every exported identifier start with the identifier name: `// SearchProducts queries the core API for products matching q.`
+**Convention: dated, measurement-backed rationale for non-obvious decisions.** This is the dominant comment style across the codebase, not just in build scripts. A comment explaining *why* typically cites an issue/PR number, a measured before/after, or a specific defect it prevents recurring — e.g. `ShopService.java`'s `reservedSlugs` field explains the Next.js static-route collision it guards against; `ShopMapper.java`'s `@BeanMapping` comment cites `QA-council BE-02` and the exact defect (`published` NOT NULL violated by a naive partial update).
+- JSDoc/TSDoc: function-level doc comments on exported utilities and non-obvious React components, e.g. `frontend/lib/api-client.ts`'s file-level comment enumerating its four hardening behaviors.
+- Java: OpenAPI annotations (`@Operation`, `@ApiResponse`) preferred over Javadoc on controller methods; service methods get brief Javadoc; exception classes get a one-line Javadoc naming the resulting HTTP status (`ResourceNotFoundException.java:3-5`).
+- Workarounds and known limitations are written down with the reasoning, not just flagged — consistent with the project's `CLAUDE.md` "Proof Standards" doctrine of recording measured evidence rather than assumptions.
 
 ## Function Design
 
-**Size:**
-- Complex business logic: < 50 lines
-- Small helpers: < 10 lines
-- Controllers: 5–15 lines, delegate to service
-
-**Parameters:**
-- TypeScript: destructured object for component props / hooks — `function Component({ shopSlug, children }: Props)`
-- Java: explicit parameters (DTOs, ids); constructor injection for services
-- Go: explicit parameters, `error` as last return value
-
-**Return Values:**
-- React components: JSX; hooks: tuple or object of state + callbacks
-- Java services: `DTO` or `Optional<DTO>`; throw rather than return null
-- Go: `(result, error)` convention; never panic on expected errors
+- Target: < 50 lines for complex business logic; small utility functions < 10 lines acceptable (per `CLAUDE.md`).
+- Controllers: thin delegation to service layer, typically 5-15 lines per endpoint method (`ShopController.java` `list()` is 5 lines).
+- Frontend: destructured object parameters for components/hooks; Java constructor/service methods take individual typed parameters (JPA/Spring convention).
+- Go: explicit parameters, error as the last return value (`(result, error)` convention throughout `edge-go/internal/core/client.go`).
 
 ## Module Design
 
-**Exports:**
-- Frontend: named exports for components and utilities; default export reserved for Next.js pages / layouts
-- Java: public class per file; package-private helpers
-- Go: capitalised identifier = exported; keep package surface small
+**Java:** package-per-domain under `core-java/src/main/java/uk/jtoye/core/<domain>/` (e.g. `shop/`, `product/`, `order/`, `media/`, `finance/`), each with its own `package-info.java` marked `@NonNullApi`. Public classes are the domain's API surface; DTOs live in a `dto/` subpackage; some domains keep a private `exception/` subpackage for domain-specific faults.
 
-**Barrel files:**
-- Rare. `frontend/components/ui/` components export individually; no `index.ts` re-exports.
+**Go:** `internal/<domain>/` isolates each concern (`auth`, `core`, `middleware`, `whatsapp`) from external import — enforced by Go's `internal/` visibility rule, not just convention.
 
-**Package Organization:**
-- Frontend: `app/` (routes), `components/{ui,dashboard,storefront}/`, `lib/`, `hooks/`, `types/`
-- Backend: `uk.jtoye.core.<domain>/` — e.g. `shop/`, `order/`, `storefront/`, `payment/`, `security/`, `config/`
-- Go: `internal/<domain>/` — one domain per dir
+**Frontend:** `app/` (routes), `components/`, `lib/`, `hooks/`, `types/` — named exports for components and utilities, default export reserved for Next.js page/layout files (App Router convention).
 
-## Specific Patterns
-
-**Type Safety:**
-- Frontend: TypeScript strict mode; `zod` schemas for runtime validation of inbound data
-- Backend: Jakarta Bean Validation (`@Valid`, `@NotNull`, `@Email`) on DTOs
-- Go: explicit structs, no `interface{}` unless strictly necessary
-
-**Null / Optional Handling:**
-- TypeScript: optional chaining (`?.`), nullish coalescing (`??`); avoid `!` non-null assertions
-- Java: `Optional<T>` on repository reads, guard clauses at method entry
-- Go: `nil` checks before dereference; use `errors.New` or wrapped errors instead of sentinel nils
-
-**Immutability:**
-- React: spread / map / filter for state updates (see `CartProvider` reducer)
-- Java: setters used inside services for JPA-managed entities; DTOs are mutable POJOs but treated immutably in mapping layer
-- Functional style (stream / map / filter / reduce) preferred for collections
-
-**Dependency Injection:**
-- Frontend: React Context (`CartContext`, `ToastContext`) for cross-cutting state; hooks for local
-- Backend: Spring constructor injection (`@RequiredArgsConstructor` via Lombok) — never field injection
-- Go: manual wiring in `cmd/edge/main.go`; dependencies passed into constructors explicitly
-
-**Tenant / Auth Context:**
-- Java: `TenantContext.set(tenantId)` populated by `JwtTenantFilter` per request; services read via `TenantContext.get()`; cleared in `finally`
-- Frontend: `NextAuth` session for staff (`/dashboard`) and custom `customerLogin()` / `getCustomerSession()` for storefront customers
-- Go: `JWTMiddleware` extracts bearer, validates against Keycloak JWKS, attaches claims to `gin.Context`
-
-**Mapping:**
-- MapStruct interfaces (`@Mapper(componentModel = "spring")`) with abstract methods; implementations generated at compile time into `build/generated/sources/annotationProcessor/`
-
-**Transactions:**
-- `@Transactional` at the service layer (class-level read-only default; write methods annotated individually)
-- Never on controllers; never on repositories
-
-**Caching:**
-- Spring Cache (`@Cacheable`, `@CacheEvict`) with Redis backend
-- `TenantAwareCacheKeyGenerator` prepends `tenantId` to every cache key to prevent cross-tenant bleed
+**MCP server:** `src/tools/` — one file per MCP tool, each exporting its handler and Zod input schema (e.g. `createOrderHandler`, `createOrderInputSchema` from `src/tools/create-order.ts`), imported directly by that tool's co-located test file.
 
 ---
 
-*Convention analysis: 2026-04-18*
+*Convention analysis: 2026-09-03*
