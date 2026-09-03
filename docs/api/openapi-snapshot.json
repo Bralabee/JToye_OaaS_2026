@@ -540,6 +540,26 @@
       },
       "CreateOrderRequest" : {
         "properties" : {
+          "addressCity" : {
+            "maxLength" : 120,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "addressLine1" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "addressPostcode" : {
+            "maxLength" : 12,
+            "minLength" : 0,
+            "type" : "string"
+          },
           "customerEmail" : {
             "type" : "string"
           },
@@ -551,6 +571,17 @@
             "type" : "string"
           },
           "customerPhone" : {
+            "type" : "string"
+          },
+          "fulfilmentType" : {
+            "description" : "How the order is fulfilled. Optional; defaults to COLLECTION for this endpoint, because a vendor/API/MCP order captures no address unless one is sent. DELIVERY requires addressLine1, addressCity and addressPostcode.",
+            "enum" : [
+              "DELIVERY",
+              "COLLECTION"
+            ],
+            "example" : "COLLECTION",
+            "maxLength" : 20,
+            "minLength" : 0,
             "type" : "string"
           },
           "items" : {
@@ -1969,6 +2000,10 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "unitCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
           "updatedAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -1989,6 +2024,17 @@
             "type" : "string"
           },
           "customerPhone" : {
+            "type" : "string"
+          },
+          "deliveryFeePennies" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "fulfilmentType" : {
+            "enum" : [
+              "DELIVERY",
+              "COLLECTION"
+            ],
             "type" : "string"
           },
           "id" : {
@@ -2049,6 +2095,10 @@
           },
           "totalAmountPennies" : {
             "format" : "int64",
+            "type" : "integer"
+          },
+          "unitCount" : {
+            "format" : "int32",
             "type" : "integer"
           },
           "updatedAt" : {
@@ -2999,6 +3049,10 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "unitCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
           "updatedAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -3059,6 +3113,9 @@
             "type" : "integer"
           },
           "title" : {
+            "type" : "string"
+          },
+          "vatRate" : {
             "type" : "string"
           }
         },
@@ -6568,7 +6625,7 @@
           "required" : true
         },
         "responses" : {
-          "200" : {
+          "201" : {
             "content" : {
               "*/*" : {
                 "schema" : {
@@ -6576,7 +6633,67 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Order created. A repeated Idempotency-Key replays the original order and echoes this same 201 - never a second row."
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Request validation failed (errors/validation), or a rejected value such as ordering more units than the product has in stock (errors/invalid-argument)"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or one that is expired or invalid (errors/unauthorized)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Token lacks the orders:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on the target shop (errors/shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The shop, customer or a product in the basket does not exist for this tenant (errors/not-found)"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "A request with this Idempotency-Key is still in flight (errors/idempotency-conflict)"
+          },
+          "422" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Idempotency-Key reused with a different payload (errors/idempotency-payload-mismatch)"
           }
         },
         "security" : [
@@ -7668,6 +7785,26 @@
             },
             "description" : "Validation error - missing required fields or invalid price"
           },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or one that is expired or invalid (errors/unauthorized)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on the target shop (errors/shop-access-denied)"
+          },
           "409" : {
             "content" : {
               "application/problem+json" : {
@@ -7939,6 +8076,36 @@
             },
             "description" : "Product found"
           },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The id path variable is not a UUID (errors/type-mismatch)"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or one that is expired or invalid (errors/unauthorized)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller holds no STAFF grant on the shop that owns this product (errors/shop-access-denied)"
+          },
           "404" : {
             "content" : {
               "application/problem+json" : {
@@ -7947,7 +8114,7 @@
                 }
               }
             },
-            "description" : "Product not found"
+            "description" : "Product not found (errors/not-found)"
           }
         },
         "security" : [
@@ -9232,7 +9399,7 @@
     },
     "/api/v1/public/shops/{slug}/orders" : {
       "post" : {
-        "description" : "Create an order as a guest customer. Prices are calculated server-side.",
+        "description" : "Create an order as a guest customer. Prices are calculated server-side. Supply an Idempotency-Key header to make a retried POST safe: the same key with the same body replays the original confirmation and never creates a second order; the same key with a different body is refused 422 (errors/idempotency-payload-mismatch); a concurrent request on the same key that is still in flight is refused 409 (errors/idempotency-conflict). The legacy request-body field idempotencyKey is still honoured and is authoritative when both are present.",
         "operationId" : "createGuestOrder",
         "parameters" : [
           {
@@ -9240,6 +9407,16 @@
             "name" : "slug",
             "required" : true,
             "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "Client-supplied key; same key replays the original response, never duplicates.",
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : false,
+            "schema" : {
+              "maxLength" : 64,
               "type" : "string"
             }
           }
@@ -9255,7 +9432,7 @@
           "required" : true
         },
         "responses" : {
-          "200" : {
+          "201" : {
             "content" : {
               "*/*" : {
                 "schema" : {
@@ -9263,7 +9440,27 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Order created (or the original confirmation replayed for a repeated key)"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "A request with this Idempotency-Key is in flight"
+          },
+          "422" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Idempotency-Key reused with a different payload"
           }
         },
         "summary" : "Place a guest order",
@@ -10311,7 +10508,37 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Batch accepted; per-item results in the response"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Batch validation failed (errors/validation)"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or one that is expired or invalid (errors/unauthorized)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no grant on the target shop (errors/shop-access-denied)"
           }
         },
         "security" : [
@@ -11120,7 +11347,7 @@
     },
     "/public/shops/{slug}/orders" : {
       "post" : {
-        "description" : "Create an order as a guest customer. Prices are calculated server-side.",
+        "description" : "Create an order as a guest customer. Prices are calculated server-side. Supply an Idempotency-Key header to make a retried POST safe: the same key with the same body replays the original confirmation and never creates a second order; the same key with a different body is refused 422 (errors/idempotency-payload-mismatch); a concurrent request on the same key that is still in flight is refused 409 (errors/idempotency-conflict). The legacy request-body field idempotencyKey is still honoured and is authoritative when both are present.",
         "operationId" : "createGuestOrder_1",
         "parameters" : [
           {
@@ -11128,6 +11355,16 @@
             "name" : "slug",
             "required" : true,
             "schema" : {
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "Client-supplied key; same key replays the original response, never duplicates.",
+            "in" : "header",
+            "name" : "Idempotency-Key",
+            "required" : false,
+            "schema" : {
+              "maxLength" : 64,
               "type" : "string"
             }
           }
@@ -11143,7 +11380,7 @@
           "required" : true
         },
         "responses" : {
-          "200" : {
+          "201" : {
             "content" : {
               "*/*" : {
                 "schema" : {
@@ -11151,7 +11388,27 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Order created (or the original confirmation replayed for a repeated key)"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "A request with this Idempotency-Key is in flight"
+          },
+          "422" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Idempotency-Key reused with a different payload"
           }
         },
         "summary" : "Place a guest order",
