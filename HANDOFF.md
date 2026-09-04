@@ -67,7 +67,42 @@ and memory `project_qa_council_20260902.md`; the procedure lessons went into
 filed except the RabbitMQ horizon (#724, deferred to 2026-11-30 by PR #725) — still unfiled: 2
 Criticals, the top Highs, a docs epic, amendments to #648/#453/#711, and 9 new defects the refuter
 surfaced — and `/qa-remediate 20260902-134741` has not run.
-The 41-gate expectation at "Resume here" is unchanged.
+The gate expectation at "Resume here" is 43 (42 `scripts/check-*.sh` + `scripts/docs-freshness.sh`,
+which is exactly what `check-handoff-contract.sh` H-1 counts) — this line said 41 until 2026-09-04,
+contradicting the EXPECT 43 claim below it in the same file. H-1 does not read this sentence (no `**`
+marker), which is the semantic rot that gate's own closing NOTE says it cannot detect.
+
+**2026-09-04 delta — the remediation RAN, and this file said it had not.** The block above ends
+"`/qa-remediate 20260902-134741` has not run"; it had, across ten `qa/cluster-*` lanes, and this
+file simply was not updated. Corrected here rather than rewritten above, so the record shows what
+was believed and when. **Branch `feature/qa-remediate-20260902` is now PR #726 (OPEN), 76 commits /
+245 files / +16k-3.5k against main.** Both Criticals are in: **API-1** `9980ad17` gates
+`POST /api/v1/sync/batch` by scope + shop grant, validates items and derives the shop slug (the
+read-only `integration-catalog-ro` credential could write the catalogue); **FE-1** `fe0c4a42` clears
+the app session server-side on the Keycloak return leg (`@auth/core` re-issued the JWT on every
+session GET, so Sign Out left the cookie live). Two migrations ship: **V65** narrows the six legacy
+Envers `_aud` INSERT policies off `WITH CHECK (true)` — the `IS NULL` arm is load-bearing, because
+Envers DELETE revisions carry `tenant_id` NULL by construction and the naive predicate breaks every
+product/order/customer DELETE — and **V66** adds `orders.unit_count` beside an untouched
+`item_count`, no backfill, NULL ≠ 0. `origin/main` is still stamped V64 until this merges, so
+CLAUDE.md's "Current schema version" is correct for merged state and goes stale on merge.
+**CI on `60132305`: 15 pass / 1 fail / 4 skipped.** The single failure is `review-record`, which is
+head-scoped and wants a human — "no review record for head 60132305". Two CI failures were fixed en
+route and neither was the remediation's fault: the OpenAPI gate + `OpenApiSnapshotTest` failed on a
+stale `docs/api/openapi-snapshot.json`, regenerated in `2f39df00` — oasdiff calls it breaking
+because three `200`s disappear, but `HttpStatus.CREATED` is unchanged between main and the branch
+(1×/1× in `OrderController`, 2×/2× in `PublicStorefrontController`), so the snapshot had documented
+a status no client ever received; and Trivy failed on four HIGH `fast-uri` CVEs that this branch
+never introduced (`3.1.5` on main too, `mcp-server/package-lock.json` diff EMPTY against main),
+bumped to 3.1.7 in `60132305` — the daily-DB time-bomb, not a regression. Docs and gates closed
+alongside: `docs/metrics.json` was stale at 3572 against a tree measuring 3912 and is regenerated
+with 22 prose claims reconciled; `.planning/codebase/` remapped (four of seven documents dated
+2026-04-18); and `scripts/check-doc-versions.sh` gained a `Go` row after passing 119 claims while
+every doc said Go 1.26 and the module had been on 1.27 since #674 — coverage 119 claims/6 docs ->
+147/7, proven able to fail before being trusted. Full record:
+`.planning/quick/260903-psy-fix-docs-freshness-metrics-drift-and-sta/`. **Not this session's work:**
+`b3fd1f05` (enable graphify + ignore the 163 MB it generates) came from a concurrent session on the
+same checkout and was carried up by the push — unreviewed here.
 
 **Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
 the 2026-08-24 session broke it once itself (see "The truncating filter", below).
