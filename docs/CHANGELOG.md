@@ -62,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   #674 — coverage is now 147 claims across 7 docs, and the row was proven able to fail
   before being trusted. Three pre-existing `check-doc-citations` violations in
   `k8s/LOCAL.md` fixed; that gate runs in CI and was already red on this branch.
+- **`fast-uri` 3.1.5 → 3.1.7 in `mcp-server` (four HIGH SSRF CVEs — 2026-75899, -75931,
+  -75975, -76172).** Not introduced here: `origin/main` carries the same 3.1.5 and its
+  Security Scan was green on 2026-09-02, so the advisories entered Trivy's database after
+  that — the daily-DB time-bomb this repo has met before, where a tree that changed nothing
+  reds on its own schedule. The `overrides` floor moves to `^3.1.6` so the CVE boundary is
+  stated rather than left to resolution luck; exactly one lockfile version changed. The same
+  lock rides #733 so that branch's gate passes too — whichever merges second rebases cleanly.
 
 ### Dependency-horizon gate: dated deferral for rabbitmq/4.3 so Operational Contracts stops redding every PR (#725) — 2026-09-02
 
