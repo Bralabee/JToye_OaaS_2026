@@ -43,16 +43,16 @@
 - Spring OAuth2 Resource Server - JWT validation against Keycloak JWKS
 - Spring AOP - Aspect-oriented programming (`@Cacheable`, tenant guards)
 - Spring Cache - Redis-backed distributed cache
-- Spring AMQP - RabbitMQ publisher/consumer for order events (`spring-boot-starter-amqp`, `core-java/build.gradle.kts:52`)
-- Spring WebSocket + STOMP - Kitchen Display System real-time messaging (`spring-boot-starter-websocket`, `core-java/build.gradle.kts:108`)
-- Spring WebFlux (`spring-boot-starter-webflux`) - Non-blocking WebClient for Claude/Ollama AI calls (`core-java/build.gradle.kts:134`)
-- Spring Statemachine 4.0.2 - Order lifecycle state machine (`core-java/build.gradle.kts:95`)
+- Spring AMQP - RabbitMQ publisher/consumer for order events (`spring-boot-starter-amqp`, `core-java/build.gradle.kts:57`)
+- Spring WebSocket + STOMP - Kitchen Display System real-time messaging (`spring-boot-starter-websocket`, `core-java/build.gradle.kts:113`)
+- Spring WebFlux (`spring-boot-starter-webflux`) - Non-blocking WebClient for Claude/Ollama AI calls (`core-java/build.gradle.kts:139`)
+- Spring Statemachine 4.0.2 - Order lifecycle state machine (`core-java/build.gradle.kts:100`)
 
 **API & Observability:**
 - Spring Actuator - `/actuator/health`, `/actuator/prometheus`
-- SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation (`core-java/build.gradle.kts:164`)
+- SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation (`core-java/build.gradle.kts:169`)
 - Micrometer Prometheus - Metrics export (`io.micrometer:micrometer-registry-prometheus`)
-- Micrometer Tracing (`micrometer-tracing-bridge-brave`) + Zipkin Reporter - Distributed tracing (`core-java/build.gradle.kts:138`)
+- Micrometer Tracing (`micrometer-tracing-bridge-brave`) + Zipkin Reporter - Distributed tracing (`core-java/build.gradle.kts:143`)
 
 **Frontend:**
 - Next.js 16.3.2 - React framework, file-based routing, standalone output
@@ -77,7 +77,7 @@
 **Testing:**
 - JUnit 5 (spring-boot-starter-test) - Java unit/integration tests
 - Spring Security Test - `@WithMockUser`, security-aware MockMvc
-- Testcontainers 1.21.4 (+ postgresql, junit-jupiter) - Dockerized integration tests, excluded by default, opt-in via `-PincludeIntegration` (`org.testcontainers:testcontainers`, `core-java/build.gradle.kts:189-190`)
+- Testcontainers 1.21.4 (+ postgresql, junit-jupiter) - Dockerized integration tests, excluded by default, opt-in via `-PincludeIntegration` (`org.testcontainers:testcontainers`, `core-java/build.gradle.kts:194-195`)
 - H2 - Lightweight in-memory JPA tests
 - Jest 29.7.0 + jest-environment-jsdom 30.3.0 - JS test runner
 - @testing-library/react 16.3.0, @testing-library/jest-dom 7.0.1, @testing-library/user-event 14.6.5
@@ -94,12 +94,12 @@
 ## Key Dependencies
 
 **Critical (Backend):**
-- PostgreSQL JDBC 42.7.13 (`core-java/build.gradle.kts:163`)
+- PostgreSQL JDBC 42.7.13 (`core-java/build.gradle.kts:168`)
 - Hibernate ORM (managed by Spring Boot BOM) + Hibernate Envers for audit history
-- AWS SDK v2 BOM 2.54.3 + `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:119-120`)
-- Stripe Java SDK 33.3.0 (`core-java/build.gradle.kts:145`)
-- OpenPDF 2.0.3 - Allergen label PDF generation (`core-java/build.gradle.kts:148`)
-- ~~JasperReports~~ — **REMOVED 2026-07-27** (`core-java/build.gradle.kts:153`). Never used (zero imports, zero `.jrxml`/`.jasper` templates) and the sole source of `commons-beanutils`; removing it cleared three Trivy image-gate HIGHs (CVE-2025-48734, CVE-2025-10492, CVE-2026-6009). PDF generation is OpenPDF.
+- AWS SDK v2 BOM 2.54.3 + `software.amazon.awssdk:s3` (`core-java/build.gradle.kts:124-125`)
+- Stripe Java SDK 33.3.0 (`core-java/build.gradle.kts:150`)
+- OpenPDF 2.0.3 - Allergen label PDF generation (`core-java/build.gradle.kts:153`)
+- ~~JasperReports~~ — **REMOVED 2026-07-27** (`core-java/build.gradle.kts:158`). Never used (zero imports, zero `.jrxml`/`.jasper` templates) and the sole source of `commons-beanutils`; removing it cleared three Trivy image-gate HIGHs (CVE-2025-48734, CVE-2025-10492, CVE-2026-6009). PDF generation is OpenPDF.
 
 **Resilience & Rate Limiting:**
 - Resilience4j Spring Boot 3 Starter 2.4.0 - Circuit breakers for stripe/email/ai
@@ -156,7 +156,7 @@
 ## Platform Requirements
 
 **Development:**
-- Docker + Docker Compose (Docker Engine 29+ / API >= 1.40; Testcontainers env var `DOCKER_API_VERSION=1.45` in `core-java/build.gradle.kts:198`)
+- Docker + Docker Compose (Docker Engine 29+ / API >= 1.40; Testcontainers env var `DOCKER_API_VERSION=1.45` in `core-java/build.gradle.kts:203`)
 - Java 25 JDK (requires Gradle ≥ 9.1; the wrapper pins 9.7.1)
 - Node.js 24+
 - Go 1.22+
