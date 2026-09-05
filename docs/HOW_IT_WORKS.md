@@ -53,7 +53,9 @@ the GUC aspect, all inside the core. Two things defend each layer, so a single m
    then reaches the decision point: **`if (paymentService.isConfigured())`**.
 3. `isConfigured()` is just "is `stripe.api-key` non-blank?" — and it defaults **empty** on every
    stack. So the code takes the **cash-on-delivery else-branch**: status `PENDING`, `PaymentStatus.NONE`,
-   `paymentMethod = "Cash on Delivery"`, and the order event is published in-transaction via the
+   `paymentMethod = "Unpaid"` (INT-9 / E-2 — fulfilment-neutral: the branch never consulted the
+   fulfilment type, so the old `"Cash on Delivery"` label was wrong on every COLLECTION order),
+   and the order event is published in-transaction via the
    outbox. A boot-time WARN records that payments are unconfigured.
 4. **If a key were present**, the order is `saveAndFlush`-ed *before* the Stripe intent is created (the
    order UUID must exist for the `order_id` metadata — omitting this was the #538 defect), MARKETPLACE
@@ -189,7 +191,13 @@ Verification is a first-class subsystem, not an afterthought.
 
 ```bash
 # Bring up the canonical Compose runtime (dev + E2E)
-scripts/start-dev.sh                 # runs verify-env.sh preflight, then compose up
+docker compose -f docker-compose.full-stack.yml up -d --build
+
+# Hybrid ALTERNATIVE, not the same thing: scripts/start-dev.sh runs verify-env.sh against the
+# repo-root .env, then `cd infra && docker compose up -d` (Postgres + Keycloak only, reading
+# infra/.env), then bootRun and `npm run dev` as HOST processes. Never run it alongside the
+# line above — they collide on host ports 5433 and 8085. Teardown: scripts/stop-dev.sh
+#   scripts/start-dev.sh
 
 # After ANY code change, rebuild the affected images BEFORE E2E — `start` does not rebuild:
 docker compose -f docker-compose.full-stack.yml up -d --build core-java frontend

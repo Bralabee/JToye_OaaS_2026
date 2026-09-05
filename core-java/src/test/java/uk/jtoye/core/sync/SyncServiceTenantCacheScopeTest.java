@@ -18,6 +18,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import uk.jtoye.core.config.TenantAwareCacheKeyGenerator;
@@ -25,14 +26,15 @@ import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.sync.dto.BatchSyncRequest;
 import uk.jtoye.core.sync.dto.BatchSyncResponse;
+import uk.jtoye.core.sync.dto.SyncItem;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -54,7 +56,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p><b>Why the #287 fix is the WRONG fix here, and this class proves it.</b> #287 could simply
  * DELETE the eviction, because bulk import is provably create-only — a row that never existed
  * has no cache key to stale. {@code SyncService} genuinely upserts
- * ({@code shopRepository.findByName(...)} / {@code productRepository.findBySku(...)} then save),
+ * ({@code shopRepository.findByNameAndTenantId(...)} / {@code productRepository.findBySku(...)} then save),
  * so existing rows really are mutated and an eviction is NECESSARY. Only its RADIUS was wrong.
  * {@link #anUpdatedProductsOwnEntryIsStillInvalidated()} and
  * {@link #anUpdatedShopsOwnEntryIsStillInvalidated()} are the arms that go red if a future
@@ -152,6 +154,21 @@ class SyncServiceTenantCacheScopeTest {
             return "loaded:" + id;
         }
     }
+
+    /**
+     * QA-council 20260902 Cluster A: SyncService now takes the per-shop write gate (SEC-5) and
+     * ShopService (the API-13 create path). Both are mocked — nothing here is about authorization,
+     * and a mock require() is a no-op, so every eviction arm below exercises the same code it did.
+     *
+     * <p>Bean OVERRIDES rather than {@code @Bean Mockito.mock(...)} in {@link CacheProof}, and the
+     * distinction is load-bearing: Spring autowires {@code @Value} fields on ANY instance a
+     * {@code @Bean} method returns, the Mockito subclass inherits the real class's
+     * {@code Duration directoryUpsertInterval}, and this bare context has no String-to-Duration
+     * converter — measured: the context failed to load. A {@code @MockitoBean} override is
+     * registered as a raw singleton and skips population entirely.
+     */
+    @MockitoBean private ShopAccessService shopAccessService;
+    @MockitoBean private ShopService shopService;
 
     @Autowired private SyncService syncService;
     @Autowired private CacheManager cacheManager;
@@ -401,37 +418,36 @@ class SyncServiceTenantCacheScopeTest {
                 .thenAnswer(inv -> inv.getArgument(0));
     }
 
-    /** The upsert's UPDATE branch for shops. */
+    /** The upsert's UPDATE branch for shops. Every shop arm runs as TENANT_B, and the lookup is tenant-keyed (M1). */
     private void stubExistingShop(String name, UUID id) {
         Shop existing = new Shop();
         existing.setId(id);
         existing.setName(name);
-        Mockito.when(shopRepository.findByName(name)).thenReturn(Optional.of(existing));
+        Mockito.when(shopRepository.findByNameAndTenantId(name, TENANT_B)).thenReturn(Optional.of(existing));
         Mockito.when(shopRepository.save(Mockito.any(Shop.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
     }
 
-    @SafeVarargs
-    private static BatchSyncRequest batchOf(Map<String, Object>... items) {
+    private static BatchSyncRequest batchOf(SyncItem... items) {
         return BatchSyncRequest.builder().items(List.of(items)).build();
     }
 
-    private static Map<String, Object> productItem(String sku) {
-        Map<String, Object> item = new HashMap<>();
-        item.put("type", "product");
-        item.put("sku", sku);
-        item.put("title", "Synced " + sku);
-        item.put("ingredientsText", "Rice, tomatoes");
-        item.put("allergenMask", 0);
-        item.put("pricePennies", 899);
-        return item;
+    private static SyncItem productItem(String sku) {
+        return SyncItem.builder()
+                .type("product")
+                .sku(sku)
+                .title("Synced " + sku)
+                .ingredientsText("Rice, tomatoes")
+                .allergenMask(0)
+                .pricePennies(899L)
+                .build();
     }
 
-    private static Map<String, Object> shopItem(String name) {
-        Map<String, Object> item = new HashMap<>();
-        item.put("type", "shop");
-        item.put("name", name);
-        item.put("address", "1 Test Street, London");
-        return item;
+    private static SyncItem shopItem(String name) {
+        return SyncItem.builder()
+                .type("shop")
+                .name(name)
+                .address("1 Test Street, London")
+                .build();
     }
 }

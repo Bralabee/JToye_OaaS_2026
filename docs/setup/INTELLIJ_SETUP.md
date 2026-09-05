@@ -8,7 +8,12 @@ FATAL: password authentication failed for user "jtoye"
 
 **Root Cause:** IntelliJ is running the application without the `DB_PORT=5433` environment variable.
 
-## Solution 1: Use the 'local' Profile (EASIEST - TRY THIS FIRST!)
+## Solution 1: Use the 'local' Profile (fewest settings — try this first)
+
+> You still need credentials. The `local` profile supplies the PORT (5433) and the runtime
+> ROLE as defaults; it does NOT supply a password, and it no longer carries one. Set
+> `DB_PASSWORD` in the run configuration's Environment variables (or export it in the shell
+> IntelliJ inherits) using the value from your `.env`.
 
 ### Step-by-Step Instructions
 
@@ -30,9 +35,15 @@ FATAL: password authentication failed for user "jtoye"
    - Click the green Run button
    - Application should start on port 9090
 
-**Why this works:** We've created `application-local.yml` with the correct database port (5433) hard-coded.
+**Why this works:** `application-local.yml` defaults the connection to port 5433 and to the
+`jtoye_runtime` application role, so those two are the settings you do not have to type.
+Every value in that file is config-injected (`${DB_PORT:5433}`, `${DB_USER:jtoye_runtime}`,
+`${DB_PASSWORD}`) — it used to hard-code `jtoye_app` / `secret`, which could not authenticate
+and, even with a correct password, is a role the application refuses to start as because it
+OWNS the tables. `DB_PASSWORD` has no default on purpose: the boot fails loudly on an
+unresolved placeholder rather than silently trying an empty password.
 
-## Solution 2: Use Environment Variables (If Solution 1 doesn't work)
+## Solution 2: Use Environment Variables (no profile)
 
 ### Step-by-Step Instructions
 
@@ -43,7 +54,15 @@ FATAL: password authentication failed for user "jtoye"
 2. **Add Environment Variable**
    - In the configuration window, find the **"Environment variables"** field
    - Click the folder icon or text field
-   - Add: `DB_PORT=5433`
+   - Add ALL THREE — `DB_PORT` alone is not enough. Without a profile, `application.yml`
+     resolves `${DB_USER:jtoye_app}` (the MIGRATOR role, which the application refuses to
+     start as) and `${DB_PASSWORD:}` (EMPTY, which does not authenticate):
+
+     ```
+     DB_PORT=5433
+     DB_USER=jtoye_runtime
+     DB_PASSWORD=<the value from your .env>
+     ```
    - Click **OK**
 
 3. **Apply and Save**
@@ -76,7 +95,7 @@ Run Configuration Window:
 When configured correctly, you should see in the logs:
 ```
 Database: jdbc:postgresql://localhost:5433/jtoye (PostgreSQL 15.13)
-Successfully validated 4 migrations
+Successfully validated N migrations        # N = the current schema head; see README.md
 Tomcat started on port 9090 (http) with context path '/'
 Started CoreApplication in X.XXX seconds
 ```
@@ -128,7 +147,9 @@ You can also set:
 - `SERVER_PORT=9090` (API port, default is 9090)
 - `DB_HOST=localhost` (database host)
 - `DB_NAME=jtoye` (database name)
-- `DB_USER=jtoye` (database user)
+- `DB_USER=jtoye_runtime` (application role — **never** `jtoye`, the superuser: it bypasses RLS and `DatabaseConfigurationValidator` refuses to start; and never `jtoye_app`, which OWNS the tables and is refused for the same reason)
 - `DB_PASSWORD` (database password — take the value from your `.env`, do not type a literal)
 
-But **`DB_PORT=5433` is the critical one** that must be set!
+**All three are required.** `DB_PORT` alone leaves the application on the base default role
+with an empty password, which is the exact "password authentication failed" this guide opens
+with.

@@ -221,6 +221,22 @@ export interface Order {
   customerId?: string
   totalAmountPennies: number
   itemCount: number
+  /**
+   * COR-4 (V66): UNITS on the order — what the customer counted in the basket. `itemCount` is
+   * LINES and is what this surface used to render under the word "items", so a 6-Zobo order read
+   * "1 item" here and "6 items" on the basket minutes earlier.
+   *
+   * Optional AND nullable, and the two absences mean the same thing: NOT RECORDED. Absent = an
+   * older backend; null = a row written before V66. Neither may be coalesced to 0 or replaced by
+   * `itemCount` — the count is simply not rendered when it is not known.
+   */
+  unitCount?: number | null
+  // COR-1 (QA-council 20260902-134741): backend OrderDto now exposes how the order is fulfilled
+  // and what delivery cost, so the vendor LIST can see the classification — it could not before,
+  // which is how 4 live orders sat mis-classified as DELIVERY-with-no-address with nothing on
+  // screen contradicting itself. Optional for old-backend tolerance: an older API omits both.
+  fulfilmentType?: FulfilmentType
+  deliveryFeePennies?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -273,6 +289,10 @@ export interface OrderDetail {
   customerPhone?: string
   notes?: string
   totalAmountPennies: number
+  // COR-4 (V66): UNITS on the order, beside the LINES the `items` array already gives. Optional
+  // and nullable: both absences mean NOT RECORDED (older backend / pre-V66 row) and neither may
+  // be coalesced to 0 or to items.length.
+  unitCount?: number | null
   items: OrderItem[]
   createdAt: string
   updatedAt: string
@@ -428,10 +448,20 @@ export type OnboardingState =
   | "REJECTED"
   | "WITHDRAWN"
 
+// INT-6 (QA council 20260902-134741): ALL eight backend constants, in Java declaration
+// order. This union was a hand-maintained 3-of-8 subset; because the pages' copy maps are
+// typed Record<GateType, …>, tsc was satisfied and the five missing types rendered as the
+// literal "Check". Parity with GateType.java / GateStatus.java / OnboardingState.java is
+// now enforced by frontend/__tests__/onboarding-enum-parity.test.ts.
 export type GateType =
   | "BUSINESS_VERIFIED"
   | "FOOD_HYGIENE_RATING"
+  | "FOOD_BUSINESS_REGISTRATION"
+  | "IDENTITY_KYC"
+  | "PAYMENTS_CONNECTED"
+  | "AGREEMENT_SIGNED"
   | "ALLERGEN_DATA_COMPLETE"
+  | "MENU_MINIMUM"
 
 export type GateStatus =
   | "PENDING"

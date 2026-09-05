@@ -7,6 +7,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -80,6 +81,20 @@ class OrderServiceTest {
 
     @Mock
     private ShopAccessService shopAccessService;
+
+    /**
+     * COR-5: a REAL generator, deliberately @Spy and not @Mock.
+     *
+     * <p>The order number is now minted by {@link OrderNumberGenerator} rather than by a private
+     * method on the service. A @Mock here would return null and the format assertions below
+     * ("Contains tenant prefix", "Contains current date", "Random suffix provides collision
+     * resistance", "1000 orders generate unique numbers") would have to be deleted or weakened to
+     * a verify() — which is exactly the kind of "assert the call happened" substitution those
+     * tests exist to avoid. A @Spy keeps every one of them exercising the real arithmetic, so the
+     * extraction is proven behaviour-preserving rather than merely compiling.
+     */
+    @Spy
+    private OrderNumberGenerator orderNumberGenerator = new OrderNumberGenerator();
 
     @InjectMocks
     private OrderService orderService;
@@ -273,6 +288,105 @@ class OrderServiceTest {
         verify(shopRepository).findById(shopId);
         verify(productRepository).findById(productId);
         verify(orderRepository, never()).saveAndFlush(any(Order.class));
+    }
+
+    /**
+     * PR #726 review M2 — mirrors the storefront's CR-01 guard (PublicStorefrontService): an
+     * order for shop X may only contain shop X's products. {@code findById} is RLS-scoped to the
+     * TENANT, not the shop, so without this a SHOP_MANAGER granted shop A could line-item shop
+     * B's product onto an order for A. Same exception type + message shape as the absent-row case
+     * so the 404 does not disclose that the product exists on another shop. RED on the unfixed
+     * tree: the order saves with the foreign line.
+     */
+    @Test
+    @DisplayName("createOrder - A product homed on ANOTHER shop is not-found and nothing is saved")
+    void testCreateOrder_ProductOnAnotherShop_isNotFound() {
+        // Given
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setShopId(shopId);
+
+        OrderItemRequest itemRequest = new OrderItemRequest();
+        itemRequest.setProductId(productId);
+        itemRequest.setQuantity(1);
+        request.setItems(List.of(itemRequest));
+
+        testProduct.setShopId(UUID.randomUUID()); // shop B, same tenant
+        when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
+        when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
+
+        // When & Then
+        ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () -> {
+            orderService.createOrder(request);
+        });
+
+        assertEquals("Product not found: " + productId, exception.getMessage(),
+                "same shape as the absent-row 404: no title, no shop id");
+        verify(orderRepository, never()).saveAndFlush(any(Order.class));
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    /**
+     * M2's deliberate null arm: a {@code shop_id IS NULL} product is tenant-wide by design (V20)
+     * and must stay orderable from any of the tenant's shops.
+     */
+    @Test
+    @DisplayName("createOrder - A tenant-wide product (shopId == null) is still accepted")
+    void testCreateOrder_TenantWideProduct_isAccepted() {
+        // Given
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setShopId(shopId);
+
+        OrderItemRequest itemRequest = new OrderItemRequest();
+        itemRequest.setProductId(productId);
+        itemRequest.setQuantity(2);
+        request.setItems(List.of(itemRequest));
+
+        assertNull(testProduct.getShopId(), "fixture precondition: the product is tenant-wide");
+        when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
+        when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            setField(order, "id", orderId);
+            return order;
+        });
+
+        // When
+        OrderDto result = orderService.createOrder(request);
+
+        // Then
+        assertNotNull(result);
+        assertEquals(2000L, result.getTotalAmountPennies());
+        verify(orderRepository).saveAndFlush(any(Order.class));
+    }
+
+    /** M2's allow arm: a product homed on the SAME shop is accepted (the guard is scoped, not a wall). */
+    @Test
+    @DisplayName("createOrder - A product homed on the ordered shop is accepted")
+    void testCreateOrder_ProductOnSameShop_isAccepted() {
+        // Given
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setShopId(shopId);
+
+        OrderItemRequest itemRequest = new OrderItemRequest();
+        itemRequest.setProductId(productId);
+        itemRequest.setQuantity(1);
+        request.setItems(List.of(itemRequest));
+
+        testProduct.setShopId(shopId);
+        when(shopRepository.findById(shopId)).thenReturn(Optional.of(testShop));
+        when(productRepository.findById(productId)).thenReturn(Optional.of(testProduct));
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            setField(order, "id", orderId);
+            return order;
+        });
+
+        // When
+        OrderDto result = orderService.createOrder(request);
+
+        // Then
+        assertNotNull(result);
+        verify(orderRepository).saveAndFlush(any(Order.class));
     }
 
     @Test

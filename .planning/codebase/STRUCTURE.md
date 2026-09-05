@@ -1,478 +1,285 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-04-18
+**Analysis Date:** 2026-09-03
 
 ## Directory Layout
 
 ```
 JToye_OaaS_2026/
-├── core-java/                     # Spring Boot backend (port 9090)
+├── core-java/                      # Spring Boot 3.5.16 backend (port 9090), JDK 25 / Gradle 9.7.1
 │   ├── src/main/java/uk/jtoye/core/
-│   │   ├── ai/                    # LLM integration (Ollama image analysis)
-│   │   ├── audit/                 # AuditService, Envers helpers
-│   │   ├── common/                # Shared utilities, constants
-│   │   ├── config/                # CacheConfig, CorsConfig, EnversConfig,
-│   │   │                          #   OpenApiConfig, RateLimitConfig,
-│   │   │                          #   RabbitMQConfig, ScheduledCleanupService,
-│   │   │                          #   BusinessMetricsService,
-│   │   │                          #   TenantAwareCacheKeyGenerator,
-│   │   │                          #   TenantCacheEvictor
-│   │   ├── controller/            # SecurityHealthController (cross-cutting)
-│   │   ├── customer/              # Customer domain
-│   │   ├── exception/             # GlobalExceptionHandler, ErrorResponse,
-│   │   │                          #   ResourceNotFoundException, InvalidStateTransitionException
-│   │   ├── finance/               # FinancialTransaction domain, VAT
-│   │   ├── gdpr/                  # Data export/deletion requests
-│   │   ├── notification/          # Email service, RabbitMQ publishers
-│   │   ├── order/                 # Order domain + Spring State Machine + SSE
-│   │   ├── payment/               # Stripe integration + PaymentEventOutbox
-│   │   │                          #   (PaymentController, PaymentService,
-│   │   │                          #    PaymentEventOutbox, PaymentEventOutboxFlusher,
-│   │   │                          #    PaymentEventPublisher, PaymentEventAuditListener,
-│   │   │                          #    StripeProperties)
-│   │   ├── product/               # Product domain, image gallery
-│   │   ├── review/                # Customer reviews
-│   │   ├── security/              # TenantContext, JwtTenantFilter, SecurityConfig,
-│   │   │                          #   TenantSetLocalAspect, TenantContextCleanupFilter,
-│   │   │                          #   RateLimitInterceptor
-│   │   ├── shop/                  # Shop domain (tenant-owned storefront)
-│   │   ├── storage/               # S3/MinIO file operations
-│   │   ├── storefront/            # Public (unauth) endpoints — v2.1 extended
-│   │   │                          #   PublicStorefrontController (promotions,
-│   │   │                          #   announcements, guest orders, tracking)
-│   │   │                          #   PublicStorefrontService + dto/
-│   │   ├── sync/                  # SyncController, batch sync from edge devices
-│   │   ├── tenant/                # Tenant provisioning (dev profile)
-│   │   ├── websocket/             # STOMP/WS — v2.1 relay-capable
-│   │   │                          #   WebSocketConfig (in-memory | relay modes)
-│   │   │                          #   TenantChannelInterceptor (P1 hardened)
-│   │   │                          #   JwtHandshakeInterceptor
-│   │   │                          #   (JWT in STOMP CONNECT headers)
-│   │   └── CoreApplication.java   # @SpringBootApplication entry point
+│   │   ├── ai/                     # Ollama image-analysis integration (2 files)
+│   │   ├── audit/                  # AuditService, Envers helpers (4 files)
+│   │   ├── common/                 # GlobalExceptionHandler + shared utilities (3 files)
+│   │   ├── config/                 # CacheConfig, CorsConfig, RabbitMQConfig, RateLimitConfig,
+│   │   │                           #   BusinessMetricsService, TenantAwareCacheKeyGenerator, etc. (19 files)
+│   │   ├── controller/             # SecurityHealthController (cross-cutting, 1 file)
+│   │   ├── customer/                # CustomerController + CRUD (6 files)
+│   │   ├── dev/                     # Development-only helpers, disabled in prod (2 files)
+│   │   ├── exception/                # Custom exception hierarchy (17 files)
+│   │   ├── finance/                  # FinancialTransactionController, VAT ledger (8 files)
+│   │   ├── gdpr/                     # DsarIntakeController/Verification, erasure records (14 files)
+│   │   ├── geo/                      # Postcode centroid search, distance (7 files)
+│   │   ├── media/                    # CoW media_asset model + async upload pipeline (26 files)
+│   │   ├── notification/             # Email/webhook consent, PublicUnsubscribeController (4 files)
+│   │   ├── onboarding/               # Vendor onboarding state machine + admin queue (23 files)
+│   │   ├── order/                    # Order state machine, SSE, allergen snapshot (28 files)
+│   │   ├── payment/                  # PaymentController, Stripe, refunds, event outbox (~13 files)
+│   │   ├── product/                  # ProductController, full-text search (12 files)
+│   │   ├── review/                   # Reviews (3 files)
+│   │   ├── security/                 # JWT filters, TenantContext, RLS GUC pinning (18 files)
+│   │   │   └── access/               #   shop_staff vendor-scoped access layer (16 files)
+│   │   ├── shop/                     # ShopController, Announcement, Promotion (18 files)
+│   │   ├── storage/                  # S3/MinIO abstraction (3 files)
+│   │   ├── storefront/               # PublicStorefrontController — unauthenticated reads (3 files)
+│   │   ├── sync/                     # SyncController — batch sync from edge (3 files)
+│   │   ├── tenant/                   # TenantAdminController, DevTenantController (10 files)
+│   │   ├── webhook/                  # Outbound webhook subscriptions + delivery (18 files)
+│   │   ├── websocket/                # STOMP config, StompDestinations, tenant interceptor (3 files)
+│   │   └── CoreApplication.java      # Entry point
 │   ├── src/main/resources/
-│   │   ├── application.yml        # Base config
-│   │   ├── application-{dev,test,staging,prod}.yml
-│   │   ├── db/migration/          # 33 Flyway migrations (V1 … V33)
-│   │   │                          # V33__fix_rls_policies.sql (latest, v2.1)
-│   │   └── logback-spring.xml
-│   ├── src/test/java/             # 341 passing tests (unit + integration)
-│   ├── build.gradle.kts           # Spring Boot 3.4.2, JDK 21
-│   └── build-local/               # Gradle output (redirected from build/)
+│   │   ├── application*.yml          # base + dev/test/staging/prod profiles
+│   │   ├── db/migration/             # Flyway V1..V66 (66 files)
+│   │   ├── geo/                      # Postcode dataset (gzipped, OGL v3) + SOURCE.md
+│   │   └── dev/                      # Dev-profile seed data
+│   ├── src/test/java/uk/jtoye/core/  # Mirrors main/ package-for-package; unit + Testcontainers integration tests
+│   └── build.gradle.kts, build-local/ (live build output — build/ is stale, do not read from it)
 │
-├── edge-go/                       # Go 1.22 API gateway (port 8080)
-│   ├── cmd/edge/main.go           # Gin router, middleware wiring
+├── edge-go/                        # Go 1.27 / Gin edge gateway (port 8080)
+│   ├── cmd/edge/                   # main.go (entry), handlers.go, metrics.go, docs.go, types.go
 │   ├── internal/
-│   │   ├── core/                  # HTTP client + sony/gobreaker circuit breaker
-│   │   ├── middleware/            # JWT validation (golang-jwt/jwt v5)
-│   │   └── whatsapp/              # Webhook parser
-│   ├── go.mod / go.sum            # Gin, zap, gobreaker
-│   ├── Dockerfile                 # multi-stage, scratch runtime
-│   └── (57 passing tests — up from 21 in v2.0; P1 audit hardening)
+│   │   ├── auth/                   # Keycloak service-token provider (WhatsApp intake)
+│   │   ├── core/                   # Core API client + circuit breaker (client.go, contract.go, orders.go)
+│   │   ├── middleware/             # JWT validation middleware
+│   │   └── whatsapp/               # Inbound webhook HMAC verification + parser
+│   ├── docs/                       # swaggo-generated OpenAPI (docs.go, swagger.json/yaml)
+│   └── Dockerfile                  # multi-stage, scratch-based runtime
 │
-├── frontend/                      # Next.js 16 UI (port 3000, dev 3100)
-│   ├── app/                       # App Router
-│   │   ├── dashboard/             # Admin UI (shops, products, orders, customers,
-│   │   │                          #   promotions, announcements, kitchen, finance)
-│   │   ├── shop/                  # Customer storefront
-│   │   │   ├── [slug]/page.tsx    # Shop detail + product browse
-│   │   │   ├── [slug]/cart/       # Cart page (v2.1 — standalone route)
-│   │   │   │   └── page.tsx
-│   │   │   ├── [slug]/checkout/   # Stripe checkout
-│   │   │   ├── [slug]/orders/     # Order tracking by number
-│   │   │   ├── orders/            # v2.1 — customer order history by email
-│   │   │   │   └── page.tsx       #       (previously 404'd)
-│   │   │   ├── auth/              # Customer auth (email + magic link)
-│   │   │   ├── error.tsx          # v2.1 P1 — route error boundary
-│   │   │   └── layout.tsx
-│   │   ├── auth/                  # Admin auth (Keycloak OIDC via NextAuth)
-│   │   ├── track/                 # Public order tracking landing
-│   │   ├── api/auth/              # NextAuth v5 route handlers
-│   │   ├── error.tsx              # v2.1 P1 — root error boundary
-│   │   └── page.tsx               # Root redirect (auth-aware)
+├── frontend/                       # Next.js 16.3.2 / React 19 (App Router)
+│   ├── app/
+│   │   ├── page.tsx                # Public marketing landing page
+│   │   ├── layout.tsx              # Root layout
+│   │   ├── auth/signin/            # Vendor sign-in
+│   │   ├── api/                    # Route handlers: auth/, customer-auth/, customer-orders/,
+│   │   │                           #   health/, vendor-auth/ (NextAuth + session bridging)
+│   │   ├── dashboard/               # Vendor admin surface (authenticated)
+│   │   │   ├── customers/ finance/ kitchen/ marketing/ media/ onboarding/
+│   │   │   │   orders/ payments/ products/ shops/ staff/ webhooks/
+│   │   ├── shop/                    # Public + customer storefront
+│   │   │   ├── [slug]/              #   shop detail, cart, checkout (dynamic route)
+│   │   │   ├── auth/ signin/         #   customer auth
+│   │   │   └── orders/               #   customer order tracking
+│   │   ├── track/                   # Order tracking (public link)
+│   │   ├── unsubscribe/             # Public unsubscribe landing
+│   │   ├── legal/                   # accessibility/ cookies/ privacy/ retention
+│   │   ├── business-model-guide/, competitive/, for-operators/  # Marketing pages
+│   │   └── fonts/                   # next/font local assets
 │   ├── components/
-│   │   ├── dashboard/             # Admin UI: sidebar, shell, data tables
-│   │   ├── storefront/            # cart-provider, product-detail-modal,
-│   │   │                          #   storefront-nav, require-customer-auth
-│   │   ├── ui/                    # Radix-based primitives
-│   │   └── providers.tsx
-│   ├── lib/
-│   │   ├── api-client.ts          # Axios + JWT interceptor, 401 redirect
-│   │   ├── public-api-client.ts   # Unauthenticated client (storefront)
-│   │   ├── customer-auth.ts       # Storefront customer auth helpers
-│   │   ├── order-history.ts       # Order lookup by email
-│   │   ├── env-validation.ts      # Runtime env var validation
-│   │   └── utils.ts
-│   ├── hooks/                     # React hooks (use-toast, etc.)
-│   ├── types/                     # TypeScript type definitions
-│   ├── e2e/                       # Playwright end-to-end suites
-│   │   ├── kitchen-flow.spec.ts   # Kitchen display workflow
-│   │   ├── storefront-flows.spec.ts  # v2.1 — browse→cart→checkout flows
-│   │   └── stomp-relay.spec.ts    # v2.1 — cross-replica broadcast verification
-│   ├── __tests__/                 # Jest unit tests (76 passing)
-│   ├── auth.ts                    # NextAuth v5 config
-│   ├── middleware.ts              # Route-level auth gating
-│   ├── next.config.mjs            # standalone output, image remotePatterns
-│   ├── instrumentation.ts         # Next.js instrumentation hook
-│   ├── jest.config.js / jest.setup.js
-│   ├── playwright.config.ts
-│   ├── package.json               # React 19, Next 16.2.2, NextAuth v5, Tailwind
-│   └── tsconfig.json
+│   │   ├── dashboard/ (6)  layout/ (1)  legal/ (3)  marketing/ (10)
+│   │   ├── platform/ (1)   public/ (6)  storefront/ (9)  ui/ (22 — shadcn/Radix primitives)
+│   ├── lib/                         # 46 files: api-client.ts, storefront-server.ts, customer-auth*.ts,
+│   │                                #   vat.ts, delivery-fee.ts, structured-data.ts (SEO/JSON-LD), etc.
+│   ├── hooks/                       # use-stomp, use-order-events, use-customer-session, use-toast, etc. (10)
+│   ├── types/                       # api.ts, storefront.ts, next-auth.d.ts, jest-axe.d.ts
+│   ├── middleware.ts                # Next.js edge middleware (session-based routing)
+│   ├── e2e/                         # Playwright specs (27 spec files) + helpers/
+│   └── public/brand/                # Static brand assets
 │
-├── infra/                         # Local + dev infrastructure
-│   ├── docker-compose.yml         # PostgreSQL, Redis, RabbitMQ, Keycloak
-│   ├── docker-compose.hostnet.yml # Host-network variant for Linux
-│   ├── keycloak/                  # Realm config (jtoye-dev)
-│   ├── rabbitmq/                  # v2.1 new
-│   │   └── enabled_plugins        # [management, prometheus, stomp] — STOMP is v2.1
-│   ├── monitoring/                # v2.1 new observability tier
-│   │   ├── docker-compose.monitoring.yml  # Prometheus + Alertmanager + Grafana
-│   │   ├── prometheus/
-│   │   │   ├── prometheus.yml     # Scrape targets (Core, Edge, RabbitMQ, Redis)
-│   │   │   └── alerts.yml         # 14 alert rules incl. StompBrokerLag,
-│   │   │                          #   ServiceDown, RedisDown, HighErrorRate
-│   │   ├── alertmanager/          # v2.1 new
-│   │   │   ├── alertmanager.yml.tmpl   # Env-var templated receiver config
-│   │   │   └── entrypoint.sh      # Renders template → alertmanager.yml on start
-│   │   ├── grafana/
-│   │   │   ├── provisioning/      # Datasources + dashboard providers
-│   │   │   └── dashboards/
-│   │   │       └── stomp-dashboard.json  # v2.1 — STOMP broker metrics
-│   │   ├── scripts/
-│   │   │   └── smoke-test-alertmanager.sh  # v2.1 — verifies alert delivery
-│   │   └── README.md              # Monitoring stack runbook
-│   ├── db/                        # DB init helpers
-│   ├── load-testing/              # k6 scripts (private / gitignored)
-│   └── secrets/                   # Local secret material (gitignored)
+├── mcp-server/                     # Node/TypeScript MCP tool server (AI agent surface)
+│   ├── src/
+│   │   ├── index.ts                # MCP server entry point
+│   │   ├── server.ts                # Tool registration
+│   │   ├── core-client.ts           # HTTP client → CORE_BASE_URL (default http://core-java:9090)
+│   │   ├── errors.ts                # Typed MCP error mapping
+│   │   └── tools/                   # list-shops, list-products, read-orders,
+│   │                                #   create-order, create-customer (+ .test.ts siblings)
+│   └── scripts/                     # Build/publish helpers
 │
-├── k8s/                           # Kubernetes manifests
-│   ├── core-deployment.yaml       # Replicas 3-10 via HPA
-│   ├── edge-deployment.yaml
-│   ├── frontend-deployment.yaml
-│   ├── postgres-configmap.yaml    # RLS policy init
-│   ├── redis-statefulset.yaml
-│   ├── rabbitmq-statefulset.yaml
-│   ├── ingress.yaml               # TLS, path routing (/api → core, / → frontend)
-│   └── hpa.yaml                   # HorizontalPodAutoscaler
+├── k8s/                             # Kustomize deploy manifests — staging/prod deploy target
+│   ├── base/                        # core-java/edge-go/frontend Deployments, ingress, sse-ingress,
+│   │                                #   configmap, pg-backup-cronjob, secrets-template.yaml.example
+│   ├── local/                       # minikube overlay (namespace, scale-patch, ingress-patch)
+│   ├── staging/                     # staging overlay (hosts patch, configmap patch)
+│   ├── production/                  # production overlay (namespace, configmap patch)
+│   ├── scripts/                     # deploy helper scripts specific to k8s
+│   └── goldens/                     # Golden-file fixtures for `kubectl kustomize` CI diff gates
 │
-├── docs/                          # Documentation
-│   ├── guides/                    # QUICK_START.md, ENVIRONMENT_SETUP.md
-│   ├── config/                    # CONFIGURATION.md (env vars, profiles)
-│   ├── reports/                   # Production readiness, security audit
-│   ├── runbooks/                  # Alert response runbooks (mostly stubs; ServiceDown filled)
-│   ├── AI_CONTEXT.md              # System architecture context
-│   └── DOCUMENTATION_INDEX.md
+├── infra/                           # Local-dev infrastructure (compose-adjacent, NOT k8s)
+│   ├── docker-compose.yml, docker-compose.hostnet.yml, .env.example
+│   ├── db/init/                     # DB bootstrap SQL (runtime role grants)
+│   ├── keycloak/themes/jtoye/       # Custom Keycloak login theme
+│   ├── monitoring/                  # prometheus/, grafana/, alertmanager/ configs + templates
+│   ├── rabbitmq/                    # Broker definitions
+│   ├── load-testing/                # k6/baseline configs
+│   ├── secrets/                     # Local secret templates (not real secrets)
+│   ├── backups/                     # Backup/restore drill artifacts
+│   └── dependency-horizons.yaml     # Version-support-window tracking (feeds check-dependency-horizons.sh)
 │
-├── .github/                       # CI/CD
-│   └── workflows/
-│       ├── ci-cd.yaml             # Build + test pipeline
-│       └── gitleaks.yml           # v2.1 new — secret scanning on every push/PR
+├── scripts/                         # 69 top-level shell scripts — CI gates (check-*.sh), deploy.sh,
+│                                     #   start-dev.sh/stop-dev.sh (hybrid runtime), seed-*.sh, smoke-test*.sh
 │
-├── .planning/                     # GSD artefacts
-│   ├── codebase/                  # Codebase maps (this file)
-│   ├── milestones/                # v2.1 — shipped milestone archives
-│   │   ├── v2.1-ROADMAP.md
-│   │   ├── v2.1-REQUIREMENTS.md
-│   │   ├── v2.1-MILESTONE-AUDIT.md
-│   │   └── v2.1-phases/           # Archived phase plans
-│   │       ├── 09-repository-secrets-alerting/
-│   │       ├── 10-storefront-marketing-render-missing-customer-routes/
-│   │       └── 11-stomp-broker-relay-for-horizontal-scale/
-│   ├── phases/                    # v2.1 — EMPTY (all phases moved to milestones/v2.1-phases/)
-│   ├── housekeeping/
-│   ├── quick/                     # /gsd-quick task archives
-│   ├── research/
-│   ├── state-of-codebase/
-│   ├── DEEP-AUDIT-2026-04-16.md
-│   ├── MILESTONES.md              # Chronological shipped-milestone log
-│   ├── PROJECT.md
-│   ├── ROADMAP.md
-│   └── STATE.md
+├── docs/                            # analysis/ api/ architecture/ (incl. decisions/ ADR-0001..0005)
+│                                     #   archive/ audit/ config/ guides/ integration/ legal/ ops/
+│                                     #   planning/ reports/ runbooks/ security/ setup/ status/ troubleshooting/
 │
-├── scripts/                       # Build, deploy, smoke tests
-│   ├── run-app.sh                 # Start Spring Boot locally
-│   ├── start-dev.sh / stop-dev.sh # Dev stack lifecycle
-│   ├── build-images.sh            # Docker multi-platform builds
-│   ├── deploy.sh                  # Kubernetes deployment
-│   ├── smoke-test.sh              # Generic smoke tests
-│   ├── smoke-test-stomp-relay.sh  # v2.1 — verifies 2 STOMP connections from scaled replicas
-│   ├── pre-commit-gitleaks.sh     # v2.1 — local secret-scan hook
-│   ├── verify-env.sh              # Environment sanity check
-│   ├── fix-bridge-network.sh
-│   └── fix-testcontainers-docker.sh
+├── .planning/                       # GSD workflow artifacts
+│   ├── codebase/                    # THIS document + STACK/INTEGRATIONS/CONVENTIONS/TESTING/CONCERNS
+│   ├── phases/                      # Numbered phase plans (21-35+)
+│   ├── quick/                       # /gsd-quick task records
+│   ├── debug/, research/, sketches/, specs/, milestones/, housekeeping/, graphs/, state-of-codebase/
 │
-├── backups/                       # Local DB snapshots (gitignored)
-├── build/                         # Gradle-generated (gitignored)
-├── logs/                          # Runtime logs (gitignored)
-├── docker-compose.full-stack.yml  # All-in-one local dev environment
-├── build.gradle.kts               # Root Gradle config
-├── settings.gradle.kts
-├── .env / .env.example            # Environment configuration
-├── .gitleaks.toml                 # v2.1 new — gitleaks allowlist + rules
-├── CLAUDE.md                      # Claude agent project instructions
-├── HANDOFF.md                     # Session handoff notes
-├── README.md
-├── CHANGELOG.md
-└── LICENSE
+├── docker-compose.full-stack.yml   # CANONICAL local dev + E2E runtime (all services incl. Mailhog)
+├── docker-compose.frontend-3100.yml # Frontend-only compose variant
+├── .env / .env.example              # Environment configuration (never read .env contents)
+├── build.gradle.kts, settings.gradle.kts, gradlew  # Root Gradle wrapper for core-java
+├── AGENTS.md, CLAUDE.md, README.md, HANDOFF.md      # Project/AI-agent instructions and status
+└── SECURITY-FINDINGS.md, SPRING_FRAMEWORK_UPGRADE_REPORT.md, ORDER_NUMBER_GENERATION_REPORT.md
 ```
 
 ## Directory Purposes
 
 **`core-java/src/main/java/uk/jtoye/core/`:**
-Domain-driven layout. Each domain folder (shop, order, product, customer, review, finance, payment, gdpr, storefront, sync, tenant) contains:
-- `*Controller.java` — REST endpoints with `@RequestMapping`, Swagger annotations
-- `*Service.java` — `@Service`/`@Transactional` business logic, caching, state machines
-- `*Repository.java` — `JpaRepository` extensions with `@Query`
-- `*Entity.java` — JPA entities, often `@Audited` via Envers
-- `*Mapper.java` — MapStruct DTO mappers
-- `dto/` — request/response DTOs with Jakarta Validation
+- Purpose: All backend business logic, one package per domain
+- Contains: `@RestController`, `@Service`, `@Repository`/`JpaRepository`, `@Entity`, MapStruct `@Mapper`, `@Aspect` classes, colocated per domain (no separate `controllers/`, `services/`, `repositories/` top-level split)
+- Key files: `CoreApplication.java` (entry point), `security/TenantContext.java` + `security/TenantSetLocalAspect.java` + `security/JwtTenantFilter.java` (tenant isolation core), `common/GlobalExceptionHandler.java` (error handling)
 
-Cross-cutting packages:
-- `security/` — TenantContext, JwtTenantFilter, SecurityConfig, TenantSetLocalAspect, TenantContextCleanupFilter, RateLimitInterceptor
-- `config/` — CacheConfig, CorsConfig, EnversConfig, OpenApiConfig, RateLimitConfig, RabbitMQConfig, TenantAwareCacheKeyGenerator, TenantCacheEvictor, BusinessMetricsService, ScheduledCleanupService, DatabaseConfigurationValidator
-- `exception/` — GlobalExceptionHandler, ErrorResponse, domain exceptions
-- `websocket/` (v2.1) — WebSocketConfig, TenantChannelInterceptor, JwtHandshakeInterceptor
-- `audit/`, `storage/`, `notification/`, `ai/`, `controller/` (SecurityHealthController)
+**`core-java/src/main/resources/db/migration/`:**
+- Purpose: Flyway-versioned schema, the single source of truth for the database
+- Contains: 66 `V<N>__description.sql` files; RLS policies are defined per-table alongside the table itself, not in a separate "policies" directory
+- Note: `spring.flyway.out-of-order=true` is required — several version slots were filled non-sequentially (e.g. V44 landed after V45/V46 were already shipped)
 
-**`core-java/src/main/resources/`:**
-- `application.yml` — base config (active profile via `SPRING_PROFILES_ACTIVE`)
-- `application-{dev,test,staging,prod}.yml`
-- `db/migration/V{n}__*.sql` — 33 Flyway migrations as of v2.1; latest is `V33__fix_rls_policies.sql`
+**`edge-go/cmd/edge/`:**
+- Purpose: The Go binary's entry point and Gin route handlers
+- Contains: `main.go` (router wiring, only ONE business route proxied: `POST /api/v1/sync/batch`), `handlers.go`, `metrics.go`, `docs.go`
+- Key files: `main.go` — read this directly before restating what the edge proxies; it changes independently of documentation
 
-**`core-java/src/test/java/`:**
-Mirror of main source tree. Conventions:
-- `*ControllerTest.java` — MockMvc integration tests
-- `*ServiceTest.java` — unit tests with mocked repositories
-- `*RepositoryTest.java` — `@DataJpaTest` with H2
-- `integration/` — Testcontainers, tagged `@Tag("testcontainers")`
+**`frontend/app/dashboard/`:**
+- Purpose: Authenticated vendor admin surface — one subdirectory per feature area, each with its own `page.tsx`
+- Contains: `customers/`, `finance/`, `kitchen/`, `marketing/`, `media/`, `onboarding/` (2 pages), `orders/` (2 pages), `payments/` (2 pages), `products/` (2 pages), `shops/`, `staff/`, `webhooks/` (2 pages)
 
-**`edge-go/internal/`:**
-- `core/` — HTTP client, circuit breaker (`sony/gobreaker`), health check plumbing
-- `middleware/` — JWT validation against Keycloak JWKS
-- `whatsapp/` — WhatsApp webhook parser/handler
-- Tests co-located (`*_test.go`) — 57 passing
-
-**`frontend/app/`:**
-Next.js App Router. Each directory with `page.tsx` is a route; `[name]` segments are dynamic.
-- `dashboard/` — admin UI (B2B)
-- `shop/` — customer storefront (B2C)
-  - `[slug]/page.tsx` — shop detail + browse
-  - `[slug]/cart/page.tsx` — **v2.1 new** standalone cart
-  - `[slug]/checkout/page.tsx` — Stripe checkout
-  - `[slug]/orders/[orderNumber]/page.tsx` — order tracking
-  - `orders/page.tsx` — **v2.1 new** customer-wide order history by email
-  - `auth/` — customer auth flow
-  - `error.tsx` — **v2.1 new** route-scoped error boundary
-- `auth/` — admin Keycloak/OIDC flow
-- `track/` — public order tracking landing
-- `api/auth/[...nextauth]/` — NextAuth v5 handler
-- `error.tsx` — **v2.1 new** root error boundary
-
-**`frontend/components/`:**
-- `dashboard/` — admin shell, sidebar, data tables
-- `storefront/` — cart provider, product-detail modal, nav, require-customer-auth wrapper
-- `ui/` — Radix + Tailwind primitives (Button, Input, Modal, etc.)
+**`frontend/app/shop/[slug]/`:**
+- Purpose: Public/customer-facing storefront for a single shop, dynamic route on the shop slug
+- Contains: `page.tsx` (shop detail), `cart/page.tsx`, `checkout/page.tsx`, `layout.tsx`, `loading.tsx`, `not-found.tsx`, `shop-detail-client.tsx`
 
 **`frontend/lib/`:**
-- `api-client.ts` — authenticated axios, JWT interceptor, 401→signin
-- `public-api-client.ts` — unauthenticated client for storefront
-- `customer-auth.ts`, `order-history.ts`, `env-validation.ts`, `utils.ts`
+- Purpose: Framework-agnostic business logic and API clients shared across pages/components
+- Contains: `api-client.ts` (axios instance, `NEXT_PUBLIC_API_URL`), `storefront-server.ts` (server-side data loaders), `vat.ts`/`delivery-fee.ts`/`minimum-order.ts` (checkout money logic), `structured-data.ts` (SEO JSON-LD), `customer-auth*.ts`/`vendor-*.ts` (session lifecycle)
 
-**`frontend/e2e/`:**
-- `kitchen-flow.spec.ts` — kitchen display happy path
-- `storefront-flows.spec.ts` — **v2.1 extended** browse→cart→Stripe checkout
-- `stomp-relay.spec.ts` — **v2.1 new** cross-replica broadcast verification (requires `--scale core-java=2`)
+**`mcp-server/src/tools/`:**
+- Purpose: One file per MCP tool exposed to AI agents
+- Contains: `list-shops.ts`, `list-products.ts`, `read-orders.ts` (read-only), `create-order.ts`, `create-customer.ts` (mutating, Phase 25) — each paired with a `.test.ts` sibling
 
-**`infra/monitoring/`** (v2.1 new observability tier):
-- `docker-compose.monitoring.yml` — Prometheus, Alertmanager, Grafana services
-- `prometheus/prometheus.yml` — scrape config
-- `prometheus/alerts.yml` — 14 alert rules (ServiceDown, StompBrokerLag, RedisDown, HighErrorRate, etc.)
-- `alertmanager/alertmanager.yml.tmpl` — receiver config template (SMTP vars)
-- `alertmanager/entrypoint.sh` — renders template on container start
-- `grafana/provisioning/` — auto-load datasources + dashboard providers
-- `grafana/dashboards/stomp-dashboard.json` — STOMP broker metrics visualisation
-- `scripts/smoke-test-alertmanager.sh` — verifies alert fire → receiver path
+**`k8s/base/` vs `k8s/local|staging|production/`:**
+- Purpose: `base/` is the shared Kustomize resource set; the three overlays patch it per-environment (namespace, replica counts, ingress hosts, configmap values)
+- Deploy path: `ci-cd.yaml` deploy job + `scripts/deploy.sh` apply the appropriate overlay; this is the staging/prod target, NOT local dev
+- Generated: No — hand-maintained YAML, validated by `k8s/goldens/` fixtures in CI
 
-**`infra/rabbitmq/enabled_plugins`** (v2.1 new):
-Enables `rabbitmq_stomp` (port 61613) alongside management + prometheus, so Core's `StompBrokerRelay` can connect.
+**`infra/`:**
+- Purpose: Local-dev-adjacent infrastructure config consumed by BOTH the hybrid `scripts/start-dev.sh` runtime (`infra/` compose + `infra/.env`) and by `docker-compose.full-stack.yml` for some shared config (monitoring, Keycloak theme, DB init)
+- Contains: Prometheus/Grafana/Alertmanager provisioning, Keycloak custom theme, RabbitMQ definitions, DB init SQL, dependency-horizon tracking
 
-**`k8s/`:**
-- `core-deployment.yaml` — Spring Boot with liveness/readiness, replicas via HPA
-- `postgres-configmap.yaml` — RLS policy bootstrap
-- `ingress.yaml` — TLS termination, path-based routing
+**`scripts/`:**
+- Purpose: CI gate scripts (`check-*.sh`, ~40 of the 69 files) plus operational scripts (deploy, seed, smoke-test, dev-runtime start/stop)
+- Contains: Every `check-*.sh` is wired into a GitHub Actions workflow — see `scripts/check-gate-enforcement.sh`, which itself asserts no gate script is unreferenced in CI
 
 **`.planning/`:**
-GSD workflow state. Note the v2.1 reorganisation: `phases/` is now **empty** — all shipped phase folders moved to `milestones/v2.1-phases/`. New phases will populate `phases/` again when v2.2 work begins.
+- Purpose: GSD workflow state — phase plans, research, quick-task records, this codebase map
+- Contains: `codebase/` (this doc + siblings), `phases/` (numbered implementation plans), `quick/` (small task records), `debug/`, `research/`, `sketches/`, `specs/`
 
 ## Key File Locations
 
 **Entry Points:**
-- Backend: `core-java/src/main/java/uk/jtoye/core/CoreApplication.java`
-- Frontend: `frontend/app/page.tsx`
-- Edge Gateway: `edge-go/cmd/edge/main.go`
+- `core-java/src/main/java/uk/jtoye/core/CoreApplication.java`: Spring Boot main class
+- `edge-go/cmd/edge/main.go`: Go edge gateway main
+- `frontend/app/page.tsx`: Next.js landing page (root route)
+- `frontend/app/layout.tsx`: Next.js root layout
+- `mcp-server/src/index.ts`: MCP server entry point
 
 **Configuration:**
-- Spring profiles: `core-java/src/main/resources/application*.yml`
-- Environment vars: `.env`, `.env.example` (root); `frontend/.env.local.example`
-- DB migrations: `core-java/src/main/resources/db/migration/V*.sql` (through V33)
-- Kubernetes: `k8s/*.yaml`
-- Docker Compose: `docker-compose.full-stack.yml`, `infra/docker-compose.yml`, `infra/monitoring/docker-compose.monitoring.yml`
+- `core-java/src/main/resources/application.yml` (+`-dev`/`-test`/`-staging`/`-prod` profile overlays)
+- `frontend/next.config.mjs`, `frontend/tsconfig.json`, `frontend/eslint.config.mjs`
+- `edge-go/go.mod`, `edge-go/Dockerfile`
+- `docker-compose.full-stack.yml` (canonical local runtime), `infra/docker-compose.yml` (hybrid runtime)
+- `k8s/base/kustomization.yaml` + overlay `kustomization.yaml` files
 
 **Core Logic:**
+- Tenant isolation: `core-java/src/main/java/uk/jtoye/core/security/TenantContext.java`, `TenantSetLocalAspect.java`, `JwtTenantFilter.java`
+- Vendor-scoped access: `core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java`
 - Order state machine: `core-java/src/main/java/uk/jtoye/core/order/OrderStateMachineConfig.java`
-- Multi-tenant isolation: `core-java/src/main/java/uk/jtoye/core/security/TenantContext.java`, `JwtTenantFilter.java`, `TenantSetLocalAspect.java`
-- WebSocket/STOMP: `core-java/src/main/java/uk/jtoye/core/websocket/WebSocketConfig.java`, `TenantChannelInterceptor.java`
-- Public storefront: `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java`, `PublicStorefrontService.java`
-- Stripe outbox: `core-java/src/main/java/uk/jtoye/core/payment/PaymentEventOutbox.java`, `PaymentEventOutboxFlusher.java`
-- Caching: `core-java/src/main/java/uk/jtoye/core/config/CacheConfig.java`, `TenantAwareCacheKeyGenerator.java`, `TenantCacheEvictor.java`
-- Rate limiting: `edge-go/cmd/edge/main.go` (token bucket), `core-java/src/main/java/uk/jtoye/core/config/RateLimitConfig.java` (Bucket4j)
-- Audit trail: `core-java/src/main/java/uk/jtoye/core/audit/AuditService.java` + Envers
+- Transactional outbox: `core-java/src/main/java/uk/jtoye/core/payment/PaymentEventOutboxFlusher.java`, `core-java/src/main/java/uk/jtoye/core/media/MediaEventOutboxFlusher.java`
+- STOMP addressing: `core-java/src/main/java/uk/jtoye/core/websocket/StompDestinations.java`
 
 **Testing:**
-- Backend: `core-java/src/test/java/uk/jtoye/core/` (341 tests)
-- Frontend unit: `frontend/__tests__/`, `frontend/components/**/__tests__/`, `frontend/lib/__tests__/` (76 Jest tests)
-- Frontend E2E: `frontend/e2e/` (Playwright — 3 suites)
-- Go: colocated `*_test.go` (57 tests)
-
-**Observability & Ops (v2.1 new):**
-- Alertmanager: `infra/monitoring/alertmanager/`
-- Prometheus alerts: `infra/monitoring/prometheus/alerts.yml`
-- Grafana STOMP dashboard: `infra/monitoring/grafana/dashboards/stomp-dashboard.json`
-- Alertmanager smoke test: `infra/monitoring/scripts/smoke-test-alertmanager.sh`
-- STOMP relay smoke test: `scripts/smoke-test-stomp-relay.sh`
-- Secret scanning: `.gitleaks.toml`, `scripts/pre-commit-gitleaks.sh`, `.github/workflows/gitleaks.yml`
+- Java: `core-java/src/test/java/uk/jtoye/core/` (mirrors `main/` package structure; Testcontainers-backed integration tests for RLS)
+- Frontend unit: colocated `__tests__/` dirs + `*.test.tsx` under `frontend/app/`, `frontend/components/`, `frontend/hooks/`, `frontend/lib/`
+- Frontend E2E: `frontend/e2e/*.spec.ts` (27 files), Playwright config at `frontend/playwright.config.ts`
+- Go: `*_test.go` colocated with source in `edge-go/cmd/edge/` and `edge-go/internal/*/`
+- MCP: `mcp-server/src/**/*.test.ts` (Vitest)
 
 ## Naming Conventions
 
-**Java Files:**
-- Entities: PascalCase, no suffix (`Shop.java`, `Order.java`)
-- Controllers: `<Entity>Controller.java`
-- Services: `<Entity>Service.java`
-- Repositories: `<Entity>Repository.java`
-- Mappers: `<Entity>Mapper.java`
-- DTOs: `<Entity>Dto.java`, `Create<Entity>Request.java`, `<Entity>Response.java`
-- Tests: `<Class>Test.java`
-- SQL migrations: `V{number}__{description}.sql`
-
-**Java Packages:**
-- Domain-first: `uk.jtoye.core.{domain}.{sublayer}` — e.g. `uk.jtoye.core.shop`, `uk.jtoye.core.order.dto`
-- Cross-cutting: `uk.jtoye.core.{concern}` — e.g. `uk.jtoye.core.security`, `uk.jtoye.core.config`, `uk.jtoye.core.websocket`
-
-**TypeScript/JavaScript:**
-- Pages: `page.tsx` (Next.js convention)
-- Components: PascalCase `.tsx` (e.g. `CartProvider.tsx`, `SafeImage.tsx`)
-- Utilities/hooks: kebab-case `.ts` (e.g. `api-client.ts`, `use-toast.ts`)
-- Tests: `*.test.ts(x)` or `*.spec.ts(x)`; E2E lives in `frontend/e2e/*.spec.ts`
-
-**Go:**
-- Packages: `internal/<domain>/`
-- Files: snake_case (`jwt_middleware.go`), tests `*_test.go`
-- Exported identifiers: PascalCase
+**Files:**
+- Java: `PascalCase.java` matching the public class/interface name (`ShopService.java`, `OrderController.java`)
+- TypeScript components: `PascalCase.tsx` for components, `kebab-case.ts` for utilities/hooks (`use-stomp.ts`, `api-client.ts`)
+- Go: `lowercase.go`, `_test.go` suffix for tests, colocated with the code under test
+- SQL migrations: `V<N>__snake_case_description.sql` (Flyway convention, sequential except deliberately reserved out-of-order slots)
 
 **Directories:**
-- Domains: plural lowercase (`shops/`, `products/`, `orders/`)
-- Dynamic routes: `[paramName]` (Next.js)
-- API routes: `/api/v1/{resource}` (authenticated), `/public/{resource}` (unauthenticated)
+- Java: `internal/<domain>` — actually `uk/jtoye/core/<domain>` package-per-feature, flat (no `controllers/services/repositories` top-level split)
+- Go: `internal/<domain>` — genuinely isolated by feature, enforced by Go's `internal/` visibility rule
+- Frontend routes: Next.js file-based routing — a directory under `app/` becomes a URL segment; `[slug]` denotes a dynamic segment; `__tests__` denotes colocated tests excluded from routing
 
 ## Where to Add New Code
 
-**New REST Endpoint (authenticated):**
-1. Create domain folder: `core-java/src/main/java/uk/jtoye/core/{newdomain}/`
-2. Add Entity (`@Entity`, `@Table`, `@Audited` if auditable)
-3. Add Repository (`JpaRepository` extension, `@Query` where needed)
-4. Add Service (`@Service`, `@Transactional`, `@Cacheable` via `tenantAwareCacheKeyGenerator`)
-5. Add Mapper (MapStruct `@Mapper(componentModel="spring")`)
-6. Add DTOs under `{newdomain}/dto/` with Jakarta Validation
-7. Add Controller under `@RequestMapping("/api/v1/{resource}")` with Swagger annotations
-8. Add mirrored tests in `core-java/src/test/java/uk/jtoye/core/{newdomain}/`
-9. Add Flyway migration `V{next}__{description}.sql` including RLS policy for new tenant-scoped tables
-10. Document with `@Tag`, `@Operation`, `@ApiResponse` for OpenAPI
+**New backend feature (domain):**
+- Create a new package under `core-java/src/main/java/uk/jtoye/core/<domain>/` following the existing pattern: `<Entity>.java`, `<Entity>Repository.java`, `<Entity>Service.java`, `<Entity>Controller.java`, `<Entity>Mapper.java`, `dto/` subpackage for request/response DTOs
+- Add a Flyway migration in `core-java/src/main/resources/db/migration/V<next>__description.sql` with `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY` and a tenant policy using the `current_tenant_id()` helper (never a raw `::uuid` GUC cast — `RlsContractTest` rejects it)
+- Tests: mirror the package under `core-java/src/test/java/uk/jtoye/core/<domain>/`; use Testcontainers for anything touching RLS
 
-**New Public (Unauthenticated) Endpoint:**
-1. Add method to `core-java/src/main/java/uk/jtoye/core/storefront/PublicStorefrontController.java` under `/public/**`
-2. Implement in `PublicStorefrontService` — explicitly guard against leaking non-published content
-3. Ensure `SecurityConfig` permits the path (it already opens `/public/**`)
-4. Add Playwright coverage in `frontend/e2e/storefront-flows.spec.ts`
+**New vendor dashboard page:**
+- Add `frontend/app/dashboard/<feature>/page.tsx`; shared UI in `frontend/components/dashboard/`; API calls via a new or existing `frontend/lib/<feature>-api.ts` client hitting `NEXT_PUBLIC_API_URL` directly (never through the Go edge)
 
-**New WebSocket Topic:**
-1. Choose destination format `/topic/{feature}/{tenantId}/{subScope}` — the tenant UUID **must** be at segment index 3 so `TenantChannelInterceptor.validateSubscription` accepts it
-2. Publish via `SimpMessagingTemplate.convertAndSend(...)` from a service; `OrderEventPublisher` is the reference implementation
-3. If running with `stomp.broker.mode=relay`, no extra work — the relay forwards automatically
-4. Add unit + Playwright coverage; use `frontend/e2e/stomp-relay.spec.ts` as template for cross-replica assertions
+**New storefront-facing page:**
+- Add under `frontend/app/shop/` or `frontend/app/shop/[slug]/`; ensure metadata (`export const metadata`), canonical/OG tags, and JSON-LD (`frontend/lib/structured-data.ts`) are set — public pages are SEO-contracted per project CLAUDE.md quality dimensions
 
-**New Frontend Page:**
-1. Create directory under `frontend/app/{feature}/` (or nested); add `page.tsx`
-2. Use `[paramName]` for dynamic segments
-3. Feature-specific components → `frontend/components/{feature}/`
-4. Shared API helpers → `frontend/lib/{feature}-*.ts` (auth-required uses `api-client.ts`, public uses `public-api-client.ts`)
-5. Add unit tests under `__tests__/`; E2E under `frontend/e2e/`
-6. Add error boundary (`error.tsx`) if the route handles user-visible failure paths
+**New MCP tool:**
+- Add `mcp-server/src/tools/<tool-name>.ts` + `<tool-name>.test.ts`; register in `mcp-server/src/server.ts`; call `core-client.ts` directly against `CORE_BASE_URL`
 
-**New Service/Utility:**
-- Shared backend logic: `core-java/src/main/java/uk/jtoye/core/common/` or domain-specific `service/`
-- Shared frontend logic: `frontend/lib/` (utilities) or `frontend/hooks/` (hooks)
-- Do not introduce new top-level Java packages; nest under an existing domain or `config/`
+**New CI gate:**
+- Add `scripts/check-<name>.sh`; wire it into the relevant `.github/workflows/*.yml`; `scripts/check-gate-enforcement.sh` will fail CI if a new `check-*.sh` is added but never referenced
 
-**Database Schema Change:**
-1. New migration: `core-java/src/main/resources/db/migration/V{next}__{description}.sql` (next is V34 as of v2.1)
-2. For tenant-scoped tables include:
-   ```sql
-   ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;
-   CREATE POLICY tenant_isolation ON {table}
-     USING (tenant_id = current_setting('app.current_tenant_id')::uuid);
-   ```
-3. Audited entity → Envers creates `{table}_aud` automatically
-4. Migration runs on startup via Flyway — no manual execution
-
-**New Prometheus Alert:**
-1. Add rule group to `infra/monitoring/prometheus/alerts.yml`
-2. Confirm severity label (`critical` or `warning`) — Alertmanager routes on this
-3. Add runbook entry in `docs/runbooks/alerts.md`
-4. Extend `infra/monitoring/scripts/smoke-test-alertmanager.sh` if end-to-end validation is needed
-
-**Configuration Change:**
-- Spring property: edit `core-java/src/main/resources/application*.yml` or env var
-- Frontend env: `frontend/.env.local` (dev) or CI/CD secret (prod); `frontend/.env.local.example` documents shape
-- Go edge: env var read in `edge-go/cmd/edge/main.go`
-- Kubernetes: update ConfigMap in `k8s/` and redeploy
+**Utilities:**
+- Java shared helpers: `core-java/src/main/java/uk/jtoye/core/common/`
+- Frontend shared helpers: `frontend/lib/utils.ts` (generic) or a new `frontend/lib/<concern>.ts` file for a named concern (matches existing pattern — one file per concern, not a catch-all)
 
 ## Special Directories
 
-**`build/`, `build-local/`:**
-- Gradle output (redirected from `build/` to `build-local/` to dodge permission issues in some dev environments)
-- Generated: Yes | Committed: No (gitignored)
-
-**`node_modules/`, `.next/`:**
-- npm packages and Next.js build cache
-- Generated: Yes | Committed: No
-
-**`coverage/`, `test-results/`, `playwright-report/`:**
-- Test coverage and report outputs
-- Generated: Yes | Committed: No
-
-**`logs/`:**
-- Runtime logs (Spring Boot, Edge Go)
-- Generated: Yes | Committed: No
-
-**`.gradle/`, `.gradle-docker/`, `.gradle-local/`:**
-- Gradle wrapper + caches
-- Committed: Partial (`gradlew` executable, caches gitignored)
-
-**`backups/`:**
-- Local DB snapshots
-- Generated: Yes | Committed: No
-
-**`infra/secrets/`, `infra/load-testing/`, `infra/backups/`:**
-- Private local material; directory-level perms `drwx------`
+**`core-java/build-local/`:**
+- Purpose: The LIVE local Gradle build output (JaCoCo reports, compiled classes, generated OpenAPI spec)
+- Generated: Yes
 - Committed: No
+- Note: `core-java/build/` also exists but is STALE — always read build artifacts from `build-local/`, never `build/` (see project-level trap memory on stale build directories)
 
-**`.planning/phases/`:**
-- Currently **empty** after v2.1 archive (all content in `.planning/milestones/v2.1-phases/`)
-- Future phase plans will repopulate this directory for v2.2
+**`k8s/goldens/`:**
+- Purpose: Golden-file fixtures asserting `kubectl kustomize` output shape hasn't drifted unexpectedly across `k8s/base` + overlay changes
+- Generated: No (hand-committed expected output, regenerated deliberately when a change is intentional)
+- Committed: Yes
 
-**`.planning/milestones/v2.1-phases/`:**
-- Read-only archive of shipped phases (09, 10, 11) — SUMMARY.md, VERIFICATION.md, etc.
-- Referenced from `.planning/MILESTONES.md` chronological log
+**`.qa-council/`:**
+- Purpose: QA council audit run artifacts (findings, adjudication records) from the project's structured audit process
+- Generated: Yes (per audit run)
+- Committed: Yes (audit trail)
+
+**`frontend/coverage/`, `frontend/playwright-report/`, `frontend/test-results/`, `frontend/e2e-artifacts/`:**
+- Purpose: Test/coverage tool output
+- Generated: Yes
+- Committed: No (or selectively — `e2e-artifacts/` has shown up with specific phase subfolders committed for evidence, e.g. `35-12/`)
+
+**`.evidence/`:**
+- Purpose: Falsifiable-evidence artifacts (fail-direction + pass-direction proof pairs) required by the project's evidence-standards quality dimension
+- Generated: Yes, per verification run
+- Committed: Yes
 
 ---
 
-*Structure analysis: 2026-04-18*
+*Structure analysis: 2026-09-03*

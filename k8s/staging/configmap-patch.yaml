@@ -52,3 +52,11 @@ data:
   # application.yml defaults; only the origin is staging-specific.
   stripe.connect.return-url: "https://app-staging.olajay.co.uk/dashboard/payments/connect/return"
   stripe.connect.refresh-url: "https://app-staging.olajay.co.uk/dashboard/payments/connect/refresh"
+
+  # FE-1 / E-5 (QA council 20260902-134741): stated EXPLICITLY here, never
+  # inherited — the vendor sign-out return leg stays on today's /auth/signin
+  # until scripts/check-keycloak-logout-uri.sh (run in deploy-staging, enforced
+  # once this is "true") is green against the staging realm's vendor client for
+  # https://app-staging.olajay.co.uk/api/vendor-auth/logout-complete. See
+  # k8s/base/configmap.yaml for the mechanism and the failure it guards.
+  vendor.logout-complete.enabled: "false"

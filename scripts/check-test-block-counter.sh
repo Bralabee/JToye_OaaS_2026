@@ -47,8 +47,8 @@ command -v node >/dev/null 2>&1 || { echo "VOID: node is not installed" >&2; exi
 [ -d "$FIXTURES" ] || { echo "VOID: $FIXTURES is missing" >&2; exit 2; }
 
 FIXTURE_COUNT=$(find "$FIXTURES" -maxdepth 1 -name '*.fixture.ts' | wc -l | tr -d ' ')
-[ "$FIXTURE_COUNT" -ge 15 ] || {
-	echo "VOID: only $FIXTURE_COUNT fixture(s) found — the arms below name 15. A shrinking" >&2
+[ "$FIXTURE_COUNT" -ge 16 ] || {
+	echo "VOID: only $FIXTURE_COUNT fixture(s) found — the arms below name 16. A shrinking" >&2
 	echo "      fixture set is how a self-test quietly stops testing anything." >&2
 	exit 2
 }
@@ -128,6 +128,13 @@ expect_count playwright loop-scope-by-family.fixture.ts  3
 # Fail direction, measured: this arm reads 13 against the pre-fix counter.
 expect_count jest       commented-each-table.fixture.ts  10
 expect_count vitest     commented-each-table.fixture.ts  10
+# A TYPESCRIPT TYPE ARGUMENT ON THE HEAD: `it.each<[string, number]>([...])`. Before
+# this arm the counter read the `.each` chain, saw `<` where it wanted `(`, and
+# treated the head as a bare identifier — ZERO blocks, silently. Measured on PR #726:
+# a 12-row typed table counted as 0 while jest executed 12, and only the runner oracle
+# noticed. 1 plain + 3 typed + 4 nested-generic (`>>` / `>]>` must be walked balanced).
+expect_count jest       generic-each-table.fixture.ts    8
+expect_count vitest     generic-each-table.fixture.ts    8
 
 # ── VOID arms: refusing is the required behaviour ───────────────────────────
 expect_void jest void-unresolvable-each.fixture.ts "not a resolvable array literal"
@@ -165,7 +172,7 @@ else
 fi
 
 printf '  arms     : %s\n' "$ARMS"
-if [ "$ARMS" -lt 18 ]; then
+if [ "$ARMS" -lt 20 ]; then
 	echo "VOID: only $ARMS arm(s) ran — a self-test that shrank is not a self-test." >&2
 	exit 2
 fi

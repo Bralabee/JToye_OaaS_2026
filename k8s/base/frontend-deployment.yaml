@@ -150,6 +150,19 @@ spec:
             configMapKeyRef:
               name: app-config
               key: frontend.url
+        # FE-1 / E-5 (QA council 20260902-134741): a genuine server-side runtime
+        # env, read per request by frontend/lib/vendor-logout-complete.ts (the
+        # same class as NEXTAUTH_URL above, NOT the D-18 NEXT_PUBLIC_ class).
+        # Sourced from app-config vendor.logout-complete.enabled, which is
+        # "false" in base AND in every overlay until
+        # scripts/check-keycloak-logout-uri.sh is green against that
+        # environment's realm — see the key's comment in configmap.yaml for the
+        # failure it guards. Off = today's /auth/signin landing.
+        - name: VENDOR_LOGOUT_COMPLETE_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: vendor.logout-complete.enabled
         - name: NEXTAUTH_SECRET
           valueFrom:
             secretKeyRef:

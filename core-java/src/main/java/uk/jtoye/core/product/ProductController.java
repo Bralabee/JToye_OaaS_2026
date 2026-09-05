@@ -74,7 +74,16 @@ public class ProductController {
     @Operation(summary = "Get product by ID", description = "Returns a single product by ID for the authenticated tenant")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Product found"),
-            @ApiResponse(responseCode = "404", description = "Product not found")
+            // API-5: a malformed id is a live 400 this operation never declared - a generated
+            // client had no typed branch for the commonest bad request against it.
+            @ApiResponse(responseCode = "400",
+                    description = "The id path variable is not a UUID (errors/type-mismatch)"),
+            @ApiResponse(responseCode = "401",
+                    description = "No bearer token, or one that is expired or invalid (errors/unauthorized)"),
+            @ApiResponse(responseCode = "403",
+                    description = "Caller holds no STAFF grant on the shop that owns this product "
+                            + "(errors/shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "Product not found (errors/not-found)")
     })
     public ResponseEntity<ProductDto> getById(
             @Parameter(description = "Product ID") @PathVariable UUID id) {
@@ -149,6 +158,13 @@ public class ProductController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Product created successfully"),
             @ApiResponse(responseCode = "400", description = "Validation error - missing required fields or invalid price"),
+            // API-5: the scope gate above and the shop-grant check in ProductService both
+            // answer 403 live, and neither was declared.
+            @ApiResponse(responseCode = "401",
+                    description = "No bearer token, or one that is expired or invalid (errors/unauthorized)"),
+            @ApiResponse(responseCode = "403",
+                    description = "Token lacks the catalog:write scope (errors/forbidden), or the caller "
+                            + "holds no SHOP_MANAGER grant on the target shop (errors/shop-access-denied)"),
             @ApiResponse(responseCode = "409", description = "Product SKU already exists for this tenant")
     })
     public ResponseEntity<ProductDto> create(

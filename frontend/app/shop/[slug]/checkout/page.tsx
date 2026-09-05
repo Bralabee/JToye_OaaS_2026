@@ -14,16 +14,19 @@ import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { describeOrderError } from "@/lib/order-error"
 import { minimumShortfallPennies } from "@/lib/minimum-order"
+// COR-2 / PR #726 low (b): the delivery-fee preview lives in the lib and ONLY there. This file
+// used to carry a byte-identical second body; the cart page already imported the lib.
+import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
+import { buildGuestOrderIntent, guestOrderIntentSignature } from "@/lib/checkout-idempotency"
+import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/vat"
 import publicApiClient from "@/lib/public-api-client"
-import { getAllergenNames } from "@/types/api"
+// FulfilmentType is the shared two-member union (mirrors the backend enum), not a local re-declaration.
+import { getAllergenNames, type FulfilmentType } from "@/types/api"
 import { PublicShop, PublicProduct } from "@/types/storefront"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
 }
-
-/** How an order is fulfilled — mirrors the server FulfilmentType enum strings. */
-export type FulfilmentType = "DELIVERY" | "COLLECTION"
 
 /**
  * UK postcode format (UI-SPEC Surface E). Kept non-global so `.test()` carries
@@ -34,27 +37,6 @@ export const UK_POSTCODE_REGEX = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/
 /** Validate a UK postcode, trimming + upper-casing first (blur normalises too). */
 export function isValidUkPostcode(value: string): boolean {
   return UK_POSTCODE_REGEX.test(value.trim().toUpperCase())
-}
-
-/**
- * Client-side delivery-fee PREVIEW. Mirrors the server waiver EXACTLY
- * (PublicStorefrontService.calculateDeliveryFee): COLLECTION is always £0;
- * DELIVERY uses the shop's fee, waived to £0 once the subtotal clears the
- * free-delivery threshold. This is display-only — the server recomputes the
- * authoritative total on order creation, so tampering here cannot underpay.
- */
-export function previewDeliveryFeePennies(
-  subtotalPennies: number,
-  fulfilmentType: FulfilmentType,
-  deliveryFeePennies: number | null | undefined,
-  freeDeliveryThresholdPennies: number | null | undefined
-): number {
-  if (fulfilmentType === "COLLECTION") return 0
-  const base = deliveryFeePennies ?? 0
-  if (freeDeliveryThresholdPennies != null && subtotalPennies >= freeDeliveryThresholdPennies) {
-    return 0
-  }
-  return base
 }
 
 /**
@@ -310,8 +292,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   )
 
   /**
-   * A stable signature of the order intent. Changing the basket produces a different one, which
-   * resets the acknowledgement — acknowledging one basket must not silently carry to another.
+   * A stable signature of the BASKET. Changing the basket produces a different one, which resets
+   * the acknowledgement — acknowledging one basket must not silently carry to another. This is
+   * deliberately basket-only: correcting a phone number is not a new set of allergens.
    */
   const basketSignature = useMemo(
     () => items.map((i) => `${i.productId}:${i.quantity}`).join("|"),
@@ -322,6 +305,43 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     setAcknowledged(false)
     setAckError(false)
   }, [basketSignature])
+
+  // The body this page will POST, built ONCE from the form state and used for BOTH the request
+  // and the idempotency signature, so no field can be submitted without being signed
+  // (lib/checkout-idempotency.ts).
+  const orderIntent = useMemo(
+    () =>
+      buildGuestOrderIntent({
+        customerName,
+        customerEmail,
+        customerPhone,
+        notes,
+        fulfilmentType,
+        address1,
+        address2,
+        city,
+        postcode,
+        items,
+      }),
+    [customerName, customerEmail, customerPhone, notes, fulfilmentType, address1, address2, city, postcode, items]
+  )
+  const intentSignature = useMemo(() => guestOrderIntentSignature(orderIntent), [orderIntent])
+  // QA 20260902 Cluster E (API-4): the server refuses the same key with a DIFFERENT body
+  // (422 errors/idempotency-payload-mismatch). The key therefore has to follow the ORDER INTENT,
+  // not the page mount. PR #726 M3: "intent" means the WHOLE payload, not the basket alone — a
+  // basket edited through the cart drawer, a corrected phone number, a changed address line or a
+  // Delivery->Collection switch between two submits must each mint a fresh key, or a correct
+  // server refusal becomes a hard error with no recovery path. An UNCHANGED payload keeps its key
+  // so a retry replays rather than duplicates. The mount-time key is kept on the first run
+  // (nothing has been submitted under it yet, and hydration would otherwise discard it for no
+  // reason).
+  const lastIntentSignatureRef = useRef(intentSignature)
+  useEffect(() => {
+    if (lastIntentSignatureRef.current !== intentSignature) {
+      lastIntentSignatureRef.current = intentSignature
+      idempotencyKeyRef.current = crypto.randomUUID()
+    }
+  }, [intentSignature])
 
   // Fetch the shop so the fee breakdown can be shown BEFORE payment. Provides
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
@@ -427,32 +447,22 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     setSubmitting(true)
 
     try {
+      // One read, used for BOTH the header and the body field, so the two can never disagree.
+      const idempotencyKey = idempotencyKeyRef.current
+      // The body is the SIGNED intent plus the key — the same object the signature was taken
+      // over, so what the server compares against the key is exactly what the key was bound to.
       // Server contract (GuestOrderRequest, plan 19-01) is FLAT: fulfilmentType +
       // addressLine1/2 + addressCity + addressPostcode (NOT a nested address obj).
-      const payload = {
-        customerName: customerName.trim(),
-        customerEmail: customerEmail.trim(),
-        customerPhone: customerPhone.trim(),
-        notes: notes.trim() || undefined,
-        idempotencyKey: idempotencyKeyRef.current,
-        fulfilmentType,
-        ...(fulfilmentType === "DELIVERY"
-          ? {
-              addressLine1: address1.trim(),
-              addressLine2: address2.trim() || undefined,
-              addressCity: city.trim(),
-              addressPostcode: postcode.trim().toUpperCase(),
-            }
-          : {}),
-        items: items.map((item) => ({
-          productId: item.productId,
-          quantity: item.quantity,
-        })),
-      }
+      const payload = { ...orderIntent, idempotencyKey }
 
+      // QA 20260902 Cluster E (API-3): the Idempotency-Key HEADER is the platform contract every
+      // other mutating endpoint speaks; the body field is the storefront's working legacy
+      // convention and stays authoritative server-side. Both are sent (additive — nothing
+      // displaced), carrying the same value.
       const res = await publicApiClient.post<OrderConfirmation>(
         `/public/shops/${slug}/orders`,
-        payload
+        payload,
+        { headers: { "Idempotency-Key": idempotencyKey } }
       )
 
       const confirmation = res.data
@@ -540,7 +550,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             )}
             {codConfirmation.vatAmountPennies > 0 && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">VAT ({codConfirmation.vatRate === "STANDARD" ? "20%" : codConfirmation.vatRate === "REDUCED" ? "5%" : "0%"})</span>
+                <span className="text-slate-600">VAT ({vatRateLabel(asVatRate(codConfirmation.vatRate))})</span>
                 <span className="text-slate-900">{formatPrice(codConfirmation.vatAmountPennies)}</span>
               </div>
             )}
@@ -644,7 +654,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             )}
             {paymentState.vatAmountPennies > 0 && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">VAT ({paymentState.vatRate === "STANDARD" ? "20%" : paymentState.vatRate === "REDUCED" ? "5%" : "0%"})</span>
+                <span className="text-slate-600">VAT ({vatRateLabel(asVatRate(paymentState.vatRate))})</span>
                 <span className="text-slate-900">{formatPrice(paymentState.vatAmountPennies)}</span>
               </div>
             )}
@@ -713,9 +723,25 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   const minimumOrderPennies = shop?.minimumOrderPennies ?? 0
   const minimumShortfall = minimumShortfallPennies(subtotalPennies, minimumOrderPennies)
   const belowMinimum = minimumShortfall !== null
-  // VAT-inclusive fraction already contained within the gross (UK retail idiom,
-  // unchanged): gross * 20 / 120, rounded down.
-  const vatPreviewPennies = Math.floor((previewTotalPennies * 20) / 120)
+  // COR-6: the VAT preview follows the BASKET's resolved rate, not a hardcoded 20%.
+  //
+  // This used to be Math.floor((previewTotalPennies * 20) / 120) with a "VAT (incl. 20%)" label,
+  // because PublicProductDto carried no rate and the client structurally could not resolve one.
+  // Most cold takeaway food is ZERO-rated (HMRC VAT Notice 709/1), so on such a basket the
+  // customer was shown a VAT figure before paying and a contradicting figure on the confirmation
+  // screen one screen later. The server has resolved the real rate since Issue #81 BUG 2.
+  //
+  // lib/vat.ts mirrors VatCalculator clause for clause: predominantRate over the line grosses,
+  // then vatFromGross over the COMBINED total (subtotal + delivery), which is the single
+  // truncation Order.calculateTotal performs. Preview only — the server recomputes and remains
+  // authoritative, so nothing here can change what is charged.
+  const basketVatRate = predominantRate(
+    items.map((item) => ({
+      grossPennies: item.pricePennies * item.quantity,
+      rate: asVatRate(item.vatRate),
+    }))
+  )
+  const vatPreviewPennies = vatFromGross(previewTotalPennies, basketVatRate)
   const inputBase =
     "w-full rounded-lg border px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400"
 
@@ -935,10 +961,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </div>
             <div className="flex items-center justify-between text-sm">
               {/* Prices are VAT-inclusive (UK retail): VAT is the fraction already
-                  contained within the gross total, not an add-on. Extracted at the
-                  standard rate (gross*20/120, round down) to match the post-order
-                  confirmation screen's vatAmountPennies. */}
-              <span className="text-slate-600">VAT (incl. 20%)</span>
+                  contained within the gross total, not an add-on. COR-6: the rate is the
+                  basket's RESOLVED predominant rate, so this line matches the post-order
+                  confirmation screen's vatAmountPennies on a zero- or reduced-rated basket
+                  too — it did not before. */}
+              <span className="text-slate-600">VAT ({vatRateLabel(basketVatRate)})</span>
               <span className="text-slate-900">{formatPrice(vatPreviewPennies)}</span>
             </div>
             <div className="flex items-center justify-between pt-1.5">

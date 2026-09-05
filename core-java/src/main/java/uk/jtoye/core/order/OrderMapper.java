@@ -43,6 +43,10 @@ public interface OrderMapper {
     @Mapping(target = "customerPhone", source = "customerPhone")
     @Mapping(target = "notes", source = "notes")
     @Mapping(target = "totalAmountPennies", source = "totalAmountPennies")
+    // COR-1: the vendor list must be able to SEE the classification and the fee. Scalar columns
+    // on the order row — no extra query, no collection load.
+    @Mapping(target = "fulfilmentType", source = "fulfilmentType")
+    @Mapping(target = "deliveryFeePennies", source = "deliveryFeePennies")
     @Mapping(target = "createdAt", source = "createdAt")
     @Mapping(target = "updatedAt", source = "updatedAt")
     OrderDto toDto(Order order);
@@ -54,6 +58,10 @@ public interface OrderMapper {
     // Fulfilment + delivery address (V45) so /dashboard/orders/[id] can render
     // how + where the order is fulfilled.
     @Mapping(target = "fulfilmentType", source = "fulfilmentType")
+    // COR-1 / M6: the fee beside the classification on the DETAIL view too, not only the list.
+    // MapStruct would map this implicitly by name; it is explicit so the two DTOs' COR-1 blocks
+    // read the same and a rename on either side fails the build rather than silently un-mapping.
+    @Mapping(target = "deliveryFeePennies", source = "deliveryFeePennies")
     @Mapping(target = "addressLine1", source = "addressLine1")
     @Mapping(target = "addressLine2", source = "addressLine2")
     @Mapping(target = "addressCity", source = "addressCity")

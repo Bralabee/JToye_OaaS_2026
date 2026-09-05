@@ -9,7 +9,10 @@
 #      security. So the one documented "start the backend" command could not start the
 #      backend. Measured: with DB_USER=jtoye the boot dies with
 #      "CRITICAL SECURITY ERROR: Application is using PostgreSQL superuser 'jtoye'";
-#      with DB_USER=jtoye_app it reaches "DATABASE SECURITY VALIDATION PASSED".
+#      with DB_USER=jtoye_runtime it reaches "DATABASE SECURITY VALIDATION PASSED".
+#      NOT jtoye_app: that role OWNS every public table, and the sibling check
+#      validateNotTableOwner() throws on a table owner for the same class of reason.
+#      jtoye_app is reached only through DB_MIGRATION_USER, by Flyway.
 #
 #   2. It also used to export a hardcoded DB_PASSWORD. That literal no longer authenticates:
 #      `psql -h localhost -p 5433 -U jtoye` returns
@@ -45,6 +48,13 @@ done
 export DB_HOST="${DB_HOST:-localhost}"
 export DB_PORT="${DB_PORT:-5433}"
 export DB_NAME="${DB_NAME:-jtoye}"
+# NOTE the DB_USER fallback is deliberately NOT jtoye_runtime, and is deliberately left as it
+# is. application.yml derives the FLYWAY user from the datasource user
+# (user: ${DB_MIGRATION_USER:${spring.datasource.username}}), so a role with no CREATE
+# reaching Flyway kills the first migration on a fresh volume -- green on an existing one.
+# .env.example ships DB_USER=jtoye_runtime + DB_MIGRATION_USER=jtoye_app, so a correctly
+# provisioned .env never lands on this fallback. Decoupling the migrator default first is
+# tracked separately; do not flip this line on its own.
 export DB_USER="${DB_USER:-jtoye_app}"
 export SERVER_PORT="${SERVER_PORT:-9090}"
 
@@ -71,7 +81,7 @@ ERROR: DB_USER is 'jtoye', which is a PostgreSQL superuser.
   The application refuses to start with it (DatabaseConfigurationValidator). Use the
   application role instead:
 
-      DB_USER=jtoye_app
+      DB_USER=jtoye_runtime
 
 EOF
     exit 1

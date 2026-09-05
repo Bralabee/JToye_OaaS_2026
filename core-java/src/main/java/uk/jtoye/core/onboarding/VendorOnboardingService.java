@@ -2,6 +2,9 @@ package uk.jtoye.core.onboarding;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -13,6 +16,7 @@ import uk.jtoye.core.onboarding.dto.AdminOnboardingDto;
 import uk.jtoye.core.onboarding.dto.GateDto;
 import uk.jtoye.core.onboarding.dto.OnboardingDto;
 import uk.jtoye.core.onboarding.gate.AllergenCompletenessGate;
+import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopService;
@@ -48,6 +52,7 @@ public class VendorOnboardingService {
     private final ShopRepository shopRepository;
     private final GateChainRunner gateChainRunner;
     private final AllergenCompletenessGate allergenCompletenessGate;
+    private final UserDirectoryRepository userDirectoryRepository;
 
     public VendorOnboardingService(VendorOnboardingRepository onboardingRepository,
                                    VendorOnboardingGateRepository gateRepository,
@@ -55,7 +60,8 @@ public class VendorOnboardingService {
                                    ShopService shopService,
                                    ShopRepository shopRepository,
                                    GateChainRunner gateChainRunner,
-                                   AllergenCompletenessGate allergenCompletenessGate) {
+                                   AllergenCompletenessGate allergenCompletenessGate,
+                                   UserDirectoryRepository userDirectoryRepository) {
         this.onboardingRepository = onboardingRepository;
         this.gateRepository = gateRepository;
         this.stateMachineService = stateMachineService;
@@ -63,6 +69,7 @@ public class VendorOnboardingService {
         this.shopRepository = shopRepository;
         this.gateChainRunner = gateChainRunner;
         this.allergenCompletenessGate = allergenCompletenessGate;
+        this.userDirectoryRepository = userDirectoryRepository;
     }
 
     /**
@@ -114,6 +121,7 @@ public class VendorOnboardingService {
         VendorOnboarding onboarding = requireOnboarding(tenantId);
 
         transition(onboarding, OnboardingEvent.SUBMIT);
+        recordSubmitterInDirectory(tenantId);
 
         gateChainRunner.materialise(onboarding);
         kickGateChainAfterCommit(onboarding.getId(), tenantId);
@@ -135,6 +143,7 @@ public class VendorOnboardingService {
         VendorOnboarding onboarding = requireOnboarding(tenantId);
 
         transition(onboarding, OnboardingEvent.RESUBMIT);
+        recordSubmitterInDirectory(tenantId);
 
         UUID onboardingId = onboarding.getId();
         for (VendorOnboardingGate gate : gateRepository.findByOnboardingId(onboardingId)) {
@@ -251,9 +260,31 @@ public class VendorOnboardingService {
     }
 
     /**
-     * Admin review queue (ONBD-03 / D-04): onboardings parked in VERIFYING because a
-     * gate needs a human — i.e. VERIFYING with at least one MANUAL_REVIEW gate row.
-     * This is the black-hole state the existing {@link #listPendingApproval() /pending}
+     * The lifecycle states in which a MANUAL_REVIEW gate can exist and a reviewer can act
+     * on it: VERIFYING (the park), and ACTION_REQUIRED (INT-1 — the same park when another
+     * mandatory gate FAILED in the same run, because {@link GateChainRunner} fires
+     * GATE_FAILED before it considers the MANUAL_REVIEW park). Shared by
+     * {@link #listReviewPending()} and the {@link #resolveGate} guard so the queue never
+     * lists an item whose only control would 400 (the "structural green over a dead
+     * feature" trap).
+     */
+    static final List<OnboardingState> REVIEWABLE_STATES =
+            List.of(OnboardingState.VERIFYING, OnboardingState.ACTION_REQUIRED);
+
+    /**
+     * Admin review queue (ONBD-03 / D-04): every onboarding carrying at least one
+     * MANUAL_REVIEW gate row — i.e. a gate that needs a human. Membership is decided by the
+     * PRESENCE of a parked gate, not by a single lifecycle state (INT-1, QA council
+     * 20260902-134741 / A15): with no Companies House API key the BUSINESS_VERIFIED gate
+     * always parks at MANUAL_REVIEW, and whenever another mandatory gate FAILED in the same
+     * run the runner demotes to ACTION_REQUIRED first — under the old VERIFYING-only filter
+     * that parked gate vanished from the reviewer's queue while the vendor page told the
+     * vendor a reviewer was on it. The vendor-facing {@code reviewPending} flag on
+     * {@code OnboardingDto} is a DIFFERENT predicate (VERIFYING only, no PENDING gate) and is
+     * deliberately not widened — the vendor must never be told "in review" while a failed
+     * check is theirs to fix.
+     *
+     * <p>This is the black-hole state the existing {@link #listPendingApproval() /pending}
      * approve/reject queue never showed; per D-04/A4 it is a NEW queue (Incremental
      * Betterment — the /pending contract is untouched). Runs under RLS, so the list is
      * scoped to the caller's tenant (same interim-resolver boundary as gate-resolve;
@@ -263,7 +294,7 @@ public class VendorOnboardingService {
     @Transactional(readOnly = true)
     public List<AdminOnboardingDto> listReviewPending() {
         CurrentTenant.require();
-        return onboardingRepository.findByStatusOrderBySubmittedAtAsc(OnboardingState.VERIFYING).stream()
+        return onboardingRepository.findByStatusInOrderBySubmittedAtAsc(REVIEWABLE_STATES).stream()
                 .filter(o -> gateRepository.existsByOnboardingIdAndStatus(o.getId(), GateStatus.MANUAL_REVIEW))
                 .map(o -> toAdminDto(o, gateRepository.findByOnboardingId(o.getId())))
                 .toList();
@@ -323,14 +354,21 @@ public class VendorOnboardingService {
      * foreign onboarding is a clean 404, no existence oracle). A real J'Toye
      * platform-operator console is a deferred phase.
      *
-     * <p><strong>VERIFYING-only guard (WR-01):</strong> a gate can only be resolved while
-     * the onboarding is in {@code VERIFYING}. {@code runAndRecompute} advances the state
-     * machine ONLY from VERIFYING, so resolving a gate once the onboarding has already left
-     * that state (PENDING_APPROVAL / APPROVED / LIVE) would mutate a gate row the recompute
-     * can never act on — silently stranding the application until a later {@code /approve}
-     * fails with an unexplained gate-guard veto. Resolving outside VERIFYING is therefore
-     * rejected with {@link InvalidStateTransitionException} → HTTP 400, and no gate row is
-     * touched.
+     * <p><strong>Review-window guard (WR-01, widened by INT-1 / A15):</strong> a gate can
+     * be resolved only while the onboarding is in {@link #REVIEWABLE_STATES} — VERIFYING or
+     * ACTION_REQUIRED. {@code runAndRecompute} advances the state machine ONLY from
+     * VERIFYING, so resolving a gate once the onboarding has left the review window
+     * (PENDING_APPROVAL / APPROVED / LIVE) would mutate a gate row the recompute can never
+     * act on — silently stranding the application until a later {@code /approve} fails with
+     * an unexplained gate-guard veto. That is still rejected with
+     * {@link InvalidStateTransitionException} → HTTP 400, no gate row touched.
+     * ACTION_REQUIRED is admitted because a MANUAL_REVIEW gate parked beside a FAILED one
+     * lands there (the runner fires GATE_FAILED before the park), and the VERIFYING-only
+     * guard then 400'd the reviewer's only control — the third lockout mechanism behind
+     * the two-actor dead-end. Resolving in ACTION_REQUIRED is NOT stranding: the row is
+     * written and audited, the after-commit recompute returns early (state unchanged), and
+     * the vendor's {@link #resubmit()} — which resets only FAILED/MANUAL_REVIEW rows and
+     * preserves PASSED/WAIVED — carries the reviewer's decision into the next VERIFYING run.
      *
      * <p>The gate write is Envers-audited automatically ({@code VendorOnboardingGate}
      * is {@code @Audited} → {@code vendor_onboarding_gate_aud}). A FAIL decision
@@ -342,16 +380,18 @@ public class VendorOnboardingService {
         UUID tenantId = CurrentTenant.require();
         VendorOnboarding onboarding = requireOnboardingById(onboardingId);
 
-        // WR-01: gate resolution is VERIFYING-only. The recompute this method dispatches
-        // (GateChainRunner.runAndRecompute) advances the state machine ONLY from VERIFYING;
-        // resolving a gate on an onboarding already at PENDING_APPROVAL/APPROVED/LIVE would
-        // silently mutate a gate row the recompute can never act on, stranding the onboarding
-        // and surfacing later as an unexplained APPROVE guard veto. Reject up front instead.
-        if (onboarding.getStatus() != OnboardingState.VERIFYING) {
+        // WR-01 (window widened by INT-1): gate resolution is valid only inside the review
+        // window — VERIFYING, or ACTION_REQUIRED when a parked gate sits beside a FAILED one.
+        // The recompute this method dispatches (GateChainRunner.runAndRecompute) advances the
+        // state machine ONLY from VERIFYING; resolving a gate on an onboarding already at
+        // PENDING_APPROVAL/APPROVED/LIVE would silently mutate a gate row the recompute can
+        // never act on, stranding the onboarding and surfacing later as an unexplained
+        // APPROVE guard veto. Reject up front instead.
+        if (!REVIEWABLE_STATES.contains(onboarding.getStatus())) {
             throw new InvalidStateTransitionException(
                     "Gate " + gateType + " cannot be resolved while onboarding " + onboardingId
                     + " is in state " + onboarding.getStatus()
-                    + " — gate resolution is only valid during manual review (VERIFYING)");
+                    + " — gate resolution is only valid during manual review (VERIFYING or ACTION_REQUIRED)");
         }
 
         if (decision == GateDecision.FAIL && (reason == null || reason.isBlank())) {
@@ -448,6 +488,48 @@ public class VendorOnboardingService {
     }
 
     /**
+     * INT-4 (QA council 20260902-134741): make the submitter reachable. Envers already records
+     * WHO submitted ({@code revinfo.user_id} = the JWT subject, via {@code TenantRevisionListener});
+     * this refreshes the caller's tenant-scoped {@code user_directory} row from the same JWT so
+     * {@link OnboardingSubmitterResolver} can turn that subject into an EMAIL when
+     * {@code tenants.contact_email} is blank. The directory is otherwise populated only on
+     * shop-scoped write paths ({@code ShopAccessService}), which a vendor who only ever calls the
+     * onboarding endpoints never touches — so without this the fallback would be empty exactly
+     * when it is needed. Same D-09 throttled upsert, same "only the caller's own {@code sub}"
+     * property (T-23-02-01); {@code cutoff = now()} so the address is current at submit time.
+     * Best-effort and fail-closed: no JWT principal, a non-UUID subject, or a missing/oversize
+     * email claim means nothing is written — never a guess, never a failed submit.
+     */
+    private void recordSubmitterInDirectory(UUID tenantId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
+            return;
+        }
+        UUID subject;
+        try {
+            subject = UUID.fromString(jwt.getSubject());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return;
+        }
+        String email = jwt.getClaimAsString("email");
+        if (email == null || email.isBlank() || email.length() > 320) {
+            return; // nothing usable to route to — the column is VARCHAR(320)
+        }
+        String displayName = jwt.getClaimAsString("name");
+        if (displayName == null || displayName.isBlank()) {
+            displayName = jwt.getClaimAsString("preferred_username");
+        }
+        if (displayName != null && displayName.length() > 255) {
+            displayName = displayName.substring(0, 255);
+        }
+        try {
+            userDirectoryRepository.upsertSeen(tenantId, subject, email.trim(), displayName, OffsetDateTime.now());
+        } catch (RuntimeException ex) {
+            log.warn("Submitter directory refresh skipped (best-effort) for tenant {}: {}", tenantId, ex.getMessage());
+        }
+    }
+
+    /**
      * CR-01: dispatch the async gate chain only AFTER the current transaction
      * commits. {@link GateChainRunner#runAndRecompute} is {@code @Async @Transactional}
      * — it opens its own connection on a worker thread. Firing it while the submit
@@ -492,13 +574,14 @@ public class VendorOnboardingService {
                 });
     }
 
-    /** WR-02: trim + uppercase a company number; a blank/whitespace value becomes null. */
+    /**
+     * WR-02 + INT-7/A14: canonical company number — trim, uppercase, blank → null (sole
+     * trader), and left-zero-pad a purely numeric value to the 8-character register key
+     * ({@code 445790} → {@code 00445790}). Delegates to {@link CompanyNumbers#normalise} so
+     * the gate's lookup key and the stored aggregate can never disagree.
+     */
     private static String normaliseCompanyNumber(String companyNumber) {
-        if (companyNumber == null) {
-            return null;
-        }
-        String normalised = companyNumber.trim().toUpperCase();
-        return normalised.isEmpty() ? null : normalised;
+        return CompanyNumbers.normalise(companyNumber);
     }
 
     private VendorOnboarding requireOnboarding(UUID tenantId) {

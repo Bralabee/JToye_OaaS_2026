@@ -236,7 +236,7 @@ class GuestCheckoutOnlinePaymentIntegrationTest {
     // Test C — CONTROL. The COD fallback must behave exactly as it does today.
     // ------------------------------------------------------------------
     @Test
-    @DisplayName("CONTROL: with no Stripe key the COD fallback is unchanged — PENDING / NONE / 'Cash on Delivery' (#538)")
+    @DisplayName("CONTROL: with no Stripe key the COD fallback is unchanged — PENDING / NONE / 'Unpaid' (#538, INT-9)")
     void codFallback_unchanged() {
         stripeProperties.setApiKey("");
         assertThat(stripeProperties.getApiKey())
@@ -264,7 +264,14 @@ class GuestCheckoutOnlinePaymentIntegrationTest {
         Map<String, Object> row = readOrderRow(confirmation.getOrderNumber());
         assertThat(row.get("status")).isEqualTo("PENDING");
         assertThat(row.get("payment_status")).isEqualTo("NONE");
-        assertThat(row.get("payment_method")).isEqualTo("Cash on Delivery");
+        // INT-9 (QA-council 20260902-134741, owner ruling E-2): this assertion used to pin
+        // "Cash on Delivery" — on a request this very class builds as COLLECTION (see
+        // guestRequestFor below), so the test ENCODED the defect it should have caught. The
+        // literal is now the fulfilment-neutral, truthful "Unpaid": no payment has been taken
+        // and no payment request has been sent. #461 (the COD fallback itself) stays open.
+        assertThat(row.get("payment_method"))
+                .as("INT-9: a COLLECTION order must not carry a delivery payment label")
+                .isEqualTo("Unpaid");
         assertThat(row.get("payment_reference"))
                 .as("a COD order references no Stripe object")
                 .isNull();

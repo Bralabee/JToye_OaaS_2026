@@ -33,8 +33,17 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     // the MOBL-01-verified 375px shell markup below is unchanged.
     <ShopSwitcherProvider>
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
+      {/* SKIP LINK (A11Y-1, QA council 20260902-134741; WCAG 2.4.1). With no
+          bypass control the first Tab stop was the shop switcher and <main> was
+          17 presses away on every dashboard load (probes/a11y/23), against 2 on
+          the public shell. This is the same markup public-shell.tsx,
+          app/shop/layout.tsx and app/auth/signin/page.tsx already ship — class
+          string and target id copied verbatim, FIRST in document order so it
+          is the first Tab stop. `<main>` needs no tabindex: Chromium moves the
+          sequential-focus start point to the fragment target (probe 22b). */}
+      <a href="#main" className="sr-only z-50 rounded-full bg-oxblood px-4 py-3 text-sm font-bold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4">Skip to main content</a>
       <Sidebar />
-      <main className="flex-1 overflow-y-auto">
+      <main id="main" className="flex-1 overflow-y-auto">
         {/* Mobile-only top bar — brand chrome once the sidebar is gone. The
             shop-context switcher (VSA-03) rides here next to the wordmark; it is
             width-capped + truncating so it adds no horizontal overflow at 375px

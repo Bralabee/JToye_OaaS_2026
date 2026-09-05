@@ -57,9 +57,21 @@ export const CLS_BUDGET = 0.1
  *
  * Identical to four decimal places. The single shift fires at ~1516 ms and its
  * `sources` are all HERO elements — the search form, the category chips, the
- * paragraph and both persona doors — i.e. client-island hydration above the
- * kitchen row this phase rewrote. Layout shift propagates downward, and the
- * control arm is what proves that rather than merely arguing it.
+ * paragraph and both persona doors — above the kitchen row this phase rewrote.
+ * Layout shift propagates downward, and the control arm is what proves the
+ * kitchen row is not the cause rather than merely arguing it.
+ *
+ * THE CAUSE ITSELF IS NOT ESTABLISHED, and this docblock used to say it was.
+ * It read "i.e. client-island hydration", which is an attribution the two
+ * measured arms above cannot support: they show WHERE the shift is and that
+ * 33-03 did not move it, never WHY it fires. Corrected during the QA council of
+ * 2026-09-02, whose adjudication A19 measured the analogous shift on `/shop` and
+ * found a different mechanism — the Work Sans swap widening a `flex-wrap` chip
+ * row until it re-wrapped, moving the grid below it by exactly one row height.
+ * `/`'s own sources include a category-chip row of the same shape, so the font
+ * swap is a live candidate here too. Hydration is not excluded and the two are
+ * not mutually exclusive — a hydrating island can also re-render text in a
+ * different face. Both are hypotheses until an arm distinguishes them.
  *
  * THIS NUMBER IS A RECORD, NOT A BUDGET, AND CLS_BUDGET WAS DELIBERATELY NOT
  * RAISED TO 0.2 TO GO GREEN. Raising a budget until the tree passes is how a
@@ -68,8 +80,12 @@ export const CLS_BUDGET = 0.1
  * if 33-07's client island makes the shift worse — while the absolute 0.1 target
  * stays declared and unmet, so the debt stays visible.
  *
- * Fixing it means changing how `HeroSearch` hydrates, which is outside 33-03's
- * file set and is its own scoped work.
+ * Fixing it is its own scoped work, outside 33-03's file set, and the first step
+ * is an arm that separates the two candidates above rather than a change to
+ * `HeroSearch`'s hydration chosen on the strength of a guess. The `/shop` fix
+ * (making the shifting row unable to wrap) is the cheaper of the two to try
+ * first, and it is falsifiable: if the shift survives it, hydration is what is
+ * left.
  */
 export const LANDING_CLS_KNOWN_BASELINE = 0.1793
 
@@ -132,8 +148,13 @@ export const LANDING_CLS_TOLERANCE = 0.02
  * same hero sources. The same shift got LIGHTER.
  *
  * The mechanism visible in the entry's own rects: the persona-door grid
- * (`div.mt-6.grid.grid-cols-1...sm:grid-cols-2`) reflows during hydration at the
- * narrow band and does not at the wide one —
+ * (`div.mt-6.grid.grid-cols-1...sm:grid-cols-2`) reflows at the narrow band and
+ * does not at the wide one —
+ *     (it said "reflows during hydration"; the rects date the reflow, they do
+ *     not name what re-laid it out. An extra text line at the narrow band is
+ *     equally consistent with the font swap — see the A19 correction on
+ *     LANDING_CLS_KNOWN_BASELINE above. The width finding below is unaffected:
+ *     the MECH arm isolates the CAP, whatever the trigger.)
  *     CONTROL / MECH   prev h=220 -> cur h=248   (+28px, an extra text line)
  *     TREATMENT        prev h=220 -> cur h=220   (no growth)
  * and the settled page is 28px shorter at 1280 (doc 2234 vs 2262). A height

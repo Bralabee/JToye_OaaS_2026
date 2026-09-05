@@ -14,6 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import uk.jtoye.core.common.idempotency.IdempotencyOutcome;
+import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
@@ -23,6 +25,7 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderEventPublisher;
+import uk.jtoye.core.order.OrderNumberGenerator;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.payment.PaymentIntentResult;
@@ -47,6 +50,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,6 +69,7 @@ class PublicStorefrontServiceTest {
     @Mock private uk.jtoye.core.shop.ShopPromotionRepository promotionRepository;
     @Mock private ShopAnnouncementRepository announcementRepository;
     @Mock private PostcodeGeocoder postcodeGeocoder;
+    @Mock private IdempotencyService idempotencyService;
 
     private PublicStorefrontService service;
 
@@ -87,7 +92,19 @@ class PublicStorefrontServiceTest {
         // this unit test exercises the same ceiling behaviour the running service has.
         // 33-08: postcodeGeocoder drives the THIRD search tier and is reached only when both text
         // tiers return empty, so most arms in this file never touch it.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, postcodeGeocoder, 5.0, 50.0);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), 5.0, 50.0);
+
+        // Cluster E (API-3/API-4/INT-15): a keyed guest order is routed through the V50 store's
+        // credential-safe variant. This unit test has no database, so the mock simply runs the
+        // supplied work — the reservation / hash / replay semantics are proven against real
+        // Postgres in GuestCheckoutIdempotencyIntegrationTest and
+        // IdempotencyServiceUnstoredResponseIntegrationTest. Running the WORK (not the replay)
+        // keeps the pre-existing WR-02 retry arms meaningful: the legacy in-work lookup on
+        // orders.idempotency_key is what they exercise.
+        lenient().doAnswer(inv -> {
+            Supplier<?> work = inv.getArgument(3);
+            return new IdempotencyOutcome<>(201, work.get());
+        }).when(idempotencyService).executeWithoutStoringResponse(any(), any(), any(), any(), any());
 
         tenantId = UUID.randomUUID();
         publishedShop = new Shop();
@@ -241,6 +258,50 @@ class PublicStorefrontServiceTest {
         assertEquals(899L, result.get("Mains").get(0).getPricePennies());
     }
 
+    /**
+     * COR-6 (QA-council 20260902-134741). {@code PublicProductDto} carried 13 fields and no VAT
+     * rate, so the checkout page could not resolve one and hardcoded {@code gross * 20 / 120}
+     * with a "VAT (incl. 20%)" label. Most cold takeaway food is ZERO-rated (HMRC VAT Notice
+     * 709/1, re-read 2026-09-03), so on such a basket the customer was shown a VAT figure before
+     * paying and a contradicting figure on the confirmation screen a moment later. The server has
+     * resolved the real rate since Issue #81 BUG 2 — the client was simply never given the input.
+     *
+     * <p>The ZERO arm is the falsifiable one: all 22 products on the dev DB are STANDARD, so an
+     * assertion exercised only against seeded data cannot fail.
+     */
+    @Test
+    @DisplayName("COR-6: the public product DTO exposes vatRate so the client can preview VAT correctly")
+    void publicProductDtoExposesVatRate() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+
+        Product zeroRated = availableProduct("Cold Meat Pie", 1200L);
+        zeroRated.setCategory("Mains");
+        zeroRated.setVatRate(VatRate.ZERO);
+        Product standardRated = availableProduct("Hot Jollof Rice", 899L);
+        standardRated.setCategory("Mains");
+        standardRated.setVatRate(VatRate.STANDARD);
+        when(productRepository.findAvailableByShopOrderedByCategory(publishedShop.getId()))
+                .thenReturn(List.of(zeroRated, standardRated));
+
+        Map<String, List<PublicProductDto>> byCategory =
+                service.getShopProducts("test-shop-abc12345");
+
+        List<PublicProductDto> all = byCategory.values().stream().flatMap(List::stream).toList();
+        assertEquals(2, all.size());
+        PublicProductDto cold = all.stream()
+                .filter(p -> "Cold Meat Pie".equals(p.getTitle())).findFirst().orElseThrow();
+        PublicProductDto hot = all.stream()
+                .filter(p -> "Hot Jollof Rice".equals(p.getTitle())).findFirst().orElseThrow();
+
+        assertEquals("ZERO", cold.getVatRate(),
+                "COR-6: a zero-rated line must reach the client as ZERO, not as an assumed 20%");
+        assertEquals("STANDARD", hot.getVatRate());
+        // Non-vacuity: if the two carried the same value the assertion could not tell a real
+        // pass-through from a hardcoded constant.
+        assertNotEquals(cold.getVatRate(), hot.getVatRate());
+    }
+
     @Test
     @DisplayName("trackOrder returns status when order number and email match")
     void trackOrder_success() {
@@ -264,6 +325,79 @@ class PublicStorefrontServiceTest {
         assertEquals("PENDING", result.getStatus());
         assertEquals("Test Shop", result.getShopName());
         assertEquals(1500L, result.getTotalAmountPennies());
+    }
+
+    /**
+     * COR-7 (QA-council 20260902-134741). {@code PublicOrderStatus} declares 11 fields;
+     * {@code trackOrder} assigned 8. {@code subtotalPennies} / {@code vatRate} /
+     * {@code vatAmountPennies} serialised as {@code null} on every 200, so a machine consumer
+     * reading this unauthenticated endpoint saw "no VAT" where VAT exists.
+     *
+     * <p>The distinction the assertion protects is the V63 NULL-vs-0 rule applied to money:
+     * "this order carries no VAT" and "this endpoint did not disclose the VAT" are different
+     * claims, and a null collapses them into the cheaper, wrong one. {@code getCustomerOrders}
+     * — the sibling reader 40 lines above in the same service — has always populated all three,
+     * so this was an omission on one of two paths, not a decision about the contract.
+     */
+    @Test
+    @DisplayName("COR-7: trackOrder populates subtotal, vatRate and vatAmount — a null is not 'no VAT'")
+    void trackOrder_populatesTheMoneyBreakdown() {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setOrderNumber("ORD-COR7-20260902-A1");
+        order.setCustomerEmail("cor7@example.com");
+        order.setStatus(OrderStatus.PREPARING);
+        order.setShopId(publishedShop.getId());
+        order.setSubtotalPennies(1200L);
+        order.setVatRate(VatRate.STANDARD);
+        order.setVatAmountPennies(250L);
+        order.setTotalAmountPennies(1500L);
+        order.setUpdatedAt(OffsetDateTime.now());
+
+        when(orderRepository.findByOrderNumberAndCustomerEmail("ORD-COR7-20260902-A1", "cor7@example.com"))
+                .thenReturn(Optional.of(order));
+        when(shopRepository.findById(publishedShop.getId()))
+                .thenReturn(Optional.of(publishedShop));
+
+        var result = service.trackOrder("ORD-COR7-20260902-A1", "cor7@example.com");
+
+        assertEquals(1200L, result.getSubtotalPennies(),
+                "COR-7: subtotalPennies is declared on the DTO and must be disclosed, not null");
+        assertEquals("STANDARD", result.getVatRate(),
+                "COR-7: the order's resolved VAT rate must reach the tracking response");
+        assertEquals(250L, result.getVatAmountPennies(),
+                "COR-7: a null vatAmountPennies reads as 'no VAT' — it must carry the real figure");
+    }
+
+    /**
+     * COR-7 fallback arm. A pre-VAT order row can genuinely hold a null {@code vat_rate} /
+     * {@code vat_amount_pennies}; the response must use the SAME defaults the sibling
+     * {@code getCustomerOrders} reader already uses ("ZERO" / 0) rather than throwing or
+     * emitting null, so the two customer surfaces cannot disagree about the same order.
+     */
+    @Test
+    @DisplayName("COR-7: a null vatRate/vatAmount on the row falls back exactly as getCustomerOrders does")
+    void trackOrder_nullVatFallsBackLikeTheHistoryReader() {
+        Order order = new Order();
+        setField(order, "id", UUID.randomUUID());
+        order.setOrderNumber("ORD-COR7-20260902-A2");
+        order.setCustomerEmail("cor7@example.com");
+        order.setStatus(OrderStatus.PENDING);
+        order.setShopId(publishedShop.getId());
+        order.setVatRate(null);
+        order.setVatAmountPennies(null);
+        order.setTotalAmountPennies(900L);
+        order.setUpdatedAt(OffsetDateTime.now());
+
+        when(orderRepository.findByOrderNumberAndCustomerEmail("ORD-COR7-20260902-A2", "cor7@example.com"))
+                .thenReturn(Optional.of(order));
+        when(shopRepository.findById(publishedShop.getId()))
+                .thenReturn(Optional.of(publishedShop));
+
+        var result = service.trackOrder("ORD-COR7-20260902-A2", "cor7@example.com");
+
+        assertEquals("ZERO", result.getVatRate());
+        assertEquals(0L, result.getVatAmountPennies());
     }
 
     @Test
@@ -503,6 +637,74 @@ class PublicStorefrontServiceTest {
         assertNull(saved.getAddressLine1(), "COLLECTION order must not persist an address");
     }
 
+    /**
+     * INT-9 (QA-council 20260902-134741, owner ruling E-2). The COD fallback wrote
+     * {@code payment_method = "Cash on Delivery"} unconditionally, with no reference to the
+     * fulfilment type resolved 187 lines earlier — so on this runtime 39 COLLECTION orders
+     * carried a literal that names a delivery that will never happen. It is a vendor-finance
+     * label: nothing in the codebase branches on the string (census in plan-money-orders.md).
+     *
+     * <p>The replacement is {@code "Unpaid"}, ruled by the owner (E-2). "Pay on collection" and
+     * "Cash on Collection" are BOTH forbidden — issue #461 records the owner's ruling that
+     * pay-on-collection is not an allowed policy, so encoding it here would inscribe a
+     * prohibited state into the vendor's finance view. "Unpaid" is the only value truthful
+     * today: no payment has been taken and no payment request has been sent, and the string must
+     * not claim a request is pending.
+     */
+    @Test
+    @DisplayName("INT-9: the COD fallback labels a COLLECTION order 'Unpaid', never 'Cash on Delivery'")
+    void createGuestOrder_codFallbackLabelsCollectionOrderUnpaid() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Puff Puff", 300L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        // No Stripe key -> the COD branch, which is the only writer of this literal.
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GuestOrderRequest request = new GuestOrderRequest();
+        request.setCustomerName("Ada Lovelace");
+        request.setCustomerEmail("ada@example.com");
+        request.setCustomerPhone("07700900002");
+        request.setFulfilmentType("COLLECTION");
+        request.setItems(List.of(itemFor(product, 1)));
+
+        service.createGuestOrder("test-shop-abc12345", request);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        Order saved = captor.getValue();
+
+        assertEquals(FulfilmentType.COLLECTION, saved.getFulfilmentType());
+        assertEquals("Unpaid", saved.getPaymentMethod(),
+                "INT-9/E-2: a COLLECTION order must not be labelled with a delivery payment method");
+        assertEquals(OrderStatus.PENDING, saved.getStatus());
+    }
+
+    /**
+     * INT-9 companion arm: the label is fulfilment-NEUTRAL by design. It states what is true of
+     * the order (nothing has been paid) and needs no branch on the fulfilment type, so a DELIVERY
+     * order gets the same string — a second branch would be a second thing to get wrong, and the
+     * old literal's whole defect was that it asserted a fulfilment mode it never consulted.
+     */
+    @Test
+    @DisplayName("INT-9: the COD label is fulfilment-neutral — a DELIVERY order reads 'Unpaid' too")
+    void createGuestOrder_codFallbackLabelIsFulfilmentNeutral() {
+        publishedShop.setDeliveryFeePennies(0L);
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createGuestOrder("test-shop-abc12345", deliveryRequest(product));
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captor.capture());
+        assertEquals("Unpaid", captor.getValue().getPaymentMethod());
+    }
+
     @Test
     @DisplayName("createGuestOrder charges the shop's server-side delivery fee for DELIVERY (client value never trusted)")
     void createGuestOrder_deliveryUsesServerFee() throws Exception {
@@ -585,6 +787,161 @@ class PublicStorefrontServiceTest {
                 "a non-DRAFT duplicate must not disclose any payment reference");
         assertEquals("PENDING", confirmation.getStatus());
         verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    // ---- PR #726 review M5 (COR-4 scope gap): the confirmation carries UNITS beside LINES ----
+
+    /**
+     * The checkout confirmation is the FIRST customer surface after the basket said "2 items", so it
+     * is where the COR-4 divergence bites first. {@code itemCount} stays LINES (untouched contract);
+     * {@code unitCount} is SUM(quantity). RED on the unfixed tree: does not compile
+     * ({@code GuestOrderConfirmation} has no {@code getUnitCount()}).
+     */
+    @Test
+    @DisplayName("createGuestOrder confirmation carries unitCount (COR-4) beside the line-based itemCount")
+    void createGuestOrder_confirmationCarriesUnitCount() throws Exception {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // deliveryRequest() orders ONE line of quantity 2 — the exact shape where lines != units.
+        GuestOrderConfirmation confirmation =
+                service.createGuestOrder("test-shop-abc12345", deliveryRequest(product));
+
+        assertEquals(1, confirmation.getItemCount(), "itemCount keeps its LINES meaning");
+        assertEquals(2, confirmation.getUnitCount(), "unitCount is UNITS — the number the basket showed");
+    }
+
+    /**
+     * Replay half of M5: the idempotent retry rebuilds the confirmation from the PERSISTED order, so
+     * it must pass unitCount through AS-IS. A pre-V66 row has NULL, and NULL means "not recorded" —
+     * it must never be coalesced to 0 or substituted with itemCount.
+     */
+    @Test
+    @DisplayName("idempotent replay passes unitCount through as-is: a pre-V66 order replays null, never 0 (COR-4)")
+    void createGuestOrder_idempotentReplay_nullUnitCountStaysNull() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Order historic = existingOrder(OrderStatus.PENDING, "pi_456");
+        assertNull(historic.getUnitCount(), "fixture precondition: a row that predates V66");
+        when(orderRepository.findByTenantIdAndIdempotencyKey(tenantId, "retry-key-123"))
+                .thenReturn(Optional.of(historic));
+
+        GuestOrderConfirmation confirmation =
+                service.createGuestOrder("test-shop-abc12345", idempotentRetryRequest());
+
+        assertEquals(2, confirmation.getItemCount());
+        assertNull(confirmation.getUnitCount(), "NULL means not recorded; a fabricated 0 is a lie");
+    }
+
+    @Test
+    @DisplayName("idempotent replay carries a recorded unitCount (COR-4)")
+    void createGuestOrder_idempotentReplay_recordedUnitCountIsCarried() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Order recorded = existingOrder(OrderStatus.PENDING, "pi_456");
+        recorded.setUnitCount(6);
+        when(orderRepository.findByTenantIdAndIdempotencyKey(tenantId, "retry-key-123"))
+                .thenReturn(Optional.of(recorded));
+
+        GuestOrderConfirmation confirmation =
+                service.createGuestOrder("test-shop-abc12345", idempotentRetryRequest());
+
+        assertEquals(2, confirmation.getItemCount());
+        assertEquals(6, confirmation.getUnitCount());
+    }
+
+    // ---- Cluster E (QA council 20260902-134741, API-3 / API-4 / INT-15) ----
+
+    @Test
+    @DisplayName("resolveGuestIdempotencyKey: body and header carrying the SAME key is one intent, and that key is used")
+    void resolveGuestIdempotencyKey_agreeingSourcesAreOneIntent() {
+        assertEquals("same-key", PublicStorefrontService.resolveGuestIdempotencyKey("same-key", "same-key"));
+    }
+
+    /**
+     * PR #726 review follow-up. The body used to WIN silently (DEBUG log) when the two sources
+     * disagreed. Two different keys are two different intents on one request — a client defect —
+     * and picking one means a retry that carries only the OTHER key finds no reservation and mints
+     * the duplicate order the key exists to prevent. Fail closed, before any write.
+     */
+    @Test
+    @DisplayName("resolveGuestIdempotencyKey: body and header carrying DIFFERENT keys is refused 400, never resolved by preference")
+    void resolveGuestIdempotencyKey_disagreeingSourcesAreRefused() {
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> PublicStorefrontService.resolveGuestIdempotencyKey("body-key", "header-key"));
+        assertTrue(ex.getMessage().contains("idempotencyKey"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("Idempotency-Key"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("createGuestOrder with disagreeing body/header keys writes nothing and never reaches the idempotency store")
+    void createGuestOrder_disagreeingKeys_writesNothing() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Egusi", 1200L);
+        GuestOrderRequest request = deliveryRequest(product);
+        request.setIdempotencyKey("body-key");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request, "header-key"));
+
+        verifyNoInteractions(idempotencyService);
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("resolveGuestIdempotencyKey: the Idempotency-Key header is honoured when the body carries no key (API-3)")
+    void resolveGuestIdempotencyKey_headerUsedWhenBodyAbsent() {
+        assertEquals("header-key", PublicStorefrontService.resolveGuestIdempotencyKey(null, "header-key"));
+        assertEquals("header-key", PublicStorefrontService.resolveGuestIdempotencyKey("   ", "header-key"));
+    }
+
+    @Test
+    @DisplayName("resolveGuestIdempotencyKey: neither source -> null, the pre-existing keyless create")
+    void resolveGuestIdempotencyKey_neitherIsNull() {
+        assertNull(PublicStorefrontService.resolveGuestIdempotencyKey(null, null));
+        assertNull(PublicStorefrontService.resolveGuestIdempotencyKey("", " "));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder with a key routes through the V50 store under the storefront-namespaced endpoint, hashing the request (API-4)")
+    void createGuestOrder_withKey_routesThroughTheIdempotencyStore() throws Exception {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Egusi", 1200L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        GuestOrderRequest request = deliveryRequest(product);
+        request.setIdempotencyKey("intent-42");
+
+        service.createGuestOrder("test-shop-abc12345", request, null);
+
+        verify(idempotencyService).executeWithoutStoringResponse(
+                eq(PublicStorefrontService.GUEST_ORDER_ENDPOINT), eq("intent-42"), same(request), any(), any());
+        assertEquals("storefront.orders.create", PublicStorefrontService.GUEST_ORDER_ENDPOINT,
+                "namespaced away from orders.create so a dashboard key can never collide with a guest key");
+        verify(orderRepository).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("createGuestOrder without any key bypasses the store — the keyless create is unchanged (census)")
+    void createGuestOrder_withoutKey_bypassesTheIdempotencyStore() throws Exception {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Egusi", 1200L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.createGuestOrder("test-shop-abc12345", deliveryRequest(product), null);
+
+        verifyNoInteractions(idempotencyService);
+        verify(orderRepository).save(any(Order.class));
     }
 
     @Test
@@ -1009,7 +1366,8 @@ class PublicStorefrontServiceTest {
         private PublicStorefrontService serviceWithRadii(double defaultRadiusKm, double maxRadiusKm) {
             return new PublicStorefrontService(shopRepository, productRepository, orderRepository,
                     eventPublisher, entityManager, paymentService, promotionRepository,
-                    announcementRepository, postcodeGeocoder, defaultRadiusKm, maxRadiusKm);
+                    announcementRepository, idempotencyService, postcodeGeocoder,
+                    new OrderNumberGenerator(), defaultRadiusKm, maxRadiusKm);
         }
 
         @Test

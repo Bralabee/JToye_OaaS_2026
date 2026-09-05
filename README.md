@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Bralabee/JToye_OaaS_2026/actions)
-[![Tests](https://img.shields.io/badge/tests-3572%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-4003%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -19,7 +19,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 |-------|------------|
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS, NextAuth.js v5 |
 | **Backend** | Spring Boot 3, Java 25, MapStruct 1.6.3, Redis Caching, Spring State Machine |
-| **Edge** | Go 1.26, Gin, Circuit Breakers, Rate Limiting |
+| **Edge** | Go 1.27, Gin, Circuit Breakers, Rate Limiting |
 | **Database** | PostgreSQL 15 with Row-Level Security (RLS) |
 | **Auth** | Keycloak 24 (OAuth2/OIDC) |
 | **Infrastructure** | Docker, Kubernetes, Redis, RabbitMQ |
@@ -82,7 +82,8 @@ cp edge-go/.env.example edge-go/.env
 # 2. Start the backing services only (Postgres, Keycloak, Redis, RabbitMQ)
 docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 
-# 3. Start backend (reads .env; runs as jtoye_app, never the jtoye superuser)
+# 3. Start backend (reads .env; connects as jtoye_runtime — jtoye_app is the Flyway migrator,
+#    jtoye the superuser; core-java refuses to boot as either)
 ./scripts/run-app.sh
 
 # 4. Start frontend (new terminal)
@@ -93,6 +94,34 @@ cd frontend && npm install && npm run dev
 > `infra/docker-compose.yml` declares its own `jtoye-postgres` / `jtoye-keycloak` containers on the
 > same host ports (5433, 8085), so it collides with the canonical stack, and it starts neither Redis
 > nor RabbitMQ — which `application.yml` expects on `localhost`.
+
+### Option 3: Hybrid — `scripts/start-dev.sh` (Postgres + Keycloak in Docker, app on the host)
+
+`scripts/start-dev.sh` does **not** start the canonical full-stack runtime, and it does not read
+`docker-compose.full-stack.yml` at all. It runs `cd infra && docker compose up -d` (Postgres +
+Keycloak only), then `./gradlew :core-java:bootRun` and `npm run dev` as **host processes**.
+`scripts/stop-dev.sh` is the matching teardown for exactly this mode.
+
+```bash
+cp infra/.env.example infra/.env   # REQUIRED — see below
+./scripts/start-dev.sh             # teardown: ./scripts/stop-dev.sh
+```
+
+> **`infra/.env` is a hard prerequisite of this mode and of nothing else.**
+> `infra/docker-compose.yml` reads `infra/.env` — **not** the repo-root `.env` — and declares
+> seven `${VAR:?}` guards (`DB_PASSWORD`, `KEYCLOAK_CLIENT_SECRET`, `EDGE_API_CLIENT_SECRET`,
+> `KC_SEED_USER_PASSWORD`, `INTEGRATION_CATALOG_RO_SECRET`, `INTEGRATION_ORDERS_RW_SECRET`,
+> `KC_ADMIN_PASSWORD`). Without the file, step 1 of `start-dev.sh` exits non-zero on all seven.
+> Note the asymmetry: the script's own preflight (`scripts/verify-env.sh`) validates the
+> **repo-root** `.env`, so a green preflight does not mean the compose file can render.
+
+Never run this mode alongside Option 1 or 2: `infra/docker-compose.yml` re-declares
+`jtoye-postgres` / `jtoye-keycloak` on the same host ports (5433, 8085), and it starts neither
+Redis nor RabbitMQ, which `application.yml` expects on `localhost`.
+
+`scripts/start-dev.sh` takes no flags of its own — every argument is forwarded to
+`scripts/verify-env.sh` and the stack is started regardless, so `start-dev.sh --help` **starts
+services**.
 
 📖 **Detailed Guide:** See [docs/guides/QUICK_START.md](docs/guides/QUICK_START.md)
 
@@ -174,9 +203,9 @@ cd frontend && npm install && npm run dev
 - `/api/v1/products` - Product catalog with allergen tracking
 - `/api/v1/orders` - Order lifecycle with state machine
 - `/api/v1/customers` - Customer profiles
-- `/api/v1/financial-transactions` - Transaction tracking
+- `/api/v1/financial-transactions` - Transaction tracking (role-gated: the seed user `tenant-a-user` lacks the finance authority and correctly gets **403**)
 - `/api/v1/sync/batch` - High-volume data synchronization
-- `/api/v1/onboarding` - Vendor onboarding state machine
+- `/api/v1/onboarding` - Vendor onboarding state machine (no GET collection on this path: a bare `GET` is **405**. Use `POST /api/v1/onboarding` and `GET /api/v1/onboarding/{id}`)
 
 Not under the prefix (these 404 if you add it):
 
@@ -259,14 +288,14 @@ inert placeholder — every deploy re-pins to `:<git-sha>` and a premortem guard
 that static default ever survives to an `apply`, so it is intentionally not version-tracked.
 
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
-- Backend (Java): 1730 `@Test` methods across 275 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
+- Backend (Java): 1885 `@Test` methods across 295 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
 - Edge (Go): 84 `Test*` functions across 11 files ✅
-- Frontend (Jest): 1583 `it/test` blocks across 146 files ✅
+- Frontend (Jest): 1846 `it/test` blocks across 172 files ✅
 - Frontend E2E (Playwright): 127 `test()` blocks across 27 specs ✅
-- MCP server (vitest): 48 `it/test` blocks across 8 files ✅
-- **Total: 3572 logical test invocations** ✅
+- MCP server (vitest): 61 `it/test` blocks across 8 files ✅
+- **Total: 4003 logical test invocations** ✅
 
-Database schema version: **V64** (Flyway).
+Database schema version: **V66** (Flyway).
 
 > These numbers are guarded end-to-end by two CI gates in
 > `.github/workflows/docs-freshness.yml`: `scripts/docs-freshness.sh` asserts
@@ -299,7 +328,7 @@ Database schema version: **V64** (Flyway).
 
 - **Java 25** (Eclipse Temurin recommended); the bundled Gradle 9.7.1 wrapper is required (JDK 25 needs Gradle ≥ 9.1).
 - **Node.js 24+** (with npm)
-- **Go 1.26+** (`edge-go/go.mod` declares `go 1.26.0`)
+- **Go 1.27+** (`edge-go/go.mod` declares `go 1.27.0`)
 - **Docker** with **Compose v2** (`docker compose`, not the standalone `docker-compose` v1 binary)
 
 ### Project Structure
@@ -328,8 +357,15 @@ cd edge-go && go test ./...
 # Deploy to Kubernetes
 ./scripts/deploy.sh staging
 
-# Run smoke tests
-./scripts/smoke-test.sh
+# Run smoke tests against the environment you just deployed.
+# Both toggles default to the HARDENED PROD posture, so a bare invocation asserts that
+# Swagger and the actuator are NOT publicly reachable. Mirrors .github/workflows/ci-cd.yaml.
+EXPECT_SWAGGER=true ./scripts/smoke-test.sh https://api-staging.olajay.co.uk   # staging
+./scripts/smoke-test.sh https://api.olajay.co.uk                               # production
+
+# Against the LOCAL compose stack both surfaces are deliberately published, so say so --
+# a bare `./scripts/smoke-test.sh` here fails 6 of 10 checks by design, not by fault:
+EXPECT_SWAGGER=true EXPECT_PUBLIC_ACTUATOR=true ./scripts/smoke-test.sh
 ```
 
 ---

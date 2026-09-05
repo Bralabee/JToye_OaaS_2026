@@ -11,14 +11,23 @@ public class GuestOrderConfirmation {
     private Long vatAmountPennies;
     private Long totalAmountPennies;
     private String shopName;
+    /** LINES on the order ({@code COUNT(order_items)}). Semantics untouched — see {@link #unitCount}. */
     private int itemCount;
+    /**
+     * COR-4 (V66, PR #726 review M5): UNITS on the order — {@code SUM(order_items.quantity)} — beside
+     * {@link #itemCount}, which stays LINES. This is the number the basket showed the customer
+     * moments before this confirmation renders, so it is the one that must agree with it. Nullable,
+     * and null means NOT RECORDED (an idempotent replay of a row that predates V66). Never read null
+     * as 0 and never substitute {@code itemCount} for it.
+     */
+    private Integer unitCount;
     private String clientSecret;
     private List<String> allergenWarnings;
 
     public GuestOrderConfirmation(String orderNumber, String status, Long subtotalPennies,
                                   Long deliveryFeePennies, String vatRate, Long vatAmountPennies,
                                   Long totalAmountPennies, String shopName, int itemCount,
-                                  String clientSecret, List<String> allergenWarnings) {
+                                  Integer unitCount, String clientSecret, List<String> allergenWarnings) {
         this.orderNumber = orderNumber;
         this.status = status;
         this.subtotalPennies = subtotalPennies;
@@ -28,6 +37,7 @@ public class GuestOrderConfirmation {
         this.totalAmountPennies = totalAmountPennies;
         this.shopName = shopName;
         this.itemCount = itemCount;
+        this.unitCount = unitCount;
         this.clientSecret = clientSecret;
         this.allergenWarnings = allergenWarnings;
     }
@@ -41,6 +51,7 @@ public class GuestOrderConfirmation {
     public Long getTotalAmountPennies() { return totalAmountPennies; }
     public String getShopName() { return shopName; }
     public int getItemCount() { return itemCount; }
+    public Integer getUnitCount() { return unitCount; }
     public String getClientSecret() { return clientSecret; }
     public List<String> getAllergenWarnings() { return allergenWarnings; }
 }

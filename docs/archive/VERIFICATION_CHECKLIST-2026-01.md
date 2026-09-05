@@ -1,5 +1,20 @@
 # Production Readiness Verification Checklist
 
+> **⚠ Historical record (superseded — do not follow these commands).**
+>
+> This checklist was written against the pre-2026-08 port scheme, the unprefixed API surface,
+> and Gradle 8.10.2 / JDK 21. Its commands do not run against the current stack: QA run
+> `20260902-134741` measured broken steps throughout — the wrapper-regeneration step would
+> **downgrade** Gradle below the 9.1 the Java 25 toolchain requires, `scripts/dev.sh` does not
+> exist, the ports (8080 / 8081 / 8090) are now 9090 / 8085 / 8089, the token recipe omits the
+> client secret and returns `unauthorized_client`, and every business path is missing the
+> `/api/v1` prefix.
+>
+> It is kept for provenance only. The live equivalents are `README.md` § Quick Start,
+> `docs/HOW_IT_WORKS.md` § 9 (the gate sweep), and `scripts/smoke-test.sh` (see `README.md`
+> § Common Commands).
+
+
 ## Pre-Deployment Verification Steps
 
 ### 1. Build & Dependency Resolution

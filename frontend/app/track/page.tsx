@@ -7,7 +7,7 @@ import { m } from "framer-motion"
 import { springPop } from "@/lib/motion"
 import {
   Package, Search, Loader2, CheckCircle2, Clock,
-  ChefHat, CircleDot, XCircle, Store
+  ChefHat, CircleDot, XCircle, Store, RefreshCw
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
@@ -19,6 +19,16 @@ export interface OrderStatus {
   shopName: string
   totalAmountPennies: number
   itemCount: number
+  /**
+   * COR-4 (V66): UNITS on the order — what the customer counted in the basket. `itemCount` is
+   * LINES and is what this surface used to render under the word "items", so a 6-Zobo order read
+   * "1 item" here and "6 items" on the basket minutes earlier.
+   *
+   * Optional AND nullable, and the two absences mean the same thing: NOT RECORDED. Absent = an
+   * older backend; null = a row written before V66. Neither may be coalesced to 0 or replaced by
+   * `itemCount` — the count is simply not rendered when it is not known.
+   */
+  unitCount?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -33,6 +43,13 @@ const STEPS = [
 
 /** Statuses that are still in flight — what a shopper actually came here for. */
 export const ACTIVE_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY"]
+
+/**
+ * Statuses no further update can follow, so the 15-second poller stops (INT-8).
+ * REFUNDED was in neither this set nor STEPS: the stepper rendered the raw enum
+ * string "REFUNDED" as its label and the poll ran for as long as the tab lived.
+ */
+const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED", "REFUNDED"]
 
 /**
  * Which of a signed-in customer's own orders should the tracking view open on?
@@ -222,7 +239,7 @@ function TrackOrderContent() {
 
   // Auto-refresh for active orders (15s).
   useEffect(() => {
-    if (!order || order.status === "COMPLETED" || order.status === "CANCELLED") return
+    if (!order || TERMINAL_STATUSES.includes(order.status)) return
     const interval = setInterval(async () => {
       try {
         const res = await publicApiClient.get<OrderStatus>(
@@ -237,6 +254,7 @@ function TrackOrderContent() {
 
   const currentStep = order ? STEPS.findIndex((s) => s.key === order.status) : -1
   const isCancelled = order?.status === "CANCELLED"
+  const isRefunded = order?.status === "REFUNDED"
 
   // A signed-in customer is shown their order, not a form. The form is still
   // one tap away (they may be chasing a guest order placed on another address).
@@ -392,13 +410,24 @@ function TrackOrderContent() {
               <div>
                 <p className="text-sm font-semibold text-slate-900">{order.shopName}</p>
                 <p className="text-xs text-slate-600">
-                  {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot; {formatPrice(order.totalAmountPennies)}
+                  {/* COR-4: units when recorded; when not (a pre-V66 row), the price alone.
+                      Falling back to itemCount would print the LINE count under the word
+                      "items" — the defect — and coalescing null to 0 would claim an empty
+                      order. Not rendering a number is the only honest third option. */}
+                  {order.unitCount != null && (
+                    <>{order.unitCount} item{order.unitCount !== 1 ? "s" : ""} &middot; </>
+                  )}
+                  {formatPrice(order.totalAmountPennies)}
                 </p>
                 <p className="mt-1 font-mono text-xs text-slate-300">{order.orderNumber}</p>
               </div>
               {isCancelled ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
                   <XCircle className="h-3 w-3" /> Cancelled
+                </span>
+              ) : isRefunded ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700">
+                  <RefreshCw className="h-3 w-3" /> Refunded
                 </span>
               ) : currentStep >= 4 ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
@@ -421,7 +450,7 @@ function TrackOrderContent() {
           </div>
 
           {/* Progress */}
-          {!isCancelled && (
+          {!isCancelled && !isRefunded && (
             <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
               <div className="flex items-center justify-between gap-1">
                 {STEPS.map((step, i) => {

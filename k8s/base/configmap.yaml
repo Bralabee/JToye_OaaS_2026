@@ -21,6 +21,27 @@ data:
   frontend.url: "https://app.olajay.co.uk"
 
   # ---------------------------------------------------------------------------
+  # FE-1 / E-5 (QA council 20260902-134741) — the vendor sign-out return leg.
+  #
+  # "true" makes <frontend.url>/api/vendor-auth/logout-complete the
+  # post_logout_redirect_uri Keycloak returns a signing-out vendor to; that route
+  # ends the Auth.js session SERVER-SIDE in the last response the browser
+  # processes (the client-side clear lost a race to ~24 in-flight session GETs
+  # 9/12 times, re-opening /dashboard as the departed vendor with no prompt).
+  #
+  # OFF here and restated as OFF in EVERY overlay, deliberately: the URI must be
+  # registered on the vendor client of the DEPLOYED realm, which is external and
+  # not verifiable from this repository, and an unregistered URI makes Keycloak
+  # answer 400 WITHOUT terminating the SSO session (#504) — strictly worse than
+  # the defect the flag closes. With the flag off the frontend keeps today's
+  # /auth/signin landing. Flip an overlay to "true" only after
+  # scripts/check-keycloak-logout-uri.sh (run in that overlay's deploy job,
+  # ENFORCED once the flag is on) is green against its realm. Compose runs ON.
+  # Consumed by frontend-deployment.yaml -> VENDOR_LOGOUT_COMPLETE_ENABLED.
+  # ---------------------------------------------------------------------------
+  vendor.logout-complete.enabled: "false"
+
+  # ---------------------------------------------------------------------------
   # Postgres port — the RENDER-TIME declaration (issue #271)
   #
   # WHAT CONSUMES THIS: nothing injects it as an env var. It exists so the
@@ -291,3 +312,24 @@ data:
   webhook.delivery.max-attempts: "8"
   webhook.delivery.retention-days: "30"
   webhook.target.block-private-ranges: "true"
+
+  # --- Vendor shop-scoping posture (Phase 23 D-12; QA-council 20260902 SEC-2) --
+  # Consumed as core ACCESS_STRICT_SCOPING -> application.yml
+  # jtoye.access.strict-scoping. "false" is a RECORDED DESIGN DECISION, not an
+  # oversight: 23-DISCUSSION-LOG D-12 selected "implicit-admin + lazy grandfather
+  # behind a config switch (default OFF)" and rejected "strict from day one";
+  # 23-REVIEW CR-07 hardened the ON path and left the default OFF. Under OFF an
+  # UNGRANTED tenant user is an implicit tenant-wide GROUP_ADMIN and every JIT
+  # grant is honoured. Before this key existed the posture was invisible: no
+  # manifest declared it, so a reader of the render could not tell OFF-by-choice
+  # from OFF-by-omission (the DEF-4/DEF-6 shape). SOURCE: byte-identical to the
+  # application.yml default, so the rendered behaviour is unchanged.
+  #
+  # DO NOT FLIP HERE. Arming is a per-tenant blast-radius change that is blocked
+  # on: #285 (bulk-revoke of JIT shop_staff rows — the population ON de-honours),
+  # the /sync/batch shop predicate (SEC-5 / #648, otherwise the ungated path
+  # becomes the only way through), and the integration-orders-rw client — its
+  # UUID subject means isDeclaredMachineClient never fires and its GROUP_ADMIN
+  # comes solely from the strict-OFF implicit-admin rule, so arming breaks MCP
+  # create_order. core-java WARN-logs this posture at startup.
+  access.strict-scoping: "false"

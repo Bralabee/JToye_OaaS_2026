@@ -276,7 +276,7 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
         </h3>
         {order.items && order.items.length > 0 ? (
           <div className="overflow-hidden rounded-lg border border-slate-200">
-            <Table>
+            <Table containerLabel="Order items table">
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>

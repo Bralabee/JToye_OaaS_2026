@@ -456,7 +456,14 @@ export default function DashboardPage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              // A11Y-5: this raw table overflows at 320px; the scroller must be a named,
+              // focusable region or keyboard users cannot pan it (same shape as ui/table).
+              <div
+                role="region"
+                aria-label="Recent orders table"
+                tabIndex={0}
+                className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+              >
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-slate-200 text-left text-sm font-medium text-slate-600">

@@ -25,7 +25,7 @@
 
 import fs from "fs"
 import path from "path"
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { useSearchParams } from "next/navigation"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { ShopDiscoveryClient } from "@/app/shop/shop-discovery-client"
@@ -687,5 +687,62 @@ describe("/shop route family — the declared Marketing width tier (UIX-07)", ()
     )
     // And that shared value is a real class, not two matching absences.
     expect(WIDTH_TIER_CLASS.marketing).not.toBe("")
+  })
+})
+
+/**
+ * FE-3 — the suggestion row cannot wrap, so the font swap cannot move the grid.
+ *
+ * MECHANISM, from the layout-shift entry's own sources (adjudication A19): ONE
+ * shift at t≈1493 ms on /shop. Three chip BUTTONs grow in WIDTH only
+ * (102→114, 113→126, 90→97; h stays 40) and the header nav grows 132→137 with y
+ * unchanged — height-preserving width growth across two independent rows, i.e. a
+ * text-metric change, i.e. the Work Sans swap. The shop-card grid then moves
+ * y 345→387: +42 px, which is exactly one chip row (20 + 12 + 2 chip + 8 gap).
+ * The chips re-wrapped and pushed everything below them.
+ *
+ * `size-adjust` is NOT the missing fix — it already ships (the built CSS carries
+ * `size-adjust:111.93%` / `ascent-override:83.09%` from next/font's
+ * adjustFontFallback), and it normalises x-height, not per-glyph advance widths.
+ * A wrapping row stays metric-sensitive no matter what the fallback metrics say.
+ * A row that CANNOT wrap cannot change height, so the grid below it cannot be
+ * pushed, and the chips' own width growth scores ~0 because its distance is 0.
+ *
+ * WHAT THIS FILE CANNOT PROVE. jsdom has no layout: CLS is unobservable here.
+ * These assertions pin the MECHANISM (the row's wrap behaviour and the
+ * keyboard-reachability the fix owes in exchange); the number belongs to
+ * probes/fe-perf-vitals.js at the declared throttled profile and is not claimed
+ * until that runs.
+ */
+describe("ShopDiscoveryClient — the suggestion row is metric-insensitive (FE-3)", () => {
+  it("is a single row that cannot wrap, and scrolls instead", () => {
+    renderDiscovery({ query: "", interpretation: TEXT })
+
+    const row = screen.getByRole("region", { name: /suggested searches/i })
+
+    // CONTROL: this really is the chip row, not some other region — every
+    // suggestion is inside it. Without this, the class assertions below could
+    // be true of an empty container.
+    const chips = within(row).getAllByRole("button")
+    expect(chips.length).toBe(6)
+    expect(chips.map((c) => c.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining("Jollof")])
+    )
+
+    expect(row.className).toContain("flex-nowrap")
+    expect(row.className).not.toContain("flex-wrap")
+    expect(row.className).toContain("overflow-x-auto")
+  })
+
+  it("pays for the scroll with keyboard reachability, not with a silent trap", () => {
+    renderDiscovery({ query: "", interpretation: TEXT })
+
+    const row = screen.getByRole("region", { name: /suggested searches/i })
+
+    // WCAG 2.1.1: a scrollable region must be focusable or its overflowed
+    // content is unreachable by keyboard — and a focusable element with no
+    // visible focus indicator is 2.4.7. Both, or the fix creates an A11Y-5.
+    expect(row).toHaveAttribute("tabindex", "0")
+    expect(row.className).toContain("focus-visible:ring")
   })
 })

@@ -6,7 +6,7 @@ name: Base Image Freshness
 #   which is in this repo:
 #
 #     - the CONTENT of a floating base tag (node:24-alpine, eclipse-temurin:
-#       21-jre-alpine, golang:1.26-alpine) — the tag string is pinned, what it
+#       25-jre-alpine, golang:1.27-alpine) — the tag string is pinned, what it
 #       resolves to is not;
 #     - Trivy's vulnerability DB, which refreshes DAILY.
 #

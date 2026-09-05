@@ -67,12 +67,43 @@ import type { Order, OrderDetail, OrderStatus, Shop, Product } from "@/types/api
 import { formatDistanceToNow, format } from "date-fns"
 import { Trash2 } from "lucide-react"
 
-const orderSchema = z.object({
-  shopId: z.string().min(1, "Shop is required"),
-  customerName: z.string().min(1, "Customer name is required").max(100),
-  customerEmail: z.string().email("Invalid email").max(255),
-  customerPhone: z.string().max(20).optional(),
-})
+// COR-1 (QA-council 20260902-134741, owner ruling E-1). The dialog had NO fulfilment control, so
+// every order it created took the backend's V45 entity default and persisted as DELIVERY with a
+// GBP 0.00 fee and no address — a delivery kitchen ticket with nowhere to deliver to.
+//
+// COLLECTION is the default because that is what this dialog captures: a walk-in / phone ticket.
+// DELIVERY stays reachable (E-1: vendors take delivery orders by phone) and then REQUIRES the
+// address, mirroring the server's FulfilmentPolicy.requireDeliveryAddress. The client check is a
+// UX affordance only — the server is authoritative and answers 400 on its own.
+const orderSchema = z
+  .object({
+    shopId: z.string().min(1, "Shop is required"),
+    customerName: z.string().min(1, "Customer name is required").max(100),
+    customerEmail: z.string().email("Invalid email").max(255),
+    customerPhone: z.string().max(20).optional(),
+    // No .default() here: zod's default makes the INPUT optional while the OUTPUT stays
+    // required, and react-hook-form's Resolver types then refuse to line up. The default is
+    // supplied by useForm({ defaultValues }) instead, which is where the form's initial state
+    // belongs anyway.
+    fulfilmentType: z.enum(["COLLECTION", "DELIVERY"]),
+    addressLine1: z.string().max(255).optional(),
+    addressLine2: z.string().max(255).optional(),
+    addressCity: z.string().max(120).optional(),
+    addressPostcode: z.string().max(12).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.fulfilmentType !== "DELIVERY") return
+    const required = [
+      ["addressLine1", "Address line 1 is required for a delivery order"],
+      ["addressCity", "City is required for a delivery order"],
+      ["addressPostcode", "Postcode is required for a delivery order"],
+    ] as const
+    for (const [field, message] of required) {
+      if (!data[field]?.trim()) {
+        ctx.addIssue({ code: "custom", message, path: [field] })
+      }
+    }
+  })
 
 type OrderFormData = z.infer<typeof orderSchema>
 
@@ -97,31 +128,37 @@ const statusConfig: Record<
   CONFIRMED: {
     label: "Confirmed",
     color: "text-blue-700",
-    bgColor: "bg-blue-500",
+    // A11Y-6 (QA council 20260902-134741): white text on a solid fill needs
+    // 4.5:1. Measured from tailwindcss/colors — blue-500 3.68, blue-600 5.17;
+    // amber-500 2.15 -> amber-700 5.02; green-500 2.28 -> green-700 5.02;
+    // emerald-600 3.77 -> emerald-700 5.48; red-500 3.76 -> red-600 4.83;
+    // orange-500 2.80 -> orange-700 5.18. Asserted generically over this map
+    // in __tests__/cluster-g-contrast-sites.test.ts. Not a token change (A26).
+    bgColor: "bg-blue-600",
     icon: CheckCircle2,
   },
   PREPARING: {
     label: "Preparing",
     color: "text-amber-700",
-    bgColor: "bg-amber-500",
+    bgColor: "bg-amber-700",
     icon: ChefHat,
   },
   READY: {
     label: "Ready",
     color: "text-green-700",
-    bgColor: "bg-green-500",
+    bgColor: "bg-green-700",
     icon: PackageIcon,
   },
   COMPLETED: {
     label: "Completed",
     color: "text-emerald-700",
-    bgColor: "bg-emerald-600",
+    bgColor: "bg-emerald-700",
     icon: FileCheck,
   },
   CANCELLED: {
     label: "Cancelled",
     color: "text-red-700",
-    bgColor: "bg-red-500",
+    bgColor: "bg-red-600",
     icon: XCircle,
   },
   REFUNDED: {
@@ -130,7 +167,7 @@ const statusConfig: Record<
     // the existing food-delivery palette (per `feedback_design_direction.md`).
     label: "Refunded",
     color: "text-orange-700",
-    bgColor: "bg-orange-500",
+    bgColor: "bg-orange-700",
     icon: RefreshCcw,
   },
 }
@@ -189,7 +226,8 @@ const getAvailableTransitions = (
         endpoint: "start-preparation",
         nextStatus: "PREPARING",
         icon: ChefHat,
-        color: "bg-amber-600 hover:bg-amber-700",
+        // A11Y-6: amber-600 is 3.19 with white text; -700 is 5.02, -800 7.09.
+        color: "bg-amber-700 hover:bg-amber-800",
       },
       {
         action: "Cancel",
@@ -205,7 +243,7 @@ const getAvailableTransitions = (
         endpoint: "mark-ready",
         nextStatus: "READY",
         icon: PackageIcon,
-        color: "bg-green-600 hover:bg-green-700",
+        color: "bg-green-700 hover:bg-green-800",
       },
     ],
     READY: [
@@ -214,7 +252,7 @@ const getAvailableTransitions = (
         endpoint: "complete",
         nextStatus: "COMPLETED",
         icon: FileCheck,
-        color: "bg-emerald-600 hover:bg-emerald-700",
+        color: "bg-emerald-700 hover:bg-emerald-800",
       },
     ],
     COMPLETED: [],
@@ -276,9 +314,12 @@ function OrdersPageInner() {
     watch,
   } = useForm<OrderFormData>({
     resolver: zodResolver(orderSchema),
+    // COR-1: the fulfilment control opens on COLLECTION, which is what this dialog captures.
+    defaultValues: { fulfilmentType: "COLLECTION" },
   })
 
   const selectedShopId = watch("shopId")
+  const selectedFulfilment = watch("fulfilmentType")
 
   // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
   const { contextShopId } = useShopContext()
@@ -398,6 +439,13 @@ function OrdersPageInner() {
       customerName: "",
       customerEmail: "",
       customerPhone: "",
+      // COR-1: reset must restore the fulfilment default too, or the dialog opens with no
+      // selection and the first order of the session goes out unclassified again.
+      fulfilmentType: "COLLECTION",
+      addressLine1: "",
+      addressLine2: "",
+      addressCity: "",
+      addressPostcode: "",
     })
     setOrderItems([])
     setDialogOpen(true)
@@ -442,11 +490,17 @@ function OrdersPageInner() {
 
       setSubmitting(true)
 
-      // Add items to form data
-      const payload = {
-        ...data,
-        items: orderItems,
-      }
+      // Add items to form data.
+      //
+      // COR-1: the address block is sent ONLY for a DELIVERY order. The server ignores it on a
+      // COLLECTION order anyway (FulfilmentPolicy decides from the type, never from the payload),
+      // but posting a set of empty strings would put a delivery address on the wire for an order
+      // that has none, and any future audit of the request body would read it as one.
+      const { addressLine1, addressLine2, addressCity, addressPostcode, ...rest } = data
+      const payload =
+        data.fulfilmentType === "DELIVERY"
+          ? { ...rest, addressLine1, addressLine2, addressCity, addressPostcode, items: orderItems }
+          : { ...rest, items: orderItems }
 
       await apiClient.post("/api/v1/orders", payload)
       toast({
@@ -455,7 +509,7 @@ function OrdersPageInner() {
       })
 
       setDialogOpen(false)
-      reset()
+      reset({ fulfilmentType: "COLLECTION" })
       setOrderItems([])
       if (currentPage === 0) fetchData()
       else setCurrentPage(0)
@@ -647,128 +701,126 @@ function OrdersPageInner() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Order ID</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visibleOrders.filter(o => statusFilter === "ALL" || o.status === statusFilter).map((order) => {
-                      const config = statusConfig[order.status]
-                      const StatusIcon = config.icon
-                      const transitions = getAvailableTransitions(order.status)
-                      const isProcessing = processingOrderId === order.id
+              <Table containerLabel="Orders table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Order ID</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleOrders.filter(o => statusFilter === "ALL" || o.status === statusFilter).map((order) => {
+                    const config = statusConfig[order.status]
+                    const StatusIcon = config.icon
+                    const transitions = getAvailableTransitions(order.status)
+                    const isProcessing = processingOrderId === order.id
 
-                      return (
-                        <m.tr
-                          key={order.id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="group cursor-pointer hover:bg-slate-50"
-                          // Phase 17-04 (VOPS-01): row click navigates to the
-                          // dedicated detail route so vendors can issue refunds
-                          // and use the full detail panel. The inline detail
-                          // Dialog below is kept for v2.2 per 17-CONTEXT
-                          // (deferred deprecation — frontend cleanup TBD).
-                          onClick={(e) => {
-                            // A click that started inside the actions cell is a
-                            // button press, not a request to open the order.
-                            if (
-                              (e.target as HTMLElement).closest("[data-row-actions]")
-                            ) {
-                              return
-                            }
-                            router.push(`/dashboard/orders/${order.id}`)
-                          }}
-                        >
-                          <TableCell className="font-mono text-xs">
-                            {/* QA-council FIX-5 (L1): customers quote the ORD-…
-                                number from their receipt — show it here so a
-                                vendor can match a phone enquiry to a row.
-                                Legacy orders without a number keep the
-                                truncated-UUID fallback. */}
-                            {order.orderNumber ?? `${order.id.substring(0, 8)}...`}
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">
-                                {order.customerName || "N/A"}
+                    return (
+                      <m.tr
+                        key={order.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="group cursor-pointer hover:bg-slate-50"
+                        // Phase 17-04 (VOPS-01): row click navigates to the
+                        // dedicated detail route so vendors can issue refunds
+                        // and use the full detail panel. The inline detail
+                        // Dialog below is kept for v2.2 per 17-CONTEXT
+                        // (deferred deprecation — frontend cleanup TBD).
+                        onClick={(e) => {
+                          // A click that started inside the actions cell is a
+                          // button press, not a request to open the order.
+                          if (
+                            (e.target as HTMLElement).closest("[data-row-actions]")
+                          ) {
+                            return
+                          }
+                          router.push(`/dashboard/orders/${order.id}`)
+                        }}
+                      >
+                        <TableCell className="font-mono text-xs">
+                          {/* QA-council FIX-5 (L1): customers quote the ORD-…
+                              number from their receipt — show it here so a
+                              vendor can match a phone enquiry to a row.
+                              Legacy orders without a number keep the
+                              truncated-UUID fallback. */}
+                          {order.orderNumber ?? `${order.id.substring(0, 8)}...`}
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">
+                              {order.customerName || "N/A"}
+                            </div>
+                            {order.customerEmail && (
+                              <div className="text-xs text-slate-500">
+                                {order.customerEmail}
                               </div>
-                              {order.customerEmail && (
-                                <div className="text-xs text-slate-500">
-                                  {order.customerEmail}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={`${config.bgColor} flex w-fit items-center gap-1 text-white`}
-                            >
-                              <StatusIcon className="h-3 w-3" />
-                              {config.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-semibold">
-                            £{((order.totalAmountPennies || 0) / 100).toFixed(2)}
-                          </TableCell>
-                          <TableCell className="text-slate-600">
-                            {formatDistanceToNow(new Date(order.createdAt), {
-                              addSuffix: true,
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={`${config.bgColor} flex w-fit items-center gap-1 text-white`}
+                          >
+                            <StatusIcon className="h-3 w-3" />
+                            {config.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-semibold">
+                          £{((order.totalAmountPennies || 0) / 100).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-slate-600">
+                          {formatDistanceToNow(new Date(order.createdAt), {
+                            addSuffix: true,
+                          })}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {/* `data-row-actions`, not an onClick shield. The
+                              shield was `onClick={e => e.stopPropagation()}`
+                              on a plain <div> — a `no-static-element-interactions`
+                              defect whose whole job was to suppress an
+                              ancestor. The row's own handler now declines to
+                              navigate when the click originated inside this
+                              container, which is the same rule expressed once,
+                              at the element that owns the decision
+                              (31-02 / LGL-02). */}
+                          <div className="flex justify-end gap-2" data-row-actions>
+                            {transitions.map((transition) => {
+                              const TransitionIcon = transition.icon
+                              return (
+                                <Button
+                                  key={transition.action}
+                                  size="sm"
+                                  className={`${transition.color} text-white h-8`}
+                                  onClick={() =>
+                                    handleStateTransition(
+                                      order.id,
+                                      transition.endpoint,
+                                      transition.action
+                                    )
+                                  }
+                                  disabled={isProcessing}
+                                >
+                                  <TransitionIcon className="mr-1 h-3 w-3" />
+                                  {transition.action}
+                                </Button>
+                              )
                             })}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {/* `data-row-actions`, not an onClick shield. The
-                                shield was `onClick={e => e.stopPropagation()}`
-                                on a plain <div> — a `no-static-element-interactions`
-                                defect whose whole job was to suppress an
-                                ancestor. The row's own handler now declines to
-                                navigate when the click originated inside this
-                                container, which is the same rule expressed once,
-                                at the element that owns the decision
-                                (31-02 / LGL-02). */}
-                            <div className="flex justify-end gap-2" data-row-actions>
-                              {transitions.map((transition) => {
-                                const TransitionIcon = transition.icon
-                                return (
-                                  <Button
-                                    key={transition.action}
-                                    size="sm"
-                                    className={`${transition.color} text-white h-8`}
-                                    onClick={() =>
-                                      handleStateTransition(
-                                        order.id,
-                                        transition.endpoint,
-                                        transition.action
-                                      )
-                                    }
-                                    disabled={isProcessing}
-                                  >
-                                    <TransitionIcon className="mr-1 h-3 w-3" />
-                                    {transition.action}
-                                  </Button>
-                                )
-                              })}
-                              {transitions.length === 0 && (
-                                <span className="text-xs text-slate-400">
-                                  No actions
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                        </m.tr>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                            {transitions.length === 0 && (
+                              <span className="text-xs text-slate-600">
+                                No actions
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                      </m.tr>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
             <Pagination
               currentPage={currentPage}
@@ -865,6 +917,84 @@ function OrdersPageInner() {
                 </p>
               )}
             </div>
+
+            {/* COR-1 / E-1: how is this order fulfilled? Without this control every order the
+                dialog created was silently a DELIVERY order with no address and no fee. */}
+            <div className="space-y-2">
+              <Label htmlFor="fulfilmentType">Fulfilment</Label>
+              <Select
+                value={selectedFulfilment ?? "COLLECTION"}
+                onValueChange={(value) =>
+                  setValue("fulfilmentType", value as "COLLECTION" | "DELIVERY", {
+                    shouldValidate: true,
+                  })
+                }
+              >
+                <SelectTrigger id="fulfilmentType" aria-label="How this order is fulfilled">
+                  <SelectValue placeholder="Collection" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="COLLECTION">Collection — customer picks it up</SelectItem>
+                  <SelectItem value="DELIVERY">Delivery — to the address below</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                {selectedFulfilment === "DELIVERY"
+                  ? "The shop's delivery fee is applied by the server, and waived above the shop's free-delivery threshold."
+                  : "No delivery fee. Choose Delivery to take a phone order for delivery."}
+              </p>
+            </div>
+
+            {selectedFulfilment === "DELIVERY" && (
+              <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <Label className="text-sm font-semibold">Delivery address</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="addressLine1" className="text-xs">Address line 1</Label>
+                  <Input
+                    id="addressLine1"
+                    className="bg-white"
+                    placeholder="e.g., 12 Coldharbour Lane"
+                    {...register("addressLine1")}
+                  />
+                  {errors.addressLine1 && (
+                    <p className="text-sm text-red-600">{errors.addressLine1.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="addressLine2" className="text-xs">Address line 2 (optional)</Label>
+                  <Input
+                    id="addressLine2"
+                    className="bg-white"
+                    placeholder="e.g., Flat 3"
+                    {...register("addressLine2")}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="addressCity" className="text-xs">City</Label>
+                  <Input
+                    id="addressCity"
+                    className="bg-white"
+                    placeholder="e.g., London"
+                    {...register("addressCity")}
+                  />
+                  {errors.addressCity && (
+                    <p className="text-sm text-red-600">{errors.addressCity.message}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="addressPostcode" className="text-xs">Postcode</Label>
+                  <Input
+                    id="addressPostcode"
+                    className="bg-white"
+                    placeholder="e.g., SW9 8LF"
+                    {...register("addressPostcode")}
+                  />
+                  {errors.addressPostcode && (
+                    <p className="text-sm text-red-600">{errors.addressPostcode.message}</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Order Items Section */}
             <div className="space-y-3 border-t pt-4">
@@ -1024,7 +1154,7 @@ function OrdersPageInner() {
                 </h3>
                 {selectedOrderDetail.items && selectedOrderDetail.items.length > 0 ? (
                   <div className="overflow-hidden rounded-lg border">
-                    <Table>
+                    <Table containerLabel="Order items table">
                       <TableHeader>
                         <TableRow>
                           <TableHead>Product</TableHead>

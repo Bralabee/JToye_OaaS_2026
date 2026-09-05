@@ -28,9 +28,7 @@ import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +69,7 @@ public class OrderService {
     private final StockService stockService;
     private final RefundService refundService;
     private final ShopAccessService shopAccessService;
+    private final OrderNumberGenerator orderNumberGenerator;
 
     public OrderService(OrderRepository orderRepository,
                        ProductRepository productRepository,
@@ -82,7 +81,8 @@ public class OrderService {
                        FinancialTransactionService financialTransactionService,
                        StockService stockService,
                        RefundService refundService,
-                       ShopAccessService shopAccessService) {
+                       ShopAccessService shopAccessService,
+                       OrderNumberGenerator orderNumberGenerator) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
@@ -94,6 +94,7 @@ public class OrderService {
         this.stockService = stockService;
         this.refundService = refundService;
         this.shopAccessService = shopAccessService;
+        this.orderNumberGenerator = orderNumberGenerator;
     }
 
     /**
@@ -122,7 +123,8 @@ public class OrderService {
         Order order = new Order();
         order.setTenantId(tenantId);
         order.setShopId(shop.getId());
-        order.setOrderNumber(generateOrderNumber(tenantId));
+        // COR-5: one generator, shared with the storefront path (OrderNumberGenerator).
+        order.setOrderNumber(orderNumberGenerator.generate(tenantId));
         order.setStatus(OrderStatus.DRAFT);
         order.setNotes(request.getNotes());
 
@@ -143,6 +145,39 @@ public class OrderService {
         }
         order.setUpdatedAt(OffsetDateTime.now());
 
+        // ------------------------------------------------------------------------------------
+        // COR-1 (adjudication A8 + owner ruling E-1): say how this order is fulfilled.
+        //
+        // This method used to set NEITHER fulfilmentType NOR deliveryFeePennies, so the V45
+        // entity default stood and every vendor / REST / MCP order persisted as DELIVERY with a
+        // £0 fee and no address. That produced a delivery kitchen ticket with nowhere to deliver
+        // to, an empty "Delivery address" block on the vendor's screen, and a READY email
+        // promising a delivery to a customer who had given no address.
+        //
+        // COLLECTION is the fallback because that is what this path's request captures by
+        // default. It is NOT the only option: E-1 records that vendors take delivery orders by
+        // phone, API and MCP, so an explicit DELIVERY (with the address block) is fully
+        // supported and priced. Defaulting alone was explicitly rejected — it would have made
+        // DELIVERY unreachable off the storefront, which is a capability removal.
+        //
+        // The three rules below live in FulfilmentPolicy, shared verbatim with
+        // PublicStorefrontService.createGuestOrder. A second copy of a money rule is exactly
+        // what let these two paths disagree for four months.
+        // ------------------------------------------------------------------------------------
+        FulfilmentType fulfilmentType =
+                FulfilmentPolicy.resolve(request.getFulfilmentType(), FulfilmentType.COLLECTION);
+        order.setFulfilmentType(fulfilmentType);
+        FulfilmentPolicy.requireDeliveryAddress(fulfilmentType, request.getAddressLine1(),
+                request.getAddressCity(), request.getAddressPostcode());
+        if (fulfilmentType == FulfilmentType.DELIVERY) {
+            order.setAddressLine1(request.getAddressLine1());
+            order.setAddressLine2(request.getAddressLine2());
+            order.setAddressCity(request.getAddressCity());
+            order.setAddressPostcode(request.getAddressPostcode());
+        }
+        // COLLECTION deliberately persists NO address even when one is sent: the fulfilment type
+        // decides what the order is, not the payload.
+
         // Add order items with stock validation. Collect each line's
         // VAT-inclusive gross + server-resolved rate for predominant-liability
         // resolution (Issue #81 BUG 2 — closes silent zero-rating on the admin
@@ -153,6 +188,18 @@ public class OrderService {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Product not found: " + itemRequest.getProductId()));
+
+            // PR #726 review M2 — the storefront's CR-01 invariant, applied to this path too: an
+            // order for shop X may only contain shop X's products. RLS scopes findById to the
+            // TENANT, not the shop, so without this a SHOP_MANAGER granted shop A could line-item
+            // shop B's product onto an order for A. Same exception type + message shape as the
+            // absent-row case above so the 404 does not disclose that the product exists on
+            // another shop. The null arm is DELIBERATE: a shop_id IS NULL product is tenant-wide
+            // by design (V20) and stays orderable from any of the tenant's shops.
+            if (product.getShopId() != null && !shop.getId().equals(product.getShopId())) {
+                throw new ResourceNotFoundException(
+                        "Product not found: " + itemRequest.getProductId());
+            }
 
             // Validate stock availability
             if (!product.hasStock(itemRequest.getQuantity())) {
@@ -186,6 +233,18 @@ public class OrderService {
 
         // Resolve the order's single predominant VAT rate before totalling.
         order.setVatRate(VatCalculator.predominantRate(lineRates));
+
+        // COR-1: the delivery fee, server-authoritative and computed from the SHOP's own
+        // configuration — never from anything the caller sent. COLLECTION is £0; DELIVERY is the
+        // shop's fee, waived once the item subtotal clears the shop's free-delivery threshold.
+        // It must be set BEFORE calculateTotal(), which adds it to the total and derives VAT from
+        // the combined gross (Order.calculateTotal / HMRC VAT Notice 700 s17.5-17.6).
+        long itemSubtotalPennies = order.getItems().stream()
+                .mapToLong(OrderItem::getTotalPricePennies)
+                .sum();
+        order.setDeliveryFeePennies(FulfilmentPolicy.deliveryFeePennies(
+                fulfilmentType, itemSubtotalPennies,
+                shop.getDeliveryFeePennies(), shop.getFreeDeliveryThresholdPennies()));
 
         // Calculate total
         order.calculateTotal();
@@ -534,41 +593,6 @@ public class OrderService {
 
         log.info("Deleting order {}", order.getOrderNumber());
         orderRepository.delete(order);
-    }
-
-    /**
-     * Generate unique order number for tenant.
-     * <p>
-     * Format: ORD-{tenant-prefix}-{YYYYMMDD}-{random-suffix}
-     * Example: ORD-A1B2C3D4-20260116-E5F6G7H8
-     * <p>
-     * Structure:
-     * - ORD: Constant prefix for easy identification
-     * - tenant-prefix: First 8 characters of tenant UUID (uppercase) for tenant isolation
-     * - YYYYMMDD: ISO date for chronological sorting and filtering
-     * - random-suffix: 8-character random hex for collision-proof uniqueness
-     * <p>
-     * Benefits:
-     * - Tenant-aware: Customer support can identify tenant at a glance
-     * - Sortable: Date component enables chronological ordering
-     * - Debuggable: Human-readable format with clear structure
-     * - Collision-proof: Random suffix ensures uniqueness without sequence coordination
-     * - Backward compatible: Existing orders retain their old format
-     *
-     * @param tenantId the tenant UUID for prefix generation
-     * @return unique order number string
-     */
-    private String generateOrderNumber(UUID tenantId) {
-        // Extract first 8 characters of tenant UUID for prefix (compact yet unique)
-        String tenantPrefix = tenantId.toString().replace("-", "").substring(0, 8).toUpperCase();
-
-        // Add date for sorting/filtering (YYYYMMDD format)
-        String datePart = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
-
-        // Add random suffix for uniqueness (8 hex characters, no hyphens)
-        String randomSuffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
-
-        return String.format("ORD-%s-%s-%s", tenantPrefix, datePart, randomSuffix);
     }
 
 }

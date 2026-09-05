@@ -12,6 +12,12 @@ public class PublicOrderStatus {
     private Long vatAmountPennies;
     private Long totalAmountPennies;
     private int itemCount;
+    /**
+     * COR-4 (V66): UNITS on the order — SUM(order_items.quantity) — beside {@code itemCount},
+     * which stays LINES. Nullable, and null means NOT RECORDED (the row predates V66). Never read
+     * null as 0 and never substitute {@code itemCount} for it.
+     */
+    private Integer unitCount;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 
@@ -31,6 +37,8 @@ public class PublicOrderStatus {
     public void setVatRate(String vatRate) { this.vatRate = vatRate; }
     public Long getVatAmountPennies() { return vatAmountPennies; }
     public void setVatAmountPennies(Long vatAmountPennies) { this.vatAmountPennies = vatAmountPennies; }
+    public Integer getUnitCount() { return unitCount; }
+    public void setUnitCount(Integer unitCount) { this.unitCount = unitCount; }
     public int getItemCount() { return itemCount; }
     public void setItemCount(int itemCount) { this.itemCount = itemCount; }
     public OffsetDateTime getCreatedAt() { return createdAt; }

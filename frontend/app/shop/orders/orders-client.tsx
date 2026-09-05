@@ -20,6 +20,7 @@ import {
   type OrderSummary,
   type OrdersLoad,
 } from "@/lib/customer-orders"
+import type { OrderStatus } from "@/types/api"
 
 /**
  * The interactive half of "My Orders" (issues #463, #467).
@@ -69,13 +70,36 @@ function formatDate(iso: string): string {
   })
 }
 
-const STATUS_CONFIG: Record<string, { icon: typeof Clock; color: string; label: string }> = {
+/**
+ * The customer's status badges — one entry per SERVER status, enforced by the
+ * type (INT-8).
+ *
+ * It was `Record<string, …>` with six of the eight `OrderStatus` members, so a
+ * REFUNDED order fell through `|| STATUS_CONFIG.PENDING` at the call site and
+ * told the customer their refunded order had been "Received". Nothing failed:
+ * a `Record<string, …>` has no opinion about which keys exist.
+ *
+ * `Record<OrderStatus, …>` is not a tidy-up, it is the fix. The vendor's map at
+ * `app/dashboard/orders/page.tsx:79` is typed this way and THAT is why it
+ * carries a REFUNDED entry — the compiler required one. The next status added
+ * to the server enum is now a build error here too, not a wrong label. Jest
+ * does not type-check, so `npm run build` (or `tsc --noEmit`) is the gate.
+ */
+const STATUS_CONFIG: Record<OrderStatus, { icon: typeof Clock; color: string; label: string }> = {
+  // Never expected on a customer surface — orders are created PENDING — but a
+  // status the union declares is a status this map must answer for, and
+  // "answer with something honest" beats "silently answer PENDING".
+  DRAFT: { icon: Clock, color: "text-slate-700 bg-slate-100", label: "Draft" },
   PENDING: { icon: Clock, color: "text-amber-500 bg-amber-50", label: "Received" },
   CONFIRMED: { icon: CircleDot, color: "text-blue-500 bg-blue-50", label: "Confirmed" },
   PREPARING: { icon: ChefHat, color: "text-amber-800 bg-amber-50", label: "Preparing" },
   READY: { icon: Package, color: "text-emerald-500 bg-emerald-50", label: "Ready" },
   COMPLETED: { icon: CheckCircle2, color: "text-slate-400 bg-slate-50", label: "Completed" },
   CANCELLED: { icon: XCircle, color: "text-red-500 bg-red-50", label: "Cancelled" },
+  // Orange, the same hue the vendor's badge uses for this state, so the two
+  // surfaces describe one order the same way. text-orange-700 clears AA on both
+  // shipped light surfaces (5.21 on white, 4.85 on cream).
+  REFUNDED: { icon: RefreshCw, color: "text-orange-700 bg-orange-50", label: "Refunded" },
 }
 
 /*
@@ -100,7 +124,12 @@ const CARD_MOTION =
   "motion-reduce:[@media(hover:hover)_and_(pointer:fine)]:group-hover:translate-y-0"
 
 function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?: string; email?: string }) {
-  const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.PENDING
+  // `OrderSummary.status` is a WIRE string — `toOrdersLoad` casts the page
+  // content without validating it — so the cast happens here, at the boundary,
+  // and the `??` stays as the defence against a status this build has never
+  // heard of. It is no longer the defence against a status we simply forgot:
+  // the map's `Record<OrderStatus, …>` type now makes that a build error.
+  const cfg = STATUS_CONFIG[order.status as OrderStatus] ?? STATUS_CONFIG.PENDING
   const Icon = cfg.icon
   const active = isActiveOrder(order)
   // WR-09: never embed the customer email in tracking URLs (PII in query
@@ -135,7 +164,11 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
             </div>
             <p className="text-sm font-semibold text-slate-900">{order.shopName}</p>
             <p className="text-xs text-slate-600 mt-0.5">
-              {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} &middot; {formatPrice(order.totalAmountPennies)}
+              {/* COR-4: units when recorded; when not (a pre-V66 row), the price alone. */}
+              {order.unitCount != null && (
+                <>{order.unitCount} item{order.unitCount !== 1 ? "s" : ""} &middot; </>
+              )}
+              {formatPrice(order.totalAmountPennies)}
             </p>
             <p className="text-xs text-slate-400 mt-1">{formatDate(order.createdAt)}</p>
           </div>

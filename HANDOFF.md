@@ -1,6 +1,6 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes) and 2026-09-02 (QA council `20260902-134741` planned). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded) and 2026-09-05 (review remediated + housekeeping). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
 **2026-08-31 delta — customer-surface P0/P1 fixes (PR #711, quick task 260831-gnm).** A five-lane
 human-like utilisation audit of the customer surfaces found 15 defects; PR #711 fixed the six with
@@ -67,7 +67,75 @@ and memory `project_qa_council_20260902.md`; the procedure lessons went into
 filed except the RabbitMQ horizon (#724, deferred to 2026-11-30 by PR #725) — still unfiled: 2
 Criticals, the top Highs, a docs epic, amendments to #648/#453/#711, and 9 new defects the refuter
 surfaced — and `/qa-remediate 20260902-134741` has not run.
-The 41-gate expectation at "Resume here" is unchanged.
+The gate expectation at "Resume here" is 43 (42 `scripts/check-*.sh` + `scripts/docs-freshness.sh`,
+which is exactly what `check-handoff-contract.sh` H-1 counts) — this line said 41 until 2026-09-04,
+contradicting the EXPECT 43 claim below it in the same file. H-1 does not read this sentence (no `**`
+marker), which is the semantic rot that gate's own closing NOTE says it cannot detect.
+
+**2026-09-04 delta — the remediation RAN, and this file said it had not.** The block above ends
+"`/qa-remediate 20260902-134741` has not run"; it had, across ten `qa/cluster-*` lanes, and this
+file simply was not updated. Corrected here rather than rewritten above, so the record shows what
+was believed and when. **Branch `feature/qa-remediate-20260902` is now PR #726 (OPEN), 76 commits /
+245 files / +16k-3.5k against main.** Both Criticals are in: **API-1** `9980ad17` gates
+`POST /api/v1/sync/batch` by scope + shop grant, validates items and derives the shop slug (the
+read-only `integration-catalog-ro` credential could write the catalogue); **FE-1** `fe0c4a42` clears
+the app session server-side on the Keycloak return leg (`@auth/core` re-issued the JWT on every
+session GET, so Sign Out left the cookie live). Two migrations ship: **V65** narrows the six legacy
+Envers `_aud` INSERT policies off `WITH CHECK (true)` — the `IS NULL` arm is load-bearing, because
+Envers DELETE revisions carry `tenant_id` NULL by construction and the naive predicate breaks every
+product/order/customer DELETE — and **V66** adds `orders.unit_count` beside an untouched
+`item_count`, no backfill, NULL ≠ 0. `origin/main` is still stamped V64 until this merges, so
+CLAUDE.md's "Current schema version" is correct for merged state and goes stale on merge.
+**CI on `60132305`: 15 pass / 1 fail / 4 skipped.** The single failure is `review-record`, which is
+head-scoped and wants a human — "no review record for head 60132305". Two CI failures were fixed en
+route and neither was the remediation's fault: the OpenAPI gate + `OpenApiSnapshotTest` failed on a
+stale `docs/api/openapi-snapshot.json`, regenerated in `2f39df00` — oasdiff calls it breaking
+because three `200`s disappear, but `HttpStatus.CREATED` is unchanged between main and the branch
+(1×/1× in `OrderController`, 2×/2× in `PublicStorefrontController`), so the snapshot had documented
+a status no client ever received; and Trivy failed on four HIGH `fast-uri` CVEs that this branch
+never introduced (`3.1.5` on main too, `mcp-server/package-lock.json` diff EMPTY against main),
+bumped to 3.1.7 in `60132305` — the daily-DB time-bomb, not a regression. Docs and gates closed
+alongside: `docs/metrics.json` was stale at 3572 against a tree measuring 3912 and is regenerated
+with 22 prose claims reconciled; `.planning/codebase/` remapped (four of seven documents dated
+2026-04-18); and `scripts/check-doc-versions.sh` gained a `Go` row after passing 119 claims while
+every doc said Go 1.26 and the module had been on 1.27 since #674 — coverage 119 claims/6 docs ->
+147/7, proven able to fail before being trusted. Full record:
+`.planning/quick/260903-psy-fix-docs-freshness-metrics-drift-and-sta/`. **Not this session's work:**
+`b3fd1f05` (enable graphify + ignore the 163 MB it generates) came from a concurrent session on the
+same checkout and was carried up by the push — unreviewed here.
+
+**2026-09-05 delta — the PR #726 review was remediated on the branch, then `/housekeeping` ran.**
+The review (M1–M7 + Lows: tenant-scoped sync shop upsert, same-shop order guard, payload-bound
+checkout key, `state`-bound vendor logout, one redirect sanitiser, body≠header idempotency key
+refused 400, `it.each<[...]>` counter hole) landed as `b88480b8`; the Tomcat 10.1.59 pin went to its
+own branch as PR #733 with the same `fast-uri` 3.1.7 lock, so whichever merges second rebases cleanly.
+**Both PRs sit at 15 pass / 4 skipped / 1 fail, and the one fail is `review-record` on each** — the
+human gate, deliberately not self-satisfied (author ≠ verifier); merge is yours. Housekeeping
+findings, all measured: every doc gate green from this tree (`check-claims` 47/47, `docs-freshness`
+4003, `check-doc-metrics` 37/37, `check-doc-versions` 147/7 docs, `check-changelog-contract` 24/24,
+`check-doc-citations` 43 verified — that last one was RED locally only because a stale duplicate of
+#733's `build.gradle.kts` hunk sat uncommitted in this tree, shifting two cited line numbers; dropped
+with owner OK). `docs/CHANGELOG.md` gained the `fast-uri` entry `60132305` had no line for.
+`edge-go`: gofmt/vet/build/tidy/`test -race` all clean. **The compose stack is STALE for this
+branch** — images built 2026-08-31 21:23Z, source last moved 2026-09-05 — pages render (`/`, `/shop`,
+`/auth/signin`, `/track` 200; 404 page works) but that is the old code: `bash scripts/sync-runtime.sh`
+before any E2E. Project memory hygiene went 41 FAILs → 0 (13 `type:` nestings, 27 kebab→snake link
+stems, 1 missing description); the capture is committed on dotfiles branch `feature/oaas-memory-hygiene`
+(`a7d334b`) but **unpushed by owner choice**: dotfiles' pre-push self-tests fail on the `master`
+baseline itself (hook batteries 4/11, review-gate-onboard 16) — `feature/guard-prefix-splitter` looks
+like the fix. ⚠ **New dotfiles trap, repaired here:** pushing from a LINKED WORKTREE hands the
+pre-push hook an absolute `GIT_DIR`, and its test batteries' `git init` / `git -C /tmp/… commit` then
+re-initialise the SHARED repo (`core.bare = true`, working tree unrecognised) and commit their fixtures
+(`VERSION`, `f.txt`, a `.env` "leak") onto the pushing branch. Fixed with `git config core.bare false`
++ `update-ref` back to the real tip; nothing reached the remote. Neither the hook nor the tests unset
+`GIT_DIR` — that is the dotfiles fix to make. Branch audit: nothing unpushed; no merged-PR branch left
+local or remote; `phase-29-research` kept again (never had a PR, 112 unique files — k8s/base +
+staging manifests and planning — an owner decision, not cleanup); the ten `qa/cluster-*` branches are
+fully contained in `origin/feature/qa-remediate-20260902` but held by another session's worktrees under
+`/tmp/claude-1000/`, so they are deletable only after #726 merges and those worktrees go. Toolchain
+doctor: 8 DRIFT rows (gh, claude-code, gemini-cli, copilot, docker-ce, fabric-cli, fabric-cicd,
+antigravity-hub) + `conda` MISSING — surfaced, not applied. Left as found: untracked
+`.planning/quick/260831-jz4-fix-keycloak-realm-config-branded-login-/evidence/`.
 
 **Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
 the 2026-08-24 session broke it once itself (see "The truncating filter", below).
@@ -80,13 +148,15 @@ the 2026-08-24 session broke it once itself (see "The truncating filter", below)
 
 ## Resume here
 
-**Branch `main`, clean tree, nothing in flight.** No phase is part-done and no branch is waiting.
+**Two branches are in flight and waiting on YOUR review, not on engineering:**
+`feature/qa-remediate-20260902` (PR #726) and `feature/tomcat-10.1.59-cve-pin` (PR #733) — see the
+2026-09-05 delta above. The block below describes the `main` checkout once they have merged.
 
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 41 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 43 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done

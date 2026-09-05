@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { resolvePublicOrigin } from "@/lib/public-origin"
+import { safeReturnTo } from "@/lib/safe-return-to"
 
 /**
  * GET /api/customer-auth/logout-url?redirect=/shop
@@ -43,23 +44,19 @@ const KC_BASE =
   process.env.NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL ||
   "http://localhost:8085/realms/jtoye-customers" // never fall back to jtoye-dev (staff realm)
 
-/**
- * Restrict the post-logout redirect to a same-origin storefront path. The value
- * is user-controlled; only accept a relative path beginning with a single "/"
- * (reject protocol-relative "//host", backslash tricks "/\\host", and absolute
- * URLs) so the returned URL can never escape this origin. Falls back to "/shop".
- */
-function sanitizeRedirect(raw: string | null): string {
-  const fallback = "/shop"
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
-    return fallback
-  }
-  return raw
-}
+/** Where a refused `?redirect=` lands: the storefront root, the realm's historical default. */
+const CUSTOMER_FALLBACK_PATH = "/shop"
 
 export async function GET(req: NextRequest) {
   const id = req.cookies.get(ID_COOKIE)?.value
-  const redirect = sanitizeRedirect(req.nextUrl.searchParams.get("redirect"))
+  // The post-logout redirect is user-controlled and must never leave this
+  // origin. PR #726 follow-up to low (a): this route carried the LAST private
+  // `sanitizeRedirect` after the vendor sibling moved to the shared
+  // `safeReturnTo`, and the local copy was the weaker one — it accepted an
+  // interior backslash (`/shop\@evil.example`), which some browsers normalise
+  // to a protocol-relative URL, and did not trim. One sanitiser across both
+  // realms now (`lib/safe-return-to.ts`); only the fallback differs.
+  const redirect = safeReturnTo(req.nextUrl.searchParams.get("redirect"), CUSTOMER_FALLBACK_PATH)
 
   // Issue #504: the origin is INJECTED, not read off the request. `nextUrl.origin`
   // is the server's BIND address inside a container — measured

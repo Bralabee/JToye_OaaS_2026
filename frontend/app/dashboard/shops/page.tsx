@@ -350,80 +350,78 @@ export default function ShopsPage() {
                 </Button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Address</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {shops.map((shop) => (
-                      <m.tr
-                        key={shop.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="group"
-                      >
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <SafeImage
-                              src={shop.logoUrl}
-                              alt={shop.name}
-                              className="h-8 w-8 rounded-lg object-cover"
-                              fallbackClassName="h-8 w-8 rounded-lg bg-blue-100"
-                              fallbackIcon={<Store className="h-4 w-4 text-blue-600" />}
-                            />
-                            {shop.name}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2 text-slate-600">
-                            <MapPin className="h-4 w-4" />
-                            {shop.address || "—"}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {shop.published ? (
-                            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                              <Globe className="h-3 w-3 mr-1" />Published
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-slate-500">Draft</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-slate-600">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4" />
-                            {formatDistanceToNow(new Date(shop.createdAt), {
-                              addSuffix: true,
-                            })}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <IconButton
-                              onClick={() => openEditDialog(shop)}
-                              label={`Edit shop ${shop.name}`}
-                              icon={<Pencil className="h-4 w-4" />}
-                            />
-                            <IconButton
-                              onClick={() => openDeleteDialog(shop)}
-                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                              label={`Delete shop ${shop.name}`}
-                              icon={<Trash2 className="h-4 w-4" />}
-                            />
-                          </div>
-                        </TableCell>
-                      </m.tr>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <Table containerLabel="Shops table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Address</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {shops.map((shop) => (
+                    <m.tr
+                      key={shop.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="group"
+                    >
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <SafeImage
+                            src={shop.logoUrl}
+                            alt={shop.name}
+                            className="h-8 w-8 rounded-lg object-cover"
+                            fallbackClassName="h-8 w-8 rounded-lg bg-blue-100"
+                            fallbackIcon={<Store className="h-4 w-4 text-blue-600" />}
+                          />
+                          {shop.name}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 text-slate-600">
+                          <MapPin className="h-4 w-4" />
+                          {shop.address || "—"}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {shop.published ? (
+                          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                            <Globe className="h-3 w-3 mr-1" />Published
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-slate-600">Draft</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-slate-600">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4" />
+                          {formatDistanceToNow(new Date(shop.createdAt), {
+                            addSuffix: true,
+                          })}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <IconButton
+                            onClick={() => openEditDialog(shop)}
+                            label={`Edit shop ${shop.name}`}
+                            icon={<Pencil className="h-4 w-4" />}
+                          />
+                          <IconButton
+                            onClick={() => openDeleteDialog(shop)}
+                            className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                            label={`Delete shop ${shop.name}`}
+                            icon={<Trash2 className="h-4 w-4" />}
+                          />
+                        </div>
+                      </TableCell>
+                    </m.tr>
+                  ))}
+                </TableBody>
+              </Table>
             )}
             <Pagination
               currentPage={currentPage}

@@ -191,7 +191,9 @@ describe("/shop/[slug] — server-seeded storefront", () => {
     expect(article.lastElementChild).toBe(trigger)
     expect(trigger.className).toContain("absolute inset-0")
 
-    const add = screen.getByRole("button", { name: "Add" })
+    // A11Y-4 (QA council 20260902-134741): the control is named per product,
+    // not the bare "Add" that nine cards on one page used to share.
+    const add = screen.getByRole("button", { name: "Add Peri Peri Chicken to basket" })
     expect(add.className).toContain("relative z-10")
     expect(article.contains(add)).toBe(true)
   })
@@ -215,5 +217,46 @@ describe("/shop/[slug] — server-seeded storefront", () => {
     const banner = screen.getByAltText("Brixton Village Grill banner")
     expect(banner).toHaveAttribute("fetchpriority", "high")
     expect(banner).toHaveAttribute("loading", "eager")
+  })
+})
+
+/**
+ * QA council 20260902-134741 — A11Y-4 (WCAG 2.4.6). The `quantity === 0`
+ * branch of every product card rendered `<button>Add</button>`, so a shop
+ * page exposed nine controls with one identical accessible name and a
+ * name-driven actor (screen reader, voice control, automation) added the
+ * wrong dish (probes/a11y/04, 04b). The visible text stays "Add"; the name
+ * becomes "Add {title} to basket". A dish that is ALSO featured renders twice
+ * (the Popular rail and its category list), so the rail copy is suffixed
+ * "(featured)" — otherwise the same dish still carries two identical names
+ * and the uniqueness assertion the gate widening adds would be unsatisfiable.
+ */
+describe("/shop/[slug] — add-to-basket controls are named per product (A11Y-4)", () => {
+  it("a dish rendered in both the featured rail and its category gets two DISTINCT names", async () => {
+    const featured: PublicProduct = { ...product, id: "p-feat", title: "Jollof Rice", featured: true }
+    const withFeatured: ShopDetail = {
+      ...detail,
+      products: { Mains: [product, featured] },
+    }
+    await act(async () => {
+      render(<ShopDetailClient slug="brixton-village-grill" initial={withFeatured} />)
+    })
+
+    // Rendered twice on purpose — the good being preserved.
+    expect(screen.getAllByRole("heading", { level: 3, name: /Jollof Rice/ })).toHaveLength(2)
+
+    const railCopy = screen.getByRole("button", { name: "Add Jollof Rice to basket (featured)" })
+    const listCopy = screen.getByRole("button", { name: "Add Jollof Rice to basket" })
+    expect(railCopy).not.toBe(listCopy)
+    // Both still read "Add" to a sighted user.
+    expect(railCopy).toHaveTextContent(/^Add$/)
+    expect(listCopy).toHaveTextContent(/^Add$/)
+
+    // No accessible name maps to more than one control on the page.
+    const addNames = screen
+      .getAllByRole("button", { name: /^Add .+ to basket/ })
+      .map((b) => b.getAttribute("aria-label"))
+    expect(new Set(addNames).size).toBe(addNames.length)
+    expect(addNames).toHaveLength(3)
   })
 })

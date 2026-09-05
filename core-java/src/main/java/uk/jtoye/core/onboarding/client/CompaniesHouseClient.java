@@ -28,8 +28,10 @@ import java.util.Optional;
  * {@code @CircuitBreaker(name = "companies-house")} and blocks with an explicit
  * timeout; a 5xx / circuit-open / timeout propagates a typed failure that the
  * gate maps to {@code MANUAL_REVIEW}. A 404 (no record — e.g. a company number
- * that never existed) is NOT a failure: it returns {@link Optional#empty()} so
- * the gate can WAIVE.
+ * that never existed) is NOT a transport failure: it returns {@link Optional#empty()}
+ * and the gate parks it at {@code MANUAL_REVIEW} (INT-7 / A14 — it used to WAIVE, a
+ * fail-open on an exact-key register). Callers pass the canonical 8-character key
+ * ({@code CompanyNumbers.normalise}); the API does not pad or fuzzy-match for you.
  */
 @Component
 public class CompaniesHouseClient {

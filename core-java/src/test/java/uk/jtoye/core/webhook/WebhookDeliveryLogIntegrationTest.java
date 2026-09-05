@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -30,6 +29,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static uk.jtoye.core.testsupport.TenantJwts.adminJwt;
+import static uk.jtoye.core.testsupport.TenantJwts.tenantlessAdminJwt;
 
 /**
  * Issue #444 (QA council F-H4-WHDELIV) — {@code GET
@@ -60,6 +61,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * predicate and can only be excluded by the tenant boundary itself — which makes
  * the isolation assertion a genuine RLS proof rather than a restatement of the
  * WHERE clause.
+ *
+ * <p><b>Principal shape (QA-remediate 20260902 SEC-1).</b> Requests carry a production-shaped
+ * realm-admin JWT ({@code TenantJwts.adminJwt}: UUID {@code sub} + {@code tenant_id} claim)
+ * instead of {@code @WithMockUser}: {@code WebhookDeliveryService} now gates on
+ * {@code ShopAccessService.requireGroupAdmin()}, whose fail-closed {@code requireVendorUserId()}
+ * denies a non-JWT principal with the typed 403. The tenant travels in the claim. The
+ * no-tenant arm uses {@code tenantlessAdminJwt()} so it still reaches the service with no
+ * tenant established and the loud {@code missing-tenant-context} contract stays testable.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -217,11 +226,10 @@ class WebhookDeliveryLogIntegrationTest {
 
     /** AC #1 — the log returns the rows that provably exist for the caller's tenant. */
     @Test
-    @WithMockUser
     @DisplayName("delivery log returns the rows that exist for the tenant")
     void deliveryLog_returnsTheRowsThatExist() throws Exception {
         MvcResult result = mockMvc.perform(get("/api/v1/webhooks/" + SUB_A + "/deliveries")
-                        .header("X-Tenant-Id", TENANT_A.toString()))
+                        .with(adminJwt(TENANT_A)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(3))
                 .andExpect(jsonPath("$.content.length()").value(3))
@@ -240,11 +248,10 @@ class WebhookDeliveryLogIntegrationTest {
 
     /** AC #1 — the status filter narrows the same non-empty set (it was 0 under every filter). */
     @Test
-    @WithMockUser
     @DisplayName("delivery log status filter returns the matching subset, not an empty page")
     void deliveryLog_statusFilter_returnsMatchingSubset() throws Exception {
         mockMvc.perform(get("/api/v1/webhooks/" + SUB_A + "/deliveries")
-                        .header("X-Tenant-Id", TENANT_A.toString())
+                        .with(adminJwt(TENANT_A))
                         .param("status", "FAILED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))
@@ -257,11 +264,10 @@ class WebhookDeliveryLogIntegrationTest {
      * alone cannot exclude it; only the tenant boundary can.
      */
     @Test
-    @WithMockUser
     @DisplayName("another tenant's delivery under the same subscription id is never returned")
     void deliveryLog_doesNotLeakAnotherTenantsRow() throws Exception {
         MvcResult asA = mockMvc.perform(get("/api/v1/webhooks/" + SUB_A + "/deliveries")
-                        .header("X-Tenant-Id", TENANT_A.toString()))
+                        .with(adminJwt(TENANT_A)))
                 .andExpect(status().isOk())
                 .andReturn();
         assertThat(asA.getResponse().getContentAsString())
@@ -269,7 +275,7 @@ class WebhookDeliveryLogIntegrationTest {
                 .doesNotContain(DEL_FOREIGN.toString());
 
         MvcResult asB = mockMvc.perform(get("/api/v1/webhooks/" + SUB_B + "/deliveries")
-                        .header("X-Tenant-Id", TENANT_B.toString()))
+                        .with(adminJwt(TENANT_B)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andReturn();
@@ -283,11 +289,10 @@ class WebhookDeliveryLogIntegrationTest {
 
     /** AC #4 — a foreign subscription id is 404, not a readable log. */
     @Test
-    @WithMockUser
     @DisplayName("a tenant cannot open another tenant's subscription log")
     void deliveryLog_foreignSubscription_is404() throws Exception {
         mockMvc.perform(get("/api/v1/webhooks/" + SUB_A + "/deliveries")
-                        .header("X-Tenant-Id", TENANT_B.toString()))
+                        .with(adminJwt(TENANT_B)))
                 .andExpect(status().isNotFound());
     }
 
@@ -299,10 +304,12 @@ class WebhookDeliveryLogIntegrationTest {
      * empty page.
      */
     @Test
-    @WithMockUser
     @DisplayName("with no tenant established the log errors loudly instead of returning an empty page")
     void deliveryLog_withNoTenant_failsLoudly() throws Exception {
-        MvcResult result = mockMvc.perform(get("/api/v1/webhooks/" + SUB_A + "/deliveries"))
+        // A realm-admin JWT with NO tenant claim and NO X-Tenant-Id header: authenticated, passes
+        // the GROUP_ADMIN gate (realm-admin bridge), and reaches the service with no tenant.
+        MvcResult result = mockMvc.perform(get("/api/v1/webhooks/" + SUB_A + "/deliveries")
+                        .with(tenantlessAdminJwt()))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/missing-tenant-context"))
                 .andReturn();
@@ -313,19 +320,18 @@ class WebhookDeliveryLogIntegrationTest {
 
     /** AC #2 — replay works on a delivery the log returned (no Idempotency-Key). */
     @Test
-    @WithMockUser
     @DisplayName("replay succeeds on a delivery returned by the log")
     void replay_worksOnADeliveryReturnedByTheLog() throws Exception {
         // The log returns it...
         mockMvc.perform(get("/api/v1/webhooks/" + SUB_C + "/deliveries")
-                        .header("X-Tenant-Id", TENANT_A.toString()))
+                        .with(adminJwt(TENANT_A)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].id").value(DEL_REPLAY_SRC.toString()));
 
         // ...and replaying that same id creates a new PENDING attempt.
         mockMvc.perform(post("/api/v1/webhooks/" + SUB_C + "/deliveries/" + DEL_REPLAY_SRC + "/replay")
-                        .header("X-Tenant-Id", TENANT_A.toString()))
+                        .with(adminJwt(TENANT_A)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.replay").value(true))
@@ -346,7 +352,6 @@ class WebhookDeliveryLogIntegrationTest {
      * "replay works" test would have hidden which half was broken.
      */
     @Test
-    @WithMockUser
     @DisplayName("un-keyed replay does not 404 on a delivery that exists")
     void replay_withoutIdempotencyKey_doesNot404() throws Exception {
         assertThat(countVisibleDeliveries(TENANT_A, SUB_E))
@@ -354,26 +359,25 @@ class WebhookDeliveryLogIntegrationTest {
                 .isEqualTo(1);
 
         mockMvc.perform(post("/api/v1/webhooks/" + SUB_E + "/deliveries/" + DEL_REPLAY_UNKEYED_SRC + "/replay")
-                        .header("X-Tenant-Id", TENANT_A.toString()))
+                        .with(adminJwt(TENANT_A)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.replayOf").value(DEL_REPLAY_UNKEYED_SRC.toString()));
     }
 
     /** AC #2 — the Idempotency-Key path replays once and is safe to retry. */
     @Test
-    @WithMockUser
     @DisplayName("keyed replay is idempotent and creates exactly one new attempt")
     void replay_withIdempotencyKey_createsExactlyOneAttempt() throws Exception {
         String key = "replay-444-" + UUID.randomUUID();
 
         mockMvc.perform(post("/api/v1/webhooks/" + SUB_D + "/deliveries/" + DEL_REPLAY_KEYED_SRC + "/replay")
-                        .header("X-Tenant-Id", TENANT_A.toString())
+                        .with(adminJwt(TENANT_A))
                         .header("Idempotency-Key", key))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.replayOf").value(DEL_REPLAY_KEYED_SRC.toString()));
 
         mockMvc.perform(post("/api/v1/webhooks/" + SUB_D + "/deliveries/" + DEL_REPLAY_KEYED_SRC + "/replay")
-                        .header("X-Tenant-Id", TENANT_A.toString())
+                        .with(adminJwt(TENANT_A))
                         .header("Idempotency-Key", key))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.replayOf").value(DEL_REPLAY_KEYED_SRC.toString()));

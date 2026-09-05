@@ -2,6 +2,7 @@ package uk.jtoye.core.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -13,6 +14,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 /**
@@ -72,5 +74,43 @@ class OpenApiDevProfileGatingTest {
         assertEquals(200, status,
                 "/v3/api-docs must stay anonymous outside prod — gating it everywhere would break "
                 + "local Swagger UI and the API tooling the issue explicitly requires to keep working");
+    }
+
+    @Autowired
+    private Environment environment;
+
+    /**
+     * INT-24 (QA council 20260902-134741, docs sweep DOC-9): the SERVED document must
+     * advertise a base the service is actually listening on.
+     *
+     * <p>It advertised the hardcoded {@code http://localhost:8080} while the API binds
+     * {@code server.port} (9090), so Swagger UI's "Try it out" - the whole reason this
+     * route stays anonymous in dev, per the test above - posted at a refused port.
+     *
+     * <p>This is asserted on the SERVED JSON rather than on the bean, because the bean
+     * test cannot see springdoc: no snapshot gate can ever catch a servers regression
+     * ({@code check-openapi-snapshot-fresh.sh:146} and {@code OpenApiSnapshotTest.normalize}
+     * both delete the block as environment-dependent, and the committed snapshot has
+     * {@code .servers == null}).
+     *
+     * <p>The expected value is composed from {@code server.port} read out of the SAME
+     * Environment the application binds from, so this cannot be satisfied by a literal
+     * that happens to match today.
+     */
+    @Test
+    void servedSpecAdvertisesThePortTheServiceListensOn() throws Exception {
+        String body = mockMvc.perform(get("/v3/api-docs"))
+                .andReturn().getResponse().getContentAsString();
+
+        String port = environment.getRequiredProperty("server.port");
+        String expected = "\"url\":\"http://localhost:" + port + "\"";
+
+        assertTrue(body.contains(expected),
+                "the served spec must advertise http://localhost:" + port + " (the port this "
+                + "service binds), got servers block: "
+                + body.substring(Math.max(0, body.indexOf("\"servers\"")),
+                                 Math.min(body.length(), body.indexOf("\"servers\"") + 200)));
+        assertTrue(!body.contains("\"url\":\"http://localhost:8080\"") || "8080".equals(port),
+                "http://localhost:8080 must not be advertised unless the service actually binds it");
     }
 }
