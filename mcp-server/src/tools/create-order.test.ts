@@ -19,9 +19,11 @@ vi.mock("pino", () => ({ default: () => logSpies }));
 // delegation path is exercised end-to-end.
 vi.mock("../core-client.js", () => ({ corePost: vi.fn(), coreGet: vi.fn() }));
 
-import { z } from "zod";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { corePost } from "../core-client.js";
-import { createOrderHandler, createOrderInputSchema } from "./create-order.js";
+import { createOrderHandler, createOrderSchema, registerCreateOrder } from "./create-order.js";
 
 const CUSTOMER_EMAIL = "walk-in-victim@example.com";
 
@@ -184,7 +186,7 @@ describe("create_order handler", () => {
  * non-idempotent path; shopId + a non-empty items[] are required too.
  */
 describe("create_order input schema", () => {
-  const schema = z.object(createOrderInputSchema);
+  const schema = createOrderSchema;
 
   it("rejects a missing idempotencyKey and an over-length key", () => {
     const base = {
@@ -274,5 +276,177 @@ describe("create_order input schema", () => {
         idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
       }).success,
     ).toBe(true);
+  });
+
+  // COR-1 follow-up: the flat shape marked the three address fields optional, so a DELIVERY order
+  // with no address parsed clean here and only failed as core's 400 (FulfilmentPolicy
+  // .requireDeliveryAddress). The rule is cross-field, so it lives in a superRefine on the object
+  // schema. Each missing field gets its OWN issue path so an agent can repair exactly that field.
+  it("COR-1: rejects DELIVERY with NO address, naming addressLine1/addressCity/addressPostcode", () => {
+    const result = schema.safeParse({
+      shopId: "7f000001-0000-4000-8000-000000000002",
+      items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 1 }],
+      idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
+      fulfilmentType: "DELIVERY",
+    });
+    expect(result.success).toBe(false);
+    const issues = result.success ? [] : result.error.issues;
+    const paths = issues.map((i) => i.path.join(".")).sort();
+    expect(paths).toEqual(["addressCity", "addressLine1", "addressPostcode"]);
+    for (const issue of issues) {
+      expect(issue.message).toMatch(/required when fulfilmentType is DELIVERY/);
+    }
+  });
+
+  it("COR-1: rejects DELIVERY missing ONLY the postcode — the issue names just that field", () => {
+    const result = schema.safeParse({
+      shopId: "7f000001-0000-4000-8000-000000000002",
+      items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 1 }],
+      idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
+      fulfilmentType: "DELIVERY",
+      addressLine1: "12 Coldharbour Lane",
+      addressCity: "London",
+    });
+    expect(result.success).toBe(false);
+    const paths = result.success ? [] : result.error.issues.map((i) => i.path.join("."));
+    expect(paths).toEqual(["addressPostcode"]);
+  });
+
+  // Core's check is isBlank(), not null — "   " would still be a 400 there, so it is rejected here.
+  it("COR-1: treats a whitespace-only address part as missing for DELIVERY (mirrors core isBlank)", () => {
+    const result = schema.safeParse({
+      shopId: "7f000001-0000-4000-8000-000000000002",
+      items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 1 }],
+      idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
+      fulfilmentType: "DELIVERY",
+      addressLine1: "   ",
+      addressCity: "London",
+      addressPostcode: "SW9 8LF",
+    });
+    expect(result.success).toBe(false);
+    const paths = result.success ? [] : result.error.issues.map((i) => i.path.join("."));
+    expect(paths).toEqual(["addressLine1"]);
+  });
+
+  it("COR-1: an explicit COLLECTION order with NO address still parses (the rule is DELIVERY-only)", () => {
+    expect(
+      schema.safeParse({
+        shopId: "7f000001-0000-4000-8000-000000000002",
+        items: [{ productId: "0b6cbcf6-3535-49a0-a839-3f382e3ba9a7", quantity: 1 }],
+        idempotencyKey: "order-key-abc-123", // gitleaks:allow (fake test idempotency key, not a credential)
+        fulfilmentType: "COLLECTION",
+      }).success,
+    ).toBe(true);
+  });
+});
+
+/**
+ * Registered-tool contract: drive `create_order` through a real McpServer + in-memory client so
+ * the SDK's own input validation (the thing an agent actually hits) is what runs. A schema-level
+ * safeParse proves the rule exists; this proves the SERVER enforces it before corePost is reached.
+ */
+describe("create_order registered tool (in-memory MCP round trip)", () => {
+  async function connect() {
+    const server = new McpServer({ name: "t", version: "0" });
+    registerCreateOrder(server, "tok");
+    const client = new Client({ name: "c", version: "0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    return { server, client };
+  }
+
+  beforeEach(() => {
+    vi.mocked(corePost).mockReset();
+  });
+
+  it("exposes an inputSchema JSON schema that still lists the address fields (Zod → JSON export works)", async () => {
+    const { client, server } = await connect();
+    const { tools } = await client.listTools();
+    const tool = tools.find((t) => t.name === "create_order");
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props)).toEqual(
+      expect.arrayContaining([
+        "fulfilmentType",
+        "addressLine1",
+        "addressCity",
+        "addressPostcode",
+        "idempotencyKey",
+      ]),
+    );
+    // The cross-field rule does NOT promote the address to unconditionally required.
+    expect(tool!.inputSchema.required).not.toContain("addressLine1");
+    await client.close();
+    await server.close();
+  });
+
+  it("DELIVERY without an address is rejected by the server naming the fields — corePost is NEVER called", async () => {
+    const { client, server } = await connect();
+    vi.mocked(corePost).mockResolvedValue(created201);
+
+    // SDK 1.29 surfaces input-validation failures as an isError tool RESULT (McpServer
+    // .createToolError), not a JSON-RPC rejection — that is the shape an agent reads.
+    const result = await client.callTool({
+      name: "create_order",
+      arguments: { ...validArgs(), fulfilmentType: "DELIVERY" },
+    });
+
+    expect(result.isError).toBe(true);
+    const text = (result.content as { text: string }[])[0]!.text;
+    expect(text).toContain("Invalid arguments for tool create_order");
+    for (const field of ["addressLine1", "addressCity", "addressPostcode"]) {
+      expect(text).toContain(`${field} is required when fulfilmentType is DELIVERY`);
+    }
+    expect(corePost).not.toHaveBeenCalled();
+    await client.close();
+    await server.close();
+  });
+
+  it("DELIVERY with the address block is forwarded to core with the address in the body", async () => {
+    const { client, server } = await connect();
+    vi.mocked(corePost).mockResolvedValue(created201);
+
+    const result = await client.callTool({
+      name: "create_order",
+      arguments: {
+        ...validArgs(),
+        fulfilmentType: "DELIVERY",
+        addressLine1: "12 Coldharbour Lane",
+        addressCity: "London",
+        addressPostcode: "SW9 8LF",
+      },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(corePost).toHaveBeenCalledTimes(1);
+    const [path, , body, headers] = vi.mocked(corePost).mock.calls[0]!;
+    expect(path).toBe("/api/v1/orders");
+    expect(body).toMatchObject({
+      fulfilmentType: "DELIVERY",
+      addressLine1: "12 Coldharbour Lane",
+      addressCity: "London",
+      addressPostcode: "SW9 8LF",
+    });
+    expect(headers).toEqual({ "Idempotency-Key": "order-key-abc-123" }); // gitleaks:allow (fake test idempotency key, not a credential)
+    await client.close();
+    await server.close();
+  });
+
+  it("COLLECTION without an address is forwarded to core untouched", async () => {
+    const { client, server } = await connect();
+    vi.mocked(corePost).mockResolvedValue(created201);
+
+    const result = await client.callTool({
+      name: "create_order",
+      arguments: { ...validArgs(), fulfilmentType: "COLLECTION" },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(corePost).toHaveBeenCalledTimes(1);
+    const [, , body] = vi.mocked(corePost).mock.calls[0]!;
+    expect(body).toMatchObject({ fulfilmentType: "COLLECTION" });
+    expect(body).not.toHaveProperty("addressLine1");
+    await client.close();
+    await server.close();
   });
 });

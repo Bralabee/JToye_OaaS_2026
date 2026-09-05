@@ -94,7 +94,8 @@ class SyncServiceTest {
                 .items(Collections.singletonList(shopItem("New Shop", "123 Street")))
                 .build();
 
-        when(shopRepository.findByName("New Shop")).thenReturn(Optional.empty());
+        // M1: the lookup is (name, tenant) — never name alone
+        when(shopRepository.findByNameAndTenantId("New Shop", tenantId)).thenReturn(Optional.empty());
 
         // Act
         BatchSyncResponse response = syncService.processBatch(request);
@@ -118,7 +119,7 @@ class SyncServiceTest {
         existing.setId(shopId);
         existing.setName("Old Name");
         existing.setAddress("Old Address");
-        when(shopRepository.findByName("Old Name")).thenReturn(Optional.of(existing));
+        when(shopRepository.findByNameAndTenantId("Old Name", tenantId)).thenReturn(Optional.of(existing));
 
         BatchSyncResponse response = syncService.processBatch(BatchSyncRequest.builder()
                 .items(Collections.singletonList(shopItem("Old Name", "New Address")))
@@ -210,17 +211,68 @@ class SyncServiceTest {
         verify(cacheEvictor, never()).evictEntityAfterCommit(anyString(), anyString(), any(UUID.class));
     }
 
+    /**
+     * PR #726 review M7: every {@link SyncItem} field is optional on the wire, but the UPDATE
+     * branch set title and ingredientsText UNCONDITIONALLY while allergenMask and pricePennies
+     * were already guarded — so an item that only carried a new price wiped both to null
+     * (title then dies on products.title NOT NULL; the Natasha's Law ingredients text silently
+     * blanks). RED on the unfixed tree: title/ingredients are null after the batch.
+     */
+    @Test
+    void testProcessBatch_UpdateProduct_absentTitleAndIngredientsAreLeftAlone() {
+        UUID productId = UUID.randomUUID();
+        Product existing = new Product();
+        ReflectionTestUtils.setField(existing, "id", productId);
+        existing.setSku("SKU-P");
+        existing.setTitle("Keep Me");
+        existing.setIngredientsText("Rice, tomatoes");
+        existing.setPricePennies(500L);
+        when(productRepository.findBySku("SKU-P")).thenReturn(Optional.of(existing));
+
+        syncService.processBatch(BatchSyncRequest.builder()
+                .items(Collections.singletonList(
+                        SyncItem.builder().type("product").sku("SKU-P").pricePennies(750L).build()))
+                .build());
+
+        assertThat(existing.getTitle()).as("an absent title means 'unchanged', not 'clear it'").isEqualTo("Keep Me");
+        assertThat(existing.getIngredientsText()).isEqualTo("Rice, tomatoes");
+        assertThat(existing.getPricePennies()).isEqualTo(750L);
+        verify(productRepository).save(existing);
+    }
+
+    /**
+     * M7, the CREATE half: a brand-new SKU with no title has nothing to persist under
+     * products.title NOT NULL. Reject it as the 400 the service already uses elsewhere
+     * (IllegalArgumentException -> errors/invalid-argument) BEFORE the write, instead of letting
+     * the constraint surface as a 500/409 after the batch has half-run. RED on the unfixed tree:
+     * no exception, save() is reached with a null title.
+     */
+    @Test
+    void testProcessBatch_CreateProduct_withoutTitleIs400_andSavesNothing() {
+        when(productRepository.findBySku("NEW-NO-TITLE")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> syncService.processBatch(BatchSyncRequest.builder()
+                .items(Collections.singletonList(
+                        SyncItem.builder().type("product").sku("NEW-NO-TITLE").pricePennies(100L).build()))
+                .build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("title");
+
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
     @Test
     void testProcessBatch_MixedItems() {
         // Arrange
         BatchSyncRequest request = BatchSyncRequest.builder()
                 .items(Arrays.asList(
                         shopItem("Shop 1", null),
-                        SyncItem.builder().type("product").sku("SKU1").build(),
+                        // a CREATE needs a title (M7); the other fields stay absent to prove they are optional
+                        SyncItem.builder().type("product").sku("SKU1").title("Product 1").build(),
                         SyncItem.builder().type("unknown").build()))
                 .build();
 
-        when(shopRepository.findByName(anyString())).thenReturn(Optional.empty());
+        when(shopRepository.findByNameAndTenantId(anyString(), any(UUID.class))).thenReturn(Optional.empty());
         when(productRepository.findBySku(anyString())).thenReturn(Optional.empty());
 
         // Act

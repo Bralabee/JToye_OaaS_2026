@@ -257,4 +257,70 @@ describe("Checkout idempotency contract (Cluster E client half)", () => {
     const secondPayload = mockedPost.mock.calls[1][1] as { items: Array<{ productId: string; quantity: number }> }
     expect(secondPayload.items).toEqual([{ productId: "p1", quantity: 2 }])
   })
+
+  /**
+   * PR #726 review, M3. The signature used to be `productId:quantity` ONLY. Every other field
+   * in the POST body — phone, email, name, notes, fulfilment type, the address — could change
+   * between two submits and the SAME key would travel with a DIFFERENT body: a correct server
+   * 422 payload-mismatch with no client recovery. The key must follow the PAYLOAD, not the basket.
+   */
+  it("editing ONLY the phone between two submits mints a NEW key (M3: the key follows the whole payload)", async () => {
+    mockedPost.mockRejectedValue(new Error("network down"))
+    renderCheckout()
+    await armCheckout()
+
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
+    await screen.findByText(/Failed to place order/i)
+
+    // Same basket, same everything — except the phone the shopper mistyped.
+    fireEvent.change(screen.getByLabelText(/phone number/i), { target: { value: "07700 900001" } })
+
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2))
+
+    const first = submittedKeys(0)
+    const second = submittedKeys(1)
+    expect(second.bodyKey).toBeTruthy()
+    expect(second.bodyKey).not.toBe(first.bodyKey)
+    expect(second.headerKey).toBe(second.bodyKey)
+    const [firstPayload, secondPayload] = [mockedPost.mock.calls[0][1], mockedPost.mock.calls[1][1]] as Array<{
+      customerPhone: string
+      items: unknown
+    }>
+    // Non-vacuity: the basket did NOT change, so the old basket-only signature would have reused the key.
+    expect(secondPayload.items).toEqual(firstPayload.items)
+    expect(secondPayload.customerPhone).toBe("07700 900001")
+  })
+
+  it("switching fulfilment DELIVERY -> COLLECTION between two submits mints a NEW key (M3)", async () => {
+    mockedPost.mockRejectedValue(new Error("network down"))
+    renderCheckout()
+    // Arm as a DELIVERY order this time: fill the address the delivery branch validates.
+    await screen.findByRole("button", { name: /place order/i })
+    fireEvent.change(screen.getByLabelText(/address line 1/i), { target: { value: "12 Coldharbour Lane" } })
+    fireEvent.change(screen.getByLabelText(/town \/ city/i), { target: { value: "London" } })
+    fireEvent.change(screen.getByLabelText(/postcode/i), { target: { value: "SW9 8LF" } })
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: "Ade Johnson" } })
+    fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: "ade@example.com" } })
+    fireEvent.change(screen.getByLabelText(/phone number/i), { target: { value: "07700 900000" } })
+    acknowledgeAllergens()
+
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
+    await screen.findByText(/Failed to place order/i)
+
+    fireEvent.click(screen.getByRole("button", { name: /collection/i }))
+
+    placeOrder()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2))
+
+    const first = submittedKeys(0)
+    const second = submittedKeys(1)
+    expect(second.bodyKey).not.toBe(first.bodyKey)
+    expect(second.headerKey).toBe(second.bodyKey)
+    const secondPayload = mockedPost.mock.calls[1][1] as { fulfilmentType: string; addressLine1?: string }
+    expect(secondPayload.fulfilmentType).toBe("COLLECTION")
+    expect(secondPayload.addressLine1).toBeUndefined()
+  })
 })

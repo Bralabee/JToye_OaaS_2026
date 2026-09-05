@@ -26,6 +26,7 @@ import {
   rememberCustomerId,
   rememberLastSignIn,
 } from "@/lib/cart-identity"
+import { safeReturnTo } from "@/lib/safe-return-to"
 
 // Phase 18: customer identity lives in its own realm (jtoye-customers), decoupled
 // from the B2B staff/vendor realm (jtoye-dev). Use the dedicated customer base URL,
@@ -651,37 +652,13 @@ export async function customerIdpSignOut(returnTo: string = "/shop/signin"): Pro
  * Narrow an arbitrary "where should I go after sign-in" value to a SAME-ORIGIN
  * relative path, or fall back to `/shop`.
  *
- * This exists because `/shop/signin?next=…` puts the post-login destination in a
- * URL, which anyone can craft into a link. Without it, `?next=https://evil.example`
- * would be stored and then handed to `router.replace()` by the OAuth callback — a
- * textbook open redirect, and a convincing one because the user really did just
- * authenticate with us before being bounced away.
- *
- * Rejected, each for a reason rather than by a general "looks odd" rule:
- *   - anything with a scheme (`https:`, and `javascript:` in particular)
- *   - protocol-relative `//host`, which a naive "starts with /" check accepts and
- *     browsers treat as absolute
- *   - backslash variants (`/\evil.com`, `\\evil.com`) that some browsers normalise
- *     to a protocol-relative URL
- *   - anything not starting with a single `/`, so a bare `evil.com` cannot resolve
- *     relative to the current directory
- *
- * Deliberately NOT a route allowlist: the whole point is to return the shopper to
- * wherever they were, and enumerating that is a maintenance burden that would fail
- * closed onto `/shop` the first time a route is added.
+ * The implementation lives in `lib/safe-return-to.ts` (PR #726 low (a)) so the
+ * SERVER logout routes can share the identical rule without importing this
+ * browser-side module; it is re-exported here so every existing storefront
+ * import keeps resolving to the same single function. The rationale for each
+ * rejected shape is recorded there.
  */
-export function safeReturnTo(value: string | null | undefined): string {
-  const fallback = "/shop"
-  if (!value) return fallback
-  const candidate = value.trim()
-  if (!candidate.startsWith("/")) return fallback
-  // `//host` and `/\host` are absolute to a browser despite the leading slash.
-  if (candidate.startsWith("//") || candidate.startsWith("/\\")) return fallback
-  if (candidate.includes("\\")) return fallback
-  // A scheme cannot appear in a path-absolute URL; if one does, this is not one.
-  if (/^[a-z][a-z0-9+.-]*:/i.test(candidate)) return fallback
-  return candidate
-}
+export { safeReturnTo }
 
 /**
  * Get the return URL after auth callback.

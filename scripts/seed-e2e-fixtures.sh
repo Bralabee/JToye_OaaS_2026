@@ -273,11 +273,16 @@ SQL
 psql_run "$zero_vat_sql" || void "zero-rated product seed failed"
 
 # --- 5. Media review fixtures (delegated, not duplicated) ---------------------------
+#   Same shape as psql_run: quiet on success, the child's FULL output on failure. This used to be
+#   `>/dev/null 2>&1`, which left a CI log reading only "did not pass — run it directly" with no
+#   way to run it directly against a runner that had already been torn down.
 if [ "$SKIP_MEDIA" != "1" ]; then
-  if bash "$REPO_ROOT/scripts/seed-media-review-fixtures.sh" >/dev/null 2>&1; then
+  media_out=$(bash "$REPO_ROOT/scripts/seed-media-review-fixtures.sh" 2>&1); media_rc=$?
+  if [ "$media_rc" -eq 0 ]; then
     echo "  media     : OK (seed-media-review-fixtures.sh)"
   else
-    echo "FAIL: seed-media-review-fixtures.sh did not pass — run it directly for detail." >&2
+    echo "$media_out" >&2
+    echo "FAIL: seed-media-review-fixtures.sh did not pass (exit $media_rc) — its output is above." >&2
     exit 1
   fi
 fi

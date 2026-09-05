@@ -735,21 +735,32 @@ public class PublicStorefrontService {
     }
 
     /**
-     * Which key identifies this order intent. The request-body {@code idempotencyKey} is the
-     * convention the storefront has always used and stays AUTHORITATIVE; the platform's
-     * {@code Idempotency-Key} header (API-3) is an ADDITIVE source consulted only when the body
-     * carries none. Neither present ⇒ {@code null}, the keyless create.
+     * Which key identifies this order intent. Two sources are accepted: the request-body
+     * {@code idempotencyKey} (the convention the storefront has always used) and the platform's
+     * {@code Idempotency-Key} header (API-3). Either alone identifies the intent; both carrying
+     * the SAME value is one intent; neither present ⇒ {@code null}, the keyless create.
+     *
+     * <p>Both present and DIFFERENT is refused as a 400 ({@link IllegalArgumentException} →
+     * {@code errors/invalid-argument}), before any write. PR #726 review follow-up: this used to
+     * let the body win on a DEBUG log. Two different keys are two different intents on one request
+     * — a client defect, not a preference to resolve — and honouring one means a retry that carries
+     * only the OTHER key finds no reservation and mints the duplicate order the key exists to stop.
+     * A 400 the client sees on the first request is cheaper than a duplicate it never sees.
      *
      * <p>Package-private for direct unit-test access within {@code uk.jtoye.core.storefront}.
      */
     static String resolveGuestIdempotencyKey(String bodyKey, String headerKey) {
-        if (bodyKey != null && !bodyKey.isBlank()) {
-            if (headerKey != null && !headerKey.isBlank() && !headerKey.equals(bodyKey)) {
-                log.debug("Guest order carries both a body idempotencyKey and a differing Idempotency-Key header; the body value is authoritative");
-            }
+        boolean hasBody = bodyKey != null && !bodyKey.isBlank();
+        boolean hasHeader = headerKey != null && !headerKey.isBlank();
+        if (hasBody && hasHeader && !headerKey.equals(bodyKey)) {
+            throw new IllegalArgumentException(
+                    "Request body idempotencyKey and Idempotency-Key header disagree; "
+                            + "send one key, or the same key in both");
+        }
+        if (hasBody) {
             return bodyKey;
         }
-        if (headerKey != null && !headerKey.isBlank()) {
+        if (hasHeader) {
             return headerKey;
         }
         return null;
@@ -802,6 +813,10 @@ public class PublicStorefrontService {
                 existingOrder.getTotalAmountPennies(),
                 shop.getName(),
                 existingOrder.getItemCount(),
+                // COR-4 / M5: units passed through AS-IS. A replayed row that predates V66 carries
+                // null, and null means "not recorded" — a different statement from 0 and from the
+                // line count, so it is neither coalesced nor substituted.
+                existingOrder.getUnitCount(),
                 existingClientSecret,
                 List.of()
         );
@@ -1082,6 +1097,9 @@ public class PublicStorefrontService {
                 order.getTotalAmountPennies(),
                 shop.getName(),
                 order.getItems().size(),
+                // COR-4 / M5: the UNITS the basket showed ("6 items" for 6 Zobos on one line),
+                // populated by calculateTotal() above; itemCount above stays LINES.
+                order.getUnitCount(),
                 clientSecret,
                 allergenWarnings
         );

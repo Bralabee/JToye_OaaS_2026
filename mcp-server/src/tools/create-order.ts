@@ -29,8 +29,10 @@ const logger = pino({ name: "jtoye-mcp" });
 // SSRF (T-25-08): a fixed path constant — the caller never composes host or path.
 const CREATE_ORDER_PATH = "/api/v1/orders";
 
-// Raw Zod shape (NOT z.object) — the @modelcontextprotocol/sdk v1.29.0 contract.
-// Field names/types mirror CreateOrderRequest + OrderItemRequest, verified against
+// Raw Zod shape. The sibling tools register their raw shape directly (the SDK v1.29.0 accepts
+// either a shape or a Zod object); this one is wrapped in `createOrderSchema` below so it can
+// carry the DELIVERY-requires-address cross-field rule. Field names/types mirror
+// CreateOrderRequest + OrderItemRequest, verified against
 // docs/api/openapi-snapshot.json (D-08). `items` is kept required (.min(1)) to match
 // the runtime @NotEmpty @Valid constraint — the snapshot's `required` array under-
 // reports it (springdoc does not propagate @NotEmpty on a collection to `required`),
@@ -93,6 +95,34 @@ export const createOrderInputSchema = {
     ),
 };
 
+// The three address parts core's FulfilmentPolicy.requireDeliveryAddress demands for DELIVERY
+// (line 2 stays optional there too). Kept as a typed tuple so the refinement and the JSON-schema
+// descriptions above cannot drift apart silently.
+const DELIVERY_REQUIRED_ADDRESS_FIELDS = ["addressLine1", "addressCity", "addressPostcode"] as const;
+
+// The schema actually registered on the server. Wrapping the raw shape in z.object() is what
+// the SDK does internally anyway (normalizeObjectSchema → objectFromShape); doing it here lets
+// the tool carry a cross-field rule the flat shape cannot express: DELIVERY requires the address.
+// Before this the three fields were plain .optional(), so a DELIVERY order with no address parsed
+// clean at the tool boundary and only failed as core's 400 — the agent saw an opaque HTTP error
+// instead of a per-field issue it could repair. Core stays the authority (isBlank(), 400); this
+// mirrors it so the failure surfaces where the agent reads the contract. superRefine (not refine)
+// so each missing part gets its OWN path. The refinement is a check on the same ZodObject, so the
+// SDK's Zod → JSON-schema export is unchanged and the address fields stay non-required in it.
+export const createOrderSchema = z.object(createOrderInputSchema).superRefine((value, ctx) => {
+  if (value.fulfilmentType !== "DELIVERY") return;
+  for (const field of DELIVERY_REQUIRED_ADDRESS_FIELDS) {
+    const part = value[field];
+    if (part === undefined || part.trim().length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: [field],
+        message: `${field} is required when fulfilmentType is DELIVERY`,
+      });
+    }
+  }
+});
+
 interface CreateOrderArgs {
   shopId: string;
   customerId?: string;
@@ -150,7 +180,7 @@ export function registerCreateOrder(server: McpServer, bearer: string): void {
         "replay returns the original order, never a duplicate. fulfilmentType is optional and " +
         "defaults to COLLECTION; pass DELIVERY with addressLine1/addressCity/addressPostcode to " +
         "place a delivery order, which is priced with the shop's delivery fee.",
-      inputSchema: createOrderInputSchema,
+      inputSchema: createOrderSchema,
     },
     createOrderHandler(bearer),
   );

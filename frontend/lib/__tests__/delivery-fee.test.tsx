@@ -1,37 +1,22 @@
 /**
- * `lib/delivery-fee.ts` — behaviour, and PARITY with the copy still living in
- * the checkout page (COR-2).
+ * `lib/delivery-fee.ts` — behaviour, and the guarantee that it is the ONLY copy
+ * (COR-2, closed by PR #726 low (b)).
  *
- * The parity block is the load-bearing half. The basket page and the checkout
- * page must never quote different delivery fees for the same basket, and until
- * the checkout page can be edited (another lane owns that file this round) the
- * only thing standing between "one rule" and "two rules that happen to agree
- * today" is an assertion that runs both and compares. Delete the checkout copy
- * and re-export the lib, and this block keeps passing for the right reason.
- *
- * The checkout page is imported for its exported pure function only; its
- * module-level dependencies are mocked exactly as
- * `app/shop/[slug]/checkout/__tests__/checkout.test.tsx` mocks them.
+ * The basket page and the checkout page must never quote different delivery fees
+ * for the same basket. Until PR #726 the checkout page carried a byte-identical
+ * second body and this file ran both and compared; that block could only ever
+ * say "the two agree TODAY". The copy is now deleted and the checkout page
+ * imports the lib, so the guard below is structural: the page must import the
+ * lib and must not define a function of that name. Re-introducing the copy —
+ * the way the drift would actually start — turns it red.
  */
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
-import { previewDeliveryFeePennies as checkoutPreview } from "@/app/shop/[slug]/checkout/page"
 import type { FulfilmentType } from "@/types/api"
 
-jest.mock("@/lib/public-api-client", () => ({
-  __esModule: true,
-  default: { get: jest.fn(), post: jest.fn() },
-}))
-jest.mock("@/lib/customer-auth", () => ({
-  getCustomerSession: jest.fn(() => Promise.resolve(null)),
-}))
-jest.mock("@/lib/order-history", () => ({ saveLocalOrder: jest.fn() }))
-jest.mock("@stripe/stripe-js", () => ({ loadStripe: jest.fn(() => Promise.resolve(null)) }))
-jest.mock("@stripe/react-stripe-js", () => ({
-  Elements: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  PaymentElement: () => null,
-  useStripe: () => null,
-  useElements: () => null,
-}))
+const CHECKOUT_PAGE = join(process.cwd(), "app", "shop", "[slug]", "checkout", "page.tsx")
+const CART_PAGE = join(process.cwd(), "app", "shop", "[slug]", "cart", "page.tsx")
 
 /**
  * Every case the server waiver distinguishes, plus the two null shapes
@@ -62,24 +47,23 @@ describe("previewDeliveryFeePennies mirrors the server waiver", () => {
 })
 
 describe("the basket and checkout previews are ONE rule (COR-2)", () => {
-  it("agrees with the checkout page's copy on every case", () => {
-    const disagreements = CASES.filter(
-      (c) => previewDeliveryFeePennies(...c.args) !== checkoutPreview(...c.args)
-    ).map((c) => c.name)
-    expect(disagreements).toEqual([])
+  it("both storefront pages import the lib's previewDeliveryFeePennies", () => {
+    const importLine = /import\s*\{[^}]*\bpreviewDeliveryFeePennies\b[^}]*\}\s*from\s*"@\/lib\/delivery-fee"/
+    expect(readFileSync(CHECKOUT_PAGE, "utf8")).toMatch(importLine)
+    expect(readFileSync(CART_PAGE, "utf8")).toMatch(importLine)
   })
 
-  /**
-   * Anti-vacuity. Without this the block above would pass just as happily if
-   * one of the two imports resolved to `undefined` and both calls threw the
-   * same way, or if CASES were empty.
-   */
-  it("is comparing two real, distinct-by-identity functions over a non-empty case set", () => {
-    expect(typeof previewDeliveryFeePennies).toBe("function")
-    expect(typeof checkoutPreview).toBe("function")
+  it("the checkout page no longer defines its own copy (PR #726 low b)", () => {
+    // The exact shape the duplicate had. A re-export would also be a second
+    // name for the same rule and is caught by the same pattern's `export` arm.
+    const source = readFileSync(CHECKOUT_PAGE, "utf8")
+    expect(source).not.toMatch(/function\s+previewDeliveryFeePennies\s*\(/)
+    expect(source).not.toMatch(/export\s*\{\s*previewDeliveryFeePennies\s*\}/)
+    // Anti-vacuity: the file really was read and really does call the preview.
+    expect(source).toMatch(/previewDeliveryFeePennies\(/)
     expect(CASES.length).toBeGreaterThanOrEqual(10)
-    // A deliberately WRONG expectation must be caught by the same comparison —
-    // proof the comparison can fail at all.
+    // A deliberately WRONG expectation must be caught by the lib itself —
+    // proof the behaviour block above can fail at all.
     expect(previewDeliveryFeePennies(300, "DELIVERY", 350, 2500)).not.toBe(0)
   })
 })

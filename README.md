@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-2.3.0--dev-blue.svg)](docs/CHANGELOG.md)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/Bralabee/JToye_OaaS_2026/actions)
-[![Tests](https://img.shields.io/badge/tests-3912%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
+[![Tests](https://img.shields.io/badge/tests-4003%20logical%20invocations-brightgreen.svg)](docs/metrics.json)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -288,12 +288,12 @@ inert placeholder — every deploy re-pins to `:<git-sha>` and a premortem guard
 that static default ever survives to an `apply`, so it is intentionally not version-tracked.
 
 **Test Results** (counts verified by `scripts/docs-freshness.sh`; see `docs/metrics.json`):
-- Backend (Java): 1869 `@Test` methods across 295 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
+- Backend (Java): 1885 `@Test` methods across 295 files ✅ (Testcontainers with real Postgres + RLS, require Docker)
 - Edge (Go): 84 `Test*` functions across 11 files ✅
-- Frontend (Jest): 1779 `it/test` blocks across 169 files ✅
+- Frontend (Jest): 1846 `it/test` blocks across 172 files ✅
 - Frontend E2E (Playwright): 127 `test()` blocks across 27 specs ✅
-- MCP server (vitest): 53 `it/test` blocks across 8 files ✅
-- **Total: 3912 logical test invocations** ✅
+- MCP server (vitest): 61 `it/test` blocks across 8 files ✅
+- **Total: 4003 logical test invocations** ✅
 
 Database schema version: **V66** (Flyway).
 

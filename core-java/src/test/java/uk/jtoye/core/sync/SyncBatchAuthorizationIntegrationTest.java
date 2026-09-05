@@ -359,6 +359,75 @@ class SyncBatchAuthorizationIntegrationTest {
     }
 
     // =====================================================================
+    // M1 (PR #726 review) — the shop upsert key is (tenant, name), never name alone
+    // =====================================================================
+
+    /**
+     * PR #726 review M1: {@code upsertShop} resolved the row with the tenant-less
+     * {@code ShopRepository.findByName}. Under {@code shops_public_read} ({@code published = true
+     * OR tenant_id = current_tenant_id()}) that lookup also sees every OTHER tenant's PUBLISHED
+     * shop of the same name, so with the caller's own shop present too the query returns two
+     * rows. RED on the unfixed tree: 500 (IncorrectResultSizeDataAccessException), the batch is
+     * rolled back and the caller's shop is never updated. Fixed: the caller's own shop is the one
+     * updated and the foreign shop is byte-identical afterwards.
+     */
+    @Test
+    void sameNamedPublishedForeignShop_doesNotBlockUpdatingTheCallersOwnShop() throws Exception {
+        Fixture f = seed();
+        String shopAName = jdbc.queryForObject("SELECT name FROM shops WHERE id = ?", String.class, f.shopA);
+        UUID foreignShop = seedForeignPublishedShop(shopAName);
+
+        mockMvc.perform(post(SYNC)
+                        .with(adminJwt(f.tenant))
+                        .contentType("application/json")
+                        .content(shopJson(shopAName, "7 Sync Updated Road")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.processedCount").value(1));
+
+        assertThat(jdbc.queryForObject("SELECT address FROM shops WHERE id = ?", String.class, f.shopA))
+                .as("the caller's OWN shop of that name is the one the batch updates")
+                .isEqualTo("7 Sync Updated Road");
+        assertThat(jdbc.queryForObject("SELECT address FROM shops WHERE id = ?", String.class, foreignShop))
+                .as("the foreign tenant's same-named shop is untouched")
+                .isEqualTo("1 Test Street, London");
+    }
+
+    /**
+     * M1, the other half: the caller has NO shop of that name and only a foreign tenant's
+     * PUBLISHED shop carries it. RED on the unfixed tree: {@code findByName} resolves the FOREIGN
+     * shop, the SEC-5 gate then refuses it (the FC-1 tenant proof — a 404/403, never a create),
+     * so the caller can never sync-create a shop of that name. Fixed: a GROUP_ADMIN sync creates
+     * a NEW shop under the caller's tenant (never born published, T-18-05-T) and the foreign shop
+     * is untouched.
+     */
+    @Test
+    void sameNamedPublishedForeignShop_doesNotBlockCreatingTheCallersShop() throws Exception {
+        Fixture f = seed();
+        String name = "Shared Name " + UUID.randomUUID().toString().substring(0, 8);
+        UUID foreignShop = seedForeignPublishedShop(name);
+
+        mockMvc.perform(post(SYNC)
+                        .with(adminJwt(f.tenant))
+                        .contentType("application/json")
+                        .content(shopJson(name, "3 Sync Street, London")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.processedCount").value(1));
+
+        Map<String, Object> created = jdbc.queryForMap(
+                "SELECT id::text AS id, published, address FROM shops WHERE tenant_id = ? AND name = ?",
+                f.tenant, name);
+        assertThat(created.get("id")).as("a NEW shop under the caller's tenant, not the foreign row")
+                .isNotEqualTo(foreignShop.toString());
+        assertThat((Boolean) created.get("published")).isFalse();
+        assertThat(created.get("address")).isEqualTo("3 Sync Street, London");
+
+        Map<String, Object> foreign = jdbc.queryForMap(
+                "SELECT address, published FROM shops WHERE id = ?", foreignShop);
+        assertThat(foreign.get("address")).as("the foreign shop is untouched").isEqualTo("1 Test Street, London");
+        assertThat((Boolean) foreign.get("published")).isTrue();
+    }
+
+    // =====================================================================
     // Wire compatibility — the edge forwards []map[string]interface{} verbatim
     // =====================================================================
 
@@ -405,6 +474,20 @@ class SyncBatchAuthorizationIntegrationTest {
                         + "VALUES (?, ?, ?, ?, 'SHOP_MANAGER', now())",
                 UUID.randomUUID(), tenant, manager, shopA);
         return new Fixture(tenant, shopA, shopB, skuA, skuB, manager);
+    }
+
+    /**
+     * A second tenant holding a PUBLISHED shop of the given name — the row {@code shops_public_read}
+     * makes visible to every other tenant. Seeded through the real service (valid graph, real slug),
+     * then published directly: the sole-writer invariant means createShop never publishes.
+     */
+    private UUID seedForeignPublishedShop(String name) {
+        UUID foreignTenant = UUID.randomUUID();
+        jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+                foreignTenant, "Foreign Tenant " + foreignTenant);
+        UUID shop = asRealmAdmin(foreignTenant, () -> shopService.createShop(shopRequest(name)).getId());
+        jdbc.update("UPDATE shops SET published = true WHERE id = ?", shop);
+        return shop;
     }
 
     private static String originalTitle(String sku) {

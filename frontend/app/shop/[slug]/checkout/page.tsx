@@ -14,17 +14,19 @@ import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { describeOrderError } from "@/lib/order-error"
 import { minimumShortfallPennies } from "@/lib/minimum-order"
+// COR-2 / PR #726 low (b): the delivery-fee preview lives in the lib and ONLY there. This file
+// used to carry a byte-identical second body; the cart page already imported the lib.
+import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
+import { buildGuestOrderIntent, guestOrderIntentSignature } from "@/lib/checkout-idempotency"
 import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/vat"
 import publicApiClient from "@/lib/public-api-client"
-import { getAllergenNames } from "@/types/api"
+// FulfilmentType is the shared two-member union (mirrors the backend enum), not a local re-declaration.
+import { getAllergenNames, type FulfilmentType } from "@/types/api"
 import { PublicShop, PublicProduct } from "@/types/storefront"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
 }
-
-/** How an order is fulfilled — mirrors the server FulfilmentType enum strings. */
-export type FulfilmentType = "DELIVERY" | "COLLECTION"
 
 /**
  * UK postcode format (UI-SPEC Surface E). Kept non-global so `.test()` carries
@@ -35,27 +37,6 @@ export const UK_POSTCODE_REGEX = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/
 /** Validate a UK postcode, trimming + upper-casing first (blur normalises too). */
 export function isValidUkPostcode(value: string): boolean {
   return UK_POSTCODE_REGEX.test(value.trim().toUpperCase())
-}
-
-/**
- * Client-side delivery-fee PREVIEW. Mirrors the server waiver EXACTLY
- * (PublicStorefrontService.calculateDeliveryFee): COLLECTION is always £0;
- * DELIVERY uses the shop's fee, waived to £0 once the subtotal clears the
- * free-delivery threshold. This is display-only — the server recomputes the
- * authoritative total on order creation, so tampering here cannot underpay.
- */
-export function previewDeliveryFeePennies(
-  subtotalPennies: number,
-  fulfilmentType: FulfilmentType,
-  deliveryFeePennies: number | null | undefined,
-  freeDeliveryThresholdPennies: number | null | undefined
-): number {
-  if (fulfilmentType === "COLLECTION") return 0
-  const base = deliveryFeePennies ?? 0
-  if (freeDeliveryThresholdPennies != null && subtotalPennies >= freeDeliveryThresholdPennies) {
-    return 0
-  }
-  return base
 }
 
 /**
@@ -311,30 +292,56 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   )
 
   /**
-   * A stable signature of the order intent. Changing the basket produces a different one, which
-   * resets the acknowledgement — acknowledging one basket must not silently carry to another.
+   * A stable signature of the BASKET. Changing the basket produces a different one, which resets
+   * the acknowledgement — acknowledging one basket must not silently carry to another. This is
+   * deliberately basket-only: correcting a phone number is not a new set of allergens.
    */
   const basketSignature = useMemo(
     () => items.map((i) => `${i.productId}:${i.quantity}`).join("|"),
     [items]
   )
-  // QA 20260902 Cluster E (API-4): the server now refuses the same key with a DIFFERENT body
-  // (422 errors/idempotency-payload-mismatch). The key therefore has to follow the ORDER INTENT,
-  // not the page mount: a basket edited between two submits — a line removed as out of stock, a
-  // quantity changed through the cart drawer — must mint a fresh key, or a correct server refusal
-  // becomes a hard error with no recovery path. An UNCHANGED basket keeps its key so a retry
-  // replays rather than duplicates. The mount-time key is kept on the first run (nothing has been
-  // submitted under it yet, and hydration would otherwise discard it for no reason).
-  const lastBasketSignatureRef = useRef(basketSignature)
   useEffect(() => {
-    if (lastBasketSignatureRef.current !== basketSignature) {
-      lastBasketSignatureRef.current = basketSignature
-      idempotencyKeyRef.current = crypto.randomUUID()
-    }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     setAcknowledged(false)
     setAckError(false)
   }, [basketSignature])
+
+  // The body this page will POST, built ONCE from the form state and used for BOTH the request
+  // and the idempotency signature, so no field can be submitted without being signed
+  // (lib/checkout-idempotency.ts).
+  const orderIntent = useMemo(
+    () =>
+      buildGuestOrderIntent({
+        customerName,
+        customerEmail,
+        customerPhone,
+        notes,
+        fulfilmentType,
+        address1,
+        address2,
+        city,
+        postcode,
+        items,
+      }),
+    [customerName, customerEmail, customerPhone, notes, fulfilmentType, address1, address2, city, postcode, items]
+  )
+  const intentSignature = useMemo(() => guestOrderIntentSignature(orderIntent), [orderIntent])
+  // QA 20260902 Cluster E (API-4): the server refuses the same key with a DIFFERENT body
+  // (422 errors/idempotency-payload-mismatch). The key therefore has to follow the ORDER INTENT,
+  // not the page mount. PR #726 M3: "intent" means the WHOLE payload, not the basket alone — a
+  // basket edited through the cart drawer, a corrected phone number, a changed address line or a
+  // Delivery->Collection switch between two submits must each mint a fresh key, or a correct
+  // server refusal becomes a hard error with no recovery path. An UNCHANGED payload keeps its key
+  // so a retry replays rather than duplicates. The mount-time key is kept on the first run
+  // (nothing has been submitted under it yet, and hydration would otherwise discard it for no
+  // reason).
+  const lastIntentSignatureRef = useRef(intentSignature)
+  useEffect(() => {
+    if (lastIntentSignatureRef.current !== intentSignature) {
+      lastIntentSignatureRef.current = intentSignature
+      idempotencyKeyRef.current = crypto.randomUUID()
+    }
+  }, [intentSignature])
 
   // Fetch the shop so the fee breakdown can be shown BEFORE payment. Provides
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
@@ -442,28 +449,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     try {
       // One read, used for BOTH the header and the body field, so the two can never disagree.
       const idempotencyKey = idempotencyKeyRef.current
+      // The body is the SIGNED intent plus the key — the same object the signature was taken
+      // over, so what the server compares against the key is exactly what the key was bound to.
       // Server contract (GuestOrderRequest, plan 19-01) is FLAT: fulfilmentType +
       // addressLine1/2 + addressCity + addressPostcode (NOT a nested address obj).
-      const payload = {
-        customerName: customerName.trim(),
-        customerEmail: customerEmail.trim(),
-        customerPhone: customerPhone.trim(),
-        notes: notes.trim() || undefined,
-        idempotencyKey,
-        fulfilmentType,
-        ...(fulfilmentType === "DELIVERY"
-          ? {
-              addressLine1: address1.trim(),
-              addressLine2: address2.trim() || undefined,
-              addressCity: city.trim(),
-              addressPostcode: postcode.trim().toUpperCase(),
-            }
-          : {}),
-        items: items.map((item) => ({
-          productId: item.productId,
-          quantity: item.quantity,
-        })),
-      }
+      const payload = { ...orderIntent, idempotencyKey }
 
       // QA 20260902 Cluster E (API-3): the Idempotency-Key HEADER is the platform contract every
       // other mutating endpoint speaks; the body field is the storefront's working legacy
@@ -560,7 +550,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             )}
             {codConfirmation.vatAmountPennies > 0 && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">VAT ({codConfirmation.vatRate === "STANDARD" ? "20%" : codConfirmation.vatRate === "REDUCED" ? "5%" : "0%"})</span>
+                <span className="text-slate-600">VAT ({vatRateLabel(asVatRate(codConfirmation.vatRate))})</span>
                 <span className="text-slate-900">{formatPrice(codConfirmation.vatAmountPennies)}</span>
               </div>
             )}
@@ -664,7 +654,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             )}
             {paymentState.vatAmountPennies > 0 && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">VAT ({paymentState.vatRate === "STANDARD" ? "20%" : paymentState.vatRate === "REDUCED" ? "5%" : "0%"})</span>
+                <span className="text-slate-600">VAT ({vatRateLabel(asVatRate(paymentState.vatRate))})</span>
                 <span className="text-slate-900">{formatPrice(paymentState.vatAmountPennies)}</span>
               </div>
             )}

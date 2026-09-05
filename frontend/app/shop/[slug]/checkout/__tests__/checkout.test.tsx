@@ -17,10 +17,10 @@
 
 import { Suspense } from "react"
 import { render, screen, fireEvent } from "@testing-library/react"
-import CheckoutPage, {
-  previewDeliveryFeePennies,
-  isValidUkPostcode,
-} from "@/app/shop/[slug]/checkout/page"
+import CheckoutPage, { isValidUkPostcode } from "@/app/shop/[slug]/checkout/page"
+// PR #726 low (b): the checkout page no longer carries its own copy of the fee preview; the lib
+// is the one implementation both the cart page and the checkout page render from.
+import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
 import { CartProvider } from "@/components/storefront/cart-provider"
 import publicApiClient from "@/lib/public-api-client"
 

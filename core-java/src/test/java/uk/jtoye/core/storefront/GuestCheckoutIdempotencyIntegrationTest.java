@@ -275,27 +275,50 @@ class GuestCheckoutIdempotencyIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // (e) census: the body field stays AUTHORITATIVE when both are present,
-    //     so today's storefront (body key) keeps working unchanged.
+    // (e) body and header both present. PR #726 review follow-up: the census arm
+    //     here used to assert that the BODY WON when the two disagreed. That was a
+    //     preference standing in for a contract — a retry carrying only the header
+    //     key would find no reservation and mint the duplicate the key exists to
+    //     stop. Disagreement is now refused before any write; agreement is one intent.
     // ------------------------------------------------------------------
     @Test
-    @DisplayName("body key stays authoritative when a header disagrees: the order is keyed by the body value and the header value reserves nothing (census)")
-    void bodyKey_staysAuthoritative_whenTheHeaderDisagrees() {
-        UUID productId = seedProduct("SKU-QA0902-BODYWINS");
+    @DisplayName("body and header keys that DISAGREE are refused 400 and write nothing: no order row and no reservation under EITHER key")
+    void disagreeingBodyAndHeaderKeys_areRefused_andWriteNothing() {
+        UUID productId = seedProduct("SKU-QA0902-DISAGREE");
         String bodyKey = "qa0902-body-" + UUID.randomUUID();
-        String headerKey = "qa0902-hdr-ignored-" + UUID.randomUUID();
+        String headerKey = "qa0902-hdr-" + UUID.randomUUID();
+        long reservationsBefore = countReservations();
+
+        assertThatThrownBy(() -> publicStorefrontService.createGuestOrder(
+                SHOP_SLUG, guestRequest(productId, 1, bodyKey), headerKey))
+                .as("two different keys are two different intents on one request — a client defect, not a preference")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Idempotency-Key");
+
+        assertThat(countOrdersByKey(bodyKey)).as("no order under the body key").isZero();
+        assertThat(countOrdersByKey(headerKey)).as("no order under the header key").isZero();
+        assertThat(countReservationsForKey(bodyKey)).as("no reservation under the body key").isZero();
+        assertThat(countReservationsForKey(headerKey)).as("no reservation under the header key").isZero();
+        assertThat(countReservations()).as("the refusal happened before the store was touched").isEqualTo(reservationsBefore);
+    }
+
+    @Test
+    @DisplayName("CONTROL: body and header carrying the SAME key are one intent — keyed once, replayed on repeat")
+    void agreeingBodyAndHeaderKeys_areOneIntent() {
+        // Without this arm the refusal above could be firing for EVERY dual-source request and
+        // the negative case would still read green.
+        UUID productId = seedProduct("SKU-QA0902-AGREE");
+        String key = "qa0902-agree-" + UUID.randomUUID();
 
         GuestOrderConfirmation first = publicStorefrontService.createGuestOrder(
-                SHOP_SLUG, guestRequest(productId, 1, bodyKey), headerKey);
-        // Same body key, a DIFFERENT header: still the same intent, so still a replay.
+                SHOP_SLUG, guestRequest(productId, 1, key), key);
         GuestOrderConfirmation second = publicStorefrontService.createGuestOrder(
-                SHOP_SLUG, guestRequest(productId, 1, bodyKey), "qa0902-hdr-other-" + UUID.randomUUID());
+                SHOP_SLUG, guestRequest(productId, 1, key), key);
 
-        assertThat(readOrderKey(first.getOrderNumber())).as("the body value keys the order").isEqualTo(bodyKey);
-        assertThat(second.getOrderNumber()).isEqualTo(first.getOrderNumber());
-        assertThat(countOrdersByKey(bodyKey)).isEqualTo(1);
-        assertThat(countOrdersByKey(headerKey)).as("the ignored header value keyed nothing").isZero();
-        assertThat(countReservationsForKey(headerKey)).as("and reserved nothing").isZero();
+        assertThat(readOrderKey(first.getOrderNumber())).isEqualTo(key);
+        assertThat(second.getOrderNumber()).as("the repeat is a replay").isEqualTo(first.getOrderNumber());
+        assertThat(countOrdersByKey(key)).isEqualTo(1);
+        assertThat(reservationRow(key).get("response_status")).isEqualTo(201);
     }
 
     // ---- Request builder ----

@@ -15,7 +15,7 @@
  */
 
 import { Suspense } from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import CheckoutPage from "@/app/shop/[slug]/checkout/page"
 import { CartProvider } from "@/components/storefront/cart-provider"
 import publicApiClient from "@/lib/public-api-client"
@@ -44,6 +44,7 @@ jest.mock("@stripe/react-stripe-js", () => ({
 }))
 
 const mockedGet = publicApiClient.get as jest.Mock
+const mockedPost = publicApiClient.post as jest.Mock
 
 const SLUG = "jollof-express"
 const STORAGE_KEY = `jtoye-cart-${SLUG}`
@@ -105,8 +106,35 @@ function renderCheckout() {
 
 beforeEach(() => {
   mockedGet.mockReset()
+  mockedPost.mockReset()
   mockedGet.mockResolvedValue({ data: SHOP })
 })
+
+/** Fill a COLLECTION order, acknowledge the allergen panel and submit, landing on the COD confirmation. */
+async function placeCollectionOrder() {
+  await screen.findByRole("button", { name: /place order/i })
+  fireEvent.click(screen.getByRole("button", { name: /collection/i }))
+  fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: "Ade Johnson" } })
+  fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: "ade@example.com" } })
+  fireEvent.change(screen.getByLabelText(/phone number/i), { target: { value: "07700 900000" } })
+  fireEvent.click(screen.getByRole("checkbox", { name: /I have read the allergen information/i }))
+  fireEvent.click(screen.getByRole("button", { name: /place order/i }))
+  await screen.findByText(/Order confirmed/i)
+}
+
+const CONFIRMATION = {
+  orderNumber: "ORD-VAT-LABEL-1",
+  status: "PENDING",
+  subtotalPennies: 1200,
+  deliveryFeePennies: 0,
+  vatRate: "STANDARD",
+  vatAmountPennies: 200,
+  totalAmountPennies: 1200,
+  shopName: "Jollof Express",
+  itemCount: 1,
+  clientSecret: null,
+  allergenWarnings: [],
+}
 
 afterEach(() => {
   localStorage.clear()
@@ -164,5 +192,36 @@ describe("COR-6: the checkout VAT preview follows the basket's rate", () => {
     renderCheckout()
 
     expect(await screen.findByText("VAT (incl. 20%)")).toBeInTheDocument()
+  })
+})
+
+/**
+ * PR #726 review, low (c). The two POST-order screens (COD confirmation and the card-payment
+ * summary) labelled the server's `vatRate` through a `"20%" : "5%" : "0%"` ternary, so an EXEMPT
+ * order read "VAT (0%)" — a different legal claim from exempt — and a STANDARD order read
+ * "VAT (20%)" while the preview one screen earlier read "VAT (incl. 20%)". Both now go through
+ * `vatRateLabel`, the same table the preview uses, so the wording cannot disagree across screens.
+ */
+describe("the confirmation screen labels the server's rate through vatRateLabel (PR #726 low c)", () => {
+  it("an EXEMPT order reads 'VAT (exempt)', never 'VAT (0%)'", async () => {
+    // `vatAmountPennies > 0` is the row's render gate, so a non-zero figure is what makes the
+    // label observable at all; the point under test is the WORD, not the arithmetic.
+    mockedPost.mockResolvedValue({ data: { ...CONFIRMATION, vatRate: "EXEMPT", vatAmountPennies: 1 } })
+    seedCart([{ pricePennies: 1200, quantity: 1, vatRate: "EXEMPT" }])
+    renderCheckout()
+    await placeCollectionOrder()
+
+    expect(screen.getByText("VAT (exempt)")).toBeInTheDocument()
+    expect(screen.queryByText(/VAT \(0%\)/)).not.toBeInTheDocument()
+  })
+
+  it("a STANDARD order uses the same 'incl. 20%' wording as the preview", async () => {
+    mockedPost.mockResolvedValue({ data: CONFIRMATION })
+    seedCart([{ pricePennies: 1200, quantity: 1, vatRate: "STANDARD" }])
+    renderCheckout()
+    await placeCollectionOrder()
+
+    expect(screen.getByText("VAT (incl. 20%)")).toBeInTheDocument()
+    expect(screen.queryByText(/VAT \(20%\)/)).not.toBeInTheDocument()
   })
 })

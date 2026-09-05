@@ -201,9 +201,11 @@ public class PublicStorefrontController {
                     + "key with a different body is refused 422 (errors/idempotency-payload-mismatch); a "
                     + "concurrent request on the same key that is still in flight is refused 409 "
                     + "(errors/idempotency-conflict). The legacy request-body field idempotencyKey is still "
-                    + "honoured and is authoritative when both are present.")
+                    + "honoured; when both are present they must carry the SAME value, and a request whose body "
+                    + "and header keys differ is refused 400 (errors/invalid-argument) before any order is written.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Order created (or the original confirmation replayed for a repeated key)"),
+            @ApiResponse(responseCode = "400", description = "Request body idempotencyKey and Idempotency-Key header disagree"),
             @ApiResponse(responseCode = "409", description = "A request with this Idempotency-Key is in flight"),
             @ApiResponse(responseCode = "422", description = "Idempotency-Key reused with a different payload")
     })

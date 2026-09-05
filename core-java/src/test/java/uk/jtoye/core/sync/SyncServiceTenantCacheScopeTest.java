@@ -56,7 +56,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p><b>Why the #287 fix is the WRONG fix here, and this class proves it.</b> #287 could simply
  * DELETE the eviction, because bulk import is provably create-only — a row that never existed
  * has no cache key to stale. {@code SyncService} genuinely upserts
- * ({@code shopRepository.findByName(...)} / {@code productRepository.findBySku(...)} then save),
+ * ({@code shopRepository.findByNameAndTenantId(...)} / {@code productRepository.findBySku(...)} then save),
  * so existing rows really are mutated and an eviction is NECESSARY. Only its RADIUS was wrong.
  * {@link #anUpdatedProductsOwnEntryIsStillInvalidated()} and
  * {@link #anUpdatedShopsOwnEntryIsStillInvalidated()} are the arms that go red if a future
@@ -418,12 +418,12 @@ class SyncServiceTenantCacheScopeTest {
                 .thenAnswer(inv -> inv.getArgument(0));
     }
 
-    /** The upsert's UPDATE branch for shops. */
+    /** The upsert's UPDATE branch for shops. Every shop arm runs as TENANT_B, and the lookup is tenant-keyed (M1). */
     private void stubExistingShop(String name, UUID id) {
         Shop existing = new Shop();
         existing.setId(id);
         existing.setName(name);
-        Mockito.when(shopRepository.findByName(name)).thenReturn(Optional.of(existing));
+        Mockito.when(shopRepository.findByNameAndTenantId(name, TENANT_B)).thenReturn(Optional.of(existing));
         Mockito.when(shopRepository.save(Mockito.any(Shop.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
     }

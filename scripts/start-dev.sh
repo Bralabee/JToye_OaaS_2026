@@ -14,11 +14,40 @@
 # Teardown: scripts/stop-dev.sh (its "HYBRID" arm pairs with this script).
 # Never run alongside docker-compose.full-stack.yml: both bind host ports 5433 and 8085.
 #
-# FLAGS: this script has none of its own. Every argument is forwarded to
-# scripts/verify-env.sh (see below) and the stack is then started REGARDLESS, so
-# `start-dev.sh --help` STARTS SERVICES. Adding real flag handling is tracked separately.
+# FLAGS: `-h` / `--help` prints this usage and exits 0 BEFORE anything is started or
+# any host port is bound. Every OTHER argument is forwarded verbatim to
+# scripts/verify-env.sh (see below): an env-file path, or --with-stack.
+#   Before the guard below existed, `--help` was forwarded to verify-env.sh, which
+#   printed ITS usage and exited 0 — and this script then carried on and started
+#   the stack. Asking for help must never have a side effect.
 
-set -e
+set -eo pipefail
+
+# Early exit on help — checked against EVERY arg, not just $1, so a stray
+# `start-dev.sh .env --help` also stops here rather than starting services.
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      cat <<'USAGE'
+Usage: scripts/start-dev.sh [ENV_FILE] [--with-stack]
+
+Start the J'Toye OaaS HYBRID development runtime:
+  1. infra/docker-compose.yml   Postgres + Keycloak in Docker (reads infra/.env)
+  2. ./gradlew :core-java:bootRun  host process, logs/backend.log
+  3. npm run dev (frontend)        host process, logs/frontend.log
+
+Options:
+  -h, --help     Print this usage and exit 0 WITHOUT starting anything.
+  ENV_FILE       Env file for the preflight (scripts/verify-env.sh); default ./.env
+  --with-stack   Also run verify-env.sh's live running-stack smoke tests.
+
+Teardown: scripts/stop-dev.sh
+Never run alongside docker-compose.full-stack.yml (both bind host ports 5433 and 8085).
+USAGE
+      exit 0
+      ;;
+  esac
+done
 
 echo "🚀 Starting J'Toye OaaS Development Environment"
 echo "================================================"

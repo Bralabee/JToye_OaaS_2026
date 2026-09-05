@@ -28,9 +28,7 @@ import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -190,6 +188,18 @@ public class OrderService {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Product not found: " + itemRequest.getProductId()));
+
+            // PR #726 review M2 — the storefront's CR-01 invariant, applied to this path too: an
+            // order for shop X may only contain shop X's products. RLS scopes findById to the
+            // TENANT, not the shop, so without this a SHOP_MANAGER granted shop A could line-item
+            // shop B's product onto an order for A. Same exception type + message shape as the
+            // absent-row case above so the 404 does not disclose that the product exists on
+            // another shop. The null arm is DELIBERATE: a shop_id IS NULL product is tenant-wide
+            // by design (V20) and stays orderable from any of the tenant's shops.
+            if (product.getShopId() != null && !shop.getId().equals(product.getShopId())) {
+                throw new ResourceNotFoundException(
+                        "Product not found: " + itemRequest.getProductId());
+            }
 
             // Validate stock availability
             if (!product.hasStock(itemRequest.getQuantity())) {

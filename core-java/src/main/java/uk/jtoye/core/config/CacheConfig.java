@@ -119,7 +119,7 @@ public class CacheConfig implements CachingConfigurer {
      * hand-written type id. Jackson's guidance since 2.10 is an explicit
      * {@code BasicPolymorphicTypeValidator}; the denylist still applies underneath it.
      *
-     * <p><b>Why these four, and why {@code java.lang.} is not optional.</b> Derived from the LIVE
+     * <p><b>Why these five, and why {@code java.lang.} is not optional.</b> Derived from the LIVE
      * cache bytes, not from reading the DTOs. Under {@code DefaultTyping.EVERYTHING} a {@code Long}
      * field is written as {@code ["java.lang.Long", 899]} — {@code Integer}, {@code Boolean},
      * {@code Double} and {@code String} are Jackson "natural" types and carry no id, {@code Long} is
@@ -141,7 +141,10 @@ public class CacheConfig implements CachingConfigurer {
             "uk.jtoye.",   // ProductDto, ShopDto, Membership, ShopRole, VatRate, AllergenSpan, MediaAssetDto
             "java.util.",  // UUID, ArrayList / List.of, LinkedHashMap / Map.copyOf (ImmutableCollections$*)
             "java.time.",  // OffsetDateTime
-            "java.lang."   // Long — see above
+            "java.lang.",  // Long — see above
+            "java.math."   // BigDecimal / BigInteger (PR #726 review): like Long, NOT a Jackson natural
+                           // type, so it is stored WITH an id and a money-precise field added to any
+                           // cached DTO would otherwise fail every READ — silently, per the note above
     );
 
     static PolymorphicTypeValidator cacheTypeValidator() {

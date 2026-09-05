@@ -15,7 +15,7 @@ retry.
 |---|---|---|---|
 | `POST /api/v1/orders` (dashboard) | **YES (new, this slice)** | `Idempotency-Key` header → generic `idempotency_keys` store | Replays the original order; zero duplicate rows |
 | `POST /api/v1/customers` | **YES (new, this slice)** | `Idempotency-Key` header → generic `idempotency_keys` store | Replays the original customer; no duplicate |
-| `POST /api/v1/public/shops/{slug}/orders` (guest checkout; `/public/...` alias) | **YES (full, QA 20260902 Cluster E)** | **HEADER** `Idempotency-Key` OR request-**BODY** `idempotencyKey` (body authoritative) → generic `idempotency_keys` store, endpoint `storefront.orders.create`, via `executeWithoutStoringResponse` (**no `response_body`**; `orders.idempotency_key` V24 unique idx kept as backstop) | Replays existing order and re-fetches a LIVE Stripe client secret; different body → 422; concurrent in-flight → 409 |
+| `POST /api/v1/public/shops/{slug}/orders` (guest checkout; `/public/...` alias) | **YES (full, QA 20260902 Cluster E)** | **HEADER** `Idempotency-Key` OR request-**BODY** `idempotencyKey` (either alone, or both with the SAME value; body≠header → 400 before any write) → generic `idempotency_keys` store, endpoint `storefront.orders.create`, via `executeWithoutStoringResponse` (**no `response_body`**; `orders.idempotency_key` V24 unique idx kept as backstop) | Replays existing order and re-fetches a LIVE Stripe client secret; different body → 422; concurrent in-flight → 409 |
 | `POST /api/v1/orders/{orderId}/refund` | YES | **HEADER** `Idempotency-Key` → entity-local `Refund (tenant_id, idempotency_key)` dedup (`RefundService`) | Replays existing refund, 201 |
 | `POST /sync/batch` (edge) | YES (by construction) | UPSERT by natural key (`SyncService`), shops+products only | Re-apply overwrites the same row |
 | `POST /webhooks/stripe` | YES | `processed_stripe_events` (V35) `INSERT … ON CONFLICT (event_id) DO NOTHING` | 0 rows → skip side effects |
@@ -173,12 +173,17 @@ first-request stamp needs generalizing.
 - **Guest checkout** (`PublicStorefrontService`) — carve-out CLOSED by QA council
   20260902-134741 Cluster E (API-3 / API-4 / INT-15). It now reserves through the
   generic store's credential-safe variant (see *Credential-bearing responses*
-  above); the request-**body** `idempotencyKey` is retained as the authoritative
-  legacy source alongside the header, and `orders.idempotency_key` (V24) stays as
-  the in-work lookup for keys placed before the store existed and as the unique
-  backstop. The storefront (`checkout/page.tsx`) sends BOTH the header and the
-  body field, with the key bound to the basket signature so a changed basket mints
-  a new key instead of tripping the 422.
+  above); the request-**body** `idempotencyKey` is retained as a legacy source
+  alongside the header — either alone identifies the intent, both carrying the
+  SAME value is one intent, and both carrying DIFFERENT values is refused 400
+  (`errors/invalid-argument`) before any write (PR #726 review follow-up: the body
+  used to win silently, and a retry that carried only the header key would then
+  have found no reservation and minted the duplicate the key exists to stop).
+  `orders.idempotency_key` (V24) stays as the in-work lookup for keys placed
+  before the store existed and as the unique backstop. The storefront
+  (`checkout/page.tsx`) sends the SAME key as BOTH the header and the body field,
+  bound to a signature of the whole POST payload (`lib/checkout-idempotency.ts`)
+  so any change to what is submitted mints a new key instead of tripping the 422.
 
 ## edge-go compatibility
 

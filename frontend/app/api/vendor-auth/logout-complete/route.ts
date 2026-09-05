@@ -1,9 +1,16 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
+import { resolvePublicOrigin } from "@/lib/public-origin"
 import { VENDOR_SIGNIN_PATH, isVendorLogoutCompleteEnabled } from "@/lib/vendor-logout-complete"
+import {
+  VENDOR_LOGOUT_STATE_COOKIE,
+  isHttpsOrigin,
+  vendorLogoutStateClearingOptions,
+  vendorLogoutStateMatches,
+} from "@/lib/vendor-logout-state"
 import { clearVendorSessionInto } from "@/lib/vendor-session-clear"
 
 /**
- * GET /api/vendor-auth/logout-complete
+ * GET /api/vendor-auth/logout-complete?state=<echoed by Keycloak>
  *
  * FE-1 (QA council 20260902-134741, **Critical**) — Keycloak's
  * `post_logout_redirect_uri` for the vendor realm, and the response in which the
@@ -43,9 +50,28 @@ import { clearVendorSessionInto } from "@/lib/vendor-session-clear"
  * URL it actually requested, which is the public origin Keycloak just sent it
  * to. No origin has to be guessed.
  *
- * RESIDUAL (plan R3, accepted): a GET route is cross-site reachable, so a
- * hostile page can force a vendor sign-out. Denial of session, not escalation —
- * the same exposure `POST /api/customer-auth/logout` carries.
+ * BOUND TO THE SIGN-OUT THAT STARTED IT (PR #726 review, M4). Plan R3 had
+ * accepted "a GET route is cross-site reachable, so a hostile page can force a
+ * vendor sign-out" as a residual. It is no longer open. Keycloak's return leg
+ * must be a GET, so the binding is OIDC RP-initiated-logout `state`
+ * (`lib/vendor-logout-state.ts`): `logout-url` mints a random value into a
+ * short-lived httpOnly cookie scoped to `/api/vendor-auth` AND onto the
+ * end-session URL; Keycloak echoes it back here as `?state=`; this route ends the
+ * session ONLY when the echo equals the cookie (constant-time), and expires the
+ * cookie so the value is one-shot. A cross-site `<img src>` cannot read or forge
+ * the cookie, so it cannot produce a match.
+ *
+ * ON MISMATCH OR ABSENCE: NO SIDE EFFECTS, AND A REDIRECT RATHER THAN A 400.
+ * The session is left alone and so is the state cookie (a forged hit must not
+ * be able to cancel a legitimate sign-out mid-flight). The vendor still lands on
+ * `/auth/signin` because that is this route's whole contract — E-5 says the worst
+ * case of ANY misjudgement here is today's documented defect (app cookie
+ * survives), never a vendor stranded on an error page. A stale state (cookie
+ * expired while a slow connection sat on Keycloak's confirmation page) is the
+ * legitimate case that reaches this branch, and a 400 would turn a working
+ * sign-out into a support ticket while a redirect turns it into the pre-FE-1
+ * behaviour. Forged hits get exactly the same response, so the branch also does
+ * not tell an attacker whether a sign-out was in flight.
  */
 
 export const dynamic = "force-dynamic"
@@ -56,7 +82,7 @@ const NO_STORE_HEADERS = {
   Vary: "Cookie",
 } as const
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const res = new NextResponse(null, {
     status: 302,
     headers: { Location: VENDOR_SIGNIN_PATH, ...NO_STORE_HEADERS },
@@ -68,6 +94,20 @@ export async function GET(): Promise<NextResponse> {
     return res
   }
 
+  // M4: the echoed `state` must equal the one-shot cookie this browser was
+  // issued by `logout-url`. Anything else — absent, guessed, replayed, expired —
+  // is not this vendor's sign-out, and the response is the plain redirect above
+  // with nothing touched (see the docblock for why a redirect and not a 400).
+  const presented = req.nextUrl.searchParams.get("state")
+  const expected = req.cookies.get(VENDOR_LOGOUT_STATE_COOKIE)?.value
+  if (!vendorLogoutStateMatches(presented, expected)) {
+    return res
+  }
+
+  // Consume the state before clearing, so the value is one-shot whatever the
+  // clear does. Same scope as the set (path + Secure follow the public origin's
+  // scheme, as in `logout-url`), or the browser keeps the original.
+  res.cookies.set(VENDOR_LOGOUT_STATE_COOKIE, "", vendorLogoutStateClearingOptions(isHttpsOrigin(resolvePublicOrigin(req))))
   await clearVendorSessionInto(res, "logout-complete")
   return res
 }

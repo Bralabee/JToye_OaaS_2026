@@ -1414,6 +1414,10 @@
             "format" : "int64",
             "type" : "integer"
           },
+          "unitCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
           "vatAmountPennies" : {
             "format" : "int64",
             "type" : "integer"
@@ -1928,6 +1932,10 @@
           },
           "customerPhone" : {
             "type" : "string"
+          },
+          "deliveryFeePennies" : {
+            "format" : "int64",
+            "type" : "integer"
           },
           "fulfilmentType" : {
             "enum" : [
@@ -3982,7 +3990,7 @@
             "type" : "string"
           },
           "title" : {
-            "description" : "Product title",
+            "description" : "Product title. Required when the SKU is new (create); optional on update, where an absent title leaves the existing one unchanged",
             "example" : "Yam 5kg",
             "maxLength" : 255,
             "minLength" : 1,
@@ -6683,7 +6691,7 @@
                 }
               }
             },
-            "description" : "A request with this Idempotency-Key is still in flight (errors/idempotency-conflict)"
+            "description" : "A request with this Idempotency-Key is still in flight (errors/idempotency-conflict), or the generated order number collided with an existing order's under the order-number uniqueness constraints (uq_orders_tenant_number / uk_orders_order_number) - a retry mints a fresh number (errors/duplicate)"
           },
           "422" : {
             "content" : {
@@ -9399,7 +9407,7 @@
     },
     "/api/v1/public/shops/{slug}/orders" : {
       "post" : {
-        "description" : "Create an order as a guest customer. Prices are calculated server-side. Supply an Idempotency-Key header to make a retried POST safe: the same key with the same body replays the original confirmation and never creates a second order; the same key with a different body is refused 422 (errors/idempotency-payload-mismatch); a concurrent request on the same key that is still in flight is refused 409 (errors/idempotency-conflict). The legacy request-body field idempotencyKey is still honoured and is authoritative when both are present.",
+        "description" : "Create an order as a guest customer. Prices are calculated server-side. Supply an Idempotency-Key header to make a retried POST safe: the same key with the same body replays the original confirmation and never creates a second order; the same key with a different body is refused 422 (errors/idempotency-payload-mismatch); a concurrent request on the same key that is still in flight is refused 409 (errors/idempotency-conflict). The legacy request-body field idempotencyKey is still honoured; when both are present they must carry the SAME value, and a request whose body and header keys differ is refused 400 (errors/invalid-argument) before any order is written.",
         "operationId" : "createGuestOrder",
         "parameters" : [
           {
@@ -9441,6 +9449,16 @@
               }
             },
             "description" : "Order created (or the original confirmation replayed for a repeated key)"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Request body idempotencyKey and Idempotency-Key header disagree"
           },
           "409" : {
             "content" : {
@@ -11347,7 +11365,7 @@
     },
     "/public/shops/{slug}/orders" : {
       "post" : {
-        "description" : "Create an order as a guest customer. Prices are calculated server-side. Supply an Idempotency-Key header to make a retried POST safe: the same key with the same body replays the original confirmation and never creates a second order; the same key with a different body is refused 422 (errors/idempotency-payload-mismatch); a concurrent request on the same key that is still in flight is refused 409 (errors/idempotency-conflict). The legacy request-body field idempotencyKey is still honoured and is authoritative when both are present.",
+        "description" : "Create an order as a guest customer. Prices are calculated server-side. Supply an Idempotency-Key header to make a retried POST safe: the same key with the same body replays the original confirmation and never creates a second order; the same key with a different body is refused 422 (errors/idempotency-payload-mismatch); a concurrent request on the same key that is still in flight is refused 409 (errors/idempotency-conflict). The legacy request-body field idempotencyKey is still honoured; when both are present they must carry the SAME value, and a request whose body and header keys differ is refused 400 (errors/invalid-argument) before any order is written.",
         "operationId" : "createGuestOrder_1",
         "parameters" : [
           {
@@ -11389,6 +11407,16 @@
               }
             },
             "description" : "Order created (or the original confirmation replayed for a repeated key)"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Request body idempotencyKey and Idempotency-Key header disagree"
           },
           "409" : {
             "content" : {

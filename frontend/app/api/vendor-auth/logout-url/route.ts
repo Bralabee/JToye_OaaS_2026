@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { resolvePublicOrigin } from "@/lib/public-origin"
+import { safeReturnTo } from "@/lib/safe-return-to"
 import {
   VENDOR_LOGOUT_COMPLETE_PATH,
+  VENDOR_SIGNIN_PATH,
   isVendorLogoutCompleteEnabled,
 } from "@/lib/vendor-logout-complete"
+import {
+  VENDOR_LOGOUT_STATE_COOKIE,
+  isHttpsOrigin,
+  mintVendorLogoutState,
+  vendorLogoutStateCookieOptions,
+} from "@/lib/vendor-logout-state"
 import { clearVendorSessionInto } from "@/lib/vendor-session-clear"
 
 /**
@@ -88,28 +96,19 @@ function keycloakBase(): string | null {
   )
 }
 
-/**
- * Restrict the post-logout redirect to a same-origin dashboard path. The value
- * is user-controlled; only accept a relative path beginning with a single "/"
- * (reject protocol-relative "//host", backslash tricks "/\\host", and absolute
- * URLs) so the returned URL can never escape this origin. Falls back to
- * "/auth/signin" — the vendor equivalent of the customer route's "/shop".
- */
-function sanitizeRedirect(raw: string | null): string {
-  const fallback = "/auth/signin"
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
-    return fallback
-  }
-  return raw
-}
-
 export async function GET(req: NextRequest) {
   const session = await auth()
   // Already on the session via `buildSession` (lib/session-callback.ts:19), fed
   // by `callbacks.jwt` (auth.ts:77) and preserved across refresh (auth.ts:40).
   // `auth.ts` needs no change for this route to work.
   const idToken = session?.idToken
-  const redirect = sanitizeRedirect(req.nextUrl.searchParams.get("redirect"))
+  // The post-logout redirect is user-controlled and must never leave this
+  // origin. PR #726 low (a): this route used to carry its own `sanitizeRedirect`
+  // beside the shared `safeReturnTo`, and the local copy was the weaker one — it
+  // accepted an interior backslash (`/dashboard\@evil.example`) and did not
+  // trim. One sanitiser now (`lib/safe-return-to.ts`), with the vendor realm's
+  // fallback — the equivalent of the customer route's "/shop".
+  const redirect = safeReturnTo(req.nextUrl.searchParams.get("redirect"), VENDOR_SIGNIN_PATH)
 
   // Injected, never read off the request: `nextUrl.origin` is the server's BIND
   // address inside a container (measured `http://0.0.0.0:3000`, unmoved by the
@@ -161,11 +160,8 @@ export async function GET(req: NextRequest) {
   // byte-identical to the pre-FE-1 URL, which is the E-5 fail-safe: a deployed
   // realm that has not registered the new URI can never turn a working sign-out
   // into a Keycloak 400 with SSO alive.
-  const postLogoutRedirectUri = origin
-    ? isVendorLogoutCompleteEnabled()
-      ? `${origin}${VENDOR_LOGOUT_COMPLETE_PATH}`
-      : returnUri
-    : null
+  const completeLeg = origin !== null && isVendorLogoutCompleteEnabled()
+  const postLogoutRedirectUri = origin ? (completeLeg ? `${origin}${VENDOR_LOGOUT_COMPLETE_PATH}` : returnUri) : null
 
   const params = new URLSearchParams({ id_token_hint: idToken })
   if (postLogoutRedirectUri) {
@@ -178,12 +174,25 @@ export async function GET(req: NextRequest) {
   // redirect uri errors WITHOUT terminating anything. Losing the return journey
   // is a cosmetic degradation; losing the sign-out is the security defect.
   // Never trade the second away to keep the first.
-  return withBestEffortClear(
-    NextResponse.json(
-      { url: `${base}/protocol/openid-connect/logout?${params.toString()}` },
-      { headers: NO_STORE_HEADERS }
-    )
+
+  // PR #726 M4: the return leg is a GET that ends the session, so it is BOUND
+  // to this sign-out by OIDC RP-initiated-logout `state` (see
+  // `lib/vendor-logout-state.ts`). Minted ONLY when logout-complete is actually
+  // the return leg: with the flag off, or with no origin, that route is not on
+  // the path and the URL stays byte-identical to the pre-FE-1 one (E-5). The
+  // `state` rides the KEYCLOAK URL, never the registered redirect URI, which
+  // stays query-less (plan R2) — Keycloak is what echoes it back as `?state=`.
+  const state = completeLeg ? mintVendorLogoutState() : null
+  if (state) params.set("state", state)
+
+  const res = NextResponse.json(
+    { url: `${base}/protocol/openid-connect/logout?${params.toString()}` },
+    { headers: NO_STORE_HEADERS }
   )
+  if (state) {
+    res.cookies.set(VENDOR_LOGOUT_STATE_COOKIE, state, vendorLogoutStateCookieOptions(isHttpsOrigin(origin)))
+  }
+  return withBestEffortClear(res)
 }
 
 /**

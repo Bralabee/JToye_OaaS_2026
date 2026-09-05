@@ -3,6 +3,8 @@ package uk.jtoye.core.order;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Locale;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -47,6 +49,27 @@ class FulfilmentPolicyTest {
                 () -> FulfilmentPolicy.resolve("TELEPORT", FulfilmentType.COLLECTION));
         assertEquals("Invalid fulfilment type: TELEPORT (expected DELIVERY or COLLECTION)",
                 e.getMessage());
+    }
+
+    /**
+     * PR #726 review low (a): the upper-casing must not depend on the JVM's default locale. Under
+     * tr-TR a bare {@code toUpperCase()} maps {@code i} to the dotted capital {@code İ}, so
+     * {@code "delivery"} becomes {@code "DELİVERY"} and a valid request is a 400 on a Turkish-locale
+     * host. RED on the unfixed tree: "Invalid fulfilment type: delivery".
+     */
+    @Test
+    @DisplayName("resolve is locale-independent: under tr-TR 'delivery' still resolves to DELIVERY")
+    void resolveIsLocaleIndependent() {
+        Locale original = Locale.getDefault();
+        Locale.setDefault(Locale.of("tr", "TR"));
+        try {
+            assertEquals(FulfilmentType.DELIVERY,
+                    FulfilmentPolicy.resolve("delivery", FulfilmentType.COLLECTION));
+            assertEquals(FulfilmentType.COLLECTION,
+                    FulfilmentPolicy.resolve("collection", FulfilmentType.DELIVERY));
+        } finally {
+            Locale.setDefault(original);
+        }
     }
 
     // ---- requireDeliveryAddress -------------------------------------------------------------

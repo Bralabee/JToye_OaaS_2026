@@ -122,7 +122,7 @@ public class SyncService {
 
         switch (type.toLowerCase()) {
             case "shop":
-                return upsertShop(item);
+                return upsertShop(item, tenantId);
             case "product":
                 return upsertProduct(item, tenantId);
             default:
@@ -131,11 +131,16 @@ public class SyncService {
         }
     }
 
-    private boolean upsertShop(SyncItem item) {
+    private boolean upsertShop(SyncItem item, UUID tenantId) {
         String name = item.getName();
         if (name == null) return false;
 
-        Optional<Shop> existing = shopRepository.findByName(name);
+        // PR #726 review M1: the upsert key is (tenant, name) — idx_shops_tenant_name is unique per
+        // TENANT — so the lookup must say so. The bare findByName ran under shops_public_read and
+        // ALSO returned a foreign tenant's PUBLISHED shop of the same name: two rows (500, whole
+        // batch rolled back) when this tenant has its own, or the foreign row alone when it does
+        // not — which require() below then correctly refused, so the caller could never create it.
+        Optional<Shop> existing = shopRepository.findByNameAndTenantId(name, tenantId);
         if (existing.isEmpty()) {
             // API-13: a bare `shopRepository.save(new Shop())` never set `slug` (NOT NULL), so this
             // branch had failed on every attempt (zero rows ever). Creating through
@@ -150,9 +155,10 @@ public class SyncService {
         }
 
         Shop shop = existing.get();
-        // SEC-5: an UPDATE mutates a shop the caller must manage. For a GROUP_ADMIN, require()
-        // also proves the shop belongs to the caller's tenant (FC-1) — `findByName` runs under the
-        // shops_public_read policy and could otherwise surface a PUBLISHED foreign shop of the same name.
+        // SEC-5: an UPDATE mutates a shop the caller must manage, so it is gated on the resolved
+        // shop with SHOP_MANAGER. The lookup above is already tenant-scoped, so the row is provably
+        // this tenant's before the gate runs; require()'s own FC-1 tenant proof stays as the
+        // second, independent layer rather than the only one.
         shopAccessService.require(shop.getId(), ShopRole.SHOP_MANAGER);
         shop.setName(name);
         shop.setAddress(item.getAddress());
@@ -176,12 +182,29 @@ public class SyncService {
         // and is denied the typed shop-access 403 here.
         shopAccessService.require(existing.map(Product::getShopId).orElse(null), ShopRole.SHOP_MANAGER);
 
+        // PR #726 review M7: every SyncItem field is optional on the wire, so on an UPDATE an absent
+        // title/ingredientsText means "unchanged", exactly as allergenMask and pricePennies already
+        // did — not "clear it" (title would then die on products.title NOT NULL as a 500 after the
+        // batch half-ran; the Natasha's Law ingredients text would silently blank). A CREATE has no
+        // prior value to keep, so a title is REQUIRED there and its absence is the typed 400
+        // (IllegalArgumentException -> errors/invalid-argument) before anything is written.
+        if (existing.isEmpty() && (item.getTitle() == null || item.getTitle().isBlank())) {
+            throw new IllegalArgumentException(
+                    "Product title is required to create a new product (sku '" + sku + "')");
+        }
+
         Product product = existing.orElseGet(Product::new);
 
         product.setTenantId(tenantId);
         product.setSku(sku);
-        product.setTitle(item.getTitle());
-        product.setIngredientsText(item.getIngredientsText());
+
+        if (item.getTitle() != null) {
+            product.setTitle(item.getTitle());
+        }
+
+        if (item.getIngredientsText() != null) {
+            product.setIngredientsText(item.getIngredientsText());
+        }
 
         if (item.getAllergenMask() != null) {
             product.setAllergenMask(item.getAllergenMask());

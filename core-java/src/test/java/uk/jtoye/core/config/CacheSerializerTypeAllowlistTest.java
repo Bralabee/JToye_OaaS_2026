@@ -12,6 +12,7 @@ import uk.jtoye.core.product.AllergenSpan;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.shop.dto.ShopDto;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
@@ -147,6 +148,27 @@ class CacheSerializerTypeAllowlistTest {
         assertThat(json).as("the DTO itself is stored by class name").contains("\"uk.jtoye.core.product.dto.ProductDto\"");
         assertThat(json).as("dates are ISO-8601 with an explicit id, not epoch arrays")
                 .contains("\"java.time.OffsetDateTime\"").contains("2026-09-02T09:15:00Z");
+    }
+
+    /**
+     * PR #726 review low (c): {@code java.math.} joins the allowlist. Like {@code Long}, a
+     * {@code BigDecimal} is NOT a Jackson natural type, so under {@code DefaultTyping.EVERYTHING} it is
+     * stored WITH an explicit {@code java.math.BigDecimal} id — and without the prefix the READ is
+     * refused, which {@link RedisCacheErrorHandler#handleCacheGetError} swallows into a permanent
+     * silent miss the moment any cached DTO grows a money-precise field. RED on the unfixed tree:
+     * {@code InvalidTypeIdException} naming {@code java.math.BigDecimal}.
+     */
+    @Test
+    void aBigDecimalRoundTripsThroughTheProductionSerializer() {
+        BigDecimal original = new BigDecimal("19.99");
+        String json = new String(serializer.serialize(original), StandardCharsets.UTF_8);
+        assertThat(json).as("stored with an explicit id, which is why java.math. must be allowlisted")
+                .contains("\"java.math.BigDecimal\"");
+
+        Object back = serializer.deserialize(json.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(back).isInstanceOf(BigDecimal.class);
+        assertThat((BigDecimal) back).isEqualByComparingTo(original);
     }
 
     // ---- refusal arm (the security half) -----------------------------------------------------

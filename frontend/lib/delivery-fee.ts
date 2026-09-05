@@ -18,12 +18,12 @@
  * "£3.50" is wrong for every other shop on the platform and silently wrong for
  * this one the day the vendor edits it.
  *
- * NOT YET THE ONLY COPY. `app/shop/[slug]/checkout/page.tsx` still exports its
- * own byte-identical `previewDeliveryFeePennies`; that file is owned by another
- * lane in this remediation round, so it could not be edited here. The follow-up
- * is three lines — delete the checkout body and re-export this one — and until
- * it lands, `lib/__tests__/delivery-fee.test.tsx` asserts the two functions
- * agree on every case, so the duplication cannot drift silently.
+ * THE ONLY COPY, since PR #726 low (b). `app/shop/[slug]/checkout/page.tsx`
+ * carried a byte-identical `previewDeliveryFeePennies` for one remediation round
+ * because another lane owned that file; it now imports this one, as the cart
+ * page always did. `lib/__tests__/delivery-fee.test.tsx` guards the structure —
+ * both pages import from here and the checkout page defines no function of this
+ * name — so the duplication cannot quietly come back.
  */
 // The union already exists on the shared API types (`types/api.ts:263`, mirroring
 // the backend enum). Imported rather than re-declared: a second copy of a

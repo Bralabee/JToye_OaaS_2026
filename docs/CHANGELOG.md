@@ -34,9 +34,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same RFC 7807 document as every other error (API-10); Companies House 404 parks for
   review instead of waiving, with numbers zero-padded (INT); and the A11Y tier covers focus
   restoration, control naming, and error association.
+- **Review of this PR, remediated on the same branch.** The sync shop upsert resolved by
+  NAME under `shops_public_read`, so a foreign tenant's PUBLISHED shop of the same name
+  made the caller's own sync a 500 (two rows) or a 404 (one row, forever) — now keyed on
+  `(tenant_id, name)`, proven with two Testcontainers arms that also assert the foreign row
+  is untouched. Vendor/API/MCP `createOrder` gained the storefront's same-shop product
+  guard (the `shop_id IS NULL` tenant-wide arm kept, V20). The checkout Idempotency-Key
+  now follows the WHOLE payload (`lib/checkout-idempotency.ts`), not just the basket lines,
+  so correcting a phone number after a failed submit no longer trips a 422 with no way out.
+  The vendor logout return leg is bound to an OIDC `state` in a one-shot cookie, closing
+  the cross-site force-logout the FE-1 fix had documented as residual. Body and header
+  idempotency keys that DISAGREE on the guest checkout are refused 400 before any write
+  rather than the body winning silently — a retry carrying only the other key would have
+  minted the duplicate the key exists to stop. Both realms' logout routes share ONE
+  redirect sanitiser (`lib/safe-return-to.ts`); the two private copies each accepted an
+  interior backslash. `GuestOrderConfirmation.unitCount` and `OrderDetailDto
+  .deliveryFeePennies` fill the COR-4 / COR-1 scope gaps. And the static test counter
+  read `it.each<[...]>(…)` as a bare identifier — ZERO blocks for a 12-row typed table,
+  silently — until the runner oracle disagreed; it now walks the type-argument list, with
+  a fixture arm that was shown to fail first.
 - **Docs and gates, closing drift this run exposed.** `docs/metrics.json` was stale — the
-  branch added tests without regenerating it — now 3,912 logical invocations (was 3,572)
-  with 22 prose claims reconciled. `.planning/codebase/` remapped, four of its seven
+  branch added tests without regenerating it — now 4,003 logical invocations (was 3,572)
+  with 37 prose claims reconciled. `.planning/codebase/` remapped, four of its seven
   documents having dated to 2026-04-18. `scripts/check-doc-versions.sh` gained a `Go` row:
   it read Gin out of `go.mod` from the day it was written but never the Go directive, so it
   passed 119 claims while every doc said Go 1.26 and the module had been on 1.27 since

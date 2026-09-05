@@ -29,8 +29,12 @@ import lombok.NoArgsConstructor;
  * {@code SyncService} exactly as before (a product item without a SKU is skipped; a shop item
  * has no SKU at all) — a {@code @NotNull} here would reject one type's valid item on the other
  * type's behalf. The constraints are therefore RANGE/SIZE bounds only, which Jakarta skips on
- * {@code null}. Presence rules (NOT NULL columns) keep firing where they always did, in the
- * database, as the typed {@code missing-field} 400.
+ * {@code null}. Presence rules are decided in {@code SyncService}, per branch: on an UPDATE of
+ * an existing product every absent field means "unchanged" (PR #726 review M7 — title and
+ * ingredientsText included, not only allergenMask and pricePennies); on a CREATE {@code title} is
+ * REQUIRED and its absence is the typed {@code invalid-argument} 400, raised before anything is
+ * written rather than left for {@code products.title NOT NULL} to surface after the batch has
+ * half-run.
  */
 @Data
 @Builder
@@ -50,7 +54,7 @@ public class SyncItem {
     private String sku;
 
     @Size(min = 1, max = 255, message = "Title must be between 1 and 255 characters")
-    @Schema(description = "Product title", example = "Yam 5kg")
+    @Schema(description = "Product title. Required when the SKU is new (create); optional on update, where an absent title leaves the existing one unchanged", example = "Yam 5kg")
     private String title;
 
     @Size(min = 1, max = 2000, message = "Ingredients text must be between 1 and 2000 characters")

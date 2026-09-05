@@ -89,7 +89,10 @@ public class OrderController {
                             + "this tenant (errors/not-found)"),
             @ApiResponse(responseCode = "409",
                     description = "A request with this Idempotency-Key is still in flight "
-                            + "(errors/idempotency-conflict)"),
+                            + "(errors/idempotency-conflict), or the generated order number collided "
+                            + "with an existing order's under the order-number uniqueness constraints "
+                            + "(uq_orders_tenant_number / uk_orders_order_number) - a retry mints a "
+                            + "fresh number (errors/duplicate)"),
             @ApiResponse(responseCode = "422",
                     description = "Idempotency-Key reused with a different payload "
                             + "(errors/idempotency-payload-mismatch)")

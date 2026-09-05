@@ -789,12 +789,108 @@ class PublicStorefrontServiceTest {
         verify(orderRepository, never()).save(any(Order.class));
     }
 
+    // ---- PR #726 review M5 (COR-4 scope gap): the confirmation carries UNITS beside LINES ----
+
+    /**
+     * The checkout confirmation is the FIRST customer surface after the basket said "2 items", so it
+     * is where the COR-4 divergence bites first. {@code itemCount} stays LINES (untouched contract);
+     * {@code unitCount} is SUM(quantity). RED on the unfixed tree: does not compile
+     * ({@code GuestOrderConfirmation} has no {@code getUnitCount()}).
+     */
+    @Test
+    @DisplayName("createGuestOrder confirmation carries unitCount (COR-4) beside the line-based itemCount")
+    void createGuestOrder_confirmationCarriesUnitCount() throws Exception {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Jollof Rice", 899L);
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(paymentService.isConfigured()).thenReturn(false);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // deliveryRequest() orders ONE line of quantity 2 — the exact shape where lines != units.
+        GuestOrderConfirmation confirmation =
+                service.createGuestOrder("test-shop-abc12345", deliveryRequest(product));
+
+        assertEquals(1, confirmation.getItemCount(), "itemCount keeps its LINES meaning");
+        assertEquals(2, confirmation.getUnitCount(), "unitCount is UNITS — the number the basket showed");
+    }
+
+    /**
+     * Replay half of M5: the idempotent retry rebuilds the confirmation from the PERSISTED order, so
+     * it must pass unitCount through AS-IS. A pre-V66 row has NULL, and NULL means "not recorded" —
+     * it must never be coalesced to 0 or substituted with itemCount.
+     */
+    @Test
+    @DisplayName("idempotent replay passes unitCount through as-is: a pre-V66 order replays null, never 0 (COR-4)")
+    void createGuestOrder_idempotentReplay_nullUnitCountStaysNull() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Order historic = existingOrder(OrderStatus.PENDING, "pi_456");
+        assertNull(historic.getUnitCount(), "fixture precondition: a row that predates V66");
+        when(orderRepository.findByTenantIdAndIdempotencyKey(tenantId, "retry-key-123"))
+                .thenReturn(Optional.of(historic));
+
+        GuestOrderConfirmation confirmation =
+                service.createGuestOrder("test-shop-abc12345", idempotentRetryRequest());
+
+        assertEquals(2, confirmation.getItemCount());
+        assertNull(confirmation.getUnitCount(), "NULL means not recorded; a fabricated 0 is a lie");
+    }
+
+    @Test
+    @DisplayName("idempotent replay carries a recorded unitCount (COR-4)")
+    void createGuestOrder_idempotentReplay_recordedUnitCountIsCarried() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Order recorded = existingOrder(OrderStatus.PENDING, "pi_456");
+        recorded.setUnitCount(6);
+        when(orderRepository.findByTenantIdAndIdempotencyKey(tenantId, "retry-key-123"))
+                .thenReturn(Optional.of(recorded));
+
+        GuestOrderConfirmation confirmation =
+                service.createGuestOrder("test-shop-abc12345", idempotentRetryRequest());
+
+        assertEquals(2, confirmation.getItemCount());
+        assertEquals(6, confirmation.getUnitCount());
+    }
+
     // ---- Cluster E (QA council 20260902-134741, API-3 / API-4 / INT-15) ----
 
     @Test
-    @DisplayName("resolveGuestIdempotencyKey: the body field stays authoritative when both sources are present (census)")
-    void resolveGuestIdempotencyKey_bodyWinsOverHeader() {
-        assertEquals("body-key", PublicStorefrontService.resolveGuestIdempotencyKey("body-key", "header-key"));
+    @DisplayName("resolveGuestIdempotencyKey: body and header carrying the SAME key is one intent, and that key is used")
+    void resolveGuestIdempotencyKey_agreeingSourcesAreOneIntent() {
+        assertEquals("same-key", PublicStorefrontService.resolveGuestIdempotencyKey("same-key", "same-key"));
+    }
+
+    /**
+     * PR #726 review follow-up. The body used to WIN silently (DEBUG log) when the two sources
+     * disagreed. Two different keys are two different intents on one request — a client defect —
+     * and picking one means a retry that carries only the OTHER key finds no reservation and mints
+     * the duplicate order the key exists to prevent. Fail closed, before any write.
+     */
+    @Test
+    @DisplayName("resolveGuestIdempotencyKey: body and header carrying DIFFERENT keys is refused 400, never resolved by preference")
+    void resolveGuestIdempotencyKey_disagreeingSourcesAreRefused() {
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> PublicStorefrontService.resolveGuestIdempotencyKey("body-key", "header-key"));
+        assertTrue(ex.getMessage().contains("idempotencyKey"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("Idempotency-Key"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("createGuestOrder with disagreeing body/header keys writes nothing and never reaches the idempotency store")
+    void createGuestOrder_disagreeingKeys_writesNothing() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop-abc12345"))
+                .thenReturn(Optional.of(publishedShop));
+        Product product = availableProduct("Egusi", 1200L);
+        GuestOrderRequest request = deliveryRequest(product);
+        request.setIdempotencyKey("body-key");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.createGuestOrder("test-shop-abc12345", request, "header-key"));
+
+        verifyNoInteractions(idempotencyService);
+        verify(orderRepository, never()).save(any(Order.class));
     }
 
     @Test

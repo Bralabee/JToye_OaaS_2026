@@ -1,5 +1,7 @@
 package uk.jtoye.core.order;
 
+import java.util.Locale;
+
 /**
  * The ONE place the fulfilment rules live: how a fulfilment type is resolved from a request, what
  * a DELIVERY order must carry, and what delivery costs (COR-1, QA-council 20260902-134741).
@@ -60,7 +62,10 @@ public final class FulfilmentPolicy {
             return fallback;
         }
         try {
-            return FulfilmentType.valueOf(raw.trim().toUpperCase());
+            // Locale.ROOT: a bare toUpperCase() follows the JVM default locale, and under tr-TR
+            // "delivery" becomes "DELİVERY" (dotted capital I) — a valid request 400s on a
+            // Turkish-locale host. The enum constants are ASCII; the comparison must be too.
+            return FulfilmentType.valueOf(raw.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid fulfilment type: " + raw
                     + " (expected DELIVERY or COLLECTION)");

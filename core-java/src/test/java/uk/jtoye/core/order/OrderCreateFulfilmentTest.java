@@ -279,6 +279,32 @@ class OrderCreateFulfilmentTest {
     }
 
     /**
+     * PR #726 review M6 (COR-1 scope gap): the LIST DTO gained {@code deliveryFeePennies} but the
+     * DETAIL DTO — the one {@code /dashboard/orders/[id]} and the kitchen board actually read — did
+     * not, so the detail page could show a DELIVERY order with no way to see what it was charged.
+     * Same real {@code OrderMapperImpl} as above. RED on the unfixed tree: does not compile
+     * ({@code OrderDetailDto} has no {@code getDeliveryFeePennies()}).
+     */
+    @Test
+    @DisplayName("M6: OrderDetailDto carries deliveryFeePennies beside fulfilmentType and unitCount")
+    void orderDetailDtoExposesDeliveryFee() {
+        CreateOrderRequest request = requestFor(2); // 2 x 899 = 1798p, still below the 2000p waiver
+        request.setFulfilmentType("DELIVERY");
+        request.setAddressLine1("12 Coldharbour Lane");
+        request.setAddressCity("London");
+        request.setAddressPostcode("SW9 8LF");
+        Order order = created(request);
+
+        uk.jtoye.core.order.dto.OrderDetailDto dto = new OrderMapperImpl().toDetailDto(order);
+
+        assertEquals(FulfilmentType.DELIVERY, dto.getFulfilmentType());
+        assertEquals(399L, dto.getDeliveryFeePennies());
+        assertEquals(2, dto.getUnitCount(), "COR-4 units still map beside the fee");
+        assertEquals(order.getOrderNumber(), dto.getOrderNumber());
+        assertEquals(order.getTotalAmountPennies(), dto.getTotalAmountPennies());
+    }
+
+    /**
      * A8's named harm, closed end to end rather than argued. The order is created through the real
      * service; its PERSISTED fulfilment type is then handed to the REAL email service, exactly as
      * {@code OrderStateChangeListener} does at the READY transition. Only {@code JavaMailSender} is
