@@ -927,6 +927,9 @@ jobs:
           chmod +x ./scripts/check-doc-citations.sh
           ./scripts/check-doc-citations.sh
 
+      - name: Assert logout preflights preserve advisory and enforced exits under Actions errexit
+        run: python3 scripts/check-logout-preflight.py
+
       # Plan 33-02 (W10). This invariant used to be a sentence in a success-criteria
       # list with no check anywhere. Flyway runs as jtoye_app — rolsuper = f, no
       # CREATE on the database — so a migration that creates an extension cannot
@@ -1576,7 +1579,8 @@ jobs:
             exit 2
           fi
           if [ "$FLAG" = "true" ]; then URI="${FRONTEND_URL%/}/api/vendor-auth/logout-complete"; else URI="${FRONTEND_URL%/}/auth/signin"; fi
-          KC_ISSUER="$ISSUER" KC_CLIENT_ID="$CLIENT" POST_LOGOUT_REDIRECT_URI="$URI" bash scripts/check-keycloak-logout-uri.sh; rc=$?
+          rc=0
+          KC_ISSUER="$ISSUER" KC_CLIENT_ID="$CLIENT" POST_LOGOUT_REDIRECT_URI="$URI" bash scripts/check-keycloak-logout-uri.sh || rc=$?
           if [ "$FLAG" = "true" ]; then
             if [ "$rc" -ne 0 ]; then
               echo "FATAL: vendor.logout-complete.enabled is \"true\" for k8s/staging but the realm did not accept $URI (rc=$rc). Refusing to deploy a return leg Keycloak would answer with a 400 that leaves the SSO session alive." >&2
@@ -1766,7 +1770,8 @@ jobs:
             exit 2
           fi
           if [ "$FLAG" = "true" ]; then URI="${FRONTEND_URL%/}/api/vendor-auth/logout-complete"; else URI="${FRONTEND_URL%/}/auth/signin"; fi
-          KC_ISSUER="$ISSUER" KC_CLIENT_ID="$CLIENT" POST_LOGOUT_REDIRECT_URI="$URI" bash scripts/check-keycloak-logout-uri.sh; rc=$?
+          rc=0
+          KC_ISSUER="$ISSUER" KC_CLIENT_ID="$CLIENT" POST_LOGOUT_REDIRECT_URI="$URI" bash scripts/check-keycloak-logout-uri.sh || rc=$?
           if [ "$FLAG" = "true" ]; then
             if [ "$rc" -ne 0 ]; then
               echo "FATAL: vendor.logout-complete.enabled is \"true\" for k8s/production but the realm did not accept $URI (rc=$rc). Refusing to deploy a return leg Keycloak would answer with a 400 that leaves the SSO session alive." >&2

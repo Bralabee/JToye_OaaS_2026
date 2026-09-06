@@ -313,14 +313,13 @@ function matchParen(s, open) {
 }
 
 // Index of the `>` closing the type-argument list opened by `s[open] === '<'`, or -1.
-// Type arguments only ever contain `<` / `>` as list brackets (the masked text has
-// no strings or comments, and a `=>` inside a function type is `=` then `>`, which
-// still closes what its own `<` opened), so a plain depth walk is exact.
+// A function type's `=>` does not close a generic list. Strings and comments are
+// already masked, so only real angle brackets participate in the depth walk.
 function matchAngle(s, open) {
   let depth = 0;
   for (let i = open; i < s.length; i++) {
     if (s[i] === "<") depth++;
-    else if (s[i] === ">") { depth--; if (depth === 0) return i; }
+    else if (s[i] === ">" && s[i - 1] !== "=") { depth--; if (depth === 0) return i; }
   }
   return -1;
 }
@@ -358,7 +357,7 @@ function resolveArrayBinding(masked, name) {
     while (i < masked.length) {
       const c = masked[i];
       if (c === "<" || c === "(" || c === "[" || c === "{") depth++;
-      else if (c === ">" || c === ")" || c === "]" || c === "}") depth--;
+      else if ((c === ">" && masked[i - 1] !== "=") || c === ")" || c === "]" || c === "}") depth--;
       else if (c === ";" && depth <= 0) break;
       else if (
         c === "=" && depth <= 0 &&

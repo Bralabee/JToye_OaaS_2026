@@ -135,8 +135,12 @@ expect_count vitest     commented-each-table.fixture.ts  10
 # noticed. 1 plain + 3 typed + 4 nested-generic (`>>` / `>]>` must be walked balanced).
 expect_count jest       generic-each-table.fixture.ts    8
 expect_count vitest     generic-each-table.fixture.ts    8
+expect_count jest       callback-generic-each.fixture.ts 6
+expect_count vitest     callback-generic-each.fixture.ts 6
 
 # ── VOID arms: refusing is the required behaviour ───────────────────────────
+expect_void jest void-unclosed-callback-generic.fixture.ts "unbalanced type-argument list"
+expect_void vitest void-unclosed-callback-generic.fixture.ts "unbalanced type-argument list"
 expect_void jest void-unresolvable-each.fixture.ts "not a resolvable array literal"
 expect_void jest void-imported-each.fixture.ts     "not an array literal declared in this file"
 expect_void jest void-alias.fixture.ts             "unsupported test alias 'xit'"
