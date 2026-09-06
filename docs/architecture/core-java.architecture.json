@@ -1,0 +1,450 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "J'Toye Core — tenant isolation path",
+    "subtitle": "core-java · Spring Boot 3.5 · JDK 25",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1160,
+      600
+    ],
+    "repository": {
+      "url": "https://github.com/Bralabee/JToye_OaaS_2026",
+      "revision": "9d9efaebac56e1708438c5405d18103a59d1b8e2"
+    },
+    "views": [
+      {
+        "id": "isolation",
+        "label": "Tenant isolation",
+        "focus": [
+          "tenantfilter",
+          "aspect",
+          "postgres",
+          "services"
+        ],
+        "note": "The claim becomes a ThreadLocal, the ThreadLocal becomes a Postgres GUC, the GUC drives RLS."
+      },
+      {
+        "id": "ingress",
+        "label": "Ingress chain",
+        "focus": [
+          "edge",
+          "filterchain",
+          "tenantfilter",
+          "ratelimit",
+          "controllers"
+        ],
+        "note": "Every request crosses four gates before a controller method runs."
+      },
+      {
+        "id": "async",
+        "label": "Async edges",
+        "focus": [
+          "services",
+          "outbox",
+          "rabbit",
+          "stripe"
+        ],
+        "note": "Events are written in the business transaction and published after commit."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "edge",
+      "type": "external",
+      "label": "Edge + web app",
+      "sublabel": "Bearer JWT",
+      "pos": [
+        38,
+        140
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "filterchain",
+      "type": "security",
+      "label": "Security chain",
+      "sublabel": "OAuth2 resource server",
+      "sources": [
+        {
+          "path": "core-java/src/main/java/uk/jtoye/core/security/SecurityConfig.java",
+          "line": 32,
+          "label": "SecurityConfig"
+        }
+      ],
+      "pos": [
+        222,
+        140
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "tenantfilter",
+      "type": "security",
+      "label": "JwtTenantFilter",
+      "sublabel": "claim → TenantContext",
+      "sources": [
+        {
+          "path": "core-java/src/main/java/uk/jtoye/core/security/JwtTenantFilter.java",
+          "line": 31,
+          "label": "JwtTenantFilter"
+        },
+        {
+          "path": "core-java/src/main/java/uk/jtoye/core/security/TenantContext.java",
+          "line": 6,
+          "label": "TenantContext"
+        }
+      ],
+      "pos": [
+        406,
+        140
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "ratelimit",
+      "type": "security",
+      "label": "Rate limit",
+      "sublabel": "Bucket4j per tenant",
+      "sources": [
+        {
+          "path": "core-java/src/main/java/uk/jtoye/core/security/RateLimitInterceptor.java",
+          "line": 45,
+          "label": "RateLimitInterceptor"
+        }
+      ],
+      "pos": [
+        590,
+        140
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "controllers",
+      "type": "backend",
+      "label": "REST controllers",
+      "sublabel": "25 classes",
+      "sources": [
+        {
+          "path": "core-java/src/main/java/uk/jtoye/core/order/OrderController.java",
+          "line": 1,
+          "label": "OrderController"
+        }
+      ],
+      "pos": [
+        774,
+        140
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "stripe",
+      "type": "external",
+      "label": "Stripe",
+      "sublabel": "payments",
+      "brand": "stripe",
+      "pos": [
+        958,
+        140
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "keycloak",
+      "type": "external",
+      "label": "Keycloak",
+      "sublabel": "JWKS + realm roles",
+      "pos": [
+        222,
+        300
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "aspect",
+      "type": "security",
+      "label": "TenantSetLocalAspect",
+      "sublabel": "set_config per tx",
+      "sources": [
+        {
+          "path": "core-java/src/main/java/uk/jtoye/core/security/TenantSetLocalAspect.java",
+          "line": 61,
+          "end_line": 73,
+          "label": "set_config"
+        }
+      ],
+      "pos": [
+        590,
+        300
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "services",
+      "type": "backend",
+      "label": "Domain services",
+      "sublabel": "41 classes · 25 repos",
+      "pos": [
+        774,
+        300
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "outbox",
+      "type": "messagebus",
+      "label": "Event outbox",
+      "sublabel": "payment + media",
+      "sources": [
+        {
+          "path": "core-java/src/main/java/uk/jtoye/core/payment/PaymentEventOutboxFlusher.java",
+          "line": 49,
+          "label": "flusher"
+        }
+      ],
+      "pos": [
+        958,
+        300
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "RLS · 64 migrations",
+      "brand": "postgresql",
+      "sources": [
+        {
+          "path": "core-java/src/main/resources/db/migration/V2__rls_policies.sql",
+          "line": 1,
+          "label": "V2 RLS policies"
+        }
+      ],
+      "pos": [
+        590,
+        460
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "rabbit",
+      "type": "messagebus",
+      "label": "RabbitMQ",
+      "sublabel": "after-commit publish",
+      "brand": "rabbitmq",
+      "sources": [
+        {
+          "path": "core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java",
+          "line": 24,
+          "label": "RabbitMQConfig"
+        }
+      ],
+      "pos": [
+        958,
+        460
+      ],
+      "size": [
+        138,
+        68
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Filter chain",
+      "wraps": [
+        "filterchain",
+        "tenantfilter",
+        "ratelimit"
+      ],
+      "pad": 26
+    },
+    {
+      "kind": "security-group",
+      "label": "RLS boundary",
+      "wraps": [
+        "aspect",
+        "postgres"
+      ],
+      "pad": 26
+    }
+  ],
+  "connections": [
+    {
+      "id": "edge-chain",
+      "from": "edge",
+      "to": "filterchain",
+      "label": "Bearer JWT",
+      "variant": "emphasis",
+      "labelAt": [
+        199,
+        222
+      ]
+    },
+    {
+      "id": "chain-tenant",
+      "from": "filterchain",
+      "to": "tenantfilter",
+      "label": "authenticated",
+      "labelAt": [
+        383,
+        222
+      ]
+    },
+    {
+      "id": "tenant-rate",
+      "from": "tenantfilter",
+      "to": "ratelimit",
+      "label": "tenant id",
+      "labelAt": [
+        615,
+        222
+      ]
+    },
+    {
+      "id": "rate-controllers",
+      "from": "ratelimit",
+      "to": "controllers",
+      "label": "within quota",
+      "labelAt": [
+        751,
+        222
+      ]
+    },
+    {
+      "id": "stripe-controllers",
+      "from": "stripe",
+      "to": "controllers",
+      "label": "signed webhook",
+      "variant": "security",
+      "labelAt": [
+        935,
+        222
+      ]
+    },
+    {
+      "id": "chain-keycloak",
+      "from": "filterchain",
+      "to": "keycloak",
+      "label": "JWKS",
+      "variant": "dashed",
+      "labelAt": [
+        291,
+        222
+      ]
+    },
+    {
+      "id": "controllers-services",
+      "from": "controllers",
+      "to": "services",
+      "label": "@PreAuthorize",
+      "labelAt": [
+        843,
+        222
+      ]
+    },
+    {
+      "id": "tenant-aspect",
+      "from": "tenantfilter",
+      "to": "aspect",
+      "label": "ThreadLocal",
+      "variant": "dashed"
+    },
+    {
+      "id": "services-aspect",
+      "from": "services",
+      "to": "aspect",
+      "label": "@Transactional",
+      "labelAt": [
+        751,
+        382
+      ]
+    },
+    {
+      "id": "aspect-postgres",
+      "from": "aspect",
+      "to": "postgres",
+      "label": "app.current_tenant_id",
+      "variant": "security",
+      "labelAt": [
+        659,
+        382
+      ]
+    },
+    {
+      "id": "services-outbox",
+      "from": "services",
+      "to": "outbox",
+      "label": "same transaction",
+      "labelAt": [
+        935,
+        382
+      ]
+    },
+    {
+      "id": "outbox-rabbit",
+      "from": "outbox",
+      "to": "rabbit",
+      "label": "flusher publishes",
+      "labelAt": [
+        1027,
+        382
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Isolation is three hops, not one",
+      "items": [
+        "JwtTenantFilter reads the claim into a ThreadLocal",
+        "TenantSetLocalAspect calls set_config on the tx connection"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Counted, not estimated",
+      "items": [
+        "25 controllers · 41 services · 25 repositories",
+        "64 Flyway migrations; V2 installs the RLS policies"
+      ]
+    }
+  ]
+}

@@ -209,3 +209,6 @@ e2e-artifacts/
 # committing it. Ignored so that running the gate locally does not leave an untracked
 # ~20KB build artefact for a blanket `git add` to sweep into a commit.
 edge-go/coverage.out
+
+# archify visual-check evidence (regenerable, not artifacts)
+docs/architecture/*.visual-check.*
