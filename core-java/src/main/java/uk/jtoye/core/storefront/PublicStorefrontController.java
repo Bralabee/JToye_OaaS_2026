@@ -197,17 +197,19 @@ public class PublicStorefrontController {
     @Operation(summary = "Place a guest order",
             description = "Create an order as a guest customer. Prices are calculated server-side. "
                     + "Supply an Idempotency-Key header to make a retried POST safe: the same key with the "
-                    + "same body replays the original confirmation and never creates a second order; the same "
-                    + "key with a different body is refused 422 (errors/idempotency-payload-mismatch); a "
+                    + "same body and shop replays the original confirmation and never creates a second order; the same "
+                    + "key with a different body or shop is refused 422 (errors/idempotency-payload-mismatch); a "
                     + "concurrent request on the same key that is still in flight is refused 409 "
                     + "(errors/idempotency-conflict). The legacy request-body field idempotencyKey is still "
                     + "honoured; when both are present they must carry the SAME value, and a request whose body "
-                    + "and header keys differ is refused 400 (errors/invalid-argument) before any order is written.")
+                    + "and header keys differ is refused 400 (errors/invalid-argument) before any order is written. "
+                    + "A completed reservation whose order has been deleted or expired returns 410; it never creates a replacement.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Order created (or the original confirmation replayed for a repeated key)"),
-            @ApiResponse(responseCode = "400", description = "Request body idempotencyKey and Idempotency-Key header disagree"),
+            @ApiResponse(responseCode = "400", description = "Invalid request, including disagreeing keys or total quantity above 2147483647"),
             @ApiResponse(responseCode = "409", description = "A request with this Idempotency-Key is in flight"),
-            @ApiResponse(responseCode = "422", description = "Idempotency-Key reused with a different payload")
+            @ApiResponse(responseCode = "410", description = "The completed order has been deleted or expired; no replacement is created"),
+            @ApiResponse(responseCode = "422", description = "Idempotency-Key reused with a different payload or shop")
     })
     public ResponseEntity<GuestOrderConfirmation> createGuestOrder(
             @PathVariable String slug,

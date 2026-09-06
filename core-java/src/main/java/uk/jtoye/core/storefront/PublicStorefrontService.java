@@ -9,9 +9,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
+import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
@@ -709,7 +712,7 @@ public class PublicStorefrontService {
             // transaction, so a failed create (Stripe outage, stock, validation) rolls the key
             // back with the order and a genuine retry succeeds.
             return idempotencyService.executeWithoutStoringResponse(
-                    GUEST_ORDER_ENDPOINT, idempotencyKey, request,
+                    GUEST_ORDER_ENDPOINT, idempotencyKey, new GuestCheckoutIdentity(shop.getId(), request), request,
                     () -> placeGuestOrder(shop, request, idempotencyKey),
                     () -> replayGuestOrder(shop, idempotencyKey)).value();
         } finally {
@@ -732,6 +735,11 @@ public class PublicStorefrontService {
     @Transactional
     public GuestOrderConfirmation createGuestOrder(String slug, GuestOrderRequest request) {
         return createGuestOrder(slug, request, null);
+    }
+
+    // Slugs can change; the shop UUID is the stable identity. Legacy body-only reservations
+    // remain replayable only through replayConfirmation's independent ownership check.
+    private record GuestCheckoutIdentity(UUID shopId, GuestOrderRequest request) {
     }
 
     /**
@@ -770,13 +778,14 @@ public class PublicStorefrontService {
      * The replay half of the credential-safe store: the reservation for {@code idempotencyKey} is
      * complete with a matching hash, so the confirmation is re-derived from the ORDER ROW rather
      * than read back from the store (which holds no body). The order was written in the same
-     * transaction that completed the reservation, so its absence is an invariant violation, not
-     * a case to create afresh — creating here would mint the very duplicate the key exists to stop.
+     * transaction that completed the reservation, but may since have been deleted by a manager
+     * or DRAFT cleanup. Its absence is a terminal replay, never permission to create afresh:
+     * the original order may already have moved money.
      */
     private GuestOrderConfirmation replayGuestOrder(Shop shop, String idempotencyKey) {
         Order existingOrder = orderRepository.findByTenantIdAndIdempotencyKey(shop.getTenantId(), idempotencyKey)
-                .orElseThrow(() -> new IllegalStateException(
-                        "Completed idempotency reservation has no order row for the guest key"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.GONE,
+                        "The order for this Idempotency-Key has been deleted or expired"));
         log.info("Idempotent replay for key '{}', returning existing order {}",
                 idempotencyKey, existingOrder.getOrderNumber());
         return replayConfirmation(shop, existingOrder);
@@ -791,6 +800,13 @@ public class PublicStorefrontService {
      * persists this DTO (adjudication A3).
      */
     private GuestOrderConfirmation replayConfirmation(Shop shop, Order existingOrder) {
+        // Covers BOTH V50 replay and the pre-reservation V24 order lookup, before any payment
+        // credential is fetched. Keys are tenant-wide, so another shop must not reuse this one.
+        if (!shop.getId().equals(existingOrder.getShopId())
+                || !shop.getTenantId().equals(existingOrder.getTenantId())) {
+            throw new IdempotencyPayloadMismatchException(
+                    "Idempotency-Key reused with a different request payload");
+        }
         String existingClientSecret = null;
         if (existingOrder.getStatus() == OrderStatus.DRAFT
                 && existingOrder.getPaymentReference() != null

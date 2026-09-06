@@ -1,5 +1,7 @@
 package uk.jtoye.core.storefront;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -8,12 +10,16 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -25,7 +31,10 @@ import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -39,6 +48,9 @@ import java.util.concurrent.Future;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * QA council 20260902-134741, Cluster E (API-3, API-4, INT-15) — the guest checkout honours the
@@ -68,6 +80,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * that under the NOSUPERUSER downgrade). The tenant GUC is nevertheless pinned on every path.
  */
 @SpringBootTest
+@AutoConfigureMockMvc
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
@@ -88,6 +101,8 @@ class GuestCheckoutIdempotencyIntegrationTest {
 
     @Autowired PublicStorefrontService publicStorefrontService;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired MockMvc mockMvc;
+    @Autowired ObjectMapper objectMapper;
 
     /** Dedicated tenant so a parallel fork's fixtures cannot collide on slug/SKU. */
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000902");
@@ -321,6 +336,130 @@ class GuestCheckoutIdempotencyIntegrationTest {
         assertThat(reservationRow(key).get("response_status")).isEqualTo(201);
     }
 
+    @Test
+    void deletedOrderReplayIsGoneAndNeverRecreated() throws Exception {
+        String key = UUID.randomUUID().toString();
+        GuestOrderRequest request = guestRequest(seedProduct("SKU-DELETED-REPLAY"), 1, key);
+        GuestOrderConfirmation first = publicStorefrontService.createGuestOrder(SHOP_SLUG, request);
+        assertThat(jdbcTemplate.update("DELETE FROM orders WHERE order_number = ?", first.getOrderNumber()))
+                .isEqualTo(1);
+
+        for (int retry = 0; retry < 2; retry++) {
+            mockMvc.perform(post("/api/v1/public/shops/" + SHOP_SLUG + "/orders")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isGone());
+        }
+        assertThat(countOrdersByKey(key)).isZero();
+        assertThat(reservationRow(key).get("response_status")).isEqualTo(201);
+    }
+
+    @Test
+    void completedReservationCannotReplayAtAnotherShop() {
+        String otherSlug = "other-" + UUID.randomUUID();
+        seedShopIdempotent(TENANT_ID, otherSlug);
+        String key = UUID.randomUUID().toString();
+        GuestOrderRequest request = guestRequest(seedProduct("SKU-SHOP-REPLAY"), 1, key);
+        GuestOrderConfirmation first = publicStorefrontService.createGuestOrder(SHOP_SLUG, request);
+
+        assertThatThrownBy(() -> publicStorefrontService.createGuestOrder(otherSlug, request))
+                .isInstanceOf(IdempotencyPayloadMismatchException.class);
+        assertThat(publicStorefrontService.createGuestOrder(SHOP_SLUG, request).getOrderNumber())
+                .isEqualTo(first.getOrderNumber());
+        assertThat(countOrdersByKey(key)).isEqualTo(1);
+    }
+
+    @Test
+    void legacyOrderWithoutReservationCannotReplayAtAnotherShop() {
+        String otherSlug = "legacy-other-" + UUID.randomUUID();
+        seedShopIdempotent(TENANT_ID, otherSlug);
+        String key = UUID.randomUUID().toString();
+        GuestOrderRequest request = guestRequest(seedProduct("SKU-LEGACY-SHOP-REPLAY"), 1, key);
+        GuestOrderConfirmation first = publicStorefrontService.createGuestOrder(SHOP_SLUG, request);
+        assertThat(jdbcTemplate.update("DELETE FROM idempotency_keys WHERE tenant_id = ? AND idempotency_key = ?",
+                TENANT_ID, key)).isEqualTo(1);
+
+        assertThatThrownBy(() -> publicStorefrontService.createGuestOrder(otherSlug, request))
+                .isInstanceOf(IdempotencyPayloadMismatchException.class);
+        assertThat(countReservationsForKey(key)).isZero();
+        assertThat(publicStorefrontService.createGuestOrder(SHOP_SLUG, request).getOrderNumber())
+                .isEqualTo(first.getOrderNumber());
+        assertThat(countOrdersByKey(key)).isEqualTo(1);
+    }
+
+    @Test
+    void legacyBodyOnlyHashAllowsOnlyMatchingBodyAndOwningShop() throws Exception {
+        String otherSlug = "old-hash-other-" + UUID.randomUUID();
+        seedShopIdempotent(TENANT_ID, otherSlug);
+        String key = UUID.randomUUID().toString();
+        UUID product = seedProduct("SKU-OLD-HASH-REPLAY");
+        GuestOrderRequest request = guestRequest(product, 1, key);
+        GuestOrderConfirmation first = publicStorefrontService.createGuestOrder(SHOP_SLUG, request);
+        String legacyHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(objectMapper.writeValueAsString(request).getBytes(StandardCharsets.UTF_8)));
+        assertThat(jdbcTemplate.update("UPDATE idempotency_keys SET request_hash = ? "
+                + "WHERE tenant_id = ? AND endpoint = ? AND idempotency_key = ?",
+                legacyHash, TENANT_ID, ENDPOINT, key)).isEqualTo(1);
+
+        assertThatThrownBy(() -> publicStorefrontService.createGuestOrder(otherSlug, request))
+                .isInstanceOf(IdempotencyPayloadMismatchException.class);
+        assertThatThrownBy(() -> publicStorefrontService.createGuestOrder(SHOP_SLUG, guestRequest(product, 2, key)))
+                .isInstanceOf(IdempotencyPayloadMismatchException.class);
+        assertThat(publicStorefrontService.createGuestOrder(SHOP_SLUG, request).getOrderNumber())
+                .isEqualTo(first.getOrderNumber());
+        assertThat(countOrdersByKey(key)).isEqualTo(1);
+        assertThat(reservationRow(key).get("response_body")).isNull();
+    }
+
+    @Test
+    void guestQuantityOverflowIs400AndRollsBackReservation() throws Exception {
+        UUID firstProduct = seedProduct("SKU-OVERFLOW-GUEST-A");
+        UUID secondProduct = seedProduct("SKU-OVERFLOW-GUEST-B");
+        jdbcTemplate.update("UPDATE products SET quantity_in_stock = ? WHERE id IN (?, ?)",
+                Integer.MAX_VALUE, firstProduct, secondProduct);
+        String key = UUID.randomUUID().toString();
+        GuestOrderRequest request = guestRequest(firstProduct, 1073741824, key);
+        request.setItems(List.of(request.getItems().getFirst(),
+                guestRequest(secondProduct, 1073741824, null).getItems().getFirst()));
+
+        mockMvc.perform(post("/api/v1/public/shops/" + SHOP_SLUG + "/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+        assertThat(countOrdersByKey(key)).isZero();
+        assertThat(countReservationsForKey(key)).isZero();
+
+        request.getItems().getLast().setQuantity(1073741823);
+        GuestOrderConfirmation accepted = publicStorefrontService.createGuestOrder(SHOP_SLUG, request);
+        assertThat(accepted.getUnitCount()).isEqualTo(Integer.MAX_VALUE);
+        assertThat(jdbcTemplate.queryForObject("SELECT unit_count FROM orders WHERE order_number = ?",
+                Integer.class, accepted.getOrderNumber())).isEqualTo(Integer.MAX_VALUE);
+    }
+
+    @Test
+    void vendorQuantityOverflowIs400BeforePersistence() throws Exception {
+        UUID firstProduct = seedProduct("SKU-OVERFLOW-VENDOR-A");
+        UUID secondProduct = seedProduct("SKU-OVERFLOW-VENDOR-B");
+        jdbcTemplate.update("UPDATE products SET quantity_in_stock = ? WHERE id IN (?, ?)",
+                Integer.MAX_VALUE, firstProduct, secondProduct);
+        String key = UUID.randomUUID().toString();
+        String email = key + "@example.com";
+        Map<String, Object> request = Map.of("shopId", shopId, "customerEmail", email,
+                "items", List.of(Map.of("productId", firstProduct, "quantity", 1073741824),
+                        Map.of("productId", secondProduct, "quantity", 1073741824)));
+        mockMvc.perform(post("/api/v1/orders").with(jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
+                                .claim("tenant_id", TENANT_ID.toString()))
+                        .authorities(new SimpleGrantedAuthority("ROLE_admin"),
+                                new SimpleGrantedAuthority("SCOPE_orders:write")))
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM orders WHERE customer_email = ?",
+                Integer.class, email)).isZero();
+        assertThat(countReservationsForKey(key)).isZero();
+    }
+
     // ---- Request builder ----
 
     private GuestOrderRequest guestRequest(UUID productId, int qty, String idempotencyKey) {
@@ -419,7 +558,7 @@ class GuestCheckoutIdempotencyIntegrationTest {
                     "INSERT INTO shops (id, tenant_id, created_at, name, slug, published, "
                             + "delivery_fee_pennies, minimum_order_pennies, version) "
                             + "VALUES (?, ?, now(), ?, ?, true, 0, 0, 0)",
-                    id, tenantId, "QA 0902 Cluster E Shop", slug);
+                    id, tenantId, "QA 0902 Cluster E Shop " + slug, slug);
             return id;
         } finally {
             TenantContext.clear();

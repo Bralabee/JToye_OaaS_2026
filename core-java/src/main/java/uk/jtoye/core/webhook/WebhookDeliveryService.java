@@ -131,6 +131,12 @@ public class WebhookDeliveryService {
         return WebhookDeliveryView.from(saved);
     }
 
+    /** Authorize even a cached replay, which never invokes the mutation callback. */
+    public void requireReplayAccess() {
+        requireTenant();
+        shopAccessService.requireGroupAdmin();
+    }
+
     /** 404 (RFC 7807) unless the subscription exists and belongs to the caller's tenant. */
     private void requireOwnedSubscription(UUID subscriptionId) {
         WebhookSubscriptionDto owned = subscriptionService.getById(subscriptionId);

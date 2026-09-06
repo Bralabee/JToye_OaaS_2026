@@ -6,9 +6,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.common.CurrentTenant;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -16,6 +19,7 @@ import uk.jtoye.core.onboarding.dto.AdminOnboardingDto;
 import uk.jtoye.core.onboarding.dto.GateDto;
 import uk.jtoye.core.onboarding.dto.OnboardingDto;
 import uk.jtoye.core.onboarding.gate.AllergenCompletenessGate;
+import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
@@ -53,6 +57,7 @@ public class VendorOnboardingService {
     private final GateChainRunner gateChainRunner;
     private final AllergenCompletenessGate allergenCompletenessGate;
     private final UserDirectoryRepository userDirectoryRepository;
+    private final TransactionTemplate directoryTransaction;
 
     public VendorOnboardingService(VendorOnboardingRepository onboardingRepository,
                                    VendorOnboardingGateRepository gateRepository,
@@ -61,7 +66,8 @@ public class VendorOnboardingService {
                                    ShopRepository shopRepository,
                                    GateChainRunner gateChainRunner,
                                    AllergenCompletenessGate allergenCompletenessGate,
-                                   UserDirectoryRepository userDirectoryRepository) {
+                                   UserDirectoryRepository userDirectoryRepository,
+                                   PlatformTransactionManager transactionManager) {
         this.onboardingRepository = onboardingRepository;
         this.gateRepository = gateRepository;
         this.stateMachineService = stateMachineService;
@@ -70,6 +76,8 @@ public class VendorOnboardingService {
         this.gateChainRunner = gateChainRunner;
         this.allergenCompletenessGate = allergenCompletenessGate;
         this.userDirectoryRepository = userDirectoryRepository;
+        this.directoryTransaction = new TransactionTemplate(transactionManager);
+        this.directoryTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /**
@@ -522,10 +530,37 @@ public class VendorOnboardingService {
         if (displayName != null && displayName.length() > 255) {
             displayName = displayName.substring(0, 255);
         }
-        try {
-            userDirectoryRepository.upsertSeen(tenantId, subject, email.trim(), displayName, OffsetDateTime.now());
-        } catch (RuntimeException ex) {
-            log.warn("Submitter directory refresh skipped (best-effort) for tenant {}: {}", tenantId, ex.getMessage());
+        String resolvedDisplayName = displayName;
+        OffsetDateTime seenAt = OffsetDateTime.now();
+        Runnable refresh = () -> {
+            UUID previousTenant = TenantContext.get().orElse(null);
+            TenantContext.set(tenantId);
+            try {
+                directoryTransaction.executeWithoutResult(status -> userDirectoryRepository.upsertSeen(
+                        tenantId, subject, email.trim(), resolvedDisplayName, seenAt));
+            } catch (RuntimeException ex) {
+                // SQL errors can include the failed row's PII; log the type, not its message.
+                log.warn("Submitter directory refresh skipped (best-effort) for tenant {}: {}",
+                        tenantId, ex.getClass().getSimpleName());
+            } finally {
+                if (previousTenant == null) {
+                    TenantContext.clear();
+                } else {
+                    TenantContext.set(previousTenant);
+                }
+            }
+        };
+        // A caught SQL error still aborts PostgreSQL's transaction. Wait until the parent
+        // commits (releasing its locks), then refresh in a genuinely separate transaction.
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    refresh.run();
+                }
+            });
+        } else {
+            refresh.run();
         }
     }
 

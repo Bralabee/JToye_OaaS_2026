@@ -20,9 +20,9 @@ import { signOut } from "@/auth"
  * not load-bearing) and removes any dependence on that merge surviving a
  * hand-built redirect.
  *
- * NEVER THROWS. Both callers are on the P0 sign-out path: `logout-url` must still
- * hand the client the Keycloak end-session URL, and `logout-complete` must still
- * land the vendor on `/auth/signin`, whatever Auth.js does. A failure here is
+ * NEVER THROWS. The state-bound `logout-complete` return leg must still land the
+ * vendor on `/auth/signin`, whatever Auth.js does. The unprotected `logout-url`
+ * GET only looks up the session and must not call this helper. A failure here is
  * logged and the response proceeds without the clear — which is today's
  * behaviour, never worse.
  *

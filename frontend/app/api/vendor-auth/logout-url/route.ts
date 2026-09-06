@@ -13,7 +13,6 @@ import {
   mintVendorLogoutState,
   vendorLogoutStateCookieOptions,
 } from "@/lib/vendor-logout-state"
-import { clearVendorSessionInto } from "@/lib/vendor-session-clear"
 
 /**
  * GET /api/vendor-auth/logout-url?redirect=/auth/signin
@@ -140,12 +139,9 @@ export async function GET(req: NextRequest) {
     // the RELATIVE path is strictly safer and equally correct: the browser
     // resolves it against the page it is already on, which is this app.
     //
-    // FE-1: no Keycloak leg means no return leg, so the logout-complete route
-    // is deliberately NOT named here even with the flag on; the best-effort
-    // clear below is the only server-side help this branch gets.
-    return withBestEffortClear(
-      NextResponse.json({ url: returnUri ?? redirect }, { headers: NO_STORE_HEADERS })
-    )
+    // No Keycloak leg means no return leg. The client still performs its CSRF-protected
+    // Auth.js signOut; this unprotected GET must only look up the session, never end it.
+    return NextResponse.json({ url: returnUri ?? redirect }, { headers: NO_STORE_HEADERS })
   }
 
   // FE-1 (QA council 20260902-134741): with the flag ON, Keycloak returns the
@@ -192,19 +188,6 @@ export async function GET(req: NextRequest) {
   if (state) {
     res.cookies.set(VENDOR_LOGOUT_STATE_COOKIE, state, vendorLogoutStateCookieOptions(isHttpsOrigin(origin)))
   }
-  return withBestEffortClear(res)
-}
-
-/**
- * FE-1 (a) — the EARLY, best-effort leg. Not the fix: this response answers at
- * dt≈107-168 ms, inside the very window the in-flight `/api/auth/session` GETs
- * occupy, so a re-issue can still land after it. But it is harmless and strictly
- * additive — the same server `signOut` the return leg uses, its clearing cookies
- * carried on THIS response as well — and it helps precisely when the browser
- * never completes the Keycloak navigation. `clearVendorSessionInto` never
- * throws, so the end-session URL (the P0 path) cannot be lost to it.
- */
-async function withBestEffortClear(res: NextResponse): Promise<NextResponse> {
-  await clearVendorSessionInto(res, "logout-url")
+  // Only the state-bound logout-complete return leg may clear the session server-side.
   return res
 }

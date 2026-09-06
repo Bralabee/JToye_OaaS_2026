@@ -202,6 +202,12 @@ public class Order {
      * truth; order, ledger and preview now agree to the penny.
      */
     public void calculateTotal() {
+        int units;
+        try {
+            units = items.stream().mapToInt(OrderItem::getQuantity).reduce(0, Math::addExact);
+        } catch (ArithmeticException ex) {
+            throw new IllegalArgumentException("Order total quantity must not exceed " + Integer.MAX_VALUE, ex);
+        }
         this.subtotalPennies = items.stream()
                 .mapToLong(OrderItem::getTotalPricePennies)
                 .sum();
@@ -210,7 +216,7 @@ public class Order {
         this.itemCount = items.size();
         // COR-4: units, beside lines — never instead of them. Set on EVERY calculateTotal(), so
         // both order-creation paths and any later recalculation populate it together.
-        this.unitCount = items.stream().mapToInt(OrderItem::getQuantity).sum();
+        this.unitCount = units;
     }
 
     // Getters and Setters

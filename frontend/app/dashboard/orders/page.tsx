@@ -86,10 +86,10 @@ const orderSchema = z
     // supplied by useForm({ defaultValues }) instead, which is where the form's initial state
     // belongs anyway.
     fulfilmentType: z.enum(["COLLECTION", "DELIVERY"]),
-    addressLine1: z.string().max(255).optional(),
-    addressLine2: z.string().max(255).optional(),
-    addressCity: z.string().max(120).optional(),
-    addressPostcode: z.string().max(12).optional(),
+    addressLine1: z.string().optional(),
+    addressLine2: z.string().optional(),
+    addressCity: z.string().optional(),
+    addressPostcode: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.fulfilmentType !== "DELIVERY") return
@@ -101,6 +101,18 @@ const orderSchema = z
     for (const [field, message] of required) {
       if (!data[field]?.trim()) {
         ctx.addIssue({ code: "custom", message, path: [field] })
+      }
+    }
+    // Collection omits the address entirely, including stale values from a delivery edit.
+    const limits = [
+      ["addressLine1", 255],
+      ["addressLine2", 255],
+      ["addressCity", 120],
+      ["addressPostcode", 12],
+    ] as const
+    for (const [field, maximum] of limits) {
+      if ((data[field]?.length ?? 0) > maximum) {
+        ctx.addIssue({ code: "too_big", origin: "string", maximum, inclusive: true, path: [field] })
       }
     }
   })
@@ -968,6 +980,9 @@ function OrdersPageInner() {
                     placeholder="e.g., Flat 3"
                     {...register("addressLine2")}
                   />
+                  {errors.addressLine2 && (
+                    <p className="text-sm text-red-600">{errors.addressLine2.message}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="addressCity" className="text-xs">City</Label>

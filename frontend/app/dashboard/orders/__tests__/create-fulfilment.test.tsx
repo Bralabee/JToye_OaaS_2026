@@ -11,7 +11,7 @@
  * <p>These tests assert the CONTROL and the request BODY, not a screenshot: what matters is what
  * reaches POST /api/v1/orders, because that is what the server persists.
  */
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import OrdersPage from "../page"
 import apiClient from "@/lib/api-client"
@@ -61,6 +61,30 @@ async function openCreateDialog(user: ReturnType<typeof userEvent.setup>) {
   return control
 }
 
+async function prepareDelivery(user: ReturnType<typeof userEvent.setup>) {
+  const control = await openCreateDialog(user)
+  await user.click(screen.getByRole("combobox", { name: /shop for this order/i }))
+  await user.click(await screen.findByRole("option", { name: /brixton kitchen/i }))
+  await user.type(screen.getByLabelText(/customer name/i), "Phone Caller")
+  await user.type(screen.getByLabelText(/customer email/i), "caller@example.com")
+  await user.click(screen.getByRole("button", { name: /add item/i }))
+  await user.click(screen.getByRole("combobox", { name: /product for order item 1/i }))
+  await user.click(await screen.findByRole("option", { name: /jollof rice/i }))
+  await user.click(control)
+  await user.click(await screen.findByRole("option", { name: /delivery/i }))
+  fireEvent.change(screen.getByLabelText(/address line 1/i), { target: { value: "12 Coldharbour Lane" } })
+  fireEvent.change(screen.getByLabelText(/^city$/i), { target: { value: "London" } })
+  fireEvent.change(screen.getByLabelText(/postcode/i), { target: { value: "SW9 8LF" } })
+  return control
+}
+
+const ADDRESS_FIELDS = [
+  ["addressLine1", /address line 1/i, 255],
+  ["addressLine2", /address line 2/i, 255],
+  ["addressCity", /^city$/i, 120],
+  ["addressPostcode", /postcode/i, 12],
+] as const
+
 describe("COR-1: the vendor create-order dialog carries a fulfilment control", () => {
   it("renders a fulfilment control that opens on Collection", async () => {
     const user = userEvent.setup()
@@ -106,5 +130,44 @@ describe("COR-1: the vendor create-order dialog carries a fulfilment control", (
       .toBeInTheDocument()
     // Nothing may reach the money endpoint.
     expect(mockedApiClient.post).not.toHaveBeenCalled()
+  })
+
+  it.each(ADDRESS_FIELDS)("ignores stale overlong %s after switching to COLLECTION and omits all address fields", async (_field, label, max) => {
+    const user = userEvent.setup()
+    const control = await prepareDelivery(user)
+    fireEvent.change(screen.getByLabelText(label), { target: { value: "x".repeat(max + 1) } })
+    await user.click(control)
+    await user.click(await screen.findByRole("option", { name: /collection/i }))
+    expect(screen.queryByLabelText(label)).not.toBeInTheDocument()
+
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^create order$/i }))
+    await waitFor(() => expect(mockedApiClient.post).toHaveBeenCalledTimes(1))
+    expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/orders", {
+      shopId: SHOP_ID,
+      customerName: "Phone Caller",
+      customerEmail: "caller@example.com",
+      customerPhone: "",
+      fulfilmentType: "COLLECTION",
+      items: [{ productId: PRODUCT_ID, quantity: 1 }],
+    })
+  })
+
+  it.each(ADDRESS_FIELDS)("DELIVERY rejects overlong %s with a visible error, then accepts the length boundary", async (field, label, max) => {
+    const user = userEvent.setup()
+    await prepareDelivery(user)
+    const input = screen.getByLabelText(label)
+    fireEvent.change(input, { target: { value: "x".repeat(max + 1) } })
+    const submit = within(screen.getByRole("dialog")).getByRole("button", { name: /^create order$/i })
+    await user.click(submit)
+    expect(await within(input.parentElement!).findByText(new RegExp(`${max} characters`))).toBeInTheDocument()
+    expect(mockedApiClient.post).not.toHaveBeenCalled()
+
+    fireEvent.change(input, { target: { value: "x".repeat(max) } })
+    await user.click(submit)
+    await waitFor(() => expect(mockedApiClient.post).toHaveBeenCalledTimes(1))
+    expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/orders", expect.objectContaining({
+      fulfilmentType: "DELIVERY",
+      [field]: "x".repeat(max),
+    }))
   })
 })

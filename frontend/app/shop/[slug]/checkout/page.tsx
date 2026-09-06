@@ -235,7 +235,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   }, [])
   const [customerPhone, setCustomerPhone] = useState("")
   const [notes, setNotes] = useState("")
-  const idempotencyKeyRef = useRef(crypto.randomUUID())
+  const idempotencyKeyRef = useRef<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -326,22 +326,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     [customerName, customerEmail, customerPhone, notes, fulfilmentType, address1, address2, city, postcode, items]
   )
   const intentSignature = useMemo(() => guestOrderIntentSignature(orderIntent), [orderIntent])
-  // QA 20260902 Cluster E (API-4): the server refuses the same key with a DIFFERENT body
-  // (422 errors/idempotency-payload-mismatch). The key therefore has to follow the ORDER INTENT,
-  // not the page mount. PR #726 M3: "intent" means the WHOLE payload, not the basket alone — a
-  // basket edited through the cart drawer, a corrected phone number, a changed address line or a
-  // Delivery->Collection switch between two submits must each mint a fresh key, or a correct
-  // server refusal becomes a hard error with no recovery path. An UNCHANGED payload keeps its key
-  // so a retry replays rather than duplicates. The mount-time key is kept on the first run
-  // (nothing has been submitted under it yet, and hydration would otherwise discard it for no
-  // reason).
-  const lastIntentSignatureRef = useRef(intentSignature)
-  useEffect(() => {
-    if (lastIntentSignatureRef.current !== intentSignature) {
-      lastIntentSignatureRef.current = intentSignature
-      idempotencyKeyRef.current = crypto.randomUUID()
-    }
-  }, [intentSignature])
+  // Bind the key to the last SUBMITTED payload, never to intermediate edits. A lost response
+  // followed by edit -> undo must replay the same order; a genuinely changed submission needs
+  // a new key to avoid the server's 422 idempotency-payload-mismatch (API-4 / PR #726 M3).
+  const lastIntentSignatureRef = useRef<string | null>(null)
 
   // Fetch the shop so the fee breakdown can be shown BEFORE payment. Provides
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
@@ -447,6 +435,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     setSubmitting(true)
 
     try {
+      if (!idempotencyKeyRef.current || lastIntentSignatureRef.current !== intentSignature) {
+        idempotencyKeyRef.current = crypto.randomUUID()
+        lastIntentSignatureRef.current = intentSignature
+      }
       // One read, used for BOTH the header and the body field, so the two can never disagree.
       const idempotencyKey = idempotencyKeyRef.current
       // The body is the SIGNED intent plus the key — the same object the signature was taken

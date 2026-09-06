@@ -102,9 +102,9 @@ class PublicStorefrontServiceTest {
         // keeps the pre-existing WR-02 retry arms meaningful: the legacy in-work lookup on
         // orders.idempotency_key is what they exercise.
         lenient().doAnswer(inv -> {
-            Supplier<?> work = inv.getArgument(3);
+            Supplier<?> work = inv.getArgument(4);
             return new IdempotencyOutcome<>(201, work.get());
-        }).when(idempotencyService).executeWithoutStoringResponse(any(), any(), any(), any(), any());
+        }).when(idempotencyService).executeWithoutStoringResponse(any(), any(), any(), any(), any(), any());
 
         tenantId = UUID.randomUUID();
         publishedShop = new Shop();
@@ -729,6 +729,8 @@ class PublicStorefrontServiceTest {
     private Order existingOrder(OrderStatus status, String paymentReference) {
         Order order = new Order();
         setField(order, "id", UUID.randomUUID());
+        order.setTenantId(tenantId);
+        order.setShopId(publishedShop.getId());
         order.setOrderNumber("ORD-EXISTING-0001");
         order.setStatus(status);
         order.setSubtotalPennies(1798L);
@@ -922,7 +924,7 @@ class PublicStorefrontServiceTest {
         service.createGuestOrder("test-shop-abc12345", request, null);
 
         verify(idempotencyService).executeWithoutStoringResponse(
-                eq(PublicStorefrontService.GUEST_ORDER_ENDPOINT), eq("intent-42"), same(request), any(), any());
+                eq(PublicStorefrontService.GUEST_ORDER_ENDPOINT), eq("intent-42"), any(), same(request), any(), any());
         assertEquals("storefront.orders.create", PublicStorefrontService.GUEST_ORDER_ENDPOINT,
                 "namespaced away from orders.create so a dashboard key can never collide with a guest key");
         verify(orderRepository).save(any(Order.class));

@@ -77,6 +77,9 @@ public class WebhookDeliveryController {
             @PathVariable UUID deliveryId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
 
+        // A cache hit bypasses deliveryService.replay(), including its authorization gate.
+        deliveryService.requireReplayAccess();
+
         // WR-01: without a key, one click == one replay row (legacy behavior).
         // With a key, route through the generic V50 idempotency store so a
         // same-key retry (the frontend api-client auto-retries same key on 5xx)

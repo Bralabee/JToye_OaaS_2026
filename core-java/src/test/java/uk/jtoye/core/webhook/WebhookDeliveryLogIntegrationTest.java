@@ -31,6 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static uk.jtoye.core.testsupport.TenantJwts.adminJwt;
 import static uk.jtoye.core.testsupport.TenantJwts.tenantlessAdminJwt;
+import static uk.jtoye.core.testsupport.TenantJwts.vendorJwt;
 
 /**
  * Issue #444 (QA council F-H4-WHDELIV) — {@code GET
@@ -106,6 +107,8 @@ class WebhookDeliveryLogIntegrationTest {
     private static final UUID SUB_D = UUID.fromString("00000000-0000-0000-0000-0000000005d1");
     /** Tenant A, un-keyed replay in isolation (no preceding log read). */
     private static final UUID SUB_E = UUID.fromString("00000000-0000-0000-0000-0000000005e1");
+    private static final UUID SUB_AUTH = UUID.randomUUID();
+    private static final UUID DEL_AUTH = UUID.randomUUID();
 
     private static final UUID DEL_DELIVERED = UUID.fromString("00000000-0000-0000-0000-00000000de11");
     private static final UUID DEL_RETRYING = UUID.fromString("00000000-0000-0000-0000-00000000de22");
@@ -118,6 +121,7 @@ class WebhookDeliveryLogIntegrationTest {
     private static final UUID DEL_REPLAY_UNKEYED_SRC = UUID.fromString("00000000-0000-0000-0000-00000000de88");
 
     private static boolean seeded = false;
+    private static final UUID STAFF = UUID.randomUUID();
 
     @BeforeEach
     void seedOnce() {
@@ -134,6 +138,8 @@ class WebhookDeliveryLogIntegrationTest {
         insertSubscription(SUB_C, TENANT_A);
         insertSubscription(SUB_D, TENANT_A);
         insertSubscription(SUB_E, TENANT_A);
+        insertSubscription(SUB_AUTH, TENANT_A);
+        insertDelivery(DEL_AUTH, TENANT_A, SUB_AUTH, "order.state.changed", "FAILED", 8, 500, "Failed");
 
         // Tenant A's log: exactly the shape the council observed in production —
         // a delivered row, a retrying row at attempt 6 with a real remote 503,
@@ -150,6 +156,12 @@ class WebhookDeliveryLogIntegrationTest {
         insertDelivery(DEL_REPLAY_SRC, TENANT_A, SUB_C, "order.state.changed", "FAILED", 8, 500, "500 Internal Server Error");
         insertDelivery(DEL_REPLAY_KEYED_SRC, TENANT_A, SUB_D, "order.state.changed", "FAILED", 8, 500, "500 Internal Server Error");
         insertDelivery(DEL_REPLAY_UNKEYED_SRC, TENANT_A, SUB_E, "order.state.changed", "FAILED", 8, 500, "500 Internal Server Error");
+
+        UUID staffShop = UUID.randomUUID();
+        jdbc.update("INSERT INTO shops (id, tenant_id, name, slug, delivery_fee_pennies) VALUES (?, ?, 'Staff shop', ?, 0)",
+                staffShop, TENANT_A, "staff-" + staffShop);
+        jdbc.update("INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role) VALUES (?, ?, ?, ?, 'STAFF')",
+                UUID.randomUUID(), TENANT_A, STAFF, staffShop);
 
         // Seeding ran as the Testcontainers SUPERUSER (bypasses FORCE RLS).
         // Downgrade so every request below faces genuinely enforced RLS.
@@ -385,5 +397,31 @@ class WebhookDeliveryLogIntegrationTest {
         assertThat(countVisibleDeliveries(TENANT_A, SUB_D))
                 .as("two identical keyed replays create exactly ONE new attempt")
                 .isEqualTo(2);
+    }
+
+    @Test
+    void staffCannotReadAnAdminsCachedReplay() throws Exception {
+        String key = UUID.randomUUID().toString();
+        String url = "/api/v1/webhooks/" + SUB_AUTH + "/deliveries/" + DEL_AUTH + "/replay";
+        String adminResponse = mockMvc.perform(post(url).with(adminJwt(TENANT_A))
+                        .header("Idempotency-Key", key))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        int before = countVisibleDeliveries(TENANT_A, SUB_AUTH);
+
+        mockMvc.perform(post(url).with(vendorJwt(STAFF, TENANT_A)).header("Idempotency-Key", key))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/shop-access-denied"));
+        assertThat(countVisibleDeliveries(TENANT_A, SUB_AUTH)).isEqualTo(before);
+        assertThat(mockMvc.perform(post(url).with(adminJwt(TENANT_A)).header("Idempotency-Key", key))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
+                .isEqualTo(adminResponse);
+    }
+
+    @Test
+    void staffIsDeniedForFreshKeyAndMissingTargetBeforeLookup() throws Exception {
+        mockMvc.perform(post("/api/v1/webhooks/" + UUID.randomUUID() + "/deliveries/"
+                        + UUID.randomUUID() + "/replay")
+                        .with(vendorJwt(STAFF, TENANT_A)).header("Idempotency-Key", UUID.randomUUID()))
+                .andExpect(status().isForbidden());
     }
 }

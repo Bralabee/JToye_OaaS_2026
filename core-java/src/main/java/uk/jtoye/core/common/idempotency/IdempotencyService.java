@@ -118,7 +118,7 @@ public class IdempotencyService {
                                              Object requestBody,
                                              Class<T> responseType,
                                              Supplier<T> work) {
-        return run(endpoint, key, requestBody, work, true,
+        return run(endpoint, key, requestBody, null, work, true,
                 storedBody -> deserialize(storedBody, responseType));
     }
 
@@ -147,12 +147,29 @@ public class IdempotencyService {
                                                                    Object requestBody,
                                                                    Supplier<T> work,
                                                                    Supplier<T> replay) {
-        return run(endpoint, key, requestBody, work, false, ignoredNullBody -> replay.get());
+        return run(endpoint, key, requestBody, null, work, false, ignoredNullBody -> replay.get());
+    }
+
+    /**
+     * Compatibility for a strengthened request identity. New reservations always hash
+     * {@code requestBody}; an older hash may match {@code legacyRequestBody} only when the
+     * caller's replay supplier independently checks ownership of the original resource.
+     * Never use this to replay a stored response: the legacy identity alone is insufficient.
+     */
+    @Transactional
+    public <T> IdempotencyOutcome<T> executeWithoutStoringResponse(String endpoint,
+                                                                   String key,
+                                                                   Object requestBody,
+                                                                   Object legacyRequestBody,
+                                                                   Supplier<T> work,
+                                                                   Supplier<T> replay) {
+        return run(endpoint, key, requestBody, legacyRequestBody, work, false, ignoredNullBody -> replay.get());
     }
 
     private <T> IdempotencyOutcome<T> run(String endpoint,
                                           String key,
                                           Object requestBody,
+                                          Object legacyRequestBody,
                                           Supplier<T> work,
                                           boolean persistResponse,
                                           Function<String, T> onReplay) {
@@ -218,7 +235,8 @@ public class IdempotencyService {
         }
 
         String storedHash = (String) row.get("request_hash");
-        if (storedHash != null && !storedHash.equals(requestHash)) {
+        if (storedHash != null && !storedHash.equals(requestHash)
+                && (legacyRequestBody == null || !storedHash.equals(sha256Hex(serialize(legacyRequestBody))))) {
             log.info("Idempotency payload mismatch: endpoint={} key={} — different request body", endpoint, key);
             throw new IdempotencyPayloadMismatchException(
                     "Idempotency-Key reused with a different request payload");

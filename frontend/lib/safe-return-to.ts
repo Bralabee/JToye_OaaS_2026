@@ -27,6 +27,7 @@
  *     browsers treat as absolute
  *   - backslash variants (`/\evil.com`, `\\evil.com`, `/a\@evil.com`) that some
  *     browsers normalise to a protocol-relative URL
+ *   - control characters, including tabs/newlines a URL parser strips between slashes
  *   - anything not starting with a single `/`, so a bare `evil.com` cannot resolve
  *     relative to the current directory
  *
@@ -41,12 +42,22 @@
  */
 export function safeReturnTo(value: string | null | undefined, fallback: string = "/shop"): string {
   if (!value) return fallback
+  // Check BEFORE trimming: controls are not harmless padding, and URL parsing removes some.
+  for (const character of value) {
+    const code = character.charCodeAt(0)
+    if (code <= 0x1f || code === 0x7f) return fallback
+  }
   const candidate = value.trim()
   if (!candidate.startsWith("/")) return fallback
   // `//host` and `/\host` are absolute to a browser despite the leading slash.
   if (candidate.startsWith("//") || candidate.startsWith("/\\")) return fallback
   if (candidate.includes("\\")) return fallback
-  // A scheme cannot appear in a path-absolute URL; if one does, this is not one.
-  if (/^[a-z][a-z0-9+.-]*:/i.test(candidate)) return fallback
+  // Use the browser's parser as a second check, against a fixed origin (no request trust).
+  const origin = "https://return-to.invalid"
+  try {
+    if (new URL(candidate, origin).origin !== origin) return fallback
+  } catch {
+    return fallback
+  }
   return candidate
 }

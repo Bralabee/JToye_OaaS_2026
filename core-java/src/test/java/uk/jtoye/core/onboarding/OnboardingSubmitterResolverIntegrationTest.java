@@ -35,6 +35,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -215,5 +216,27 @@ class OnboardingSubmitterResolverIntegrationTest {
         });
 
         assertThat(inTenantTx(tenantA, () -> resolver.submitterEmail(onboardingId, tenantA))).isEmpty();
+    }
+
+    @Test
+    void directorySqlFailureDoesNotRollBackSubmission() throws Exception {
+        UUID subject = UUID.randomUUID();
+        String email = "directory-sql-failure@shop.test";
+        jdbc.execute("ALTER TABLE user_directory ADD CONSTRAINT test_directory_failure "
+                + "CHECK (email <> 'directory-sql-failure@shop.test')");
+        try {
+            assertThatThrownBy(() -> inTenantTx(tenantA, () -> jdbc.update(
+                    "INSERT INTO user_directory (tenant_id, user_id, email) VALUES (?, ?, ?)",
+                    tenantA, subject, email)))
+                    .hasMessageContaining("test_directory_failure");
+
+            UUID onboardingId = createAndSubmit(subject, email);
+            assertThat(inTenantTx(tenantA, () -> jdbc.queryForObject(
+                    "SELECT count(*) FROM vendor_onboarding_aud WHERE id = ? AND status = 'VERIFYING'",
+                    Integer.class, onboardingId))).isEqualTo(1);
+            assertThat(inTenantTx(tenantA, () -> resolver.submitterEmail(onboardingId, tenantA))).isEmpty();
+        } finally {
+            jdbc.execute("ALTER TABLE user_directory DROP CONSTRAINT test_directory_failure");
+        }
     }
 }

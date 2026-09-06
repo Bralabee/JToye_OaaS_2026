@@ -8,6 +8,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * COR-4 (QA-council 20260902-134741, adjudication A9) — an order records how many THINGS the
@@ -64,6 +65,18 @@ class OrderUnitCountTest {
 
         assertEquals(6, order.getUnitCount());
         assertEquals(3, order.getItemCount());
+    }
+
+    @Test
+    void maximumAggregateQuantityIsRepresentable() {
+        assertEquals(Integer.MAX_VALUE, orderWith(1073741824, 1073741823).getUnitCount());
+    }
+
+    @Test
+    void aggregateQuantityOverflowIsRejected() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> orderWith(1073741824, 1073741824));
+        assertEquals("Order total quantity must not exceed 2147483647", error.getMessage());
     }
 
     @Test

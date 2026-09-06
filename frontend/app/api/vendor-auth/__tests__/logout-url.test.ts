@@ -40,6 +40,7 @@
 import { NextRequest } from "next/server"
 import { auth, signOut } from "@/auth"
 import { GET as vendorLogoutUrlGET } from "../logout-url/route"
+import { GET as logoutCompleteGET } from "../logout-complete/route"
 
 jest.mock("@/auth", () => ({ auth: jest.fn(), signOut: jest.fn() }))
 
@@ -226,6 +227,9 @@ describe("/api/vendor-auth/logout-url — the redirect can never leave this orig
     ["padded protocol-relative", "  //evil.example"],
     ["padded absolute https", " https://evil.example/steal"],
     ["padded javascript:", " javascript:alert(1)"],
+    ["tab between slashes", "/\t/evil.example"],
+    ["newline between slashes", "/\n/evil.example"],
+    ["carriage return between slashes", "/\r/evil.example"],
   ]
 
   it.each(hostile)("rejects a %s redirect and falls back to /auth/signin", async (_label, raw) => {
@@ -493,47 +497,72 @@ describe("/api/vendor-auth/logout-url — M4: the return leg carries a state bou
   })
 })
 
-/**
- * FE-1 (a) — the EARLY, best-effort leg. Not the fix (it answers inside the
- * very window the in-flight session GETs occupy), but harmless and strictly
- * additive: the clearing cookies the server signOut produces ride on this
- * response too. What matters is the failure shape: a signOut that throws must
- * never cost the vendor the end-session URL — that URL is the P0 path.
- */
-describe("/api/vendor-auth/logout-url — FE-1 (a): best-effort early clear, never load-bearing", () => {
-  it("copies the server signOut's clearing cookies onto the URL response", async () => {
+describe("/api/vendor-auth/logout-url — GET looks up the session but never ends it", () => {
+  it.each([undefined, "false", "true"])("does NOT call server signOut with the flag %p", async (flag) => {
     mockSignOut.mockResolvedValue({
       redirect: "/",
       cookies: [{ name: "authjs.session-token", value: "", options: { maxAge: 0, path: "/" } }],
     })
-    await withEnv(SPLIT_HORIZON, async () => {
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: flag }, async () => {
       const res = await vendorLogoutUrlGET(
         containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
       )
-      expect(mockSignOut).toHaveBeenCalledWith({ redirect: false })
+      expect(mockAuth).toHaveBeenCalledTimes(1)
+      expect(mockSignOut).not.toHaveBeenCalled()
       const cookies = setCookies(res)
-      expect(cookies.some((c) => c.startsWith("authjs.session-token=") && /Max-Age=0/i.test(c))).toBe(true)
-      // And the URL is still there — this leg is additive.
+      expect(cookies.every((c) => c.startsWith("jtoye-vendor-logout-state="))).toBe(true)
+      if (flag !== "true") expect(cookies).toHaveLength(0)
       const { url } = await res.json()
       expect(url).toContain("id_token_hint=ID")
     })
   })
 
-  it("a THROWING signOut does not cost the vendor the end-session URL", async () => {
-    mockSignOut.mockRejectedValue(new Error("auth misconfigured"))
-    const quiet = jest.spyOn(console, "error").mockImplementation(() => {})
-    try {
-      await withEnv(SPLIT_HORIZON, async () => {
-        const res = await vendorLogoutUrlGET(
-          containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
-        )
-        expect(res.status).toBe(200)
-        const { url } = await res.json()
-        expect(url).toContain(`${PUBLIC_ISSUER}/protocol/openid-connect/logout`)
-        expect(url).toContain("id_token_hint=ID")
-      })
-    } finally {
-      quiet.mockRestore()
-    }
+  it.each([undefined, "true"])("does not clear a session without an id token, flag %p", async (flag) => {
+    mockAuth.mockResolvedValue({ user: { email: "vendor@example.com" } })
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: flag }, async () => {
+      const res = await vendorLogoutUrlGET(containerRequest("/api/vendor-auth/logout-url"))
+      expect(mockSignOut).not.toHaveBeenCalled()
+      expect(setCookies(res)).toHaveLength(0)
+      expect(await res.json()).toEqual({ url: `${PUBLIC_ORIGIN}/auth/signin` })
+    })
+  })
+
+  it("does not clear a session when the Keycloak base is missing", async () => {
+    await withEnv({ ...SPLIT_HORIZON, KEYCLOAK_ISSUER: undefined, [FLAG]: "true" }, async () => {
+      const res = await vendorLogoutUrlGET(containerRequest("/api/vendor-auth/logout-url"))
+      expect(mockSignOut).not.toHaveBeenCalled()
+      expect(setCookies(res)).toHaveLength(0)
+      expect(await res.json()).toEqual({ url: `${PUBLIC_ORIGIN}/auth/signin` })
+    })
+  })
+
+  it("leaves session cookies alone until logout-complete receives the matching state cookie", async () => {
+    mockSignOut.mockResolvedValue({
+      redirect: "/",
+      cookies: [{ name: "__Secure-authjs.session-token.0", value: "", options: { maxAge: 0, path: "/", secure: true } }],
+    })
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: "true" }, async () => {
+      const lookup = await vendorLogoutUrlGET(containerRequest("/api/vendor-auth/logout-url"))
+      const { url } = await lookup.json()
+      const endSession = new URL(url)
+      const state = endSession.searchParams.get("state")
+      const cookie = lookup.cookies.get("jtoye-vendor-logout-state")
+      expect(state).toBeTruthy()
+      expect(cookie?.value).toBe(state)
+      expect(mockSignOut).not.toHaveBeenCalled()
+
+      const callback = new URL(endSession.searchParams.get("post_logout_redirect_uri")!)
+      callback.searchParams.set("state", state!)
+      const res = await logoutCompleteGET(new NextRequest(callback, {
+        headers: { cookie: `${cookie!.name}=${cookie!.value}` },
+      }))
+      expect(mockSignOut).toHaveBeenCalledTimes(1)
+      expect(mockSignOut).toHaveBeenCalledWith({ redirect: false })
+      expect(res.headers.get("location")).toBe("/auth/signin")
+      const clearedState = res.cookies.get("jtoye-vendor-logout-state")
+      expect(clearedState).toMatchObject({ value: "", maxAge: 0, path: cookie!.path, secure: cookie!.secure })
+      expect(res.cookies.get("__Secure-authjs.session-token.0"))
+        .toMatchObject({ value: "", maxAge: 0, path: "/", secure: true })
+    })
   })
 })

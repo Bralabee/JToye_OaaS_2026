@@ -220,6 +220,47 @@ describe("Checkout idempotency contract (Cluster E client half)", () => {
     expect(second.headerKey).toBe(first.headerKey)
   })
 
+  it("reuses the last SUBMITTED key after a lost response followed by a notes edit and undo", async () => {
+    mockedPost.mockRejectedValue(new Error("response lost"))
+    renderCheckout()
+    await armCheckout()
+
+    placeOrder()
+    await screen.findByText(/Failed to place order/i)
+    const notes = screen.getByLabelText(/notes/i)
+    fireEvent.change(notes, { target: { value: "Leave at the door" } })
+    fireEvent.change(notes, { target: { value: "" } })
+
+    placeOrder()
+    await screen.findByText(/Failed to place order/i)
+    expect(mockedPost).toHaveBeenCalledTimes(2)
+    expect(submittedKeys(1)).toEqual(submittedKeys(0))
+    expect(mockedPost.mock.calls[1]).toEqual(mockedPost.mock.calls[0])
+  })
+
+  it("binds a changed submission to a NEW key, then preserves THAT key through an edit/undo retry", async () => {
+    mockedPost.mockRejectedValue(new Error("response lost"))
+    renderCheckout()
+    await armCheckout()
+
+    placeOrder()
+    await screen.findByText(/Failed to place order/i)
+    const notes = screen.getByLabelText(/notes/i)
+    fireEvent.change(notes, { target: { value: "Ring the bell" } })
+    placeOrder()
+    await screen.findByText(/Failed to place order/i)
+    expect(submittedKeys(1).bodyKey).not.toBe(submittedKeys(0).bodyKey)
+    expect(submittedKeys(1).headerKey).toBe(submittedKeys(1).bodyKey)
+    expect(mockedPost.mock.calls[1][1].notes).toBe("Ring the bell")
+
+    fireEvent.change(notes, { target: { value: "Do not ring" } })
+    fireEvent.change(notes, { target: { value: "Ring the bell" } })
+    placeOrder()
+    await screen.findByText(/Failed to place order/i)
+    expect(mockedPost).toHaveBeenCalledTimes(3)
+    expect(mockedPost.mock.calls[2]).toEqual(mockedPost.mock.calls[1])
+  })
+
   it("a CHANGED basket mints a NEW key before the next submit, so it can never trip the 422 payload-mismatch (API-4)", async () => {
     mockedPost.mockRejectedValue(new Error("network down"))
     let cart: CartApi | null = null

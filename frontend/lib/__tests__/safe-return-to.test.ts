@@ -36,4 +36,36 @@ describe("safeReturnTo — one function, two realms", () => {
     expect(safeReturnTo("/dashboard/orders", "/auth/signin")).toBe("/dashboard/orders")
     expect(safeReturnTo(" /dashboard/orders ", "/auth/signin")).toBe("/dashboard/orders")
   })
+
+  it.each(["\t", "\n", "\r"])("rejects a control %p that URL parsing strips into an external authority", (control) => {
+    const origin = "https://vendor.example.test"
+    const raw = `/${control}/evil.example`
+    // Prove the browser parser really turns this apparently single-slash path into another origin.
+    expect(new URL(raw, origin).origin).toBe("https://evil.example")
+    expect(safeReturnTo(raw, "/auth/signin")).toBe("/auth/signin")
+    expect(new URL(safeReturnTo(raw), origin).origin).toBe(origin)
+  })
+
+  it("rejects every ASCII control character, including leading/trailing controls before trimming", () => {
+    const controls = [...Array.from({ length: 32 }, (_, code) => code), 127]
+    for (const code of controls) {
+      const control = String.fromCharCode(code)
+      for (const raw of [`${control}/dashboard`, `/dashboard${control}`, `/dash${control}board`]) {
+        expect({ code, raw, result: safeReturnTo(raw, "/auth/signin") })
+          .toEqual({ code, raw, result: "/auth/signin" })
+      }
+    }
+  })
+
+  it.each([
+    "/dashboard/orders?status=PENDING#recent",
+    "/shop/evil.example-kitchen",
+    "/shop/caf%C3%A9?next=https%3A%2F%2Fevil.example",
+    "/shop/../dashboard/orders",
+    "/shop/%2F%2Fevil.example",
+  ])("keeps the safe path %s and its parsed origin", (raw) => {
+    expect(safeReturnTo(raw)).toBe(raw)
+    expect(new URL(safeReturnTo(raw), "https://vendor.example.test").origin)
+      .toBe("https://vendor.example.test")
+  })
 })
