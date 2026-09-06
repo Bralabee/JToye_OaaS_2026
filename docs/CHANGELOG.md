@@ -53,6 +53,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read `it.each<[...]>(…)` as a bare identifier — ZERO blocks for a 12-row typed table,
   silently — until the runner oracle disagreed; it now walks the type-argument list, with
   a fixture arm that was shown to fail first.
+- **Round 2 of the review, concluded 2026-09-07.** The unprotected logout-url GET no
+  longer ends the session even best-effort — an unauthenticated GET must only look up,
+  and clearing now happens solely on the state-verified logout-complete return leg.
+  `safeReturnTo` rejects ASCII controls before trimming (the URL parser strips a tab
+  between slashes into a foreign authority — proven in-band) and re-checks with the
+  browser's own parser. The checkout key binds to the last SUBMITTED payload, so a lost
+  response followed by edit-then-undo replays instead of minting a needless key. The
+  guest idempotency identity now includes the shop UUID (slugs can change), with a
+  legacy-compat arm guarded by an ownership check on every replay path; a replay whose
+  order has since been deleted answers 410, never a 500, and never re-creates. The
+  best-effort `user_directory` refresh moved to afterCommit in its own transaction — a
+  caught SQL error was still aborting the parent PostgreSQL transaction. Unit counts
+  reject int overflow. And the cache-hit-bypasses-authz shape was closed TWICE: webhook
+  replay in round 2 itself, then — found by the tenancy review of that very fix —
+  `orders.create`, whose cached replay returned the stored customer PII without the
+  VSA-02 shop_staff gate ever running; both now authorize before the lookup, each with a
+  denial test shown to fail on the pre-fix code. Media accept/reprocess share the shape
+  at NIT severity (disclosure is asset id + status only) and are recorded as residual,
+  not silently dropped.
 - **Docs and gates, closing drift this run exposed.** `docs/metrics.json` was stale — the
   branch added tests without regenerating it — now 4,003 logical invocations (was 3,572)
   with 37 prose claims reconciled. `.planning/codebase/` remapped, four of its seven

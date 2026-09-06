@@ -1,6 +1,6 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded) and 2026-09-05 (review remediated + housekeeping). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) and 2026-09-07 (round 2 concluded, branch reconciled with main). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
 **2026-08-31 delta — customer-surface P0/P1 fixes (PR #711, quick task 260831-gnm).** A five-lane
 human-like utilisation audit of the customer surfaces found 15 defects; PR #711 fixed the six with
@@ -137,6 +137,35 @@ doctor: 8 DRIFT rows (gh, claude-code, gemini-cli, copilot, docker-ce, fabric-cl
 antigravity-hub) + `conda` MISSING — surfaced, not applied. Left as found: untracked
 `.planning/quick/260831-jz4-fix-keycloak-realm-config-branded-login-/evidence/`.
 
+**2026-09-07 delta — round 2 committed, the merge-with-main conflict resolved, the branch
+concluded.** PR #733 (the Tomcat pin) merged to main on 2026-09-05 and made #726 CONFLICTING on
+`core-java/build.gradle.kts`; the reconciliation merge `d3155923` (main → branch, in
+`.worktrees/pr-726-fix`) resolved it. The 21-file round-2 review remediation found UNCOMMITTED in
+that worktree (a JetBrains Junie session's work) was reviewed in full and committed as `9474805e`:
+the unprotected logout-url GET made session-read-only (clearing lives solely on the state-verified
+logout-complete leg), `safeReturnTo` control-character hardening with the in-band
+`/\t/evil.example` foreign-origin proof, the checkout key re-bound to the last SUBMITTED payload,
+the guest idempotency identity bound to the shop UUID with a legacy-compat arm behind an ownership
+check, the webhook replay cache-hit authz gate, the `user_directory` refresh moved to afterCommit
+REQUIRES_NEW, and a unit-count overflow guard. Two independent reviews then ran on that delta
+(tenancy-security + release-QA): **no blocker**; the one SHOULD-FIX — `orders.create` carrying the
+same cache-hit-bypasses-authz shape round 2 fixed for webhooks — closed in `2d8a4426` with the
+webhook denial-test pattern ported and the full bracket run (pre-hoist controller: test FAILS;
+restored by content: PASSES). OpenAPI snapshot regenerated for the new 410 + shop-bound wording
+(`2906b8bd`); metrics 4041 → 4042 with the three prose docs reconciled each time. Instrument note:
+the first full-suite run failed 116/318 integrationTest classes on `Could not connect to Ryuk at
+localhost:32768` — Testcontainers sidecar churn under maxParallelForks=4, an environment failure,
+not code; green on re-run with `TESTCONTAINERS_RYUK_DISABLED=true`. Frontend full suites: 172/172
+Jest suites (1873 tests) + `next build` clean. **Reviewer residuals deliberately NOT chased into
+this PR** (recorded in the PR description too): `media.upload`/`media.reprocess` share the
+cache-hit shape at NIT severity (a hit discloses only asset id + status); the legacy-hash compat
+arm has no sunset date; flag-OFF logout deployments rely on the client-side clear alone (the
+documented E-5 residual). Main-checkout residue resolved: the uncommitted `build.gradle.kts`
+Tomcat hunk was the SAME stale duplicate of #733 the 09-05 session already dropped once from this
+tree — dropped again; its two companion pins (commons-lang3 3.20.0 over springdoc's 3.17.0,
+commons-compress 1.28.0 over Testcontainers' 1.24.0, both scanner-suggested) are recorded HERE as
+a candidate follow-up PR against main, not swept into #726.
+
 **Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
 the 2026-08-24 session broke it once itself (see "The truncating filter", below).
 
@@ -148,9 +177,11 @@ the 2026-08-24 session broke it once itself (see "The truncating filter", below)
 
 ## Resume here
 
-**Two branches are in flight and waiting on YOUR review, not on engineering:**
-`feature/qa-remediate-20260902` (PR #726) and `feature/tomcat-10.1.59-cve-pin` (PR #733) — see the
-2026-09-05 delta above. The block below describes the `main` checkout once they have merged.
+**#733 merged 2026-09-05; #726 was concluded by the 2026-09-07 session** — verify the actual
+merge state with `gh pr view 726 --json state,mergedAt` rather than trusting this sentence.
+The block below describes the `main` checkout once #726 has merged. After that merge the ten
+`qa/cluster-*` branches and the `/tmp/claude-1000/…/qa/wt-*` worktrees holding them become
+deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 
 ```bash
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
