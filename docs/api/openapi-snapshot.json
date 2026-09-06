@@ -9407,7 +9407,7 @@
     },
     "/api/v1/public/shops/{slug}/orders" : {
       "post" : {
-        "description" : "Create an order as a guest customer. Prices are calculated server-side. Supply an Idempotency-Key header to make a retried POST safe: the same key with the same body replays the original confirmation and never creates a second order; the same key with a different body is refused 422 (errors/idempotency-payload-mismatch); a concurrent request on the same key that is still in flight is refused 409 (errors/idempotency-conflict). The legacy request-body field idempotencyKey is still honoured; when both are present they must carry the SAME value, and a request whose body and header keys differ is refused 400 (errors/invalid-argument) before any order is written.",
+        "description" : "Create an order as a guest customer. Prices are calculated server-side. Supply an Idempotency-Key header to make a retried POST safe: the same key with the same body and shop replays the original confirmation and never creates a second order; the same key with a different body or shop is refused 422 (errors/idempotency-payload-mismatch); a concurrent request on the same key that is still in flight is refused 409 (errors/idempotency-conflict). The legacy request-body field idempotencyKey is still honoured; when both are present they must carry the SAME value, and a request whose body and header keys differ is refused 400 (errors/invalid-argument) before any order is written. A completed reservation whose order has been deleted or expired returns 410; it never creates a replacement.",
         "operationId" : "createGuestOrder",
         "parameters" : [
           {
@@ -9458,7 +9458,7 @@
                 }
               }
             },
-            "description" : "Request body idempotencyKey and Idempotency-Key header disagree"
+            "description" : "Invalid request, including disagreeing keys or total quantity above 2147483647"
           },
           "409" : {
             "content" : {
@@ -9470,6 +9470,16 @@
             },
             "description" : "A request with this Idempotency-Key is in flight"
           },
+          "410" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The completed order has been deleted or expired; no replacement is created"
+          },
           "422" : {
             "content" : {
               "application/problem+json" : {
@@ -9478,7 +9488,7 @@
                 }
               }
             },
-            "description" : "Idempotency-Key reused with a different payload"
+            "description" : "Idempotency-Key reused with a different payload or shop"
           }
         },
         "summary" : "Place a guest order",
@@ -11365,7 +11375,7 @@
     },
     "/public/shops/{slug}/orders" : {
       "post" : {
-        "description" : "Create an order as a guest customer. Prices are calculated server-side. Supply an Idempotency-Key header to make a retried POST safe: the same key with the same body replays the original confirmation and never creates a second order; the same key with a different body is refused 422 (errors/idempotency-payload-mismatch); a concurrent request on the same key that is still in flight is refused 409 (errors/idempotency-conflict). The legacy request-body field idempotencyKey is still honoured; when both are present they must carry the SAME value, and a request whose body and header keys differ is refused 400 (errors/invalid-argument) before any order is written.",
+        "description" : "Create an order as a guest customer. Prices are calculated server-side. Supply an Idempotency-Key header to make a retried POST safe: the same key with the same body and shop replays the original confirmation and never creates a second order; the same key with a different body or shop is refused 422 (errors/idempotency-payload-mismatch); a concurrent request on the same key that is still in flight is refused 409 (errors/idempotency-conflict). The legacy request-body field idempotencyKey is still honoured; when both are present they must carry the SAME value, and a request whose body and header keys differ is refused 400 (errors/invalid-argument) before any order is written. A completed reservation whose order has been deleted or expired returns 410; it never creates a replacement.",
         "operationId" : "createGuestOrder_1",
         "parameters" : [
           {
@@ -11416,7 +11426,7 @@
                 }
               }
             },
-            "description" : "Request body idempotencyKey and Idempotency-Key header disagree"
+            "description" : "Invalid request, including disagreeing keys or total quantity above 2147483647"
           },
           "409" : {
             "content" : {
@@ -11428,6 +11438,16 @@
             },
             "description" : "A request with this Idempotency-Key is in flight"
           },
+          "410" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The completed order has been deleted or expired; no replacement is created"
+          },
           "422" : {
             "content" : {
               "application/problem+json" : {
@@ -11436,7 +11456,7 @@
                 }
               }
             },
-            "description" : "Idempotency-Key reused with a different payload"
+            "description" : "Idempotency-Key reused with a different payload or shop"
           }
         },
         "summary" : "Place a guest order",
