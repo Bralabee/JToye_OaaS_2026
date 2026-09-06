@@ -108,6 +108,9 @@ public class OrderController {
             OrderDto order = orderService.createOrder(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(order);
         }
+        // A cache hit replays the stored OrderDto without invoking createOrder(),
+        // which would skip its VSA-02 shop_staff gate — authorize before the lookup.
+        orderService.requireCreateAccess(request.getShopId());
         IdempotencyOutcome<OrderDto> outcome = idempotencyService.execute(
                 "orders.create", idempotencyKey, request, OrderDto.class,
                 () -> orderService.createOrder(request));

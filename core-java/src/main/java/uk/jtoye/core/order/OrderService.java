@@ -98,6 +98,17 @@ public class OrderService {
     }
 
     /**
+     * Authorize an order-create against the VSA-02 shop_staff gate WITHOUT creating anything.
+     * For the controller's Idempotency-Key branch: a cache hit returns the stored OrderDto
+     * (customer name/email/phone) without ever invoking {@link #createOrder}, so the gate
+     * inside it never runs — the same cache-hit-bypasses-authz shape
+     * {@code WebhookDeliveryService.requireReplayAccess} closes for webhook replays.
+     */
+    public void requireCreateAccess(UUID shopId) {
+        shopAccessService.require(shopId, ShopRole.SHOP_MANAGER);
+    }
+
+    /**
      * Create a new order with items.
      * Automatically assigns tenant from context and calculates totals.
      * Validates that the shop belongs to the current tenant.

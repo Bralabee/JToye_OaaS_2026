@@ -786,9 +786,12 @@ public class PublicStorefrontService {
         Order existingOrder = orderRepository.findByTenantIdAndIdempotencyKey(shop.getTenantId(), idempotencyKey)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.GONE,
                         "The order for this Idempotency-Key has been deleted or expired"));
+        // Guard before logging: a cross-shop legacy-hash probe must not record another
+        // shop's order number against the attacker-addressed request.
+        GuestOrderConfirmation confirmation = replayConfirmation(shop, existingOrder);
         log.info("Idempotent replay for key '{}', returning existing order {}",
                 idempotencyKey, existingOrder.getOrderNumber());
-        return replayConfirmation(shop, existingOrder);
+        return confirmation;
     }
 
     /**

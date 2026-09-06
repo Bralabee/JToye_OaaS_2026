@@ -20,6 +20,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
+import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.order.OrderController;
 import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDto;
@@ -214,6 +215,41 @@ class OrderIdempotencyIntegrationTest {
             }
         } finally {
             pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void cachedReplayIsDeniedWithoutTheShopGrant() {
+        // QA 20260902 round-2 review: a cache hit returns the STORED OrderDto (customer
+        // name/email/phone) without invoking createOrder(), so before the controller-level
+        // requireCreateAccess hoist the only gates a replay met were @PreAuthorize scope +
+        // the store's tenant key — a same-tenant caller with orders:write but NO grant on
+        // the shop could read the admin's cached order. Ports the webhook pattern
+        // (staffCannotReadAnAdminsCachedReplay) onto orders.create.
+        Fixture fx = seedFreshShopWithProduct(/*stock=*/ 100);
+        String key = "order-key-authz-" + UUID.randomUUID();
+        TenantContext.set(TENANT_ID);
+        try {
+            CreateOrderRequest request = buildRequest(fx, "authz notes");
+            ResponseEntity<OrderDto> admin = orderController.createOrder(request, key);
+            assertThat(admin.getBody()).isNotNull();
+
+            // Same tenant, orders:write scope, but neither realm-admin nor any shop_staff
+            // grant — the ShopAccessService "explicitly granted users only" path.
+            SecurityContextHolder.getContext().setAuthentication(
+                    new UsernamePasswordAuthenticationToken("ungranted-vendor", "n/a",
+                            List.of(new SimpleGrantedAuthority("SCOPE_orders:write"))));
+
+            assertThatThrownBy(() -> orderController.createOrder(request, key))
+                    .as("the cached replay is refused exactly like a fresh create would be")
+                    .isInstanceOf(ShopAccessDeniedException.class);
+
+            assertThat(countOrders(fx.shopId))
+                    .as("the denied replay neither created nor disturbed anything")
+                    .isEqualTo(1);
+        } finally {
+            SecurityContextHolder.clearContext();
+            TenantContext.clear();
         }
     }
 
