@@ -1,0 +1,457 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "J'Toye Edge Gateway — request topology",
+    "subtitle": "edge-go · Gin 1.12 · Go 1.27",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1180,
+      660
+    ],
+    "repository": {
+      "url": "https://github.com/Bralabee/JToye_OaaS_2026",
+      "revision": "9d9efaebac56e1708438c5405d18103a59d1b8e2"
+    },
+    "views": [
+      {
+        "id": "protected-path",
+        "label": "Authenticated path",
+        "focus": [
+          "clients",
+          "router",
+          "limiter",
+          "jwt",
+          "handlers",
+          "coreclient",
+          "coreapi"
+        ],
+        "note": "The only JWT-protected route: POST /api/v1/sync/batch through to core-java."
+      },
+      {
+        "id": "whatsapp-intake",
+        "label": "WhatsApp intake",
+        "focus": [
+          "meta",
+          "router",
+          "handlers",
+          "parser",
+          "svctoken",
+          "keycloak",
+          "coreapi"
+        ],
+        "note": "Signature-only public route: Meta cannot present a JWT, so the edge mints its own."
+      },
+      {
+        "id": "observability",
+        "label": "Metrics topology",
+        "focus": [
+          "router",
+          "mgmt",
+          "limiter"
+        ],
+        "note": "EDGE_MANAGEMENT_PORT moves /metrics off the published application port."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "clients",
+      "type": "external",
+      "label": "Public clients",
+      "sublabel": "HTTPS · Bearer JWT",
+      "pos": [
+        38,
+        180
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "meta",
+      "type": "external",
+      "label": "WhatsApp Cloud API",
+      "sublabel": "Meta webhook",
+      "brand": "whatsapp",
+      "pos": [
+        38,
+        350
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "router",
+      "type": "backend",
+      "label": "Gin app router",
+      "sublabel": "PORT 8080",
+      "sources": [
+        {
+          "path": "edge-go/cmd/edge/main.go",
+          "line": 267,
+          "label": "gin.Default()"
+        }
+      ],
+      "pos": [
+        222,
+        265
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "limiter",
+      "type": "security",
+      "label": "Token-bucket guard",
+      "sublabel": "per-replica DoS valve",
+      "sources": [
+        {
+          "path": "edge-go/cmd/edge/main.go",
+          "line": 166,
+          "end_line": 200,
+          "label": "rateLimiter()"
+        }
+      ],
+      "pos": [
+        406,
+        180
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "jwt",
+      "type": "security",
+      "label": "JWT middleware",
+      "sublabel": "JWKS · iss + aud",
+      "sources": [
+        {
+          "path": "edge-go/internal/middleware/jwt.go",
+          "line": 108,
+          "label": "Validate()"
+        }
+      ],
+      "pos": [
+        406,
+        350
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "handlers",
+      "type": "backend",
+      "label": "edgeHandlers",
+      "sublabel": "4 routes",
+      "sources": [
+        {
+          "path": "edge-go/cmd/edge/handlers.go",
+          "line": 24,
+          "label": "edgeHandlers"
+        }
+      ],
+      "pos": [
+        590,
+        265
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "parser",
+      "type": "backend",
+      "label": "WhatsApp parser",
+      "sublabel": "text → order lines",
+      "sources": [
+        {
+          "path": "edge-go/internal/whatsapp/parser.go",
+          "line": 51,
+          "label": "ParseWebhook()"
+        }
+      ],
+      "pos": [
+        590,
+        440
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "coreclient",
+      "type": "backend",
+      "label": "Core client",
+      "sublabel": "gobreaker · 5 declared calls",
+      "sources": [
+        {
+          "path": "edge-go/internal/core/client.go",
+          "line": 35,
+          "label": "NewClient()"
+        }
+      ],
+      "pos": [
+        774,
+        265
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "svctoken",
+      "type": "security",
+      "label": "Service token",
+      "sublabel": "client_credentials",
+      "sources": [
+        {
+          "path": "edge-go/internal/auth/service_token.go",
+          "line": 57,
+          "label": "provider"
+        }
+      ],
+      "pos": [
+        774,
+        440
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "mgmt",
+      "type": "backend",
+      "label": "Mgmt listener",
+      "sublabel": "/metrics only",
+      "brand": "prometheus",
+      "sources": [
+        {
+          "path": "edge-go/cmd/edge/main.go",
+          "line": 128,
+          "label": "newManagementRouter()"
+        }
+      ],
+      "pos": [
+        222,
+        440
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "coreapi",
+      "type": "external",
+      "label": "core-java API",
+      "sublabel": "Spring Boot",
+      "pos": [
+        958,
+        265
+      ],
+      "size": [
+        138,
+        68
+      ]
+    },
+    {
+      "id": "keycloak",
+      "type": "external",
+      "label": "Keycloak",
+      "sublabel": "JWKS + token endpoint",
+      "pos": [
+        958,
+        440
+      ],
+      "size": [
+        138,
+        68
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "edge-go process",
+      "wraps": [
+        "router",
+        "limiter",
+        "jwt",
+        "handlers",
+        "parser",
+        "coreclient",
+        "svctoken",
+        "mgmt"
+      ],
+      "pad": 28
+    }
+  ],
+  "connections": [
+    {
+      "id": "clients-router",
+      "from": "clients",
+      "to": "router",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "meta-router",
+      "from": "meta",
+      "to": "router",
+      "label": "HMAC-SHA256",
+      "variant": "security",
+      "labelAt": [
+        199,
+        347
+      ]
+    },
+    {
+      "id": "router-limiter",
+      "from": "router",
+      "to": "limiter",
+      "label": "all but /health,/ready",
+      "labelAt": [
+        383,
+        262
+      ]
+    },
+    {
+      "id": "limiter-jwt",
+      "from": "limiter",
+      "to": "jwt",
+      "label": "protected group",
+      "labelAt": [
+        475,
+        262
+      ]
+    },
+    {
+      "id": "limiter-handlers",
+      "from": "limiter",
+      "to": "handlers",
+      "label": "public routes",
+      "variant": "dashed",
+      "labelAt": [
+        567,
+        262
+      ]
+    },
+    {
+      "id": "jwt-handlers",
+      "from": "jwt",
+      "to": "handlers",
+      "label": "verified claims",
+      "labelAt": [
+        567,
+        347
+      ]
+    },
+    {
+      "id": "jwt-keycloak",
+      "from": "jwt",
+      "to": "keycloak",
+      "label": "JWKS refresh",
+      "variant": "dashed",
+      "labelAt": [
+        700,
+        560
+      ],
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          475,
+          575
+        ],
+        [
+          1027,
+          575
+        ]
+      ]
+    },
+    {
+      "id": "handlers-parser",
+      "from": "handlers",
+      "to": "parser",
+      "label": "webhook body",
+      "labelAt": [
+        659,
+        347
+      ]
+    },
+    {
+      "id": "handlers-svctoken",
+      "from": "handlers",
+      "to": "svctoken",
+      "label": "no caller JWT",
+      "labelAt": [
+        751,
+        347
+      ]
+    },
+    {
+      "id": "svctoken-keycloak",
+      "from": "svctoken",
+      "to": "keycloak",
+      "label": "mint token",
+      "variant": "security",
+      "labelAt": [
+        935,
+        522
+      ]
+    },
+    {
+      "id": "handlers-coreclient",
+      "from": "handlers",
+      "to": "coreclient",
+      "label": "SyncBatch · CreateOrder",
+      "labelAt": [
+        820,
+        347
+      ]
+    },
+    {
+      "id": "coreclient-coreapi",
+      "from": "coreclient",
+      "to": "coreapi",
+      "label": "HTTP + breaker",
+      "variant": "emphasis",
+      "labelAt": [
+        935,
+        240
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One protected route",
+      "items": [
+        "POST /api/v1/sync/batch is the only JWT-gated route",
+        "/health and /ready are exempt from the bucket by path"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Two listeners, one binary",
+      "items": [
+        "Unset EDGE_MANAGEMENT_PORT keeps /metrics on :8080",
+        "Set, it moves to a second engine with no limiter"
+      ]
+    }
+  ]
+}
