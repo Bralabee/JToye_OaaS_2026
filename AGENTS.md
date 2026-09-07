@@ -62,7 +62,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - JUnit 5 - Java test framework
 - Testcontainers 1.21.4 - Docker-based integration testing
 - Spring Boot Test - Testing utilities and test containers
-- Jest 29.7.0 - JavaScript test runner
+- Jest 30.5.1 - JavaScript test runner
 - @testing-library/react - React component testing
 - @playwright/test 1.62.1 - E2E browser automation
 - Spring Boot Gradle Plugin 3.5.16 - JAR packaging
