@@ -173,8 +173,8 @@ psql_run "$promo_sql" || void "promotion/announcement seed failed"
 # human can perform" anti-pattern this repo already paid for once (V64/#647). This
 # section is that reset, scripted and idempotent.
 #
-# SCOPE: SHOP_TENANT only. Another tenant's onboarding row (…0002 is WITHDRAWN on the
-# dev DB) is not this spec's concern and a table-wide sweep would destroy state other
+# SCOPE: SHOP_TENANT only. Another tenant's onboarding row (…0002 is LIVE on the dev DB,
+# measured 2026-09-07 — this line said WITHDRAWN and was stale) is not this spec's concern and a table-wide sweep would destroy state other
 # flows may assert.
 #
 # Shop.published is DELIBERATELY untouched: demo shops are seed-published and the
@@ -185,28 +185,44 @@ psql_run "$promo_sql" || void "promotion/announcement seed failed"
 # RESET_ONBOARDING=0 preserves a terminal state on purpose (e.g. an owner-gate reviewer
 # inspecting LIVE). The verification at the bottom still FAILS in that case — opting out
 # of the repair is not opting out of the truth.
-TERMINAL_STATES="('LIVE','SUSPENDED','REJECTED','WITHDRAWN')"
+# The list is "states ONBD-05 cannot be driven from", NOT the state machine's terminal
+# set — the two differ and conflating them shipped a vacuous PASS. ONBD-05 asserts the
+# honest in-review copy, which VendorOnboardingService derives only when status is
+# VERIFYING. Note the premise is REACHABILITY, not "gates resolve on the way out of
+# VERIFYING" — that is false: REVIEWABLE_STATES is {VERIFYING, ACTION_REQUIRED} and a
+# MANUAL_REVIEW gate parks in ACTION_REQUIRED whenever another mandatory gate FAILED in
+# the same run. What makes the list below correct is that SUBMIT (from DRAFT) and
+# RESUBMIT (from ACTION_REQUIRED) are the ONLY edges into VERIFYING in
+# VendorOnboardingStateMachineConfig, so none of the six listed states has a path back —
+# and reviewPending is VERIFYING-only, so ONBD-05 cannot assert from any of them. Measured 2026-09-07 on the dev stack: the demo
+# tenant sat at APPROVED (all three gates PASSED/WAIVED), this guard printed
+# "APPROVED — re-runnable, untouched", the verification counted 0 blocking rows and
+# declared ONBD-05 armed — and ONBD-05 then FAILED on a 60s timeout rather than skipping,
+# which is worse than the undeclared skip the section was written to prevent (#686).
+# PENDING_APPROVAL is included for the same reason as APPROVED: gates already resolved.
+# Re-runnable, and deliberately absent: DRAFT, ACTION_REQUIRED, VERIFYING.
+NON_RERUNNABLE_STATES="('PENDING_APPROVAL','APPROVED','LIVE','SUSPENDED','REJECTED','WITHDRAWN')"
 onb_status=$(psql_q "select status from vendor_onboarding where tenant_id = '$SHOP_TENANT';")
 if [ -z "$onb_status" ]; then
   echo "  onboarding: no row for tenant $SHOP_TENANT — create path open, nothing to reset"
-elif ! grep -qF "'$onb_status'" <<< "$TERMINAL_STATES"; then
+elif ! grep -qF "'$onb_status'" <<< "$NON_RERUNNABLE_STATES"; then
   echo "  onboarding: $onb_status — re-runnable, untouched"
 elif [ "$RESET_ONBOARDING" != "1" ]; then
-  echo "  onboarding: $onb_status (terminal) — RESET_ONBOARDING=0, PRESERVED (verification will fail)"
+  echo "  onboarding: $onb_status (not re-runnable) — RESET_ONBOARDING=0, PRESERVED (verification will fail)"
 else
   onb_reset_sql=$(cat <<SQL
 delete from vendor_onboarding_gate g
  using vendor_onboarding o
  where g.onboarding_id = o.id
    and o.tenant_id = '$SHOP_TENANT'
-   and o.status in $TERMINAL_STATES;
+   and o.status in $NON_RERUNNABLE_STATES;
 delete from vendor_onboarding
  where tenant_id = '$SHOP_TENANT'
-   and status in $TERMINAL_STATES;
+   and status in $NON_RERUNNABLE_STATES;
 SQL
 )
   psql_run "$onb_reset_sql" || void "onboarding reset failed"
-  echo "  onboarding: was $onb_status (terminal) — row + gates deleted; ONBD-05 can run again"
+  echo "  onboarding: was $onb_status (not re-runnable) — row + gates deleted; ONBD-05 can run again"
 fi
 
 # --- 4. Optional: cross-tenant residue ---------------------------------------------
@@ -252,22 +268,43 @@ fi
 #   truncates once.
 #
 #   Idempotent on (tenant_id, sku), which is the live unique index idx_products_tenant_sku.
+#
+#   durability_type + shelf_life_days ARE NOT OPTIONAL HERE, and the ON CONFLICT arm must
+#   keep repairing them on rows an earlier seeder version created without. This product
+#   lands on PROMO_SHOP_SLUG, which is also the shop ONBD-05 onboards, and
+#   AllergenCompletenessGate fails the MANDATORY ALLERGEN_DATA_COMPLETE gate when ANY
+#   product on that shop lacks a durability type, a shelf life or an ingredients list. A
+#   FAILED mandatory gate drives the onboarding to ACTION_REQUIRED, where the honest
+#   in-review copy ONBD-05 asserts can never render — so an under-specified fixture here
+#   silently breaks a different spec's fixture. Measured 2026-09-07 on the dev stack:
+#   gates read ALLERGEN_DATA_COMPLETE=FAILED ("1 product(s) ... E2E-ZERO-VAT-001"),
+#   BUSINESS_VERIFIED=WAIVED, FOOD_HYGIENE_RATING=MANUAL_REVIEW, and ONBD-05 timed out
+#   after 60s. USE_BY is what every product the seeder does not itself write uses (22 of
+#   22); the common shelf life is 2 days (21 rows), and 3 days appears on exactly one other
+#   row, itself a QA probe fixture. The gate requires only NON-NULL, so neither number is
+#   load-bearing — they are stated exactly because an earlier draft said "USE_BY/3 matches
+#   every real product", which was true of the type and false of the days.
 ZERO_VAT_SKU="${ZERO_VAT_SKU:-E2E-ZERO-VAT-001}"
 zero_vat_sql=$(cat <<SQL
 insert into products
   (id, tenant_id, shop_id, sku, title, description, ingredients_text, allergen_mask,
+   durability_type, shelf_life_days,
    price_pennies, vat_rate, category, available, quantity_in_stock, created_at)
 values
   (gen_random_uuid(), '$SHOP_TENANT', '$SHOP_ID', '$ZERO_VAT_SKU',
    'Cold Meat Pie (takeaway)',
    'Served cold for takeaway. Zero-rated for VAT (HMRC Notice 709/1).',
    'Wheat flour, beef, onion, potato', 0,
+   'USE_BY', 3,
    1200, 'ZERO', 'Mains', true, 999, now())
 on conflict (tenant_id, sku) do update set
   vat_rate          = 'ZERO',
   price_pennies     = 1200,
   available         = true,
-  quantity_in_stock = 999;
+  quantity_in_stock = 999,
+  durability_type   = 'USE_BY',
+  shelf_life_days   = 3,
+  ingredients_text  = 'Wheat flour, beef, onion, potato';
 SQL
 )
 psql_run "$zero_vat_sql" || void "zero-rated product seed failed"
@@ -312,24 +349,52 @@ ann=$(psql_q "select count(*) from shop_announcements
   where shop_id = '$SHOP_ID' and active
     and (valid_from is null or valid_from <= now())
     and (valid_until is null or valid_until > now());")
-# onboarding-blocked-flow's own skip guard, asked of the DB: a LIVE/terminal row for the
-# vendor tenant means ONBD-05 will skip UNDECLARED. Expect 0 such rows.
+# onboarding-blocked-flow's own skip guard, asked of the DB: a row past VERIFYING for the
+# vendor tenant means ONBD-05 cannot assert (it skips UNDECLARED at best, and times out at
+# worst — measured 2026-09-07 at APPROVED). Expect 0 such rows.
 onb_terminal=$(psql_q "select count(*) from vendor_onboarding
-  where tenant_id = '$SHOP_TENANT' and status in $TERMINAL_STATES;")
+  where tenant_id = '$SHOP_TENANT' and status in $NON_RERUNNABLE_STATES;")
 # COR-6: the zero-rated product must be VISIBLE to the storefront, not merely present. The
 # public catalogue only returns available rows on a published shop, so an unavailable row would
 # satisfy a count and still leave the preview assertion unarmed.
 zero_vat=$(psql_q "select count(*) from products p join shops s on s.id = p.shop_id
   where p.sku = '$ZERO_VAT_SKU' and p.vat_rate = 'ZERO' and p.available and s.published;")
+# ONBD-05's OTHER precondition, and the one that was missing when #726's zero-VAT product
+# broke it: AllergenCompletenessGate walks EVERY product on the onboarding shop, so one
+# under-specified fixture anywhere on PROMO_SHOP_SLUG fails a mandatory gate and parks the
+# onboarding in ACTION_REQUIRED. Counting rows this script itself may add is the point —
+# a fixture that sabotages another fixture is exactly what went unseen.
+#
+# THE PREDICATE, NOT DECORATION: the Java gate tests isBlank(), so a product whose
+# ingredients_text is '   ' FAILS the gate. Measured with a plain `= ''` here, such a row
+# left this check reporting 0 and exiting PASS while the gate would have failed —
+# mirroring the FIELDS is not mirroring the PREDICATE.
+#
+# WHY A CHARACTER CLASS AND NOT btrim(): two spellings were measured wrong before this one.
+# btrim()'s DEFAULT set is the SPACE character alone, so a TAB-only value passed while the
+# gate failed it. The obvious repair, btrim(x, E' \t\n\r\f\v'), is WORSE THAN IT LOOKS:
+# \v is NOT a PostgreSQL escape, and an unrecognised backslash sequence in an E'' string
+# yields the character itself — measured, that set arrives as {space, TAB, LF, CR, FF, 'v'},
+# codepoint 118, so it silently gained the LETTER v (a product whose ingredients read "v"
+# was reported incomplete) and still lacked the VT it was written to add.
+# POSIX [[:space:]] is exactly space/TAB/LF/VT/FF/CR — it states the intent, matches
+# Character.isWhitespace for these inputs, and takes backslash-escape spelling out of this
+# path for good. `*` covers the empty string, so it subsumes the original `= ''`.
+allergen_incomplete=$(psql_q "select count(*) from products
+  where shop_id = '$SHOP_ID'
+    and (durability_type is null or durability_type ~ '^[[:space:]]*\$'
+         or shelf_life_days is null
+         or ingredients_text is null or ingredients_text ~ '^[[:space:]]*\$');")
 
 echo "  DRAFT orders ON PAGE 1 (top $ORDERS_PAGE_SIZE by created_at)  : $draft  (expect >= 1)"
 echo "  ACTIVE, in-window promotions on the shop     : $promo  (expect >= 1)"
 echo "  ACTIVE, in-window announcements on the shop  : $ann  (expect >= 1)"
-echo "  LIVE/terminal onboarding rows for the tenant : $onb_terminal  (expect 0 — else ONBD-05 skips undeclared)"
+echo "  Onboarding rows ONBD-05 cannot run from      : $onb_terminal  (expect 0 — else ONBD-05 skips undeclared)"
+echo "  Allergen-incomplete products on the shop     : $allergen_incomplete  (expect 0 — else the mandatory gate FAILS and ONBD-05 cannot reach in-review)"
 echo "  VISIBLE zero-rated products (COR-6 arming)   : $zero_vat  (expect >= 1 — else the VAT-preview assertion is vacuous)"
 
 if [ "$draft" -ge 1 ] && [ "$promo" -ge 1 ] && [ "$ann" -ge 1 ] && [ "$onb_terminal" -eq 0 ] \
-   && [ "$zero_vat" -ge 1 ]; then
+   && [ "$zero_vat" -ge 1 ] && [ "$allergen_incomplete" -eq 0 ]; then
   echo "PASS: vendor-refund-flow's DRAFT test, storefront-flows' STFR-06 and onboarding-blocked-flow's ONBD-05 can now assert non-vacuously."
   echo "      COR-6: a VISIBLE zero-rated product exists, so 'checkout preview == confirmation'"
   echo "      is falsifiable rather than a coincidence of an all-STANDARD catalogue."
