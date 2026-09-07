@@ -69,11 +69,27 @@ describe("Products page table scroll region — keyboard reachability (F4 / A11Y
 
   it("the horizontally-scrolling table region is a keyboard-focusable, named landmark", async () => {
     render(<ProductsPage />)
-    await screen.findByRole("table")
-    // The `region` role IS the fix's `overflow-x-auto` div — the `Table`
-    // component itself wraps `<table>` in its own `overflow-auto` div, so
-    // this is one level further out than `table.parentElement`.
+    const table = await screen.findByRole("table")
+    // QA council 20260902-134741 A11Y-5: the region is now the Table
+    // primitive's OWN overflow-auto div — the node that actually scrolls —
+    // and this page's hand-rolled outer wrapper is gone. Before, the outer
+    // wrapper was the region and the primitive's div sat INSIDE it, so the
+    // scroller itself was still unfocusable and the route had two nested
+    // horizontal scroll containers.
     const scrollRegion = screen.getByRole("region", { name: /products table/i })
     expect(scrollRegion).toHaveAttribute("tabIndex", "0")
+    expect(scrollRegion).toBe(table.parentElement)
+  })
+
+  it("renders exactly one scroll container around the table — no double nesting", async () => {
+    render(<ProductsPage />)
+    const table = await screen.findByRole("table")
+    const scrollAncestors: Element[] = []
+    for (let el = table.parentElement; el; el = el.parentElement) {
+      if (/\boverflow-(x-)?auto\b/.test(el.className)) scrollAncestors.push(el)
+    }
+    expect(scrollAncestors).toHaveLength(1)
+    // And that one container is the named region, not an anonymous wrapper.
+    expect(scrollAncestors[0]).toHaveAttribute("role", "region")
   })
 })

@@ -19,7 +19,14 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      # QA-council 20260902-134741 SEC-7 (A7): REQUIRED, exactly as prod — no default, so a
+      # missing k8s secret fails startup (PlaceholderResolutionException) instead of producing
+      # an unauthenticated Redis client. Staging was the only DEPLOYED profile that failed open.
+      # NOT compose's `${VAR:?msg}`: Spring reads everything after the first `:` as a default,
+      # so that shape would silently start with the literal password "?msg" (measured).
+      # Base/dev/local/test keep the empty default on purpose (A7) — see
+      # StagingRedisPasswordFailClosedTest for both arms and the boundary.
+      password: ${REDIS_PASSWORD}
       timeout: 2500ms
       lettuce:
         pool:

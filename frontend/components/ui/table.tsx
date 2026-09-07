@@ -2,18 +2,40 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-const Table = React.forwardRef<
-  HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto">
+export interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
+  /**
+   * Accessible name for the scroll container around the table.
+   *
+   * The `overflow-auto` div below IS the node that scrolls horizontally when
+   * the table is wider than its column, and a scroller with no focusable
+   * content is unreachable by keyboard (WCAG 2.1.1; axe
+   * `scrollable-region-focusable`, serious — QA council 20260902-134741
+   * A11Y-5, measured on /dashboard and /dashboard/finance at 320/390). So the
+   * div is a `role="region"` with `tabIndex={0}`, and a region needs a name.
+   * Required rather than defaulted: a default baked in here would lie on ten
+   * different tables, and an optional prop lets the next importer ship an
+   * unnamed, unreachable scroller again. Importers must NOT add their own
+   * `overflow-x-auto` wrapper around this — that double-nests the scroll.
+   */
+  containerLabel: string
+}
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, containerLabel, ...props }, ref) => (
+  <div
+    role="region"
+    aria-label={containerLabel}
+    tabIndex={0}
+    className="relative w-full overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+  >
     <table
       ref={ref}
       className={cn("w-full caption-bottom text-sm", className)}
       {...props}
     />
   </div>
-))
+  )
+)
 Table.displayName = "Table"
 
 const TableHeader = React.forwardRef<

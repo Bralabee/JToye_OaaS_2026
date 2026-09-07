@@ -144,6 +144,79 @@ export function forgetCustomerId(): void {
 }
 
 /**
+ * The subject of the LAST confirmed customer sign-in on this browser, kept
+ * until an EXPLICIT sign-out — FE-5 (QA council 20260902-134741).
+ *
+ * WHY A FOURTH KEY. `CUSTOMER_ID_KEY` is removed the moment the session goes
+ * away (that is the property `hasActiveSessionMarker` relies on), and a basket
+ * owner stamp only exists once a basket has been written. So after a sign-in
+ * that LAPSED — the three HttpOnly cookies stopped being valid, nobody pressed
+ * Sign out — nothing on this origin said "somebody was signed in here". Meanwhile
+ * Keycloak's SSO cookies for that person are very likely still alive on the IdP
+ * host, and NEITHER this app's client nor its server can see them: they are set
+ * for the IdP's host under `/realms/<realm>/`. The measured consequence was the
+ * shared-device dead-end: person B taps "Create an account", Keycloak refuses
+ * with "already authenticated as different user 'A'", 0 links / 0 buttons /
+ * 0 forms, A's email on screen.
+ *
+ * This key is the honest, client-detectable proxy for that state: "a sign-in
+ * happened on this browser and no explicit sign-out has happened since". The
+ * storefront offers "Not you? Sign out" when the session is unauthenticated AND
+ * this is set. It is an OFFER, not a claim about the IdP — the SSO session may
+ * have expired on its own — and taking it is harmless either way.
+ *
+ * LIFECYCLE — the same rule as the basket owner stamp (R-16), stated so the
+ * next editor does not "tidy" it into `clearMarker()`:
+ *   - a confirmed sign-in (`setMarker` with a sub) WRITES or CONFIRMS it;
+ *   - a lapse (`clearMarker`, `forgetCustomerId`) leaves it ALONE — a lapsed
+ *     session is not a new person;
+ *   - ONLY an explicit sign-out (`clearSignedOutState`) removes it.
+ * Removing it on a lapse would make the control vanish in exactly the state it
+ * exists for. Its through-the-transition test asserts the STORED value at every
+ * step, never the rendered nav (`lib/__tests__/customer-auth-last-signin.test.ts`).
+ *
+ * Deliberately the opaque `sub`, never the email or name — the same argument
+ * as `CUSTOMER_ID_KEY` above — and a blank sub is ignored for the same reason.
+ */
+export const CUSTOMER_LAST_SIGNIN_KEY = "jtoye-customer-last-signin"
+
+export function rememberLastSignIn(sub: string | null | undefined): void {
+  if (typeof window === "undefined") return
+  if (!sub) return
+  try {
+    window.localStorage.setItem(CUSTOMER_LAST_SIGNIN_KEY, sub)
+  } catch {
+    /* storage may be unavailable (private mode) — ignore */
+  }
+}
+
+/** Explicit sign-out only. Never called from a lapse path. */
+export function forgetLastSignIn(): void {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.removeItem(CUSTOMER_LAST_SIGNIN_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getLastSignIn(): string | null {
+  if (typeof window === "undefined") return null
+  try {
+    return window.localStorage.getItem(CUSTOMER_LAST_SIGNIN_KEY) || null
+  } catch {
+    // Private mode / storage disabled: no evidence of a prior sign-in reads
+    // as "none", which withholds the offer — never a stricter behaviour.
+    return null
+  }
+}
+
+/** Did a customer sign in on this browser without ever explicitly signing out? */
+export function hasRememberedSignIn(): boolean {
+  return getLastSignIn() !== null
+}
+
+/**
  * May a basket last written by `owner` be shown to `current`?
  *
  *   owner = null/undefined  built anonymously, or written before #459 shipped.

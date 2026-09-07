@@ -312,6 +312,18 @@ function matchParen(s, open) {
   return -1;
 }
 
+// Index of the `>` closing the type-argument list opened by `s[open] === '<'`, or -1.
+// A function type's `=>` does not close a generic list. Strings and comments are
+// already masked, so only real angle brackets participate in the depth walk.
+function matchAngle(s, open) {
+  let depth = 0;
+  for (let i = open; i < s.length; i++) {
+    if (s[i] === "<") depth++;
+    else if (s[i] === ">" && s[i - 1] !== "=") { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
 // Number of top-level elements of an array literal whose text starts at `s[0] === '['`.
 function countArrayElements(s) {
   let depth = 0, commas = 0, sawContent = false, lastWasComma = false;
@@ -345,7 +357,7 @@ function resolveArrayBinding(masked, name) {
     while (i < masked.length) {
       const c = masked[i];
       if (c === "<" || c === "(" || c === "[" || c === "{") depth++;
-      else if (c === ">" || c === ")" || c === "]" || c === "}") depth--;
+      else if ((c === ">" && masked[i - 1] !== "=") || c === ")" || c === "]" || c === "}") depth--;
       else if (c === ";" && depth <= 0) break;
       else if (
         c === "=" && depth <= 0 &&
@@ -521,6 +533,20 @@ function countFile(file, family) {
     }
     let k = i;
     while (k < masked.length && /\s/.test(masked[k])) k++;
+    // A TypeScript type-argument list may sit between the chain and the call:
+    // `it.each<[string, Partial<Foo>]>([...])`. Before this was handled the `<`
+    // failed the delimiter test below and the head fell through as a "bare
+    // identifier" — ZERO blocks for a 12-row table, silently (PR #726). Walk the
+    // list as balanced `<`/`>` so nested generics (`>>`, `>]>`) close correctly;
+    // an unbalanced list is a VOID, never a guess.
+    if (masked[k] === "<") {
+      const closeAngle = matchAngle(masked, k);
+      if (closeAngle === -1) {
+        fail(file, lineOf(masked, start), `unbalanced type-argument list after '${m[1]}${chain.length ? "." + chain.join(".") : ""}<'`);
+      }
+      k = closeAngle + 1;
+      while (k < masked.length && /\s/.test(masked[k])) k++;
+    }
     const delim = masked[k];
     if (delim !== "(" && delim !== "`") continue; // a bare `it` / `test` identifier
 

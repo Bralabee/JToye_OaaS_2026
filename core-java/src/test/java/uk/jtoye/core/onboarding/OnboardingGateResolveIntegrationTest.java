@@ -258,15 +258,47 @@ class OnboardingGateResolveIntegrationTest {
         assertThat(dbGateStatus(onboardingId, GateType.FOOD_HYGIENE_RATING)).isEqualTo("MANUAL_REVIEW");
     }
 
-    // --- WR-01: gate resolution is VERIFYING-only ----------------------------------------
+    // --- INT-1 (QA council 20260902-134741, A15): resolve is VERIFYING|ACTION_REQUIRED ----
 
     /**
-     * WR-01: resolving a gate on an onboarding that has already left VERIFYING (here
-     * PENDING_APPROVAL — post-recompute, awaiting the admin queue) is rejected with a
+     * INT-1: a MANUAL_REVIEW gate parked beside a FAILED one lands the onboarding in
+     * ACTION_REQUIRED, and the VERIFYING-only guard then 400'd the reviewer's only control —
+     * the third lockout mechanism behind the two-actor dead-end. Resolving in ACTION_REQUIRED
+     * writes the gate row (Envers-audited) and leaves the state with the vendor: the recompute
+     * advances ONLY from VERIFYING, and the vendor's RESUBMIT (which preserves PASSED/WAIVED
+     * rows) is what carries the reviewer's decision forward.
+     */
+    @Test
+    void adminResolvesManualReviewGateWhileActionRequired_rowUpdated_stateStaysWithVendor() throws Exception {
+        UUID onboardingId = seedOnboarding(OnboardingState.ACTION_REQUIRED);
+        seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.MANUAL_REVIEW);
+        seedGate(onboardingId, GateType.FOOD_HYGIENE_RATING, GateStatus.PASSED);
+        seedGate(onboardingId, GateType.ALLERGEN_DATA_COMPLETE, GateStatus.FAILED);
+
+        mockMvc.perform(post(resolveUrl(onboardingId, GateType.BUSINESS_VERIFIED))
+                        .with(adminJwt(tenantId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"PASS\",\"reason\":\"Checked the register by company name\"}"))
+                .andExpect(status().isOk());
+
+        assertThat(dbGateStatus(onboardingId, GateType.BUSINESS_VERIFIED)).isEqualTo("PASSED");
+        // The FAILED row is the vendor's to fix and is untouched by the reviewer's decision.
+        assertThat(dbGateStatus(onboardingId, GateType.ALLERGEN_DATA_COMPLETE)).isEqualTo("FAILED");
+        // No state change: the after-commit recompute returns early outside VERIFYING
+        // (GateChainRunner), so the application stays ACTION_REQUIRED for the vendor's re-run.
+        assertStatusHolds(onboardingId, "ACTION_REQUIRED");
+    }
+
+    // --- WR-01 (narrowed by INT-1): gate resolution is VERIFYING|ACTION_REQUIRED-only ----
+
+    /**
+     * WR-01: resolving a gate on an onboarding that has already left the review window
+     * (here PENDING_APPROVAL — post-recompute, awaiting the admin queue) is rejected with a
      * 400 (RFC 7807) and does NOT mutate the gate row. Without this guard the gate row
      * would flip but the recompute (which only advances from VERIFYING) could never act
      * on it, stranding the onboarding until a later /approve failed with an unexplained
-     * gate-guard veto.
+     * gate-guard veto. INT-1 widened the window to ACTION_REQUIRED; this arm proves the
+     * guard still holds beyond it.
      */
     @Test
     void gateResolveOutsideVerifyingIs400_gateRowUnchanged() throws Exception {
@@ -339,5 +371,18 @@ class OnboardingGateResolveIntegrationTest {
             Thread.sleep(100);
         }
         fail("Timed out waiting for onboarding " + onboardingId + " to leave " + notExpected);
+    }
+
+    /**
+     * Assert the status is {@code expected} now AND after the after-commit async recompute
+     * has had time to run — a negative that must be sampled over time, not once.
+     */
+    private void assertStatusHolds(UUID onboardingId, String expected) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 1_500;
+        while (System.currentTimeMillis() < deadline) {
+            assertThat(dbStatus(onboardingId)).isEqualTo(expected);
+            Thread.sleep(100);
+        }
+        assertThat(dbStatus(onboardingId)).isEqualTo(expected);
     }
 }

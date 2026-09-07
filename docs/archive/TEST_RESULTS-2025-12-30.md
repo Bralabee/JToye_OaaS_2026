@@ -1,5 +1,16 @@
 # Test Execution Results
 
+> **⚠ Historical test-run record from 2025-12-30 — figures are NOT updated.**
+>
+> Recorded against Gradle 8.10.2 / JDK 21 with 24 tests. The current toolchain is Java 25 on
+> the Gradle 9.7.1 wrapper, and the current test figures are gated: `docs/metrics.json` is the
+> single source of truth, quoted in `README.md`, `CLAUDE.md` and `AGENTS.md` and checked by
+> `scripts/docs-freshness.sh` and `scripts/check-doc-metrics.sh`.
+>
+> The numbers below are deliberately left as they were. Rewriting a dated run report to match
+> today's tree would destroy the record rather than correct it.
+
+
 **Date:** 2025-12-30
 **Gradle Version:** 8.10.2
 **JDK Version:** 21

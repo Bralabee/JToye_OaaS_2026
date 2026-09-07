@@ -13,7 +13,6 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.http.client.reactive.MockClientHttpRequest;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -44,6 +43,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static uk.jtoye.core.testsupport.TenantJwts.adminJwt;
 
 /**
  * COMMS-05 end-to-end proof over real Postgres 15 (Testcontainers): the
@@ -60,6 +60,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * cert. Deliveries target {@code https://ok.example.com} / {@code https://fail.example.com}
  * (HTTPS passes the delivery-time SSRF re-validation with {@code block-private-ranges=false},
  * and the mock intercepts before any real call).
+ *
+ * <p><b>Principal shape (QA-remediate 20260902 SEC-1).</b> The HTTP arms (replay, delivery log)
+ * carry a production-shaped realm-admin JWT ({@code TenantJwts.adminJwt}: UUID {@code sub} +
+ * {@code tenant_id} claim) instead of {@code @WithMockUser}, because the webhook services now
+ * gate on {@code ShopAccessService.requireGroupAdmin()}, which denies a non-JWT principal with
+ * the typed 403. The worker/fanout arms need no principal — they are driven directly.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -191,14 +197,13 @@ class WebhookDeliveryWorkerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void replay_createsTaggedNewRow_leavingOriginalIntact() throws Exception {
         UUID subscription = insertSubscription("https://ok.example.com/hook", "whsec-replay");
         fanoutOrderReady();
         UUID original = deliveryIdFor(subscription);
 
         mockMvc.perform(post("/api/v1/webhooks/" + subscription + "/deliveries/" + original + "/replay")
-                        .header("X-Tenant-Id", tenantId.toString())
+                        .with(adminJwt(tenantId))
                         .header("Idempotency-Key", "replay-key-1"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.replay").value(true))
@@ -225,7 +230,6 @@ class WebhookDeliveryWorkerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void replay_sameIdempotencyKey_createsExactlyOneRow_differentKeyCreatesAnother() throws Exception {
         UUID subscription = insertSubscription("https://ok.example.com/hook", "whsec-idem");
         fanoutOrderReady();
@@ -236,7 +240,7 @@ class WebhookDeliveryWorkerIntegrationTest {
 
         // First replay with key K.
         String firstBody = mockMvc.perform(post(base)
-                        .header("X-Tenant-Id", tenantId.toString())
+                        .with(adminJwt(tenantId))
                         .header("Idempotency-Key", sameKey))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
@@ -244,7 +248,7 @@ class WebhookDeliveryWorkerIntegrationTest {
 
         // Second replay with the SAME key — must NOT create a second row (WR-01).
         String secondBody = mockMvc.perform(post(base)
-                        .header("X-Tenant-Id", tenantId.toString())
+                        .with(adminJwt(tenantId))
                         .header("Idempotency-Key", sameKey))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
@@ -263,7 +267,7 @@ class WebhookDeliveryWorkerIntegrationTest {
 
         // A DIFFERENT key genuinely creates a new replay row.
         mockMvc.perform(post(base)
-                        .header("X-Tenant-Id", tenantId.toString())
+                        .with(adminJwt(tenantId))
                         .header("Idempotency-Key", "idem-replay-" + UUID.randomUUID()))
                 .andExpect(status().isCreated());
 
@@ -276,13 +280,12 @@ class WebhookDeliveryWorkerIntegrationTest {
     }
 
     @Test
-    @WithMockUser
     void deliveryLog_listsRowsForSubscription() throws Exception {
         UUID subscription = insertSubscription("https://ok.example.com/hook", "whsec-log");
         fanoutOrderReady();
 
         mockMvc.perform(get("/api/v1/webhooks/" + subscription + "/deliveries")
-                        .header("X-Tenant-Id", tenantId.toString()))
+                        .with(adminJwt(tenantId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray())
                 .andExpect(jsonPath("$.content[0].eventType").value("order.ready"))

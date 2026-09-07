@@ -125,24 +125,26 @@ healthcheck:
    - Added restart policy for core-java
    - Increased healthcheck timings
 
-2. **fix-docker-networking.sh** (NEW)
+2. **scripts/fix-bridge-network.sh**
    - Comprehensive iptables fix for both host→container and container→container networking
 
 ## Current Workaround
 
-Until the iptables fix is applied, use:
+Until the iptables fix is applied, use the HYBRID runtime:
 
 ```bash
-./start-dev.sh
+./scripts/start-dev.sh
 ```
 
-This starts infrastructure in Docker and backend/frontend locally, avoiding the container-to-container networking issue.
+It starts Postgres and Keycloak in Docker (`infra/docker-compose.yml`, which reads `infra/.env`)
+and runs the backend and frontend as host processes, avoiding the container-to-container
+networking issue. Teardown is `./scripts/stop-dev.sh`. See README.md "Option 3: Hybrid".
 
 ## References
 
 - Original iptables issue: [DOCKER_IPTABLES_ISSUE.md](DOCKER_IPTABLES_ISSUE.md)
 - Iptables fix results: [IPTABLES_FIX_RESULTS.md](IPTABLES_FIX_RESULTS.md)
-- Quick start guide: [QUICK_START.md](QUICK_START.md)
+- Quick start guide: [../guides/QUICK_START.md](../guides/QUICK_START.md)
 
 ## Summary
 

@@ -26,6 +26,16 @@ export interface CartItem {
   quantity: number
   imageUrl: string | null
   category: string | null
+  /**
+   * COR-6: the line's VAT rate, captured when the item is added so the checkout can preview VAT
+   * per line the way the server computes it (VatCalculator.predominantRate over the basket).
+   *
+   * Optional AND nullable, and BOTH absences mean "unknown": a basket persisted before COR-6
+   * carries no rate at all, and lib/vat.ts resolves unknown to STANDARD — which is the
+   * conservative direction and is exactly the behaviour those baskets already had. So this is
+   * additive for every stored basket; nothing needs migrating and no basket is emptied.
+   */
+  vatRate?: string | null
 }
 
 interface CartState {

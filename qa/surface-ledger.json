@@ -5,6 +5,18 @@
   "branch_at_seed": "feature/ux-mobile-nav-rsc-fixes",
   "sha_at_seed": "6de0155",
   "correction_note": "The live census crawled all 3 shop pages back-to-back and tripped the public 30-req/min per-IP rate limiter (#88), which 429'd /shop/brixton-village-grill and returned it EMPTY. That reading is a MEASUREMENT ARTIFACT, not the true surface. Corrected here from three converging evidence sources that all show brixton fully populated: (1) journey-matrix cells desktop1280-stale + mobile390-fresh render /shop/brixton-village-grill with imgTotal:10 imgVisible:10 imgBroken:0 (+11-image modal); (2) correctness lane proved all 21 product imageUrls resolve HTTP 200 image/jpeg incl. brixton's 7; (3) the seeder quick-task browser proof showed brixton 7/7 naturalWidth>0. The rate-limit stranding is filed as finding F-RATE (see QA-COUNCIL-REPORT).",
+  "baseline_corrections": [
+    {
+      "id": "API-16",
+      "raised_by_run": "20260902-134741",
+      "corrects_run": "20260829-122447",
+      "claim_in_that_baseline": "inv-api.json .endpoints_reached.openapi_paths_total = 118, mirrored at surface-inventory.json .api.endpoints_reached.openapi_paths_total = 118 (both re-read on 2026-09-03; note the finding text quotes the key as .openapi_paths_total, which returns null - it is nested under endpoints_reached)",
+      "ground_truth": "111 live paths on the dev profile, and 109 in the committed docs/api/openapi-snapshot.json continuously since 2026-08-17. The live 111 = the committed 109 + two dev-profile-only routes (/dev/tenants/ensure, /health/security). The correcting evidence is that run's OWN saved dump: jq '.paths|length' .qa-council/20260829-122447/evidence/api-openapi-core.json -> 111.",
+      "verdict": "wrong-value in the baseline, NOT a regression in the product. No capability disappeared between the two runs.",
+      "why_recorded_here": "That file is the baseline a future run is asked to diff against, and .qa-council/ run directories are git-excluded, so the correction cannot survive there. Left uncorrected, the next run reads a 111-vs-118 delta as a regression-by-omission and hunts seven paths that were never lost - the exact failure mode this ledger exists to prevent, arriving from the direction of a false positive rather than a silent loss.",
+      "how_to_re-derive": "curl -s http://localhost:9090/v3/api-docs | jq '.paths|length'   # dev profile, expect 111; jq '.paths|length' docs/api/openapi-snapshot.json   # expect 109"
+    }
+  ],
   "routes": [
     {"path": "/", "reachable": true},
     {"path": "/shop", "reachable": true},

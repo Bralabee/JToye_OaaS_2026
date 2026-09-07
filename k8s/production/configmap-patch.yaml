@@ -58,3 +58,13 @@ data:
   # loopback dev origin, stranding MARKETPLACE payout setup at the last step.
   stripe.connect.return-url: "https://app.olajay.co.uk/dashboard/payments/connect/return"
   stripe.connect.refresh-url: "https://app.olajay.co.uk/dashboard/payments/connect/refresh"
+
+  # FE-1 / E-5 (QA council 20260902-134741): stated EXPLICITLY here, in keeping
+  # with this overlay's convention — the vendor sign-out return leg stays on
+  # today's /auth/signin until scripts/check-keycloak-logout-uri.sh (run in
+  # deploy-production, enforced once this is "true") is green against the
+  # production realm's vendor client for
+  # https://app.olajay.co.uk/api/vendor-auth/logout-complete. Byte-identical to
+  # the base value, so this line changes nothing about the render's behaviour.
+  # See k8s/base/configmap.yaml for the mechanism and the failure it guards.
+  vendor.logout-complete.enabled: "false"

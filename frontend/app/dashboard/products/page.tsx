@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react"
 import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import * as z from "zod"
 import apiClient from "@/lib/api-client"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import { describeLoadError } from "@/lib/human-error"
@@ -53,20 +52,9 @@ import {
   getAllergenNames,
 } from "@/types/api"
 
-const productSchema = z.object({
-  sku: z.string().min(1, "SKU is required").max(50, "SKU too long"),
-  title: z.string().min(1, "Title is required").max(200, "Title too long"),
-  ingredientsText: z
-    .string()
-    .min(1, "Ingredients are required")
-    .max(1000, "Ingredients text too long"),
-  pricePounds: z
-    .string()
-    .min(1, "Price is required")
-    .refine((val) => !isNaN(parseFloat(val)) && parseFloat(val) >= 0, "Price must be a non-negative number"),
-})
-
-type ProductFormData = z.infer<typeof productSchema>
+// The form schema lives in its own module so it can be unit-tested — a Next
+// App Router page.tsx may not export non-route symbols (A11Y-8 / A11Y-11).
+import { productSchema, toPricePennies, type ProductFormData } from "./product-form-schema"
 
 function AiSuggestionRow({ label, value, onAccept }: { label: string; value: string; onAccept: () => void }) {
   return (
@@ -301,7 +289,7 @@ export default function ProductsPage() {
         title: data.title,
         ingredientsText: data.ingredientsText,
         allergenMask,
-        pricePennies: Math.round(parseFloat(data.pricePounds) * 100),
+        pricePennies: toPricePennies(data.pricePounds),
         available,
         featured,
         description: descEl?.value || undefined,
@@ -486,153 +474,147 @@ export default function ProductsPage() {
                 </Button>
               </div>
             ) : (
-              // A11Y-3 (axe scrollable-region-focusable, serious): a
-              // horizontally-overflowing region with no focusable element and
-              // no visible scrollbar affordance is unreachable by keyboard.
-              // `tabIndex={0}` + `role="region"` + an accessible name make it
-              // a landmark a keyboard/screen-reader user can find and pan.
-              <div
-                className="overflow-x-auto"
-                tabIndex={0}
-                role="region"
-                aria-label="Products table, scroll horizontally for more columns"
-              >
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Title</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Allergens</TableHead>
-                      <TableHead className="text-right">Price</TableHead>
-                      <TableHead className="text-center">Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {products.map((product) => {
-                      const allergenNames = getAllergenNames(product.allergenMask)
-                      return (
-                        <m.tr
-                          key={product.id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="group"
-                        >
-                          <TableCell className="font-mono text-sm font-medium">
-                            {product.sku}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <SafeImage
-                                src={product.imageUrl}
-                                alt={product.title}
-                                className="h-8 w-8 rounded-lg object-cover"
-                                fallbackClassName="h-8 w-8 rounded-lg bg-blue-100"
-                                fallbackIcon={<Package className="h-4 w-4 text-blue-600" />}
-                              />
-                              <div>
-                                <div className="font-medium">{product.title}</div>
-                                <IngredientText
-                                  text={product.ingredientsText}
-                                  className="line-clamp-1 block text-xs text-slate-500"
-                                />
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1.5">
-                              {product.category ? (
-                                <Badge variant="outline" className="text-xs">{product.category}</Badge>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">—</span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {allergenNames.length === 0 ? (
-                                <span className="text-sm text-muted-foreground">
-                                  No allergens
-                                </span>
-                              ) : (
-                                allergenNames.map((name) => {
-                                  const allergen = ALLERGENS.find(
-                                    (a) => a.name === name
-                                  )
-                                  return (
-                                    <Badge
-                                      key={name}
-                                      variant="outline"
-                                      className="bg-orange-50 text-orange-700 border-orange-200"
-                                    >
-                                      {name}
-                                    </Badge>
-                                  )
-                                })
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {product.pricePennies != null
-                              ? `£${(product.pricePennies / 100).toFixed(2)}`
-                              : "—"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {product.available ? (
-                                <span title="Available"><Eye className="h-3.5 w-3.5 text-emerald-500" /></span>
-                              ) : (
-                                <span title="Unavailable"><EyeOff className="h-3.5 w-3.5 text-slate-300" /></span>
-                              )}
-                              {product.featured && (
-                                <span title="Featured"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" /></span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={async () => {
-                                  try {
-                                    const res = await apiClient.get(`/api/v1/products/${product.id}/label`, { responseType: "blob" })
-                                    const url = URL.createObjectURL(res.data)
-                                    const a = document.createElement("a")
-                                    a.href = url
-                                    a.download = `label-${product.sku}.pdf`
-                                    a.click()
-                                    URL.revokeObjectURL(url)
-                                  } catch {
-                                    toast({ variant: "destructive", title: "Error", description: "Failed to download label" })
-                                  }
-                                }}
-                                className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                                title="Download allergen label"
-                                aria-label={`Download allergen label for ${product.title}`}
-                              >
-                                <FileText className="h-4 w-4" />
-                              </Button>
-                              <IconButton
-                                onClick={() => openEditDialog(product)}
-                                label={`Edit product ${product.title}`}
-                                icon={<Pencil className="h-4 w-4" />}
-                              />
-                              <IconButton
-                                onClick={() => openDeleteDialog(product)}
-                                className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                label={`Delete product ${product.title}`}
-                                icon={<Trash2 className="h-4 w-4" />}
+              // The Table primitive's own overflow div is the named, focusable region
+              // (A11Y-5, QA council 20260902-134741); the wrapper that used to sit here
+              // nested a second scroll container inside it.
+              <Table containerLabel="Products table, scroll horizontally for more columns">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>SKU</TableHead>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Allergens</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {products.map((product) => {
+                    const allergenNames = getAllergenNames(product.allergenMask)
+                    return (
+                      <m.tr
+                        key={product.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="group"
+                      >
+                        <TableCell className="font-mono text-sm font-medium">
+                          {product.sku}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <SafeImage
+                              src={product.imageUrl}
+                              alt={product.title}
+                              className="h-8 w-8 rounded-lg object-cover"
+                              fallbackClassName="h-8 w-8 rounded-lg bg-blue-100"
+                              fallbackIcon={<Package className="h-4 w-4 text-blue-600" />}
+                            />
+                            <div>
+                              {/* A11Y-10 / #702: a 224-char title took the row from 72px to 189px;
+                                  two lines (a title is the row's identifier), break-words so an
+                                  unbreakable token wraps instead of overflowing the table. */}
+                              <div className="font-medium line-clamp-2 break-words">{product.title}</div>
+                              <IngredientText
+                                text={product.ingredientsText}
+                                className="line-clamp-1 block text-xs text-slate-500"
                               />
                             </div>
-                          </TableCell>
-                        </m.tr>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            {product.category ? (
+                              <Badge variant="outline" className="text-xs">{product.category}</Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {allergenNames.length === 0 ? (
+                              <span className="text-sm text-muted-foreground">
+                                No allergens
+                              </span>
+                            ) : (
+                              allergenNames.map((name) => {
+                                const allergen = ALLERGENS.find(
+                                  (a) => a.name === name
+                                )
+                                return (
+                                  <Badge
+                                    key={name}
+                                    variant="outline"
+                                    className="bg-orange-50 text-orange-700 border-orange-200"
+                                  >
+                                    {name}
+                                  </Badge>
+                                )
+                              })
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          {product.pricePennies != null
+                            ? `£${(product.pricePennies / 100).toFixed(2)}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {product.available ? (
+                              <span title="Available"><Eye className="h-3.5 w-3.5 text-emerald-500" /></span>
+                            ) : (
+                              <span title="Unavailable"><EyeOff className="h-3.5 w-3.5 text-slate-300" /></span>
+                            )}
+                            {product.featured && (
+                              <span title="Featured"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" /></span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={async () => {
+                                try {
+                                  const res = await apiClient.get(`/api/v1/products/${product.id}/label`, { responseType: "blob" })
+                                  const url = URL.createObjectURL(res.data)
+                                  const a = document.createElement("a")
+                                  a.href = url
+                                  a.download = `label-${product.sku}.pdf`
+                                  a.click()
+                                  URL.revokeObjectURL(url)
+                                } catch {
+                                  toast({ variant: "destructive", title: "Error", description: "Failed to download label" })
+                                }
+                              }}
+                              className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                              title="Download allergen label"
+                              aria-label={`Download allergen label for ${product.title}`}
+                            >
+                              <FileText className="h-4 w-4" />
+                            </Button>
+                            <IconButton
+                              onClick={() => openEditDialog(product)}
+                              label={`Edit product ${product.title}`}
+                              icon={<Pencil className="h-4 w-4" />}
+                            />
+                            <IconButton
+                              onClick={() => openDeleteDialog(product)}
+                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                              label={`Delete product ${product.title}`}
+                              icon={<Trash2 className="h-4 w-4" />}
+                            />
+                          </div>
+                        </TableCell>
+                      </m.tr>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
             <Pagination
               currentPage={currentPage}
@@ -662,13 +644,21 @@ export default function ProductsPage() {
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Product Details</h4>
             <div className="space-y-2">
               <Label htmlFor="sku">SKU</Label>
+              {/* A11Y-7 (QA council 20260902-134741; WCAG 3.3.1): errors were visual
+                  only. Mirrors the checkout form — aria-invalid + aria-describedby to
+                  the message id, both conditional on the error existing. */}
+
               <Input
                 id="sku"
                 placeholder="e.g., PROD-001"
+                aria-invalid={errors.sku ? "true" : undefined}
+                aria-describedby={errors.sku ? "sku-error" : undefined}
                 {...register("sku")}
+
               />
+
               {errors.sku && (
-                <p className="text-sm text-red-600">{errors.sku.message}</p>
+                <p id="sku-error" className="text-sm text-red-600">{errors.sku.message}</p>
               )}
             </div>
 
@@ -676,11 +666,17 @@ export default function ProductsPage() {
               <Label htmlFor="title">Product Title</Label>
               <Input
                 id="title"
+
                 placeholder="e.g., Chocolate Chip Cookies"
+
+                aria-invalid={errors.title ? "true" : undefined}
+
+                aria-describedby={errors.title ? "title-error" : undefined}
+
                 {...register("title")}
               />
               {errors.title && (
-                <p className="text-sm text-red-600">{errors.title.message}</p>
+                <p id="title-error" className="text-sm text-red-600">{errors.title.message}</p>
               )}
             </div>
 
@@ -690,10 +686,12 @@ export default function ProductsPage() {
                 id="ingredientsText"
                 placeholder="e.g., Flour, sugar, butter, chocolate chips..."
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-invalid={errors.ingredientsText ? "true" : undefined}
+                aria-describedby={errors.ingredientsText ? "ingredientsText-error" : undefined}
                 {...register("ingredientsText")}
               />
               {errors.ingredientsText && (
-                <p className="text-sm text-red-600">
+                <p id="ingredientsText-error" className="text-sm text-red-600">
                   {errors.ingredientsText.message}
                 </p>
               )}
@@ -707,10 +705,15 @@ export default function ProductsPage() {
                 step="0.01"
                 min="0"
                 placeholder="e.g., 12.50"
+
+                aria-invalid={errors.pricePounds ? "true" : undefined}
+
+                aria-describedby={errors.pricePounds ? "pricePounds-error" : undefined}
+
                 {...register("pricePounds")}
               />
               {errors.pricePounds && (
-                <p className="text-sm text-red-600">{errors.pricePounds.message}</p>
+                <p id="pricePounds-error" className="text-sm text-red-600">{errors.pricePounds.message}</p>
               )}
             </div>
 
