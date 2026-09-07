@@ -1,4 +1,4 @@
-// Jest Snapshot v1, https://goo.gl/fbAQLP
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
 exports[`Security headers snapshot (regression guard) CSP directive string matches snapshot (fixed nonce) 1`] = `"default-src 'self'; script-src 'self' 'nonce-SNAPSHOT_NONCE' 'strict-dynamic' https://js.stripe.com https://*.js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.stripe.com https: http://localhost:9000; font-src 'self' data:; connect-src 'self' https://api.stripe.com https://*.stripe.com https://api.snapshot.local wss://api.snapshot.local https://keycloak.snapshot.local; frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com; frame-ancestors 'none'; form-action 'self' https://keycloak.snapshot.local; base-uri 'self'; object-src 'none'"`;
 
