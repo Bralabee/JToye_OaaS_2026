@@ -66,8 +66,8 @@
 
 **Critical:**
 - PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:168`) — explicit pin, not Boot-managed.
-- AWS SDK v2 BOM 2.54.3 (`software.amazon.awssdk:bom`) + `software.amazon.awssdk:s3` — S3-compatible object storage client (MinIO in dev, real S3 in prod).
-- Stripe Java SDK 33.3.0 — Payment intents, Connect (destination charges), webhook signature verification.
+- AWS SDK v2 BOM 2.54.9 (`software.amazon.awssdk:bom`) + `software.amazon.awssdk:s3` — S3-compatible object storage client (MinIO in dev, real S3 in prod).
+- Stripe Java SDK 33.4.0 — Payment intents, Connect (destination charges), webhook signature verification.
 - @stripe/react-stripe-js 6.8.2 + @stripe/stripe-js 9.14.0 — Frontend Stripe Elements integration.
 - next-auth 5.0.0-beta.32 (`@auth/core` pinned via `overrides` to `0.41.3`) — Session/auth middleware, Keycloak OIDC provider.
 - @modelcontextprotocol/sdk ^1.29.0 — MCP server protocol implementation (`mcp-server/package.json`).
