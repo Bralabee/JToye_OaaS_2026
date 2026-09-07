@@ -210,6 +210,9 @@ e2e-artifacts/
 # ~20KB build artefact for a blanket `git add` to sweep into a commit.
 edge-go/coverage.out
 
+# archify visual-check evidence (regenerable, not artifacts)
+docs/architecture/*.visual-check.*
+
 # graphify knowledge-graph output (/gsd:graphify build). Both directories are
 # derived entirely from the commit they were built at -- graphify status records
 # built_at_commit and reports commit_stale against HEAD -- and a full rebuild from
