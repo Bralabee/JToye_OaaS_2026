@@ -365,21 +365,26 @@ zero_vat=$(psql_q "select count(*) from products p join shops s on s.id = p.shop
 # onboarding in ACTION_REQUIRED. Counting rows this script itself may add is the point —
 # a fixture that sabotages another fixture is exactly what went unseen.
 #
-# btrim() IS THE PREDICATE, NOT DECORATION: the Java gate tests isBlank(), so a product
-# whose ingredients_text is '   ' FAILS the gate. Measured with a plain `= ''` here, such
-# a row left this check reporting 0 and exiting PASS while the gate would have failed —
-# mirroring the FIELDS is not mirroring the PREDICATE. The EXPLICIT trim set is load-bearing
-# too: btrim()'s default set is the SPACE character ALONE, while isBlank() is
-# Character.isWhitespace, so a TAB-only value passed a plain btrim() and still failed the
-# gate (measured: btrim(E'\t') = '' is false). Widening the set closes that gap. The `is null` disjuncts are dead
-# against today's schema (ingredients_text is NOT NULL; durability_type carries a CHECK)
-# and are kept deliberately: the mirror is this check's whole justification, a schema is
-# not a constant, and a dead disjunct costs nothing.
+# THE PREDICATE, NOT DECORATION: the Java gate tests isBlank(), so a product whose
+# ingredients_text is '   ' FAILS the gate. Measured with a plain `= ''` here, such a row
+# left this check reporting 0 and exiting PASS while the gate would have failed —
+# mirroring the FIELDS is not mirroring the PREDICATE.
+#
+# WHY A CHARACTER CLASS AND NOT btrim(): two spellings were measured wrong before this one.
+# btrim()'s DEFAULT set is the SPACE character alone, so a TAB-only value passed while the
+# gate failed it. The obvious repair, btrim(x, E' \t\n\r\f\v'), is WORSE THAN IT LOOKS:
+# \v is NOT a PostgreSQL escape, and an unrecognised backslash sequence in an E'' string
+# yields the character itself — measured, that set arrives as {space, TAB, LF, CR, FF, 'v'},
+# codepoint 118, so it silently gained the LETTER v (a product whose ingredients read "v"
+# was reported incomplete) and still lacked the VT it was written to add.
+# POSIX [[:space:]] is exactly space/TAB/LF/VT/FF/CR — it states the intent, matches
+# Character.isWhitespace for these inputs, and takes backslash-escape spelling out of this
+# path for good. `*` covers the empty string, so it subsumes the original `= ''`.
 allergen_incomplete=$(psql_q "select count(*) from products
   where shop_id = '$SHOP_ID'
-    and (durability_type is null or btrim(durability_type, E' \t\n\r\f\v') = ''
+    and (durability_type is null or durability_type ~ '^[[:space:]]*\$'
          or shelf_life_days is null
-         or ingredients_text is null or btrim(ingredients_text, E' \t\n\r\f\v') = '');")
+         or ingredients_text is null or ingredients_text ~ '^[[:space:]]*\$');")
 
 echo "  DRAFT orders ON PAGE 1 (top $ORDERS_PAGE_SIZE by created_at)  : $draft  (expect >= 1)"
 echo "  ACTIVE, in-window promotions on the shop     : $promo  (expect >= 1)"
