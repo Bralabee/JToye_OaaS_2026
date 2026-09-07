@@ -341,7 +341,7 @@ jobs:
       - name: Download the unit suite's JaCoCo execution data
         if: github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: java-coverage-exec-unit
           path: core-java/build-local/jacoco
