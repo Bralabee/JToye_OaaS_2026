@@ -44,7 +44,7 @@ docker compose -f docker-compose.full-stack.yml down
 **Best for:** Active development, debugging, IDE integration
 
 **Prerequisites:**
-- Java 21 (JDK 25 is incompatible with Gradle 8.10), Node.js 24+, Go 1.26+
+- Java 25 (Eclipse Temurin recommended) — the bundled Gradle 9.7.1 wrapper is required (JDK 25 needs Gradle >= 9.1); Node.js 24+; Go 1.27+
 - Docker with **Compose v2** (`docker compose`) — for the backing services only
 
 #### Step 1: Environment Setup
@@ -62,32 +62,41 @@ Fill in every `CHANGE_ME`. `scripts/run-app.sh` sources the repo-root `.env` fir
 
 **Windows (Command Prompt):**
 ```cmd
+copy .env.example .env
 copy frontend\.env.local.example frontend\.env.local
 copy core-java\.env.example core-java\.env
 copy edge-go\.env.example edge-go\.env
-copy infra\.env.example infra\.env
 ```
 
 **Windows (PowerShell):**
 ```powershell
+Copy-Item .env.example .env
 Copy-Item frontend\.env.local.example frontend\.env.local
 Copy-Item core-java\.env.example core-java\.env
 Copy-Item edge-go\.env.example edge-go\.env
-Copy-Item infra\.env.example infra\.env
 ```
 
-#### Step 2: Start Infrastructure
+> `infra/.env` is deliberately **not** copied here. It is required only by the hybrid runtime
+> (`scripts/start-dev.sh`), which runs `infra/docker-compose.yml`; that file reads `infra/.env`
+> and **not** the repo-root `.env`. See README.md "Option 3: Hybrid".
+
+#### Step 2: Start the backing services
 
 ```bash
-cd infra
-docker compose up -d
-cd ..
+docker compose -f docker-compose.full-stack.yml up -d postgres keycloak redis rabbitmq
 ```
+
+> Do **not** use `cd infra && docker compose up -d` here. `infra/docker-compose.yml` is a
+> deliberate two-service profile (Postgres + Keycloak only). It re-declares `jtoye-postgres`
+> and `jtoye-keycloak` on the **same host ports** (5433, 8085) as the canonical stack, so the
+> two collide, and it starts neither Redis nor RabbitMQ — which `application.yml` expects on
+> `localhost`. It exists for the hybrid runtime `scripts/start-dev.sh` drives; see README.md
+> "Option 3: Hybrid".
 
 **Verify:**
 ```bash
 docker ps | grep jtoye
-# Should show: jtoye-postgres and jtoye-keycloak
+# Should show: jtoye-postgres, jtoye-keycloak, jtoye-redis, jtoye-rabbitmq
 ```
 
 #### Step 3: Start Backend
@@ -96,10 +105,13 @@ docker ps | grep jtoye
 ./scripts/run-app.sh
 ```
 
-**Or manually:**
+**Or manually** — `DB_PORT` alone is not enough. `application.yml` resolves `${DB_USER:jtoye_app}`
+and `${DB_PASSWORD:}`, so a bare `DB_PORT=5433` boots with the migrator role and an EMPTY
+password and fails authentication:
 ```bash
-DB_PORT=5433 ./gradlew :core-java:bootRun
+DB_PORT=5433 DB_USER=jtoye_runtime DB_PASSWORD="$DB_PASSWORD" ./gradlew :core-java:bootRun
 ```
+`scripts/run-app.sh` exists precisely to set these; prefer it.
 
 **Verify:**
 ```bash

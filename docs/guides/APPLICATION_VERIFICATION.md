@@ -257,7 +257,7 @@ None required - application is production-ready for single-tenant testing.
 - `docs/setup/SETUP.md` - General setup instructions
 - `docs/setup/INTELLIJ_SETUP.md` - IntelliJ-specific configuration
 - `docs/CHANGELOG.md` - Version history
-- `docs/setup/IMPLEMENTATION_SUMMARY.md` - Technical implementation details
+- `docs/archive/IMPLEMENTATION_SUMMARY-2026-01.md` - Technical implementation details (historical; its "Verify Implementation" commands target retired ports)
 
 ## Conclusion
 

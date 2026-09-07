@@ -107,6 +107,15 @@ data:
   api.url: "http://api.jtoye.local"
   frontend.url: "http://app.jtoye.local"
 
+  # FE-1 / E-5 (QA council 20260902-134741): stated EXPLICITLY per overlay, never
+  # inherited — the vendor sign-out return leg stays on today's /auth/signin
+  # until scripts/check-keycloak-logout-uri.sh is green against THIS overlay's
+  # realm. Local happens to share the compose realm, whose core-api client
+  # registers http://app.jtoye.local/*, so the gate is expected to pass here
+  # first; the flip is still a deliberate, measured act, not a default. See
+  # k8s/base/configmap.yaml for the mechanism and the failure it guards.
+  vendor.logout-complete.enabled: "false"
+
   # --- Shared backing-service endpoint shims --------------------------------
   # Ports come from the base keys (redis.port 6379, rabbitmq.port 5672,
   # stomp.broker.relay-port 61613), which already match the compose values, so

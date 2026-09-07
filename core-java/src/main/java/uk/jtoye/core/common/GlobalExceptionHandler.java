@@ -3,6 +3,7 @@ package uk.jtoye.core.common;
 import com.stripe.exception.StripeException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.mapping.PropertyReferenceException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -453,6 +454,38 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST, "Invalid value for parameter '" + ex.getName() + "'");
         problem.setTitle("Bad Request");
         problem.setType(URI.create("https://jtoye.uk/errors/type-mismatch"));
+        return problem;
+    }
+
+    /**
+     * API-7 (QA council 20260902-134741) — an unresolvable {@code sort} property is a
+     * client error, 400, not a server fault.
+     *
+     * <p>{@code GET /api/v1/products?sort=;DROP} returned <b>500 errors/internal</b>:
+     * Spring Data's {@link PropertyReferenceException} matched none of the handlers above,
+     * so it fell through to {@link #handleGenericException} — which also logged a full
+     * stacktrace at ERROR for every such request. It is the only 5xx the error-model sweep
+     * could provoke from client input; every other malformed input already mapped to 4xx.
+     *
+     * <p>The detail names ONLY the rejected property. {@code ex.getMessage()} is
+     * "No property ';DROP' found for type 'Product'" and appends "Did you mean ..." when a
+     * near match exists — echoing it would hand the caller the entity name and a list of
+     * its real property names, so the message is composed here rather than forwarded.
+     *
+     * <p>Scope note: this exception is effectively always request-driven. Repository query
+     * derivation resolves property paths at context startup, so a mistyped property in a
+     * derived query method fails the boot, not a request.
+     */
+    @ExceptionHandler(PropertyReferenceException.class)
+    public ProblemDetail handlePropertyReference(PropertyReferenceException ex) {
+        log.debug("Rejected unresolvable sort/filter property '{}'", ex.getPropertyName());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                "Unknown sort or filter property '" + ex.getPropertyName() + "'");
+        problem.setTitle("Invalid Sort Property");
+        problem.setType(URI.create("https://jtoye.uk/errors/invalid-sort"));
+        // Typed member so a client can branch on the offending name without parsing prose.
+        problem.setProperty("property", ex.getPropertyName());
         return problem;
     }
 

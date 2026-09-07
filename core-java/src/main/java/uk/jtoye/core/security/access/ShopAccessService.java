@@ -1,5 +1,6 @@
 package uk.jtoye.core.security.access;
 
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -145,6 +146,38 @@ public class ShopAccessService {
      */
     private ShopAccessService self() {
         return selfProvider.getObject();
+    }
+
+    /**
+     * Log the resolved shop-scoping posture ONCE at startup (QA-council 20260902 SEC-2).
+     *
+     * <p>{@code strict-scoping=false} is a recorded design decision (D-12, CR-07) and the
+     * production default — but until this line existed the posture was invisible: no
+     * manifest declared the variable and nothing in the logs said which rule was in force,
+     * so OFF-by-choice and OFF-by-omission were indistinguishable. A WARN (not INFO) because
+     * the consequence is an authorization posture — every ungranted tenant user is an implicit
+     * tenant-wide GROUP_ADMIN — and an operator reading a deployment's first log lines must
+     * see that stated, not infer it. The flip itself is NOT decided here: it is blocked on
+     * #285 (bulk-revoke of JIT grants), the {@code /sync/batch} shop predicate, and the
+     * {@code integration-orders-rw} UUID-subject client whose GROUP_ADMIN comes solely from
+     * the strict-OFF rule.
+     *
+     * <p>Reads the startup-bound field only; tests that flip {@code strictScoping} by
+     * reflection do not re-trigger it, which is correct — it describes the posture the
+     * process BOOTED with.
+     */
+    @PostConstruct
+    void logScopingPosture() {
+        if (strictScoping) {
+            log.info("event=shop_scoping_posture strict=true: vendor shop-scoping is ENFORCED "
+                    + "(jtoye.access.strict-scoping=true) — JIT-provisioned tenant-wide GROUP_ADMIN grants "
+                    + "are de-honoured, no new JIT provisioning; operator grants and realm admins honoured.");
+            return;
+        }
+        log.warn("event=shop_scoping_posture strict=false: vendor shop-scoping is NOT enforced — every "
+                + "ungranted tenant user is an implicit tenant-wide GROUP_ADMIN and every JIT grant is honoured "
+                + "(jtoye.access.strict-scoping=false, D-12 recorded default). Arming is tracked and blocked on "
+                + "#285, the /sync/batch shop predicate and the integration-orders-rw UUID-subject client.");
     }
 
     // ---------------------------------------------------------------------

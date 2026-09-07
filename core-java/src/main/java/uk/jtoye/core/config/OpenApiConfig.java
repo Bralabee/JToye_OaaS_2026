@@ -31,6 +31,31 @@ public class OpenApiConfig {
         @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:http://localhost:8081/realms/jtoye-dev}")
         private String issuerUri;
 
+        /**
+         * INT-24 (QA council 20260902-134741): the "Local Development" server URL.
+         *
+         * <p>It was the hardcoded literal {@code http://localhost:8080}, while the API
+         * listens on {@code server.port} (9090 in every profile and in the compose stack,
+         * where the container is published 9090->9090). Swagger UI's "Try it out" therefore
+         * POSTed at a refused port: probing the advertised base with the same command shape
+         * that returns 200 on 9090 gave {@code HTTP 000 connection refused}.
+         *
+         * <p>Derived from {@code server.port} rather than restated, so it cannot drift from
+         * the port the application actually binds - the same rule the tenant-header scheme
+         * below follows (the name comes from the filter that honours it, never a copy).
+         * Override with {@code jtoye.openapi.local-server-url} or, via Boot's relaxed
+         * binding, the {@code JTOYE_OPENAPI_LOCAL_SERVER_URL} environment variable when the
+         * API is reached through a proxy or a different published port.
+         *
+         * <p>No gate would have caught this: both OpenAPI snapshot normalisers strip
+         * {@code servers} as environment-dependent ({@code check-openapi-snapshot-fresh.sh}
+         * and {@code OpenApiSnapshotTest.normalize} both do {@code del(.servers)}), which is
+         * why this ships with its own assertions in {@code OpenApiConfigServerUrlTest} and
+         * {@code OpenApiDevProfileGatingTest}.
+         */
+        @Value("${jtoye.openapi.local-server-url:http://localhost:${server.port:9090}}")
+        private String localServerUrl;
+
         @Bean
         public OpenAPI jtoyeOpenAPI() {
                 return new OpenAPI()
@@ -81,7 +106,7 @@ public class OpenApiConfig {
                                                                 .name("Proprietary")
                                                                 .url("https://jtoye.uk/license")))
                                 .servers(List.of(
-                                                new Server().url("http://localhost:8080")
+                                                new Server().url(localServerUrl)
                                                                 .description("Local Development"),
                                                 new Server().url("https://api.jtoye.uk").description("Production")))
                                 .addSecurityItem(new SecurityRequirement()

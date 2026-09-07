@@ -1,10 +1,14 @@
 "use client"
 
-import { use } from "react"
+import { use, useEffect, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Minus, Plus, Trash2, ShoppingBag, Store } from "lucide-react"
 import { useCart } from "@/components/storefront/cart-provider"
 import { SafeImage } from "@/components/ui/safe-image"
+import { minimumShortfallPennies } from "@/lib/minimum-order"
+import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
+import publicApiClient from "@/lib/public-api-client"
+import type { PublicShop } from "@/types/storefront"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
@@ -13,6 +17,31 @@ function formatPrice(pennies: number): string {
 export default function CartPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params)
   const { items, updateQuantity, removeItem, clearCart, itemCount, totalPennies } = useCart()
+
+  // The shop is the ONLY source for the delivery fee, the free-delivery
+  // threshold and the minimum order (COR-2/COR-3). Same fetch shape and same
+  // graceful degradation as checkout: on failure `shop` stays null, the page
+  // makes NO delivery or minimum claim at all, and the server — which recomputes
+  // the total and enforces the minimum authoritatively in createGuestOrder —
+  // remains the only thing that decides either.
+  //
+  // Declared ABOVE the empty-basket early return: hook order is not allowed to
+  // depend on whether the basket has items.
+  const [shop, setShop] = useState<PublicShop | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    publicApiClient
+      .get<PublicShop>(`/public/shops/${slug}`)
+      .then((res) => {
+        if (!cancelled) setShop(res.data)
+      })
+      .catch(() => {
+        /* No fee line, no minimum line. Silence, never a guessed £0.00. */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [slug])
 
   if (items.length === 0) {
     return (
@@ -30,6 +59,34 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
       </div>
     )
   }
+
+  // Money this screen is allowed to CLAIM. Every input is server-authoritative:
+  // the fee, the waiver threshold and the minimum all come from the shop DTO,
+  // never from a literal — a hardcoded "£3.50" is wrong for every other shop and
+  // silently wrong for this one the day the vendor edits it.
+  const previewedDeliveryPennies = previewDeliveryFeePennies(
+    totalPennies,
+    "DELIVERY",
+    shop?.deliveryFeePennies,
+    shop?.freeDeliveryThresholdPennies
+  )
+  // A null fee is NOT RECORDED, not "free" (the WR-04 rule stated on PublicShop):
+  // a shop that has never set one renders no delivery line at all rather than a
+  // confident "£0.00".
+  const deliveryFeeKnown = shop != null && shop.deliveryFeePennies != null
+  // The same arithmetic the floating bar and checkout call (#718 F-3), so the
+  // three screens cannot quote three different shortfalls for one basket.
+  const minimumOrderPennies = shop?.minimumOrderPennies ?? 0
+  const shortfallPennies = minimumShortfallPennies(totalPennies, minimumOrderPennies)
+  const belowMinimum = shortfallPennies !== null
+  // One label for both CTA shapes — the enabled link and the disabled button
+  // must never drift into saying different things.
+  const ctaContent = (
+    <>
+      Proceed to checkout
+      <span className="text-gold">{formatPrice(totalPennies)} subtotal</span>
+    </>
+  )
 
   return (
     <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
@@ -119,27 +176,77 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
         ))}
       </div>
 
-      {/* Order summary */}
+      {/* Order summary.
+
+          THERE IS DELIBERATELY NO "TOTAL" LINE (COR-2). This screen cannot know
+          the fulfilment type — the customer chooses delivery or collection on
+          the NEXT screen — so any total here is a claim about a decision not yet
+          made. It used to render the item subtotal under the word "Total" and
+          was contradicted one tap later: £3.00 shown, £6.50 payable. Subtotal
+          plus the delivery FLOOR removes the false claim without inventing a
+          new one, and it cannot be wrong for a customer who then picks
+          collection. */}
       <div className="mt-6 rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
         <div className="flex items-center justify-between text-sm">
           <span className="text-slate-600">Subtotal</span>
           <span className="font-semibold text-slate-900">{formatPrice(totalPennies)}</span>
         </div>
-        <div className="mt-4 border-t border-cream-100 pt-4 flex items-center justify-between">
-          <span className="text-base font-bold text-slate-900">Total</span>
-          <span className="text-base font-bold text-slate-900">{formatPrice(totalPennies)}</span>
-        </div>
+        {deliveryFeeKnown && (
+          <>
+            <div className="mt-2 flex items-center justify-between text-sm">
+              <span className="text-slate-600">Delivery</span>
+              {previewedDeliveryPennies === 0 ? (
+                <span className="font-semibold text-emerald-700">Free</span>
+              ) : (
+                <span className="font-semibold text-slate-900">
+                  from {formatPrice(previewedDeliveryPennies)}
+                </span>
+              )}
+            </div>
+            {previewedDeliveryPennies > 0 && (
+              <p className="mt-1 text-xs text-slate-600">
+                Added at checkout, where collection is free
+                {shop?.freeDeliveryThresholdPennies != null
+                  ? ` and delivery is free over ${formatPrice(shop.freeDeliveryThresholdPennies)}`
+                  : ""}
+                .
+              </p>
+            )}
+          </>
+        )}
       </div>
 
       {/* Actions */}
       <div className="mt-6 space-y-3">
-        <Link
-          href={`/shop/${slug}/checkout`}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg"
-        >
-          Proceed to checkout
-          <span className="text-gold">{formatPrice(totalPennies)}</span>
-        </Link>
+        {/* The blocking rule, stated where the customer can still act on it
+            (COR-3). Word-for-word the floating bar's label, from the same
+            lib/minimum-order arithmetic, so the bar, this screen and checkout
+            read as ONE rule rather than three. It is a PERMANENT hint sitting
+            directly above the control it explains — the condition checkout's own
+            comment sets for disabling a control at all, because a disabled
+            button gives no feedback on touch. */}
+        {belowMinimum && (
+          <p id="basket-minimum-hint" className="text-center text-sm font-medium text-amber-800">
+            Add {formatPrice(shortfallPennies!)} to order &middot; min {formatPrice(minimumOrderPennies)}
+          </p>
+        )}
+        {belowMinimum ? (
+          <button
+            type="button"
+            disabled
+            aria-describedby="basket-minimum-hint"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {ctaContent}
+          </button>
+        ) : (
+          <Link
+            href={`/shop/${slug}/checkout`}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg"
+          >
+            {ctaContent}
+          </Link>
+        )}
         <Link
           href={`/shop/${slug}`}
           className="flex w-full items-center justify-center gap-1 rounded-2xl border border-cream-100 py-3 text-sm font-medium text-slate-600 hover:bg-cream transition-colors"

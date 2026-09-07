@@ -159,6 +159,16 @@ describe("/api/customer-auth/logout-url — the same-origin restriction still ho
     ["backslash trick", "/\\evil.example.com/steal"],
     ["scheme-ish", "javascript:alert(1)"],
     ["empty", ""],
+    // PR #726 follow-up to low (a): the vendor sibling lost its private `sanitizeRedirect`
+    // for the shared `safeReturnTo`; this route was the LAST copy. These are the cases the
+    // local copy ACCEPTED — an interior backslash, which some browsers normalise to a
+    // protocol-relative URL, and whitespace-padded variants of the hostile forms above that
+    // a `startsWith("/")` check never sees. One sanitiser across both realms now.
+    ["interior backslash", "/shop\\@evil.example.com"],
+    ["double-backslash host", "\\\\evil.example.com"],
+    ["padded protocol-relative", "  //evil.example.com/steal"],
+    ["padded absolute https", " https://evil.example.com/steal"],
+    ["padded javascript:", " javascript:alert(1)"],
   ]
 
   it.each(hostile)("rejects a %s redirect and falls back to /shop", async (_label, raw) => {

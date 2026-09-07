@@ -28,8 +28,12 @@ never exercises the relay at all).
 Jest/Playwright suites, iterating on a page — use Docker Compose:
 
 ```bash
-scripts/start-dev.sh        # the canonical local dev + E2E runtime
+docker compose -f docker-compose.full-stack.yml up -d   # the canonical local dev + E2E runtime
 ```
+
+(`scripts/start-dev.sh` is a different, hybrid runtime — `infra/` compose plus host processes —
+paired with `scripts/stop-dev.sh`. It is not the canonical stack and does not read
+`docker-compose.full-stack.yml`.)
 
 Compose remains canonical for development and E2E (`CLAUDE.md` § "Runtime & deploy topology");
 Kubernetes remains the staging/production deploy target. **Neither layer is retired.** This cluster
@@ -533,10 +537,10 @@ Spring's **in-memory** simple broker accepts arbitrary destination paths, so the
 there and invalid the moment it is relayed.
 
 **Why every k8s environment is affected while development is not.**
-`k8s/base/configmap.yaml:145` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
+`k8s/base/configmap.yaml:166` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
 nor `k8s/production/configmap-patch.yaml` overrides it, so **staging and production both inherit the
 broken path**. Meanwhile `docker-compose.full-stack.yml:310` passes
-`STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `core-java/src/main/resources/application.yml:442` reads
+`STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `core-java/src/main/resources/application.yml:456` reads
 `mode: ${STOMP_BROKER_MODE:in-memory}` — so a normal compose run never enters the relay branch at all
 (`core-java/src/main/java/uk/jtoye/core/websocket/WebSocketConfig.java:76`, `enableSimpleBroker`). That asymmetry is the entire reason this survived to
 production undetected, and it is exactly what D-06 predicted when it insisted the relay be proven on the
@@ -1536,7 +1540,7 @@ jtoye
 ```
 
 `STOMP_BROKER_MODE=relay` matters on its own: dev compose defaults to
-`mode: ${STOMP_BROKER_MODE:in-memory}` (`core-java/src/main/resources/application.yml:442`), so this code path is exercised **only** on this cluster (D-06).
+`mode: ${STOMP_BROKER_MODE:in-memory}` (`core-java/src/main/resources/application.yml:456`), so this code path is exercised **only** on this cluster (D-06).
 Re-asserted on the CURRENT pod after Task 1's frontend re-apply:
 `grep -c "Access refused for user"` = **0**, `grep -c 'In-memory simple broker'` = **0**,
 `grep -c 'STOMP broker relay configured'` = **1**, restart count **4** and stable (§7 A2 explains why

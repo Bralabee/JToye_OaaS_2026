@@ -1,5 +1,6 @@
 package uk.jtoye.core.security;
 
+import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.ConsumptionProbe;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
 import io.github.bucket4j.Bucket;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -22,6 +24,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -114,7 +119,7 @@ class RateLimitInterceptorTest {
 
         // Assert
         assertTrue(result, "Request should be allowed");
-        verify(response).setHeader("X-RateLimit-Limit", "100");
+        verify(response).setHeader("X-RateLimit-Limit", "120");  // API-8: capacity (100 + burst 20), not the refill rate
         verify(response).setHeader("X-RateLimit-Remaining", "45");
         verify(response).setHeader(eq("X-RateLimit-Reset"), anyString());
         verify(bucket).tryConsumeAndReturnRemaining(1);
@@ -145,7 +150,7 @@ class RateLimitInterceptorTest {
         // Assert
         assertFalse(result, "Request should be blocked");
         verify(response).setStatus(429);
-        verify(response).setHeader("X-RateLimit-Limit", "100");
+        verify(response).setHeader("X-RateLimit-Limit", "120");  // API-8: capacity (100 + burst 20), not the refill rate
         verify(response).setHeader("X-RateLimit-Remaining", "0");
         verify(response).setHeader(eq("Retry-After"), eq("30"));
         // issue #413: RFC 7807 media type, and an explicit charset — getWriter() otherwise
@@ -372,7 +377,7 @@ class RateLimitInterceptorTest {
         // Assert: allowed, public-tier headers, and the bucket keyed by rl:public:{ip}
         // (NOT the tenant "rate_limit::" namespace).
         assertTrue(result, "Public request under limit should be allowed");
-        verify(response).setHeader("X-RateLimit-Limit", "30");
+        verify(response).setHeader("X-RateLimit-Limit", "40");   // API-8: capacity (30 + burst 10), not the refill rate
         verify(response).setHeader("X-RateLimit-Remaining", "29");
         verify(bucket).tryConsumeAndReturnRemaining(1);
         verify(builder).build(
@@ -398,7 +403,7 @@ class RateLimitInterceptorTest {
         boolean result = interceptor.preHandle(request, response, new Object());
 
         assertTrue(result, "Versioned public alias request under limit should be allowed");
-        verify(response).setHeader("X-RateLimit-Limit", "30");
+        verify(response).setHeader("X-RateLimit-Limit", "40");   // API-8: capacity (30 + burst 10), not the refill rate
         verify(builder).build(
                 argThat((String key) -> key.startsWith("rl:public:") && key.contains("203.0.113.42")),
                 any(Supplier.class));
@@ -428,7 +433,7 @@ class RateLimitInterceptorTest {
         // Assert: 429 + Retry-After, keyed rl:public:, and NO tenantId in the guest body.
         assertFalse(result, "Public request over limit should be blocked");
         verify(response).setStatus(429);
-        verify(response).setHeader("X-RateLimit-Limit", "30");
+        verify(response).setHeader("X-RateLimit-Limit", "40");   // API-8: capacity (30 + burst 10), not the refill rate
         verify(response).setHeader("X-RateLimit-Remaining", "0");
         verify(response).setHeader(eq("Retry-After"), eq("15"));
         verify(response).setContentType("application/problem+json");
@@ -494,5 +499,104 @@ class RateLimitInterceptorTest {
         // Assert: fail OPEN (no 429, no 500) — issue #86 semantics preserved for public.
         assertTrue(result, "Public path must fail open when Redis is unavailable");
         verify(response, never()).setStatus(429);
+    }
+
+    // ------------------------------------------------------------------
+    // API-8 (QA council 20260902-134741): X-RateLimit-Remaining exceeded
+    // X-RateLimit-Limit on EVERY response, on BOTH buckets.
+    //
+    // Adjudication A4: there are two buckets and two separate defects. The
+    // tenant bucket is 100/min + burst 20 and the public IP-keyed bucket
+    // (#88) is 30/min + burst 10 by default, widened to 600/120 for the local
+    // compose runtime. Both advertised the REFILL RATE as Limit while counting
+    // Remaining out of the bucket's CAPACITY (rate + burst), so live headers
+    // read "Limit: 100, Remaining: 119" and "Limit: 600, Remaining: 719" - a
+    // client computing remaining/limit for backoff gets a ratio above 1.
+    //
+    // These two tests take the capacity from the SAME BucketConfiguration the
+    // interceptor hands Bucket4j, not from a literal typed here: if the header
+    // and the bucket ever disagree again, the assertion fails whatever the
+    // configured numbers are.
+    // ------------------------------------------------------------------
+
+    /** Collects every setHeader(name, value) call into a map, in call order. */
+    private Map<String, String> capturedHeaders() {
+        ArgumentCaptor<String> names = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> values = ArgumentCaptor.forClass(String.class);
+        verify(response, atLeastOnce()).setHeader(names.capture(), values.capture());
+        List<String> n = names.getAllValues();
+        List<String> v = values.getAllValues();
+        Map<String, String> out = new HashMap<>();
+        for (int i = 0; i < n.size(); i++) {
+            out.put(n.get(i), v.get(i));
+        }
+        return out;
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void tenantHeaders_advertiseBucketCapacity_andRemainingNeverExceedsLimit() throws Exception {
+        TenantContext.set(testTenantId);
+        when(request.getRequestURI()).thenReturn("/api/v1/shops");
+
+        // 119 is the live observation: a 120-token bucket with one token just consumed.
+        ConsumptionProbe probe = mock(ConsumptionProbe.class);
+        when(probe.isConsumed()).thenReturn(true);
+        when(probe.getRemainingTokens()).thenReturn(119L);
+        when(bucket.tryConsumeAndReturnRemaining(1)).thenReturn(probe);
+
+        assertTrue(interceptor.preHandle(request, response, new Object()));
+
+        ArgumentCaptor<Supplier<BucketConfiguration>> configCaptor =
+                ArgumentCaptor.forClass(Supplier.class);
+        verify(builder).build(anyString(), configCaptor.capture());
+        long realCapacity = configCaptor.getValue().get().getBandwidths()[0].getCapacity();
+
+        Map<String, String> headers = capturedHeaders();
+        long limit = Long.parseLong(headers.get("X-RateLimit-Limit"));
+        long remaining = Long.parseLong(headers.get("X-RateLimit-Remaining"));
+
+        assertEquals(realCapacity, limit,
+                "X-RateLimit-Limit must advertise the capacity the bucket is actually built with "
+                + "(default-limit + burst-capacity), not the refill rate");
+        assertTrue(remaining <= limit,
+                "X-RateLimit-Remaining (" + remaining + ") must never exceed X-RateLimit-Limit ("
+                + limit + ") - a client computing remaining/limit for backoff got a ratio above 1");
+
+        TenantContext.clear();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void publicHeaders_advertiseBucketCapacity_andRemainingNeverExceedsLimit() throws Exception {
+        // The second bucket, the one CLAUDE.md never documented. Same defect, own code path.
+        TenantContext.clear();
+        when(request.getRequestURI()).thenReturn("/api/v1/public/shops");
+        when(request.getHeader("X-Forwarded-For")).thenReturn("203.0.113.11");
+
+        // 39 = the public bucket full (30 + burst 10) with one token consumed; the same
+        // shape as the live 719-out-of-600 reading under the compose 600/120 override.
+        ConsumptionProbe probe = mock(ConsumptionProbe.class);
+        when(probe.isConsumed()).thenReturn(true);
+        when(probe.getRemainingTokens()).thenReturn(39L);
+        when(bucket.tryConsumeAndReturnRemaining(1)).thenReturn(probe);
+
+        assertTrue(interceptor.preHandle(request, response, new Object()));
+
+        ArgumentCaptor<Supplier<BucketConfiguration>> configCaptor =
+                ArgumentCaptor.forClass(Supplier.class);
+        verify(builder).build(anyString(), configCaptor.capture());
+        long realCapacity = configCaptor.getValue().get().getBandwidths()[0].getCapacity();
+
+        Map<String, String> headers = capturedHeaders();
+        long limit = Long.parseLong(headers.get("X-RateLimit-Limit"));
+        long remaining = Long.parseLong(headers.get("X-RateLimit-Remaining"));
+
+        assertEquals(realCapacity, limit,
+                "the public IP-keyed bucket must advertise its own capacity "
+                + "(public.requests-per-minute + public.burst)");
+        assertTrue(remaining <= limit,
+                "X-RateLimit-Remaining (" + remaining + ") must never exceed X-RateLimit-Limit ("
+                + limit + ") on the public bucket either");
     }
 }

@@ -207,7 +207,7 @@ function StaffLoading() {
           <CardDescription>{CURRENT_ACCESS_DESCRIPTION}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
+          <Table containerLabel="Current access table">
             <TableHeader>
               <TableRow>
                 <TableHead>Person</TableHead>
@@ -606,7 +606,7 @@ export default function StaffPage() {
               No access granted yet.
             </p>
           ) : (
-            <Table>
+            <Table containerLabel="Access grants table">
               <TableHeader>
                 <TableRow>
                   <TableHead>Person</TableHead>

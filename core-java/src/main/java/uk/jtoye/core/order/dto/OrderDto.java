@@ -1,6 +1,7 @@
 package uk.jtoye.core.order.dto;
 
 import uk.jtoye.core.finance.VatRate;
+import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
 
@@ -21,7 +22,24 @@ public class OrderDto {
     private VatRate vatRate;
     private Long vatAmountPennies;
     private Long totalAmountPennies;
+    /**
+     * COR-1: how the order is fulfilled, and what delivery cost.
+     *
+     * <p>Both are new on the LIST DTO and both are cheap: they are scalar columns on the order
+     * row itself, so unlike the allergen aggregate noted below they cost no extra query and no
+     * lazy collection load. They are here because without them the vendor list could not see the
+     * classification at all — which is how 4 live orders sat mis-classified as DELIVERY-with-no-
+     * address without anything on screen contradicting itself.
+     */
+    private FulfilmentType fulfilmentType;
+    private Long deliveryFeePennies;
     private Integer itemCount;
+    /**
+     * COR-4 (V66): UNITS on the order — SUM(order_items.quantity) — beside {@code itemCount},
+     * which stays LINES. Nullable, and null means NOT RECORDED (the row predates V66). Never read
+     * null as 0 and never substitute {@code itemCount} for it.
+     */
+    private Integer unitCount;
     private PaymentStatus paymentStatus;
     private String paymentReference;
     private String paymentMethod;
@@ -78,6 +96,15 @@ public class OrderDto {
 
     public Long getTotalAmountPennies() { return totalAmountPennies; }
     public void setTotalAmountPennies(Long totalAmountPennies) { this.totalAmountPennies = totalAmountPennies; }
+
+    public FulfilmentType getFulfilmentType() { return fulfilmentType; }
+    public void setFulfilmentType(FulfilmentType fulfilmentType) { this.fulfilmentType = fulfilmentType; }
+
+    public Long getDeliveryFeePennies() { return deliveryFeePennies; }
+    public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
+
+    public Integer getUnitCount() { return unitCount; }
+    public void setUnitCount(Integer unitCount) { this.unitCount = unitCount; }
 
     public Integer getItemCount() { return itemCount; }
     public void setItemCount(Integer itemCount) { this.itemCount = itemCount; }

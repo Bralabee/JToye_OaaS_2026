@@ -25,7 +25,7 @@
     "vitest": "^4"
   },
   "overrides": {
-    "fast-uri": "^3.1.4",
+    "fast-uri": "^3.1.6",
     "hono": "^4.13.5",
     "@hono/node-server": "^1.19.17"
   }

@@ -212,3 +212,14 @@ edge-go/coverage.out
 
 # archify visual-check evidence (regenerable, not artifacts)
 docs/architecture/*.visual-check.*
+
+# graphify knowledge-graph output (/gsd:graphify build). Both directories are
+# derived entirely from the commit they were built at -- graphify status records
+# built_at_commit and reports commit_stale against HEAD -- and a full rebuild from
+# a warm cache takes ~90s, so there is nothing here that a checkout cannot
+# regenerate. Ignored because they are large and rewritten on every build:
+# graph.json and .last-build-snapshot.json are ~38 MB EACH, and .planning/ is
+# committed automatically under commit_docs=true, which would otherwise sweep
+# ~163 MB of regenerable tool state into history on a blanket `git add`.
+graphify-out/
+.planning/graphs/
