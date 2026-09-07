@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The E2E seeder's own fixture broke ONBD-05, and its guard could not see it (#737) — 2026-09-07
+
+- **#726's zero-VAT fixture failed a mandatory onboarding gate.** The COR-6 product lands
+  on `PROMO_SHOP_SLUG`, which is also the shop ONBD-05 onboards, and carried no
+  `durability_type` or `shelf_life_days`. `AllergenCompletenessGate` walks every product
+  on that shop, so `ALLERGEN_DATA_COMPLETE` FAILED, parking the onboarding in
+  `ACTION_REQUIRED` where the honest in-review copy can never render — ONBD-05 timed out
+  after 60s. Absent at `9d9efaeb` (the commit the last green nightly ran on), so the next
+  nightly would have been the first to fail. The `ON CONFLICT` arm repairs the columns as
+  well as setting them, so an already-seeded row is fixed rather than left behind.
+- **The reset guard's state list was the wrong set.** It held the state machine's terminal
+  states, not "states ONBD-05 cannot be driven from". With the demo tenant at `APPROVED`
+  it printed "re-runnable, untouched", counted 0 blocking rows and exited 0 — a vacuous
+  PASS over a test incapable of passing. Renamed `NON_RERUNNABLE_STATES` and widened to
+  include `APPROVED`/`PENDING_APPROVAL`; correctness rests on reachability (SUBMIT and
+  RESUBMIT are the only edges into VERIFYING) and on `reviewPending` being VERIFYING-only.
+- **The seeder now verifies the precondition that actually broke.** It asserted five
+  preconditions, none of them this one. The new check counts allergen-incomplete products
+  on the onboarding shop using `btrim`, mirroring the gate's `isBlank()` predicate rather
+  than only its fields — a whitespace-only ingredients list fails the gate and previously
+  slipped past a plain `= ''` comparison. Break-arm bracket rc 0 / 1 / 0, restores verified
+  by content hash.
+
 ### QA council `20260902-134741` remediated: 2 Criticals, the High tier, and the doc/gate drift behind them (#726) — 2026-09-03
 
 - **A documented read-only credential could write the catalogue (API-1, Critical).**

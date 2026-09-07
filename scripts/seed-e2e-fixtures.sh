@@ -173,8 +173,8 @@ psql_run "$promo_sql" || void "promotion/announcement seed failed"
 # human can perform" anti-pattern this repo already paid for once (V64/#647). This
 # section is that reset, scripted and idempotent.
 #
-# SCOPE: SHOP_TENANT only. Another tenant's onboarding row (…0002 is WITHDRAWN on the
-# dev DB) is not this spec's concern and a table-wide sweep would destroy state other
+# SCOPE: SHOP_TENANT only. Another tenant's onboarding row (…0002 is LIVE on the dev DB,
+# measured 2026-09-07 — this line said WITHDRAWN and was stale) is not this spec's concern and a table-wide sweep would destroy state other
 # flows may assert.
 #
 # Shop.published is DELIBERATELY untouched: demo shops are seed-published and the
@@ -187,9 +187,14 @@ psql_run "$promo_sql" || void "promotion/announcement seed failed"
 # of the repair is not opting out of the truth.
 # The list is "states ONBD-05 cannot be driven from", NOT the state machine's terminal
 # set — the two differ and conflating them shipped a vacuous PASS. ONBD-05 asserts the
-# honest in-review copy, which the server derives only while a mandatory gate sits in
-# MANUAL_REVIEW; gates are resolved on the way OUT of VERIFYING, so every state after it
-# has no parked gate left to assert on. Measured 2026-09-07 on the dev stack: the demo
+# honest in-review copy, which VendorOnboardingService derives only when status is
+# VERIFYING. Note the premise is REACHABILITY, not "gates resolve on the way out of
+# VERIFYING" — that is false: REVIEWABLE_STATES is {VERIFYING, ACTION_REQUIRED} and a
+# MANUAL_REVIEW gate parks in ACTION_REQUIRED whenever another mandatory gate FAILED in
+# the same run. What makes the list below correct is that SUBMIT (from DRAFT) and
+# RESUBMIT (from ACTION_REQUIRED) are the ONLY edges into VERIFYING in
+# VendorOnboardingStateMachineConfig, so none of the six listed states has a path back —
+# and reviewPending is VERIFYING-only, so ONBD-05 cannot assert from any of them. Measured 2026-09-07 on the dev stack: the demo
 # tenant sat at APPROVED (all three gates PASSED/WAIVED), this guard printed
 # "APPROVED — re-runnable, untouched", the verification counted 0 blocking rows and
 # declared ONBD-05 armed — and ONBD-05 then FAILED on a 60s timeout rather than skipping,
@@ -274,7 +279,10 @@ fi
 #   silently breaks a different spec's fixture. Measured 2026-09-07 on the dev stack:
 #   gates read ALLERGEN_DATA_COMPLETE=FAILED ("1 product(s) ... E2E-ZERO-VAT-001"),
 #   BUSINESS_VERIFIED=WAIVED, FOOD_HYGIENE_RATING=MANUAL_REVIEW, and ONBD-05 timed out
-#   after 60s. USE_BY/3 matches every real product on the dev tree (22 of 22).
+#   after 60s. USE_BY is what every product on the dev tree uses (23 of 23);
+#   the common shelf life is 2 days (21 rows) and 3 appears on one other row, a QA probe
+#   fixture. The gate requires only NON-NULL, so the exact number is not load-bearing —
+#   stated precisely because the earlier "22 of 22" read as if 3 days were the norm.
 ZERO_VAT_SKU="${ZERO_VAT_SKU:-E2E-ZERO-VAT-001}"
 zero_vat_sql=$(cat <<SQL
 insert into products
@@ -354,13 +362,20 @@ zero_vat=$(psql_q "select count(*) from products p join shops s on s.id = p.shop
 # broke it: AllergenCompletenessGate walks EVERY product on the onboarding shop, so one
 # under-specified fixture anywhere on PROMO_SHOP_SLUG fails a mandatory gate and parks the
 # onboarding in ACTION_REQUIRED. Counting rows this script itself may add is the point —
-# a fixture that sabotages another fixture is exactly what went unseen. Mirrors
-# AllergenCompletenessGate.isAllergenComplete field for field.
+# a fixture that sabotages another fixture is exactly what went unseen.
+#
+# btrim() IS THE PREDICATE, NOT DECORATION: the Java gate tests isBlank(), so a product
+# whose ingredients_text is '   ' FAILS the gate. Measured with a plain `= ''` here, such
+# a row left this check reporting 0 and exiting PASS while the gate would have failed —
+# mirroring the FIELDS is not mirroring the PREDICATE. The `is null` disjuncts are dead
+# against today's schema (ingredients_text is NOT NULL; durability_type carries a CHECK)
+# and are kept deliberately: the mirror is this check's whole justification, a schema is
+# not a constant, and a dead disjunct costs nothing.
 allergen_incomplete=$(psql_q "select count(*) from products
   where shop_id = '$SHOP_ID'
-    and (durability_type is null or durability_type = ''
+    and (durability_type is null or btrim(durability_type) = ''
          or shelf_life_days is null
-         or ingredients_text is null or ingredients_text = '');")
+         or ingredients_text is null or btrim(ingredients_text) = '');")
 
 echo "  DRAFT orders ON PAGE 1 (top $ORDERS_PAGE_SIZE by created_at)  : $draft  (expect >= 1)"
 echo "  ACTIVE, in-window promotions on the shop     : $promo  (expect >= 1)"
