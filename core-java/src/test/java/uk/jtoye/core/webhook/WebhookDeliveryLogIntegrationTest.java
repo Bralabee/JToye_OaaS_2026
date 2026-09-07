@@ -1,5 +1,6 @@
 package uk.jtoye.core.webhook;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -412,9 +413,20 @@ class WebhookDeliveryLogIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/shop-access-denied"));
         assertThat(countVisibleDeliveries(TENANT_A, SUB_AUTH)).isEqualTo(before);
-        assertThat(mockMvc.perform(post(url).with(adminJwt(TENANT_A)).header("Idempotency-Key", key))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
-                .isEqualTo(adminResponse);
+
+        // NOT byte equality: the V50 replay deserializes the stored body and Jackson
+        // re-serializes timestamps normalized to UTC, so a JVM on a non-UTC offset (BST)
+        // prints the SAME instant two ways — byte-comparing was green in CI (UTC) and red
+        // on any British-summer machine. The load-bearing claim is that the admin's replay
+        // still answers AFTER the staff denial, returns the ORIGINAL delivery, and mints
+        // no new row.
+        String replayed = mockMvc.perform(post(url).with(adminJwt(TENANT_A)).header("Idempotency-Key", key))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        ObjectMapper mapper = new ObjectMapper();
+        assertThat(mapper.readTree(replayed).get("id")).isEqualTo(mapper.readTree(adminResponse).get("id"));
+        assertThat(mapper.readTree(replayed).get("replayOf"))
+                .isEqualTo(mapper.readTree(adminResponse).get("replayOf"));
+        assertThat(countVisibleDeliveries(TENANT_A, SUB_AUTH)).isEqualTo(before);
     }
 
     @Test
