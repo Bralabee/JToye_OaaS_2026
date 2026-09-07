@@ -4,6 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { captureOpener, restoreOpener } from "@/components/ui/dialog-focus"
 
 const Sheet = SheetPrimitive.Root
 
@@ -61,11 +62,31 @@ interface SheetContentProps
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, hideCloseButton, ...props }, ref) => (
+>(
+  (
+    { side = "right", className, children, hideCloseButton, onOpenAutoFocus, onCloseAutoFocus, ...props },
+    ref
+  ) => {
+  // A11Y-2: who had focus when this opened. The basket drawer is a controlled
+  // Sheet with no SheetTrigger, so Radix had nothing to restore to. See
+  // dialog-focus.ts. For the three SheetTrigger consumers the captured opener
+  // IS the trigger, so their behaviour is unchanged.
+  const openerRef = React.useRef<HTMLElement | null>(null)
+  return (
   <SheetPortal>
     <SheetOverlay />
     <SheetPrimitive.Content
       ref={ref}
+      // A11Y-16 — see dialog.tsx. Before {...props} (A20) so a consumer can override.
+      aria-modal="true"
+      onOpenAutoFocus={(event) => {
+        openerRef.current = captureOpener()
+        onOpenAutoFocus?.(event)
+      }}
+      onCloseAutoFocus={(event) => {
+        onCloseAutoFocus?.(event)
+        restoreOpener(event, openerRef)
+      }}
       className={cn(sheetVariants({ side }), className)}
       {...props}
     >
@@ -78,7 +99,9 @@ const SheetContent = React.forwardRef<
       )}
     </SheetPrimitive.Content>
   </SheetPortal>
-))
+  )
+  }
+)
 SheetContent.displayName = SheetPrimitive.Content.displayName
 
 const SheetHeader = ({

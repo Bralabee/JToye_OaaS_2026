@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.webhook.dto.CreateWebhookSubscriptionRequest;
 import uk.jtoye.core.webhook.dto.WebhookSubscriptionDto;
 
@@ -23,6 +24,19 @@ import java.util.UUID;
  * {@code signingSecret} is generated with {@link SecureRandom} (256 bits,
  * base64url) and returned to the caller in plaintext ONLY on create and rotate —
  * it is never logged and never carried on a read DTO.
+ *
+ * <p><strong>GROUP_ADMIN only (QA-council 20260902 SEC-1).</strong> A webhook subscription is a
+ * tenant-wide integration credential: create/rotate mint the HMAC signing secret every
+ * downstream receiver trusts, revoke terminally kills the integration, and V55 carries no
+ * {@code shop_id} to scope it narrower. Every public entry point therefore opens with
+ * {@link ShopAccessService#requireGroupAdmin()} — the SAME service-boundary gate
+ * {@code StaffManagementService} puts on the analogous tenant-wide admin surface — BEFORE the
+ * ownership lookup, so a scoped caller receives the typed shop-access 403 and never learns
+ * whether the id exists. Before this gate the controllers fell through to
+ * {@code anyRequest().authenticated()} and a STAFF-rank user granted one shop could rotate
+ * the tenant's secrets. Under the strict-scoping-OFF default the gate is a no-op for every
+ * ungranted (implicit-admin) user and for realm admins; it bites exactly the population
+ * holding an explicit per-shop grant, which is the population it exists for.
  */
 @Service
 @Transactional
@@ -36,14 +50,18 @@ public class WebhookSubscriptionService {
     private final SecureRandom secureRandom = new SecureRandom();
     private final WebhookSubscriptionRepository repository;
     private final WebhookUrlValidator urlValidator;
+    private final ShopAccessService shopAccessService;
 
     public WebhookSubscriptionService(WebhookSubscriptionRepository repository,
-                                      WebhookUrlValidator urlValidator) {
+                                      WebhookUrlValidator urlValidator,
+                                      ShopAccessService shopAccessService) {
         this.repository = repository;
         this.urlValidator = urlValidator;
+        this.shopAccessService = shopAccessService;
     }
 
     public WebhookSubscriptionDto.WithSecret create(CreateWebhookSubscriptionRequest request) {
+        shopAccessService.requireGroupAdmin();
         urlValidator.validate(request.getTargetUrl());
 
         List<WebhookEventType> types = request.getEventTypes();
@@ -71,6 +89,7 @@ public class WebhookSubscriptionService {
 
     @Transactional(readOnly = true)
     public List<WebhookSubscriptionDto> list() {
+        shopAccessService.requireGroupAdmin();
         return repository.findByTenantId(currentTenant()).stream()
                 .map(this::toDto)
                 .toList();
@@ -78,10 +97,12 @@ public class WebhookSubscriptionService {
 
     @Transactional(readOnly = true)
     public WebhookSubscriptionDto getById(UUID id) {
+        shopAccessService.requireGroupAdmin();
         return toDto(require(id));
     }
 
     public WebhookSubscriptionDto.WithSecret rotateSecret(UUID id) {
+        shopAccessService.requireGroupAdmin();
         WebhookSubscription entity = require(id);
         ensureNotRevoked(entity);
 
@@ -96,6 +117,7 @@ public class WebhookSubscriptionService {
     }
 
     public WebhookSubscriptionDto pause(UUID id) {
+        shopAccessService.requireGroupAdmin();
         WebhookSubscription entity = require(id);
         ensureNotRevoked(entity);
         entity.setStatus(WebhookSubscription.Status.PAUSED);
@@ -104,6 +126,7 @@ public class WebhookSubscriptionService {
     }
 
     public WebhookSubscriptionDto resume(UUID id) {
+        shopAccessService.requireGroupAdmin();
         WebhookSubscription entity = require(id);
         ensureNotRevoked(entity);
         entity.setStatus(WebhookSubscription.Status.ACTIVE);
@@ -113,6 +136,7 @@ public class WebhookSubscriptionService {
     }
 
     public WebhookSubscriptionDto revoke(UUID id) {
+        shopAccessService.requireGroupAdmin();
         WebhookSubscription entity = require(id);
         entity.setStatus(WebhookSubscription.Status.REVOKED); // terminal
         log.info("Revoked webhook subscription {}", id);

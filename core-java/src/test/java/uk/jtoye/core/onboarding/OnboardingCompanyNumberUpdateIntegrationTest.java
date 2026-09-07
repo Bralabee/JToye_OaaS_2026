@@ -114,6 +114,26 @@ class OnboardingCompanyNumberUpdateIntegrationTest {
         assertThat(dbCompanyNumber(onboardingId)).isEqualTo("CD654321");
     }
 
+    /**
+     * INT-7 / A14: Companies House keys are exact 8-character strings, and older numbers are
+     * zero-padded ({@code 00445790}). A vendor who types {@code 445790} must be stored — and
+     * later looked up — as {@code 00445790}; letter-prefixed numbers are never padded.
+     */
+    @Test
+    @WithMockUser
+    void purelyNumericNumberIsPersistedZeroPaddedToEight() throws Exception {
+        UUID onboardingId = seedOnboarding(OnboardingState.ACTION_REQUIRED, null);
+
+        mockMvc.perform(post("/api/v1/onboarding/company-number")
+                        .header("X-Tenant-Id", tenantId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"companyNumber\":\" 445790 \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.companyNumber").value("00445790"));
+
+        assertThat(dbCompanyNumber(onboardingId)).isEqualTo("00445790");
+    }
+
     // --- Blank = sole trader (persists null) -----------------------------------------
 
     @Test

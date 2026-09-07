@@ -50,12 +50,26 @@ spring:
           batch_size: 20
         order_inserts: true
         order_updates: true
-        envers:
-          audit_table_suffix: _aud
-          revision_field_name: rev
-          revision_type_field_name: revtype
-          store_data_at_delete: true
-          default_schema: public
+      # QA-council 20260902-134741 N-3 (folded into SEC-6). Hibernate Envers reads its
+      # settings under the `org.hibernate.envers.*` prefix (org.hibernate.envers.
+      # configuration.EnversSettings), and Spring Boot passes spring.jpa.properties.*
+      # through to Hibernate VERBATIM, so this block used to sit under `hibernate.envers`
+      # and reached nothing. It never showed: the defaults `_AUD` / `REV` / `REVTYPE`
+      # case-fold to the migrations' lower-case names on Postgres. store_data_at_delete,
+      # however, did NOT take effect - every live DELETE revision carried a NULL tenant_id,
+      # the exact shape V65's `tenant_id IS NULL` arm has to keep admitting. From here on a
+      # DELETE revision snapshots the entity (tenant_id included). The GDPR scrubs in
+      # OrderRepository / CustomerRepository match on tenant_id + id / customer_id / email,
+      # so those rows are covered by the same Article-17 UPDATE. Proven applied by
+      # AuditTableInsertPolicyIntegrationTest.enversSettingsDeclaredInApplicationYmlAreActuallyApplied.
+      org:
+        hibernate:
+          envers:
+            audit_table_suffix: _aud
+            revision_field_name: rev
+            revision_type_field_name: revtype
+            store_data_at_delete: true
+            default_schema: public
     open-in-view: false
   flyway:
     enabled: true

@@ -110,6 +110,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    JwtTenantFilter jwtTenantFilter,
                                                    ObjectProvider<TenantFilter> tenantFilterProvider,
+                                                   ProblemDetailAuthenticationEntryPoint authenticationEntryPoint,
                                                    Environment env) throws Exception {
         // Runtime prod check shared by the actuator-scrape matcher and the HSTS
         // block below (12-RESEARCH.md §4.2 Pattern A: single bean + env check).
@@ -125,6 +126,25 @@ public class SecurityConfig {
             // and CORS already restricts which origins may read responses.
             // This is the standard stateless-API posture; see ADR-001.
             .csrf(csrf -> csrf.disable())
+            // API-10 (QA council 20260902-134741): 401 was the ONLY status in the error
+            // model that returned an empty body — every other one (400/403/404/405/415/
+            // 422/429/500) is application/problem+json with a stable jtoye.uk/errors/*
+            // type. An entry point runs in the FILTER CHAIN, so GlobalExceptionHandler
+            // never sees the failure; the document has to be written here.
+            //
+            // BOTH registrations are load-bearing and refuse different requests:
+            //   exceptionHandling      -> ExceptionTranslationFilter, for a request with
+            //                             NO credentials at all;
+            //   oauth2ResourceServer   -> BearerTokenAuthenticationFilter, for a bearer
+            //                             that is present but garbage/expired/tampered.
+            // Wiring only one leaves the other empty-bodied — asserted from both doors in
+            // UnauthenticatedProblemDetailIntegrationTest.
+            //
+            // NOT changed here: sessionCreationPolicy(STATELESS). The finding also observed
+            // a JSESSIONID on this stateless API; that is a process-wide
+            // SecurityContextRepository change needing a STOMP-handshake + springdoc census
+            // first (plan §4.1b), so it ships on its own.
+            .exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint))
             .cors(Customizer.withDefaults()) // Enable CORS with default configuration
             .authorizeHttpRequests(auth -> {
                 // issue #99 do-now (probe-401 fix): "/actuator/health/**" MUST be a
@@ -212,8 +232,9 @@ public class SecurityConfig {
             // scope claim -> SCOPE_* authorities. JwtTenantFilter (added AFTER
             // BearerTokenAuthenticationFilter below) still maps tenant_id -> TenantContext;
             // role/scope checks are additive to RLS scoping.
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
-                    jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+            .oauth2ResourceServer(oauth2 -> oauth2
+                    .authenticationEntryPoint(authenticationEntryPoint)
+                    .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 
         // Browser security headers per ASVS 14.4.1-14.4.7 (SEC-03).
         // HSTS gated by prod profile at runtime — dev HTTP traffic never sees it.

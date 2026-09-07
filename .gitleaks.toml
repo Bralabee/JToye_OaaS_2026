@@ -3,34 +3,38 @@ title = "J'Toye OaaS gitleaks config"
 [extend]
 useDefault = true
 
-# ---- Path-based allowlists ---------------------------------------------------
-[[allowlists]]
-description = "Placeholder template files containing CHANGE_ME / REPLACE_WITH_*"
-condition = "OR"
-paths = [
-  '''\.env\.example$''',
-  # Old path kept for full-history scans (fetch-depth 0); renamed to
-  # *.yaml.example by #100 so it is no longer a live kustomize resource.
-  '''k8s/base/secrets-template\.yaml$''',
-  '''k8s/base/secrets-template\.yaml\.example$''',
-  '''\.gitleaks\.toml$''',
-  # Planning artifacts contain curl examples with env var placeholders
-  # (e.g. curl -u ${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}).
-  # These are code snippets, not actual credentials.
-  '''\.planning/phases/.*-PLAN\.md$''',
-  '''\.planning/phases/.*-RESEARCH\.md$''',
-  # CONTEXT.md captures dev ports/creds (e.g. the KC_SEED_USER_PASSWORD dev seed
-  # already committed on main in .env/realm) — same planning-prose risk class as
-  # PLAN/RESEARCH above, not a live credential source.
-  '''\.planning/phases/.*-CONTEXT\.md$''',
-  # CONTROL-ARMS.md records falsifiability evidence: pasted psql command lines,
-  # curl -sSI header dumps and container role NAMES. Same planning-prose risk
-  # class as PLAN/RESEARCH/CONTEXT above. The widening is bounded by the plan
-  # itself, which forbids pasting any command line carrying a literal password
-  # value — the allowlist covers the prose risk, not a genuine secret.
-  '''\.planning/phases/.*-CONTROL-ARMS\.md$''',
-  '''scripts/smoke-test.*\.sh$''',
-]
+# ---- Path-based allowlists: NONE, deliberately -------------------------------
+# SEC-3 (QA-council 20260902-134741). This file used to carry a `paths` allowlist
+# over .env.example, k8s/base/secrets-template*, .gitleaks.toml, 140 planning
+# files (.planning/phases/*-{PLAN,RESEARCH,CONTEXT,CONTROL-ARMS}.md) and
+# scripts/smoke-test*.sh. A bare path allowlist suppresses EVERY rule in those
+# files, so a real AWS key, GitHub PAT or private key pasted into planning prose
+# was invisible — measured with identical bytes differing only in path: 3 findings
+# under core-java/, 0 under .planning/phases/*-PLAN.md and scripts/smoke-test*.sh.
+#
+# The documented remedy, `targetRules` on the path allowlist, was measured on
+# gitleaks 8.27.2 — the version .github/workflows/gitleaks.yml pins — and is
+# INERT there: a targeted path allowlist suppressed nothing in six of six runs
+# (planning paths still flagged all three planted rules under it, and the five
+# historical curl-auth-user placeholders it was meant to keep covered resurfaced
+# in a full-history scan). No side effects were observed. 8.30.1 honours it
+# exactly as documented. The version pin is a deliberate act (issue #274,
+# full-history rerun) and is not bumped to make a config trick work, so the path
+# allowlists are removed instead and the placeholder shapes they existed for are
+# expressed as CONTENT allowlists below, which are rule-agnostic but
+# shape-precise and behave identically on 8.27.2 and 8.30.1.
+#
+# Scope measured over the FULL git history on 8.27.2 with the path allowlists
+# removed: the only hits they ever suppressed were five curl-auth-user matches on
+# `curl -u "${VAR:-default}:${VAR:-default}"` (11-02-PLAN.md and
+# smoke-test-stomp-relay.sh, one commit) — all covered by the shell-expansion
+# regex below, so the working tree (10) and full-history (11) finding sets are
+# byte-identical before and after this change. Nothing in .env.example,
+# secrets-template* or this file ever needed the path exemption: the CHANGE_ME /
+# REPLACE_WITH_* content rules already cover them. A future planning document
+# that trips generic-api-key fails the PR scan and is handled on its own merits
+# (rewrite, or a commit fingerprint below) instead of pre-emptively blinding the
+# scanner to 140 files.
 
 # ---- Content-based allowlists (defence-in-depth for any file) ----------------
 [[allowlists]]
@@ -42,6 +46,13 @@ regexes = [
   '''REPLACE_WITH_[A-Z_]+''',
   '''your-[a-z-]+-here''',
   '''<[A-Z_]+>''',
+  # SEC-3: a captured secret that consists ENTIRELY of shell parameter
+  # expansions — ${VAR} or ${VAR:-default}, optionally two of them joined by ':'
+  # as curl -u user:pass writes them, with or without the surrounding quotes
+  # gitleaks captures — is a placeholder by construction. Anchored at BOTH ends
+  # on purpose: "${SVC_USER}:hunter2" and admin:${PASS} do NOT match and stay
+  # flagged (measured on 8.27.2 and 8.30.1).
+  '''^["']?\$\{[A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?\}(?::\$\{[A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?\})?["']?$''',
 ]
 
 # ---- Fingerprint-based allowlists (specific historical false positives) ------

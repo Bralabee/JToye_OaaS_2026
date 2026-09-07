@@ -131,7 +131,8 @@ public class OnboardingAdminController {
     @PostMapping("/{id}/gates/{gateType}/resolve")
     @Operation(summary = "Resolve an onboarding gate",
             description = "Overrides a gate row (PASS/WAIVE/FAIL) then lets the existing recompute advance the "
-                    + "state machine. FAIL requires a reason. Interim resolver = the tenant's own admin (D-01).")
+                    + "state machine. Valid while the onboarding is VERIFYING or ACTION_REQUIRED (400 otherwise). "
+                    + "FAIL requires a reason. Interim resolver = the tenant's own admin (D-01).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Gate resolved; recompute triggered"),
             @ApiResponse(responseCode = "400", description = "FAIL with no reason, or invalid decision/body"),
@@ -148,7 +149,9 @@ public class OnboardingAdminController {
     }
 
     /**
-     * List onboardings parked in manual review (VERIFYING + a MANUAL_REVIEW gate).
+     * List onboardings carrying a gate parked in manual review (a MANUAL_REVIEW gate row) —
+     * in VERIFYING, or in ACTION_REQUIRED when another mandatory gate FAILED in the same run
+     * (INT-1 / A15: the VERIFYING-only filter hid exactly that combination from the reviewer).
      * GET /onboarding/admin/reviews
      *
      * <p>A NEW queue distinct from {@code /pending} (which stays the PENDING_APPROVAL
@@ -156,8 +159,9 @@ public class OnboardingAdminController {
      */
     @GetMapping("/reviews")
     @Operation(summary = "List review-pending applications",
-            description = "Onboardings in VERIFYING with a MANUAL_REVIEW gate for the caller's tenant, oldest "
-                    + "submission first, each with its gate breakdown. Distinct from /pending. Requires admin.")
+            description = "Onboardings carrying a MANUAL_REVIEW gate for the caller's tenant — in VERIFYING, or in "
+                    + "ACTION_REQUIRED when another mandatory gate also FAILED — oldest submission first, each with "
+                    + "its gate breakdown. Distinct from /pending. Requires admin.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Review-pending applications (possibly empty)"),
             @ApiResponse(responseCode = "403", description = "Caller lacks the admin role")

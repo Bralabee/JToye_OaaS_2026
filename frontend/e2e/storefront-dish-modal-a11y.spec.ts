@@ -273,7 +273,7 @@ test.describe("Storefront basket announcement — pluralisation (#272)", () => {
   test("announces '1 item in basket', not '1 items'", async ({ page }) => {
     await page.goto(`/shop/${SHOP_SLUG}`)
 
-    const addButton = page.getByRole("button", { name: "Add", exact: true }).first()
+    const addButton = page.getByRole("button", { name: /^Add .+ to basket/ }).first()
     await expect(addButton).toBeVisible({ timeout: 30_000 })
 
     const announcement = () =>
@@ -291,7 +291,7 @@ test.describe("Storefront basket announcement — pluralisation (#272)", () => {
 
     // And the plural still applies above one — a fix that hardcoded the
     // singular would satisfy the block above and be equally wrong.
-    await page.getByRole("button", { name: "Add", exact: true }).first().click()
+    await page.getByRole("button", { name: /^Add .+ to basket/ }).first().click()
     await expect.poll(announcement).toBe("2 items in basket")
   })
 })

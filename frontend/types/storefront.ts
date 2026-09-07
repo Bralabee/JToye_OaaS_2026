@@ -54,6 +54,8 @@ export type { MediaAsset, MediaAssetStatus } from "@/types/api"
  */
 export type { SearchInterpretation } from "@/lib/search-interpretation"
 
+import type { VatRateName } from "@/lib/vat"
+
 export interface PublicProduct {
   id: string
   title: string
@@ -67,6 +69,14 @@ export interface PublicProduct {
   ingredientsText: string
   allergenMask: number
   pricePennies: number
+  /**
+   * COR-6 (QA-council 20260902-134741): this product's VAT rate, mirroring the backend
+   * `uk.jtoye.core.finance.VatRate`. Optional AND nullable for old-backend tolerance — the field
+   * did not exist before COR-6, which is precisely why the checkout hardcoded 20% and showed a
+   * zero-rated basket a VAT figure it was never charged. `lib/vat.ts` resolves an absent value
+   * to STANDARD (no silent zero-rating), matching VatCalculator.predominantRate.
+   */
+  vatRate?: VatRateName | null
   category: string | null
   dietaryTags: string | null
   preparationTimeMinutes: number | null

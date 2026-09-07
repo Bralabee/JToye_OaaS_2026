@@ -123,6 +123,37 @@ class OnboardingResubmitIntegrationTest {
         assertThat(byType.get(GateType.FOOD_HYGIENE_RATING.name())).isEqualTo(GateStatus.PASSED.name());
     }
 
+    /**
+     * INT-7 publish-safety (A14): remapping the Companies House 404 branch must not be able
+     * to un-waive anything already WAIVED. Two mechanisms, both proven here on the real path:
+     * {@code resubmit()} resets only FAILED/MANUAL_REVIEW rows, and the runner re-evaluates
+     * only PENDING rows. The company number is set to a value that WOULD park (no API key ->
+     * MANUAL_REVIEW) if the WAIVED row were ever reset and re-run — so a regression shows up
+     * as a stall in VERIFYING, not as a coincidental re-waive.
+     */
+    @Test
+    @WithMockUser
+    void resubmitNeverResetsAWaivedGate_soAnExistingWaiverSurvivesTheRerun() throws Exception {
+        UUID onboardingId = seedOnboarding(OnboardingState.ACTION_REQUIRED, "12345678");
+        seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.WAIVED);
+        seedGate(onboardingId, GateType.FOOD_HYGIENE_RATING, GateStatus.PASSED);
+        seedGate(onboardingId, GateType.ALLERGEN_DATA_COMPLETE, GateStatus.FAILED);
+
+        mockMvc.perform(post("/api/v1/onboarding/resubmit")
+                        .header("X-Tenant-Id", tenantId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VERIFYING"));
+
+        // The synchronous reset inside resubmit() left the waiver alone (committed before the 200).
+        assertThat(dbGateStatus(onboardingId, GateType.BUSINESS_VERIFIED)).isEqualTo("WAIVED");
+
+        // And the async run advanced on {WAIVED, PASSED, re-evaluated PASSED} without touching it.
+        JsonNode pending = awaitStatus(OnboardingState.PENDING_APPROVAL);
+        Map<String, String> byType = gateStatuses(pending);
+        assertThat(byType.get(GateType.BUSINESS_VERIFIED.name())).isEqualTo(GateStatus.WAIVED.name());
+        assertThat(byType.get(GateType.ALLERGEN_DATA_COMPLETE.name())).isEqualTo(GateStatus.PASSED.name());
+    }
+
     @Test
     @WithMockUser
     void resubmitFromDraftIsIllegalTransition_returns400() throws Exception {
@@ -144,12 +175,23 @@ class OnboardingResubmitIntegrationTest {
     }
 
     private UUID seedOnboarding(OnboardingState state) {
+        return seedOnboarding(state, null);
+    }
+
+    private UUID seedOnboarding(OnboardingState state, String companyNumber) {
         VendorOnboarding onboarding = new VendorOnboarding();
         onboarding.setTenantId(tenantId);
         onboarding.setShopId(shopId);
         onboarding.setModel(OnboardingModel.MARKETPLACE);
         onboarding.setStatus(state);
+        onboarding.setCompanyNumber(companyNumber);
         return onboardingRepository.saveAndFlush(onboarding).getId();
+    }
+
+    private String dbGateStatus(UUID onboardingId, GateType type) {
+        return jdbc.queryForObject(
+                "SELECT status FROM vendor_onboarding_gate WHERE onboarding_id = ? AND gate_type = ?",
+                String.class, onboardingId, type.name());
     }
 
     private void seedGate(UUID onboardingId, GateType type, GateStatus gateStatus) {

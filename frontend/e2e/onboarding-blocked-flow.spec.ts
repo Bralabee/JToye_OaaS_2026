@@ -45,7 +45,8 @@
  *   - Save inline edit:         button "Save company number"  -> toast "Company number updated"
  *   - Submit CTA (DRAFT):       button "Submit for verification"
  *   - Re-run CTA (ACTION_REQ):  button "Re-run checks"
- *   - Honest in-review copy:    /with our team for review/  + badge "In review"
+ *   - Honest in-review copy:    /parked for a manual review/  + badge "In review"
+ *                               (INT-5: names the tenant's own administrator — never "our team")
  *   - Dishonest forever copy:   /This usually takes under a minute/  (MUST be absent once in review)
  */
 
@@ -244,8 +245,12 @@ test.describe("Phase 21 — blocked onboarding journey (ONBD-05)", () => {
     // 4s (backing off to 30s in review); assert on the concrete honest copy, never on
     // networkidle. Generous timeout to absorb async gate settling + one poll cycle.
     await expect(
-      page.getByText(/with our team for review/i).first()
+      page.getByText(/parked for a manual review/i).first()
     ).toBeVisible({ timeout: 60_000 })
+    // INT-5 / A13: the copy names the real actor (the tenant's own administrator), never a
+    // J'Toye "team" that does not exist under the interim resolver.
+    await expect(page.getByText(/an administrator on your own account/i).first()).toBeVisible()
+    await expect(page.getByText(/with our team for review/i)).toHaveCount(0)
 
     // The honest "In review" badge replaces the running-checks label.
     await expect(page.getByText(/^In review$/i).first()).toBeVisible({ timeout: 10_000 })
