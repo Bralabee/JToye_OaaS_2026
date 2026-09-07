@@ -75,7 +75,7 @@ marker), which is the semantic rot that gate's own closing NOTE says it cannot d
 **2026-09-04 delta — the remediation RAN, and this file said it had not.** The block above ends
 "`/qa-remediate 20260902-134741` has not run"; it had, across ten `qa/cluster-*` lanes, and this
 file simply was not updated. Corrected here rather than rewritten above, so the record shows what
-was believed and when. **Branch `feature/qa-remediate-20260902` is now PR #726 (OPEN), 76 commits /
+was believed and when. **Branch `feature/qa-remediate-20260902` is now PR #726 (MERGED 2026-09-07), 76 commits /
 245 files / +16k-3.5k against main.** Both Criticals are in: **API-1** `9980ad17` gates
 `POST /api/v1/sync/batch` by scope + shop grant, validates items and derives the shop slug (the
 read-only `integration-catalog-ro` credential could write the catalogue); **FE-1** `fe0c4a42` clears
