@@ -350,15 +350,27 @@ onb_terminal=$(psql_q "select count(*) from vendor_onboarding
 # satisfy a count and still leave the preview assertion unarmed.
 zero_vat=$(psql_q "select count(*) from products p join shops s on s.id = p.shop_id
   where p.sku = '$ZERO_VAT_SKU' and p.vat_rate = 'ZERO' and p.available and s.published;")
+# ONBD-05's OTHER precondition, and the one that was missing when #726's zero-VAT product
+# broke it: AllergenCompletenessGate walks EVERY product on the onboarding shop, so one
+# under-specified fixture anywhere on PROMO_SHOP_SLUG fails a mandatory gate and parks the
+# onboarding in ACTION_REQUIRED. Counting rows this script itself may add is the point —
+# a fixture that sabotages another fixture is exactly what went unseen. Mirrors
+# AllergenCompletenessGate.isAllergenComplete field for field.
+allergen_incomplete=$(psql_q "select count(*) from products
+  where shop_id = '$SHOP_ID'
+    and (durability_type is null or durability_type = ''
+         or shelf_life_days is null
+         or ingredients_text is null or ingredients_text = '');")
 
 echo "  DRAFT orders ON PAGE 1 (top $ORDERS_PAGE_SIZE by created_at)  : $draft  (expect >= 1)"
 echo "  ACTIVE, in-window promotions on the shop     : $promo  (expect >= 1)"
 echo "  ACTIVE, in-window announcements on the shop  : $ann  (expect >= 1)"
 echo "  Onboarding rows ONBD-05 cannot run from      : $onb_terminal  (expect 0 — else ONBD-05 skips undeclared)"
+echo "  Allergen-incomplete products on the shop     : $allergen_incomplete  (expect 0 — else the mandatory gate FAILS and ONBD-05 cannot reach in-review)"
 echo "  VISIBLE zero-rated products (COR-6 arming)   : $zero_vat  (expect >= 1 — else the VAT-preview assertion is vacuous)"
 
 if [ "$draft" -ge 1 ] && [ "$promo" -ge 1 ] && [ "$ann" -ge 1 ] && [ "$onb_terminal" -eq 0 ] \
-   && [ "$zero_vat" -ge 1 ]; then
+   && [ "$zero_vat" -ge 1 ] && [ "$allergen_incomplete" -eq 0 ]; then
   echo "PASS: vendor-refund-flow's DRAFT test, storefront-flows' STFR-06 and onboarding-blocked-flow's ONBD-05 can now assert non-vacuously."
   echo "      COR-6: a VISIBLE zero-rated product exists, so 'checkout preview == confirmation'"
   echo "      is falsifiable rather than a coincidence of an all-STANDARD catalogue."
