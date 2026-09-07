@@ -15,7 +15,7 @@ retry.
 |---|---|---|---|
 | `POST /api/v1/orders` (dashboard) | **YES (new, this slice)** | `Idempotency-Key` header → generic `idempotency_keys` store | Replays the original order; zero duplicate rows |
 | `POST /api/v1/customers` | **YES (new, this slice)** | `Idempotency-Key` header → generic `idempotency_keys` store | Replays the original customer; no duplicate |
-| `POST /public/shops/{slug}/orders` (guest checkout) | YES (partial) | request-**BODY** `idempotencyKey` → `orders.idempotency_key` unique idx (V24); `PublicStorefrontService` | Replays existing order; re-fetches Stripe client secret |
+| `POST /api/v1/public/shops/{slug}/orders` (guest checkout; `/public/...` alias) | **YES (full, QA 20260902 Cluster E)** | **HEADER** `Idempotency-Key` OR request-**BODY** `idempotencyKey` (either alone, or both with the SAME value; body≠header → 400 before any write) → generic `idempotency_keys` store, endpoint `storefront.orders.create`, via `executeWithoutStoringResponse` (**no `response_body`**; `orders.idempotency_key` V24 unique idx kept as backstop) | Replays existing order and re-fetches a LIVE Stripe client secret; different body → 422; concurrent in-flight → 409 |
 | `POST /api/v1/orders/{orderId}/refund` | YES | **HEADER** `Idempotency-Key` → entity-local `Refund (tenant_id, idempotency_key)` dedup (`RefundService`) | Replays existing refund, 201 |
 | `POST /sync/batch` (edge) | YES (by construction) | UPSERT by natural key (`SyncService`), shops+products only | Re-apply overwrites the same row |
 | `POST /webhooks/stripe` | YES | `processed_stripe_events` (V35) `INSERT … ON CONFLICT (event_id) DO NOTHING` | 0 rows → skip side effects |
@@ -121,6 +121,41 @@ inside the create's transaction:
    The `@Parameter(hidden = true)` keeps springdoc from double-listing the header
    (the customizer supplies the rich, documented parameter).
 
+### Credential-bearing responses — `executeWithoutStoringResponse`
+
+`IdempotencyService.execute` persists `serialize(result)` unconditionally. That is
+unusable when the response carries a credential: the guest checkout's
+`GuestOrderConfirmation.clientSecret` is a Stripe PaymentIntent client secret, a
+browser-presentable payment credential that must not be archived at rest — and
+would be stale anyway, because the storefront deliberately re-fetches a live one
+on replay (WR-02). QA council 20260902-134741 (adjudication A3) therefore added
+the `persistResponse=false` variant:
+
+```java
+IdempotencyOutcome<XDto> outcome = idempotencyService.executeWithoutStoringResponse(
+        "storefront.orders.create", key, request,
+        () -> place(request),          // the work, run exactly once per key
+        () -> rederive(key));          // the replay: re-read the system of record
+```
+
+Same reservation, same request hash, same 409 / 422 semantics; `response_body`
+stays NULL and `response_status` is stamped so a completed reservation is never
+mistaken for an in-flight one. Two rules for adopters:
+
+- **Namespace the endpoint** away from every body-storing adopter (the guest
+  path uses `storefront.orders.create`, not `orders.create`): the table is
+  shared, and a NULL body under a storing endpoint is undeserialisable on replay.
+- **The replay supplier reads the system of record**, never the store — that is
+  the whole point of the variant.
+
+The completion `UPDATE` asserts it stamped exactly one row: under FORCE RLS a
+lost tenant GUC would otherwise make it match zero rows silently, leaving the
+reservation "in-flight" forever (every retry a 409) while the create had
+committed. `GuestCheckoutIdempotencyIntegrationTest` and
+`IdempotencyServiceUnstoredResponseIntegrationTest` (which includes the
+falsifying control: the storing `execute` on the same table DOES write the body)
+prove the contract against real Postgres.
+
 ### Limitation — 201 is hardcoded (this slice)
 
 `IdempotencyService.execute` stamps `response_status = 201` on the first request
@@ -135,10 +170,20 @@ first-request stamp needs generalizing.
   header dedup on the `Refund (tenant_id, idempotency_key)` unique constraint.
   Migration to the generic mechanism is a documented follow-up, not part of this
   slice.
-- **Guest checkout** (`PublicStorefrontService`) keeps its request-**body**
-  `idempotencyKey` on `orders.idempotency_key` (V24). It intentionally stays as
-  is because the storefront replay also re-issues the Stripe client secret for a
-  payable DRAFT — behavior the generic store does not model.
+- **Guest checkout** (`PublicStorefrontService`) — carve-out CLOSED by QA council
+  20260902-134741 Cluster E (API-3 / API-4 / INT-15). It now reserves through the
+  generic store's credential-safe variant (see *Credential-bearing responses*
+  above); the request-**body** `idempotencyKey` is retained as a legacy source
+  alongside the header — either alone identifies the intent, both carrying the
+  SAME value is one intent, and both carrying DIFFERENT values is refused 400
+  (`errors/invalid-argument`) before any write (PR #726 review follow-up: the body
+  used to win silently, and a retry that carried only the header key would then
+  have found no reservation and minted the duplicate the key exists to stop).
+  `orders.idempotency_key` (V24) stays as the in-work lookup for keys placed
+  before the store existed and as the unique backstop. The storefront
+  (`checkout/page.tsx`) sends the SAME key as BOTH the header and the body field,
+  bound to a signature of the whole POST payload (`lib/checkout-idempotency.ts`)
+  so any change to what is submitted mints a new key instead of tripping the 422.
 
 ## edge-go compatibility
 

@@ -40,7 +40,7 @@ the four services talk to Core directly — the "edge gateway" fronts almost not
                                                │  Redis · Rabbit  │
      ┌──────────────────┐                      │  MinIO · Keycloak│
      │  edge-go :8089   │  POST /sync/batch ──▶│  Ollama          │
-     │  Gin/Go 1.26     │  (the ONE JWT route) │                  │
+     │  Gin/Go 1.27     │  (the ONE JWT route) │                  │
      │  + WhatsApp HMAC │  WhatsApp → orders ─▶│                  │
      └──────────────────┘                      └──────────────────┘
 ```
@@ -141,7 +141,9 @@ non-disclosing 404.
 (`:847`): with a Stripe key it saves the order *before* creating the intent (the order UUID must
 exist for `order_id` metadata — the #538 defect), routes MARKETPLACE orders as **destination charges**
 with an application fee of `platform-fee-bps` (default 0); **without** a key it takes the
-**cash-on-delivery** branch (`:903-908`, `PaymentStatus.NONE`, `paymentMethod="Cash on Delivery"`).
+**unpaid COD** branch (`PaymentStatus.NONE`, `paymentMethod="Unpaid"` — INT-9 / owner ruling E-2:
+the former `"Cash on Delivery"` named a delivery on orders this same branch writes as COLLECTION;
+`"Unpaid"` is fulfilment-neutral and is the only claim true today, since no payment request is sent).
 `isConfigured()` is simply "`stripe.api-key` non-blank", which defaults empty everywhere — so **every
 out-of-the-box runtime silently takes COD**, and a `@PostConstruct` WARN is logged at boot. Webhooks
 (`/public/payments/webhook`) verify the Stripe signature, dedupe on `processed_stripe_events` *before*
@@ -194,7 +196,7 @@ carries a per-request CSP nonce (built in `middleware.ts` — which explicitly d
 
 ## 4. Edge-Go and MCP-Server
 
-**edge-go** (Gin, Go 1.26; 23 files): JWT validation is solid and fail-closed (RSA-only, split-horizon
+**edge-go** (Gin, Go 1.27; 23 files): JWT validation is solid and fail-closed (RSA-only, split-horizon
 issuer, audience always enforced with a `core-api` default, mandatory tenant claim); an unknown-`kid`
 triggers a **concurrent** (not serialised) JWKS refetch per request — a real amplification vector
 bounded only by the 20-rps limiter. The rate limiter is a **process-wide** DoS valve (not per-tenant —

@@ -79,12 +79,22 @@ public class EmailNotificationService {
      * READY copy, branched on how the order is fulfilled (#502).
      *
      * <p>This transition previously sent collection-only copy unconditionally, so
-     * every DELIVERY customer was told to come and pick the order up. That is not
-     * a rare path: {@code orders.fulfilment_type} is {@code NOT NULL DEFAULT
-     * 'DELIVERY'} (V45) and {@code Order} defaults the field to
-     * {@link FulfilmentType#DELIVERY}, so every order created outside the
-     * storefront checkout — which is the only writer that sets the value
-     * explicitly — is a DELIVERY order.
+     * every DELIVERY customer was told to come and pick the order up.
+     *
+     * <p><b>Updated by COR-1 (2026-09-02) — the premise this note used to carry is no
+     * longer true, and saying so matters because the old wording justified the branch.</b>
+     * It read: "every order created outside the storefront checkout — which is the only
+     * writer that sets the value explicitly — is a DELIVERY order". That WAS true, and it
+     * was the defect: {@code OrderService.createOrder} set no fulfilment type, so the V45
+     * {@code NOT NULL DEFAULT 'DELIVERY'} column default stood and 4 of 60 live orders
+     * claimed a delivery for which no address had ever been captured. BOTH order-creation
+     * paths now set the value explicitly through {@code FulfilmentPolicy}: the storefront
+     * from the customer's choice, and the vendor / REST / MCP path from an optional request
+     * field defaulting to COLLECTION. A vendor CAN still take a phone DELIVERY order (owner
+     * ruling E-1) — it must then carry an address, and it is priced with the shop's fee.
+     *
+     * <p>What is unchanged, and load-bearing: the column default is still
+     * {@code 'DELIVERY'} for pre-V45 history, so the fallback below still matters.
      *
      * <p>A {@code null} type resolves to the DELIVERY copy, matching the column
      * default. The asymmetry is deliberate: "come and collect" is the actively

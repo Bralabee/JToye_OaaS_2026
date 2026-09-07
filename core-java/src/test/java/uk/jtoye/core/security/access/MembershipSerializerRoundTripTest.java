@@ -1,11 +1,8 @@
 package uk.jtoye.core.security.access;
 
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import uk.jtoye.core.config.CacheConfig;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -21,23 +18,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * cached record is serialized to Redis and back, so this is now a load-bearing contract rather
  * than dead config.
  *
- * <p>This is a plain unit test (no Spring context, no Docker) that reconstructs the serializer
- * exactly as {@code CacheConfig.jsonRedisSerializer()} builds it: a {@link JavaTimeModule},
- * ISO-8601 dates, and polymorphic default typing ({@code EVERYTHING}) so the concrete
- * {@code Membership} type + its map are recovered ({@code @class} is stored). It intentionally
- * mirrors that construction so a future change to the serializer that would break the membership
- * round-trip fails HERE, fast.
+ * <p>This is a plain unit test (no Spring context, no Docker) that uses the PRODUCTION serializer
+ * itself, {@link CacheConfig#jsonRedisSerializer()}. It used to hold a hand-kept copy of that
+ * construction; SEC-4 (QA-council 20260902) replaced the mapper's laissez-faire type validator
+ * with an allowlist, and a copy would have stayed green over a validator change that broke every
+ * membership cache read — because it tested the copy, not the bean. Now a change to the serializer
+ * that would break the membership round-trip fails HERE, fast, against the real thing.
  */
 class MembershipSerializerRoundTripTest {
 
-    /** EXACT mirror of {@code CacheConfig.jsonRedisSerializer()} so this proves the real path. */
+    /** The production serializer, not a mirror — see the class Javadoc. */
     private GenericJackson2JsonRedisSerializer serializer() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        mapper.activateDefaultTyping(mapper.getPolymorphicTypeValidator(),
-                ObjectMapper.DefaultTyping.EVERYTHING, JsonTypeInfo.As.PROPERTY);
-        return new GenericJackson2JsonRedisSerializer(mapper);
+        return CacheConfig.jsonRedisSerializer();
     }
 
     @Test

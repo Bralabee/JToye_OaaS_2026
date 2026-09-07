@@ -227,12 +227,62 @@ if [ "$CLEAN_RESIDUE" = "1" ]; then
   echo "  residue   : removed $removed promotion(s), $removed_a announcement(s) whose tenant != shop's tenant"
 fi
 
+# --- 4b. ZERO-RATED product (COR-6) ------------------------------------------------
+# WHY THIS FIXTURE EXISTS, AND WHY IT IS THE ARMING STEP, NOT A NICETY
+#
+#   Measured on this dev DB (2026-09-03): `select vat_rate, count(*) from products group by 1`
+#   returns STANDARD 22 — every seeded product. So the checkout's VAT preview matched the
+#   server's figure by COINCIDENCE, not by correctness: the client hardcoded 20% and every
+#   basket happened to be standard-rated. Any assertion that "the preview equals the
+#   confirmation" therefore passed on the broken tree and proves nothing on the fixed one.
+#
+#   COR-6 makes the preview follow the basket's resolved rate. This row is what lets that be
+#   FALSIFIED: a pure zero-rated basket where the old hardcoded arithmetic would show a
+#   non-zero VAT and the correct answer is GBP 0.00.
+#
+#   VAT accuracy of the fixture itself (HMRC VAT Notice 709/1, re-read 2026-09-03): COLD
+#   takeaway FOOD is zero-rated; hot takeaway food and drink is standard-rated, and soft
+#   drinks are standard-rated even when cold. The fixture is therefore a cold food item, not
+#   a chilled drink — a plausible menu line whose zero-rating is genuinely correct.
+#
+#   PRICE: 1200p clears mama-ades-kitchen's 1000p minimum order on a SINGLE unit, so the
+#   browser proof can reach the payment step without a second line diluting the basket's
+#   rate. It sits below the 2500p free-delivery threshold on purpose, so the delivery fee is
+#   also in the combined gross the VAT is derived from — the exact figure Order.calculateTotal
+#   truncates once.
+#
+#   Idempotent on (tenant_id, sku), which is the live unique index idx_products_tenant_sku.
+ZERO_VAT_SKU="${ZERO_VAT_SKU:-E2E-ZERO-VAT-001}"
+zero_vat_sql=$(cat <<SQL
+insert into products
+  (id, tenant_id, shop_id, sku, title, description, ingredients_text, allergen_mask,
+   price_pennies, vat_rate, category, available, quantity_in_stock, created_at)
+values
+  (gen_random_uuid(), '$SHOP_TENANT', '$SHOP_ID', '$ZERO_VAT_SKU',
+   'Cold Meat Pie (takeaway)',
+   'Served cold for takeaway. Zero-rated for VAT (HMRC Notice 709/1).',
+   'Wheat flour, beef, onion, potato', 0,
+   1200, 'ZERO', 'Mains', true, 999, now())
+on conflict (tenant_id, sku) do update set
+  vat_rate          = 'ZERO',
+  price_pennies     = 1200,
+  available         = true,
+  quantity_in_stock = 999;
+SQL
+)
+psql_run "$zero_vat_sql" || void "zero-rated product seed failed"
+
 # --- 5. Media review fixtures (delegated, not duplicated) ---------------------------
+#   Same shape as psql_run: quiet on success, the child's FULL output on failure. This used to be
+#   `>/dev/null 2>&1`, which left a CI log reading only "did not pass — run it directly" with no
+#   way to run it directly against a runner that had already been torn down.
 if [ "$SKIP_MEDIA" != "1" ]; then
-  if bash "$REPO_ROOT/scripts/seed-media-review-fixtures.sh" >/dev/null 2>&1; then
+  media_out=$(bash "$REPO_ROOT/scripts/seed-media-review-fixtures.sh" 2>&1); media_rc=$?
+  if [ "$media_rc" -eq 0 ]; then
     echo "  media     : OK (seed-media-review-fixtures.sh)"
   else
-    echo "FAIL: seed-media-review-fixtures.sh did not pass — run it directly for detail." >&2
+    echo "$media_out" >&2
+    echo "FAIL: seed-media-review-fixtures.sh did not pass (exit $media_rc) — its output is above." >&2
     exit 1
   fi
 fi
@@ -266,14 +316,23 @@ ann=$(psql_q "select count(*) from shop_announcements
 # vendor tenant means ONBD-05 will skip UNDECLARED. Expect 0 such rows.
 onb_terminal=$(psql_q "select count(*) from vendor_onboarding
   where tenant_id = '$SHOP_TENANT' and status in $TERMINAL_STATES;")
+# COR-6: the zero-rated product must be VISIBLE to the storefront, not merely present. The
+# public catalogue only returns available rows on a published shop, so an unavailable row would
+# satisfy a count and still leave the preview assertion unarmed.
+zero_vat=$(psql_q "select count(*) from products p join shops s on s.id = p.shop_id
+  where p.sku = '$ZERO_VAT_SKU' and p.vat_rate = 'ZERO' and p.available and s.published;")
 
 echo "  DRAFT orders ON PAGE 1 (top $ORDERS_PAGE_SIZE by created_at)  : $draft  (expect >= 1)"
 echo "  ACTIVE, in-window promotions on the shop     : $promo  (expect >= 1)"
 echo "  ACTIVE, in-window announcements on the shop  : $ann  (expect >= 1)"
 echo "  LIVE/terminal onboarding rows for the tenant : $onb_terminal  (expect 0 — else ONBD-05 skips undeclared)"
+echo "  VISIBLE zero-rated products (COR-6 arming)   : $zero_vat  (expect >= 1 — else the VAT-preview assertion is vacuous)"
 
-if [ "$draft" -ge 1 ] && [ "$promo" -ge 1 ] && [ "$ann" -ge 1 ] && [ "$onb_terminal" -eq 0 ]; then
+if [ "$draft" -ge 1 ] && [ "$promo" -ge 1 ] && [ "$ann" -ge 1 ] && [ "$onb_terminal" -eq 0 ] \
+   && [ "$zero_vat" -ge 1 ]; then
   echo "PASS: vendor-refund-flow's DRAFT test, storefront-flows' STFR-06 and onboarding-blocked-flow's ONBD-05 can now assert non-vacuously."
+  echo "      COR-6: a VISIBLE zero-rated product exists, so 'checkout preview == confirmation'"
+  echo "      is falsifiable rather than a coincidence of an all-STANDARD catalogue."
   echo "NOTE: vendor-refund-flow's REFUND test stays skipped by design — it needs real"
   echo "      Stripe test-mode keys (STRIPE_API_KEY), not a fixture."
   exit 0

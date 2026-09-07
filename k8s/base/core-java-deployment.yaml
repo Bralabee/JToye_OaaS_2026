@@ -513,6 +513,16 @@ spec:
             configMapKeyRef:
               name: app-config
               key: webhook.target.block-private-ranges
+        # --- Vendor shop-scoping posture (Phase 23 D-12; QA-council 20260902 SEC-2) ---
+        # Declared EXPLICITLY as "false" so the posture is visible in every render and
+        # to check-env-contract.sh direction (a), instead of silently resolving to the
+        # application.yml default. See the app-config key for why OFF is deliberate and
+        # what blocks arming it (#285, SEC-5/#648, integration-orders-rw). Do not flip here.
+        - name: ACCESS_STRICT_SCOPING
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: access.strict-scoping
         resources:
           requests:
             # Issue #94 [P2-3]: memory request == limit (Guaranteed-memory QoS).

@@ -39,6 +39,14 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
     // published=true, so a tenant could fetch another tenant's PUBLISHED shop by id.
     Optional<Shop> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    // Tenant-scoped by-name read for the Edge sync upsert (PR #726 review M1). The shop
+    // upsert key is (tenant, name) — idx_shops_tenant_name is unique per TENANT, not globally —
+    // but the bare findByName runs under shops_public_read and so also returns a FOREIGN
+    // tenant's PUBLISHED shop of the same name: two rows (IncorrectResultSizeDataAccessException,
+    // 500) when the caller has its own, or the foreign row alone (which the SEC-5 gate then
+    // refuses) when it does not, so that caller could never sync-create the shop.
+    Optional<Shop> findByNameAndTenantId(String name, UUID tenantId);
+
     Optional<Shop> findBySlug(String slug);
 
     Optional<Shop> findBySlugAndPublishedTrue(String slug);

@@ -7,10 +7,28 @@
  * and left all six Keycloak SSO cookies alive, so the next click on "Sign in
  * with Keycloak" silently re-entered the dashboard as the departed user.
  *
+ * FE-1 (QA council 20260902-134741, **Critical**) — the OTHER half. The app
+ * cookie itself survived, because `@auth/core` re-issues it on every session
+ * GET and the client-side clear raced ~24 of those. The return leg of the
+ * Keycloak round-trip is now `/api/vendor-auth/logout-complete`, which clears
+ * the session SERVER-SIDE in the last response the browser processes. This
+ * route composes that `post_logout_redirect_uri`, CONFIG-INJECTED from
+ * `NEXTAUTH_URL` (never a literal), behind `VENDOR_LOGOUT_COMPLETE_ENABLED`
+ * (E-5 fail-safe: off = today's `/auth/signin` landing, so a deployed realm
+ * that has not registered the new URI can never strand a vendor on a Keycloak
+ * 400 with SSO alive).
+ *
  * WHAT THESE TESTS CAN AND CANNOT SAY. They assert the URL this route COMPOSES.
  * They cannot assert that a real Keycloak session is terminated — that needs a
  * rebuilt stack and a cookie-jar probe, and it is the orchestrator's. A green
  * run here is "the URL is right", never "the vendor is signed out".
+ *
+ * WHY THE PUBLIC ORIGIN IS `https://vendor.example.test` AND NOT THE COMPOSE ONE.
+ * The derivation-from-config assertions below are only non-vacuous if the
+ * configured origin is one no literal in the source could produce. With the
+ * compose origin (loopback, port 3000) a route that had that origin typed into
+ * it would pass every case here. The FE-1 change record asserts the compose
+ * origin appears NOWHERE under app/api/vendor-auth — this file included.
  *
  * WHY `nextUrl.origin` IS SIMULATED RATHER THAN MOCKED AWAY — the same reason
  * the customer sibling gives (`app/api/customer-auth/__tests__/logout-url-origin.test.ts`):
@@ -20,20 +38,26 @@
  */
 
 import { NextRequest } from "next/server"
-import { auth } from "@/auth"
+import { auth, signOut } from "@/auth"
 import { GET as vendorLogoutUrlGET } from "../logout-url/route"
+import { GET as logoutCompleteGET } from "../logout-complete/route"
 
-jest.mock("@/auth", () => ({ auth: jest.fn() }))
+jest.mock("@/auth", () => ({ auth: jest.fn(), signOut: jest.fn() }))
 
 const mockAuth = auth as unknown as jest.Mock
+const mockSignOut = signOut as unknown as jest.Mock
 
 const BIND_ORIGIN = "http://0.0.0.0:3000"
+const PUBLIC_ORIGIN = "https://vendor.example.test"
+const PUBLIC_HOST = new URL(PUBLIC_ORIGIN).host
 const PUBLIC_ISSUER = "http://localhost:8085/realms/jtoye-dev"
 const INTERNAL_ISSUER = "http://keycloak:8080/realms/jtoye-dev"
+const FLAG = "VENDOR_LOGOUT_COMPLETE_ENABLED"
+const COMPLETE_PATH = "/api/vendor-auth/logout-complete"
 
 function containerRequest(path: string): NextRequest {
   return new NextRequest(`${BIND_ORIGIN}${path}`, {
-    headers: { host: "localhost:3000" },
+    headers: { host: PUBLIC_HOST },
   })
 }
 
@@ -54,18 +78,31 @@ const withEnv = async (env: Record<string, string | undefined>, fn: () => Promis
   }
 }
 
-/** The realm config as compose supplies it: public AND internal both present. */
+/**
+ * The realm config as compose supplies it: public AND internal both present.
+ * The FE-1 flag is explicitly ABSENT here, so every pre-existing case below
+ * exercises today's landing (`/auth/signin`) and would go red if the default
+ * ever flipped on silently — the E-5 design says off-unless-set.
+ */
 const SPLIT_HORIZON = {
   NEXT_PUBLIC_KEYCLOAK_URL: undefined,
   KEYCLOAK_ISSUER: PUBLIC_ISSUER,
   KEYCLOAK_ISSUER_INTERNAL: INTERNAL_ISSUER,
-  NEXTAUTH_URL: "http://localhost:3000",
+  NEXTAUTH_URL: PUBLIC_ORIGIN,
   APP_PUBLIC_ORIGIN: undefined,
+  [FLAG]: undefined,
+}
+
+function setCookies(res: Response): string[] {
+  const h = res.headers as Headers & { getSetCookie?: () => string[] }
+  return typeof h.getSetCookie === "function" ? h.getSetCookie() : []
 }
 
 beforeEach(() => {
   mockAuth.mockReset()
   mockAuth.mockResolvedValue({ idToken: "ID", user: { email: "vendor@example.com" } })
+  mockSignOut.mockReset()
+  mockSignOut.mockResolvedValue({ redirect: "/", cookies: [] })
 })
 
 describe("/api/vendor-auth/logout-url — the end-session URL (R-01)", () => {
@@ -81,7 +118,7 @@ describe("/api/vendor-auth/logout-url — the end-session URL (R-01)", () => {
       expect(parsed.pathname).toBe("/realms/jtoye-dev/protocol/openid-connect/logout")
       expect(parsed.searchParams.get("id_token_hint")).toBe("ID")
       expect(parsed.searchParams.get("post_logout_redirect_uri")).toBe(
-        "http://localhost:3000/auth/signin"
+        `${PUBLIC_ORIGIN}/auth/signin`
       )
       expect(url).not.toContain("0.0.0.0")
     })
@@ -147,7 +184,7 @@ describe("/api/vendor-auth/logout-url — the end-session URL (R-01)", () => {
       )
       const { url } = await res.json()
 
-      expect(url).toBe("http://localhost:3000/auth/signin")
+      expect(url).toBe(`${PUBLIC_ORIGIN}/auth/signin`)
       expect(url).not.toContain("id_token_hint")
       expect(url).not.toContain("8085")
       expect(url).not.toContain("keycloak:8080")
@@ -181,6 +218,18 @@ describe("/api/vendor-auth/logout-url — the redirect can never leave this orig
     ["absolute https", "https://evil.example/steal"],
     ["scheme-ish", "javascript:alert(1)"],
     ["empty", ""],
+    // PR #726 low (a): the route had its own weaker `sanitizeRedirect` beside the shared
+    // `safeReturnTo`. These are the cases the local copy ACCEPTED — an interior backslash,
+    // which some browsers normalise to a protocol-relative URL, and whitespace-padded variants
+    // of the hostile forms above that a `startsWith("/")` check never sees. One sanitiser now.
+    ["interior backslash", "/dashboard\\@evil.example"],
+    ["double-backslash host", "\\\\evil.example"],
+    ["padded protocol-relative", "  //evil.example"],
+    ["padded absolute https", " https://evil.example/steal"],
+    ["padded javascript:", " javascript:alert(1)"],
+    ["tab between slashes", "/\t/evil.example"],
+    ["newline between slashes", "/\n/evil.example"],
+    ["carriage return between slashes", "/\r/evil.example"],
   ]
 
   it.each(hostile)("rejects a %s redirect and falls back to /auth/signin", async (_label, raw) => {
@@ -193,7 +242,7 @@ describe("/api/vendor-auth/logout-url — the redirect can never leave this orig
       const { url } = await res.json()
       const plr = new URL(url).searchParams.get("post_logout_redirect_uri")
 
-      expect(plr).toBe("http://localhost:3000/auth/signin")
+      expect(plr).toBe(`${PUBLIC_ORIGIN}/auth/signin`)
       expect(plr).not.toContain("evil.example")
       expect(url).not.toContain("evil.example")
     })
@@ -208,7 +257,7 @@ describe("/api/vendor-auth/logout-url — the redirect can never leave this orig
       )
       const { url } = await res.json()
       expect(new URL(url).searchParams.get("post_logout_redirect_uri")).toBe(
-        "http://localhost:3000/dashboard/orders"
+        `${PUBLIC_ORIGIN}/dashboard/orders`
       )
     })
   })
@@ -253,6 +302,267 @@ describe("/api/vendor-auth/logout-url — the id_token is never cacheable (WR-04
 
       expect(res.headers.get("cache-control")).toBe("private, no-store, max-age=0")
       expect(res.headers.get("vary")).toBe("Cookie")
+    })
+  })
+})
+
+/**
+ * FE-1 — the return leg is the server-side clear, and it is CONFIG-INJECTED.
+ *
+ * E-5 point 1: the `post_logout_redirect_uri` derives from `NEXTAUTH_URL`,
+ * never a literal. E-5 point 3: it ships behind `VENDOR_LOGOUT_COMPLETE_ENABLED`,
+ * off unless set, so the worst case is today's defect and never a Keycloak
+ * "Invalid redirect uri" page — which, measured (#504), errors WITHOUT
+ * terminating the SSO session.
+ */
+describe("/api/vendor-auth/logout-url — FE-1: the return leg is /api/vendor-auth/logout-complete, config-injected", () => {
+  it("FLAG ON: post_logout_redirect_uri is <NEXTAUTH_URL>/api/vendor-auth/logout-complete, with NO query string", async () => {
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: "true" }, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      const { url } = await res.json()
+      const plr = new URL(url).searchParams.get("post_logout_redirect_uri")
+
+      expect(plr).toBe(`${PUBLIC_ORIGIN}${COMPLETE_PATH}`)
+      // No query, deliberately (plan R2): the realm check must be "does the
+      // path match /*", never "does Keycloak's matcher tolerate a query".
+      expect(new URL(plr as string).search).toBe("")
+      // The id_token_hint half is untouched by the flag.
+      expect(new URL(url).searchParams.get("id_token_hint")).toBe("ID")
+    })
+  })
+
+  it("FLAG ON, DERIVATION ARM: a different NEXTAUTH_URL moves the return leg with it", async () => {
+    // The fail direction of "config-injected": a literal origin anywhere in
+    // the source would leave this URI unchanged when the config changes.
+    const OTHER = "https://other-tenant.example.test"
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: "true", NEXTAUTH_URL: OTHER }, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      const { url } = await res.json()
+      expect(new URL(url).searchParams.get("post_logout_redirect_uri")).toBe(
+        `${OTHER}${COMPLETE_PATH}`
+      )
+      expect(url).not.toContain(PUBLIC_HOST)
+    })
+  })
+
+  it.each([
+    ["unset", undefined],
+    ["false", "false"],
+  ])("FLAG %s: keeps today's /auth/signin return leg (E-5 fail-safe)", async (_label, value) => {
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: value }, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      const { url } = await res.json()
+      expect(new URL(url).searchParams.get("post_logout_redirect_uri")).toBe(
+        `${PUBLIC_ORIGIN}/auth/signin`
+      )
+      expect(url).not.toContain(COMPLETE_PATH)
+    })
+  })
+
+  it("FLAG ON: the degraded branch (no id token) is UNCHANGED — no Keycloak leg means no return leg", async () => {
+    mockAuth.mockResolvedValue(null)
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: "true" }, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      const { url } = await res.json()
+      expect(url).toBe(`${PUBLIC_ORIGIN}/auth/signin`)
+    })
+  })
+
+  it("FLAG ON, NO trustworthy origin: still omits post_logout_redirect_uri rather than guess one", async () => {
+    // A configured flag must not be able to talk the route into emitting a
+    // bind-address URI — the #504 defect — just to reach the new leg.
+    await withEnv(
+      { ...SPLIT_HORIZON, [FLAG]: "true", NEXTAUTH_URL: undefined, APP_PUBLIC_ORIGIN: undefined },
+      async () => {
+        const res = await vendorLogoutUrlGET(
+          containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+        )
+        const { url } = await res.json()
+        expect(new URL(url).searchParams.get("post_logout_redirect_uri")).toBeNull()
+        expect(url).not.toContain("0.0.0.0")
+      }
+    )
+  })
+})
+
+/**
+ * PR #726 review, M4 — the return leg is BOUND to this sign-out by OIDC
+ * RP-initiated-logout `state`.
+ *
+ * `/api/vendor-auth/logout-complete` is a GET that ends the session, and Keycloak
+ * can only return by GET, so without a binding any cross-site `<img src>` could
+ * force-sign-out a vendor. This route now mints a random `state`, stores it in a
+ * short-lived cookie scoped to `/api/vendor-auth`, and puts the same value on
+ * the end-session URL; Keycloak echoes `state` back onto
+ * `post_logout_redirect_uri` as a query parameter, and `logout-complete` clears
+ * the session only when the echo matches the cookie. The registered redirect URI
+ * itself stays query-less (plan R2) — `state` rides the Keycloak URL, not the
+ * registered URI.
+ */
+describe("/api/vendor-auth/logout-url — M4: the return leg carries a state bound to a one-shot cookie", () => {
+  const STATE_COOKIE = "jtoye-vendor-logout-state"
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+  function stateCookieLine(res: Response): string | undefined {
+    return setCookies(res).find((c) => c.startsWith(`${STATE_COOKIE}=`))
+  }
+
+  it("FLAG ON: puts a random `state` on the Keycloak URL and the SAME value in the state cookie", async () => {
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: "true" }, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      const { url } = await res.json()
+      const state = new URL(url).searchParams.get("state")
+
+      expect(state).toMatch(UUID)
+      const line = stateCookieLine(res)
+      expect(line).toBeDefined()
+      expect(line!.startsWith(`${STATE_COOKIE}=${state};`) || line!.startsWith(`${STATE_COOKIE}=${state} `)).toBe(true)
+      // The registered redirect URI is untouched by the binding: still query-less.
+      const plr = new URL(url).searchParams.get("post_logout_redirect_uri")
+      expect(plr).toBe(`${PUBLIC_ORIGIN}${COMPLETE_PATH}`)
+      expect(new URL(plr as string).search).toBe("")
+    })
+  })
+
+  it("FLAG ON: the state cookie is httpOnly, SameSite=Lax, Secure on an https origin, scoped to /api/vendor-auth, and short-lived (<= 5 min)", async () => {
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: "true" }, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      const line = stateCookieLine(res) as string
+      expect(line).toMatch(/;\s*HttpOnly/i)
+      expect(line).toMatch(/;\s*SameSite=Lax/i)
+      // PUBLIC_ORIGIN is https, so the cookie must be Secure.
+      expect(line).toMatch(/;\s*Secure/i)
+      expect(line).toMatch(/;\s*Path=\/api\/vendor-auth(;|$)/i)
+      const maxAge = Number(/Max-Age=(\d+)/i.exec(line)?.[1])
+      expect(maxAge).toBeGreaterThan(0)
+      expect(maxAge).toBeLessThanOrEqual(300)
+    })
+  })
+
+  it("FLAG ON, http origin: the cookie is NOT marked Secure (or the browser would drop it and every sign-out would fail closed)", async () => {
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: "true", NEXTAUTH_URL: "http://app.jtoye.local" }, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      const line = stateCookieLine(res) as string
+      expect(line).toBeDefined()
+      expect(line).not.toMatch(/;\s*Secure/i)
+      expect(line).toMatch(/;\s*HttpOnly/i)
+    })
+  })
+
+  it("two sign-outs mint two DIFFERENT states (non-vacuity: the value is random, not a constant)", async () => {
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: "true" }, async () => {
+      const a = await (await vendorLogoutUrlGET(containerRequest("/api/vendor-auth/logout-url"))).json()
+      const b = await (await vendorLogoutUrlGET(containerRequest("/api/vendor-auth/logout-url"))).json()
+      expect(new URL(a.url).searchParams.get("state")).not.toBe(new URL(b.url).searchParams.get("state"))
+    })
+  })
+
+  it("FLAG OFF: no `state` and no state cookie — the URL stays byte-compatible with the pre-FE-1 leg (E-5)", async () => {
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: undefined }, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      const { url } = await res.json()
+      expect(new URL(url).searchParams.get("state")).toBeNull()
+      expect(stateCookieLine(res)).toBeUndefined()
+    })
+  })
+
+  it("FLAG ON but NO trustworthy origin: no return leg is named, so no state is minted either", async () => {
+    await withEnv(
+      { ...SPLIT_HORIZON, [FLAG]: "true", NEXTAUTH_URL: undefined, APP_PUBLIC_ORIGIN: undefined },
+      async () => {
+        const res = await vendorLogoutUrlGET(
+          containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+        )
+        const { url } = await res.json()
+        expect(new URL(url).searchParams.get("state")).toBeNull()
+        expect(stateCookieLine(res)).toBeUndefined()
+      }
+    )
+  })
+})
+
+describe("/api/vendor-auth/logout-url — GET looks up the session but never ends it", () => {
+  it.each([undefined, "false", "true"])("does NOT call server signOut with the flag %p", async (flag) => {
+    mockSignOut.mockResolvedValue({
+      redirect: "/",
+      cookies: [{ name: "authjs.session-token", value: "", options: { maxAge: 0, path: "/" } }],
+    })
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: flag }, async () => {
+      const res = await vendorLogoutUrlGET(
+        containerRequest("/api/vendor-auth/logout-url?redirect=/auth/signin")
+      )
+      expect(mockAuth).toHaveBeenCalledTimes(1)
+      expect(mockSignOut).not.toHaveBeenCalled()
+      const cookies = setCookies(res)
+      expect(cookies.every((c) => c.startsWith("jtoye-vendor-logout-state="))).toBe(true)
+      if (flag !== "true") expect(cookies).toHaveLength(0)
+      const { url } = await res.json()
+      expect(url).toContain("id_token_hint=ID")
+    })
+  })
+
+  it.each([undefined, "true"])("does not clear a session without an id token, flag %p", async (flag) => {
+    mockAuth.mockResolvedValue({ user: { email: "vendor@example.com" } })
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: flag }, async () => {
+      const res = await vendorLogoutUrlGET(containerRequest("/api/vendor-auth/logout-url"))
+      expect(mockSignOut).not.toHaveBeenCalled()
+      expect(setCookies(res)).toHaveLength(0)
+      expect(await res.json()).toEqual({ url: `${PUBLIC_ORIGIN}/auth/signin` })
+    })
+  })
+
+  it("does not clear a session when the Keycloak base is missing", async () => {
+    await withEnv({ ...SPLIT_HORIZON, KEYCLOAK_ISSUER: undefined, [FLAG]: "true" }, async () => {
+      const res = await vendorLogoutUrlGET(containerRequest("/api/vendor-auth/logout-url"))
+      expect(mockSignOut).not.toHaveBeenCalled()
+      expect(setCookies(res)).toHaveLength(0)
+      expect(await res.json()).toEqual({ url: `${PUBLIC_ORIGIN}/auth/signin` })
+    })
+  })
+
+  it("leaves session cookies alone until logout-complete receives the matching state cookie", async () => {
+    mockSignOut.mockResolvedValue({
+      redirect: "/",
+      cookies: [{ name: "__Secure-authjs.session-token.0", value: "", options: { maxAge: 0, path: "/", secure: true } }],
+    })
+    await withEnv({ ...SPLIT_HORIZON, [FLAG]: "true" }, async () => {
+      const lookup = await vendorLogoutUrlGET(containerRequest("/api/vendor-auth/logout-url"))
+      const { url } = await lookup.json()
+      const endSession = new URL(url)
+      const state = endSession.searchParams.get("state")
+      const cookie = lookup.cookies.get("jtoye-vendor-logout-state")
+      expect(state).toBeTruthy()
+      expect(cookie?.value).toBe(state)
+      expect(mockSignOut).not.toHaveBeenCalled()
+
+      const callback = new URL(endSession.searchParams.get("post_logout_redirect_uri")!)
+      callback.searchParams.set("state", state!)
+      const res = await logoutCompleteGET(new NextRequest(callback, {
+        headers: { cookie: `${cookie!.name}=${cookie!.value}` },
+      }))
+      expect(mockSignOut).toHaveBeenCalledTimes(1)
+      expect(mockSignOut).toHaveBeenCalledWith({ redirect: false })
+      expect(res.headers.get("location")).toBe("/auth/signin")
+      const clearedState = res.cookies.get("jtoye-vendor-logout-state")
+      expect(clearedState).toMatchObject({ value: "", maxAge: 0, path: cookie!.path, secure: cookie!.secure })
+      expect(res.cookies.get("__Secure-authjs.session-token.0"))
+        .toMatchObject({ value: "", maxAge: 0, path: "/", secure: true })
     })
   })
 })

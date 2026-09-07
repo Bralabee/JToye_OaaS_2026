@@ -116,6 +116,20 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: bash scripts/check-changelog-cites-pr.sh
+      # The repo's own documented first-run sequence is `cp .env.example .env` then
+      # `bash scripts/verify-env.sh`, and it could not pass: verify-env.sh has required
+      # KC_ADMIN_PASSWORD since the infra/ stack started guarding it with ${VAR:?}, and
+      # the template never carried the key (QA run 20260902-134741, INT-16).
+      #
+      # CI could not see it, and that is the interesting half. e2e-nightly.yml reads the
+      # credential list FROM `verify-env.sh --list-required` and appends generated values
+      # after `cp .env.example .env`, so CI MANUFACTURES every required variable — the
+      # template's omission is invisible to the one workflow that exercises it. This step
+      # compares the two artefacts directly instead. Fails closed at exit 2 on an empty or
+      # unreadable required list.
+      - name: Verify .env.example offers a line for every required variable
+        if: always()
+        run: bash scripts/check-env-example-contract.sh
       # HANDOFF.md went stale TWICE on 2026-07-31, both times under the work it was
       # describing (#391, then #394), because nothing read it. This checks the claims
       # that ARE mechanically checkable: the gate count, capitalised issue/PR state
