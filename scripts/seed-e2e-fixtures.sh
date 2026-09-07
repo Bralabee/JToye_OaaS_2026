@@ -279,10 +279,11 @@ fi
 #   silently breaks a different spec's fixture. Measured 2026-09-07 on the dev stack:
 #   gates read ALLERGEN_DATA_COMPLETE=FAILED ("1 product(s) ... E2E-ZERO-VAT-001"),
 #   BUSINESS_VERIFIED=WAIVED, FOOD_HYGIENE_RATING=MANUAL_REVIEW, and ONBD-05 timed out
-#   after 60s. USE_BY is what every product on the dev tree uses (23 of 23);
-#   the common shelf life is 2 days (21 rows) and 3 appears on one other row, a QA probe
-#   fixture. The gate requires only NON-NULL, so the exact number is not load-bearing —
-#   stated precisely because the earlier "22 of 22" read as if 3 days were the norm.
+#   after 60s. USE_BY is what every product the seeder does not itself write uses (22 of
+#   22); the common shelf life is 2 days (21 rows), and 3 days appears on exactly one other
+#   row, itself a QA probe fixture. The gate requires only NON-NULL, so neither number is
+#   load-bearing — they are stated exactly because an earlier draft said "USE_BY/3 matches
+#   every real product", which was true of the type and false of the days.
 ZERO_VAT_SKU="${ZERO_VAT_SKU:-E2E-ZERO-VAT-001}"
 zero_vat_sql=$(cat <<SQL
 insert into products
@@ -367,15 +368,18 @@ zero_vat=$(psql_q "select count(*) from products p join shops s on s.id = p.shop
 # btrim() IS THE PREDICATE, NOT DECORATION: the Java gate tests isBlank(), so a product
 # whose ingredients_text is '   ' FAILS the gate. Measured with a plain `= ''` here, such
 # a row left this check reporting 0 and exiting PASS while the gate would have failed —
-# mirroring the FIELDS is not mirroring the PREDICATE. The `is null` disjuncts are dead
+# mirroring the FIELDS is not mirroring the PREDICATE. The EXPLICIT trim set is load-bearing
+# too: btrim()'s default set is the SPACE character ALONE, while isBlank() is
+# Character.isWhitespace, so a TAB-only value passed a plain btrim() and still failed the
+# gate (measured: btrim(E'\t') = '' is false). Widening the set closes that gap. The `is null` disjuncts are dead
 # against today's schema (ingredients_text is NOT NULL; durability_type carries a CHECK)
 # and are kept deliberately: the mirror is this check's whole justification, a schema is
 # not a constant, and a dead disjunct costs nothing.
 allergen_incomplete=$(psql_q "select count(*) from products
   where shop_id = '$SHOP_ID'
-    and (durability_type is null or btrim(durability_type) = ''
+    and (durability_type is null or btrim(durability_type, E' \t\n\r\f\v') = ''
          or shelf_life_days is null
-         or ingredients_text is null or btrim(ingredients_text) = '');")
+         or ingredients_text is null or btrim(ingredients_text, E' \t\n\r\f\v') = '');")
 
 echo "  DRAFT orders ON PAGE 1 (top $ORDERS_PAGE_SIZE by created_at)  : $draft  (expect >= 1)"
 echo "  ACTIVE, in-window promotions on the shop     : $promo  (expect >= 1)"
