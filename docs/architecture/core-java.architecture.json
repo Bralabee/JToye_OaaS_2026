@@ -11,7 +11,7 @@
     ],
     "repository": {
       "url": "https://github.com/Bralabee/JToye_OaaS_2026",
-      "revision": "9d9efaebac56e1708438c5405d18103a59d1b8e2"
+      "revision": "a990551e4b1f8a04eaa5778c48446c50a39151fa"
     },
     "views": [
       {
@@ -244,7 +244,7 @@
       "id": "postgres",
       "type": "database",
       "label": "PostgreSQL",
-      "sublabel": "RLS · 64 migrations",
+      "sublabel": "RLS · 66 migrations",
       "brand": "postgresql",
       "sources": [
         {
@@ -443,7 +443,7 @@
       "title": "Counted, not estimated",
       "items": [
         "25 controllers · 41 services · 25 repositories",
-        "64 Flyway migrations; V2 installs the RLS policies"
+        "66 Flyway migrations; V2 installs the RLS policies"
       ]
     }
   ]

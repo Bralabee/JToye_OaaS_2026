@@ -28,7 +28,7 @@ Treat the badges as "you can go read this", not as proof, and have someone who k
 the subsystem read the arrows.
 
 Counted claims in the cards (25 controllers, 41 services, 25 repositories,
-64 migrations, 5 declared edge→core calls) were verified against `git ls-tree` at the
+66 migrations, 5 declared edge→core calls) were verified against `git ls-tree` at the
 pinned revision. Nothing in the toolchain re-checks them; they go stale silently.
 
 ## Regenerating
