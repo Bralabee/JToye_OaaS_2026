@@ -6,7 +6,7 @@
 
 **Primary:**
 - Java 25 (Temurin) — Core API (`core-java/`), toolchain pinned in `core-java/build.gradle.kts:13` (`JavaLanguageVersion.of(25)`) and root `build.gradle.kts:9`. Docker build/runtime stages use `eclipse-temurin:25-jdk-alpine` / `eclipse-temurin:25-jre-alpine` (`core-java/Dockerfile`). CI pins `java-version: '25'` / `distribution: 'temurin'` via `actions/setup-java@v6` in `.github/workflows/ci-cd.yaml` (4 jobs: test, integration-tests, code-review-gate-checks, and one more).
-- TypeScript 5.9.3 — Frontend (`frontend/package.json` `devDependencies.typescript`), Next.js 16.3.2 + React 19.2.8. `frontend/tsconfig.json` strict mode, `target: ES2017`.
+- TypeScript 5.9.3 — Frontend (`frontend/package.json` `devDependencies.typescript`), Next.js 16.3.4 + React 19.2.8. `frontend/tsconfig.json` strict mode, `target: ES2017`.
 - Go 1.27 — Edge API gateway (`edge-go/go.mod:3` `go 1.27.0`; `edge-go/Dockerfile` builds on `golang:1.27-alpine`; CI pins `go-version: '1.27'` via `actions/setup-go@v7`). The prose in CLAUDE.md, AGENTS.md, README and the guides trailed one minor version behind the manifest until it was corrected in `9d4f53e8` (the superseded number is deliberately not written here — the `Go` row is total over its form, so naming it would make this sentence fail the rule it is describing); `scripts/check-doc-versions.sh` now carries a `Go` row so that claim cannot drift unnoticed again.
 
 **Secondary:**
@@ -40,7 +40,7 @@
 - Spring State Machine 4.0.2 (`spring-statemachine-starter`) — order lifecycle state machine.
 - Spring Cache + Spring Data Redis — tenant-aware caching.
 - Spring AOP — cross-cutting concerns (tenant pinning, caching).
-- Next.js 16.3.2 + React 19.2.8 — Frontend framework (file-based routing, standalone output build).
+- Next.js 16.3.4 + React 19.2.8 — Frontend framework (file-based routing, standalone output build).
 - Gin v1.12.0 — Go HTTP routing/middleware for the edge gateway (`edge-go/go.mod:6`).
 
 **Testing:**
@@ -48,7 +48,7 @@
 - Testcontainers 1.21.4 (`testcontainers`, `postgresql`, `rabbitmq`, `junit-jupiter` modules) — real Postgres + RLS and real-broker fan-out proofs; run via the dedicated `integrationTest` Gradle task, tagged `testcontainers`, excluded from the default `test` task.
 - H2 (`com.h2database:h2`) — lightweight in-memory unit tests.
 - JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:367` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
-- Jest 29.7.0 + @testing-library/react 16.3.0 + jest-environment-jsdom 30.4.1 — Frontend unit/component tests.
+- Jest 29.7.0 + @testing-library/react 16.3.0 + jest-environment-jsdom 30.5.1 — Frontend unit/component tests. `overrides` pins the transitive `nwsapi` at 2.2.24: 2.2.27 breaks Radix-Select role queries (two suites timeout deterministically; bisected 2026-09-07, exit criteria in #736).
 - jest-axe 11.0.0 + @axe-core/playwright 4.13.0 + axe-core 4.13.0 — Accessibility testing.
 - @playwright/test 1.62.1 — E2E browser automation (`frontend/playwright.config.ts`).
 - vitest ^4 — MCP server unit tests (`mcp-server/package.json`).
@@ -57,7 +57,7 @@
 - Spring Boot Gradle Plugin 3.5.16 — bootJar packaging, redirected to `core-java/build-local/` (`layout.buildDirectory.set(file("build-local"))`) — `core-java/build/` is a stale artifact directory, never read.
 - Flyway 3-part: `flyway-core` + `flyway-database-postgresql` (Boot-managed versions) — schema migration.
 - Lombok + MapStruct 1.6.3 (+ `lombok-mapstruct-binding` 0.2.0) — boilerplate reduction / compile-time DTO mapping.
-- ESLint 9 flat config (`frontend/eslint.config.mjs`) — the only lint config; Next 16 removed `next lint`. Spreads `eslint-config-next@16.3.2`'s native flat-config arrays (`/core-web-vitals`, `/typescript`) directly — do NOT wrap with `FlatCompat` (crashes with a circular-structure error per that file's own header).
+- ESLint 9 flat config (`frontend/eslint.config.mjs`) — the only lint config; Next 16 removed `next lint`. Spreads `eslint-config-next@16.3.4`'s native flat-config arrays (`/core-web-vitals`, `/typescript`) directly — do NOT wrap with `FlatCompat` (crashes with a circular-structure error per that file's own header).
 - TailwindCSS 3.4.1 + PostCSS 8.5.12 — Frontend styling.
 - tsx ^4 — MCP server dev-mode TS execution (`mcp-server/package.json` `dev` script).
 - cross-env 10.1.0 — cross-platform env var injection for `npm run dev`.
