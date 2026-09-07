@@ -520,8 +520,43 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
         </div>
       </div>
 
-      {/* Suggested searches — same vocabulary as the landing hero */}
-      <div className="mb-6 sm:mb-8 flex flex-wrap gap-2">
+      {/* Suggested searches — same vocabulary as the landing hero.
+
+          A SINGLE ROW THAT CANNOT WRAP (FE-3). This row was `flex-wrap`, and it
+          is the whole of /shop's 0.1616 CLS against a declared 0.1 budget. The
+          layout-shift entry's own sources: three chips grow in WIDTH only
+          (102→114, 113→126, 90→97) with h unchanged, the header nav grows
+          132→137 with y unchanged — height-preserving width growth on two
+          independent rows, which is a text-metric change and nothing else. The
+          Work Sans swap makes the chips wider, the row re-wraps, and the shop
+          grid below moves y 345→387: +42 px, exactly one chip row.
+
+          `size-adjust` is NOT the missing remedy and adopting it would have been
+          a no-op edit to a global font loader: next/font already ships it
+          (`size-adjust:111.93%` in the built CSS). It normalises x-height; it
+          cannot make two typefaces share per-glyph advance widths, so a wrapping
+          row stays metric-sensitive. A row that cannot wrap cannot change
+          height, so nothing below it can be pushed — and the chips' own width
+          growth then has distance 0 and scores ~0.
+
+          The scroller shape is `components/marketing/dish-scroller.tsx`'s,
+          reused rather than reinvented. THE A11Y ATTRIBUTES ARE NOT GARNISH:
+          without them this is a `scrollable-region-focusable` violation
+          (WCAG 2.1.1 — the overflowed chips would be unreachable by keyboard)
+          and it fails `jsx-a11y/no-noninteractive-tabindex`, which the repo has
+          already extended to permit exactly this pattern.
+
+          DISPLACED GOOD, ACCOUNTED FOR: at 390 px all six chips used to be
+          visible at once across two rows; some now sit behind a scroll. Paid for
+          with a keyboard-reachable named region the wrapped row never was, snap
+          points, and the removal of a 0.16 CLS from a public revenue surface. At
+          ≥768 px the row already fitted on one line, so desktop is unchanged. */}
+      <div
+        role="region"
+        aria-label="Suggested searches"
+        tabIndex={0}
+        className="mb-6 sm:mb-8 flex flex-nowrap snap-x gap-2 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 [&>*]:snap-start"
+      >
         {SUGGESTIONS.map((s) => {
           const active = searchQuery.trim().toLowerCase() === s.q
           return (
@@ -530,7 +565,12 @@ function ShopDiscovery({ initial, initialQuery, initialInterpretation }: Discove
               type="button"
               onClick={() => setSearchQuery(active ? "" : s.q)}
               aria-pressed={active}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium shadow-sm transition-colors ${
+              // `shrink-0 whitespace-nowrap` is load-bearing, not tidying: a
+              // flex item shrinks by default, so inside a nowrap row the chips
+              // would compress and their own labels would wrap instead — a
+              // HEIGHT change, which is the very shift this fix removes, moved
+              // one element inwards.
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium shadow-sm transition-colors ${
                 active
                   ? "border-oxblood bg-oxblood text-white"
                   : "border-cream-100 bg-white text-slate-700 hover:border-amber-300 hover:text-oxblood"

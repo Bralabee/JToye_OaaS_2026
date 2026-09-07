@@ -173,8 +173,9 @@ DB_PORT=5432
 | `SPRING_PROFILES_ACTIVE` | `dev` | `prod` | `prod` | Activates profile-specific config |
 | `DB_HOST` | `localhost` | `postgres.staging` | Cloud DB endpoint | Database host |
 | `DB_PORT` | `5433` | `5432` | `5432` | Database port |
-| `DB_USER` | `jtoye` | `jtoye_app` | `jtoye_app` | DB user |
-| `DB_PASSWORD` | `secret` | K8s Secret | K8s Secret | **Never hardcode!** |
+| `DB_USER` | `jtoye_runtime` | `jtoye_runtime` | `jtoye_runtime` | Application DB role (DML only, owns nothing) |
+| `DB_MIGRATION_USER` | `jtoye_app` | `jtoye_app` | `jtoye_app` | Flyway migrator/owner role only |
+| `DB_PASSWORD` | from `.env` | K8s Secret | K8s Secret | **Never hardcode!** |
 | `KC_ISSUER_URI` | `http://localhost:8085/realms/jtoye-dev` | `https://auth-staging.olajay.co.uk/realms/jtoye-prod` | `https://auth.olajay.co.uk/realms/jtoye-prod` | Keycloak issuer |
 | `LOG_LEVEL` | `INFO` | `INFO` | `WARN` | Application logging |
 | `SWAGGER_ENABLED` | `true` | `true` (protected) | `false` | Swagger UI |

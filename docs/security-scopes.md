@@ -15,7 +15,7 @@ consume.
 | Scope | Enforced now? | Meaning |
 |-------|---------------|---------|
 | `catalog:read`  | **Yes** | Read the product catalog — `GET /api/v1/products`, `GET /api/v1/products/{id}`, search, template, label. Authenticated-only (any valid tenant token can read). |
-| `catalog:write` | **Yes** | Mutate the product catalog — create/update/delete products and product images, bulk CSV/image import. Gates all **nine** `ProductController` mutations via `@PreAuthorize("hasAuthority('SCOPE_catalog:write')")`. |
+| `catalog:write` | **Yes** | Mutate the product catalog — create/update/delete products and product images, bulk CSV/image import. Gates all **nine** `ProductController` mutations via `@PreAuthorize("hasAuthority('SCOPE_catalog:write')")`, **and** the Edge batch upsert `POST /api/v1/sync/batch` (`SyncController.batchSync` — closed by QA-council 20260902 Cluster A, #648 / API-1; the batch then gates each resolved product or shop on its OWNING shop via `ShopAccessService.require(shopId, SHOP_MANAGER)`, SEC-5, and a create is GROUP_ADMIN-only). |
 | `orders:write`  | **Yes** (Phase 25 [AI-02]; CR-01 extended) | Mutate orders — gates **every** mutating `OrderController` endpoint via `@PreAuthorize("hasAuthority('SCOPE_orders:write')")`: `POST /api/v1/orders` (create), `PUT /api/v1/orders/{id}` (update), `DELETE /api/v1/orders/{id}`, and the six state transitions (`/submit`, `/confirm`, `/start-preparation`, `/mark-ready`, `/complete`, `/cancel`). The [AI-2]/#204 `create_order` MCP tool rides this scope. |
 | `customers:write` | **Yes** (Phase 25 [AI-02]; CR-01 extended) | Mutate customers — gates **every** mutating `CustomerController` endpoint via `@PreAuthorize("hasAuthority('SCOPE_customers:write')")`: `POST /api/v1/customers` (create), `PUT /api/v1/customers/{id}` (update), `DELETE /api/v1/customers/{id}`. The [AI-2]/#204 `create_customer` MCP tool rides this scope. |
 | `orders:read`   | No (reserved) | **Defined only** to seed the [AI-1]/#203 MCP capability taxonomy. Reads stay authenticated-only; not enforced. |
@@ -31,7 +31,7 @@ authorities via `JwtRolesAndScopesConverter` (which also preserves the #83 `real
 - **Reads are authenticated-only.** `GET` product endpoints carry no scope gate; any valid
   tenant/machine token (including a `catalog:read`-only token) gets **200**. This is what
   gives the read-only integration its list access with zero blast radius on other readers.
-- **Writes require `SCOPE_catalog:write`.** The nine mutating handlers are gated positively.
+- **Writes require `SCOPE_catalog:write`.** The nine mutating `ProductController` handlers **and** `POST /api/v1/sync/batch` are gated positively.
   A `catalog:read`-only token gets **403**; an operator token (which carries `catalog:write`
   by default — see §2) is not rejected by the gate.
 - **All order/customer mutations require `SCOPE_orders:write` / `SCOPE_customers:write`** (Phase 25

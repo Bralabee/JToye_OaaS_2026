@@ -156,7 +156,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
             if (probe.isConsumed()) {
                 // Request allowed - add rate limit headers
-                response.setHeader(HEADER_LIMIT, String.valueOf(defaultLimit));
+                response.setHeader(HEADER_LIMIT, String.valueOf(tenantBucketCapacity()));
                 response.setHeader(HEADER_REMAINING, String.valueOf(probe.getRemainingTokens()));
                 response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + 60)); // Reset in 60 seconds
 
@@ -166,7 +166,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
                 // Rate limit exceeded - return 429
                 long waitForRefill = probe.getNanosToWaitForRefill() / 1_000_000_000; // Convert to seconds
                 response.setStatus(429); // HTTP 429 Too Many Requests
-                response.setHeader(HEADER_LIMIT, String.valueOf(defaultLimit));
+                response.setHeader(HEADER_LIMIT, String.valueOf(tenantBucketCapacity()));
                 response.setHeader(HEADER_REMAINING, "0");
                 response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + waitForRefill));
                 response.setHeader(HEADER_RETRY_AFTER, String.valueOf(waitForRefill));
@@ -233,6 +233,33 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     }
 
     /**
+     * API-8 (QA council 20260902-134741): the capacity of a tenant bucket - the number of
+     * tokens it actually holds - which is what {@code X-RateLimit-Limit} advertises.
+     *
+     * <p>The header used to advertise {@code defaultLimit}, the per-minute REFILL RATE,
+     * while {@code X-RateLimit-Remaining} counted tokens out of this capacity. Live headers
+     * therefore read {@code Limit: 100, Remaining: 119} on every response, and a client
+     * computing {@code remaining / limit} for backoff got a ratio above 1.
+     *
+     * <p>This method is deliberately the ONLY place the sum is formed: it feeds both
+     * {@link #createBucketConfiguration(UUID)} and the header, so the advertised limit and
+     * the real bucket cannot drift apart again whatever the configured numbers are.
+     */
+    private long tenantBucketCapacity() {
+        return (long) defaultLimit + burstCapacity;
+    }
+
+    /**
+     * API-8: the capacity of the public IP-keyed bucket (issue #88), the second and
+     * separately-configured limiter - {@code rate-limiting.public.requests-per-minute} +
+     * {@code rate-limiting.public.burst}, overridden to 600/120 for the local compose
+     * runtime (#409). Same defect, same single-source-of-truth remedy.
+     */
+    private long publicBucketCapacity() {
+        return (long) publicRequestsPerMinute + publicBurstCapacity;
+    }
+
+    /**
      * Creates bucket configuration for a tenant.
      * Currently uses standard tier (100 req/min) for all tenants.
      * Future enhancement: Lookup tenant tier from database/cache.
@@ -244,7 +271,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         // Standard tier: 100 requests/minute with burst capacity of 20
         // This allows brief bursts above the rate limit while maintaining average rate
         Bandwidth limit = Bandwidth.builder()
-                .capacity(defaultLimit + burstCapacity)
+                .capacity(tenantBucketCapacity())
                 .refillIntervally(defaultLimit, Duration.ofMinutes(1))
                 .build();
 
@@ -296,7 +323,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             var probe = bucket.tryConsumeAndReturnRemaining(1);
 
             if (probe.isConsumed()) {
-                response.setHeader(HEADER_LIMIT, String.valueOf(publicRequestsPerMinute));
+                response.setHeader(HEADER_LIMIT, String.valueOf(publicBucketCapacity()));
                 response.setHeader(HEADER_REMAINING, String.valueOf(probe.getRemainingTokens()));
                 response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + publicWindowSeconds));
 
@@ -305,7 +332,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             } else {
                 long waitForRefill = probe.getNanosToWaitForRefill() / 1_000_000_000; // Convert to seconds
                 response.setStatus(429); // HTTP 429 Too Many Requests
-                response.setHeader(HEADER_LIMIT, String.valueOf(publicRequestsPerMinute));
+                response.setHeader(HEADER_LIMIT, String.valueOf(publicBucketCapacity()));
                 response.setHeader(HEADER_REMAINING, "0");
                 response.setHeader(HEADER_RESET, String.valueOf(System.currentTimeMillis() / 1000 + waitForRefill));
                 response.setHeader(HEADER_RETRY_AFTER, String.valueOf(waitForRefill));
@@ -339,7 +366,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
      */
     private BucketConfiguration createPublicBucketConfiguration() {
         Bandwidth limit = Bandwidth.builder()
-                .capacity(publicRequestsPerMinute + publicBurstCapacity)
+                .capacity(publicBucketCapacity())
                 .refillIntervally(publicRequestsPerMinute, Duration.ofSeconds(publicWindowSeconds))
                 .build();
 

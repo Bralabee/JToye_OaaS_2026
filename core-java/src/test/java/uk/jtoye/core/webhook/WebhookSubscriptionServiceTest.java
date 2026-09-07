@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.webhook.dto.CreateWebhookSubscriptionRequest;
 import uk.jtoye.core.webhook.dto.WebhookSubscriptionDto;
 
@@ -34,7 +35,12 @@ class WebhookSubscriptionServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(WebhookSubscriptionRepository.class);
-        service = new WebhookSubscriptionService(repository, new WebhookUrlValidator(true));
+        // SEC-1: the service now opens every entry point with shopAccessService.requireGroupAdmin().
+        // This unit test proves the secret-lifecycle mechanics, not authorization, so the gate is an
+        // inert Mockito mock (a void no-op by default); the gate itself is proven end-to-end, on
+        // real Postgres with a real STAFF grant, by WebhookAuthzIntegrationTest.
+        service = new WebhookSubscriptionService(repository, new WebhookUrlValidator(true),
+                mock(ShopAccessService.class));
         tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         when(repository.save(any(WebhookSubscription.class)))

@@ -202,6 +202,51 @@ class OnboardingReviewQueueIntegrationTest {
                 .isNull();
     }
 
+    // --- INT-1 (QA council 20260902-134741, adjudication A15): the two-actor dead-end ------
+
+    /**
+     * INT-1: with no Companies House API key the BUSINESS_VERIFIED gate ALWAYS parks at
+     * MANUAL_REVIEW. When any other mandatory gate FAILED in the same run,
+     * {@code GateChainRunner} fires GATE_FAILED (ACTION_REQUIRED) before the MANUAL_REVIEW
+     * park is considered — and the VERIFYING-only review queue then hid the parked gate
+     * from the reviewer while the vendor page said a reviewer was looking at it. The queue
+     * is now keyed on the presence of a MANUAL_REVIEW gate, not on the VERIFYING state.
+     */
+    @Test
+    void reviewQueueListsActionRequiredWithManualReviewGateBesideFailedGate() throws Exception {
+        UUID onboardingId = seedOnboarding(OnboardingState.ACTION_REQUIRED, OffsetDateTime.now().minusMinutes(3), null);
+        seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.MANUAL_REVIEW);
+        seedGate(onboardingId, GateType.FOOD_HYGIENE_RATING, GateStatus.MANUAL_REVIEW);
+        seedGate(onboardingId, GateType.ALLERGEN_DATA_COMPLETE, GateStatus.FAILED);
+
+        String body = mockMvc.perform(get("/api/v1/onboarding/admin/reviews").with(adminJwt(tenantId)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode row = findById(objectMapper.readTree(body), onboardingId);
+        assertThat(row)
+                .as("ACTION_REQUIRED + a MANUAL_REVIEW gate must be visible to the reviewer (INT-1)")
+                .isNotNull();
+        assertThat(row.get("status").asText()).isEqualTo("ACTION_REQUIRED");
+        assertThat(row.get("gates").size()).isEqualTo(3);
+    }
+
+    /** Control for the widening: it is keyed on MANUAL_REVIEW presence, never on the state alone. */
+    @Test
+    void reviewQueueOmitsActionRequiredWithOnlyFailedGates() throws Exception {
+        UUID onboardingId = seedOnboarding(OnboardingState.ACTION_REQUIRED, OffsetDateTime.now().minusMinutes(3), null);
+        seedGate(onboardingId, GateType.BUSINESS_VERIFIED, GateStatus.PASSED);
+        seedGate(onboardingId, GateType.ALLERGEN_DATA_COMPLETE, GateStatus.FAILED);
+
+        String body = mockMvc.perform(get("/api/v1/onboarding/admin/reviews").with(adminJwt(tenantId)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(findById(objectMapper.readTree(body), onboardingId))
+                .as("ACTION_REQUIRED with no MANUAL_REVIEW gate is the vendor's alone — not a review item")
+                .isNull();
+    }
+
     @Test
     void reviewQueueByNonAdminIs403() throws Exception {
         mockMvc.perform(get("/api/v1/onboarding/admin/reviews").with(tenantJwt(tenantId)))

@@ -289,4 +289,31 @@ class GateChainRunnerTest {
 
         verify(vendorOnboardingService, never()).transition(any(), any());
     }
+
+    /**
+     * INT-1 / A15 guard check on the recompute (GateChainRunner "2. Recompute" early return):
+     * after an admin resolves a gate while the onboarding is ACTION_REQUIRED, the after-commit
+     * kick must neither drive the state machine (GATES_PASSED has no ACTION_REQUIRED source)
+     * nor emit a stall — the vendor's RESUBMIT is the only path forward from there.
+     */
+    @Test
+    @DisplayName("runAndRecompute from ACTION_REQUIRED (post-resolve kick) fires no transition and no stall")
+    void recomputeFromActionRequiredIsInert() {
+        UUID onboardingId = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        when(onboardingRepository.findById(onboardingId))
+                .thenReturn(Optional.of(onboardingIn(OnboardingState.ACTION_REQUIRED, onboardingId, tenantId)));
+        // Every mandatory gate green after the resolve — the shape that WOULD fire
+        // GATES_PASSED from VERIFYING, so this proves the state check, not the gate math.
+        when(gateRepository.findByOnboardingId(onboardingId)).thenReturn(List.of(
+                gateRow(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true),
+                gateRow(GateType.FOOD_HYGIENE_RATING, GateStatus.PASSED, true),
+                gateRow(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true)));
+
+        runner(List.of()).runAndRecompute(onboardingId, tenantId);
+
+        verify(vendorOnboardingService, never()).transition(any(), any());
+        verify(onboardingEventPublisher, never()).publishStall(any(), any(), any(), any(), any());
+        assertThat(TenantContext.get()).isEmpty();
+    }
 }

@@ -48,6 +48,11 @@ extra["netty.version"] = "4.1.136.Final"
 // already closes.
 extra["httpcore5.version"] = "5.4.3"
 
+// Override Tomcat version managed by Spring Boot 3.5.16 (10.1.55) to remediate
+// critical authorization/authentication bypass CVEs in 10.1.57 and earlier.
+// Keep within the same 10.1.x line to minimize behavioral risk.
+extra["tomcat.version"] = "10.1.59"
+
 // Override com.rabbitmq:amqp-client transitive dependency from
 // spring-boot-starter-amqp to patch 6 HIGH/MEDIUM severity CVEs discovered by
 // appmod-validate-cves-for-java. Spring Boot 3.5.16 brings in 5.25.0 via

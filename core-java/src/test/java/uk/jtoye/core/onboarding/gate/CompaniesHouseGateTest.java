@@ -25,9 +25,15 @@ import static org.mockito.Mockito.when;
 
 /**
  * Pure-Mockito unit proof of the {@code BUSINESS_VERIFIED} gate mapping
- * (VENDOR_ONBOARDING_STATE_MODEL.md §3.1 / §5.4): sole-trader / no-record →
+ * (VENDOR_ONBOARDING_STATE_MODEL.md §3.1 / §5.4): sole trader (blank number) →
  * WAIVED, {@code active} → PASSED (evidence + external_ref), a non-active status
- * → FAILED, and any client failure → MANUAL_REVIEW (never a hard fail).
+ * → FAILED, a 404 (no company bears that number) → MANUAL_REVIEW (INT-7 / A14 — it
+ * was WAIVED, a fail-open), and any client failure → MANUAL_REVIEW (never a hard fail).
+ * Also pins the lookup KEY: Companies House is an exact-key register, so a purely
+ * numeric number shorter than 8 characters is left-zero-padded before the call.
+ *
+ * <p>UNTESTED-IN-RUNTIME: this stack has no {@code COMPANIES_HOUSE_API_KEY}, so the
+ * 404 branch is reachable only through this Mockito stub of {@code lookup()}.
  */
 @ExtendWith(MockitoExtension.class)
 class CompaniesHouseGateTest {
@@ -86,15 +92,51 @@ class CompaniesHouseGateTest {
                 .containsEntry("company_number", "12345678");
     }
 
+    /**
+     * INT-7 (QA council 20260902-134741, A14): a 404 from an EXACT-KEY register means no
+     * company bears that number. Treating it like a sole trader (WAIVED) let a fabricated
+     * number clear a mandatory gate, because approve/go-live accept PASSED-or-WAIVED.
+     * It now parks for a human — never WAIVED, and never silently FAILED either.
+     */
     @Test
-    @DisplayName("no Companies House record (empty Optional) -> WAIVED")
-    void noRecordWaived() {
+    @DisplayName("no Companies House record (empty Optional / 404) -> MANUAL_REVIEW naming the register, never WAIVED")
+    void noRecordManualReview() {
         when(client.lookup("00000000")).thenReturn(Optional.empty());
 
         GateResult result = gate.evaluate(onboardingWithCompanyNumber("00000000"));
 
-        assertThat(result.status()).isEqualTo(GateStatus.WAIVED);
-        assertThat(result.reason()).contains("no Companies House record");
+        assertThat(result.status()).isEqualTo(GateStatus.MANUAL_REVIEW);
+        assertThat(result.status()).isNotEqualTo(GateStatus.WAIVED);
+        assertThat(result.reason()).containsIgnoringCase("Companies House register");
+    }
+
+    /**
+     * A14: Companies House keys are exact (e.g. Tesco is {@code 00445790}); without padding a
+     * vendor who types {@code 445790} 404s and would now hard-park for no reason. The
+     * service pads on write; the gate pads the LOOKUP key too so rows normalised before this
+     * change are still looked up correctly.
+     */
+    @Test
+    @DisplayName("a purely numeric number shorter than 8 is looked up left-zero-padded to 8 (445790 -> 00445790)")
+    void numericNumberIsZeroPaddedForLookup() {
+        when(client.lookup("00445790")).thenReturn(Optional.of(new CompanyProfile("00445790", "active")));
+
+        GateResult result = gate.evaluate(onboardingWithCompanyNumber("445790"));
+
+        assertThat(result.status()).isEqualTo(GateStatus.PASSED);
+        assertThat(result.externalRef()).isEqualTo("00445790");
+        assertThat(result.evidence()).containsEntry("company_number", "00445790");
+        verify(client, never()).lookup("445790");
+    }
+
+    @Test
+    @DisplayName("a letter-prefixed number (SC123456) and an already-8-char number (00445790) are looked up unchanged")
+    void prefixedAndFullLengthNumbersAreNotPadded() {
+        when(client.lookup("SC123456")).thenReturn(Optional.of(new CompanyProfile("SC123456", "active")));
+        when(client.lookup("00445790")).thenReturn(Optional.of(new CompanyProfile("00445790", "active")));
+
+        assertThat(gate.evaluate(onboardingWithCompanyNumber("SC123456")).externalRef()).isEqualTo("SC123456");
+        assertThat(gate.evaluate(onboardingWithCompanyNumber("00445790")).externalRef()).isEqualTo("00445790");
     }
 
     @Test

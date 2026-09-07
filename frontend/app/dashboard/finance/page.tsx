@@ -36,11 +36,13 @@ import type {
 import { formatDistanceToNow } from "date-fns"
 
 const vatRateConfig: Record<VatRate, { label: string; rate: string; color: string }> = {
-  STANDARD: { label: "Standard", rate: "20%", color: "bg-blue-500" },
+  // A11Y-6 (QA council 20260902-134741): white text on blue-500 is 3.68:1 and
+  // on green-500 2.28:1; blue-600 is 5.17, green-700 5.02. No token change.
+  STANDARD: { label: "Standard", rate: "20%", color: "bg-blue-600" },
   // bg-yellow-700, not -500: white text on -500 is 1.92:1 on white — fails AA
   // (F3 / A11Y-1). -700 is 4.92:1.
   REDUCED: { label: "Reduced", rate: "5%", color: "bg-yellow-700" },
-  ZERO: { label: "Zero", rate: "0%", color: "bg-green-500" },
+  ZERO: { label: "Zero", rate: "0%", color: "bg-green-700" },
   EXEMPT: { label: "Exempt", rate: "N/A", color: "bg-gray-500" },
 }
 
@@ -318,55 +320,53 @@ export default function FinancePage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>VAT Rate</TableHead>
-                      <TableHead>VAT Amount</TableHead>
-                      <TableHead>Created</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((tx) => {
-                      const config = vatRateConfig[tx.vatRate]
-                      return (
-                        <TableRow key={tx.id}>
-                          <TableCell className="font-medium">
-                            {tx.description || tx.id.substring(0, 8) + "..."}
-                          </TableCell>
-                          <TableCell
-                            className={`font-semibold ${
-                              tx.amountPennies >= 0
-                                ? "text-green-700"
-                                : "text-red-700"
-                            }`}
+              <Table containerLabel="Financial transactions table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Reference</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>VAT Rate</TableHead>
+                    <TableHead>VAT Amount</TableHead>
+                    <TableHead>Created</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {transactions.map((tx) => {
+                    const config = vatRateConfig[tx.vatRate]
+                    return (
+                      <TableRow key={tx.id}>
+                        <TableCell className="font-medium">
+                          {tx.description || tx.id.substring(0, 8) + "..."}
+                        </TableCell>
+                        <TableCell
+                          className={`font-semibold ${
+                            tx.amountPennies >= 0
+                              ? "text-green-700"
+                              : "text-red-700"
+                          }`}
+                        >
+                          {formatPennies(tx.amountPennies)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={`${config.color} text-white text-xs`}
                           >
-                            {formatPennies(tx.amountPennies)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={`${config.color} text-white text-xs`}
-                            >
-                              {config.label} ({config.rate})
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {formatPennies(tx.vatAmountPennies)}
-                          </TableCell>
-                          <TableCell className="text-slate-600">
-                            {formatDistanceToNow(new Date(tx.createdAt), {
-                              addSuffix: true,
-                            })}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                            {config.label} ({config.rate})
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {formatPennies(tx.vatAmountPennies)}
+                        </TableCell>
+                        <TableCell className="text-slate-600">
+                          {formatDistanceToNow(new Date(tx.createdAt), {
+                            addSuffix: true,
+                          })}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
             <Pagination
               currentPage={currentPage}

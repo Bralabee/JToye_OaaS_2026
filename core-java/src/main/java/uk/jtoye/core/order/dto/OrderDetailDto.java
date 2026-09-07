@@ -20,6 +20,14 @@ public class OrderDetailDto {
     private String customerPhone;
     private String notes;
     private Long totalAmountPennies;
+    /**
+     * COR-4 (V66): UNITS on the order — SUM(order_items.quantity). Nullable, and null means NOT
+     * RECORDED (the row predates V66). Never read null as 0. This DTO deliberately carries no
+     * {@code itemCount} (that LINES figure lives on the list-view {@code OrderDto}); the lines are
+     * available here as {@link #items} itself, so never derive a substitute for a null unitCount
+     * from them either.
+     */
+    private Integer unitCount;
     private List<OrderItemDto> items;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
@@ -36,6 +44,13 @@ public class OrderDetailDto {
     // /dashboard/orders/[id] detail page. Nullable: pre-V45 orders default to
     // DELIVERY with no persisted address; COLLECTION orders have no address.
     private FulfilmentType fulfilmentType;
+    /**
+     * COR-1 (PR #726 review M6): what delivery cost, beside {@link #fulfilmentType}. The list DTO
+     * gained this with COR-1; the detail DTO — the one {@code /dashboard/orders/[id]} and the
+     * kitchen board actually read — did not, so a DELIVERY order's detail page could not show the
+     * fee it charged. Scalar column on the order row: no extra query.
+     */
+    private Long deliveryFeePennies;
     private String addressLine1;
     private String addressLine2;
     private String addressCity;
@@ -91,6 +106,9 @@ public class OrderDetailDto {
     public Long getTotalAmountPennies() { return totalAmountPennies; }
     public void setTotalAmountPennies(Long totalAmountPennies) { this.totalAmountPennies = totalAmountPennies; }
 
+    public Integer getUnitCount() { return unitCount; }
+    public void setUnitCount(Integer unitCount) { this.unitCount = unitCount; }
+
     public List<OrderItemDto> getItems() { return items; }
     public void setItems(List<OrderItemDto> items) { this.items = items; }
 
@@ -114,6 +132,9 @@ public class OrderDetailDto {
 
     public FulfilmentType getFulfilmentType() { return fulfilmentType; }
     public void setFulfilmentType(FulfilmentType fulfilmentType) { this.fulfilmentType = fulfilmentType; }
+
+    public Long getDeliveryFeePennies() { return deliveryFeePennies; }
+    public void setDeliveryFeePennies(Long deliveryFeePennies) { this.deliveryFeePennies = deliveryFeePennies; }
 
     public String getAddressLine1() { return addressLine1; }
     public void setAddressLine1(String addressLine1) { this.addressLine1 = addressLine1; }

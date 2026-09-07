@@ -5,9 +5,15 @@
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5433/jtoye
-    username: jtoye_app
-    password: secret
+    # Config-injected, like every other profile (GLOBAL_RULE_6). These were the literals
+    # `jtoye_app` / `secret` until QA run 20260902-134741 measured that they cannot
+    # authenticate: `psql -h localhost -p 5433 -U jtoye_app` with that password fails
+    # byte-identically to a garbage-password control, and even with a correct password
+    # jtoye_app OWNS every public table, so DatabaseConfigurationValidator refuses to boot.
+    # The profile's one genuine purpose is the 5433 port, which is preserved as a default.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:jtoye}
+    username: ${DB_USER:jtoye_runtime}
+    password: ${DB_PASSWORD}
   data:
     redis:
       host: localhost
