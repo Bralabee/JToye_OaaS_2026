@@ -1,6 +1,6 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) and 2026-09-07 (round 2 concluded, branch reconciled with main). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) and later on 2026-09-07 (dependabot queue + architecture diagrams merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
 **2026-08-31 delta — customer-surface P0/P1 fixes (PR #711, quick task 260831-gnm).** A five-lane
 human-like utilisation audit of the customer surfaces found 15 defects; PR #711 fixed the six with
@@ -165,6 +165,24 @@ Tomcat hunk was the SAME stale duplicate of #733 the 09-05 session already dropp
 tree — dropped again; its two companion pins (commons-lang3 3.20.0 over springdoc's 3.17.0,
 commons-compress 1.28.0 over Testcontainers' 1.24.0, both scanner-suggested) are recorded HERE as
 a candidate follow-up PR against main, not swept into #726.
+
+**2026-09-07 later delta — the dependabot queue and the architecture diagrams merged (quick task
+260907-a30).** Five PRs merged in one pass: #734 MERGED (edge-go + core-java interactive diagrams;
+its counted claims were re-pinned to a990551e and migrations corrected 64→66 after #726 landed
+V65/V66 — the staleness its own DIAGRAMS.md predicts), #730 MERGED (jest 29.7→30.5.1; jest 30
+rejects the legacy goo.gl snapshot-header link, one line rewritten by `jest -u`), #728 MERGED
+(AWS SDK 2.54.9 + Stripe Java 33.4.0 with the 6 doc version claims), #731 MERGED (codeql-action
+4.37.9), #732 MERGED (download-artifact v8 — residual: its only usage sits behind the integration
+path filter, so the v8-download/v7-upload pairing first executes on the next main run taking that
+path; failure mode is check-jacoco rc=2 VOID, not a silent pass). The sixth, #729 (6 frontend
+minor/patch bumps), is the queue's last PR and carries this delta. Its two 09-04 CI timeouts were
+neither flaky nor its own bumps: bisection convicted the lockfile regeneration's TRANSITIVE float
+`nwsapi` 2.2.24→2.2.27 (jsdom's selector engine; both Radix-Select role-query suites pass 20/20
+~9x faster with only that pin reverted). The pin lives in `frontend/package.json` `overrides`;
+issue #736 OPEN holds the exit criteria. The shared Security Scan red on all five dependabot PRs
+was the Trivy `fast-uri` 3.1.5 daily-DB time-bomb, fixed on main by #733 after the branches were
+cut — rebasing onto main cleared it, no code change. Full record:
+`.planning/quick/260907-a30-shepherd-pr-734-and-dependabot-queue/`.
 
 **Re-measure every figure here before quoting it forward** — that is this file's standing rule, and
 the 2026-08-24 session broke it once itself (see "The truncating filter", below).

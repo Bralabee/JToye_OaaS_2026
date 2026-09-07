@@ -8,7 +8,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 
 **Payments:**
 - Stripe — PaymentIntent creation, Stripe Connect (Express accounts, destination charges for MARKETPLACE tenants per ADR-0001 Decision 2), refunds, webhook signature verification.
-  - SDK/Client: `com.stripe:stripe-java:33.4.0` (server); `@stripe/react-stripe-js` 6.8.2 + `@stripe/stripe-js` 9.14.0 (browser Elements)
+  - SDK/Client: `com.stripe:stripe-java:33.4.0` (server); `@stripe/react-stripe-js` 6.8.2 + `@stripe/stripe-js` 9.15.0 (browser Elements)
   - Client classes: `core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java`, `StripeRefundClient.java`, `StripeProperties.java`
   - Auth: `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` (both default empty — feature is inert without them)
   - Circuit breaker: `resilience4j.circuitbreaker.instances.stripe` (`core-java/src/main/resources/application.yml:727-732` — `sliding-window-size` 10, `failure-rate-threshold` 50)
