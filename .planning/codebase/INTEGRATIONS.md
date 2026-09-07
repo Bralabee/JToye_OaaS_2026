@@ -8,7 +8,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 
 **Payments:**
 - Stripe — PaymentIntent creation, Stripe Connect (Express accounts, destination charges for MARKETPLACE tenants per ADR-0001 Decision 2), refunds, webhook signature verification.
-  - SDK/Client: `com.stripe:stripe-java:33.3.0` (server); `@stripe/react-stripe-js` 6.8.2 + `@stripe/stripe-js` 9.14.0 (browser Elements)
+  - SDK/Client: `com.stripe:stripe-java:33.4.0` (server); `@stripe/react-stripe-js` 6.8.2 + `@stripe/stripe-js` 9.14.0 (browser Elements)
   - Client classes: `core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java`, `StripeRefundClient.java`, `StripeProperties.java`
   - Auth: `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` (both default empty — feature is inert without them)
   - Circuit breaker: `resilience4j.circuitbreaker.instances.stripe` (`core-java/src/main/resources/application.yml:727-732` — `sliding-window-size` 10, `failure-rate-threshold` 50)
@@ -55,7 +55,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 **File Storage:**
 - S3-compatible object storage — copy-on-write `media_asset` model (Phase 24), safe async upload pipeline (quarantine → validate → transcode → WebP derivative + thumbnail).
   - LOCAL-DEV: MinIO (`minio/minio:${MINIO_IMAGE_TAG:-latest}`), console on `9001`, S3 API on `9000` (both loopback-only). Bucket `jtoye-images` bootstrapped by a digest-pinned `minio-init` job (`minio/mc:${MINIO_MC_IMAGE_TAG}`) with an anonymous `s3:GetObject`-only policy (no `s3:ListBucket` — objects are readable by URL but not enumerable).
-  - STAGING/PROD: real AWS S3 (or equivalent), via `software.amazon.awssdk:s3` (BOM 2.54.3). `frontend/next.config.mjs` has a commented-out placeholder for production S3/CloudFront `remotePatterns` — not yet activated.
+  - STAGING/PROD: real AWS S3 (or equivalent), via `software.amazon.awssdk:s3` (BOM 2.54.9). `frontend/next.config.mjs` has a commented-out placeholder for production S3/CloudFront `remotePatterns` — not yet activated.
   - Config: `storage.s3.endpoint/region/bucket/access-key/secret-key/public-url`, all `${ENV:default}`, defaults pointing at local MinIO.
 
 **Caching:**
