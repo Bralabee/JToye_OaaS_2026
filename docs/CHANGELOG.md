@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### The cart-identity gate's Add locator died when #726 gave the button a name (#742) — 2026-09-13
 
 - **Nine of eighteen checks silently stopped running, and the nightly had been red for
-  three nights.** `frontend/e2e/cart-identity-boundary.verify.mjs` located the storefront
+  five consecutive nights (2026-09-07 through 09-11).** `frontend/e2e/cart-identity-boundary.verify.mjs` located the storefront
   Add button with an anchored `/^add$/i`. #726 (A11Y-4, WCAG 2.4.6) gave each card a
   distinct accessible name via `aria-label="Add {product} to basket"`, because nine cards
   exposing the identical name "Add" let a name-driven actor add the wrong dish. An

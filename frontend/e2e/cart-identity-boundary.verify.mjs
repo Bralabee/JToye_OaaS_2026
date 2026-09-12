@@ -246,7 +246,9 @@ async function registerCustomer(page, email, returnTo) {
  * out here so a future detector for it cannot trip on the comment explaining it --
  * matched NOTHING from 2026-09-07 onward. Every arm that SEEDS localStorage kept
  * passing while both arms that CLICK a real Add button timed out (scheduled
- * nightlies 2026-09-07/08/09 plus dispatch 34401146291), so the run exited VOID
+ * nightlies 2026-09-07 through 09-11 -- five -- plus dispatch 34401146291; the
+ * 09-12 nightly failed earlier still, at the stack build, for an unrelated reason),
+ * so the run exited VOID
  * at 9 of its 18 declared checks and the #459 / R-16 boundary went unguarded.
  *
  * The pattern is adopted VERBATIM from storefront-dish-modal-a11y.spec.ts:276 --
