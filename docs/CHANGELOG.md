@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### MinIO's Docker Hub images went behind auth, so the nightly could not build a stack (#743) — 2026-09-13
+
+- **The whole full-suite E2E lane was dark, not just one gate.** `minio-init` failed with
+  `pull access denied for minio/mc`, and because `Build and start the stack` is an early
+  step every later step — the entire Playwright suite and all four gates — was `skipped`.
+  Probed against the registry Docker pulls from, with controls: `library/redis:7-alpine`
+  and `library/postgres:15-alpine` both 200, while `minio/mc:latest`, `minio/minio:latest`
+  and even the pinned `minio/mc:RELEASE.2025-08-13T08-35-41Z` all returned **401**. A 401
+  rather than a 404 means an auth gate, and it covers the server image too.
+- **Sourced from quay.io, hardcoded inline**, matching the one registry-prefixed image this
+  repo already carries (`quay.io/keycloak/keycloak:24.0.5`). Deliberately NOT a
+  `MINIO_REGISTRY` variable: the value does not vary by environment, and making the
+  registry host of a root-credentialed container settable from the environment would weaken
+  the property #270's digest pin exists for.
+- **The digest pin survives byte-identical.** `quay.io/minio/mc@sha256:a7fe349e…` is 200 and
+  the release tag there carries that exact `docker-content-digest`; an all-zeros control
+  digest 404s, so the probe discriminates. A wrong digest still fails the pull loudly
+  (`rc=1 … not found`) rather than falling back.
+- **`MINIO_MC_IMAGE_REF` moved with the image.** That line is echoed at run time to state
+  which `mc` ran; left on the old registry it would have kept reporting a reference nothing
+  used.
+- **`.env.example`'s digest-re-resolve runbook was already broken** before this change — it
+  named a registry that now 401s.
+- **Corrected against interest:** declaring the provenance line as a second
+  `check-dependency-horizons` H-5 site does **not** make a forgotten prefix exit 2
+  (measured `rc=0`) — H-5's exit-2 class fires only when the pin appears on no non-comment
+  line, which the `image:` line always satisfies. It is kept as **advisory detection**, not
+  a blocking gate, proven worth keeping by control: the old single-site declaration is
+  totally silent on the same break.
+
 ### The E2E seeder's own fixture broke ONBD-05, and its guard could not see it (#737) — 2026-09-07
 
 - **#726's zero-VAT fixture failed a mandatory onboarding gate.** The COR-6 product lands
