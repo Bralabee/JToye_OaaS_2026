@@ -219,7 +219,7 @@ dependencies:
 
   - id: minio-mc
     pin: "quay.io/minio/mc:${MINIO_MC_IMAGE_TAG:-latest}"
-    sites: ["docker-compose.full-stack.yml:628", "docker-compose.full-stack.yml:638"]
+    sites: ["docker-compose.full-stack.yml:628", "docker-compose.full-stack.yml:638", "scripts/k8s-local-secrets.sh:299"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -238,6 +238,15 @@ dependencies:
       which the bootstrap echoes at run time as `minio-init-image-ref=` so a run STATES which
       image it ran. H-1 discovery only scans `image:` lines, so the provenance line is invisible
       to it; declaring it here is what makes H-5's exact-line check look at it.
+
+      THE SAME-FILE LIMIT DOES NOT GENERALISE, and the third site proves it. A declared site in a
+      DIFFERENT file IS blocking, because the H-5 VOID arm asks whether the pin appears on any
+      non-comment line of THAT file. Measured 2026-09-13 on scripts/k8s-local-secrets.sh:299, the
+      real "docker run" pull site for the k8s-local bootstrap: clean rc=0 site-unresolvable=0;
+      reverting only that line to the Docker Hub form gives rc=2 site-unresolvable=1 and names the
+      site; restoring gives rc=0 site-unresolvable=0. So reverting EITHER genuine pull site (the
+      compose image: line, or this script) now fails the build, where before it was invisible.
+      Only the provenance line, which shares a file with image:, is limited to NOTE class.
 
       MEASURED LIMIT, recorded so nobody overstates this — it is NOTE class, NOT exit 2. Reverting
       ONLY the provenance line to `minio/mc:` while leaving `image:` on quay was run on
