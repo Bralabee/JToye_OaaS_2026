@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The cart-identity gate's Add locator died when #726 gave the button a name (#742) — 2026-09-13
+
+- **Nine of eighteen checks silently stopped running, and the nightly had been red for
+  three nights.** `frontend/e2e/cart-identity-boundary.verify.mjs` located the storefront
+  Add button with an anchored `/^add$/i`. #726 (A11Y-4, WCAG 2.4.6) gave each card a
+  distinct accessible name via `aria-label="Add {product} to basket"`, because nine cards
+  exposing the identical name "Add" let a name-driven actor add the wrong dish. An
+  `aria-label` REPLACES the accessible name, so the visible text "Add" stopped being the
+  name and the anchored pattern matched nothing.
+- **#726 updated the specs and missed this file**, because it is not run by
+  `playwright test` — the nightly invokes it directly with `node --env-file=.env`.
+  `storefront-dish-modal-a11y.spec.ts` already used the correct `/^Add .+ to basket/`.
+- **The R-16 invariant was unverified on every tree since 2026-09-07.** Every arm that
+  seeds the basket through localStorage passed; both arms that CLICK a real button timed
+  out — C2/C1 (the shared-browser sign-out/sign-in flow) and C4 (order-empties-basket),
+  which is the class of defect #459 was filed for. The script correctly exited 2 rather
+  than reporting a pass over half a run.
+- **One module-level `ADD_TO_BASKET` constant** now feeds all three former sites. The
+  `aria-label` is untouched — the component is correct and the test locator was the defect
+  — and `EXPECTED_CHECKS` stays at 18, since the VOID was the instrument working.
+- **Proven in both directions.** Before the edit, the old pattern was shown incapable of
+  matching either live name shape while still matching the bare literal "Add" (a positive
+  control that the old pattern was well-formed). After it, against a real stack:
+  `18/18 checks passed`, `ALL PASS`, with `C4.0 [items=4]` confirming four clicks actually
+  landed. Medium parity was proven by content first — the running frontend was confirmed to
+  serve 9 distinct Add names, exactly the set the old pattern matched before #726.
+- Follow-up #741 covers making this decay class detectable; a deny-list grep gate is
+  rejected there in writing because it fails open.
+
 ### The E2E seeder's own fixture broke ONBD-05, and its guard could not see it (#737) — 2026-09-07
 
 - **#726's zero-VAT fixture failed a mandatory onboarding gate.** The COR-6 product lands
