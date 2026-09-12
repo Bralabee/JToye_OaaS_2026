@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### sharp 0.35.4, clearing the HIGH advisory that was redding every PR (#744) — 2026-09-13
+
+- **A green PR went red with no code change.** Trivy's database picked up
+  GHSA-rgj7-g3m4-5g8c (HIGH) against `sharp` 0.35.3 — libheif
+  GHSA-g89c-p67h-r497 / GHSA-2jg2-4ch7-h545 — so `Security Scan` failed on every
+  branch including main. The daily-DB time-bomb shape: nothing in the tree caused it,
+  and nothing in the tree clears it except moving the flagged dependency.
+- **Lockfile refresh only.** `^0.35.0` was already declared, so 0.35.4 is inside the
+  existing range: no manifest change, no dependency-policy decision. `npm update`
+  rather than `npm install`, so the declared range is not rewritten to `^0.35.4`.
+- **28 packages move and all 28 are sharp's own** — checked rather than assumed, since a
+  group bump can hide an unrelated transitive float: `sharp`, its 26 per-platform
+  `@img/sharp-*` / `@img/sharp-libvips-*` prebuilt binaries, and `@emnapi/runtime`
+  for the wasm targets. Zero package paths outside that family, zero `0.35.3` tarball
+  references left, 17 `0.35.4` references present as a positive control.
+- **The native binary was exercised, not just installed.** sharp backs Next image
+  optimisation and the media pipeline's WebP + 400px thumbnail, so 0.35.4 (libvips
+  8.18.6) was run on a real image from the running MinIO: JPEG 900x1200 decoded,
+  resized and transcoded to WebP 400x533. Break arm: a non-image is correctly
+  rejected, so the test can fail.
+
 ### The E2E seeder's own fixture broke ONBD-05, and its guard could not see it (#737) — 2026-09-07
 
 - **#726's zero-VAT fixture failed a mandatory onboarding gate.** The COR-6 product lands
