@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### sharp 0.35.4, clearing the HIGH advisory that was redding every PR (#744) — 2026-09-13
+
+- **A green PR went red with no code change.** Trivy's database picked up
+  GHSA-rgj7-g3m4-5g8c (HIGH) against `sharp` 0.35.3 — libheif
+  GHSA-g89c-p67h-r497 / GHSA-2jg2-4ch7-h545 — so `Security Scan` failed on every
+  branch including main. The daily-DB time-bomb shape: nothing in the tree caused it,
+  and nothing in the tree clears it except moving the flagged dependency.
+- **Lockfile refresh only.** `npm update` rather than `npm install`, so the declared range
+  is not rewritten to `^0.35.4`. No manifest change, no dependency-policy decision.
+- **`sharp` is an `overrides` entry, not a declared dependency — and that is the real
+  story.** `frontend/package.json` has no `sharp` in any dependency section; it carries
+  `overrides: { "sharp": "^0.35.0" }`. Meanwhile `next@16.3.4` declares
+  `optionalDependencies.sharp: "^0.35.4"`, which **0.35.3 did not satisfy**. The tree was
+  only valid because the root override held sharp below what Next asked for. So the
+  advisory made the problem visible; the override is what made it possible. 0.35.4 is
+  inside `^0.35.0`, so this remains a lockfile refresh with no manifest change — but the
+  override is tracked by nothing (not the horizons manifest, and not Dependabot, since it
+  is not a declared dependency) and will silently cap the tree when a future fix lands
+  only in sharp 0.36. Followed up separately.
+- **28 packages move and all 28 are sharp's own** — checked rather than assumed, since a
+  group bump can hide an unrelated transitive float: `sharp`, its 26 per-platform
+  `@img/sharp-*` / `@img/sharp-libvips-*` prebuilt binaries, and `@emnapi/runtime`
+  for the wasm targets. Zero package paths outside that family, zero `0.35.3` tarball
+  references left, 17 `0.35.4` references present as a positive control.
+- **The native binary was exercised, not just installed.** sharp backs Next image
+  optimisation and the media pipeline's WebP + 400px thumbnail, so 0.35.4 (libvips
+  8.18.6) was run on a real image from the running MinIO: JPEG 900x1200 decoded,
+  resized and transcoded to WebP 400x533. Break arm: a non-image is correctly
+  rejected, so the test can fail.
+
 ### The E2E seeder's own fixture broke ONBD-05, and its guard could not see it (#737) — 2026-09-07
 
 - **#726's zero-VAT fixture failed a mandatory onboarding gate.** The COR-6 product lands
