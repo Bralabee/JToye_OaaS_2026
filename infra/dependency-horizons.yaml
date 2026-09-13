@@ -244,8 +244,15 @@ dependencies:
       non-comment line of THAT file. Measured 2026-09-13 on scripts/k8s-local-secrets.sh:299, the
       real "docker run" pull site for the k8s-local bootstrap: clean rc=0 site-unresolvable=0;
       reverting only that line to the Docker Hub form gives rc=2 site-unresolvable=1 and names the
-      site; restoring gives rc=0 site-unresolvable=0. So reverting EITHER genuine pull site (the
-      compose image: line, or this script) now fails the build, where before it was invisible.
+      site; restoring gives rc=0 site-unresolvable=0.
+
+      Reverting THIS SCRIPT now fails the build at H-5 (exit 2), where before it was invisible.
+      Reverting the compose image: line was already caught -- by H-1 coverage, exit 1 -- and H-5
+      gives only a NOTE there, because the provenance line keeps the pin present in that same file.
+      So the compose image: line's protection is H-1's, not H-5's: H-5's file-wide search is
+      satisfied by the provenance line, which is a log string and not a pull site. Measured
+      2026-09-13: reverting BOTH compose lines gives site-unresolvable=2, naming both, which is
+      what isolates line 638 as the cause of H-5 staying quiet over a broken image: line.
       Only the provenance line, which shares a file with image:, is limited to NOTE class.
 
       MEASURED LIMIT, recorded so nobody overstates this — it is NOTE class, NOT exit 2. Reverting
