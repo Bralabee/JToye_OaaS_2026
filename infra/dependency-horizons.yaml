@@ -253,7 +253,11 @@ dependencies:
       satisfied by the provenance line, which is a log string and not a pull site. Measured
       2026-09-13: reverting BOTH compose lines gives site-unresolvable=2, naming both, which is
       what isolates line 638 as the cause of H-5 staying quiet over a broken image: line.
-      Only the provenance line, which shares a file with image:, is limited to NOTE class.
+      Only the provenance line's divergence escapes EVERY non-zero exit (measured 2026-09-13:
+      rc=0, missing-row=0, one NOTE naming :638, pin-not-at-site 4 -> 5). Under H-5 alone the
+      compose image: line is equally NOTE-limited while the provenance line carries the pin --
+      what catches that one is H-1, at exit 1. So two of the three declared sites are
+      NOTE-limited under H-5, not one; only the script's divergence reaches exit 2.
 
       MEASURED LIMIT, recorded so nobody overstates this — it is NOTE class, NOT exit 2. Reverting
       ONLY the provenance line to `minio/mc:` while leaving `image:` on quay was run on
