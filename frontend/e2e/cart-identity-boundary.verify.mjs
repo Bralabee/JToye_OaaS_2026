@@ -231,9 +231,44 @@ async function registerCustomer(page, email, returnTo) {
   }
 }
 
+/**
+ * The storefront's Add control, located by accessible name.
+ *
+ * PR #726 (A11Y-4, QA council 20260902-134741 / WCAG 2.4.6) gave that button an
+ * `aria-label` -- `Add ${product.title} to basket${inFeaturedRail ? " (featured)" : ""}`
+ * at shop-detail-client.tsx:157. That change is CORRECT and must not be reverted:
+ * nine cards on one page previously exposed the identical accessible name "Add",
+ * and a name-driven actor added the wrong dish.
+ *
+ * But `aria-label` REPLACES the accessible name, so the visible text "Add" is no
+ * longer the name, and the locator this file used at three sites -- an anchored,
+ * case-insensitive exact match on the single word "Add", deliberately not spelled
+ * out here so a future detector for it cannot trip on the comment explaining it --
+ * matched NOTHING from 2026-09-07 onward. Every arm that SEEDS localStorage kept
+ * passing while both arms that CLICK a real Add button timed out (scheduled
+ * nightlies 2026-09-07 through 09-11 -- five -- plus dispatch 34401146291; the
+ * 09-12 nightly failed earlier still, at the stack build, for an unrelated reason),
+ * so the run exited VOID
+ * at 9 of its 18 declared checks and the #459 / R-16 boundary went unguarded.
+ *
+ * The pattern is adopted VERBATIM from storefront-dish-modal-a11y.spec.ts:276 --
+ * and is the same one the jsdom render pin
+ * __tests__/shop/server-seeded-islands.test.tsx asserts against a real render --
+ * precisely so these instruments cannot drift to three different patterns again.
+ *
+ *  - Case-SENSITIVE on purpose: it mirrors the component's literal template, and
+ *    `/i` would only admit names that do not exist.
+ *  - Unanchored at the END on purpose: the Popular-rail copy of a featured dish
+ *    carries the " (featured)" suffix.
+ *  - No collision with the controls beside it: the stepper's `Increase quantity
+ *    of ...` / `Decrease quantity of ...` / `Remove ... from basket`, or the dish
+ *    modal's `Add one more ... to cart` ("to cart", not "to basket").
+ */
+const ADD_TO_BASKET = /^Add .+ to basket/
+
 async function addFirstProduct(page, slug) {
   await page.goto(`${BASE}/shop/${slug}`, { waitUntil: "domcontentloaded" })
-  const add = page.getByRole("button", { name: /^add$/i }).first()
+  const add = page.getByRole("button", { name: ADD_TO_BASKET }).first()
   await add.waitFor({ state: "visible", timeout: 30000 })
   await add.click()
   // The quantity stepper replaces the Add button once the item is in.
@@ -575,13 +610,25 @@ async function postOrderClear(browser) {
   const page = await context.newPage()
   try {
     // Enough items to clear the shop's minimum order.
+    //
+    // ADD_TO_BASKET matches BOTH name shapes the page renders -- the category-list
+    // copy and the Popular-rail copy of a featured dish -- so `adds.count()` is the
+    // same 9 it was when every Add shared the bare name "Add" (7 list copies + 2
+    // rail copies on the seeded peckham-jollof-co). The matched SET is unchanged by
+    // #726, so no count semantics change here. One consequence is worth recording
+    // rather than leaving implicit: clicking a featured-rail copy retires TWO
+    // matches (the rail copy and that same dish's list copy both swap to a
+    // stepper), while clicking a list-only copy retires one. That is acceptable
+    // because C4 needs only a basket above the shop minimum, and C4.0 asserts
+    // non-empty immediately before the order regardless -- it never asserts a
+    // specific number of matched controls.
     await page.goto(`${BASE}/shop/${SHOP}`, { waitUntil: "domcontentloaded" })
-    const adds = page.getByRole("button", { name: /^add$/i })
+    const adds = page.getByRole("button", { name: ADD_TO_BASKET })
     await adds.first().waitFor({ state: "visible", timeout: 30000 })
     const addCount = Math.min(await adds.count(), 4)
     for (let i = 0; i < addCount; i++) {
       // Each click swaps that card's Add for a stepper, so always take the first.
-      await page.getByRole("button", { name: /^add$/i }).first().click()
+      await page.getByRole("button", { name: ADD_TO_BASKET }).first().click()
       await page.waitForTimeout(300)
     }
     const before = await cartPageState(page, SHOP)
