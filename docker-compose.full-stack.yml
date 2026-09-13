@@ -571,8 +571,30 @@ services:
       - jtoye-network
 
   # MinIO — S3-compatible object storage for images
+  #
+  # REGISTRY IS quay.io, NOT Docker Hub — do not "tidy" this back to `minio/minio`.
+  # MinIO's Docker Hub repositories began requiring authentication between 2026-09-09 and
+  # 2026-09-12. Anonymous manifest probes, measured 2026-09-12, returned 401 for
+  # minio/minio:latest, minio/mc:latest AND the pinned tag minio/mc:RELEASE.2025-08-13T08-35-41Z,
+  # while library/redis:7-alpine and library/postgres:15-alpine on the SAME probe returned 200 —
+  # so this is MinIO's auth gate, not a broken probe. quay.io serves the identical artifact:
+  # quay.io/minio/mc at that same tag reports docker-content-digest
+  # sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727, which is exactly the
+  # digest already pinned in .env.example, and an all-zeros digest on the same quay repo 404s, so
+  # the probe discriminates. Nightly E2E run 34722659896 died at `Build and start the stack (no
+  # ollama)` with `pull access denied for minio/mc`, and because that step fails every later
+  # step — the whole Playwright suite and all four gates — was skipped.
+  #
+  # The prefix is written INLINE rather than behind a MINIO_REGISTRY environment variable: the
+  # registry does not vary by environment (one runtime pulls these images — this compose stack,
+  # serving local dev and the nightly — and it reaches the public internet in both), and making
+  # the supply-chain ORIGIN of a root-credentialed container settable from the environment would
+  # weaken the property the digest pin exists for (#270). The part that genuinely varies — the
+  # tag/digest — is already injected through one config layer (MINIO_IMAGE_TAG and
+  # MINIO_MC_IMAGE_TAG in .env.example). In-file precedent: the `keycloak` service's
+  # quay.io/keycloak/keycloak:24.0.5, the only other registry-prefixed image in this file.
   minio:
-    image: minio/minio:${MINIO_IMAGE_TAG:-latest}
+    image: quay.io/minio/minio:${MINIO_IMAGE_TAG:-latest}
     container_name: jtoye-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -603,7 +625,7 @@ services:
   # one-line, reviewable value in .env/.env.example (name:tag@sha256:...), and a
   # WRONG digest fails the pull loudly rather than silently falling back to latest.
   minio-init:
-    image: minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
+    image: quay.io/minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
     container_name: jtoye-minio-init
     depends_on:
       minio:
@@ -613,7 +635,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
       # The exact reference this bootstrap was launched with, echoed at run time so
       # a future run STATES which minio/mc it ran instead of leaving it inferred.
-      MINIO_MC_IMAGE_REF: minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
+      MINIO_MC_IMAGE_REF: quay.io/minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
       # Anonymous bucket policy (#626): s3:GetObject ONLY, on the OBJECT arn (/*).
       # Deliberately grants NO s3:ListBucket / GetBucketLocation on the bucket arn, so a
       # storefront image stays anonymously readable BY URL while the object inventory is

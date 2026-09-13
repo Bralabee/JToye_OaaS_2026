@@ -36,6 +36,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serve 9 distinct Add names, exactly the set the old pattern matched before #726.
 - Follow-up #741 covers making this decay class detectable; a deny-list grep gate is
   rejected there in writing because it fails open.
+### MinIO's Docker Hub images went behind auth, so the nightly could not build a stack (#743) — 2026-09-13
+
+- **The whole full-suite E2E lane was dark, not just one gate.** `minio-init` failed with
+  `pull access denied for minio/mc`, and because `Build and start the stack` is an early
+  step every later step — the entire Playwright suite and all four gates — was `skipped`.
+  Probed against the registry Docker pulls from, with controls: `library/redis:7-alpine`
+  and `library/postgres:15-alpine` both 200, while `minio/mc:latest`, `minio/minio:latest`
+  and even the pinned `minio/mc:RELEASE.2025-08-13T08-35-41Z` all returned **401**. A 401
+  rather than a 404 means an auth gate, and it covers the server image too.
+- **Sourced from quay.io, hardcoded inline**, matching the one registry-prefixed image this
+  repo already carries (`quay.io/keycloak/keycloak:24.0.5`). Deliberately NOT a
+  `MINIO_REGISTRY` variable: the value does not vary by environment, and making the
+  registry host of a root-credentialed container settable from the environment would weaken
+  the property #270's digest pin exists for.
+- **The digest pin survives byte-identical.** `quay.io/minio/mc@sha256:a7fe349e…` is 200 and
+  the release tag there carries that exact `docker-content-digest`; an all-zeros control
+  digest 404s, so the probe discriminates. A wrong digest still fails the pull loudly
+  (`rc=1 … not found`) rather than falling back.
+- **`MINIO_MC_IMAGE_REF` moved with the image.** That line is echoed at run time to state
+  which `mc` ran; left on the old registry it would have kept reporting a reference nothing
+  used.
+- **`.env.example`'s digest-re-resolve runbook was already broken** before this change — it
+  named a registry that now 401s.
+- **Corrected against interest:** declaring the provenance line as a second
+  `check-dependency-horizons` H-5 site does **not** make a forgotten prefix exit 2
+  (measured `rc=0`) — H-5's exit-2 class fires only when the pin appears on no non-comment
+  line, which the `image:` line always satisfies. It is kept as **advisory detection**, not
+  a blocking gate, proven worth keeping by control: the old single-site declaration is
+  totally silent on the same break.
+### sharp 0.35.4, clearing the HIGH advisory that was redding every PR (#744) — 2026-09-13
+
+- **A green PR went red with no code change.** Trivy's database picked up
+  GHSA-rgj7-g3m4-5g8c (HIGH) against `sharp` 0.35.3 — libheif
+  GHSA-g89c-p67h-r497 / GHSA-2jg2-4ch7-h545 — so `Security Scan` failed on every
+  branch including main. The daily-DB time-bomb shape: nothing in the tree caused it,
+  and nothing in the tree clears it except moving the flagged dependency.
+- **Lockfile refresh only.** `npm update` rather than `npm install`, so the declared range
+  is not rewritten to `^0.35.4`. No manifest change, no dependency-policy decision.
+- **`sharp` is an `overrides` entry, not a declared dependency — and that is the real
+  story.** `frontend/package.json` has no `sharp` in any dependency section; it carries
+  `overrides: { "sharp": "^0.35.0" }`. Meanwhile `next@16.3.4` declares
+  `optionalDependencies.sharp: "^0.35.4"`, which **0.35.3 did not satisfy**. The tree was
+  only valid because the root override held sharp below what Next asked for. So the
+  advisory made the problem visible; the override is what made it possible. 0.35.4 is
+  inside `^0.35.0`, so this remains a lockfile refresh with no manifest change — but the
+  override is tracked by nothing (not the horizons manifest, and not Dependabot, since it
+  is not a declared dependency) and will silently cap the tree when a future fix lands
+  only in sharp 0.36. Followed up separately.
+- **28 packages move and all 28 are sharp's own** — checked rather than assumed, since a
+  group bump can hide an unrelated transitive float: `sharp`, its 26 per-platform
+  `@img/sharp-*` / `@img/sharp-libvips-*` prebuilt binaries, and `@emnapi/runtime`
+  for the wasm targets. Zero package paths outside that family, zero `0.35.3` tarball
+  references left, 17 `0.35.4` references present as a positive control.
+- **The native binary was exercised, not just installed.** sharp backs Next image
+  optimisation and the media pipeline's WebP + 400px thumbnail, so 0.35.4 (libvips
+  8.18.6) was run on a real image from the running MinIO: JPEG 900x1200 decoded,
+  resized and transcoded to WebP 400x533. Break arm: a non-image is correctly
+  rejected, so the test can fail.
 
 ### The E2E seeder's own fixture broke ONBD-05, and its guard could not see it (#737) — 2026-09-07
 
