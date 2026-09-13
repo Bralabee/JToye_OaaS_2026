@@ -287,11 +287,16 @@ MINIO_CTR_PORT="${MINIO_CTR_PORT%%/*}"
   exit 2
 }
 
+# quay.io, NOT Docker Hub: MinIO's Hub repos require authentication as of 2026-09-12 — the
+# PINNED tag 401s too, not just :latest. quay.io serves the identical digest under the identical
+# tag, so MINIO_MC_IMAGE_TAG is unchanged by the move. Full measurement and the reason the
+# prefix is inline rather than an env var: the `minio` service comment in
+# docker-compose.full-stack.yml.
 docker run --rm --network "$MINIO_NETWORK" \
   -e MINIO_ROOT_USER -e MINIO_ROOT_PASSWORD \
   -e MC_BUCKET="$K8S_LOCAL_BACKUP_BUCKET" \
   -e MC_URL="http://${MINIO_SERVICE}:${MINIO_CTR_PORT}" \
-  --entrypoint /bin/sh "minio/mc:${MINIO_MC_IMAGE_TAG:-latest}" -c '
+  --entrypoint /bin/sh "quay.io/minio/mc:${MINIO_MC_IMAGE_TAG:-latest}" -c '
     set -e
     mc alias set bootstrap "$MC_URL" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" > /dev/null
     mc mb --ignore-existing "bootstrap/$MC_BUCKET"

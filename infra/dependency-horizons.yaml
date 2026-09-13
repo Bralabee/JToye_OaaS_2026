@@ -194,8 +194,8 @@ dependencies:
       tracked_by: "#724"
 
   - id: minio
-    pin: "minio/minio:${MINIO_IMAGE_TAG:-latest}"
-    sites: ["docker-compose.full-stack.yml:553"]
+    pin: "quay.io/minio/minio:${MINIO_IMAGE_TAG:-latest}"
+    sites: ["docker-compose.full-stack.yml:597"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -203,20 +203,77 @@ dependencies:
       endoflife.date has no `minio` product (404, measured 2026-07-27), and the pin is a
       floating `:latest` behind an env override, so there is no cycle to resolve even if the
       product existed. Horizon is UNKNOWN by construction, not by omission.
+
+      2026-09-12: RELOCATED from Docker Hub to quay.io — `pin` carries the registry prefix because
+      H-1 compares it to the `image:` string character for character. MinIO's Docker Hub repos
+      began requiring authentication on/before that date (anonymous manifest probe: 401 on
+      minio/minio:latest and minio/mc:latest AND on minio/mc's pinned tag, while
+      library/redis:7-alpine and library/postgres:15-alpine returned 200 on the same probe), which
+      blacked out the nightly E2E lane at the build step. quay.io serves the identical bytes under
+      the identical tag, so this is a registry relocation and NOT a version change: the floating
+      `:latest` position, and therefore this row's UNKNOWN horizon, are unaltered.
     manual_review:
       last_checked: "2026-07-27"
       expires: "2027-01-27"
       url: "https://github.com/minio/minio/releases"
 
   - id: minio-mc
-    pin: "minio/mc:${MINIO_MC_IMAGE_TAG:-latest}"
-    sites: ["docker-compose.full-stack.yml:584"]
+    pin: "quay.io/minio/mc:${MINIO_MC_IMAGE_TAG:-latest}"
+    sites: ["docker-compose.full-stack.yml:628", "docker-compose.full-stack.yml:638", "scripts/k8s-local-secrets.sh:299"]
     kind: image
     owner: maintainer
     eol_slug: null
     note: >-
       Same 404 + floating-tag position as `minio`. Separate row because it is a separate
       pinned artifact with its own env override.
+
+      2026-09-12: RELOCATED from Docker Hub to quay.io alongside `minio` — same 401 measurement,
+      and the digest is byte-identical across the move (quay.io/minio/mc at
+      RELEASE.2025-08-13T08-35-41Z reports docker-content-digest
+      sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727, exactly the digest
+      pinned in .env.example; an all-zeros digest on the same quay repo 404s, so the probe
+      discriminates).
+
+      THREE sites are declared deliberately:
+
+        1. the compose `image:` line -- the pull site H-1 discovery finds on its own;
+        2. the MINIO_MC_IMAGE_REF env var, which the bootstrap echoes at run time as
+           `minio-init-image-ref=` so a run STATES which image it ran. H-1 scans `image:` lines
+           only, so the provenance line is invisible to it; declaring it here is what makes
+           H-5's exact-line check look at it;
+        3. scripts/k8s-local-secrets.sh:299 -- the `docker run --entrypoint` pull site for the
+           k8s-local bootstrap, in a DIFFERENT file, which is what makes it blocking (below).
+
+      THE SAME-FILE LIMIT DOES NOT GENERALISE, and the third site proves it. A declared site in a
+      DIFFERENT file IS blocking, because the H-5 VOID arm asks whether the pin appears on any
+      non-comment line of THAT file. Measured 2026-09-13 on scripts/k8s-local-secrets.sh:299, the
+      real "docker run" pull site for the k8s-local bootstrap: clean rc=0 site-unresolvable=0;
+      reverting only that line to the Docker Hub form gives rc=2 site-unresolvable=1 and names the
+      site; restoring gives rc=0 site-unresolvable=0.
+
+      Reverting THIS SCRIPT now fails the build at H-5 (exit 2), where before it was invisible.
+      Reverting the compose image: line was already caught -- by H-1 coverage, exit 1 -- and H-5
+      gives only a NOTE there, because the provenance line keeps the pin present in that same file.
+      So the compose image: line's protection is H-1's, not H-5's: H-5's file-wide search is
+      satisfied by the provenance line, which is a log string and not a pull site. Measured
+      2026-09-13: reverting BOTH compose lines gives site-unresolvable=2, naming both, which is
+      what isolates line 638 as the cause of H-5 staying quiet over a broken image: line.
+      Only the provenance line's divergence escapes EVERY non-zero exit (measured 2026-09-13:
+      rc=0, missing-row=0, one NOTE naming :638, pin-not-at-site 4 -> 5). Under H-5 alone the
+      compose image: line is equally NOTE-limited while the provenance line carries the pin --
+      what catches that one is H-1, at exit 1. So two of the three declared sites are
+      NOTE-limited under H-5, not one; only the script's divergence reaches exit 2.
+
+      MEASURED LIMIT, recorded so nobody overstates this — it is NOTE class, NOT exit 2. Reverting
+      ONLY the provenance line to `minio/mc:` while leaving `image:` on quay was run on
+      2026-09-12: the gate exits 0 and emits `NOTE minio-mc: pin not at
+      docker-compose.full-stack.yml:638; found at line(s) 628`, lifting pin-not-at-site from 4 to
+      5. H-5's VOID arm fires only when the pin is absent from EVERY non-comment line of the file,
+      and the `image:` line always satisfies that, so no manifest shape can make this divergence
+      fail the build. The second site is still worth declaring: the control arm — the same break
+      with the old single-site declaration — produced NO minio-mc NOTE at all and left
+      pin-not-at-site at 4, i.e. total silence. So this buys advisory detection in CI output, not
+      enforcement. Do not cite it as a blocking gate.
     manual_review:
       last_checked: "2026-07-27"
       expires: "2027-01-27"
