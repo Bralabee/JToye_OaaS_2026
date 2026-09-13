@@ -234,10 +234,15 @@ dependencies:
       pinned in .env.example; an all-zeros digest on the same quay repo 404s, so the probe
       discriminates).
 
-      TWO sites are declared deliberately: the `image:` line AND the MINIO_MC_IMAGE_REF env var,
-      which the bootstrap echoes at run time as `minio-init-image-ref=` so a run STATES which
-      image it ran. H-1 discovery only scans `image:` lines, so the provenance line is invisible
-      to it; declaring it here is what makes H-5's exact-line check look at it.
+      THREE sites are declared deliberately:
+
+        1. the compose `image:` line -- the pull site H-1 discovery finds on its own;
+        2. the MINIO_MC_IMAGE_REF env var, which the bootstrap echoes at run time as
+           `minio-init-image-ref=` so a run STATES which image it ran. H-1 scans `image:` lines
+           only, so the provenance line is invisible to it; declaring it here is what makes
+           H-5's exact-line check look at it;
+        3. scripts/k8s-local-secrets.sh:299 -- the `docker run --entrypoint` pull site for the
+           k8s-local bootstrap, in a DIFFERENT file, which is what makes it blocking (below).
 
       THE SAME-FILE LIMIT DOES NOT GENERALISE, and the third site proves it. A declared site in a
       DIFFERENT file IS blocking, because the H-5 VOID arm asks whether the pin appears on any
