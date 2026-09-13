@@ -285,3 +285,26 @@ close of it — the lexical guard is the real protection there.
   file only, under the same both-directions criteria.
 - **Whether the matched set is 9 at runtime** is inferred from the seeded fixture (7 list + 2
   featured-rail copies), not measured in a browser by me.
+
+---
+
+## Correction, 2026-09-13 (appended; the text above is left as written)
+
+**The outage window recorded above as three nightlies was five.** Independent review
+re-measured the failing step of every scheduled run: 2026-09-07 `34075343411`, 09-08
+`34179020731`, 09-09 `34302015251`, 09-10 `34428261414` and 09-11 `34553474101` all failed
+at `Gate — cart identity boundary (#459 / R-16)`. The 09-12 run `34666828100` failed
+earlier, at `Build and start the stack`, for an unrelated reason (MinIO's Docker Hub images
+went behind auth — PR #743).
+
+"Three" was correct when measured on 09-09 and was then repeated into artifacts written on
+09-12 and 09-13 without re-deriving it — a number carried across a date boundary. The
+committed source comment in `frontend/e2e/cart-identity-boundary.verify.mjs`, the
+`docs/CHANGELOG.md` entry and the PR #742 body are all corrected. This file is left intact
+and corrected by this note instead, because it records what was believed at the time and
+rewriting it would destroy that; the note exists so the wrong figure cannot be re-quoted
+from here.
+
+**A corollary the correction produced:** on 09-08 through 09-11 the cart gate was the ONLY
+failing step. So this change plus #743 are together sufficient to clear the nightly lane on
+measured evidence, rather than on expectation.
