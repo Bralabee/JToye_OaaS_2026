@@ -14,9 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-g89c-p67h-r497 / GHSA-2jg2-4ch7-h545 — so `Security Scan` failed on every
   branch including main. The daily-DB time-bomb shape: nothing in the tree caused it,
   and nothing in the tree clears it except moving the flagged dependency.
-- **Lockfile refresh only.** `^0.35.0` was already declared, so 0.35.4 is inside the
-  existing range: no manifest change, no dependency-policy decision. `npm update`
-  rather than `npm install`, so the declared range is not rewritten to `^0.35.4`.
+- **Lockfile refresh only.** `npm update` rather than `npm install`, so the declared range
+  is not rewritten to `^0.35.4`. No manifest change, no dependency-policy decision.
+- **`sharp` is an `overrides` entry, not a declared dependency — and that is the real
+  story.** `frontend/package.json` has no `sharp` in any dependency section; it carries
+  `overrides: { "sharp": "^0.35.0" }`. Meanwhile `next@16.3.4` declares
+  `optionalDependencies.sharp: "^0.35.4"`, which **0.35.3 did not satisfy**. The tree was
+  only valid because the root override held sharp below what Next asked for. So the
+  advisory made the problem visible; the override is what made it possible. 0.35.4 is
+  inside `^0.35.0`, so this remains a lockfile refresh with no manifest change — but the
+  override is tracked by nothing (not the horizons manifest, and not Dependabot, since it
+  is not a declared dependency) and will silently cap the tree when a future fix lands
+  only in sharp 0.36. Followed up separately.
 - **28 packages move and all 28 are sharp's own** — checked rather than assumed, since a
   group bump can hide an unrelated transitive float: `sharp`, its 26 per-platform
   `@img/sharp-*` / `@img/sharp-libvips-*` prebuilt binaries, and `@emnapi/runtime`
