@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### netty raised to 4.1.137.Final for CVE-2026-75595 / CVE-2026-75596 — image hygiene, not a reachable hole (#752) — 2026-09-22
+
+- **Not reachable in this topology, and the entry says so.** `SslClientHelloHandler` is
+  netty's **server-side** SNI handler, and core-java does not serve over netty: it serves
+  over Tomcat (`spring-boot-starter-web`), while reactor-netty and `netty-nio-client` are
+  clients. `git grep 'SniHandler|SslClientHello|clientAuth' -- core-java/src` is empty; the
+  only netty API implemented against here is `io.netty.resolver`
+  (`SsrfGuardAddressResolverGroup`). The bump is taken because the vulnerable jar still
+  **ships in the image** — which is what the Trivy image gate scans, and what drove the
+  original pin in #318 — and so the exposure stays closed if netty ever reaches the serving
+  path. It is defence in depth plus image hygiene, not the closing of a live hole.
+- **What the two CVEs are.** CVE-2026-75595 (CVSS 9.1): `decode()` checks the wrong offset
+  before reading the 4-byte handshake header, so a ClientHello split across TLS records
+  throws and falls back to the **default** `SslContext` instead of the SNI-specific one,
+  bypassing a per-SNI `clientAuth=REQUIRE` gate.
+  CVE-2026-75596 (CVSS 8.7) shares that path: it recopies the entire buffered
+  handshake body on every additional record, so an unauthenticated peer can advertise a
+  large ClientHello, deliver it in thousands of tiny records, and drive quadratic CPU on
+  the event loop before the handshake completes — degrading TLS for every other client
+  on that loop.
+- **The pin stays on the `netty.version` BOM property**, for the reason already recorded
+  when it was introduced in #318: it re-points the imported `netty-bom` so all netty
+  artifacts move together. This tree requests `netty-handler` at 4.1.135.Final
+  transitively via `reactor-netty-core` 1.2.18 and at 4.1.118.Final elsewhere; the
+  property raises both, where forcing the single flagged artifact would not.
+- **4.1.138.Final was deliberately not taken.** It enables HTTP/2 header-value validation
+  by default — a behaviour change with its own blast radius, and its own decision.
+  4.1.137.Final is the exact fixed version for these two CVEs and stays on the 4.1 line
+  Boot 3.5.16 manages.
+- **Resolution was proven, not assumed.** `dependencyInsight --dependency netty-handler
+  --configuration runtimeClasspath` reports `4.1.137.Final (selected by rule)` with
+  `4.1.118.Final -> 4.1.137.Final` and the reactor-netty 4.1.135.Final request both
+  visibly raised. Unit suite forced through `cleanTest` so the task could not report
+  UP-TO-DATE: **1233 tests, 0 failures, 0 errors, 1 skipped**, 162 result XMLs freshly
+  written. The first attempt was a cached no-op — `BUILD SUCCESSFUL in 6s`,
+  `:core-java:test UP-TO-DATE`, zero fresh XMLs — and is not the run being reported.
+- **The one gate that could confirm the outcome does not run on a PR.** The Trivy image
+  gate lives in the `build-and-push` job, which is `if: github.event_name == 'push' ||
+  github.event_name == 'release'` — `gh pr checks` reports it `skipping`. The image
+  evidence for this change is therefore a local hand-run, and the first CI-visible signal
+  would be a red `build-and-push` on `main` after merge. Stated rather than left to be
+  inferred from a verification list that otherwise reads as full CI coverage.
+- **Pre-existing citations repaired in the same commit**, because the edit moved them:
+  `.planning/codebase/TESTING.md` and `CONCERNS.md` carry `core-java/build.gradle.kts:NN`
+  pointers that `check-doc-citations.sh` does not scan (they are not in its `DEFAULT_DOCS`),
+  so a green gate there is a pass over a set that structurally cannot contain them. All
+  nine repaired pointers were re-verified by CONTENT, not by arithmetic.
+- **It was already live before it was reviewed.** The bump sat as an uncommitted
+  working-tree edit; a 2026-09-22 rebuild built core-java from the working tree, so the
+  last locally-built image shipped `netty-handler-4.1.137.Final.jar` (read out of
+  `/app/app.jar` in the running container) while `main` still declared 4.1.136. This
+  entry is the point at which the runtime and the tree agree again.
 ### The cart-identity gate's Add locator died when #726 gave the button a name (#742) — 2026-09-13
 
 - **Nine of eighteen checks silently stopped running, and the nightly had been red for

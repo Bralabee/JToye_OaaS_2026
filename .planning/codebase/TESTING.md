@@ -116,10 +116,10 @@ static void configureProperties(DynamicPropertyRegistry registry) {
 
 **Production-shaped JWT auth in `@SpringBootTest` + `MockMvc` tests:** a `RequestPostProcessor` builds a UUID-subject Keycloak-shaped JWT carrying `realm-admin` (an implicit `GROUP_ADMIN`) rather than Spring Security Test's `@WithMockUser`, because `ShopAccessService`'s fail-closed access checks reject a non-JWT principal (`ShopControllerIntegrationTest.java` `adminJwt()`).
 
-**Gradle wiring — `test` vs `integrationTest` are two different tasks over the same source set** (`core-java/build.gradle.kts:186-284`):
+**Gradle wiring — `test` vs `integrationTest` are two different tasks over the same source set** (`core-java/build.gradle.kts:205-303`):
 - `tasks.test` **excludes** `@Tag("testcontainers")` — the fast unit job, runs on every PR/push.
 - `tasks.register<Test>("integrationTest")` **includes only** `@Tag("testcontainers")` — run locally with `./gradlew :core-java:integrationTest`.
-- Both draw from `sourceSets["test"]`. Measured contribution (`core-java/build.gradle.kts:292-307`): `integrationTest` alone contributes 607 tests across 132 classes and +25.43 coverage points over `test` alone — so **a unit-only coverage number is wrong by roughly a quarter of the codebase** and must never be quoted as "the" Java coverage figure.
+- Both draw from `sourceSets["test"]`. Measured contribution (`core-java/build.gradle.kts:311-326`): `integrationTest` alone contributes 607 tests across 132 classes and +25.43 coverage points over `test` alone — so **a unit-only coverage number is wrong by roughly a quarter of the codebase** and must never be quoted as "the" Java coverage figure.
 
 **Coverage — JaCoCo, aggregate only, floor not target:** `scripts/check-jacoco-coverage.sh` enforces a floor on the **aggregate** report (`test.exec` + `integrationTest.exec` merged), and VOIDs (exit 2) rather than reporting 0% when either `.exec` file is absent — because Gradle's `JacocoReport` has a built-in `onlyIf` that silently skips report generation when no execution data exists, which would otherwise read as a real 0%. Measured 2026-08-29 aggregate figures documented in the script: INSTRUCTION 88.06%, BRANCH 71.88%, LINE 87.55%, METHOD 87.53% (vs. 62.55/51.03/62.12/65.01 for `test` alone — the ~25-point gap the gate exists to prevent anyone from mistaking for the real number). Wired at `.github/workflows/ci-cd.yaml:382-383`.
 

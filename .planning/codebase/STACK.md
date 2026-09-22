@@ -32,6 +32,7 @@
 **Core:**
 - Spring Boot 3.5.16 — Web framework, DI, auto-configuration (`core-java/build.gradle.kts:2`).
 - Embedded Tomcat 10.1.59 — security override of Boot's managed Tomcat family (`tomcat.version` in `core-java/build.gradle.kts`, PR #733).
+- io.netty — security override of Boot's managed netty family, pinned to 4.1.137.Final via the `netty.version` Gradle extra property (`core-java/build.gradle.kts:21-52`; NOT a direct dependency — it arrives transitively via reactor-netty and `netty-nio-client`). Raised twice for security: 4.1.136.Final in PR #318 for four Trivy-flagged codec CVEs, then 4.1.137.Final in PR #752 for CVE-2026-75595 / CVE-2026-75596 in netty-handler. The second pair is NOT reachable in this topology (server-side SNI; core-java serves over Tomcat) and was taken for image hygiene — see the in-file comment before changing it.
 - Spring Data JPA + Hibernate ORM (Boot-managed version) — ORM/persistence, plus Hibernate Envers for `_aud` audit-history tables.
 - Spring Security + Spring OAuth2 Resource Server — JWT/OIDC validation against Keycloak, dual-realm (staff `jtoye-dev` + customer `jtoye-customers`).
 - Spring WebFlux (`spring-boot-starter-webflux`) — non-blocking `WebClient` used for the Anthropic/AI call path and other outbound HTTP (FHRS, Companies House, webhook delivery).
@@ -47,7 +48,7 @@
 - JUnit 5 (via `spring-boot-starter-test`) — Java unit/integration tests.
 - Testcontainers 1.21.4 (`testcontainers`, `postgresql`, `rabbitmq`, `junit-jupiter` modules) — real Postgres + RLS and real-broker fan-out proofs; run via the dedicated `integrationTest` Gradle task, tagged `testcontainers`, excluded from the default `test` task.
 - H2 (`com.h2database:h2`) — lightweight in-memory unit tests.
-- JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:367` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
+- JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:386` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
 - Jest 30.5.1 + @testing-library/react 16.3.0 + jest-environment-jsdom 30.5.1 — Frontend unit/component tests. `overrides` pins the transitive `nwsapi` at 2.2.24: 2.2.27 breaks Radix-Select role queries (two suites timeout deterministically; bisected 2026-09-07, exit criteria in #736).
 - jest-axe 11.0.0 + @axe-core/playwright 4.13.0 + axe-core 4.13.0 — Accessibility testing.
 - @playwright/test 1.62.1 — E2E browser automation (`frontend/playwright.config.ts`).
@@ -65,7 +66,7 @@
 ## Key Dependencies
 
 **Critical:**
-- PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:168`) — explicit pin, not Boot-managed.
+- PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:187`) — explicit pin, not Boot-managed.
 - AWS SDK v2 BOM 2.54.9 (`software.amazon.awssdk:bom`) + `software.amazon.awssdk:s3` — S3-compatible object storage client (MinIO in dev, real S3 in prod).
 - Stripe Java SDK 33.4.0 — Payment intents, Connect (destination charges), webhook signature verification.
 - @stripe/react-stripe-js 6.8.2 + @stripe/stripe-js 9.15.0 — Frontend Stripe Elements integration.
