@@ -26,11 +26,10 @@ layout.buildDirectory.set(file("build-local"))
 // netty-bom so the whole netty family moves together; forcing the two flagged
 // artifacts alone would leave them out of step with their siblings.
 //
-// 4.1.136.Final is the exact fixed version for the Trivy image-gate findings
-// CVE-2026-59901 (netty-codec, Bzip2Decoder infinite loop) and CVE-2026-55831 /
-// CVE-2026-55833 / CVE-2026-56745 (netty-codec-http). Staying on 4.1.x keeps us
-// on the line Boot 3.5.16 already manages — 4.2.x would be an unrequested jump.
-extra["netty.version"] = "4.1.136.Final"
+// 4.1.137.Final is the exact fixed version for CVE-2026-75595 (critical SNI
+// routing/mTLS bypass) and CVE-2026-75596 (quadratic ClientHello reassembly CPU
+// amplification) in io.netty:netty-handler.
+extra["netty.version"] = "4.1.137.Final"
 
 // Same shape, same reason, different family. Spring Boot 3.5.16's BOM pins
 // httpcore5 to 5.3.6, and that pin DOWNGRADES what the AWS SDK asks for:
