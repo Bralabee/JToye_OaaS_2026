@@ -1,6 +1,30 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) and later on 2026-09-07 (dependabot queue + architecture diagrams merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged) and 2026-09-22 (runtime re-proven, stack torn down for a planned pause). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**2026-09-22 delta — the runtime was re-proven fresh, then deliberately torn down; ordinary work resumes 2026-10-01.**
+The local stack was found RUNNING but stale: `scripts/check-runtime-freshness.sh` failed with the
+frontend image tagged 2026-09-07 against build inputs that moved on 2026-09-13 (`0a0e277f`, sharp
+0.35.4). Rebuilding it surfaced a composition of two known traps that is worth carrying forward,
+because neither one alone predicts it. First, `docker compose -f docker-compose.full-stack.yml up
+-d --build frontend` is **not frontend-only**: `frontend` depends_on `core-java`, so compose
+rebuilt and recreated core-java as well. Second, the recreated core-java then took host port
+**:9091** out of its `9090-9091:9090` range, because the container it replaced was still releasing
+:9090 at creation time. The frontend bundle bakes `NEXT_PUBLIC_API_URL=http://localhost:9090` at
+build time, so that pair silently moves the API off the port the browser calls while SSR keeps
+rendering pages perfectly — the #671 failure mode, reached through a door the #671 note does not
+name. Recovery was `up -d --force-recreate --no-deps core-java` (it took :9090 first try), after
+which the monitoring stack was started so Prometheus pins :9091 and the range cannot re-roll.
+Re-proven afterwards, in this order: the freshness gate green on all four built services; the
+smoke suite passing every test — and it had been observed failing every test minutes earlier while
+the port was wrong, so the instrument was shown able to fire; and the real browser-side call,
+`GET /public/shops`, returning three shops, which is the exact request
+`frontend/app/shop/shop-discovery-client.tsx` issues. Both compose projects were then brought down
+**without `-v`**, so all six named volumes survive. The checkpoint to compare against on the next
+bring-up, read from the live database rather than remembered: schema head **V66**, `shops` = 5 rows.
+**Opened in the same session:** a PR raising the `netty.version` pin to 4.1.137.Final for
+CVE-2026-75595 (an SNI/mTLS bypass, CVSS 9.1) and CVE-2026-75596. It had been sitting as an
+uncommitted working-tree edit that a rebuild had already baked into the running image — live in the
+runtime, on no branch and in no review — which is the state this delta exists to end.
 
 **2026-08-31 delta — customer-surface P0/P1 fixes (PR #711, quick task 260831-gnm).** A five-lane
 human-like utilisation audit of the customer surfaces found 15 defects; PR #711 fixed the six with

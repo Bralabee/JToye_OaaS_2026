@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### netty 4.1.137.Final closes an SNI/mTLS bypass and a handshake CPU amplification (#752) — 2026-09-22
+
+- **CVE-2026-75595 (CVSS 9.1) is an authentication bypass, not a slowdown.**
+  `SslClientHelloHandler#decode` in netty-handler 4.1.136.Final checks the wrong offset
+  before reading the 4-byte handshake header, so a ClientHello split across TLS records
+  throws and falls back to the **default** `SslContext` instead of the SNI-specific one.
+  A per-SNI `clientAuth=REQUIRE` gate is bypassed by an attacker who simply fragments.
+- **CVE-2026-75596 (CVSS 8.7) shares that path.** It recopies the entire buffered
+  handshake body on every additional record, so an unauthenticated peer can advertise a
+  large ClientHello, deliver it in thousands of tiny records, and drive quadratic CPU on
+  the event loop before the handshake completes — degrading TLS for every other client
+  on that loop.
+- **The pin stays on the `netty.version` BOM property**, for the reason already recorded
+  when it was introduced in #318: it re-points the imported `netty-bom` so all netty
+  artifacts move together. This tree requests `netty-handler` at 4.1.135.Final
+  transitively via `reactor-netty-core` 1.2.18 and at 4.1.118.Final elsewhere; the
+  property raises both, where forcing the single flagged artifact would not.
+- **4.1.138.Final was deliberately not taken.** It enables HTTP/2 header-value validation
+  by default — a behaviour change with its own blast radius, and its own decision.
+  4.1.137.Final is the exact fixed version for these two CVEs and stays on the 4.1 line
+  Boot 3.5.16 manages.
+- **Resolution was proven, not assumed.** `dependencyInsight --dependency netty-handler
+  --configuration runtimeClasspath` reports `4.1.137.Final (selected by rule)` with
+  `4.1.118.Final -> 4.1.137.Final` and the reactor-netty 4.1.135.Final request both
+  visibly raised. Unit suite forced through `cleanTest` so the task could not report
+  UP-TO-DATE: **1233 tests, 0 failures, 0 errors, 1 skipped**, 162 result XMLs freshly
+  written. The first attempt was a cached no-op — `BUILD SUCCESSFUL in 6s`,
+  `:core-java:test UP-TO-DATE`, zero fresh XMLs — and is not the run being reported.
+- **It was already live before it was reviewed.** The bump sat as an uncommitted
+  working-tree edit; a 2026-09-22 rebuild built core-java from the working tree, so the
+  last locally-built image shipped `netty-handler-4.1.137.Final.jar` (read out of
+  `/app/app.jar` in the running container) while `main` still declared 4.1.136. This
+  entry is the point at which the runtime and the tree agree again.
 ### The cart-identity gate's Add locator died when #726 gave the button a name (#742) — 2026-09-13
 
 - **Nine of eighteen checks silently stopped running, and the nightly had been red for

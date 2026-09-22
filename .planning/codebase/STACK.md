@@ -47,7 +47,7 @@
 - JUnit 5 (via `spring-boot-starter-test`) — Java unit/integration tests.
 - Testcontainers 1.21.4 (`testcontainers`, `postgresql`, `rabbitmq`, `junit-jupiter` modules) — real Postgres + RLS and real-broker fan-out proofs; run via the dedicated `integrationTest` Gradle task, tagged `testcontainers`, excluded from the default `test` task.
 - H2 (`com.h2database:h2`) — lightweight in-memory unit tests.
-- JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:367` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
+- JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:366` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
 - Jest 30.5.1 + @testing-library/react 16.3.0 + jest-environment-jsdom 30.5.1 — Frontend unit/component tests. `overrides` pins the transitive `nwsapi` at 2.2.24: 2.2.27 breaks Radix-Select role queries (two suites timeout deterministically; bisected 2026-09-07, exit criteria in #736).
 - jest-axe 11.0.0 + @axe-core/playwright 4.13.0 + axe-core 4.13.0 — Accessibility testing.
 - @playwright/test 1.62.1 — E2E browser automation (`frontend/playwright.config.ts`).
@@ -65,7 +65,7 @@
 ## Key Dependencies
 
 **Critical:**
-- PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:168`) — explicit pin, not Boot-managed.
+- PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:167`) — explicit pin, not Boot-managed.
 - AWS SDK v2 BOM 2.54.9 (`software.amazon.awssdk:bom`) + `software.amazon.awssdk:s3` — S3-compatible object storage client (MinIO in dev, real S3 in prod).
 - Stripe Java SDK 33.4.0 — Payment intents, Connect (destination charges), webhook signature verification.
 - @stripe/react-stripe-js 6.8.2 + @stripe/stripe-js 9.15.0 — Frontend Stripe Elements integration.
