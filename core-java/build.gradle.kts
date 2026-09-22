@@ -23,12 +23,32 @@ layout.buildDirectory.set(file("build-local"))
 // and software.amazon.awssdk:netty-nio-client, and every artifact is pinned by
 // io.spring.dependency-management ("selected by rule" in dependencyInsight).
 // Boot's documented override is this property, which re-points the imported
-// netty-bom so the whole netty family moves together; forcing the two flagged
+// netty-bom so the whole netty family moves together; forcing the flagged
 // artifacts alone would leave them out of step with their siblings.
 //
-// 4.1.137.Final is the exact fixed version for CVE-2026-75595 (critical SNI
-// routing/mTLS bypass) and CVE-2026-75596 (quadratic ClientHello reassembly CPU
-// amplification) in io.netty:netty-handler.
+// WHY THE PIN EXISTS AT ALL (#318, 2026-07-27): the Trivy image gate. It fails
+// the build on fixable CRITICAL/HIGH in the produced image, and it named
+// 4.1.136.Final for CVE-2026-59901 (netty-codec) and CVE-2026-55831 /
+// CVE-2026-55833 / CVE-2026-56745 (netty-codec-http). Do NOT drop below
+// 4.1.136.Final: those four come straight back.
+//
+// RAISED TO 4.1.137.Final (#752) for CVE-2026-75595 and CVE-2026-75596, both in
+// io.netty:netty-handler's SslClientHelloHandler. Read the reachability before
+// treating this line as a load-bearing auth control: SslClientHelloHandler is
+// netty's SERVER-side SNI handler, and this service does not serve over netty --
+// it serves over Tomcat (spring-boot-starter-web below), and reactor-netty and
+// netty-nio-client are CLIENTS. `git grep SniHandler|SslClientHello|clientAuth
+// -- core-java/src` is empty; the only netty API implemented against here is
+// io.netty.resolver (SsrfGuardAddressResolverGroup). So the SNI/mTLS bypass is
+// NOT reachable in this topology. The bump is taken because the vulnerable jar
+// still ships in the image and the image gate scans what ships, not what runs --
+// and so the exposure stays closed if a future change does put netty on the
+// serving path.
+//
+// Staying on 4.1.x keeps us on the line Boot 3.5.16 already manages. 4.2.x would
+// be an unrequested jump. 4.1.138.Final was also deliberately not taken: it turns
+// on HTTP/2 header-value validation by default, which is a behaviour change with
+// its own blast radius and its own decision.
 extra["netty.version"] = "4.1.137.Final"
 
 // Same shape, same reason, different family. Spring Boot 3.5.16's BOM pins
@@ -297,8 +317,8 @@ tasks.register<Test>("integrationTest") {
 //
 // WHY AGGREGATE, AND WHY THE UNIT-ONLY FLOOR WAS REJECTED
 //
-//   `tasks.test` above EXCLUDES the `testcontainers` tag (:183-186) and
-//   `integrationTest` runs ONLY that tag (:202-284). Both drive sourceSets["test"], so
+//   `tasks.test` above EXCLUDES the `testcontainers` tag (:202-205) and
+//   `integrationTest` runs ONLY that tag (:221-303). Both drive sourceSets["test"], so
 //   the two halves of ONE suite execute in two tasks — and, in CI, in two different
 //   jobs. Measured on this tree 2026-08-28 (JaCoCo 0.8.12, Gradle 8.10.2, JDK 21):
 //
@@ -357,7 +377,7 @@ tasks.register<Test>("integrationTest") {
 // PATHS
 //
 //   Every artefact lands under core-java/build-local/ (the layout.buildDirectory
-//   redirect at :15). core-java/build/ is STALE, and reading it is a recorded
+//   redirect at :19). core-java/build/ is STALE, and reading it is a recorded
 //   stale-artifact trap in this repo. Both report destinations below are set
 //   EXPLICITLY rather than left to the plugin's naming convention, so the gate's
 //   input path is a fact in version control instead of an inference.
