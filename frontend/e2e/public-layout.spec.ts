@@ -2,7 +2,7 @@
  * Public-surface layout conformance — THE CI BROWSER GATE.
  *
  * Every other spec in this directory needs the full docker stack (Postgres,
- * Keycloak, core-java, MinIO…), which is why none of them run in CI. The
+ * Keycloak, core-java, Azurite…), which is why none of them run in CI. The
  * consequence was that layout, image rendering and interaction — the dimension
  * users actually report defects in — had ZERO automated coverage, while text
  * had three static gates. Four user-reported defects in a row landed in that
