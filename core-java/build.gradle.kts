@@ -233,6 +233,17 @@ tasks.test {
     // selected DockerClientProviderStrategy uses, it negotiates an API the daemon accepts.
     environment("DOCKER_API_VERSION", "1.45")
     systemProperty("api.version", "1.45")
+
+    // 36-06, assumption A1: WorkloadIdentityCredentialBuildTest proves the credential works with
+    // JNA excluded by loading azure-identity from a class loader made ONLY of the production
+    // runtimeClasspath. The test classpath cannot answer that question: Testcontainers'
+    // docker-java-transport-zerodep puts net.java.dev.jna:jna on it. The test fails closed when
+    // this property is absent.
+    val productionRuntimeClasspath = configurations.runtimeClasspath.get()
+    inputs.files(productionRuntimeClasspath).withPropertyName("productionRuntimeClasspath")
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Djtoye.productionRuntimeClasspath=" + productionRuntimeClasspath.asPath)
+    })
 }
 
 // QA-council #71: dedicated task for the @Tag("testcontainers") integration
