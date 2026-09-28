@@ -788,7 +788,7 @@ Plans:
   5. The pg-backup job writes to Azure Blob through a write-only uploader and a two-arm restore drill (zero-row arm caught, live-count arm matched) runs every night; k8s base/staging/production/local carry the Blob config with Workload Identity, dedicated ServiceAccounts, no storage Secret, no port 9000, updated invariants and goldens; Phase 29 has a handoff on main with the provisioning spec, the operator-secret list change (7 → 3) and a merge-conflict map. (BLOB-06, BLOB-07, BLOB-10)
   6. Frontend `remotePatterns` and CSP `img-src` admit the Azurite origin and nothing broader (tests fail on a wildcard); a repo-wide, fail-armed CI gate finds no MinIO/S3 residue outside a reasoned allowlist; horizons carry an azurite row; the content-type gate is re-targeted to Blob; docs and test metrics are current. (BLOB-08, BLOB-09)
 
-**Plans:** 2/18 plans executed (8 waves)
+**Plans:** 3/18 plans executed (8 waves)
 
 Plans:
 
@@ -796,7 +796,7 @@ Plans:
 
 - [x] 36-01-PLAN.md — TRACER: StorageService on the Azure Blob SDK via a `BlobObjectStore` adapter, key routing to public/private containers, #626 both ways on Azurite, AWS SDK removed
 - [x] 36-02-PLAN.md — Azurite replaces MinIO in compose, the hybrid runtime (D-08), horizons and the nightly service list; env contract drops object-store credentials
-- [ ] 36-03-PLAN.md — Frontend CSP `img-src` and `remotePatterns` admit the Azurite origin and nothing broader (test-enforced)
+- [x] 36-03-PLAN.md — Frontend CSP `img-src` and `remotePatterns` admit the Azurite origin and nothing broader (test-enforced)
 - [ ] 36-04-PLAN.md — `blobctl`: one-switch, emulator-only, write-only Go uploader for the backup image; CI, Dependabot, targeted gitleaks allowlist
 - [ ] 36-05-PLAN.md — Owner decision D-11 (storage account names/regions) + the Blob estate provisioning runbook for Phase 29 (checkpoint)
 

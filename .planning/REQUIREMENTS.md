@@ -193,7 +193,7 @@ they implement are `36-CONTEXT.md` D-01..D-10 (owner, 2026-09-28). Phase 36 bloc
 - [ ] **BLOB-05**: Dev reseed (D-04/D-05): tenant-looped, dev-only, non-zero before-count on a table known to hold rows; pre-existing ACTIVE/PENDING `media_asset` rows marked FAILED; every servable storage URL HEADs 200 on Azurite; a real browser shows `naturalWidth > 0` for an image served from the storage origin.
 - [ ] **BLOB-06**: The pg-backup CronJob writes to Azure Blob (Workload Identity in staging/production, Azurite locally) via a write-only uploader; a restore from an Azurite-stored dump is exercised two-arm (arm A zero-row, arm B row-count match) by a nightly-wired gate; the image tag moves from `:15` (D-10).
 - [ ] **BLOB-07**: k8s base/staging/production/local config carries the Blob endpoints; dedicated ServiceAccounts plus the `azure.workload.identity/use` pod label on core-java and pg-backup in staging/production; no storage Secret reference renders in staging/production; NetworkPolicies drop 9000; render invariants, env contract and goldens updated.
-- [ ] **BLOB-08**: Frontend CSP `img-src` swaps the retired dev origin for `http://localhost:10000` and gains nothing broader; `next.config.mjs` `remotePatterns` admits exact origins only, never `*.blob.core.windows.net`.
+- [x] **BLOB-08**: Frontend CSP `img-src` swaps the retired dev origin for `http://localhost:10000` and gains nothing broader; `next.config.mjs` `remotePatterns` admits exact origins only, never `*.blob.core.windows.net`.
 - [ ] **BLOB-09**: Zero MinIO/S3 residue (repo-wide, fail-armed CI gate with a reasoned allowlist for historical records); horizons carry an azurite row; the content-type gate is re-targeted to Blob; docs and metrics are updated.
 - [ ] **BLOB-10**: Phase 29 handoff on main: a provisioning spec (accounts, `AllowBlobPublicAccess`, container access levels, WORM + soft delete, identities + federated credentials, RBAC scopes, `az aks update --enable-workload-identity`), the operator-secret list change (7 → 3) and the merge-conflict map for `phase-29-research`.
 
@@ -290,7 +290,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | BLOB-05 | Phase 36 | 36-11, 36-12, 36-13 | Planned 2026-09-28 — not started |
 | BLOB-06 | Phase 36 | 36-04, 36-08, 36-09 | Planned 2026-09-28 — not started (WORM/soft delete are unprovable on Azurite; stated for Phase 29) |
 | BLOB-07 | Phase 36 | 36-09, 36-10 | Planned 2026-09-28 — not started |
-| BLOB-08 | Phase 36 | 36-03 | Planned 2026-09-28 — not started |
+| BLOB-08 | Phase 36 | 36-03 | Complete 2026-09-28 (36-03: CSP img-src + remotePatterns on the Azurite origin, test-enforced; runtime proof is 36-12/36-13) |
 | BLOB-09 | Phase 36 | 36-02, 36-10, 36-12, 36-14, 36-15, 36-16, 36-17 | Planned 2026-09-28 — not started |
 | BLOB-10 | Phase 36 | 36-05, 36-17 | Planned 2026-09-28 — not started |
 
