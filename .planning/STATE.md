@@ -1,17 +1,21 @@
 ---
-gsd_state_version: 1.0
+gsd_state_version: "1.0"
 milestone: v2.3
-milestone_name: vendor-ops-ai-interleaved
+milestone_name: Vendor Ops + AI Interleaved
+current_phase: 36
+current_phase_name: Azure Blob Storage Throughout
 status: executing
-stopped_at: Phase 35 COMPLETE 13/13 (owner gate taken 2026-08-30, CONTEXT.md §7 — Detail 1100 accepted, ORCH-01 /shop 1280 confirmed; approvals tier undecidable on an empty queue, filed #690; merged as PR #691)
-last_updated: "2026-08-30T15:25:00.000Z"
-last_activity: 2026-08-30
+stopped_at: "Phase 36 PLANNED 2026-09-28 — 18 plans in 8 waves (BLOB-01..10), plan-checker PASSED; ready for /gsd-execute-phase 36"
+last_updated: "2026-09-28T20:45:05.335Z"
+last_activity: 2026-09-28
+last_activity_desc: "Phase 36 (Azure Blob Storage Throughout) planned: research, validation strategy, pattern map, 18 plans in 8 waves, plan-checker PASSED; owner decisions D-07..D-10 recorded in 36-CONTEXT.md"
+state_head: eb3c798fb109d29331744012ecadfb29dfd35829
 progress:
-  total_phases: 14
+  total_phases: 16
   completed_phases: 11
-  total_plans: 119
+  total_plans: 136
   completed_plans: 119
-  percent: 100
+  percent: 69
 ---
 
 # Project State
@@ -25,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 35 (horizontal-layout-contract) — **COMPLETE, 13 of 13**, merged as **PR #691** (2026-08-30 06:01 UTC)
-Next: no phase in progress. Phase 29 remains PAUSED at 9/16 on two owner actions (staging DNS + operator secrets, body on branch `phase-29-research`); Phases 30/32 unplanned. Open decision from 35-13: the approvals-queue tier (#690), now decidable — the queue renders a real MANUAL_REVIEW application since the 2026-08-30 fresh-volume cycle.
+Phase: 36 (Azure Blob Storage Throughout) — READY TO EXECUTE
+Next: Phase 36 (Azure Blob Storage Throughout) is planned (18 plans, 8 waves) — run /gsd-execute-phase 36. It blocks Phase 29 plans 29-11 onward. Phase 29 remains PAUSED at 9/16 on two owner actions (staging DNS + operator secrets, body on branch `phase-29-research`); Phases 30/32 unplanned. Open decision from 35-13: the approvals-queue tier (#690), now decidable — the queue renders a real MANUAL_REVIEW application since the 2026-08-30 fresh-volume cycle.
 
 > **PERCENT PROVENANCE (2026-08-30): 100 means "of written plans", not "of the milestone".**
 > Counters re-measured from disk per the 35-11 rule: `git ls-files` reports **119** `*-PLAN.md`
@@ -552,7 +556,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Executing Phase 34
+Status: Ready to execute
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -565,7 +569,7 @@ Status: Executing Phase 34
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
 Last activity: 2026-09-07 - Quick task 260907-a30: PR #734 + the dependabot queue (#728–#732) all merged — fast-uri Trivy time-bomb cleared by rebasing onto main, jest 30 landed (snapshot-header fix), transitive nwsapi 2.2.27 regression bisected and pinned back under #736, #734's counted claims re-pinned to a990551e (66 migrations). Previously: 2026-09-02 - Quick task 260902-qsc: dependency-horizon gate deferral — rabbitmq/4.3 crossed the H-3 90-day window with no code change; dated exemption to 2026-11-30 under #724 (PR #725), unblocking PR #723 and every PR after it. Previously: 2026-08-31 - Quick task 260831-pkp MERGED as PR #718 incl. all five review findings, browser-verified both directions on the rebuilt stack. Landing redesign: sketch 005 rejected whole, sketch 006 winner A ("The Pass", broken-grid round 2), sketch 007 full-page elaboration merged (PR #720) and awaiting owner elegance verdict. Previously: quick task 260831-lxf: R-16 anonymous-downgrade cart leak fixed (writes never erase an owner), verify script CI-wired, sixth quality dimension added. Previously: quick task 260831-jz4: Keycloak realm SMTP + branding (R-05/R-06/R-11) — reset email delivers via Mailhog, enumeration oracle closed, custom jtoye login theme human-approved on round 2. Previously: quick task 260831-gnm: customer-surface P0/P1 fixes — vendor SSO signout closed, search revert/race, hero blanking, fail-safe signout teardown, cookie-notice overlay; all six browser-verified fail→pass in two rounds
 
-Progress: [██████████] 98%
+Progress: [███████░░░] 69%
 
 ## Milestone v2.3 Phase Map
 
