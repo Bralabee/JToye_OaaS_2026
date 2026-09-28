@@ -73,7 +73,8 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - PostgreSQL JDBC Driver 42.7.13 - Database connectivity
 - Hibernate ORM (via Spring Boot 3.5.16) - JPA implementation
 - Hibernate Envers - Audit history tracking
-- AWS SDK v2 (2.54.9) - S3 API for image storage
+- Azure Storage Blob SDK (12.35.1) - Blob API for image storage
+- Azure Identity (1.18.6) - Workload Identity credential for Blob in AKS
 - Stripe React/JS 6.8.2, 9.15.0 - Payment processing UI integration
 - Axios 1.19.0 - HTTP client for API calls
 - Framer Motion 13.1.1 - Animation library

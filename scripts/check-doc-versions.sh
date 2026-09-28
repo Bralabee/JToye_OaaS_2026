@@ -165,7 +165,10 @@ SPECS=(
 	"Testcontainers|Testcontainers [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.testcontainers:testcontainers')"
 	"MapStruct|MapStruct [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.mapstruct:mapstruct')"
 	"PostgreSQL JDBC|PostgreSQL JDBC( Driver)? [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.postgresql:postgresql')"
-	"AWS SDK v2|AWS SDK v2 (BOM |\()[0-9]+\.[0-9]+\.[0-9]+|$(g 'software.amazon.awssdk:bom')"
+	# Phase 36 replaced the retired object-store SDK row (its BOM left the build) with the two
+	# Azure coordinates that build.gradle.kts pins explicitly.
+	"Azure Storage Blob SDK|Azure Storage Blob SDK \(?[0-9]+\.[0-9]+\.[0-9]+|$(g 'com.azure:azure-storage-blob')"
+	"Azure Identity|Azure Identity \(?[0-9]+\.[0-9]+\.[0-9]+|$(g 'com.azure:azure-identity')"
 	"Resilience4j|Resilience4j( Spring Boot 3 Starter)? [0-9]+\.[0-9]+\.[0-9]+|$(g 'io.github.resilience4j:resilience4j-spring-boot3')"
 	"Stripe Java SDK|Stripe Java SDK [0-9]+\.[0-9]+\.[0-9]+|$(g 'com.stripe:stripe-java')"
 	"Bucket4j|Bucket4j( core)? [0-9]+\.[0-9]+\.[0-9]+|$(g 'com.bucket4j:bucket4j-core')"
