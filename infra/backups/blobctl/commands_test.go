@@ -275,10 +275,12 @@ type blobServiceFake struct {
 	methods       []string
 	unauthorised  int
 	createHeaders []http.Header
+	staged        map[string][]byte // "<container>/<name>/<blockid>" -> uncommitted bytes
+	commits       int
 }
 
 func newBlobServiceFake() *blobServiceFake {
-	return &blobServiceFake{blobs: map[string][]byte{}, containers: map[string]string{}}
+	return &blobServiceFake{blobs: map[string][]byte{}, containers: map[string]string{}, staged: map[string][]byte{}}
 }
 
 func (f *blobServiceFake) fail(w http.ResponseWriter, status int, code string) {
@@ -319,6 +321,39 @@ func (f *blobServiceFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.containers[container] = r.Header.Get("x-ms-blob-public-access")
+		w.WriteHeader(http.StatusCreated)
+
+	case r.Method == http.MethodPut && name != "" && q.Get("comp") == "block":
+		b, _ := io.ReadAll(r.Body)
+		f.staged[container+"/"+name+"/"+q.Get("blockid")] = b
+		w.WriteHeader(http.StatusCreated)
+
+	case r.Method == http.MethodPut && name != "" && q.Get("comp") == "blocklist":
+		f.commits++
+		k := container + "/" + name
+		if _, exists := f.blobs[k]; exists && r.Header.Get("If-None-Match") == "*" {
+			f.fail(w, http.StatusConflict, "BlobAlreadyExists")
+			return
+		}
+		var list struct {
+			Latest []string `xml:"Latest"`
+		}
+		raw, _ := io.ReadAll(r.Body)
+		if err := xml.Unmarshal(raw, &list); err != nil || len(list.Latest) == 0 {
+			f.fail(w, http.StatusBadRequest, "InvalidBlockList")
+			return
+		}
+		var assembled []byte
+		for _, id := range list.Latest {
+			part, ok := f.staged[k+"/"+id]
+			if !ok {
+				f.fail(w, http.StatusBadRequest, "InvalidBlockList")
+				return
+			}
+			assembled = append(assembled, part...)
+		}
+		f.blobs[k] = assembled
+		w.Header().Set("ETag", `"0x2"`)
 		w.WriteHeader(http.StatusCreated)
 
 	case r.Method == http.MethodPut && name != "" && q.Get("comp") == "":
@@ -456,5 +491,37 @@ func TestAzureStore_EndToEndAgainstFakeBlobService(t *testing.T) {
 		if v := h.Get("x-ms-blob-public-access"); v != "" {
 			t.Errorf("container create asked for public access %q", v)
 		}
+	}
+}
+
+func TestAzureStore_StagedUploadAlsoNeverOverwrites(t *testing.T) {
+	// Drive the multi-block path (Put Block + Put Block List) with small limits.
+	// azblob's own UploadFile drops the access condition on this path; blobctl's
+	// commit must still carry If-None-Match: *.
+	oldLimit, oldBlock := singleShotLimit, stageBlockSize
+	singleShotLimit, stageBlockSize = 10, 4
+	t.Cleanup(func() { singleShotLimit, stageBlockSize = oldLimit, oldBlock })
+
+	fake := newBlobServiceFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	code, _, stderr := adapterRun(t, srv, "upload", writeTemp(t, "PGDMP-staged-original"), "jtoye-db-backups", "backups/big.dump")
+	if code != exitOK {
+		t.Fatalf("staged upload exit = %d (%s)", code, stderr)
+	}
+	if fake.commits != 1 {
+		t.Fatalf("commits = %d, want 1: the staged path was not taken", fake.commits)
+	}
+	if got := string(fake.blobs["jtoye-db-backups/backups/big.dump"]); got != "PGDMP-staged-original" {
+		t.Fatalf("assembled blob = %q", got)
+	}
+
+	code, _, stderr = adapterRun(t, srv, "upload", writeTemp(t, "PGDMP-staged-REPLACEMENT"), "jtoye-db-backups", "backups/big.dump")
+	if code != exitExists {
+		t.Errorf("staged re-upload exit = %d, want %d (%s)", code, exitExists, stderr)
+	}
+	if got := string(fake.blobs["jtoye-db-backups/backups/big.dump"]); got != "PGDMP-staged-original" {
+		t.Errorf("stored bytes = %q: the staged commit overwrote the existing blob", got)
 	}
 }
