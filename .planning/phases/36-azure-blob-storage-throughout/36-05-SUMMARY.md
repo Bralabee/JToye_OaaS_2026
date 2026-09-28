@@ -286,3 +286,9 @@ None. The runbook introduces no new surface beyond the plan's `<threat_model>` (
 ---
 *Phase: 36-azure-blob-storage-throughout*
 *Completed: 2026-09-28*
+
+## Self-Check: PASSED
+
+- Files: docs/runbooks/azure-blob-provisioning.md, 36-05-SUMMARY.md, .planning/WINDOWS.md all FOUND.
+- Commits: 2e25b0dd, 50e88f76, 43efd0d6 all FOUND (git cat-file -e).
+- The one unmet must-have (a check-name verdict) is reported under Issues Encountered, not counted as passed.
