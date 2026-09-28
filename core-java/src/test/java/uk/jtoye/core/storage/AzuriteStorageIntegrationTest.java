@@ -124,12 +124,18 @@ class AzuriteStorageIntegrationTest {
         String url = storage.putBytes(key, raw, "image/jpeg");
 
         assertThat(url).as("a private object must not be given a public URL").isNull();
-        String direct = blobEndpoint() + "/" + AzuriteTestSupport.QUARANTINE_CONTAINER + "/" + key;
-        HttpResponse<byte[]> get = anonymousGet(direct);
-        assertThat(get.statusCode()).as("anonymous GET of %s", direct).isNotEqualTo(200);
-        assertThat(new String(get.body(), java.nio.charset.StandardCharsets.ISO_8859_1))
-                .as("the refused response must not carry the raw (un-stripped) bytes")
-                .doesNotContain(new String(raw, java.nio.charset.StandardCharsets.ISO_8859_1));
+        // Probe the key in BOTH containers. Probing only the private one cannot fail on the
+        // regression that matters: if routing ever sent a quarantine key to the public container,
+        // the private URL is simply 404 (absent) and the raw bytes are served from the public one.
+        for (String container : java.util.List.of(
+                AzuriteTestSupport.QUARANTINE_CONTAINER, AzuriteTestSupport.PUBLIC_CONTAINER)) {
+            String direct = blobEndpoint() + "/" + container + "/" + key;
+            HttpResponse<byte[]> get = anonymousGet(direct);
+            assertThat(get.statusCode()).as("anonymous GET of %s", direct).isNotEqualTo(200);
+            assertThat(new String(get.body(), java.nio.charset.StandardCharsets.ISO_8859_1))
+                    .as("the refused response must not carry the raw (un-stripped) bytes")
+                    .doesNotContain(new String(raw, java.nio.charset.StandardCharsets.ISO_8859_1));
+        }
     }
 
     @Test
