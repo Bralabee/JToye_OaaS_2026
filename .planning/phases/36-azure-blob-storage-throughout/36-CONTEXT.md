@@ -81,6 +81,28 @@ and backup-destination decisions it depended on.
 - **D-10:** The **pg-backup image tag is bumped** from `:15`, because its contents change (awscli out,
   the Blob uploader in). The CronJob, the parity gate and the goldens move in the same change.
   Resolves research OQ7.
+- **D-11:** Storage accounts (owner, via orchestrator checkpoint, 2026-09-28; plan 36-05 Task 1,
+  **option-a**). **Staging:** media **`jtoyestgmedia`** (`uksouth`) and backup **`jtoyestgbackup`**
+  (`ukwest`). **Production:** media **`jtoyeprodmedia`** (`uksouth`) and backup
+  **`jtoyeprodbackup`** (`ukwest`). All four are `StorageV2` / **`Standard_LRS`**. Media accounts sit
+  with the AKS cluster. Each backup account is in a different region from staging (D-01), and
+  `uksouth` ↔ `ukwest` was measured as an Azure region pair on 2026-09-28, which confirms research A12.
+  **Recorded, NOT locked:** a WORM container-level time-based retention of **30 days** on
+  `jtoye-db-backups`, blob soft delete **14 days**, and a lifecycle delete of `backups/` at **35 days**.
+  The policy stays UNLOCKED through the Phase 29 restore drill, and a human locks it
+  (`docs/runbooks/azure-blob-provisioning.md` §4.4). **Availability, 2026-09-28, subscription
+  `c483d353-5f61-4587-a790-addb9ab5fb94` resolved explicitly:**
+  `az storage account check-name` gave **no verdict** for any of the four names. Every call failed
+  with rc=3 `SubscriptionNotFound`, because the `Microsoft.Storage` resource provider is
+  **NotRegistered** on the subscription. Registering it is a write, which this plan does not make.
+  The secondary, DNS-only evidence: all four `<name>.blob.core.windows.net` returned **NXDOMAIN**,
+  while the control `azureopendatastorage` resolved and a random name returned NXDOMAIN. So no
+  storage account held any of the names on that date. Phase 29 registers the provider and re-runs
+  `check-name` immediately before creating (runbook §2.1). If a name is taken, the runbook's §9
+  applies: a new owner decision, never a substitute. — **Reversibility:** costly — the names are
+  embedded in persisted staging/production image URLs and the goldens. Before the first deploy they
+  change by editing the overlays and regenerating the goldens; after it, a tenant-looped URL rewrite
+  is needed.
 
 ### Claude's Discretion
 - **Container layout.** Blob public access is set PER CONTAINER, not per prefix. Today quarantine
