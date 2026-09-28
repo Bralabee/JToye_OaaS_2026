@@ -20,6 +20,16 @@ spring:
       port: 6379
       password: ${REDIS_PASSWORD}  # From docker-compose.full-stack.yml; rotated 2026-08-29 (SEC-5), no hardcoded literal
 
+# Object storage (Phase 36, D-08). This profile is the IntelliJ path to the same hybrid runtime
+# scripts/start-dev.sh drives: infra/docker-compose.yml runs Azurite on 127.0.0.1:10000, which
+# application.yml's emulator connection string already targets. The fail-fast storage check
+# stays ON here too, so a fresh Azurite volume needs core-java to create jtoye-images (access
+# level blob) and jtoye-quarantine (private) itself. The profile's other purpose, the 5433
+# database port above, is unchanged.
+storage:
+  blob:
+    create-containers: true
+
 # Local development re-enables the metrics and Prometheus scrape endpoints
 # that the base profile (application.yml) deliberately omits. Safe here —
 # this profile only runs against a localhost Docker stack, never in prod.

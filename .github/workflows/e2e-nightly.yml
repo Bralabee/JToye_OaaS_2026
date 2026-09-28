@@ -46,7 +46,7 @@
 # job's fail-closed contract.
 #
 # CREDENTIALS
-#   No repository secret is consumed. All 16 of verify-env.sh's REQUIRED_VARS are
+#   No repository secret is consumed. All 18 of verify-env.sh's REQUIRED_VARS are
 #   generated per-run for a stack that lives ~40 minutes and is then destroyed. They must
 #   be genuinely random: verify-env.sh rejects the weak deny-list and any CHANGE_ME*
 #   value, so placeholders would fail the preflight rather than silently weaken the run.

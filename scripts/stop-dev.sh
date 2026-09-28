@@ -31,7 +31,7 @@
 #
 # NO `-v`, ANYWHERE
 #
-#   Named volumes (Postgres data, MinIO objects, Keycloak realm state) survive.
+#   Named volumes (Postgres data, Azurite blobs, Keycloak realm state) survive.
 #   Stopping the stack must never be a data-destroying operation.
 #
 # EXIT CODES:  0 = everything that was running is stopped · 1 = something survived
