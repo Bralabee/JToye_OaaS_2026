@@ -6,14 +6,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
 import uk.jtoye.core.media.MediaNormalizer;
 import uk.jtoye.core.media.exception.UnreadableImageException;
 
@@ -24,11 +16,23 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * The single owner of object-storage I/O (Phase 36: Azure Blob, Azurite locally).
+ *
+ * <p>Every object lives in one of two containers, and the container is DERIVED from the key, never
+ * chosen by a caller: a key whose second path segment is {@code quarantine}
+ * ({@code <tenant>/quarantine/<sha256>.<ext>}) goes to the private quarantine container, every
+ * other key to the public container, which serves anonymous reads by URL but never an anonymous
+ * listing (#626). Keys are byte-identical to the single-bucket layout they replace.
+ */
 @Service
 public class StorageService {
     private static final Logger log = LoggerFactory.getLogger(StorageService.class);
 
-    private final S3Client s3Client;
+    /** Storefront LCP contract: public objects are content-addressed or uniquely keyed, never replaced. */
+    private static final String IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
+    private final BlobObjectStore store;
     private final StorageProperties properties;
     private final MediaNormalizer mediaNormalizer;
 
@@ -76,8 +80,8 @@ public class StorageService {
             "webp", "image/webp"
     );
 
-    public StorageService(S3Client s3Client, StorageProperties properties, MediaNormalizer mediaNormalizer) {
-        this.s3Client = s3Client;
+    public StorageService(BlobObjectStore store, StorageProperties properties, MediaNormalizer mediaNormalizer) {
+        this.store = store;
         this.properties = properties;
         this.mediaNormalizer = mediaNormalizer;
     }
@@ -108,17 +112,9 @@ public class StorageService {
 
         String key = tenantId + "/" + pathPrefix + "/" + entityId + "/" + UUID.randomUUID() + DERIVATIVE_EXTENSION;
 
-        s3Client.putObject(
-                PutObjectRequest.builder()
-                        .bucket(properties.getS3().getBucket())
-                        .key(key)
-                        .contentType(DERIVATIVE_CONTENT_TYPE)
-                        .cacheControl("public, max-age=31536000, immutable")
-                        .build(),
-                RequestBody.fromBytes(imageBytes)
-        );
+        store.put(containerFor(key), key, imageBytes, DERIVATIVE_CONTENT_TYPE, IMMUTABLE_CACHE_CONTROL);
 
-        String publicUrl = properties.getS3().getPublicUrl() + "/" + key;
+        String publicUrl = urlForKey(key);
         log.info("Uploaded {} image: {} ({} bytes, normalized WebP)", imageType, publicUrl, imageBytes.length);
         return publicUrl;
     }
@@ -170,17 +166,9 @@ public class StorageService {
         String key = tenantId + "/" + pathPrefix + "/" + entityId + "/"
                 + name + "-" + sha256Hex(imageBytes) + DERIVATIVE_EXTENSION;
 
-        s3Client.putObject(
-                PutObjectRequest.builder()
-                        .bucket(properties.getS3().getBucket())
-                        .key(key)
-                        .contentType(DERIVATIVE_CONTENT_TYPE)
-                        .cacheControl("public, max-age=31536000, immutable")
-                        .build(),
-                RequestBody.fromBytes(imageBytes)
-        );
+        store.put(containerFor(key), key, imageBytes, DERIVATIVE_CONTENT_TYPE, IMMUTABLE_CACHE_CONTROL);
 
-        String publicUrl = properties.getS3().getPublicUrl() + "/" + key;
+        String publicUrl = urlForKey(key);
         log.info("Uploaded {} image: {} ({} bytes, normalized WebP)", imageType, publicUrl, imageBytes.length);
         return publicUrl;
     }
@@ -198,7 +186,7 @@ public class StorageService {
      * tenant: {@code <publicUrl>/<tenantId>/products/}.
      */
     public String productUploadUrlPrefix(UUID tenantId) {
-        return properties.getS3().getPublicUrl() + "/" + tenantId + "/products/";
+        return properties.getBlob().getPublicUrl() + "/" + tenantId + "/products/";
     }
 
     /**
@@ -222,17 +210,18 @@ public class StorageService {
      * ({@link uk.jtoye.core.dev.DemoDataSeeder}): the bytes are license-vetted,
      * visually-verified classpath assets bundled at build time — never runtime or
      * user input — so this deliberately does NOT run the vendor upload's
-     * MultipartFile/dimension pipeline. It reuses the same bucket, public-URL
-     * mechanism and immutable cache-control the vendor path uses, and skips the
-     * PUT when the object already exists (HeadObject) so repeated dev boots don't
+     * MultipartFile/dimension pipeline. It reuses the same public container, public-URL
+     * mechanism and immutable cache-control the vendor path uses, and writes with an atomic
+     * create-only condition ({@link BlobObjectStore#putIfAbsent}) so repeated dev boots don't
      * re-upload. The magic-byte {@link #detectContentType} check is retained as a
      * sanity guard against a corrupt/non-image asset.
      *
      * <p>Issue #489 scope note: the key IS deterministic here, but the {@code immutable}
-     * cache-control is still honest, because the HeadObject short-circuit above means the
-     * bytes at that key are written once and never replaced. (Should that skip ever be
-     * removed, this becomes the same defect {@link #uploadNamed} had, and the same content
-     * addressing is the fix.)
+     * cache-control is still honest, because the create-only write means the bytes at that key
+     * are written once and never replaced. Phase 36 replaced the old head-then-put pair with the
+     * single conditional write, which also closes the race between the two calls. (Should the
+     * condition ever be removed, this becomes the same defect {@link #uploadNamed} had, and the
+     * same content addressing is the fix.)
      */
     public String putSeedImage(UUID tenantId, String filename, byte[] bytes, String contentType) {
         if (bytes == null || bytes.length == 0) {
@@ -244,52 +233,28 @@ public class StorageService {
                     "Seed image is not a recognised image type: " + filename);
         }
 
-        String bucket = properties.getS3().getBucket();
         // Deterministic key so re-seeds are idempotent and the URL is stable.
         String key = tenantId + SEED_URL_MARKER + filename;
-        String publicUrl = properties.getS3().getPublicUrl() + "/" + key;
+        String publicUrl = urlForKey(key);
 
-        boolean exists;
-        try {
-            s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
-            exists = true;
-        } catch (NoSuchKeyException e) {
-            exists = false;
-        } catch (S3Exception e) {
-            // MinIO / some S3-compatible stores surface a missing object as a
-            // generic 404 rather than NoSuchKeyException; treat only 404 as absent.
-            if (e.statusCode() == 404) {
-                exists = false;
-            } else {
-                throw e;
-            }
-        }
-
-        if (exists) {
+        boolean created = store.putIfAbsent(properties.getBlob().getPublicContainer(), key, bytes,
+                contentType != null ? contentType : detected, IMMUTABLE_CACHE_CONTROL);
+        if (created) {
+            log.info("Uploaded seed image: {} ({} bytes)", publicUrl, bytes.length);
+        } else {
             log.info("Seed image already present, skipping upload: {}", key);
-            return publicUrl;
         }
-
-        s3Client.putObject(
-                PutObjectRequest.builder()
-                        .bucket(bucket)
-                        .key(key)
-                        .contentType(contentType != null ? contentType : detected)
-                        .cacheControl("public, max-age=31536000, immutable")
-                        .build(),
-                RequestBody.fromBytes(bytes)
-        );
-        log.info("Uploaded seed image: {} ({} bytes)", publicUrl, bytes.length);
         return publicUrl;
     }
 
     /**
-     * Delete an image from S3/MinIO by its public URL.
+     * Delete an image from object storage by its public URL. Only the public container is ever
+     * addressed: a public URL never names a quarantined object.
      */
     public void delete(String imageUrl) {
         if (imageUrl == null || imageUrl.isBlank()) return;
 
-        String publicUrlPrefix = properties.getS3().getPublicUrl() + "/";
+        String publicUrlPrefix = properties.getBlob().getPublicUrl() + "/";
         if (!imageUrl.startsWith(publicUrlPrefix)) {
             log.debug("Skipping delete for external URL: {}", imageUrl);
             return;
@@ -297,10 +262,7 @@ public class StorageService {
 
         String key = imageUrl.substring(publicUrlPrefix.length());
         try {
-            s3Client.deleteObject(DeleteObjectRequest.builder()
-                    .bucket(properties.getS3().getBucket())
-                    .key(key)
-                    .build());
+            store.deleteIfExists(properties.getBlob().getPublicContainer(), key);
             log.info("Deleted image from storage: {}", key);
         } catch (Exception e) {
             log.warn("Failed to delete image {}: {}", key, e.getMessage());
@@ -309,8 +271,8 @@ public class StorageService {
 
     // ------------------------------------------------------------------
     // Key-addressed I/O for the Phase 24 async media pipeline. StorageService
-    // stays the single owner of MinIO I/O; the worker/service layer never talks
-    // to S3Client directly. Content-Type is always the DETECTED/produced type
+    // stays the single owner of object-storage I/O; the worker/service layer never
+    // talks to the Blob SDK or the BlobObjectStore port directly. Content-Type is always the DETECTED/produced type
     // (image/webp for a derivative) — NEVER the client-supplied file.getContentType(),
     // closing the content-type-spoof anti-pattern (T-24-02 / RESEARCH).
     // ------------------------------------------------------------------
@@ -326,14 +288,8 @@ public class StorageService {
      * for byte-identical raw input). So {@code immutable} is honest on this path too.
      */
     public String putBytes(String objectKey, byte[] bytes, String contentType) {
-        s3Client.putObject(
-                PutObjectRequest.builder()
-                        .bucket(properties.getS3().getBucket())
-                        .key(objectKey)
-                        .contentType(contentType)   // detected/produced type — never the client header
-                        .cacheControl("public, max-age=31536000, immutable")
-                        .build(),
-                RequestBody.fromBytes(bytes));
+        // contentType is the detected/produced type — never the client header.
+        store.put(containerFor(objectKey), objectKey, bytes, contentType, IMMUTABLE_CACHE_CONTROL);
         log.info("Stored object by key: {} ({} bytes, {})", objectKey, bytes.length, contentType);
         return urlForKey(objectKey);
     }
@@ -343,16 +299,12 @@ public class StorageService {
      * before normalising it).
      */
     public byte[] getBytes(String objectKey) {
-        return s3Client.getObjectAsBytes(GetObjectRequest.builder()
-                        .bucket(properties.getS3().getBucket())
-                        .key(objectKey)
-                        .build())
-                .asByteArray();
+        return store.get(containerFor(objectKey), objectKey);
     }
 
     /**
      * Delete an object by its raw key (quarantine cleanup and the reference-count-0
-     * physical delete — IMG-01). Best-effort: a missing object / transient S3 error
+     * physical delete — IMG-01). Best-effort: a missing object / transient storage error
      * is logged, never thrown, so a cleanup failure cannot abort the caller's
      * transaction.
      *
@@ -370,7 +322,7 @@ public class StorageService {
      * <p>{@link #deleteByKey(String)} catches every exception and only logs, so no caller of it
      * can ever learn whether the delete worked. {@code MediaQuarantineRetentionSweep} needs that
      * fact, because "these bytes are gone" is the ONLY termination condition of its sentinel: if
-     * it stamped {@code quarantine_reclaimed_at} unconditionally, a transient S3 error would
+     * it stamped {@code quarantine_reclaimed_at} unconditionally, a transient storage error would
      * strand the object forever with nothing to complain.
      *
      * <p>Never throws — the contract that keeps a cleanup failure from aborting a caller's
@@ -378,15 +330,19 @@ public class StorageService {
      *
      * @return {@code true} iff the object was removed (or was already absent — a blank key and a
      *         successful delete of a missing object are both "gone"); {@code false} on any error.
+     *         On Blob this relies on a delete-IF-EXISTS: a plain delete of a missing blob is an
+     *         error there, which would turn "already gone" into {@code false} and strand the
+     *         sweep's sentinel forever.
      */
     public boolean deleteByKeyChecked(String objectKey) {
         if (objectKey == null || objectKey.isBlank()) return true;
         try {
-            s3Client.deleteObject(DeleteObjectRequest.builder()
-                    .bucket(properties.getS3().getBucket())
-                    .key(objectKey)
-                    .build());
-            log.info("Deleted object from storage by key: {}", objectKey);
+            boolean removed = store.deleteIfExists(containerFor(objectKey), objectKey);
+            if (removed) {
+                log.info("Deleted object from storage by key: {}", objectKey);
+            } else {
+                log.info("Object already absent from storage, counted as gone: {}", objectKey);
+            }
             return true;
         } catch (Exception e) {
             log.warn("Failed to delete object {}: {}", objectKey, e.getMessage());
@@ -394,9 +350,34 @@ public class StorageService {
         }
     }
 
-    /** The browser-reachable public URL for a stored object key. */
+    /**
+     * The browser-reachable public URL for a stored object key: always {@code storage.blob.public-url
+     * + "/" + key}, never the SDK's own blob URL, which carries the in-network host (split horizon).
+     */
     public String urlForKey(String objectKey) {
-        return properties.getS3().getPublicUrl() + "/" + objectKey;
+        return properties.getBlob().getPublicUrl() + "/" + objectKey;
+    }
+
+    /**
+     * Whether {@code key} addresses a quarantined raw upload: the first segment (the tenant) is
+     * non-empty and the text after the first {@code '/'} starts with {@code quarantine/}.
+     *
+     * <p>Deliberately independent of {@code MediaQuarantineRetentionSweep.QUARANTINE_SEGMENT}:
+     * 27-01 D-03 keeps that guard separately breakable, so it is not folded into this helper.
+     */
+    static boolean isQuarantineKey(String key) {
+        if (key == null) {
+            return false;
+        }
+        int first = key.indexOf('/');
+        return first > 0 && key.startsWith("quarantine/", first + 1);
+    }
+
+    /** The container a key lives in. Derived from the key; never chosen by a caller. */
+    private String containerFor(String key) {
+        return isQuarantineKey(key)
+                ? properties.getBlob().getQuarantineContainer()
+                : properties.getBlob().getPublicContainer();
     }
 
     /**

@@ -20,7 +20,9 @@ layout.buildDirectory.set(file("build-local"))
 
 // Override the netty version managed by Spring Boot 3.5.16's BOM. Netty is not
 // declared below — it arrives transitively via reactor-netty (starter-webflux)
-// and software.amazon.awssdk:netty-nio-client, and every artifact is pinned by
+// and com.azure:azure-core-http-netty 1.16.7 (the Azure Blob SDK's HTTP client,
+// Phase 36), which itself declares 4.1.137.Final, the same version as this pin.
+// Every netty artifact is pinned by
 // io.spring.dependency-management ("selected by rule" in dependencyInsight).
 // Boot's documented override is this property, which re-points the imported
 // netty-bom so the whole netty family moves together; forcing the flagged
@@ -37,7 +39,7 @@ layout.buildDirectory.set(file("build-local"))
 // treating this line as a load-bearing auth control: SslClientHelloHandler is
 // netty's SERVER-side SNI handler, and this service does not serve over netty --
 // it serves over Tomcat (spring-boot-starter-web below), and reactor-netty and
-// netty-nio-client are CLIENTS. `git grep SniHandler|SslClientHello|clientAuth
+// azure-core-http-netty are CLIENTS. `git grep SniHandler|SslClientHello|clientAuth
 // -- core-java/src` is empty; the only netty API implemented against here is
 // io.netty.resolver (SsrfGuardAddressResolverGroup). So the SNI/mTLS bypass is
 // NOT reachable in this topology. The bump is taken because the vulnerable jar
@@ -50,22 +52,6 @@ layout.buildDirectory.set(file("build-local"))
 // on HTTP/2 header-value validation by default, which is a behaviour change with
 // its own blast radius and its own decision.
 extra["netty.version"] = "4.1.137.Final"
-
-// Same shape, same reason, different family. Spring Boot 3.5.16's BOM pins
-// httpcore5 to 5.3.6, and that pin DOWNGRADES what the AWS SDK asks for:
-// software.amazon.awssdk:apache5-client:2.53.2 requests httpcore5 5.4.3 and
-// httpclient5 5.6.4, and dependencyInsight shows "5.3.6 -> 5.4.3 (selected by
-// rule)". So the vulnerable version is not something we or the SDK chose — it
-// is Boot's managed version winning over a newer request.
-//
-// 5.4.3 is the exact fixed version for the Trivy image-gate findings
-// CVE-2026-54399 (httpcore5) and CVE-2026-54428 (httpcore5-h2), both HIGH and
-// both marked fixable. The two artifacts are released together from one
-// project, so moving the property moves both and cannot leave them out of
-// step. 5.5-beta2 is also listed as fixed and is deliberately NOT taken: a
-// beta is not a version to put in an image over a HIGH that a stable release
-// already closes.
-extra["httpcore5.version"] = "5.4.3"
 
 // Override Tomcat version managed by Spring Boot 3.5.16 (10.1.55) to remediate
 // critical authorization/authentication bypass CVEs in 10.1.57 and earlier.
@@ -146,9 +132,18 @@ dependencies {
     // Email notifications
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
-    // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod)
-    implementation(platform("software.amazon.awssdk:bom:2.54.9"))
-    implementation("software.amazon.awssdk:s3")
+    // Azure Blob Storage (Phase 36, owner ruling 2026-09-28: Blob throughout). Azurite locally
+    // and in the nightly (connection-string mode), AKS Workload Identity in staging/production.
+    // Explicit latest-GA versions rather than azure-sdk-bom 1.3.8, which lags one patch.
+    // Coordinates checked against Maven Central and github.com/Azure/azure-sdk-for-java
+    // (36-RESEARCH.md, Package Legitimacy Audit).
+    implementation("com.azure:azure-storage-blob:12.35.1")
+    implementation("com.azure:azure-identity:1.18.6") {
+        // Desktop token-cache persistence only; it pulls jna + jna-platform native libraries that
+        // WorkloadIdentityCredential never loads (assumption A1, proven by 36-06's
+        // credential-build test).
+        exclude(group = "com.microsoft.azure", module = "msal4j-persistence-extension")
+    }
 
     // Phase 24 (IMG-02) — WebP transcode + image normalize pipeline.
     // scrimage-core decodes (via ImageIO) + resizes; scrimage-webp encodes the
@@ -211,6 +206,8 @@ dependencies {
     testImplementation("org.testcontainers:postgresql:1.21.4")
     // #92: real-broker fan-out proof for the per-instance SSE queues
     testImplementation("org.testcontainers:rabbitmq:1.21.4")
+    // Phase 36: org.testcontainers.azure.AzuriteContainer for the real-Blob storage tests
+    testImplementation("org.testcontainers:azure:1.21.4")
     testImplementation("org.testcontainers:junit-jupiter:1.21.4")
     testImplementation("com.h2database:h2") // for lightweight unit tests
 }

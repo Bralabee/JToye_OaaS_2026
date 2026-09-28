@@ -9,9 +9,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.server.ResponseStatusException;
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import uk.jtoye.core.media.MediaNormalizer;
 import uk.jtoye.core.media.MediaProperties;
 import uk.jtoye.core.media.exception.DecompressionBombException;
@@ -35,15 +32,14 @@ import java.util.zip.CRC32;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /**
  * Issue #445 (QA-A / F-H3-RAWIMG) — the three legacy synchronous image endpoints must not
  * store the client's raw bytes as the canonical, publicly-served object.
  *
- * <p>The three endpoints reach MinIO through exactly two {@link StorageService} methods, and
+ * <p>The three endpoints reach object storage through exactly two {@link StorageService} methods, and
  * nothing else in production calls them:
  * <ul>
  *   <li>{@code POST /api/v1/products/{id}/images} -&gt; {@code ProductService.addAdditionalImage}
@@ -58,7 +54,7 @@ import static org.mockito.Mockito.when;
  * <p><b>Why no Testcontainers.</b> The defect is entirely in byte handling — what is PUT to
  * object storage, and with which Content-Type. No tenancy/RLS behaviour changes, so a real
  * Postgres would exercise nothing this test needs; the tenant scoping of these same endpoints
- * is already proven under RLS by {@code ShopImageCrossTenantIntegrationTest}. The S3 client is
+ * is already proven under RLS by {@code ShopImageCrossTenantIntegrationTest}. The object store is
  * mocked because the assertion is about the PUT payload, which is captured directly.
  *
  * <p>Every assertion below is written to FAIL on the pre-fix tree, except
@@ -73,7 +69,7 @@ class LegacyImageUploadPipelineTest {
     private static final byte[] WEBP = {0x57, 0x45, 0x42, 0x50};
 
     @Mock
-    private S3Client s3Client;
+    private BlobObjectStore store;
 
     private StorageProperties properties;
     private StorageService storageService;
@@ -88,10 +84,9 @@ class LegacyImageUploadPipelineTest {
         properties = new StorageProperties();
         properties.setMaxFileSizeBytes(5_242_880);
         properties.setAllowedContentTypes(List.of("image/jpeg", "image/png", "image/webp", "image/gif"));
-        properties.getS3().setBucket("jtoye-images");
-        properties.getS3().setPublicUrl("http://localhost:9000/jtoye-images");
+        properties.getBlob().setPublicUrl("http://localhost:10000/devstoreaccount1/jtoye-images");
 
-        storageService = new StorageService(s3Client, properties, new MediaNormalizer(new MediaProperties()));
+        storageService = new StorageService(store, properties, new MediaNormalizer(new MediaProperties()));
     }
 
     // ------------------------------------------------------------------
@@ -103,7 +98,6 @@ class LegacyImageUploadPipelineTest {
     void productGalleryUploadIsNotStoredRaw() throws Exception {
         byte[] raw = jpegOf(3000, 2400);
         MockMultipartFile file = new MockMultipartFile("file", "photo.jpg", "image/jpeg", raw);
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         storageService.upload(tenantId, "products", entityId, file, ImageType.PRODUCT);
 
@@ -122,7 +116,6 @@ class LegacyImageUploadPipelineTest {
     void shopLogoUploadIsNotStoredRaw() throws Exception {
         byte[] raw = jpegOf(1200, 1200);
         MockMultipartFile file = new MockMultipartFile("file", "logo.jpg", "image/jpeg", raw);
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         storageService.uploadNamed(tenantId, "shops", entityId, "logo", file);
 
@@ -144,7 +137,6 @@ class LegacyImageUploadPipelineTest {
     void shopBannerUploadIsNotStoredRaw() throws Exception {
         byte[] raw = jpegOf(2400, 900);
         MockMultipartFile file = new MockMultipartFile("file", "banner.jpg", "image/jpeg", raw);
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         storageService.uploadNamed(tenantId, "shops", entityId, "banner", file);
 
@@ -163,7 +155,6 @@ class LegacyImageUploadPipelineTest {
         MediaProperties budget = new MediaProperties();
         byte[] raw = jpegOf(3000, 2400);
         MockMultipartFile file = new MockMultipartFile("file", "photo.jpg", "image/jpeg", raw);
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         storageService.upload(tenantId, "products", entityId, file, ImageType.PRODUCT);
 
@@ -185,7 +176,6 @@ class LegacyImageUploadPipelineTest {
                 .as("fixture must actually carry EXIF + a GPS marker")
                 .contains("Exif").contains("GPSINFOSECRET");
         MockMultipartFile file = new MockMultipartFile("file", "holiday.jpg", "image/jpeg", raw);
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         storageService.upload(tenantId, "products", entityId, file, ImageType.PRODUCT);
 
@@ -200,7 +190,6 @@ class LegacyImageUploadPipelineTest {
     void shopLogoUploadStripsExifGps() throws Exception {
         byte[] raw = jpegWithExifGps(800, 800);
         MockMultipartFile file = new MockMultipartFile("file", "logo.jpg", "image/jpeg", raw);
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         storageService.uploadNamed(tenantId, "shops", entityId, "logo", file);
 
@@ -240,7 +229,6 @@ class LegacyImageUploadPipelineTest {
         // public bucket served attacker-influenced bytes as text/html.
         byte[] raw = pngOf(900, 900);
         MockMultipartFile file = new MockMultipartFile("file", "x.png", "text/html", raw);
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         storageService.upload(tenantId, "products", entityId, file, ImageType.PRODUCT);
 
@@ -258,7 +246,6 @@ class LegacyImageUploadPipelineTest {
     void gifIsStillAcceptedAndTranscoded() throws Exception {
         byte[] raw = gifOf(800, 600);
         MockMultipartFile file = new MockMultipartFile("file", "anim.gif", "image/gif", raw);
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         storageService.uploadNamed(tenantId, "shops", entityId, "banner", file);
 
@@ -302,11 +289,12 @@ class LegacyImageUploadPipelineTest {
     }
 
     private Put capturePut() throws IOException {
-        ArgumentCaptor<PutObjectRequest> reqCaptor = ArgumentCaptor.forClass(PutObjectRequest.class);
-        ArgumentCaptor<RequestBody> bodyCaptor = ArgumentCaptor.forClass(RequestBody.class);
-        verify(s3Client).putObject(reqCaptor.capture(), bodyCaptor.capture());
-        byte[] stored = bodyCaptor.getValue().contentStreamProvider().newStream().readAllBytes();
-        return new Put(reqCaptor.getValue().key(), reqCaptor.getValue().contentType(), stored);
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<byte[]> bytesCaptor = ArgumentCaptor.forClass(byte[].class);
+        ArgumentCaptor<String> contentTypeCaptor = ArgumentCaptor.forClass(String.class);
+        verify(store).put(eq("jtoye-images"), keyCaptor.capture(), bytesCaptor.capture(),
+                contentTypeCaptor.capture(), eq("public, max-age=31536000, immutable"));
+        return new Put(keyCaptor.getValue(), contentTypeCaptor.getValue(), bytesCaptor.getValue());
     }
 
     private static String sha256(byte[] data) throws Exception {

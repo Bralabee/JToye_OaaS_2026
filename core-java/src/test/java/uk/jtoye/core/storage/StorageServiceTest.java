@@ -9,10 +9,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.server.ResponseStatusException;
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import uk.jtoye.core.media.MediaNormalizer;
 import uk.jtoye.core.media.MediaProperties;
 
@@ -25,17 +21,19 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for StorageService.
- * Tests file validation (type, size, magic bytes, dimensions) and S3 key generation.
+ * Tests file validation (type, size, magic bytes, dimensions) and object key generation.
  */
 @ExtendWith(MockitoExtension.class)
 class StorageServiceTest {
 
     @Mock
-    private S3Client s3Client;
+    private BlobObjectStore store;
 
     private StorageProperties properties;
     private StorageService storageService;
@@ -51,10 +49,9 @@ class StorageServiceTest {
         properties = new StorageProperties();
         properties.setMaxFileSizeBytes(5_242_880); // 5MB
         properties.setAllowedContentTypes(List.of("image/jpeg", "image/png", "image/webp", "image/gif"));
-        properties.getS3().setBucket("jtoye-images");
-        properties.getS3().setPublicUrl("http://localhost:9000/jtoye-images");
+        properties.getBlob().setPublicUrl("http://localhost:10000/devstoreaccount1/jtoye-images");
 
-        storageService = new StorageService(s3Client, properties, new MediaNormalizer(new MediaProperties()));
+        storageService = new StorageService(store, properties, new MediaNormalizer(new MediaProperties()));
     }
 
     /**
@@ -77,22 +74,21 @@ class StorageServiceTest {
         return baos.toByteArray();
     }
 
-    // ---- Upload: S3 Key Generation ----
+    // ---- Upload: Object Key Generation ----
 
     @Test
-    @DisplayName("upload - Generates S3 key with tenant isolation (tenantId/prefix/entityId/uuid.ext)")
-    void testUpload_GeneratesCorrectS3Key() throws Exception {
+    @DisplayName("upload - Generates object key with tenant isolation (tenantId/prefix/entityId/uuid.ext)")
+    void testUpload_GeneratesCorrectObjectKey() throws Exception {
         byte[] jpegBytes = createValidJpeg(500, 500);
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "photo.jpg", "image/jpeg", jpegBytes);
 
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         String url = storageService.upload(tenantId, "products", entityId, file);
 
         // URL should contain tenant isolation path
-        assertTrue(url.startsWith("http://localhost:9000/jtoye-images/"));
+        assertTrue(url.startsWith("http://localhost:10000/devstoreaccount1/jtoye-images/"));
         assertTrue(url.contains(tenantId.toString()));
         assertTrue(url.contains("products"));
         assertTrue(url.contains(entityId.toString()));
@@ -100,11 +96,13 @@ class StorageServiceTest {
         // normalized WebP is stored, so a ".jpg" upload is served from a ".webp" key.
         assertTrue(url.endsWith(".webp"), "expected a .webp derivative key, got: " + url);
 
-        // Verify S3 was called with correct bucket
-        ArgumentCaptor<PutObjectRequest> captor = ArgumentCaptor.forClass(PutObjectRequest.class);
-        verify(s3Client).putObject(captor.capture(), any(RequestBody.class));
-        assertEquals("jtoye-images", captor.getValue().bucket());
-        assertTrue(captor.getValue().key().startsWith(tenantId.toString()));
+        // Verify the store was called with the public container, the tenant-first key, the
+        // produced content type and the immutable cache control
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(store).put(eq("jtoye-images"), keyCaptor.capture(), any(byte[].class),
+                eq("image/webp"), eq("public, max-age=31536000, immutable"));
+        assertTrue(keyCaptor.getValue().startsWith(tenantId.toString()));
+        assertEquals("http://localhost:10000/devstoreaccount1/jtoye-images/" + keyCaptor.getValue(), url);
     }
 
     // ---- Upload: File Type Validation ----
@@ -178,12 +176,11 @@ class StorageServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "food.jpg", "image/jpeg", jpegBytes);
 
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         String url = storageService.upload(tenantId, "products", entityId, file);
 
         assertNotNull(url);
-        verify(s3Client).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+        verify(store).put(anyString(), anyString(), any(byte[].class), anyString(), anyString());
     }
 
     @Test
@@ -194,7 +191,6 @@ class StorageServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "food.png", "image/png", pngBytes);
 
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
 
         String url = storageService.upload(tenantId, "products", entityId, file);
 
@@ -239,52 +235,49 @@ class StorageServiceTest {
     @DisplayName("delete - Handles null URL gracefully (no exception)")
     void testDelete_NullUrl() {
         assertDoesNotThrow(() -> storageService.delete(null));
-        verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
+        verify(store, never()).deleteIfExists(anyString(), anyString());
     }
 
     @Test
     @DisplayName("delete - Handles empty URL gracefully (no exception)")
     void testDelete_EmptyUrl() {
         assertDoesNotThrow(() -> storageService.delete(""));
-        verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
+        verify(store, never()).deleteIfExists(anyString(), anyString());
     }
 
     @Test
     @DisplayName("delete - Handles blank URL gracefully (no exception)")
     void testDelete_BlankUrl() {
         assertDoesNotThrow(() -> storageService.delete("   "));
-        verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
+        verify(store, never()).deleteIfExists(anyString(), anyString());
     }
 
     @Test
-    @DisplayName("delete - Skips external URL (not from our S3)")
+    @DisplayName("delete - Skips external URL (not from our store)")
     void testDelete_ExternalUrl() {
         assertDoesNotThrow(() -> storageService.delete("https://example.com/other-image.jpg"));
-        verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
+        verify(store, never()).deleteIfExists(anyString(), anyString());
     }
 
     @Test
-    @DisplayName("delete - Deletes valid S3 object by extracting key from URL")
-    void testDelete_ValidS3Url() {
+    @DisplayName("delete - Deletes valid stored object by extracting key from URL")
+    void testDelete_ValidStoredUrl() {
         String key = tenantId + "/products/" + entityId + "/image.jpg";
-        String fullUrl = "http://localhost:9000/jtoye-images/" + key;
+        String fullUrl = "http://localhost:10000/devstoreaccount1/jtoye-images/" + key;
 
         storageService.delete(fullUrl);
 
-        ArgumentCaptor<DeleteObjectRequest> captor = ArgumentCaptor.forClass(DeleteObjectRequest.class);
-        verify(s3Client).deleteObject(captor.capture());
-        assertEquals("jtoye-images", captor.getValue().bucket());
-        assertEquals(key, captor.getValue().key());
+        verify(store).deleteIfExists("jtoye-images", key);
     }
 
     @Test
-    @DisplayName("delete - Handles S3 error gracefully (logs warning, does not throw)")
-    void testDelete_S3Error() {
+    @DisplayName("delete - Handles storage error gracefully (logs warning, does not throw)")
+    void testDelete_StorageError() {
         String key = tenantId + "/products/" + entityId + "/image.jpg";
-        String fullUrl = "http://localhost:9000/jtoye-images/" + key;
+        String fullUrl = "http://localhost:10000/devstoreaccount1/jtoye-images/" + key;
 
-        doThrow(new RuntimeException("S3 connection failed"))
-                .when(s3Client).deleteObject(any(DeleteObjectRequest.class));
+        doThrow(new RuntimeException("storage connection failed"))
+                .when(store).deleteIfExists(anyString(), anyString());
 
         assertDoesNotThrow(() -> storageService.delete(fullUrl));
     }
