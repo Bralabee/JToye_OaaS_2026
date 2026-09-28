@@ -33,3 +33,10 @@ ac12fa5e9d0804da3ecec30560d9ba782dee9150:k8s/base/secrets-template.yaml:generic-
 # editing it would corrupt the recorded evidence it exists to preserve.
 a67f50d906bd133a33d715125a7c1248a5b8ee44:.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/26-04-SUMMARY.md:generic-api-key:378
 a67f50d906bd133a33d715125a7c1248a5b8ee44:.planning/phases/26-local-k8s-overlay-verified-breakage-fixes/26-04-SUMMARY.md:generic-api-key:617
+
+# Phase 36 (plan 36-06, commit f9bfbaf8). REAL_KEY in StorageConfigShapeTest is a fake
+# stand-in for an account key, used only to assert that the storage shape-rule
+# messages never echo a key. Not a credential. The live line now builds the value at
+# run time from a 4-character piece, so no secret-shaped literal remains; this
+# fingerprint covers the original commit only.
+f9bfbaf84b7a67b6b5ddb2f5a281be760d8a5328:core-java/src/test/java/uk/jtoye/core/storage/StorageConfigShapeTest.java:generic-api-key:32
