@@ -67,6 +67,21 @@ and backup-destination decisions it depended on.
   `image_url` / `additional_image_urls[]` row carries the origin; changing it later is a
   tenant-looped rewrite plus a CSP/`remotePatterns` change.
 
+### Decided at plan time (owner, 2026-09-28, after 36-RESEARCH.md)
+- **D-07:** Container names: **`jtoye-images`** (public, access level `blob`) for derivatives,
+  **`jtoye-quarantine`** (private) for raw uploads, and **`jtoye-db-backups`** (prefix `backups/`)
+  on the backup account. These are embedded in every persisted URL. Resolves research OQ1.
+- **D-08:** The **hybrid dev runtime** (`scripts/start-dev.sh` + `infra/docker-compose.yml`) gets an
+  Azurite service too, and the fail-fast storage startup check stays ON in every runtime rather
+  than being switched off in dev. Resolves research OQ5 / Pitfall 3.
+- **D-09:** The pre-existing **cross-tenant delete** is fixed in this phase. `StorageService.delete(url)`
+  deletes only when the extracted key's tenant segment equals the `TenantContext` tenant; otherwise
+  it skips and logs a WARN. A test proves tenant B's URL under tenant A's context leaves the blob in
+  place. Resolves research OQ6.
+- **D-10:** The **pg-backup image tag is bumped** from `:15`, because its contents change (awscli out,
+  the Blob uploader in). The CronJob, the parity gate and the goldens move in the same change.
+  Resolves research OQ7.
+
 ### Claude's Discretion
 - **Container layout.** Blob public access is set PER CONTAINER, not per prefix. Today quarantine
   is a `/quarantine/` key prefix inside the one public bucket (`MediaAssetRepository` guards on it),
