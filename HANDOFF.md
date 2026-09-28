@@ -1,6 +1,41 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged) and 2026-09-22 (runtime re-proven, stack torn down for a planned pause). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause) and 2026-09-28 (state analysis, `main` green again, Phase 36 opened). Replaces the 2026-08-18 block.** This is the only live block in this file.
+
+**2026-09-28 delta — state analysis, `main` green again, and Phase 36 (Azure Blob) opened. Resume here.**
+**Where things stand.** `main` = `db725c94`. PR #757 is MERGED: `amqp-client` 5.33.1 → 5.34.0 for
+CVE-2026-75516 (issue #754 CLOSED) plus the missing `fi` that had kept
+`base-image-freshness.yml`'s tracking-issue step from ever filing. `main`'s post-merge run
+`36457853757` succeeded with the Trivy image gate step itself green on core-java — the first green
+image gate on `main` since 2026-09-13. The gap that let the `fi` hide (nothing parses shell inside
+workflow `run:` blocks) is issue #758, OPEN.
+**Why the stack cannot simply be restarted.** Two findings from the analysis, both still true: the
+weekly `docker-prune-weekly` run on 2026-09-27 deleted EVERY project image because the stack was
+down (volumes survived — `postgres_data` 448.2MB and `minio_data` 3.6MB, matching the 09-22
+checkpoint); and MinIO withdrew its community images for good (repo archived 2026-04-25,
+`quay.io/minio/*` answers 401 to anonymous pulls — control images on the same registry answer 200).
+That second fact is the whole cause of the nightly E2E being red since 2026-09-25 (issue #683 OPEN;
+its body still points at core-java health, which is wrong). Do NOT try to re-source MinIO.
+**Owner ruling: object storage becomes Azure Blob throughout (Phase 36).** Staging/prod on Azure
+Blob Storage, Azurite (`mcr.microsoft.com/azure-storage/azurite`) locally and in the nightly;
+MinIO and the never-provisioned AWS S3 target retired. Four decisions are locked in
+`.planning/phases/36-azure-blob-storage-throughout/36-CONTEXT.md`: backups to a separate immutable
+Azure account in another region (SUPERSEDES Phase 29 D-12, the subscription-loss trade recorded),
+AKS Workload Identity (no stored key), reseed local media (leave `minio_data` in place), raw Blob
+endpoint (custom domain deferred to Phase 32). Phase 36 blocks Phase 29 plans 29-11 onward and cuts
+Phase 29's unfilled operator secrets from 7 to 3.
+**Resume:** branch `phase-36-azure-blob-storage` holds the roadmap entry and the context. Run
+`/gsd-plan-phase 36` from a fresh session. Expect research to confirm the container split (Blob
+access is per container, and quarantine is today only a `/quarantine/` key prefix inside the public
+bucket) and the 19 test files under `core-java/src/test/` that reference MinIO/S3.
+**Still open from the analysis, not started:** dependabot PR #739 (springdoc 3.1.1) cannot merge on
+Boot 3.5 — its parent POM is Boot 4.1.0 — and belongs after #706; #751/#749 are low-risk but need
+the doc-quoted versions updated; #756 fails 6 Jest tests under React 19.3; issue #648 is fixed in
+code by #726 (`SyncBatchAuthorizationIntegrationTest`) but still OPEN; the Base Image Freshness
+workflow has been red daily since 2026-09-08 (libexpat CVE-2026-93990 on the published image); the
+review-gate script vendored at `scripts/gates/review-record-check.sh` lags the canonical copy
+(missing the #249 cancelled-run supersession); `.planning/state.json` is an untracked GSD Core
+artefact, deliberately never committed.
 
 **2026-09-22 delta — the runtime was re-proven fresh, then deliberately torn down; ordinary work resumes 2026-10-01.**
 The local stack was found RUNNING but stale: `scripts/check-runtime-freshness.sh` failed with the
