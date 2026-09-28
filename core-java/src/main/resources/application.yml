@@ -588,6 +588,11 @@ storage:
     create-containers: ${STORAGE_CREATE_CONTAINERS:false}
     max-tries: ${STORAGE_MAX_TRIES:3}
     try-timeout-seconds: ${STORAGE_TRY_TIMEOUT_SECONDS:30}
+    # The boot-time container probe (StorageStartupValidator): both containers exist, the public
+    # one is access level blob (never container, #626) and the quarantine one is private. ON in
+    # every runtime (D-08). A literal on purpose, NOT mapped from an env var, so no runtime can
+    # switch it off through its environment; only test contexts that never touch storage opt out.
+    validate-on-startup: true
   max-file-size-bytes: 5242880
   allowed-content-types: image/jpeg,image/png,image/webp,image/gif
 

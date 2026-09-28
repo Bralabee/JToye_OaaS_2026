@@ -68,6 +68,13 @@ public class StorageProperties {
         private boolean createContainers = false;
         private int maxTries = 3;
         private int tryTimeoutSeconds = 30;
+        /**
+         * The boot-time container probe ({@link StorageStartupValidator}). ON by default and in every
+         * runtime (decision D-08); application.yml sets it as a literal, deliberately not mapped from
+         * an env var, so no runtime can switch it off by environment. Only test contexts that never
+         * touch storage turn it off.
+         */
+        private boolean validateOnStartup = true;
 
         public String getAuthMode() { return authMode; }
         public void setAuthMode(String authMode) { this.authMode = authMode; }
@@ -87,6 +94,8 @@ public class StorageProperties {
         public void setMaxTries(int maxTries) { this.maxTries = maxTries; }
         public int getTryTimeoutSeconds() { return tryTimeoutSeconds; }
         public void setTryTimeoutSeconds(int tryTimeoutSeconds) { this.tryTimeoutSeconds = tryTimeoutSeconds; }
+        public boolean isValidateOnStartup() { return validateOnStartup; }
+        public void setValidateOnStartup(boolean validateOnStartup) { this.validateOnStartup = validateOnStartup; }
 
         /**
          * Refuses every malformed {@code storage.blob.*} configuration with a
