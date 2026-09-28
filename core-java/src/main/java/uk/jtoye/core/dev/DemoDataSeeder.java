@@ -67,7 +67,7 @@ import java.util.stream.Collectors;
  * <p><strong>Product photography (#15 — reversed 260713-kds):</strong> curated
  * products now carry seeded, license-verified dish imagery. Each of the 21
  * bundled Wikimedia photos (CC0/CC-BY/CC-BY-SA, zero NC/ND — attributed in
- * {@code docs/CREDITS-demo-images.md}) is uploaded to MinIO via
+ * {@code docs/CREDITS-demo-images.md}) is uploaded to object storage via
  * {@link uk.jtoye.core.storage.StorageService#putSeedImage} at a deterministic
  * {@code <tenant>/products/seed/<filename>} key and its public URL stamped onto
  * the matching product's {@code image_url} by {@link #seedProductImages}. A
@@ -350,7 +350,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         upsertCustomer(result, "James Okafor", "james.okafor@example.com", "07700 900567");
 
         // ADDITIVE image-seeding step (260713-kds): now that the curated products
-        // are persisted, upload each bundled dish photo to MinIO and stamp the
+        // are persisted, upload each bundled dish photo to object storage and stamp the
         // matching product's image_url under the seeder-owns overwrite policy.
         seedProductImages(result);
 

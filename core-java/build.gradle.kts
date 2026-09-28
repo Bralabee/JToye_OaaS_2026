@@ -276,7 +276,13 @@ tasks.register<Test>("integrationTest") {
     //     selector pool and AWS SDK v2's S3/MinIO connection reaper.
     //
     // So the accumulation had TWO causes; 27-04 fixed one. Until the WebClient/AWS-SDK clients are
-    // shared or shut down per context, forkEvery must stay. Do not "simplify" it away on the
+    // shared or shut down per context, forkEvery must stay.
+    //
+    // Phase 36 (36-01) replaced the AWS SDK with the Azure Blob SDK, whose azure-core-http-netty
+    // client has its own event-loop and connection pools. The measurement above was NOT re-taken
+    // for it, so nothing here licenses dropping forkEvery: the first full run after the swap
+    // (4 forks, forkEvery=4) passed 719/719 with no OOM, which says the setting still works, not
+    // that it is no longer needed. Do not "simplify" it away on the
     // reasoning that the listener bug is fixed — that is the specific wrong conclusion this block
     // exists to prevent, and re-deriving it costs an hour of wall clock.
     //
