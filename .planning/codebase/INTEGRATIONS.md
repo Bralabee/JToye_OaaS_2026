@@ -68,7 +68,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 ## Message Queue
 
 - RabbitMQ 4.3.4-management-alpine (LOCAL-DEV compose pin) — AMQP `5672`, management UI `15672`, STOMP `61613`, all loopback-only by default.
-  - Client: Spring AMQP, `com.rabbitmq:amqp-client` pinned to 5.33.1 via `rabbit-amqp-client.version` Gradle property.
+  - Client: Spring AMQP, `com.rabbitmq:amqp-client` pinned to 5.34.0 via `rabbit-amqp-client.version` Gradle property.
   - Transactional outbox pattern for at-least-once delivery: `payment_event_outbox` (existing) and `media_event_outbox` (V58, Phase 24) — each with its own flusher (`PaymentEventOutboxFlusher`, dedicated media flusher), exponential backoff + resurrect.
   - STOMP relay mode (`stomp.broker.mode`) — `in-memory` in compose (default), RabbitMQ STOMP relay in k8s for multi-replica SSE/KDS fan-out.
   - **STAGING/PROD broker version is unverified from this repository** — minimum supported 3.13+, RabbitMQ 4.3 community support ends 2026-11-30 (tracked `infra/dependency-horizons.yaml`, deferred to 2026-11-30 under issue #724/PR #725).

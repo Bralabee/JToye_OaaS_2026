@@ -105,7 +105,12 @@ extra["tomcat.version"] = "10.1.59"
 // check that catches that is the Trivy gate in ci-cd.yaml, which fails the build on
 // fixable HIGH/CRITICAL and is a required status check. That gate is the enforcement;
 // this line is only the fix.
-extra["rabbit-amqp-client.version"] = "5.33.1"
+//
+// 5.33.1 -> 5.34.0 (2026-09-28, #754): CVE-2026-75516 (HIGH) was published against
+// 5.33.1 after the last green main run; 5.34.0 is the version Trivy names as fixed.
+// Taken as the smallest clearing bump, not the newest (5.36.0), for the same reason as
+// above: every minor step is a chance for a runtime default to move.
+extra["rabbit-amqp-client.version"] = "5.34.0"
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
@@ -124,7 +129,7 @@ dependencies {
 
     // RabbitMQ messaging
     implementation("org.springframework.boot:spring-boot-starter-amqp")
-    // amqp-client is pinned to 5.33.1 by `rabbit-amqp-client.version` at the top of this
+    // amqp-client is pinned to 5.34.0 by `rabbit-amqp-client.version` at the top of this
     // file, not by a direct dependency here. See that comment: the direct pin used to be
     // on this line and was masking a misspelled property name.
 
@@ -317,8 +322,8 @@ tasks.register<Test>("integrationTest") {
 //
 // WHY AGGREGATE, AND WHY THE UNIT-ONLY FLOOR WAS REJECTED
 //
-//   `tasks.test` above EXCLUDES the `testcontainers` tag (:202-205) and
-//   `integrationTest` runs ONLY that tag (:221-303). Both drive sourceSets["test"], so
+//   `tasks.test` above EXCLUDES the `testcontainers` tag and
+//   `integrationTest` runs ONLY that tag. Both drive sourceSets["test"], so
 //   the two halves of ONE suite execute in two tasks — and, in CI, in two different
 //   jobs. Measured on this tree 2026-08-28 (JaCoCo 0.8.12, Gradle 8.10.2, JDK 21):
 //
