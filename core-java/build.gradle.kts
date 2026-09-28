@@ -103,8 +103,11 @@ extra["tomcat.version"] = "10.1.59"
 //
 // If a future Spring Boot renames this key again, the version silently reverts — the
 // check that catches that is the Trivy gate in ci-cd.yaml, which fails the build on
-// fixable HIGH/CRITICAL and is a required status check. That gate is the enforcement;
-// this line is only the fix.
+// fixable HIGH/CRITICAL. It lives in `build-and-push`, which runs on push and release
+// ONLY, never on a pull request: a revert of this pin merges green and turns `main` red
+// afterwards. So a PR that touches this line must prove resolution itself, with
+// `dependencyInsight --dependency com.rabbitmq:amqp-client --configuration runtimeClasspath`.
+// That gate is the enforcement; this line is only the fix.
 //
 // 5.33.1 -> 5.34.0 (2026-09-28, #754): CVE-2026-75516 (HIGH) was published against
 // 5.33.1 after the last green main run; 5.34.0 is the version Trivy names as fixed.

@@ -27,13 +27,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `run: |` block of the workflow and `bash -n`-ing each: before, 1 of 4 blocks fails with that
   exact error; after, 0 of 4. The same sweep over all seven workflows finds no other instance
   (two of them have only one-line `run:` steps and so nothing to parse — VOID, not clean).
-- **Line-number citations moved with the edit.** The new comment shifts everything below
-  `build.gradle.kts:108` by five lines; the pointers in `.planning/codebase/{CONCERNS,STACK,
-  TESTING}.md` were moved and re-checked by CONTENT (old line at HEAD vs new line on the branch).
-  Two in-file self-references in the JaCoCo comment (`:202-205`, `:221-303`) and one in
-  `scripts/check-jacoco-coverage.sh` (`:183-186`) were ALREADY wrong before this change — they
-  pointed at dependency lines, not the test tasks — and were replaced with block names rather
-  than new numbers, since a line number into the same file goes stale on every edit.
+- **Line-number citations into `build.gradle.kts` re-derived from the code, not shifted.** The
+  new comment moves everything below line 108. The first pass shifted each `.planning/codebase`
+  pointer by the insertion and "verified" it by comparing the old line at HEAD with the new
+  line on the branch — a check that passes whenever BOTH pointers are equally stale, and three
+  were: `CONCERNS.md` (Jasper removal), and both `TESTING.md` ranges (the two test tasks; the
+  607-test measurement) were already 5–7 lines off on `main`. Review round 1 caught it; each is
+  now derived from the cited text itself (`CONCERNS` → `:184-192`, `TESTING` → `:218-320` and
+  `:333-340`), after the file was final, and checked strictly: each range must START on its
+  anchor line and contain its claimed text. That check fails all three of `main`'s pointers and
+  passes all three here; the weaker "range contains the text" form had passed `main`'s
+  `:171-176` on a one-line overlap. `check-doc-citations.sh` does not scan either file, so no
+  gate would have caught it. Three
+  self-references that were also already wrong (`:202-205` and `:221-303` in the JaCoCo comment,
+  `:183-186`/`:202-284` in `scripts/check-jacoco-coverage.sh`) now name the block instead of a
+  line, since a line number into a file goes stale on every edit to it.
+- **The pin's own comment claimed the Trivy gate was "a required status check".** It is required
+  on `main` but never runs on a pull request, so a reverted pin merges green; the comment now says
+  so and names the `dependencyInsight` proof a PR touching the line must run itself.
 - **Still true after this merges:** the Trivy gate lives in `build-and-push`, which does not run
   on pull requests, so this PR's own checks cannot show the image going green — the first
   CI-visible confirmation is the `main` run after merge.

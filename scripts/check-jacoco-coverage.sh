@@ -8,7 +8,7 @@
 #
 #   core-java runs ONE test suite through TWO Gradle tasks. `test` EXCLUDES the
 #   `testcontainers` tag (the `tasks.test` block in core-java/build.gradle.kts); `integrationTest` runs ONLY that
-#   tag (:202-284). Both drive sourceSets["test"]. So `test` alone executes roughly
+#   tag (its `tasks.register` block). Both drive sourceSets["test"]. So `test` alone executes roughly
 #   two thirds of the suite, and the coverage it reports is TWENTY-FIVE POINTS BELOW
 #   the real figure. Measured on this tree 2026-08-29:
 #
