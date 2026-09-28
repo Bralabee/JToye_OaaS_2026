@@ -788,42 +788,50 @@ Plans:
   5. The pg-backup job writes to Azure Blob through a write-only uploader and a two-arm restore drill (zero-row arm caught, live-count arm matched) runs every night; k8s base/staging/production/local carry the Blob config with Workload Identity, dedicated ServiceAccounts, no storage Secret, no port 9000, updated invariants and goldens; Phase 29 has a handoff on main with the provisioning spec, the operator-secret list change (7 → 3) and a merge-conflict map. (BLOB-06, BLOB-07, BLOB-10)
   6. Frontend `remotePatterns` and CSP `img-src` admit the Azurite origin and nothing broader (tests fail on a wildcard); a repo-wide, fail-armed CI gate finds no MinIO/S3 residue outside a reasoned allowlist; horizons carry an azurite row; the content-type gate is re-targeted to Blob; docs and test metrics are current. (BLOB-08, BLOB-09)
 
-**Plans:** 18 plans (8 waves)
+**Plans:** 1/18 plans executed (8 waves)
 
 Plans:
 
 **Wave 1**
-- [ ] 36-01-PLAN.md — TRACER: StorageService on the Azure Blob SDK via a `BlobObjectStore` adapter, key routing to public/private containers, #626 both ways on Azurite, AWS SDK removed
+
+- [x] 36-01-PLAN.md — TRACER: StorageService on the Azure Blob SDK via a `BlobObjectStore` adapter, key routing to public/private containers, #626 both ways on Azurite, AWS SDK removed
 - [ ] 36-02-PLAN.md — Azurite replaces MinIO in compose, the hybrid runtime (D-08), horizons and the nightly service list; env contract drops object-store credentials
 - [ ] 36-03-PLAN.md — Frontend CSP `img-src` and `remotePatterns` admit the Azurite origin and nothing broader (test-enforced)
 - [ ] 36-04-PLAN.md — `blobctl`: one-switch, emulator-only, write-only Go uploader for the backup image; CI, Dependabot, targeted gitleaks allowlist
 - [ ] 36-05-PLAN.md — Owner decision D-11 (storage account names/regions) + the Blob estate provisioning runbook for Phase 29 (checkpoint)
 
 **Wave 2**
+
 - [ ] 36-06-PLAN.md — Fail-fast storage config (emulator-only connection strings) + boot-time container probe, ON in every runtime (D-02, D-08)
 - [ ] 36-07-PLAN.md — D-09 cross-tenant URL-delete guard + the media pipeline proven on an unstubbed Azurite
 - [ ] 36-08-PLAN.md — pg-backup image on blobctl (`:15-blob`), no prune; two-arm restore-drill gate wired into the nightly; runbook rewrite
 
 **Wave 3**
+
 - [ ] 36-09-PLAN.md — k8s base/overlays: Workload Identity, ServiceAccounts, local emulator shim, no port 9000, INV-8/9/10 + LOC-7, D-10 tag bump, goldens
 - [ ] 36-11-PLAN.md — Dev reseed script (D-04/D-05), dry run, owner-approved apply before any core-java boot (checkpoint)
 - [ ] 36-14-PLAN.md — core-java comment and test-literal residue removed (V42 untouched)
 
 **Wave 4**
+
 - [ ] 36-10-PLAN.md — k8s/local bootstrap scripts, env keys, secrets template and k8s runbooks off the retired store
 - [ ] 36-12-PLAN.md — Rebuild all, runtime parity, servable-URL gate, live upload round trip, content-type gate on Azurite (both nightly-wired)
 
 **Wave 5**
+
 - [ ] 36-13-PLAN.md — Playwright storage-images spec (`naturalWidth > 0` from the storage origin) + human look after the reseed
 - [ ] 36-15-PLAN.md — Live docs, agent-context files and codebase map describe Azure Blob/Azurite; Azurite doc-version claim
 
 **Wave 6**
+
 - [ ] 36-16-PLAN.md — Repo-wide, fail-armed object-store residue gate with a reasoned allowlist, wired into CI
 
 **Wave 7**
+
 - [ ] 36-17-PLAN.md — Metrics regenerated once; Phase 29 handoff with the conflict map and operator-secret change; requirement ledger
 
 **Wave 8**
+
 - [ ] 36-18-PLAN.md — Owner-approved push + nightly `workflow_dispatch` proof (Playwright executed > 0) + final parity readings (checkpoint)
 
 ---
