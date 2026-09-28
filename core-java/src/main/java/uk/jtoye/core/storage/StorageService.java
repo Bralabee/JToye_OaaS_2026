@@ -8,12 +8,14 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.media.MediaNormalizer;
 import uk.jtoye.core.media.exception.UnreadableImageException;
+import uk.jtoye.core.security.TenantContext;
 
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -250,6 +252,21 @@ public class StorageService {
     /**
      * Delete an image from object storage by its public URL. Only the public container is ever
      * addressed: a public URL never names a quarantined object.
+     *
+     * <p><b>D-09 (Phase 36): the key must belong to the caller's tenant.</b> Product, shop and
+     * review image URLs are client-supplied, and every tenant's images share one public container,
+     * so without this check tenant A could delete tenant B's image by saving B's URL on its own
+     * row and then removing it. The delete runs only when the key's first path segment equals the
+     * {@link TenantContext} tenant; a key with no tenant segment, an absent context (fail closed),
+     * a foreign tenant, or a key carrying dot segments / backslashes / percent-encoding (which
+     * could walk out of the caller's segment on a store that normalises paths) is skipped with a
+     * WARN, the same skip shape as the external-URL branch. Every production caller runs with the
+     * owning tenant in context (request scope via JwtTenantFilter, or DsarFanoutWorker's
+     * per-tenant {@code TenantContext.set}). Keys are server-generated as
+     * {@code <tenant UUID>/...} with no {@code '%'}, so a legitimate own-tenant URL always passes.
+     *
+     * <p>The key-addressed deletes ({@link #deleteByKey}, {@link #deleteByKeyChecked}) are not
+     * guarded: their keys come from tenant-scoped rows under RLS, never from a client.
      */
     public void delete(String imageUrl) {
         if (imageUrl == null || imageUrl.isBlank()) return;
@@ -261,6 +278,27 @@ public class StorageService {
         }
 
         String key = imageUrl.substring(publicUrlPrefix.length());
+        String keyForLog = withoutQuery(key);
+        int firstSlash = key.indexOf('/');
+        if (firstSlash <= 0) {
+            log.warn("Refusing URL delete without a tenant segment: {}", keyForLog);
+            return;
+        }
+        Optional<UUID> contextTenant = TenantContext.get();
+        if (contextTenant.isEmpty()) {
+            log.warn("Refusing URL delete with no tenant context: {}", keyForLog);
+            return;
+        }
+        String keyTenant = key.substring(0, firstSlash);
+        if (!keyTenant.equals(contextTenant.get().toString())) {
+            log.warn("Refusing cross-tenant URL delete: key tenant {} != context tenant {} (D-09): {}",
+                    keyTenant, contextTenant.get(), keyForLog);
+            return;
+        }
+        if (!isPlainPath(key)) {
+            log.warn("Refusing URL delete of a key with dot segments or encoded characters (D-09): {}", keyForLog);
+            return;
+        }
         try {
             store.deleteIfExists(properties.getBlob().getPublicContainer(), key);
             log.info("Deleted image from storage: {}", key);
@@ -387,6 +425,28 @@ public class StorageService {
         }
         int first = key.indexOf('/');
         return first > 0 && key.startsWith("quarantine/", first + 1);
+    }
+
+    /**
+     * D-09: a key whose path cannot leave its first segment — no {@code '\\'}, no {@code '%'}
+     * (an encoded separator or dot), and no {@code "."} or {@code ".."} segment.
+     */
+    static boolean isPlainPath(String key) {
+        if (key.indexOf('\\') >= 0 || key.indexOf('%') >= 0) {
+            return false;
+        }
+        for (String segment : key.split("/", -1)) {
+            if (segment.equals(".") || segment.equals("..")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The key without any query string, for logging: a query may carry a token. */
+    private static String withoutQuery(String key) {
+        int q = key.indexOf('?');
+        return q < 0 ? key : key.substring(0, q);
     }
 
     /** The container a key lives in. Derived from the key; never chosen by a caller. */
