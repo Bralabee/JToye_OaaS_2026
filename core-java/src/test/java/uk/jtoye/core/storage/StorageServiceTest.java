@@ -1,5 +1,10 @@
 package uk.jtoye.core.storage;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -7,10 +12,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.media.MediaNormalizer;
 import uk.jtoye.core.media.MediaProperties;
+import uk.jtoye.core.security.TenantContext;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -52,6 +59,11 @@ class StorageServiceTest {
         properties.getBlob().setPublicUrl("http://localhost:10000/devstoreaccount1/jtoye-images");
 
         storageService = new StorageService(store, properties, new MediaNormalizer(new MediaProperties()));
+    }
+
+    @AfterEach
+    void clearTenant() {
+        TenantContext.clear();
     }
 
     /**
@@ -265,7 +277,9 @@ class StorageServiceTest {
         String key = tenantId + "/products/" + entityId + "/image.jpg";
         String fullUrl = "http://localhost:10000/devstoreaccount1/jtoye-images/" + key;
 
-        storageService.delete(fullUrl);
+        // D-09: every production caller runs with the owning tenant in context; the delete is
+        // only honoured when the key's tenant segment is that tenant.
+        withTenant(tenantId, () -> storageService.delete(fullUrl));
 
         verify(store).deleteIfExists("jtoye-images", key);
     }
@@ -279,7 +293,119 @@ class StorageServiceTest {
         doThrow(new RuntimeException("storage connection failed"))
                 .when(store).deleteIfExists(anyString(), anyString());
 
-        assertDoesNotThrow(() -> storageService.delete(fullUrl));
+        // The tenant is set so the store IS reached and the catch is what is exercised; without
+        // it the D-09 guard would return first and this test would pass without testing anything.
+        withTenant(tenantId, () -> assertDoesNotThrow(() -> storageService.delete(fullUrl)));
+        verify(store).deleteIfExists("jtoye-images", key);
+    }
+
+    // ---- Delete: the D-09 tenant guard (Phase 36) ----
+    //
+    // ProductMapper, ShopMapper and ReviewService persist client-supplied image URLs, and every
+    // tenant's images share one public container. Before D-09, delete(url) removed any key under
+    // the public prefix, so tenant A could delete tenant B's image by saving B's URL on its own
+    // row and then removing it.
+
+    private static final String PUBLIC = "http://localhost:10000/devstoreaccount1/jtoye-images/";
+
+    @Test
+    @DisplayName("delete (D-09) - own tenant's key is deleted exactly once from the public container")
+    void d09OwnTenantKeyIsDeleted() {
+        String key = tenantId + "/products/" + entityId + "/x.webp";
+
+        withTenant(tenantId, () -> storageService.delete(PUBLIC + key));
+
+        verify(store, times(1)).deleteIfExists("jtoye-images", key);
+        verifyNoMoreInteractions(store);
+    }
+
+    @Test
+    @DisplayName("delete (D-09) - another tenant's key is refused and the WARN names both tenant ids")
+    void d09ForeignTenantKeyIsRefused() {
+        UUID other = UUID.randomUUID();
+        String key = other + "/products/" + entityId + "/x.webp";
+
+        List<ILoggingEvent> events = captureStorageLog(
+                () -> withTenant(tenantId, () -> storageService.delete(PUBLIC + key)));
+
+        verify(store, never()).deleteIfExists(anyString(), anyString());
+        assertTrue(events.stream().anyMatch(e -> e.getLevel() == Level.WARN
+                        && e.getFormattedMessage().contains(other.toString())
+                        && e.getFormattedMessage().contains(tenantId.toString())),
+                "a WARN naming the key tenant and the context tenant, got: " + messages(events));
+    }
+
+    @Test
+    @DisplayName("delete (D-09) - no tenant context: refused (fail closed) with a WARN")
+    void d09NoTenantContextIsRefused() {
+        TenantContext.clear();
+        String key = tenantId + "/products/" + entityId + "/x.webp";
+
+        List<ILoggingEvent> events = captureStorageLog(() -> storageService.delete(PUBLIC + key));
+
+        verify(store, never()).deleteIfExists(anyString(), anyString());
+        assertTrue(events.stream().anyMatch(e -> e.getLevel() == Level.WARN),
+                "a WARN for the refused delete, got: " + messages(events));
+    }
+
+    @Test
+    @DisplayName("delete (D-09) - a key with no tenant segment is refused")
+    void d09KeyWithoutTenantSegmentIsRefused() {
+        withTenant(tenantId, () -> storageService.delete(PUBLIC + "nokey"));
+        withTenant(tenantId, () -> storageService.delete(PUBLIC + "/" + tenantId + "/products/x.webp"));
+
+        verify(store, never()).deleteIfExists(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("delete (D-09) - a URL outside the public origin is still skipped")
+    void d09ExternalUrlIsStillSkipped() {
+        withTenant(tenantId, () -> storageService.delete("https://cdn.example.com/x.webp"));
+
+        verify(store, never()).deleteIfExists(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("delete (D-09) - a dot segment cannot walk from the caller's tenant into another tenant's key")
+    void d09DotSegmentTraversalIsRefused() {
+        UUID other = UUID.randomUUID();
+        String suffix = "/products/" + entityId + "/x.webp";
+
+        withTenant(tenantId, () -> {
+            storageService.delete(PUBLIC + tenantId + "/../" + other + suffix);
+            storageService.delete(PUBLIC + tenantId + "/./../" + other + suffix);
+            storageService.delete(PUBLIC + tenantId + "/%2E%2E/" + other + suffix);
+            storageService.delete(PUBLIC + tenantId + "/..%2F" + other + suffix);
+            storageService.delete(PUBLIC + tenantId + "\\..\\" + other + suffix);
+        });
+
+        verify(store, never()).deleteIfExists(anyString(), anyString());
+    }
+
+    private static void withTenant(UUID tenant, Runnable body) {
+        TenantContext.set(tenant);
+        try {
+            body.run();
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private static List<ILoggingEvent> captureStorageLog(Runnable body) {
+        Logger logger = (Logger) LoggerFactory.getLogger(StorageService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            body.run();
+        } finally {
+            logger.detachAppender(appender);
+        }
+        return appender.list;
+    }
+
+    private static String messages(List<ILoggingEvent> events) {
+        return events.stream().map(e -> e.getLevel() + " " + e.getFormattedMessage()).toList().toString();
     }
 
     // ---- Container routing: quarantine is private (Phase 36, T-36-01) ----
