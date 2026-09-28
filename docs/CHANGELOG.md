@@ -42,9 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   self-references that were also already wrong (`:202-205` and `:221-303` in the JaCoCo comment,
   `:183-186`/`:202-284` in `scripts/check-jacoco-coverage.sh`) now name the block instead of a
   line, since a line number into a file goes stale on every edit to it.
-- **The pin's own comment claimed the Trivy gate was "a required status check".** It is required
-  on `main` but never runs on a pull request, so a reverted pin merges green; the comment now says
-  so and names the `dependencyInsight` proof a PR touching the line must run itself.
+- **The pin's own comment claimed the Trivy gate was "a required status check". It is not
+  required anywhere.** `main`'s branch protection lists 14 required checks and "Build and Push
+  Images", the job that holds the image gate, is not one of them; that job also runs on push and
+  release only, never on a pull request. The required `Security Scan` is a Trivy `fs` scan, and
+  with no Gradle lockfile committed it cannot see the RESOLVED amqp-client version. So nothing
+  stops a reverted pin from merging: it merges green and turns `main` red afterwards. The comment
+  now says so and names the `dependencyInsight` proof a PR touching the line must run itself.
+  (Round 1's fix of this sentence still said "required on `main`"; round 2 caught it.)
 - **Still true after this merges:** the Trivy gate lives in `build-and-push`, which does not run
   on pull requests, so this PR's own checks cannot show the image going green — the first
   CI-visible confirmation is the `main` run after merge.
