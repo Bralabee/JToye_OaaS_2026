@@ -20,6 +20,7 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Phase 36 tracer: the REAL {@link StorageService}, built through {@link StorageConfig}'s own bean
@@ -171,6 +172,49 @@ class AzuriteStorageIntegrationTest {
     }
 
     // ------------------------------------------------------------------
+    // Task 3: pipeline semantics the media pipeline and the seeder depend on
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("deleteByKeyChecked of a key that was never written returns true (absent = gone)")
+    void deleteOfNeverWrittenKeyCountsAsGone() {
+        assertThat(storage.deleteByKeyChecked(derivativeKey())).isTrue();
+        assertThat(storage.deleteByKeyChecked(quarantineKey())).isTrue();
+    }
+
+    @Test
+    @DisplayName("putSeedImage writes a deterministic key ONCE: a second call with different bytes never overwrites")
+    void seedImageIsNeverOverwritten() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        byte[] first = jpegBytes();
+        byte[] second = jpegBytes();
+        assertThat(second).isNotEqualTo(first);
+
+        String url1 = storage.putSeedImage(tenant, "dish.jpg", first, "image/jpeg");
+        String url2 = storage.putSeedImage(tenant, "dish.jpg", second, "image/jpeg");
+
+        assertThat(url2).as("the seed URL is stable").isEqualTo(url1);
+        HttpResponse<byte[]> get = anonymousGet(url1);
+        assertThat(get.statusCode()).isEqualTo(200);
+        assertThat(get.body())
+                .as("'immutable' is only honest if the bytes at a deterministic key are written once (#489)")
+                .isEqualTo(first);
+        assertThat(get.headers().firstValue("Cache-Control")).contains(IMMUTABLE);
+    }
+
+    @Test
+    @DisplayName("get of a missing key is the service's answer (BlobStorageException 404), not 'store unavailable'")
+    void missingKeyIsAServiceAnswerNotUnavailability() {
+        String key = derivativeKey();
+
+        assertThatThrownBy(() -> storage.getBytes(key))
+                .isInstanceOf(com.azure.storage.blob.models.BlobStorageException.class)
+                .isNotInstanceOf(StorageUnavailableException.class)
+                .satisfies(e -> assertThat(((com.azure.storage.blob.models.BlobStorageException) e).getStatusCode())
+                        .isEqualTo(404));
+    }
+
+    // ------------------------------------------------------------------
 
     private static String blobEndpoint() {
         return AzuriteTestSupport.blobEndpoint(AZURITE);
@@ -190,6 +234,16 @@ class AzuriteStorageIntegrationTest {
         ThreadLocalRandom.current().nextBytes(bytes);
         byte[] header = {0x52, 0x49, 0x46, 0x46, 0x38, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50};
         System.arraycopy(header, 0, bytes, 0, header.length);
+        return bytes;
+    }
+
+    /** JPEG-magic-headed payload (putSeedImage sniffs the magic bytes) with a random body. */
+    private static byte[] jpegBytes() {
+        byte[] bytes = new byte[64];
+        ThreadLocalRandom.current().nextBytes(bytes);
+        bytes[0] = (byte) 0xFF;
+        bytes[1] = (byte) 0xD8;
+        bytes[2] = (byte) 0xFF;
         return bytes;
     }
 
