@@ -286,12 +286,22 @@ public class StorageService {
      * distinct content — the quarantine key IS the raw sha256, and a derivative key carries
      * the asset id, which a fresh upload always gets fresh (the dedup path reuses the row only
      * for byte-identical raw input). So {@code immutable} is honest on this path too.
+     *
+     * <p>Phase 36 (T-36-01): a quarantine key is stored in the PRIVATE container with NO
+     * cache header, and this returns {@code null} for it — a private object has no public URL,
+     * and the raw, un-stripped bytes must never be advertised as cacheable. Both production
+     * callers that store quarantine keys ({@code MediaAssetService} accept and re-quarantine)
+     * discard the return value.
+     *
+     * @return the public URL, or {@code null} for a quarantine key
      */
     public String putBytes(String objectKey, byte[] bytes, String contentType) {
+        boolean quarantine = isQuarantineKey(objectKey);
         // contentType is the detected/produced type — never the client header.
-        store.put(containerFor(objectKey), objectKey, bytes, contentType, IMMUTABLE_CACHE_CONTROL);
+        store.put(containerFor(objectKey), objectKey, bytes, contentType,
+                quarantine ? null : IMMUTABLE_CACHE_CONTROL);
         log.info("Stored object by key: {} ({} bytes, {})", objectKey, bytes.length, contentType);
-        return urlForKey(objectKey);
+        return quarantine ? null : urlForKey(objectKey);
     }
 
     /**
@@ -353,8 +363,14 @@ public class StorageService {
     /**
      * The browser-reachable public URL for a stored object key: always {@code storage.blob.public-url
      * + "/" + key}, never the SDK's own blob URL, which carries the in-network host (split horizon).
+     *
+     * @throws IllegalArgumentException for a quarantine key: it lives in the private container and
+     *         has no public URL (only ACTIVE assets, whose keys are derivatives, are ever asked for one)
      */
     public String urlForKey(String objectKey) {
+        if (isQuarantineKey(objectKey)) {
+            throw new IllegalArgumentException("quarantine keys have no public URL");
+        }
         return properties.getBlob().getPublicUrl() + "/" + objectKey;
     }
 
