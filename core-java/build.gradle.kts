@@ -143,6 +143,13 @@ dependencies {
         // WorkloadIdentityCredential never loads (assumption A1, proven by 36-06's
         // credential-build test).
         exclude(group = "com.microsoft.azure", module = "msal4j-persistence-extension")
+        // azure-identity 1.18.6 ALSO declares jna-platform 5.17.0 directly (not only through the
+        // extension above), so excluding the extension alone left jna on the runtime classpath.
+        // Measured in its class files: the JNA references sit in the Windows credential store,
+        // the Linux keyring, the IntelliJ/VS Code caches, the persistent token cache and one
+        // Platform.isWindows() call inside IdentityClient.authenticateWithAzurePowerShell. None
+        // is on WorkloadIdentityCredential's path.
+        exclude(group = "net.java.dev.jna")
     }
 
     // Phase 24 (IMG-02) — WebP transcode + image normalize pipeline.
