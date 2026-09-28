@@ -5,7 +5,7 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 36
 current_phase_name: Azure Blob Storage Throughout
 status: executing
-stopped_at: "Phase 36 PLANNED 2026-09-28 — 18 plans in 8 waves (BLOB-01..10), plan-checker PASSED; ready for /gsd-execute-phase 36"
+stopped_at: "Phase 36 EXECUTING (started 2026-09-28, sequential on the phase branch) — 0/18 plans complete"
 last_updated: "2026-09-28T20:45:05.335Z"
 last_activity: 2026-09-28
 last_activity_desc: "Phase 36 (Azure Blob Storage Throughout) planned: research, validation strategy, pattern map, 18 plans in 8 waves, plan-checker PASSED; owner decisions D-07..D-10 recorded in 36-CONTEXT.md"
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 36 (Azure Blob Storage Throughout) — READY TO EXECUTE
-Next: Phase 36 (Azure Blob Storage Throughout) is planned (18 plans, 8 waves) — run /gsd-execute-phase 36. It blocks Phase 29 plans 29-11 onward. Phase 29 remains PAUSED at 9/16 on two owner actions (staging DNS + operator secrets, body on branch `phase-29-research`); Phases 30/32 unplanned. Open decision from 35-13: the approvals-queue tier (#690), now decidable — the queue renders a real MANUAL_REVIEW application since the 2026-08-30 fresh-volume cycle.
+Phase: 36 (Azure Blob Storage Throughout) — EXECUTING (0/18 plans; started 2026-09-28)
+Next: Phase 36 is executing sequentially on branch `phase-36-azure-blob-storage` (the worktree base-check degraded parallel mode: the branch is ahead of origin/main). STATE.md is hand-edited during this run — `state.begin-phase` was run, diffed, found destructive again (it flattened `Last activity`, dropped `last_activity_desc` and rewrote a historical `Status:` line in the 23-13 block) and reverted; see memory trap-gsd-state-record-session. It blocks Phase 29 plans 29-11 onward. Phase 29 remains PAUSED at 9/16 on two owner actions (staging DNS + operator secrets, body on branch `phase-29-research`); Phases 30/32 unplanned. Open decision from 35-13: the approvals-queue tier (#690), now decidable — the queue renders a real MANUAL_REVIEW application since the 2026-08-30 fresh-volume cycle.
 
 > **PERCENT PROVENANCE (2026-08-30): 100 means "of written plans", not "of the milestone".**
 > Counters re-measured from disk per the 35-11 rule: `git ls-files` reports **119** `*-PLAN.md`
