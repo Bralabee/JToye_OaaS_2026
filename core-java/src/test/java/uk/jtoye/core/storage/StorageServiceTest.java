@@ -281,4 +281,69 @@ class StorageServiceTest {
 
         assertDoesNotThrow(() -> storageService.delete(fullUrl));
     }
+
+    // ---- Container routing: quarantine is private (Phase 36, T-36-01) ----
+
+    @Test
+    @DisplayName("isQuarantineKey - only '<tenant>/quarantine/...' is a quarantine key")
+    void isQuarantineKeyRecognisesOnlyTheSecondSegment() {
+        assertTrue(StorageService.isQuarantineKey(tenantId + "/quarantine/" + "a".repeat(64) + ".jpg"));
+
+        assertFalse(StorageService.isQuarantineKey(tenantId + "/media/x.webp"), "a derivative key");
+        assertFalse(StorageService.isQuarantineKey("quarantine/x"), "no tenant segment");
+        assertFalse(StorageService.isQuarantineKey(tenantId + "/products/quarantine-shots/x.webp"),
+                "'quarantine' deeper in the path, or as a prefix of another word, is not the quarantine segment");
+        assertFalse(StorageService.isQuarantineKey(""), "empty key");
+    }
+
+    @Test
+    @DisplayName("putBytes - a quarantine key goes to the PRIVATE container with no cache header and no URL")
+    void putBytesQuarantineKeyIsPrivateWithoutUrlOrImmutableHeader() {
+        String key = tenantId + "/quarantine/" + "b".repeat(64) + ".jpg";
+        byte[] bytes = {1, 2, 3};
+
+        String url = storageService.putBytes(key, bytes, "image/jpeg");
+
+        verify(store).put("jtoye-quarantine", key, bytes, "image/jpeg", null);
+        assertNull(url, "a private object has no public URL, so none may be minted for it");
+    }
+
+    @Test
+    @DisplayName("putBytes - a derivative key goes to the PUBLIC container with the immutable header and its URL")
+    void putBytesPublicKeyIsPublicWithImmutableHeaderAndUrl() {
+        String key = tenantId + "/media/" + entityId + ".webp";
+        byte[] bytes = {4, 5, 6};
+
+        String url = storageService.putBytes(key, bytes, "image/webp");
+
+        verify(store).put("jtoye-images", key, bytes, "image/webp", "public, max-age=31536000, immutable");
+        assertEquals("http://localhost:10000/devstoreaccount1/jtoye-images/" + key, url);
+    }
+
+    @Test
+    @DisplayName("urlForKey - refuses a quarantine key and composes the public URL for any other key")
+    void urlForKeyRefusesQuarantineKeys() {
+        String quarantineKey = tenantId + "/quarantine/" + "c".repeat(64) + ".png";
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> storageService.urlForKey(quarantineKey));
+        assertEquals("quarantine keys have no public URL", ex.getMessage());
+
+        String publicKey = tenantId + "/media/" + entityId + ".webp";
+        assertEquals("http://localhost:10000/devstoreaccount1/jtoye-images/" + publicKey,
+                storageService.urlForKey(publicKey));
+    }
+
+    @Test
+    @DisplayName("getBytes and deleteByKeyChecked - a quarantine key addresses the private container")
+    void readAndDeleteOfQuarantineKeyAddressThePrivateContainer() {
+        String key = tenantId + "/quarantine/" + "d".repeat(64) + ".jpg";
+        when(store.get("jtoye-quarantine", key)).thenReturn(new byte[]{7});
+        when(store.deleteIfExists("jtoye-quarantine", key)).thenReturn(true);
+
+        assertArrayEquals(new byte[]{7}, storageService.getBytes(key));
+        assertTrue(storageService.deleteByKeyChecked(key));
+
+        verify(store).get("jtoye-quarantine", key);
+        verify(store).deleteIfExists("jtoye-quarantine", key);
+    }
 }

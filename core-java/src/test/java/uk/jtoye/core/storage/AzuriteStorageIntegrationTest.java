@@ -112,6 +112,67 @@ class AzuriteStorageIntegrationTest {
     }
 
     // ------------------------------------------------------------------
+    // Task 2: quarantine is private, and the public container cannot be listed (#626)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("A quarantined upload lands in the PRIVATE container: no public URL, anonymous GET refused")
+    void quarantinedUploadIsPrivate() throws Exception {
+        String key = quarantineKey();
+        byte[] raw = webpBytes();
+
+        String url = storage.putBytes(key, raw, "image/jpeg");
+
+        assertThat(url).as("a private object must not be given a public URL").isNull();
+        String direct = blobEndpoint() + "/" + AzuriteTestSupport.QUARANTINE_CONTAINER + "/" + key;
+        HttpResponse<byte[]> get = anonymousGet(direct);
+        assertThat(get.statusCode()).as("anonymous GET of %s", direct).isNotEqualTo(200);
+        assertThat(new String(get.body(), java.nio.charset.StandardCharsets.ISO_8859_1))
+                .as("the refused response must not carry the raw (un-stripped) bytes")
+                .doesNotContain(new String(raw, java.nio.charset.StandardCharsets.ISO_8859_1));
+    }
+
+    @Test
+    @DisplayName("#626: the public container serves anonymous GET by URL but refuses an anonymous LIST")
+    void publicContainerIsReadableByUrlButNotListable() throws Exception {
+        String url = storage.putBytes(derivativeKey(), webpBytes(), "image/webp");
+        assertThat(anonymousGet(url).statusCode())
+                .as("control: an anonymous GET of a stored public derivative succeeds")
+                .isEqualTo(200);
+
+        String list = blobEndpoint() + "/" + AzuriteTestSupport.PUBLIC_CONTAINER + "?restype=container&comp=list";
+        HttpResponse<byte[]> ls = anonymousGet(list);
+        String body = new String(ls.body(), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(ls.statusCode()).as("anonymous LIST of %s (body: %s)", list, body).isNotEqualTo(200);
+        assertThat(body).as("no inventory may leak").doesNotContain("<EnumerationResults");
+    }
+
+    @Test
+    @DisplayName("A quarantine key round-trips through the private container and is absent from the public one")
+    void quarantineKeyRoundTripsThroughThePrivateContainer() throws Exception {
+        String key = quarantineKey();
+        byte[] raw = webpBytes();
+
+        storage.putBytes(key, raw, "image/jpeg");
+
+        assertThat(storage.getBytes(key)).as("authenticated read through StorageService").isEqualTo(raw);
+        String inPublic = blobEndpoint() + "/" + AzuriteTestSupport.PUBLIC_CONTAINER + "/" + key;
+        assertThat(anonymousGet(inPublic).statusCode())
+                .as("the raw bytes must not ALSO exist in the public container")
+                .isEqualTo(404);
+        assertThat(storage.deleteByKeyChecked(key)).isTrue();
+        assertThat(storage.deleteByKeyChecked(key)).as("absent counts as gone in the private container too").isTrue();
+    }
+
+    // ------------------------------------------------------------------
+
+    private static String blobEndpoint() {
+        return AzuriteTestSupport.blobEndpoint(AZURITE);
+    }
+
+    private static String quarantineKey() {
+        return UUID.randomUUID() + "/quarantine/" + UUID.randomUUID().toString().replace("-", "") + ".jpg";
+    }
 
     private static String derivativeKey() {
         return UUID.randomUUID() + "/media/" + UUID.randomUUID() + ".webp";
