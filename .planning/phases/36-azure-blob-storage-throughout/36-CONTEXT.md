@@ -81,8 +81,8 @@ and backup-destination decisions it depended on.
 - **D-10:** The **pg-backup image tag is bumped** from `:15`, because its contents change (awscli out,
   the Blob uploader in). The CronJob, the parity gate and the goldens move in the same change.
   Resolves research OQ7.
-- **D-11:** Storage accounts (owner, via orchestrator checkpoint, 2026-09-28; plan 36-05 Task 1,
-  **option-a**). **Staging:** media **`jtoyestgmedia`** (`uksouth`) and backup **`jtoyestgbackup`**
+- **D-11:** Storage accounts `jtoyestgmedia`, `jtoyestgbackup`, `jtoyeprodmedia`, `jtoyeprodbackup`
+  (owner, via orchestrator checkpoint, 2026-09-28; plan 36-05 Task 1, **option-a**). **Staging:** media **`jtoyestgmedia`** (`uksouth`) and backup **`jtoyestgbackup`**
   (`ukwest`). **Production:** media **`jtoyeprodmedia`** (`uksouth`) and backup
   **`jtoyeprodbackup`** (`ukwest`). All four are `StorageV2` / **`Standard_LRS`**. Media accounts sit
   with the AKS cluster. Each backup account is in a different region from staging (D-01), and
