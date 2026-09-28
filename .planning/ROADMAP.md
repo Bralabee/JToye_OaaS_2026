@@ -777,20 +777,54 @@ Plans:
 **Added 2026-09-28 by owner ruling** ("go with A, Azure Blob throughout"; memory `decision_azure_blob_storage`). The platform is Azure; the S3 API was a local convenience that outlived its reason. Two facts forced the timing: MinIO's community images are gone for good (repo archived 2026-04-25, source-only; Docker Hub stopped 2026-09-12; `quay.io/minio/*` answers 401 to anonymous pulls since ~2026-09-24 — the cause of the nightly E2E being red since 2026-09-25, #683, and of the local stack being unable to restart after the 2026-09-27 image prune), and the AWS S3 target configured in `k8s/{staging,production}` was **never provisioned** — its two key pairs are among Phase 29's seven unfilled operator secrets — so there is no real data to migrate outside the 3.6MB local dev volume.
 
 **Goal:** Object storage is Azure Blob Storage in staging and production and Azurite (`mcr.microsoft.com/azure-storage/azurite`) locally and in the nightly, with no S3 API, MinIO image or AWS storage credential left anywhere in the platform — and every storefront image, upload and backup path proven working end to end on the new store.
-**Requirements**: TBD (derived at plan time)
+**Requirements**: BLOB-01, BLOB-02, BLOB-03, BLOB-04, BLOB-05, BLOB-06, BLOB-07, BLOB-08, BLOB-09, BLOB-10 (derived at plan time 2026-09-28 from 36-RESEARCH.md; REQUIREMENTS.md §BLOB)
 **Depends on:** Phase 24 (media_asset CoW model + safe upload pipeline), Phase 27 (media durability: quarantine horizon, outbox). **Blocks:** Phase 29 plans 29-11 onward (first staging deploy) — the staging estate must be provisioned with a Storage Account instead of AWS keys.
-**Success criteria (draft — refined by /gsd-plan-phase 36):**
-1. core-java stores, reads and deletes media through the Azure Blob SDK behind the existing `StorageService` seam; `software.amazon.awssdk` S3 is gone from main code (a search shown able to fail first), and the media pipeline (quarantine → worker → WebP derivative → reaper) passes its existing Testcontainers suites against Azurite.
-2. The #626 access rule survives the move: images are anonymously readable BY URL while the container cannot be anonymously LISTED — proven both ways against Azurite (anonymous GET 200, anonymous list refused) and stated for the staging Storage Account config.
-3. Local compose and the nightly run a digest-pinned Azurite; `minio`/`minio-init` are removed; the nightly brings the stack up and runs its suites again (#683's cause removed, not worked around).
-4. Existing local media (the `minio_data` volume) is either migrated or deliberately reseeded — decided at discuss time — and every image URL persisted in the DB (`products.image_url`, `additional_image_urls[]`, `media_asset` keys) resolves on the new store, verified in a real browser (`naturalWidth > 0`), not by status code.
-5. The pg-backup CronJob writes to Azure Blob and a restore from it is exercised; k8s base/staging/production config, network policies and rendered goldens carry the Blob endpoint; Phase 29's operator-secret list loses the two AWS pairs.
-6. Frontend `next.config.mjs` image `remotePatterns` and the CSP `img-src` admit the Blob origin and nothing broader; `infra/dependency-horizons.yaml`, `.env.example`, scripts and docs carry no MinIO/S3 residue (a repo-wide search, fail-armed).
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE; refined from the draft by `/gsd-plan-phase 36` — the draft's "existing Testcontainers suites pass against Azurite" was a false premise, since every existing media suite stubs `StorageService`, so SC1 now requires new tests that touch the store):
+
+  1. core-java stores, reads and deletes media through the Azure Blob SDK behind the unchanged `StorageService` surface; the AWS SDK is absent from main code AND the runtime classpath (both searches shown finding it on the pre-change tree); one `storage.blob.auth-mode` switch, where a misconfiguration — unknown mode, a non-emulator connection string, Workload Identity without its injected identity, wrong container access levels — stops the application at startup; and the media pipeline (quarantine → worker → WebP derivative → quarantine delete → sweep) is proven against a real Azurite with storage unstubbed. (BLOB-01, BLOB-03)
+  2. The #626 rule survives: derivatives are anonymously readable by URL, the public container cannot be anonymously listed, and quarantine is private — proven both ways against Azurite, asserted by core-java at every boot, and stated for the staging account with the exact read-back commands; a URL-addressed delete refuses another tenant's key (D-09). (BLOB-02)
+  3. Compose, the hybrid runtime and the nightly run a digest-pinned Azurite; `minio`/`minio-init` are gone; a `workflow_dispatch` nightly on the phase branch brings the stack up and executes Playwright with an executed count above zero (#683's cause removed, not worked around). (BLOB-04)
+  4. Existing local media is deliberately reseeded (D-04): a tenant-looped dev script proven to see rows rewrites seed URLs and marks unrecoverable assets FAILED, with old-origin after-counts of 0 (D-05); every servable image URL HEADs 200 on Azurite (a gate that VOIDs on an empty set); an upload travels the full pipeline on the rebuilt stack; and a real browser renders storefront images from the storage origin with `naturalWidth > 0`. (BLOB-05)
+  5. The pg-backup job writes to Azure Blob through a write-only uploader and a two-arm restore drill (zero-row arm caught, live-count arm matched) runs every night; k8s base/staging/production/local carry the Blob config with Workload Identity, dedicated ServiceAccounts, no storage Secret, no port 9000, updated invariants and goldens; Phase 29 has a handoff on main with the provisioning spec, the operator-secret list change (7 → 3) and a merge-conflict map. (BLOB-06, BLOB-07, BLOB-10)
+  6. Frontend `remotePatterns` and CSP `img-src` admit the Azurite origin and nothing broader (tests fail on a wildcard); a repo-wide, fail-armed CI gate finds no MinIO/S3 residue outside a reasoned allowlist; horizons carry an azurite row; the content-type gate is re-targeted to Blob; docs and test metrics are current. (BLOB-08, BLOB-09)
+
+**Plans:** 18 plans (8 waves)
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 36 to break down)
+**Wave 1**
+- [ ] 36-01-PLAN.md — TRACER: StorageService on the Azure Blob SDK via a `BlobObjectStore` adapter, key routing to public/private containers, #626 both ways on Azurite, AWS SDK removed
+- [ ] 36-02-PLAN.md — Azurite replaces MinIO in compose, the hybrid runtime (D-08), horizons and the nightly service list; env contract drops object-store credentials
+- [ ] 36-03-PLAN.md — Frontend CSP `img-src` and `remotePatterns` admit the Azurite origin and nothing broader (test-enforced)
+- [ ] 36-04-PLAN.md — `blobctl`: one-switch, emulator-only, write-only Go uploader for the backup image; CI, Dependabot, targeted gitleaks allowlist
+- [ ] 36-05-PLAN.md — Owner decision D-11 (storage account names/regions) + the Blob estate provisioning runbook for Phase 29 (checkpoint)
+
+**Wave 2**
+- [ ] 36-06-PLAN.md — Fail-fast storage config (emulator-only connection strings) + boot-time container probe, ON in every runtime (D-02, D-08)
+- [ ] 36-07-PLAN.md — D-09 cross-tenant URL-delete guard + the media pipeline proven on an unstubbed Azurite
+- [ ] 36-08-PLAN.md — pg-backup image on blobctl (`:15-blob`), no prune; two-arm restore-drill gate wired into the nightly; runbook rewrite
+
+**Wave 3**
+- [ ] 36-09-PLAN.md — k8s base/overlays: Workload Identity, ServiceAccounts, local emulator shim, no port 9000, INV-8/9/10 + LOC-7, D-10 tag bump, goldens
+- [ ] 36-11-PLAN.md — Dev reseed script (D-04/D-05), dry run, owner-approved apply before any core-java boot (checkpoint)
+- [ ] 36-14-PLAN.md — core-java comment and test-literal residue removed (V42 untouched)
+
+**Wave 4**
+- [ ] 36-10-PLAN.md — k8s/local bootstrap scripts, env keys, secrets template and k8s runbooks off the retired store
+- [ ] 36-12-PLAN.md — Rebuild all, runtime parity, servable-URL gate, live upload round trip, content-type gate on Azurite (both nightly-wired)
+
+**Wave 5**
+- [ ] 36-13-PLAN.md — Playwright storage-images spec (`naturalWidth > 0` from the storage origin) + human look after the reseed
+- [ ] 36-15-PLAN.md — Live docs, agent-context files and codebase map describe Azure Blob/Azurite; Azurite doc-version claim
+
+**Wave 6**
+- [ ] 36-16-PLAN.md — Repo-wide, fail-armed object-store residue gate with a reasoned allowlist, wired into CI
+
+**Wave 7**
+- [ ] 36-17-PLAN.md — Metrics regenerated once; Phase 29 handoff with the conflict map and operator-secret change; requirement ledger
+
+**Wave 8**
+- [ ] 36-18-PLAN.md — Owner-approved push + nightly `workflow_dispatch` proof (Playwright executed > 0) + final parity readings (checkpoint)
 
 ---
 
