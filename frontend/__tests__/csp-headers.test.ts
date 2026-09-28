@@ -151,6 +151,59 @@ describe("buildCsp() — Content-Security-Policy directives", () => {
       "upgrade-insecure-requests",
     )
   })
+
+  // Phase 36 (BLOB-08): images moved to Azure Blob. Locally they are served by
+  // Azurite on http://localhost:10000; in staging/production by the raw Blob
+  // endpoint (https://<account>.blob.core.windows.net/...), which the existing
+  // broad `https:` source already covers. So the ONLY img-src change is the dev
+  // origin, and these tests exist to keep it that way: a later "helpful"
+  // `*.blob.core.windows.net` wildcard, or the retired object-store origin
+  // coming back, must turn this suite red.
+  describe("img-src admits the Azurite dev origin and nothing broader (Phase 36)", () => {
+    const imgSrcTokens = () => parseCsp(buildCsp(base))["img-src"].split(" ")
+
+    it("admits the Azurite dev origin http://localhost:10000", () => {
+      expect(imgSrcTokens()).toContain("http://localhost:10000")
+    })
+
+    it("no longer admits the retired object-store origin http://localhost:9000", () => {
+      expect(imgSrcTokens()).not.toContain("http://localhost:9000")
+    })
+
+    it("keeps https://*.stripe.com as its ONLY wildcard source, and names no Blob host", () => {
+      const tokens = imgSrcTokens()
+      expect(tokens.filter((t) => t.includes("*"))).toEqual(["https://*.stripe.com"])
+      expect(tokens.filter((t) => /blob\.core\.windows\.net/.test(t))).toEqual([])
+    })
+  })
+})
+
+// The /_next/image optimizer fetches server-side from any remotePatterns host,
+// so a broad entry is an SSRF surface (T-36-10). No shipped code imports
+// next/image, so this list is inert for rendering; it must still hold exactly
+// the one dev origin/path, and never a wildcard hostname.
+describe("next.config.mjs images.remotePatterns (Phase 36, T-36-10)", () => {
+  async function loadRemotePatterns() {
+    jest.resetModules()
+    const mod: any = await import("../next.config.mjs")
+    return mod.default.images.remotePatterns as Array<Record<string, string>>
+  }
+
+  it("holds exactly the Azurite public-container origin/path", async () => {
+    expect(await loadRemotePatterns()).toEqual([
+      {
+        protocol: "http",
+        hostname: "localhost",
+        port: "10000",
+        pathname: "/devstoreaccount1/jtoye-images/**",
+      },
+    ])
+  })
+
+  it("has no entry whose hostname contains a wildcard", async () => {
+    const wildcards = (await loadRemotePatterns()).filter((p) => String(p.hostname).includes("*"))
+    expect(wildcards).toEqual([])
+  })
 })
 
 describe("next.config.mjs static security headers", () => {
