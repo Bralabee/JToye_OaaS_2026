@@ -1,5 +1,11 @@
 # Infrastructure Docker Compose
-# This file provides PostgreSQL and Keycloak for local development
+# This file provides PostgreSQL, Keycloak and Azurite (the Azure Blob emulator) for local
+# development — the HYBRID runtime driven by scripts/start-dev.sh, where core-java runs as a
+# host process.
+#
+# NEVER run this file together with docker-compose.full-stack.yml. The two share container
+# names (jtoye-postgres, jtoye-keycloak, jtoye-azurite) and host ports (5433, 8085, 10000),
+# as scripts/start-dev.sh already states; the second one to start fails on the collision.
 #
 # SETUP REQUIRED:
 # 1. Copy .env.example to .env in this directory
@@ -89,9 +95,44 @@ services:
       keycloak-realm-render:
         condition: service_completed_successfully
 
+  # Azurite — the Azure Blob emulator for the hybrid runtime (Phase 36, D-08). Without it a
+  # host-process core-java has no object store at all, and its fail-fast startup check (36-06)
+  # would have to be switched off here. It stays ON in every runtime instead: core-java's
+  # default connection string (UseDevelopmentStorage=true) targets 127.0.0.1:10000, which this
+  # service publishes, and scripts/start-dev.sh exports STORAGE_CREATE_CONTAINERS=true so the
+  # host process creates jtoye-images (access level blob, #626) and the private
+  # jtoye-quarantine on a fresh volume.
+  #
+  # The image line is IDENTICAL to docker-compose.full-stack.yml's, character for character:
+  # infra/dependency-horizons.yaml declares both as sites of the one `azurite` pin, and the
+  # horizons gate fails if either drifts. The flags are explained on that file's service.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_IMAGE_TAG:-3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5}
+    container_name: jtoye-azurite
+    restart: unless-stopped
+    command: >-
+      azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data
+      --disableProductStyleUrl --skipApiVersionCheck --disableTelemetry
+    ports:
+      # Loopback-only by default (#438/#441), like the other services in this file. The
+      # host-process core-java AND the browser both reach the emulator here.
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:10000:10000"
+    volumes:
+      - azuritedata:/data
+    healthcheck:
+      # node is in the image, curl is not. Any HTTP status (an unauthenticated LIST is
+      # refused with one) exits 0; a connection error exits 1.
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:10000/devstoreaccount1?comp=list', () => process.exit(0)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jtoye-net
+
 networks:
   jtoye-net:
     driver: bridge
 
 volumes:
   pgdata:
+  azuritedata:

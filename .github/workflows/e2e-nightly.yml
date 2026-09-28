@@ -21,7 +21,7 @@
 #   `ollama-init` pulls `gemma3:12b` (~8 GB; a GitHub-hosted runner has ~14 GB of disk in
 #   total) and `ollama` declares `deploy.resources.reservations.devices: [nvidia]`, which
 #   no GitHub-hosted runner provides. Neither is reachable from the rest of the stack's
-#   startup path: `core-java.depends_on` is postgres/keycloak/redis/rabbitmq only, and the
+#   startup path: `core-java.depends_on` is postgres/keycloak/redis/rabbitmq/azurite only, and the
 #   sole consumer of ollama is image analysis, which no spec asserts on. The service list
 #   below is therefore explicit rather than "everything" — see SERVICES.
 #
@@ -73,7 +73,7 @@ env:
   # implicit so adding a service to compose is a deliberate decision here too.
   SERVICES: >-
     postgres keycloak-realm-render keycloak redis rabbitmq
-    core-java edge-go frontend mcp-server minio minio-init mailhog
+    core-java edge-go frontend mcp-server azurite mailhog
 
 jobs:
   full-suite:
@@ -241,8 +241,8 @@ jobs:
           # shellcheck disable=SC2086
           docker compose -f "$COMPOSE_FILE" up -d --build $SERVICES
 
-      # Explicit polling rather than `--wait`: two of these services are one-shot
-      # containers that exit 0 (keycloak-realm-render, minio-init), and a health probe
+      # Explicit polling rather than `--wait`: one of these services is a one-shot
+      # container that exits 0 (keycloak-realm-render), and a health probe
       # that cannot distinguish "exited cleanly" from "died" is not evidence. Poll the
       # things the SUITE actually needs, and dump logs on timeout rather than failing mute.
       - name: Wait for core-java and the frontend
