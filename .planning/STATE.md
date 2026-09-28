@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** between phases — Phase 35 complete (PR #691); next is an owner call: unblock Phase 29 (staging DNS + operator secrets), or plan Phase 30/32, or decide #690
+**Current focus:** Phase 36 (Azure Blob Storage Throughout) — added 2026-09-28 by owner ruling, not yet planned; next is `/gsd-plan-phase 36`. It blocks Phase 29 plans 29-11 onward, which remain paused on the owner's staging DNS and the operator secrets (this phase removes the two AWS key pairs from that list; the SMTP values remain).
 
 ## Current Position
 
@@ -666,6 +666,8 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 ## Accumulated Context
 
 ### Roadmap Evolution
+
+- **Phase 36 added (2026-09-28): Azure Blob Storage Throughout** — owner ruling after the 2026-09-28 state analysis: object storage moves to Azure Blob (staging/prod) with Azurite locally and in the nightly; MinIO and the never-provisioned AWS S3 target are retired. Forced by MinIO withdrawing its community images (quay.io 401 since ~2026-09-24, the cause of #683 and of the blocked local restart). Blocks Phase 29 plans 29-11 onward. Not yet planned: next is `/gsd-plan-phase 36`.
 
 - **Phase 35 added (2026-08-29): Horizontal Layout Contract** — tiered content widths across dashboard, index, detail and marketing surfaces. Owner-raised after the QA-council #685 merge: the product "feels narrow and confined to the middle" on desktop. Investigated rather than assumed: measured in-browser against the freshly-rebuilt runtime (landing 1152px = 60% of 1920 / 45% of 2560; directory 1280px = 66.7%/50%; dashboard 1400px = 72.9%/54.7%), root-caused to the **stock shadcn `container` block shipped verbatim** in `tailwind.config.ts` and applied at `dashboard-shell.tsx:55`, with **no width standard declared anywhere in the repo**. Industry research (self-corrected mid-task; one unverifiable value struck) found three independent products clustered at **1680–1720px** for the app shell — Stripe Dashboard 1690, Square 1680/1720 — i.e. the owner's "two thirds" instinct reproduces the measured industry ceiling. The larger finding is that mature systems **tier width by content type** rather than applying one number: full-width for resource indexes (Polaris, Carbon `--full-width`, GitLab, Lightspeed), ~1100px for detail/reading (Linear 1136, Square 1016), ~1280px for marketing (Stripe 1264). Evidence and hazards in `35-.../CONTEXT.md`. Toast and Square Market are explicitly NOT verifiable and are not cited as closest-domain evidence.
 
