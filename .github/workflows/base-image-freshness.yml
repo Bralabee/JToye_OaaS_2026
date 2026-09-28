@@ -304,6 +304,7 @@ jobs:
             echo "WARN: could not list open issues (rc=${lrc}); de-duplication is DISABLED for this run." >&2
             cat "${errf}" >&2
             existing=""
+          fi
 
           # The heredoc body is indented to the SAME column as the `run: |` block
           # scalar. YAML strips that common indentation, so the shell receives the

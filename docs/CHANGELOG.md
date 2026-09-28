@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### main's image gate green again: amqp-client 5.34.0 for CVE-2026-75516, and the freshness alert step that could never file (#757) — 2026-09-28
+
+- **amqp-client 5.33.1 → 5.34.0 (closes #754).** `main` had been red on the Trivy image gate
+  since 2026-09-22 with exactly one finding — CVE-2026-75516 (HIGH) against 5.33.1 — which was
+  published into the vulnerability DB after the last green run on 2026-09-07. Time-based, not
+  change-based: nothing touched the pin. 5.34.0 is the version Trivy names as fixed; 5.36.0 is
+  newer and was deliberately not taken, for the pin's standing reason that every minor step is a
+  chance for a runtime default to move. Dependabot cannot raise this pin — it is a BOM property
+  (`rabbit-amqp-client.version`), not a declared dependency — so it only ever moves by hand.
+- **Resolution proven in both directions**, because #657 exists for a pin that silently applied
+  nothing. `dependencyInsight --dependency com.rabbitmq:amqp-client --configuration
+  runtimeClasspath` reports `5.34.0 (selected by rule)` / `5.22.0 -> 5.34.0` on this branch, and
+  `5.33.1 (selected by rule)` on an untouched `main` worktree — the instrument distinguishes them.
+- **`base-image-freshness.yml`'s "Open or refresh the tracking issue" step had never run to
+  completion.** The `if [ "${lrc}" -ne 0 ]` block introduced with #658 had no `fi`, so every run
+  died with `syntax error: unexpected end of file` before filing anything — the step whose own
+  comment says a silently unreported CVE is the worst outcome. Proven by splitting every
+  `run: |` block of the workflow and `bash -n`-ing each: before, 1 of 4 blocks fails with that
+  exact error; after, 0 of 4. The same sweep over all seven workflows finds no other instance
+  (two of them have only one-line `run:` steps and so nothing to parse — VOID, not clean).
+- **Line-number citations into `build.gradle.kts` re-derived from the code, not shifted.** The
+  new comment moves everything below line 108. The first pass shifted each `.planning/codebase`
+  pointer by the insertion and "verified" it by comparing the old line at HEAD with the new
+  line on the branch — a check that passes whenever BOTH pointers are equally stale, and three
+  were: `CONCERNS.md` (Jasper removal), and both `TESTING.md` ranges (the two test tasks; the
+  607-test measurement) were already 5–7 lines off on `main`. Review round 1 caught it; each is
+  now derived from the cited text itself (`CONCERNS` → `:184-192`, `TESTING` → `:218-320` and
+  `:333-340`), after the file was final, and checked strictly: each range must START on its
+  anchor line and contain its claimed text. That check fails all three of `main`'s pointers and
+  passes all three here; the weaker "range contains the text" form had passed `main`'s
+  `:171-176` on a one-line overlap. `check-doc-citations.sh` does not scan either file, so no
+  gate would have caught it. Three
+  self-references that were also already wrong (`:202-205` and `:221-303` in the JaCoCo comment,
+  `:183-186`/`:202-284` in `scripts/check-jacoco-coverage.sh`) now name the block instead of a
+  line, since a line number into a file goes stale on every edit to it.
+- **The pin's own comment claimed the Trivy gate was "a required status check". It is not
+  required anywhere.** `main`'s branch protection lists 14 required checks and "Build and Push
+  Images", the job that holds the image gate, is not one of them; that job also runs on push and
+  release only, never on a pull request. The required `Security Scan` is a Trivy `fs` scan, and
+  with no Gradle lockfile committed it cannot see the RESOLVED amqp-client version. So nothing
+  stops a reverted pin from merging: it merges green and turns `main` red afterwards. The comment
+  now says so and names the `dependencyInsight` proof a PR touching the line must run itself.
+  (Round 1's fix of this sentence still said "required on `main`"; round 2 caught it.)
+- **Still true after this merges:** the Trivy gate lives in `build-and-push`, which does not run
+  on pull requests, so this PR's own checks cannot show the image going green — the first
+  CI-visible confirmation is the `main` run after merge.
+
 ### netty raised to 4.1.137.Final for CVE-2026-75595 / CVE-2026-75596 — image hygiene, not a reachable hole (#752) — 2026-09-22
 
 - **Not reachable in this topology, and the entry says so.** `SslClientHelloHandler` is
