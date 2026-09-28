@@ -60,6 +60,10 @@ public class StorageProperties {
         public int getTryTimeoutSeconds() { return tryTimeoutSeconds; }
         public void setTryTimeoutSeconds(int tryTimeoutSeconds) { this.tryTimeoutSeconds = tryTimeoutSeconds; }
 
+        /** Shape rules (36-06). RED skeleton: not yet implemented. */
+        public void validateShape(java.util.function.Function<String, String> env) {
+        }
+
         /**
          * The HOST of the endpoint the client will talk to, for logging only. It never returns the
          * connection string or any part of it other than a host name (threat T-36-03): a
