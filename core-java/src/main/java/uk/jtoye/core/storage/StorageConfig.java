@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.function.Function;
 
 /**
  * Builds the Azure Blob client behind {@link StorageService} (Phase 36).
@@ -32,39 +33,46 @@ import java.time.Duration;
 public class StorageConfig {
     private static final Logger log = LoggerFactory.getLogger(StorageConfig.class);
 
-    static final String MODE_CONNECTION_STRING = "connection-string";
-    static final String MODE_WORKLOAD_IDENTITY = "workload-identity";
-
     @Bean
     public BlobServiceClient blobServiceClient(StorageProperties properties) {
+        return buildClient(properties, System::getenv);
+    }
+
+    /**
+     * Validates the shape, then builds the client. {@code env} is the one environment lookup for
+     * both the shape rules and the credential, so a test can drive the workload-identity path
+     * without the JVM's real environment.
+     */
+    static BlobServiceClient buildClient(StorageProperties properties, Function<String, String> env) {
         StorageProperties.Blob blob = properties.getBlob();
+        // First, before anything is built: a malformed configuration stops the context here (D-02).
+        blob.validateShape(env);
+
         BlobServiceClientBuilder builder = new BlobServiceClientBuilder()
                 .retryOptions(new RequestRetryOptions(RetryPolicyType.EXPONENTIAL, blob.getMaxTries(),
                         Duration.ofSeconds(blob.getTryTimeoutSeconds()), null, null, null));
 
-        String mode = blob.getAuthMode();
-        if (MODE_CONNECTION_STRING.equals(mode)) {
-            builder.connectionString(blob.getConnectionString());
-        } else if (MODE_WORKLOAD_IDENTITY.equals(mode)) {
-            // The AKS workload-identity webhook injects these at admission; the application reads
-            // them from the environment and never from a config file.
-            WorkloadIdentityCredentialBuilder credential = new WorkloadIdentityCredentialBuilder()
-                    .clientId(System.getenv("AZURE_CLIENT_ID"))
-                    .tenantId(System.getenv("AZURE_TENANT_ID"))
-                    .tokenFilePath(System.getenv("AZURE_FEDERATED_TOKEN_FILE"));
-            String authorityHost = System.getenv("AZURE_AUTHORITY_HOST");
-            if (authorityHost != null && !authorityHost.isBlank()) {
-                credential.authorityHost(authorityHost);
+        StorageProperties.AuthMode mode = blob.authModeValue();
+        switch (mode) {
+            case CONNECTION_STRING -> builder.connectionString(blob.getConnectionString());
+            case WORKLOAD_IDENTITY -> {
+                // The AKS workload-identity webhook injects these at admission; the application
+                // reads them from the environment and never from a config file.
+                WorkloadIdentityCredentialBuilder credential = new WorkloadIdentityCredentialBuilder()
+                        .clientId(env.apply("AZURE_CLIENT_ID"))
+                        .tenantId(env.apply("AZURE_TENANT_ID"))
+                        .tokenFilePath(env.apply("AZURE_FEDERATED_TOKEN_FILE"));
+                String authorityHost = env.apply("AZURE_AUTHORITY_HOST");
+                if (authorityHost != null && !authorityHost.isBlank()) {
+                    credential.authorityHost(authorityHost);
+                }
+                builder.endpoint(blob.getEndpoint()).credential(credential.build());
             }
-            builder.endpoint(blob.getEndpoint()).credential(credential.build());
-        } else {
-            throw new StorageConfigurationException("storage.blob.auth-mode must be '"
-                    + MODE_CONNECTION_STRING + "' or '" + MODE_WORKLOAD_IDENTITY + "', got '" + mode + "'");
         }
 
         // Mode, endpoint HOST and container names only. Never the connection string (T-36-03).
         log.info("Configuring Blob storage client: mode={}, endpointHost={}, publicContainer={}, quarantineContainer={}",
-                mode, blob.endpointHostForLog(), blob.getPublicContainer(), blob.getQuarantineContainer());
+                mode.value, blob.endpointHostForLog(), blob.getPublicContainer(), blob.getQuarantineContainer());
         return builder.buildClient();
     }
 

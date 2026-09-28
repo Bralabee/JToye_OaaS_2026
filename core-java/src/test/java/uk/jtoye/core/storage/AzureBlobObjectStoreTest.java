@@ -24,8 +24,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * HOST only and always appends {@code :10000/devstoreaccount1}, so a port in the proxy URI is
  * silently ignored (verified in {@code StorageEmulatorConnectionString}'s bytecode and by building a
  * client: {@code getAccountUrl()} reports port 10000). That form would reach whatever is on 10000,
- * which is a running dev Azurite. An endpoint-only connection string addresses the chosen port and
- * carries no credential at all.
+ * which is a running dev Azurite. The emulator-account form with an explicit {@code BlobEndpoint}
+ * addresses the chosen port. Since 36-06 the shape rules accept a connection string only in an
+ * emulator form, and the SDK needs a key alongside {@code AccountName}, so the key here is the
+ * base64 of a single byte: a placeholder that authenticates nothing, not the emulator key (which
+ * never appears in this repository).
  */
 class AzureBlobObjectStoreTest {
 
@@ -39,7 +42,7 @@ class AzureBlobObjectStoreTest {
         }
         StorageProperties properties = new StorageProperties();
         properties.getBlob().setAuthMode("connection-string");
-        properties.getBlob().setConnectionString("BlobEndpoint=http://127.0.0.1:" + closedPort + "/devstoreaccount1");
+        properties.getBlob().setConnectionString("AccountName=devstoreaccount1;AccountKey=eA==;BlobEndpoint=http://127.0.0.1:" + closedPort + "/devstoreaccount1");
         properties.getBlob().setMaxTries(1);
         properties.getBlob().setTryTimeoutSeconds(2);
         StorageConfig config = new StorageConfig();

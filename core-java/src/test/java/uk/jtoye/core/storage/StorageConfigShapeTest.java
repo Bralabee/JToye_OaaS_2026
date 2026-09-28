@@ -85,10 +85,18 @@ class StorageConfigShapeTest {
     }
 
     @Test
-    @DisplayName("connection-string: devstoreaccount1 with an endpoint and no key at all is valid")
-    void emulatorAccountWithoutKeyIsValid() {
-        assertDoesNotThrow(() -> emulator("AccountName=devstoreaccount1;BlobEndpoint=http://127.0.0.1:45678/devstoreaccount1")
+    @DisplayName("connection-string: devstoreaccount1 with only a key and an endpoint is valid (the closed-port test's form)")
+    void minimalEmulatorAccountFormIsValid() {
+        assertDoesNotThrow(() -> emulator("AccountName=devstoreaccount1;AccountKey=eA==;BlobEndpoint=http://127.0.0.1:45678/devstoreaccount1")
                 .validateShape(NO_ENV));
+    }
+
+    @Test
+    @DisplayName("connection-string: devstoreaccount1 without AccountKey is refused here, not later by the SDK")
+    void emulatorAccountWithoutKeyIsRefused() {
+        StorageConfigurationException e = refused(emulator(
+                "AccountName=devstoreaccount1;BlobEndpoint=http://127.0.0.1:45678/devstoreaccount1"), NO_ENV);
+        assertThat(e.getMessage()).contains("emulator-only").contains("AccountKey");
     }
 
     // ---- connection-string mode: everything else is refused -----------------------------------
