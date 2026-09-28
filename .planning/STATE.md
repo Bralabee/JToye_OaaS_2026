@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 36 (Azure Blob Storage Throughout) — added 2026-09-28 by owner ruling, not yet planned; next is `/gsd-plan-phase 36`. It blocks Phase 29 plans 29-11 onward, which remain paused on the owner's staging DNS and the operator secrets (this phase removes the two AWS key pairs from that list; the SMTP values remain).
+**Current focus:** Phase 36 (Azure Blob Storage Throughout) — added 2026-09-28 by owner ruling; context gathered the same day (`36-CONTEXT.md`: backups to a separate immutable Azure account superseding Phase 29 D-12, AKS Workload Identity, reseed local media, raw Blob endpoint); next is `/gsd-plan-phase 36`. It blocks Phase 29 plans 29-11 onward, which remain paused on the owner's staging DNS and the operator secrets (this phase removes the two AWS key pairs from that list; the SMTP values remain).
 
 ## Current Position
 
