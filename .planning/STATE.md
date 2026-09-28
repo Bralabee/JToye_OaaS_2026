@@ -5,7 +5,7 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 36
 current_phase_name: Azure Blob Storage Throughout
 status: executing
-stopped_at: "Phase 36 EXECUTING (started 2026-09-28, sequential on the phase branch) — 0/18 plans complete"
+stopped_at: "Phase 36 EXECUTING — wave 1 complete (36-01..36-05, 5/18 plans); next wave 2 (36-06, 36-07, 36-08, 36-11)"
 last_updated: "2026-09-28T20:45:05.335Z"
 last_activity: 2026-09-28
 last_activity_desc: "Phase 36 (Azure Blob Storage Throughout) planned: research, validation strategy, pattern map, 18 plans in 8 waves, plan-checker PASSED; owner decisions D-07..D-10 recorded in 36-CONTEXT.md"
@@ -29,7 +29,8 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 36 (Azure Blob Storage Throughout) — EXECUTING (0/18 plans; started 2026-09-28)
+Phase: 36 (Azure Blob Storage Throughout) — EXECUTING (5/18 plans; started 2026-09-28)
+Wave 1 DONE 2026-09-28: 36-01 Blob SDK spine + Azurite tracer (private jtoye-quarantine, #626 proven, AWS SDK gone), 36-02 digest-pinned Azurite in both compose runtimes + nightly, 36-03 frontend CSP/remotePatterns on Azurite (BLOB-08 closed), 36-04 blobctl (own conditional upload: azblob v1.8.1 UploadFile drops If-None-Match above 256 MiB), 36-05 D-11 account names (owner option-a, 30-day WORM recorded) + runbook. Wave-1 gate: core-java unit 1240/0 fail (--rerun-tasks), blobctl go test ok, both compose files validate. Expected reds carried: check-env-contract.sh (36-09), docs-freshness counts (36-17). OPEN for owner: Microsoft.Storage provider unregistered on c483d353, so the name-availability check returned VOID (DNS shows all four free) — .planning/WINDOWS.md #1.
 Next: Phase 36 is executing sequentially on branch `phase-36-azure-blob-storage` (the worktree base-check degraded parallel mode: the branch is ahead of origin/main). STATE.md is hand-edited during this run — `state.begin-phase` was run, diffed, found destructive again (it flattened `Last activity`, dropped `last_activity_desc` and rewrote a historical `Status:` line in the 23-13 block) and reverted; see memory trap-gsd-state-record-session. It blocks Phase 29 plans 29-11 onward. Phase 29 remains PAUSED at 9/16 on two owner actions (staging DNS + operator secrets, body on branch `phase-29-research`); Phases 30/32 unplanned. Open decision from 35-13: the approvals-queue tier (#690), now decidable — the queue renders a real MANUAL_REVIEW application since the 2026-08-30 fresh-volume cycle.
 
 > **PERCENT PROVENANCE (2026-08-30): 100 means "of written plans", not "of the milestone".**
