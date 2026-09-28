@@ -138,6 +138,19 @@ jobs:
           chmod +x ./scripts/check-go-coverage.sh
           ./scripts/check-go-coverage.sh
 
+      # Phase 36 (BLOB-06): blobctl, the Azure Blob uploader baked into the
+      # pg-backup image. Its own module, so the edge-go step above never ran it.
+      # go mod verify fails on a go.sum that does not match the module proxy
+      # (supply chain, T-36-SC); -count=1 so a cached result can never stand in
+      # for a real run. The tests are hermetic: an in-process fake of the Blob
+      # REST service, no network and no container. Reuses the Go set up above
+      # (no new setup-go site: the go-ci-setup horizon row pins the existing ones).
+      - name: Run blobctl tests (backup uploader, Phase 36)
+        working-directory: infra/backups/blobctl
+        run: |
+          go mod verify
+          go test -count=1 ./...
+
       - name: Validate edge-go OpenAPI spec (@seriousme/openapi-schema-validator)
         # ROADMAP DOC-01 success criterion #1: /openapi.json is a valid
         # OpenAPI spec per an openapi-spec-validator. We use
@@ -1284,6 +1297,20 @@ jobs:
 
       - name: Vet edge-go (go vet ./...)
         working-directory: edge-go
+        run: go vet ./...
+
+      - name: Check blobctl formatting (gofmt, Phase 36)
+        working-directory: infra/backups/blobctl
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "The following Go files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet blobctl (go vet ./..., Phase 36)
+        working-directory: infra/backups/blobctl
         run: go vet ./...
 
   # Job 3: Build and push Docker images

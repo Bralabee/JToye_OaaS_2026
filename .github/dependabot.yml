@@ -42,6 +42,18 @@ updates:
       minor-and-patch:
         update-types: ["minor", "patch"]
 
+  # --- Backup uploader (Go modules, Phase 36) ---
+  # blobctl ships inside the pg-backup image, which holds database credentials,
+  # so its Azure SDK dependencies are watched on the same schedule as edge-go.
+  - package-ecosystem: "gomod"
+    directory: "/infra/backups/blobctl"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
   # --- Frontend (npm) ---
   - package-ecosystem: "npm"
     directory: "/frontend"
