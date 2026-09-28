@@ -166,8 +166,12 @@ describe("buildCsp() — Content-Security-Policy directives", () => {
       expect(imgSrcTokens()).toContain("http://localhost:10000")
     })
 
-    it("no longer admits the retired object-store origin http://localhost:9000", () => {
-      expect(imgSrcTokens()).not.toContain("http://localhost:9000")
+    // Asserted by PORT, on any host, rather than by the exact retired origin
+    // string: strictly stronger (it also refuses 127.0.0.1 and https forms of
+    // the retired store), and it keeps the retired origin's literal out of the
+    // tree, so the repo-wide residue greps need no allowlist entry for a test.
+    it("no longer admits the retired object-store origin (no source on port 9000)", () => {
+      expect(imgSrcTokens().filter((t) => /:9000(?:\/|$)/.test(t))).toEqual([])
     })
 
     it("keeps https://*.stripe.com as its ONLY wildcard source, and names no Blob host", () => {
