@@ -49,7 +49,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 **Go-to-market closure (added 2026-08-01 — v2.3 stays open until these land):**
 
 - [x] **Phase 28: Security Triage + the Dev/Prod Boundary** — The 11 findings in the untracked Strix pentest backlog triaged into the tracker or formally accepted; the dev-only tenant-header path no longer advertised or reachable under `prod`; the local stack stops publishing infrastructure to `0.0.0.0` (completed 2026-08-10)
-- [ ] **Phase 36: Azure Blob Storage Throughout** — Object storage moves to Azure Blob (staging/prod) + Azurite (local/nightly); MinIO and the never-provisioned AWS S3 target retired (added 2026-09-28 by owner ruling; blocks Phase 29 plans 29-11 onward)
+- [x] **Phase 36: Azure Blob Storage Throughout** — Object storage moves to Azure Blob (staging/prod) + Azurite (local/nightly); MinIO and the never-provisioned AWS S3 target retired (added 2026-09-28 by owner ruling; blocks Phase 29 plans 29-11 onward) (completed 2026-09-29)
 - [ ] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today
 - [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock
 - [x] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice (completed 2026-08-17)
@@ -788,7 +788,7 @@ Plans:
   5. The pg-backup job writes to Azure Blob through a write-only uploader and a two-arm restore drill (zero-row arm caught, live-count arm matched) runs every night; k8s base/staging/production/local carry the Blob config with Workload Identity, dedicated ServiceAccounts, no storage Secret, no port 9000, updated invariants and goldens; Phase 29 has a handoff on main with the provisioning spec, the operator-secret list change (7 → 3) and a merge-conflict map. (BLOB-06, BLOB-07, BLOB-10)
   6. Frontend `remotePatterns` and CSP `img-src` admit the Azurite origin and nothing broader (tests fail on a wildcard); a repo-wide, fail-armed CI gate finds no MinIO/S3 residue outside a reasoned allowlist; horizons carry an azurite row; the content-type gate is re-targeted to Blob; docs and test metrics are current. (BLOB-08, BLOB-09)
 
-**Plans:** 18/18 plans executed (8 waves)
+**Plans:** 18/18 plans complete (8 waves)
 
 Plans:
 

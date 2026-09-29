@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
-current_phase: 36
-current_phase_name: Azure Blob Storage Throughout
-status: executing
-stopped_at: "Phase 36 EXECUTING — waves 1-7 complete (17/18 plans); next wave 8 (36-18 nightly on CI — owner chose push-and-dispatch 2026-09-29); rebuilt compose stack RUNNING for the end-of-phase human check"
-last_updated: "2026-09-28T20:45:05.335Z"
-last_activity: 2026-09-28
-last_activity_desc: "Phase 36 (Azure Blob Storage Throughout) planned: research, validation strategy, pattern map, 18 plans in 8 waves, plan-checker PASSED; owner decisions D-07..D-10 recorded in 36-CONTEXT.md"
-state_head: eb3c798fb109d29331744012ecadfb29dfd35829
+current_phase: 29
+current_phase_name: Deployable Staging, With Its Own Monitoring
+status: shipping
+stopped_at: "Phase 36 COMPLETE and re-verified (passed 6/6 after the review fixes) — shipping: PR from phase-36-azure-blob-storage, then the D3 review series; Phase 29 stays PAUSED on owner actions (staging DNS + 3 operator secrets)"
+last_updated: "2026-09-29T20:48:06.956Z"
+last_activity: 2026-09-29
+last_activity_desc: "Phase 36 re-verified after code-review fixes (VERIFICATION passed 6/6; BLOB-02/06 stay partial until Phase 29 provisions the real accounts) and marked complete"
+state_head: b1066fe82fd39a1f39ed13d9f2b65720b4fc178f
 progress:
   total_phases: 16
-  completed_phases: 11
-  total_plans: 136
-  completed_plans: 119
-  percent: 69
+  completed_phases: 12
+  total_plans: 137
+  completed_plans: 137
+  percent: 75
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 36 (Azure Blob Storage Throughout) — EXECUTING (17/18 plans; started 2026-09-28)
+Phase: 36 (Azure Blob Storage Throughout) — COMPLETE 2026-09-29 (18/18 plans; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0). Shipping next. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
 Wave 6 DONE 2026-09-29: 36-16 retired-object-store residue gate (scripts/check-no-object-store-residue.sh + reasoned line-level allowlist + 41-arm selftest) wired into ci-cd.yaml and enforced by check-gate-enforcement; rc=0 on the tree (0 violations), 657 violations on the pre-phase tree; handoff gate count 45 -> 46. Line-level allowlist entries fail CI when an edit moves an allowed line (deliberate; the message names the new line). .planning/ is allowlisted whole (per plan).
 Wave 5 DONE 2026-09-29: 36-15 live docs (27 files incl. CLAUDE.md/AGENTS.md/HANDOFF.md, .planning/codebase, agent-context mirrors) on Azure Blob/Azurite 3.37.0; ADR-0002 gets an appended "Superseded in part" note (original lines untouched); check-doc-versions now also gates the Azurite version (157 claims). Doc gates green (citations back at its 5 pre-existing .planning/codebase failures). OPEN outside this repo: jtoye-orgos charters/oaas-core-java.md:46 and oaas-platform.md:18 still name the retired store — regenerating the roster from orgos would undo 36-15's hand edits to AGENTS.md + 6 mirrors.
@@ -574,9 +574,9 @@ Status: Ready to execute
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-09-29 - Completed quick task 260929-i9c: jackson-bom 2.21.6 pin clears CVE-2026-68497 from the core-java image (Trivy image gate red since the 09-29 DB update; before rc=1 / after rc=0 locally). Previously: 2026-09-07 - Quick task 260907-a30: PR #734 + the dependabot queue (#728–#732) all merged — fast-uri Trivy time-bomb cleared by rebasing onto main, jest 30 landed (snapshot-header fix), transitive nwsapi 2.2.27 regression bisected and pinned back under #736, #734's counted claims re-pinned to a990551e (66 migrations). Previously: 2026-09-02 - Quick task 260902-qsc: dependency-horizon gate deferral — rabbitmq/4.3 crossed the H-3 90-day window with no code change; dated exemption to 2026-11-30 under #724 (PR #725), unblocking PR #723 and every PR after it. Previously: 2026-08-31 - Quick task 260831-pkp MERGED as PR #718 incl. all five review findings, browser-verified both directions on the rebuilt stack. Landing redesign: sketch 005 rejected whole, sketch 006 winner A ("The Pass", broken-grid round 2), sketch 007 full-page elaboration merged (PR #720) and awaiting owner elegance verdict. Previously: quick task 260831-lxf: R-16 anonymous-downgrade cart leak fixed (writes never erase an owner), verify script CI-wired, sixth quality dimension added. Previously: quick task 260831-jz4: Keycloak realm SMTP + branding (R-05/R-06/R-11) — reset email delivers via Mailhog, enumeration oracle closed, custom jtoye login theme human-approved on round 2. Previously: quick task 260831-gnm: customer-surface P0/P1 fixes — vendor SSO signout closed, search revert/race, hero blanking, fail-safe signout teardown, cookie-notice overlay; all six browser-verified fail→pass in two rounds
+Last activity: 2026-09-29 — Phase 36 re-verified and marked complete (shipping next). Previously: 2026-09-29 - Completed quick task 260929-i9c: jackson-bom 2.21.6 pin clears CVE-2026-68497 from the core-java image.
 
-Progress: [███████░░░] 69%
+Progress: [████████░░] 75%
 
 ## Milestone v2.3 Phase Map
 
@@ -624,6 +624,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | 25 | 4 | - | - |
 | 26 | **9/9** | ~9h05m | ~61min |
 | 28 | 11 | - | - |
+| 36 | 18 | - | - |
 
 *Updated after each plan completion*
 | Phase 24 P01 | ~20min | 3 tasks | 10 files |
@@ -864,9 +865,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-08-10T00:42:38.904Z
-Stopped at: Phase 28 context gathered
-Resume file: .planning/phases/28-security-triage-the-dev-prod-boundary/28-CONTEXT.md
+Last session: 2026-09-29
+Stopped at: Phase 36 complete and re-verified; shipping (PR + D3 review series). Phase 29 PAUSED on owner actions.
+Resume file: HANDOFF.md (2026-09-29 delta) + .planning/phases/36-azure-blob-storage-throughout/36-PHASE29-HANDOFF.md
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
