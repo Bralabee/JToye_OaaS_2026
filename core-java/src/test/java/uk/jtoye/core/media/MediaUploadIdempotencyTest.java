@@ -51,7 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p>Driven through MockMvc so the {@code Idempotency-Key} header branch is exercised
  * end-to-end. NOT {@code @Transactional}: each accept commits so the replay observes the
- * committed reservation. {@link StorageService} is a {@code @SpyBean} (no live MinIO).
+ * committed reservation. {@link StorageService} is a {@code @SpyBean} (no live object store).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -92,7 +92,7 @@ class MediaUploadIdempotencyTest {
                         + "VALUES (?, ?, now(), ?, ?, ?, 0, 1000, 0, true, false, ?, 0, 0)",
                 productId, TENANT, "SKU-IDEM-" + productId.toString().substring(0, 8), "Suya",
                 "beef, spice", shopId);
-        Mockito.doReturn("http://minio/quarantine-object")
+        Mockito.doReturn("http://store/quarantine-object")
                 .when(storageService).putBytes(ArgumentMatchers.anyString(), ArgumentMatchers.any(), ArgumentMatchers.anyString());
     }
 

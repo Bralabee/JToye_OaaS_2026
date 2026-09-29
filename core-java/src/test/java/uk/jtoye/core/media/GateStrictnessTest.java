@@ -89,7 +89,7 @@ class GateStrictnessTest {
         jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
                 tenant, "test-" + tenant);
         TenantContext.set(tenant);
-        Mockito.doReturn("http://minio/derivative").when(storageService)
+        Mockito.doReturn("http://store/derivative").when(storageService)
                 .putBytes(anyString(), any(byte[].class), anyString());
         Mockito.doNothing().when(storageService).deleteByKey(anyString());
     }

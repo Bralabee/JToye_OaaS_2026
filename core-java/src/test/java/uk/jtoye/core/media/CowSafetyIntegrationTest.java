@@ -49,7 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the tenant wall is proven under NOSUPERUSER in {@code MediaAssetRlsPolicyIntegrationTest}
  * and {@code MediaProcessingWorkerIntegrationTest#workerPinsTenantGuc}. {@link StorageService}
  * is a {@code @SpyBean} so the derivative write / raw read / physical delete are controlled
- * without a live MinIO.
+ * without a live object store.
  */
 @SpringBootTest
 @Testcontainers
@@ -84,7 +84,7 @@ class CowSafetyIntegrationTest {
         jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
                 tenant, "test-" + tenant);
         TenantContext.set(tenant);
-        Mockito.doReturn("http://minio/derivative").when(storageService)
+        Mockito.doReturn("http://store/derivative").when(storageService)
                 .putBytes(Mockito.anyString(), Mockito.any(byte[].class), Mockito.anyString());
         Mockito.doNothing().when(storageService).deleteByKey(Mockito.anyString());
     }

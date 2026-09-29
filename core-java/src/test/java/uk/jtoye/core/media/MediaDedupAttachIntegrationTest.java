@@ -47,7 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Runs as the Testcontainers superuser (RLS bypassed) — CoW/dedup MECHANICS, not tenant
  * isolation. No {@code Authentication} on the thread, so the accept's VSA-02 shop gate takes the
  * internal-caller bypass (the shop gate is proven separately). {@link StorageService} is a
- * {@code @SpyBean} (no live MinIO).
+ * {@code @SpyBean} (no live object store).
  */
 @SpringBootTest
 @Testcontainers
@@ -87,7 +87,7 @@ class MediaDedupAttachIntegrationTest {
                 tenant, "test-" + tenant);
         TenantContext.set(tenant);
         Mockito.lenient().doReturn("image/jpeg").when(storageService).detectContentType(Mockito.any());
-        Mockito.lenient().doReturn("http://minio/obj").when(storageService)
+        Mockito.lenient().doReturn("http://store/obj").when(storageService)
                 .putBytes(Mockito.anyString(), Mockito.any(byte[].class), Mockito.anyString());
         Mockito.lenient().doNothing().when(storageService).deleteByKey(Mockito.anyString());
     }

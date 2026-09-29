@@ -164,7 +164,7 @@ class MediaTenantIsolationUnderConcurrencyIntegrationTest {
 
         byte[] jpeg = jpegOf(600, 400);
         Mockito.doReturn(jpeg).when(storageService).getBytes(Mockito.anyString());
-        Mockito.doReturn("http://minio/derivative").when(storageService)
+        Mockito.doReturn("http://store/derivative").when(storageService)
                 .putBytes(Mockito.anyString(), Mockito.any(byte[].class), Mockito.anyString());
         Mockito.doNothing().when(storageService).deleteByKey(Mockito.anyString());
     }

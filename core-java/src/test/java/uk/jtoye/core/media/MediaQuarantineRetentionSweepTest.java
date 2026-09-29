@@ -27,7 +27,7 @@ import static org.mockito.Mockito.when;
  * stamped unconditionally, a transient storage error would strand the object forever — and, because
  * {@code deleteByKey} swallows the exception, nothing would ever complain.
  *
- * <p><strong>Phase 36 (Blob).</strong> S3 deleted a missing key successfully; Blob's plain delete
+ * <p><strong>Phase 36 (Blob).</strong> The retired store deleted a missing key successfully; Blob's plain delete
  * does NOT, it answers 404. The store port therefore deletes IF EXISTS and reports "was absent" as
  * {@code false}, and {@code deleteByKeyChecked} must still count that as gone, or the sweep would
  * never stamp the sentinel for an object that is already gone.

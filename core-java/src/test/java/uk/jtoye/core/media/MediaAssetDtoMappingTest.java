@@ -107,13 +107,13 @@ class MediaAssetDtoMappingTest {
     void flaggedActiveAssetMapsFlaggedTrueWithDerivativeUrls() {
         MediaAssetDto dto = MediaAssetDto.from(
                 asset(MediaAsset.Status.ACTIVE, true, null),
-                "http://minio/jtoye-images/t/media/x.webp",
-                "http://minio/jtoye-images/t/media/x_thumb.webp",
+                "http://store/jtoye-images/t/media/x.webp",
+                "http://store/jtoye-images/t/media/x_thumb.webp",
                 NO_DELAY_CUTOFF);
         assertThat(dto.status()).isEqualTo(MediaAssetStatus.ACTIVE);
         assertThat(dto.flagged()).as("flagged-ACTIVE surfaces the needs-review bit").isTrue();
-        assertThat(dto.url()).isEqualTo("http://minio/jtoye-images/t/media/x.webp");
-        assertThat(dto.thumbnailUrl()).isEqualTo("http://minio/jtoye-images/t/media/x_thumb.webp");
+        assertThat(dto.url()).isEqualTo("http://store/jtoye-images/t/media/x.webp");
+        assertThat(dto.thumbnailUrl()).isEqualTo("http://store/jtoye-images/t/media/x_thumb.webp");
         assertThat(dto.width()).isEqualTo(1600);
         assertThat(dto.height()).isEqualTo(1200);
     }
@@ -122,7 +122,7 @@ class MediaAssetDtoMappingTest {
     void cleanActiveAssetMapsActiveUnflagged() {
         MediaAssetDto dto = MediaAssetDto.from(
                 asset(MediaAsset.Status.ACTIVE, false, null),
-                "http://minio/.../x.webp", "http://minio/.../x_thumb.webp", NO_DELAY_CUTOFF);
+                "http://store/.../x.webp", "http://store/.../x_thumb.webp", NO_DELAY_CUTOFF);
         assertThat(dto.status()).isEqualTo(MediaAssetStatus.ACTIVE);
         assertThat(dto.flagged()).isFalse();
     }
@@ -132,18 +132,18 @@ class MediaAssetDtoMappingTest {
         // IMG-04 contract: the product DTO exposes the per-entry media list AND keeps the
         // legacy flat imageUrl/imageUrls during the dual-read window (D-03a — no removal this phase).
         MediaAssetDto primary = MediaAssetDto.from(asset(MediaAsset.Status.ACTIVE, false, null),
-                "http://minio/.../p.webp", "http://minio/.../p_thumb.webp", NO_DELAY_CUTOFF);
+                "http://store/.../p.webp", "http://store/.../p_thumb.webp", NO_DELAY_CUTOFF);
         ProductDto product = new ProductDto();
-        product.setImageUrl("http://minio/.../flat.jpg");
-        product.setAdditionalImageUrls(List.of("http://minio/.../g1.jpg"));
+        product.setImageUrl("http://store/.../flat.jpg");
+        product.setAdditionalImageUrls(List.of("http://store/.../g1.jpg"));
         product.setMedia(List.of(primary));
 
         assertThat(product.getMedia()).singleElement()
                 .satisfies(m -> assertThat(m.status()).isEqualTo(MediaAssetStatus.ACTIVE));
         assertThat(product.getImageUrl()).as("flat imageUrl retained (dual-read)")
-                .isEqualTo("http://minio/.../flat.jpg");
+                .isEqualTo("http://store/.../flat.jpg");
         assertThat(product.getAdditionalImageUrls()).as("flat gallery retained (dual-read)")
-                .containsExactly("http://minio/.../g1.jpg");
+                .containsExactly("http://store/.../g1.jpg");
     }
 
     @Test
@@ -151,11 +151,11 @@ class MediaAssetDtoMappingTest {
         // A not-yet-migrated product (only a flat image_url, no product_media rows) has an
         // empty media list; the flat imageUrl still renders (the UI treats it as ACTIVE-equivalent).
         ProductDto product = new ProductDto();
-        product.setImageUrl("http://minio/.../legacy.jpg");
+        product.setImageUrl("http://store/.../legacy.jpg");
         product.setMedia(List.of());
 
         assertThat(product.getMedia()).isEmpty();
-        assertThat(product.getImageUrl()).isEqualTo("http://minio/.../legacy.jpg");
+        assertThat(product.getImageUrl()).isEqualTo("http://store/.../legacy.jpg");
     }
 
     // --- WR-05: thumbnail key is derived ONLY for pipeline-convention keys ------------------

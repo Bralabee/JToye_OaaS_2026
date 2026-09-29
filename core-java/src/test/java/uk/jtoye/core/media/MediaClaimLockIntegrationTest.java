@@ -85,7 +85,7 @@ class MediaClaimLockIntegrationTest {
                 tenant, "test-" + tenant);
         TenantContext.set(tenant);
         originalClaimTimeout = mediaProperties.getClaimLockTimeoutMs();
-        Mockito.doReturn("http://minio/derivative").when(storageService)
+        Mockito.doReturn("http://store/derivative").when(storageService)
                 .putBytes(Mockito.anyString(), Mockito.any(byte[].class), Mockito.anyString());
         Mockito.doNothing().when(storageService).deleteByKey(Mockito.anyString());
     }
@@ -153,7 +153,7 @@ class MediaClaimLockIntegrationTest {
         Mockito.doAnswer(inv -> {
             insidePipeline.countDown();
             Thread.sleep(2_000);
-            return "http://minio/derivative";
+            return "http://store/derivative";
         }).when(storageService).putBytes(Mockito.eq(derivativeKey), Mockito.any(byte[].class),
                 Mockito.anyString());
 

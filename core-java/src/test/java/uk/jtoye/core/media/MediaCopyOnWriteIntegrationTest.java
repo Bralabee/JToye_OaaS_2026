@@ -30,14 +30,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * IMG-01 behavioural proof over real Postgres: copy-on-write repoint (D-01),
- * reference-counted delete-at-0 (physical MinIO delete ONLY when unreferenced),
+ * reference-counted delete-at-0 (physical Blob delete ONLY when unreferenced),
  * sha256 per-tenant dedup, and the asset-first dual-read resolver query (D-03a).
  *
  * <p>Runs as the Testcontainers superuser (RLS bypassed) because these tests
  * exercise the CoW/ref-count MECHANICS, not tenant isolation — that wall is proven
  * separately under the NOSUPERUSER downgrade in
  * {@code MediaAssetRlsPolicyIntegrationTest}. {@link StorageService} is a
- * {@code @SpyBean} so the physical delete is asserted without a live MinIO (its real
+ * {@code @SpyBean} so the physical delete is asserted without a live object store (its real
  * {@code urlForKey} still runs for the dual-read check).
  */
 @SpringBootTest
@@ -169,7 +169,7 @@ class MediaCopyOnWriteIntegrationTest {
         mediaAssetService.releaseAsset(shared.getId());
         em.flush();
         assertThat(assetExists(shared.getId())).as("ref-count 0 -> row deleted").isFalse();
-        Mockito.verify(storageService).deleteByKey(key);   // physical MinIO delete happened exactly at 0
+        Mockito.verify(storageService).deleteByKey(key);   // physical Blob delete happened exactly at 0
     }
 
     @Test
