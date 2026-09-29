@@ -288,7 +288,7 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | BLOB-03 | Phase 36 | 36-07 | Complete 2026-09-29 (36-07: MediaPipelineAzuriteIntegrationTest, accept → worker → WebP derivative + thumbnail → quarantine delete and the 27-01 dispositions on an unstubbed Azurite, 3/3 with break arms; the 19 stubbed media classes green as regression only) |
 | BLOB-04 | Phase 36 | 36-02, 36-18 | Planned 2026-09-28 — not started |
 | BLOB-05 | Phase 36 | 36-11, 36-12, 36-13 | Planned 2026-09-28 — not started |
-| BLOB-06 | Phase 36 | 36-04, 36-08, 36-09 | Planned 2026-09-28 — not started (WORM/soft delete are unprovable on Azurite; stated for Phase 29) |
+| BLOB-06 | Phase 36 | 36-04, 36-08, 36-09 | In progress — 36-04 (blobctl) and 36-08 (the `:15-blob` image, a script that never prunes, and `check-backup-restore-drill.sh` wired into the nightly: arm A restores 0, arm B restores the live count, with fail and VOID arms) have SUMMARYs. NOT closed: the manifests still reference `:15` until 36-09 moves the tag, CronJob, horizons pin and goldens together (D-10), and the nightly step has not yet run on a runner (36-18). WORM, soft delete and RBAC are unprovable on Azurite and are stated for Phase 29 |
 | BLOB-07 | Phase 36 | 36-09, 36-10 | Planned 2026-09-28 — not started |
 | BLOB-08 | Phase 36 | 36-03 | Complete 2026-09-28 (36-03: CSP img-src + remotePatterns on the Azurite origin, test-enforced; runtime proof is 36-12/36-13) |
 | BLOB-09 | Phase 36 | 36-02, 36-10, 36-12, 36-14, 36-15, 36-16, 36-17 | Planned 2026-09-28 — not started |

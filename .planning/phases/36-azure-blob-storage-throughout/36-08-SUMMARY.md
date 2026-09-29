@@ -363,7 +363,10 @@ None.
 - Created files exist: `scripts/check-backup-restore-drill.sh`, `docs/archive/backups-rehearsal-evidence-2026-07.md`. Every modified file carries its change (the criteria above).
 - Commits `511be793`, `1adf6793`, `bf0b93a8`, `b1c076e9` are on `phase-36-azure-blob-storage`; `git rev-list --count 21abbda5..HEAD` = 4 before this SUMMARY.
 - Closing re-runs before writing: drill rc=0 (A=0, B=23, live=23); `check-gate-enforcement` rc=0; `check-handoff-contract` rc=0; `check-postgres-major-parity` rc=0; `check-dependency-horizons` rc=0; `check-no-measured-placeholders` rc=0.
-- Stub scan (`rg -uu -i 'TODO|FIXME|placeholder|coming soon'` over the 9 files): none introduced.
+- Stub scan (`rg -uu -i 'TODO|FIXME|placeholder|coming soon'` over the 9 changed files, against `21abbda5`): no stub introduced.
+  - `e2e-nightly.yml` and `dependency-horizons.yaml` each have 1 hit, the same count as the base.
+  - The one new hit is `check-backup-restore-drill.sh:175`, the VOID message "is still the .env.example placeholder CHANGE_ME". That is a message naming a placeholder, not a stub.
+  - (This scan ran after the first SUMMARY commit, which already claimed it; the result is unchanged.)
 
 ---
 *Phase: 36-azure-blob-storage-throughout*
