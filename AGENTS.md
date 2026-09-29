@@ -82,7 +82,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Redis 7 - Session and cache store
 - RabbitMQ 4.3.4 - Message queue (AMQP)
 - Keycloak 24.0.5 - Identity provider (OIDC/OAuth2)
-- MinIO (latest) - S3-compatible object storage for images
+- Azurite 3.37.0 - Azure Blob emulator (local, hybrid, nightly); Azure Blob Storage in staging/production
 - Ollama (latest) - Local LLM for image analysis
 - Mailhog v1.0.1 - Local SMTP for email testing
 - Resilience4j 2.4.0 - Circuit breakers and retry logic
@@ -127,14 +127,14 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Redis 7+ (external or managed service)
 - RabbitMQ **3.13+** minimum (4.3 recommended — the dev/compose stack pins 4.3.4). The deployed staging/production broker's version is **unverified from this repository** — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
 - Keycloak 24.0+ (external identity provider)
-- AWS S3 (or S3-compatible storage like MinIO)
+- Azure Blob Storage (Azurite locally)
 - SMTP server (SendGrid, AWS SES, etc.)
 - Spring Boot: 3.5.16 (Java 25)
 - PostgreSQL: 15-alpine
 - Keycloak: 24.0.5
 - Redis: 7-alpine
 - RabbitMQ: 4.3.4-management-alpine
-- MinIO: latest
+- Azurite: 3.37.0
 - Go: 1.27-alpine
 - Node.js: 24+
 - Next.js: 16.3.4
@@ -291,7 +291,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Purpose: Full REST API surface with CRUD operations, state management, tenant isolation
 - Location: `core-java/src/main/java/uk/jtoye/core/`
 - Contains: REST controllers, service layer, repository layer, domain entities, mappers, configurations
-- Depends on: PostgreSQL database (RLS-enabled), Redis cache, RabbitMQ, Stripe API, S3/MinIO storage, Keycloak
+- Depends on: PostgreSQL database (RLS-enabled), Redis cache, RabbitMQ, Stripe API, Azure Blob Storage, Keycloak
 - Used by: Frontend, Edge gateway, batch sync operations, webhook processors
 - Purpose: ORM abstraction for tenant-scoped database queries
 - Location: `core-java/src/main/java/uk/jtoye/core/*/` (repository interfaces in each domain folder)
@@ -440,8 +440,8 @@ You own the server-side Java in `~/IdeaProjects/JToye_OaaS_2026/core-java/`.
 ## The media pipeline
 
 The v2.3 `media_asset` model is copy-on-write: store only the validated, normalized derivative,
-never the raw upload. Prove it by reading the object back out of MinIO — a filesystem `find` is
-not evidence about object storage.
+never the raw upload. Prove it by reading the object back out of Blob storage (Azurite locally) — a filesystem `find`
+is not evidence about object storage.
 
 ## What you escalate rather than decide
 
@@ -600,7 +600,7 @@ You own `k8s/`, `infra/`, the compose files, and the monitoring stack for J'Toye
 ## What is actually running
 
 Sixteen containers: `core-java`, `frontend`, `edge-go`, `mcp-server`, plus `postgres:15-alpine`,
-`redis:7-alpine`, `keycloak:24.0.5`, `minio`, `mailhog`, `rabbitmq:4.3.4`, `prometheus:v2.48.0`,
+`redis:7-alpine`, `keycloak:24.0.5`, `azurite:3.37.0`, `mailhog`, `rabbitmq:4.3.4`, `prometheus:v2.48.0`,
 `alertmanager:v0.27.0`, `grafana:10.2.2`, `ollama`, and two exporters. There is a committed
 `k8s/local` overlay and a minikube machine at `~/.minikube/machines/jtoye`.
 

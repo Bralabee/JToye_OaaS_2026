@@ -11,23 +11,26 @@ image gate on `main` since 2026-09-13. The gap that let the `fi` hide (nothing p
 workflow `run:` blocks) is issue #758, OPEN.
 **Why the stack cannot simply be restarted.** Two findings from the analysis, both still true: the
 weekly `docker-prune-weekly` run on 2026-09-27 deleted EVERY project image because the stack was
-down (volumes survived — `postgres_data` 448.2MB and `minio_data` 3.6MB, matching the 09-22
-checkpoint); and MinIO withdrew its community images for good (repo archived 2026-04-25,
-`quay.io/minio/*` answers 401 to anonymous pulls — control images on the same registry answer 200).
+down (volumes survived — `postgres_data` 448.2MB and the retired object store's data volume 3.6MB,
+matching the 09-22 checkpoint); and the retired object store's vendor withdrew its community images
+for good (repo archived 2026-04-25, its `quay.io` images answer 401 to anonymous pulls — control
+images on the same registry answer 200).
 That second fact is the whole cause of the nightly E2E being red since 2026-09-25 (issue #683 OPEN;
-its body still points at core-java health, which is wrong). Do NOT try to re-source MinIO.
+its body still points at core-java health, which is wrong). Do NOT try to re-source the retired store.
 **Owner ruling: object storage becomes Azure Blob throughout (Phase 36).** Staging/prod on Azure
 Blob Storage, Azurite (`mcr.microsoft.com/azure-storage/azurite`) locally and in the nightly;
-MinIO and the never-provisioned AWS S3 target retired. Four decisions are locked in
+the self-hosted store it replaced and the never-provisioned AWS object-store target retired. Four
+decisions are locked in
 `.planning/phases/36-azure-blob-storage-throughout/36-CONTEXT.md`: backups to a separate immutable
 Azure account in another region (SUPERSEDES Phase 29 D-12, the subscription-loss trade recorded),
-AKS Workload Identity (no stored key), reseed local media (leave `minio_data` in place), raw Blob
+AKS Workload Identity (no stored key), reseed local media (leave the retired store's data volume in place, 36-CONTEXT D-04), raw Blob
 endpoint (custom domain deferred to Phase 32). Phase 36 blocks Phase 29 plans 29-11 onward and cuts
 Phase 29's unfilled operator secrets from 7 to 3.
-**Resume:** branch `phase-36-azure-blob-storage` holds the roadmap entry and the context. Run
-`/gsd-plan-phase 36` from a fresh session. Expect research to confirm the container split (Blob
-access is per container, and quarantine is today only a `/quarantine/` key prefix inside the public
-bucket) and the 19 test files under `core-java/src/test/` that reference MinIO/S3.
+**Resume:** Phase 36 is planned and in execution on branch `phase-36-azure-blob-storage`; plan
+progress is in `.planning/ROADMAP.md` and each plan's SUMMARY under
+`.planning/phases/36-azure-blob-storage-throughout/`. The runtime now stores media in Azurite
+locally (containers `jtoye-images` public, `jtoye-quarantine` private) and targets Azure Blob
+Storage with Workload Identity in staging/production.
 **Still open from the analysis, not started:** dependabot PR #739 (springdoc 3.1.1) cannot merge on
 Boot 3.5 — its parent POM is Boot 4.1.0 — and belongs after #706; #751/#749 are low-risk but need
 the doc-quoted versions updated; #756 fails 6 Jest tests under React 19.3; issue #648 is fixed in
@@ -447,7 +450,7 @@ done
   frees 9091 for core-java, killing browser-side API calls and blocking Prometheus in one move.
   Measured: six local-only test failures cleared by a `--force-recreate` with no code change.
 - The handoff PR **#668** and the fix PR both merged; local + remote branch cleanup done
-  (`chore/agents-md-resync`, `feature/deps-awssdk-stripe-bump`, `docs/system-tour-2026-08-19`
+  (`chore/agents-md-resync`, the retired-SDK + Stripe dependency-bump branch, `docs/system-tour-2026-08-19`
   deleted against verified MERGED PR state; `phase-29-research` kept deliberately).
 
 ## Environment state — measured 2026-08-24, not remembered
@@ -634,7 +637,7 @@ Three mechanics that are not obvious until they bite:
 already passed; node 24 is LTS to 2028-04-30. The support-horizon gate is correct.
 **#605 CLOSED** (springdoc 2.8.6→3.1.0, MAJOR): the OpenAPI spec cannot be generated, so the app
 likely does not boot. Needs real work. **#631 CLOSED** (frontend npm, 10 updates): real break across
-the frontend build. **#604 CLOSED** (awssdk) was superseded by **#638 CLOSED**, merged as `9387b3bf`;
+the frontend build. **#604 CLOSED** (the retired object-store SDK) was superseded by **#638 CLOSED**, merged as `9387b3bf`;
 its failure was `scripts/check-doc-versions.sh`, because dependabot cannot know to edit `CLAUDE.md`,
 `AGENTS.md` and `.planning/codebase/STACK.md`, which each pin the version in prose. **Any future SDK
 bump carries the same four-site requirement.**
