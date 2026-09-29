@@ -188,7 +188,7 @@ they implement are `36-CONTEXT.md` D-01..D-10 (owner, 2026-09-28). Phase 36 bloc
 
 - [ ] **BLOB-01**: core-java stores, reads and deletes media through the Azure Blob SDK behind the unchanged `StorageService` surface; the AWS SDK is gone from main code AND from the runtime classpath; one `storage.blob.auth-mode` switch; a misconfiguration fails at startup, not at first upload.
 - [ ] **BLOB-02**: Container split — a blob-level public container for derivatives and seed images, a **private** container for quarantine. The #626 rule (anonymous GET by URL = 200; anonymous LIST refused; anonymous GET of quarantine refused) is proven both ways against Azurite and asserted by core-java at boot in every environment; URL-addressed deletes refuse another tenant's key (D-09).
-- [ ] **BLOB-03**: The media pipeline (quarantine → worker → WebP derivative → quarantine delete; sweep `deleteByKeyChecked`) is proven against a **real** Azurite in Testcontainers; the existing stubbed suites stay green as regression only.
+- [x] **BLOB-03**: The media pipeline (quarantine → worker → WebP derivative → quarantine delete; sweep `deleteByKeyChecked`) is proven against a **real** Azurite in Testcontainers; the existing stubbed suites stay green as regression only.
 - [ ] **BLOB-04**: Compose and the nightly run a digest-pinned Azurite; `minio`/`minio-init` are removed; the hybrid runtime has Azurite too (D-08); the nightly brings the stack up AND executes Playwright (#683's cause removed).
 - [ ] **BLOB-05**: Dev reseed (D-04/D-05): tenant-looped, dev-only, non-zero before-count on a table known to hold rows; pre-existing ACTIVE/PENDING `media_asset` rows marked FAILED; every servable storage URL HEADs 200 on Azurite; a real browser shows `naturalWidth > 0` for an image served from the storage origin.
 - [ ] **BLOB-06**: The pg-backup CronJob writes to Azure Blob (Workload Identity in staging/production, Azurite locally) via a write-only uploader; a restore from an Azurite-stored dump is exercised two-arm (arm A zero-row, arm B row-count match) by a nightly-wired gate; the image tag moves from `:15` (D-10).
@@ -284,8 +284,8 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | GTM-01 | Phase 32 | not yet planned | Not started |
 | GTM-02 | Phase 32 | not yet planned | Not started |
 | BLOB-01 | Phase 36 | 36-01, 36-06, 36-14 | Planned 2026-09-28 — not started |
-| BLOB-02 | Phase 36 | 36-01, 36-05, 36-06, 36-07 | Planned 2026-09-28 — not started (the staging-account half is a Phase 29 read-back specified in 36-05) |
-| BLOB-03 | Phase 36 | 36-07 | Planned 2026-09-28 — not started |
+| BLOB-02 | Phase 36 | 36-01, 36-05, 36-06, 36-07 | In progress — all four plans have SUMMARYs; D-09 (URL deletes refuse another tenant's key) delivered by 36-07. NOT closed: "asserted at boot in every environment" still needs a real runtime boot (36-06 D6, owned by 36-11/36-17), and the staging-account half is a Phase 29 read-back specified in 36-05 |
+| BLOB-03 | Phase 36 | 36-07 | Complete 2026-09-29 (36-07: MediaPipelineAzuriteIntegrationTest, accept → worker → WebP derivative + thumbnail → quarantine delete and the 27-01 dispositions on an unstubbed Azurite, 3/3 with break arms; the 19 stubbed media classes green as regression only) |
 | BLOB-04 | Phase 36 | 36-02, 36-18 | Planned 2026-09-28 — not started |
 | BLOB-05 | Phase 36 | 36-11, 36-12, 36-13 | Planned 2026-09-28 — not started |
 | BLOB-06 | Phase 36 | 36-04, 36-08, 36-09 | Planned 2026-09-28 — not started (WORM/soft delete are unprovable on Azurite; stated for Phase 29) |
