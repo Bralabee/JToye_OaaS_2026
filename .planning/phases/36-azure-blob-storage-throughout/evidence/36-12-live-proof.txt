@@ -271,3 +271,118 @@ no other tool was used to delete the blob. What IS already proven without it:
     skipping upload" (putIfAbsent is idempotent), and the first boot logged 21 x "Uploaded seed image".
 What is NOT proven until the arm runs: that a blob missing from the store (with its DB row intact)
 is detected by the gate AND restored byte-identically by the next boot.
+
+================================================================================
+## Task 1 arms (gate-enforcement, handoff-contract, actionlint, stack-down VOID)
+================================================================================
+## Task 1 arms (2026-09-29T07:17:24Z) on commit 36e32d6b
+### clean (before arms)
+PASS: every gate either runs in CI or has a declared reason it cannot.
+ge rc=0
+### arm GE: nightly step removed -> expect rc=1 naming the new gate
+refs-in-nightly rc=1
+        check-media-urls-resolve.sh (invokes: curl docker psql)
+      A gate that cannot fire on a pull request does not prevent anything.
+      Either add it to a workflow, or declare it in /home/sanmi/IdeaProjects/JToye_OaaS_2026/scripts/gates/gate-enforcement.conf with the reason
+      it cannot run on a hosted runner.
+ge rc=1
+restore: worktree cdfce422742d219d7edc2d6f502eddadb7f1997d vs HEAD cdfce422742d219d7edc2d6f502eddadb7f1997d
+### arm HC: HANDOFF at HEAD~1 (claims 44, repo has 45) -> expect rc=1
+FAIL: H-1 /tmp/claude-3612/handoff-old.md's resume block says 'EXPECT 44 x rc=0' but the repo has 45 gate script(s)
+VOID: no commit reachable from HEAD has ever touched /tmp/claude-3612/handoff-old.md — cannot measure staleness
+hc rc=2
+### clean (after arms)
+PASS: every gate either runs in CI or has a declared reason it cannot.
+ge rc=0
+PASS: HANDOFF.md — 1 gate-count claim(s) and 28 state claim(s) hold; 0 commit(s) behind (budget 3).
+hc rc=0
+### arm HC (in place, replaces the tmp-path arm whose H-3 VOID masked the rc): EXPECT 45 -> 44
+FAIL: H-1 HANDOFF.md's resume block says 'EXPECT 44 x rc=0' but the repo has 45 gate script(s)
+FAILED: HANDOFF.md states something that is no longer true (see above).
+hc rc=1
+restore: worktree 9171e0bb885deeed8ec1289e14fb5c752a5d14bc vs HEAD 9171e0bb885deeed8ec1289e14fb5c752a5d14bc
+PASS: HANDOFF.md — 1 gate-count claim(s) and 28 state claim(s) hold; 0 commit(s) behind (budget 3).
+hc (closing clean) rc=0
+### URL gate with the stack DOWN (acceptance: rc=2)
+jtoye-postgres Exited (0) About an hour ago
+jtoye-azurite Exited (0) About an hour ago
+VOID: container 'jtoye-postgres' (the database) is 'exited', not running
+  (a result that cannot be evaluated is never a clean bill)
+urls rc=2
+### bash -n: rc=0
+### actionlint nightly: rc=0; broken copy (unterminated expression + unknown key): rc=1, 8 lines
+
+================================================================================
+## Task 3: content-type gate on Azurite — clean run and read-only arms
+================================================================================
+==============================================================================
+ check-media-content-types — #488 urgent limb, against the DELIVERED object store
+ azurite=jtoye-azurite  container=jtoye-images  (2026-09-29T07:33:23Z)
+ credential: default UseDevelopmentStorage=true (Azurite on 127.0.0.1:10000) (via the environment, never argv)
+==============================================================================
+
+A-3  allowlist, parsed from MediaNormalizer.LEGACY_SYNC_INPUT_TYPES
+       parsed     : image/gif image/jpeg image/png image/webp
+       documented : image/gif image/jpeg image/png image/webp
+
+CONTEXT — stored Content-Type census (recorded, NOT asserted; pinning it reds on any upload)
+            21 image/jpeg
+             2 image/webp
+
+A-1/A-2  the relation
+       blobs enumerated (M, denominator, must be >= 1) ......... 23
+       ...whose Content-Type is OUTSIDE the allowlist (N) ...... 0   (must be 0)
+
+------------------------------------------------------------------------------
+PASS: 0 of 23 stored blobs carry a Content-Type outside the allowlist.
+------------------------------------------------------------------------------
+check-media-content-types rc=0
+
+## content-types gate read-only arms (2026-09-29T07:30:22Z)
+### clean
+       blobs enumerated (M, denominator, must be >= 1) ......... 23
+       ...whose Content-Type is OUTSIDE the allowlist (N) ...... 0   (must be 0)
+PASS: 0 of 23 stored blobs carry a Content-Type outside the allowlist.
+ct rc=0
+### arm A-2 (real EMPTY container): MEDIA_CONTAINER=jtoye-quarantine (exists, 0 blobs) -> expect 2
+VOID: A-2: the listing of 'jtoye-quarantine' holds ZERO blobs. A wrong container and an empty one report exactly this — refusing to report clean
+ct rc=2
+### arm listing error: MEDIA_CONTAINER=jtoye-no-such-container -> expect 2
+    ErrorCode:ContainerNotFound
+VOID: listing 'jtoye-no-such-container' failed (az rc=3). A container that cannot be listed is not a container with no offending blobs (a 403 means the credential is wrong)
+ct rc=2
+### arm A8 negative control: an exported connection string with a WRONG emulator-form key -> expect 2 (403)
+ credential: exported AZURE_STORAGE_CONNECTION_STRING (via the environment, never argv)
+VOID: listing 'jtoye-images' failed (az rc=1). A container that cannot be listed is not a container with no offending blobs (a 403 means the credential is wrong)
+ct rc=2
+### arm az missing (PATH without az) -> expect 2
+VOID: the az CLI is not on PATH — the Blob listing is taken with it
+ct rc=2
+### arm object store absent: AZURITE_CONTAINER=jtoye-azurite-nope -> expect 2
+VOID: container 'jtoye-azurite-nope' does not exist (docker inspect rc=1) — the object store is not deployed here
+ct rc=2
+### clean (closing)
+PASS: 0 of 23 stored blobs carry a Content-Type outside the allowlist.
+ct rc=0
+
+residue grep: git grep -n -i -E 'minio|docker exec.*mc ' -- scripts/check-media-content-types.sh scripts/gates/gate-enforcement.conf -> rc=1 (control: the same pattern over the pre-36-12 versions -> content-types 17 hits, conf 1 hit)
+argv check: awk '/az storage blob list/ && /--connection-string/' -> 0 (control line -> 1); stronger form, any '--connection-string' in the script -> rg rc=1 (1 = none)
+
+## gate-enforcement arm for the conf removal (2026-09-29T07:33:09Z) on aa093e4a
+PASS: every gate either runs in CI or has a declared reason it cannot.
+ge (clean) rc=0
+FAIL: 1 gate(s) are referenced by no workflow and carry no exemption:
+        check-media-content-types.sh (invokes: docker)
+ge (content-types step removed, no exemption) rc=1
+restore: worktree d53c23e7c16869d52b6a0bbce3e2fd3da4ba1ae1 vs HEAD d53c23e7c16869d52b6a0bbce3e2fd3da4ba1ae1
+--- counter-arm: the SAME removal with the OLD exemption restored -> the gate stays green (why the entry had to go)
+PASS: every gate either runs in CI or has a declared reason it cannot.
+ge (step removed, old exemption present) rc=0
+restore: nightly d53c23e7c16869d52b6a0bbce3e2fd3da4ba1ae1 vs HEAD d53c23e7c16869d52b6a0bbce3e2fd3da4ba1ae1; conf 05304242b6756ce2826556d5c4344eeb785cedb2 vs HEAD 05304242b6756ce2826556d5c4344eeb785cedb2
+PASS: every gate either runs in CI or has a declared reason it cannot.
+ge (closing clean) rc=0
+
+================================================================================
+## PENDING — the text/html upload arm (plan Task 3) is BLOCKED, not run
+================================================================================
+The arm needs an az WRITE into the local Azurite (upload a text/html blob into jtoye-images, run the gate -> exit 1 naming it, delete it, clean run). The az mutation guard refuses it without a human-sanctioned [az-ok] token. The A-1 FAIL branch is therefore not yet shown against the real store; the A-2/VOID branches are (above).
