@@ -1,0 +1,72 @@
+===== docs-freshness.sh rc=0
+docs-freshness OK: metrics match source (total logical invocations: 4042).
+===== check-doc-metrics.sh rc=0
+check-doc-metrics  (2026-09-29T12:32:42Z)
+  manifest : docs/metrics.json
+  rules    : 37 across 3 doc(s)
+  claims   : 37 extracted and compared
+PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+===== check-doc-versions.sh rc=0
+  checked=4 drift=0
+== docs/architecture/ESSENTIAL_ARCHITECTURE.md ==
+  (not claimed in this doc: Testcontainers MapStruct PostgreSQL JDBC AWS SDK v2 Resilience4j Stripe Java SDK Bucket4j OpenPDF SpringDoc Spring StateMachine React Hook Form Next-Auth TailwindCSS Zod Jest Playwright Axios Framer Motion Recharts Gin)
+  checked=7 drift=0
+
+PASS: all 147 version claim(s) across 7 doc(s) match the build files.
+===== check-changelog-contract.sh rc=0
+  range     : fbee244d..origin/main
+  commits   : 88 in range, 31 feat/fix
+  cited     : 31
+  exempt    : 0 (0 declared)
+  self-test : C-3 matcher fires and declines · C-4 lookup found #71, rejected #1000757
+PASS: all 31 merged feat/fix PR(s) since fbee244d are cited in docs/CHANGELOG.md (0 exempt).
+===== check-doc-citations.sh rc=0
+Policy: CARL GLOBAL_RULE_5 / QUALITY_RULE_7. This shim has no bypass switch — choose the env.
+VOID: cannot extract YAML citations from docs/ops/terminal-states.yaml (see message above)
+  docs/ops/terminal-states.yaml              citations=0
+  citations   total=35  verified=28  uncheckable=7
+  violations  0
+PASS: all 28 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable).
+===== check-handoff-contract.sh rc=0
+  H-2 state : 25 claim(s), 25 matched the forge
+  H-3 stale : 2 commit(s) behind origin/main (budget 3)
+  H-4 self  : both extractors fire and decline
+  H-5 cites : 5 path(s) checked, 5 resolve, 1 skipped (unrecognised extension)
+PASS: HANDOFF.md — 1 gate-count claim(s) and 25 state claim(s) hold; 2 commit(s) behind (budget 3).
+      NOTE: this gate cannot detect semantic rot — a green run is not "the handoff is accurate".
+===== check-claims.sh rc=0
+  source   : metrics      json   docs/metrics.json            (json: per-key lookup)
+  source   : gradle       regex  build.gradle.kts             2.3.0
+  source   : retention    json   docs/retention-manifest.json (json: per-key lookup)
+  rules    : 47 across 6 doc(s)
+  claims   : 47 compared
+PASS: all 47 claim(s) across 6 doc(s) match their source of truth.
+===== check-gate-enforcement.sh rc=0
+check-gate-enforcement  (2026-09-29T12:32:57Z)
+  gates     : 42
+  workflows : 7
+  exempt    : 6 declared
+PASS: every gate either runs in CI or has a declared reason it cannot.
+===== check-branch-behind-base.sh rc=0
+  head         : HEAD -> 1c587f06 (feature/jackson-2.21.6-cve-2026-68497)
+  base branch  : origin/main  (resolved from refs/remotes/origin/HEAD)
+  fetch        : refreshed refs/remotes/origin/main
+  base head    : db725c94
+
+PASS: HEAD contains every commit on origin/main (db725c94); it is 1 commit(s) ahead and 0 behind.
+===== check-changelog-cites-pr.sh (no PR) rc=0
+check-changelog-cites-pr  (2026-09-29T12:32:58Z)
+  SKIP: no pull-request context (GITHUB_EVENT_NAME=<unset>) — nothing to check.
+===== check-changelog-cites-pr.sh --pr 999999 (fail arm) rc=1
+      ### Some change (#<issue>) (#999999) — YYYY-MM-DD
+
+  Only ENTRY HEADINGS count, matching check-changelog-contract C-1. A mention in prose
+  does not satisfy either gate.
+
+  If this PR genuinely needs no entry, add an EXEMPT row with a reason to scripts/gates/changelog-contract.conf.
+===== check-changelog-cites-pr.sh --pr 757 (found arm) rc=0
+check-changelog-cites-pr  (2026-09-29T12:32:58Z)
+  changelog : docs/CHANGELOG.md
+  pr        : #757
+  title     : fix(deps): x
+PASS: docs/CHANGELOG.md has an entry heading citing #757.

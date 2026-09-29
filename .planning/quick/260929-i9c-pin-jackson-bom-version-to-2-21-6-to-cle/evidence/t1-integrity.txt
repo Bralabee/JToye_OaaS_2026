@@ -1,0 +1,7 @@
+cached 2.21.6 jar: /home/sanmi/.gradle/caches/modules-2/files-2.1/com.fasterxml.jackson.core/jackson-databind/2.21.6/90fc0c39cc03058141d4312ccadb431a583d6574/jackson-databind-2.21.6.jar
+cache dir name (sha1): 90fc0c39cc03058141d4312ccadb431a583d6574
+sha1sum of cached 2.21.6 jar: 90fc0c39cc03058141d4312ccadb431a583d6574
+Maven Central published .sha1 (curl rc=0): 90fc0c39cc03058141d4312ccadb431a583d6574
+PASS: cached 2.21.6 == Maven Central
+FAIL ARM: sha1 of cached 2.21.4 jar: 09e495680be707d466527d734368ebf36e464da2
+FAIL ARM behaves: 2.21.4 sha1 differs from published 2.21.6 sha1

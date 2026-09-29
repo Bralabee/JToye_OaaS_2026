@@ -1,0 +1,9 @@
+# unzip -l core-java/build-local/libs/core-java-2.3.0.jar (built from HEAD 1c587f06, 2026-09-29T12:24:26+00:00) | BOOT-INF/lib/jackson
+    82104  1980-02-01 00:00   BOOT-INF/lib/jackson-annotations-2.21.jar
+   594296  1980-02-01 00:00   BOOT-INF/lib/jackson-core-2.21.6.jar
+  1707967  1980-02-01 00:00   BOOT-INF/lib/jackson-databind-2.21.6.jar
+    57614  1980-02-01 00:00   BOOT-INF/lib/jackson-dataformat-toml-2.21.6.jar
+    61422  1980-02-01 00:00   BOOT-INF/lib/jackson-dataformat-yaml-2.21.6.jar
+    36039  1980-02-01 00:00   BOOT-INF/lib/jackson-datatype-jdk8-2.21.6.jar
+   136877  1980-02-01 00:00   BOOT-INF/lib/jackson-datatype-jsr310-2.21.6.jar
+    10186  1980-02-01 00:00   BOOT-INF/lib/jackson-module-parameter-names-2.21.6.jar

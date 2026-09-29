@@ -1,0 +1,15 @@
+# resolved com.fasterxml.jackson family, runtimeClasspath, HEAD 1c587f06 (after)
+com.fasterxml.jackson.core:jackson-annotations:2.21
+com.fasterxml.jackson.core:jackson-core:2.21.6
+com.fasterxml.jackson.core:jackson-databind:2.21.6
+com.fasterxml.jackson.dataformat:jackson-dataformat-toml:2.21.6
+com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.21.6
+com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.21.6
+com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.21.6
+com.fasterxml.jackson:jackson-bom:2.21.6
+com.fasterxml.jackson.module:jackson-module-parameter-names:2.21.6
+# non-com.fasterxml jackson-named artifacts (not BOM-managed, not flagged by Trivy):
+software.amazon.awssdk:third-party-jackson-core:2.54.9
+software.amazon.awssdk:third-party-jackson-core:2.54.9 (c)
+# jackson-bom-2.21.6.pom (/home/sanmi/.gradle/caches/modules-2/files-2.1/com.fasterxml.jackson/jackson-bom/2.21.6/1c9e93c5ff7c8ab6b81ba467efaf9770c4450bfb/jackson-bom-2.21.6.pom):
+62:    <jackson.version.annotations>2.21</jackson.version.annotations>

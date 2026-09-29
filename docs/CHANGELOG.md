@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### core-java image gate green again: jackson-bom 2.21.6 for CVE-2026-68497 (#760) — 2026-09-29
+
+- **jackson-databind 2.21.4 → 2.21.6, via the BOM property.** The Trivy image gate
+  (`build-and-push`, core-java) went red on 2026-09-29 (runs 36552432346 and 36555251078) on
+  exactly one finding: CVE-2026-68497 (HIGH, CPU denial of service via unbounded numeric
+  parsing) against jackson-databind 2.21.4 in `app.jar`, fixed in 2.18.10 / 2.21.6 / 2.22.2.
+  The same job was green on 2026-09-28 (run 36469503402). Time-based, not change-based: the
+  vulnerability DB moved and nothing in the tree did, so `main`'s next core-java image build
+  would have gone red the same way. The fix is one line, `extra["jackson-bom.version"] =
+  "2.21.6"` in `core-java/build.gradle.kts`. Spring Boot 3.5.16 manages the whole Jackson
+  family through that one property, and it imports `com.fasterxml.jackson:jackson-bom`. So
+  core, databind and the datatype/dataformat/module artifacts move together. Forcing
+  jackson-databind alone would have left its siblings on 2.21.4. jackson-annotations resolves
+  as `2.21` both before and after, which is the BOM's own major.minor versioning and not a
+  leftover. 2.21.6 is the smallest clearing bump on the line Boot already manages; 2.21.7 and
+  2.22.2 were deliberately not taken, for the #757 reason that every step is a chance for a
+  runtime default to move. It also closes the six medium advisories 2.21.4 carries. Dependabot
+  cannot raise a BOM property, so this pin only ever moves by hand.
+- **Resolution proven in both directions, at every layer.**
+  - `dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind --configuration
+    runtimeClasspath` reports `2.21.4` (Selected by rule) on db725c94. It reports the same
+    `2.21.4` with the near-miss key `jackson.bom.version`, which nothing in the Boot, jackson-bom,
+    jackson-parent or oss-parent poms declares. On this branch it reports `2.21.6`. The key name
+    is load-bearing, and the in-file comment records that measurement. The restore after the
+    near-miss arm was verified by blob hash before the real edit was made.
+  - The resolved `com.fasterxml.jackson` family on runtimeClasspath has 9 artifacts. 8 of them
+    move from 2.21.4 to 2.21.6, and jackson-annotations is at 2.21 in both.
+  - The boot jar's `BOOT-INF/lib` held seven `-2.21.4.jar` jackson jars before and none after.
+    Before it carries `jackson-databind-2.21.4.jar`, after `jackson-databind-2.21.6.jar`.
+  - The same listings were read out of `/app/app.jar` inside images built from each commit's
+    `git archive` with the unchanged `core-java/Dockerfile`. They agree.
+  - Trivy 0.70.0, the version CI installs, was run with the gate's exact flags on both images
+    against one DB (vulnerability DB UpdatedAt 2026-09-29 06:53:54 UTC, Java DB 2026-09-29
+    01:08:11 UTC). The before image gives rc=1 with the single row CVE-2026-68497 HIGH 2.21.4.
+    The after image gives rc=0, with the `app/app.jar` target analysed at 0 findings and the
+    Alpine layer at 0. No other finding appeared.
+  - The cached jackson-databind-2.21.6.jar sha1 equals the one Maven Central publishes.
+- **Unit suite, run fresh after `cleanTest`:** 1233 tests, 0 failures, 0 errors, 1 skipped,
+  from 162 result XMLs newer than a run marker. That is identical to #757's reference.
+- **Five line-number citations into `build.gradle.kts` re-derived from the code.** The new
+  comment moves everything below line 117 down by 46. `STACK.md` (`:440` JaCoCo `toolVersion`,
+  `:241` postgresql), `TESTING.md` (`:264-366`, `:379-386`) and `CONCERNS.md` (`:230-238`) were
+  each located by their anchor text in the final file, and the arithmetic agreed with all five.
+  Each was then checked strictly: the range must START on its anchor line and contain its
+  claimed text. That check passes all five new pointers and fails all five old ones on the
+  final file. `STACK.md` also gains a Jackson bullet beside the netty one, citing
+  `:118-162`, and the six citations above the insertion still pass.
+- **Still true after this merges.** The image gate runs on push and release only, never on a
+  pull request. So the first CI-visible confirmation is `main`'s post-merge run, and a revert
+  of the pin would merge green and turn `main` red afterwards. The Testcontainers integration
+  suite and the OpenAPI Breaking-Change Gate ran only in CI, and they are where a Jackson
+  serialisation change would surface. Delete the pin once Boot's BOM manages jackson-bom at or
+  above 2.21.6: a pin left behind a newer Boot would hold Jackson below it.
+
 ### main's image gate green again: amqp-client 5.34.0 for CVE-2026-75516, and the freshness alert step that could never file (#757) — 2026-09-28
 
 - **amqp-client 5.33.1 → 5.34.0 (closes #754).** `main` had been red on the Trivy image gate
