@@ -28,3 +28,17 @@ caused by it; none breaks a gate this phase owns.
   under `# --- retention ---` states a retention the job does not perform. No gate reads pg-backup
   env (check-env-contract covers core-java, edge-go and the frontend only). Removing it changes the
   goldens, so it belongs with the next pg-backup manifest change.
+
+- 36-18: core-java image Trivy gate is red on jackson-databind 2.21.4 (CVE-2026-68497, HIGH, fixed in 2.21.6)
+  status: open
+  **What:** CI/CD runs 36552432346 (536daf41) and 36555251078 (ae4ceb43) on the phase branch both
+  fail only at "Build and Push Images (core-java) / Trivy image gate — fail on fixable CRITICAL/HIGH",
+  with one finding: `com.fasterxml.jackson.core:jackson-databind (app.jar) CVE-2026-68497 HIGH,
+  installed 2.21.4, fixed 2.18.10 / 2.21.6 / 2.22.2`. Every test and gate job in both runs is green
+  apart from this and the doc-citation failure 36-18 fixed in ae4ceb43. **Not caused by Phase 36:**
+  `dependencyInsight` on HEAD says 2.21.4 is "Selected by rule" (the Spring Boot 3.5.16 BOM through
+  io.spring.dependency-management); neither HEAD nor origin/main pins jackson in
+  core-java/build.gradle.kts, and the Boot version is unchanged. The same job passed on 5b6e76bd at
+  2026-09-28T19:49Z (run 36469503402), so the CVE entered Trivy's DB after that: the daily-DB
+  time-bomb class. main's next core-java image build will red the same way. The fix is a
+  dependency bump of that exact artifact to 2.21.6 in its own change, not part of 36-18.
