@@ -200,3 +200,71 @@ STACK AFTER TASK 1
   all 10 services running (healthy); core-java 0.0.0.0:9090;
   check-runtime-freshness PASS 4/4 (0 unverified) rc=0. Only azurite was stopped
   and started; nothing else was stopped, recreated or rebuilt.
+
+==============================================================================
+TASK 2: post-scroll screenshots for the end-of-phase human look
+==============================================================================
+Tool: Node Playwright 1.62.1 from frontend/node_modules. This is the engine the
+webapp-testing toolkit drives, but the toolkit's scripts are Python, and the
+machine's block-base-python guard refused /usr/bin/python3 (no conda env is
+declared for this project). A blocked command is the answer, so the capture
+script is Node: /tmp/claude-3613/shots.cjs (not committed).
+Each page: goto (domcontentloaded; no networkidle, because dashboard pages
+hold SSE), walk to the bottom in half-viewport steps, pause, back to the top,
+pause, then a full-page screenshot.
+Vendor credential: KC_SEED_USER_PASSWORD from the stack's .env, sourced in a
+subshell. It was never echoed or logged. The shot was taken on
+/dashboard/media/review after login, and `input[type=password]` count on
+that page = 0, so no credential field is visible in any capture.
+
+Directory: frontend/e2e-artifacts/36-13/   (NOT committed)
+  $ git check-ignore -v frontend/e2e-artifacts/36-13/*.png
+    .gitignore:185:e2e-artifacts/  (all three)  rc=0;  git status --ignored: "!! frontend/e2e-artifacts/"
+
+Plan verify:
+  $ ls frontend/e2e-artifacts/36-13/*.png > "$SCRATCH/shots.txt"; echo rc=$?  -> rc=0, shots=3
+  control: the same on an empty directory                                     -> rc=2, shots=0
+
+1. shop-brixton-village-grill-390.png   (390 x 3074, sha256 8e43644a0555980d...)
+   /shop/brixton-village-grill at 390x844, isMobile + hasTouch. Measured at
+   capture: 10 <img>, 9 storage-origin, 9 loaded (naturalWidth > 0), first
+   .../products/seed/beef-suya-wrap.jpg.
+   Shows: header, shop hero, Popular / Drinks / Mains / Sides. EVERY product
+   card carries a real food photo (Beef Suya Wrap, Peri Peri Chicken, Mango
+   Lassi, Sobo Punch, Lamb Kebab, Coleslaw, Sweet Potato Fries), no fallback
+   tiles, no empty scroll-reveal bands, then the footer. The fixed cookie notice
+   (not dismissed) overlays part of the Peri Peri Chicken card in the Popular
+   row. That is a position:fixed capture artifact, not a layout defect.
+2. shop-brixton-village-grill-1280.png  (1280 x 1983, sha256 2dca36c34b8490e1...)
+   The same page at 1280x800: 10 <img>, 9 storage-origin, 9 loaded. Two-column
+   card grid, every card with its photo, footer present. The cookie notice
+   overlays the right edge of the Peri Peri Chicken / Sobo Punch cards.
+3. vendor-media-review-1280.png         (1280 x 800, sha256 1bcb9eee63b12a1e...)
+   /dashboard/media/review signed in as the dev vendor (heading "Image
+   review"). The dashboard scrolls inside its own container, so the full-page
+   capture is one viewport. The whole queue still fits: all three cards and the
+   page footer are in frame. "Rejected uploads" lists 3 cards, each "Upload
+   rejected" with a red "Rejected" chip:
+     - "Processing stalled before it finished"  [Re-upload] [Re-process]
+     - "That file is not a supported image"      [Re-upload]
+     - "Bytes not carried over in the Phase 36 dev reseed (D-04) -- re-upload"  [Re-upload]
+   Measured: getByRole("button", /re-?upload/i) count = 3; the Phase 36 reason
+   is visible (exact line above).
+   NOTE FOR THE HUMAN CHECK: the vendor UI labels a FAILED asset "Upload
+   rejected / Rejected", and the word "FAILED" appears nowhere on the page
+   (count 0). Confirmed by content that these cards ARE the FAILED rows
+   (read-only, superuser, so RLS cannot blind it):
+     select status, count(*), string_agg(failure_reason) from media_asset group by status
+       ACTIVE | 1 | (null)                     <- 36-12's real upload on Jollof Rice
+       FAILED | 3 | Processing stalled before it finished ;; That file is not a
+                    supported image ;; Bytes not carried over in the Phase 36 dev
+                    reseed (D-04) -- re-upload
+   3 FAILED rows = 3 Rejected cards. Exactly 1 carries the Phase 36 reason. That
+   matches 36-11's apply evidence ("1 media_asset -> FAILED on ...0001, 0
+   everywhere else"). The other two FAILED rows predate Phase 36.
+
+INCREMENTAL BETTERMENT reading: the demo imagery is preserved, not dropped.
+All 21 seed product images render from the new store (7 per shop x 3 shops,
+check-media-urls-resolve 23/23 in 36-12, and 9/9 <img> loaded here). The one
+asset whose bytes could not be carried over is surfaced to the vendor with its
+reason and a Re-upload action, not silently lost.
