@@ -5,7 +5,7 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: shipping
-stopped_at: "Phase 36 COMPLETE and re-verified (passed 6/6 after the review fixes) — shipping: PR from phase-36-azure-blob-storage, then the D3 review series; Phase 29 stays PAUSED on owner actions (staging DNS + 3 operator secrets)"
+stopped_at: "Phase 36 COMPLETE and re-verified (passed 6/6 after the review fixes) — shipping as PR #763 (opened 2026-09-29), next the D3 review series (round 1 = /code-review 763 --comment); Phase 29 stays PAUSED on owner actions (staging DNS + 3 operator secrets)"
 last_updated: "2026-09-29T20:48:06.956Z"
 last_activity: 2026-09-29
 last_activity_desc: "Phase 36 re-verified after code-review fixes (VERIFICATION passed 6/6; BLOB-02/06 stay partial until Phase 29 provisions the real accounts) and marked complete"
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 36 (Azure Blob Storage Throughout) — COMPLETE 2026-09-29 (18/18 plans; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0). Shipping next. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
+Phase: 36 (Azure Blob Storage Throughout) — COMPLETE 2026-09-29 (18/18 plans; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0). Shipped as PR #763 — review series next, then merge. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
 Wave 6 DONE 2026-09-29: 36-16 retired-object-store residue gate (scripts/check-no-object-store-residue.sh + reasoned line-level allowlist + 41-arm selftest) wired into ci-cd.yaml and enforced by check-gate-enforcement; rc=0 on the tree (0 violations), 657 violations on the pre-phase tree; handoff gate count 45 -> 46. Line-level allowlist entries fail CI when an edit moves an allowed line (deliberate; the message names the new line). .planning/ is allowlisted whole (per plan).
 Wave 5 DONE 2026-09-29: 36-15 live docs (27 files incl. CLAUDE.md/AGENTS.md/HANDOFF.md, .planning/codebase, agent-context mirrors) on Azure Blob/Azurite 3.37.0; ADR-0002 gets an appended "Superseded in part" note (original lines untouched); check-doc-versions now also gates the Azurite version (157 claims). Doc gates green (citations back at its 5 pre-existing .planning/codebase failures). OPEN outside this repo: jtoye-orgos charters/oaas-core-java.md:46 and oaas-platform.md:18 still name the retired store — regenerating the roster from orgos would undo 36-15's hand edits to AGENTS.md + 6 mirrors.
