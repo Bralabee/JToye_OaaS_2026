@@ -273,7 +273,10 @@ The image runs `infra/backups/k8s-backup.sh` as its ENTRYPOINT, as uid 1000, wit
 
 CI publishes it. The `pg-backup` leg of `build-and-push` in `.github/workflows/ci-cd.yaml`
 builds this image, puts it through the same Trivy image gate as the other shipped images, and on
-every push to the default branch also pushes the exact tag the CronJob pulls. That tag is read
+every push to the default branch publishes the exact tag the CronJob pulls. It publishes that tag
+only AFTER the gate passes, as a copy of the gated sha image. The CronJob pulls the tag directly,
+with no deploy job in between, so a red gate must leave the tag on the last image that passed
+(PR #763 review round 1). That tag is read
 from `k8s/base/pg-backup-cronjob.yaml` and both goldens, never restated in the workflow. The leg
 fails before pushing if those three disagree, or if the repository they name is not the one the
 job publishes to. So a tag change is a manifest change, made in the one D-10 change, and the next

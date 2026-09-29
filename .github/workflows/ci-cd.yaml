@@ -1391,8 +1391,9 @@ jobs:
         # A CronJob in ImagePullBackOff pages nobody, so backups would stop silently on
         # the first deploy, and its postgres:15-bookworm layer and Go stdlib were never
         # put through the Trivy image gate every other shipped image passes. It now
-        # builds, pushes and gates here like the rest, and additionally pushes the exact
-        # tag the CronJob pulls (see "Resolve the tag the pg-backup CronJob pulls").
+        # builds, pushes and gates here like the rest. On the default branch it then
+        # publishes the exact tag the CronJob pulls, AFTER the image gate, as a copy of
+        # the gated sha image (see "Publish the CronJob's tag from the gated image").
         # The deploy jobs do not pin it by sha: the CronJob keeps its manifest tag.
         service: [core-java, edge-go, frontend, pg-backup]
     steps:
@@ -1447,8 +1448,8 @@ jobs:
             echo "FATAL: '$distinct' carries no tag." >&2
             exit 1
           fi
-          echo "the CronJob pulls $distinct; this leg publishes that tag on the default branch"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "the CronJob pulls $distinct; this leg publishes that tag on the default branch, after the image gate"
+          echo "ref=$distinct" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
         id: meta
@@ -1467,7 +1468,10 @@ jobs:
             # ImagePullBackOff on every deploy (the latent bug this PR closes).
             type=raw,value=${{ github.sha }}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ steps.cronjob_image.outputs.tag || 'unused' }},enable=${{ matrix.service == 'pg-backup' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            # NOT the CronJob's tag (:15-blob). The CronJob pulls that tag directly, with no
+            # deploy job in between, so pushing it here would publish an image the Trivy gate
+            # below has not passed yet (PR #763 review round 1). It is published by the last
+            # step of this job, after the gate, as a copy of the gated sha image.
 
       - name: Build and push Docker image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -1553,6 +1557,31 @@ jobs:
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
           exit-code: '1'
+
+      - name: Publish the CronJob's tag from the gated image (pg-backup leg, default branch only)
+        # Runs only if every step above passed, the image gate included: a red gate ends the
+        # job here, and the tag the CronJob pulls keeps pointing at the last image that passed.
+        # imagetools copies the manifest list of the exact sha image the gate scanned, so the
+        # published tag is byte-for-byte that image, not a rebuild.
+        if: matrix.service == 'pg-backup' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          GATED: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
+          CRONJOB_REF: ${{ steps.cronjob_image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CRONJOB_REF" ]; then
+            echo "FATAL: the CronJob image reference was not resolved; refusing to publish." >&2
+            exit 2
+          fi
+          gated="${GATED,,}"
+          docker buildx imagetools create --tag "$CRONJOB_REF" "$gated"
+          src="$(docker buildx imagetools inspect --raw "$gated" | sha256sum | cut -d' ' -f1)"
+          dst="$(docker buildx imagetools inspect --raw "$CRONJOB_REF" | sha256sum | cut -d' ' -f1)"
+          if [ -z "$src" ] || [ "$src" != "$dst" ]; then
+            echo "FATAL: $CRONJOB_REF resolves to $dst, not the gated $gated ($src)." >&2
+            exit 1
+          fi
+          echo "published $CRONJOB_REF = $gated ($src), after the image gate"
 
   # Job 4: Deploy to staging
   #
