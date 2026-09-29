@@ -1,0 +1,273 @@
+36-12 live proof — the delivered runtime, rebuilt from branch phase-36-azure-blob-storage
+Recorded 2026-09-29T07:32:12Z. Commands run from the main checkout /home/sanmi/IdeaProjects/JToye_OaaS_2026.
+No token, password, client secret or connection-string key appears below (bearer token held in a 0600 file, never echoed; the one wrong-key control is masked).
+
+================================================================================
+## Precondition (36-11): apply evidence exists and the post-apply dry run refused
+================================================================================
+149:  | ERROR:  RESEED-REFUSED: nothing references the old origin http://localhost:9000/jtoye-images -- wrong --old-origin, or already reseeded
+152:  | rc=1
+
+================================================================================
+## Rebuild: ALL built images, canonical nightly SERVICES list (compose start forbidden)
+================================================================================
+command: docker compose -f docker-compose.full-stack.yml up -d --build postgres keycloak-realm-render keycloak redis rabbitmq core-java edge-go frontend mcp-server azurite mailhog
+started: 2026-09-29T07:18:33Z
+ Image jtoye_oaas_2026-edge-go Built 
+ Image jtoye_oaas_2026-mcp-server Built 
+ Image jtoye_oaas_2026-frontend Built 
+ Image jtoye_oaas_2026-core-java Built 
+compose up --build rc=0 at 2026-09-29T07:21:25Z
+No retired object-store service is in the compose service list:
+  azurite core-java edge-go frontend keycloak keycloak-realm-render mailhog mcp-server ollama ollama-init postgres rabbitmq redis 
+Named volumes left in place (none deleted or recreated): jtoye_oaas_2026_azurite_data jtoye_oaas_2026_minio_data jtoye_oaas_2026_postgres_data 
+
+================================================================================
+## (1) core-java boot log on Azurite (first boot of the full stack on the new store)
+================================================================================
+2026-09-29 08:21:13 [core-java,,] INFO  uk.jtoye.core.storage.StorageConfig - Configuring Blob storage client: mode=connection-string, endpointHost=azurite, publicContainer=jtoye-images, quarantineContainer=jtoye-quarantine
+2026-09-29 08:21:17 [core-java,,] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 9090 (http) with context path '/'
+2026-09-29 08:21:18 [core-java,,] INFO  uk.jtoye.core.CoreApplication - Started CoreApplication in 14.986 seconds (process running for 15.487)
+2026-09-29 08:21:18 [core-java,,] INFO  u.j.c.s.StorageStartupValidator - Storage startup check passed: mode=connection-string, endpointHost=azurite, publicContainer=jtoye-images (blob), quarantineContainer=jtoye-quarantine (private), createContainers=true
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/beef-suya-wrap.jpg (224058 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/coleslaw.jpg (150523 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/lamb-kebab.jpg (181385 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/mango-lassi.jpg (175687 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/sobo-punch.jpg (124337 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/sweet-potato-fries.jpg (123230 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/chapman.jpg (156662 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/egusi-soup.jpg (77002 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/fried-plantain.jpg (90541 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/jollof-rice.jpg (136235 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/moin-moin.jpg (67206 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/pounded-yam-egusi.jpg (242427 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/zobo.jpg (275322 bytes)
+2026-09-29 08:21:19 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/dodo.jpg (165274 bytes)
+2026-09-29 08:21:20 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/ginger-beer.jpg (189067 bytes)
+2026-09-29 08:21:20 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/grilled-tilapia.jpg (183207 bytes)
+2026-09-29 08:21:20 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/palm-wine.jpg (58291 bytes)
+2026-09-29 08:21:20 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/party-jollof-rice.jpg (246408 bytes)
+2026-09-29 08:21:20 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/puff-puff.jpg (169188 bytes)
+2026-09-29 08:21:20 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/peri-peri-chicken.jpg (191938 bytes)
+2026-09-29 08:21:20 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/suya-platter.jpg (281585 bytes)
+2026-09-29 08:21:20 [core-java,,] INFO  uk.jtoye.core.dev.DemoDataSeeder - DemoDataSeeder complete for tenant 00000000-0000-0000-0000-000000000001: 0 shop(s) created, 0 product(s) created, 0 customer(s) created, 0 non-curated product(s) quarantined, 0 shop(s) 
+2026-09-29 08:21:20 [core-java,,] INFO  uk.jtoye.core.dev.DemoDataSeeder - DemoDataSeeder tenant-B probe seeded
+Uploaded seed image lines: 21 (the 21 classpath demo images; manifest has 21 images)
+ERROR lines in the boot log: 0; WARN lines: 6 (the WARNs are zipkin 'Dropped N spans due to ConnectException' — no zipkin in the compose set)
+'0 demo image(s) seeded' is correct: 36-11 already rewrote the 21 image_url rows to exactly the seed URLs, so no row changed; the 21 blobs were uploaded (putIfAbsent created them).
+
+### Readiness ordering (why the nightly URL gate can run right after the health wait)
+Force-recreate of core-java, polling :9090 and :9091 every ~0.1 s (root /actuator/health and /actuator/health/readiness):
+07:29:20.371 :9090 root=none readiness=none :9091 root=UP readiness=UP
+07:29:21.151 :9090 root=none readiness=none :9091 root=OUT_OF_SERVICE readiness=OUT_OF_SERVICE
+07:29:21.541 :9090 root=none readiness=none :9091 root=OUT_OF_SERVICE readiness=none
+07:29:21.666 :9090 root=none readiness=none :9091 root=none readiness=none
+07:29:41.489 :9090 root=none readiness=OUT_OF_SERVICE :9091 root=none readiness=none
+07:29:41.641 :9090 root=DOWN readiness=OUT_OF_SERVICE :9091 root=none readiness=none
+07:29:41.914 :9090 root=OUT_OF_SERVICE readiness=OUT_OF_SERVICE :9091 root=none readiness=none
+07:29:43.115 :9090 root=UP readiness=UP :9091 root=none readiness=none
+core-java log for that boot (local time = UTC+1):
+2026-09-29 08:29:40 [core-java,,] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 9090 (http) with context path '/'
+2026-09-29 08:29:41 [core-java,,] INFO  uk.jtoye.core.CoreApplication - Started CoreApplication in 15.73 seconds (process running for 16.339
+2026-09-29 08:29:41 [core-java,,] INFO  u.j.c.s.StorageStartupValidator - Storage startup check passed: mode=connection-string, endpointHost
+2026-09-29 08:29:42 [core-java,,] INFO  uk.jtoye.core.dev.DemoDataSeeder - DemoDataSeeder complete for tenant 00000000-0000-0000-0000-000000
+=> Tomcat serves from 07:29:41.489 while root health is DOWN/OUT_OF_SERVICE; the seeder completes at 07:29:42; root flips UP only at 07:29:43.115 together with readiness. Root health aggregates readinessState under the dev profile's probes, so 'UP' implies every ApplicationRunner (the seeder included) has returned.
+(The shutdown half of the same trace shows it too: root went OUT_OF_SERVICE with readiness while the old process still served.)
+
+================================================================================
+## (2) application.yml read OUT OF the running jar (unzip -p via docker exec)
+================================================================================
+container: jtoye_oaas_2026-core-java-1 (core-java has no container_name — compose removed it for --scale; the plan's literal 'jtoye-core-java' does not exist: docker inspect rc=1)
+unzip rc=0  bytes=45781
+running jar: blob=1 s3=0
+sha256 running jar application.yml : b8c9cd03a40c3503652fe7b94641b5349bb266b33a4dc7fc1f84a7f11819ebb2
+sha256 HEAD application.yml        : b8c9cd03a40c3503652fe7b94641b5349bb266b33a4dc7fc1f84a7f11819ebb2
+fail direction (same awk): origin/main's application.yml -> blob=0 s3=1; an empty file -> blob=0 s3=0
+
+================================================================================
+## (3) container access levels (az, connection string via the environment, not argv)
+================================================================================
+az storage container show-permission -n jtoye-images -> rc=0 {"publicAccess":"blob"}
+az storage container show-permission -n jtoye-quarantine -> rc=0 {"publicAccess":"off"}
+anonymous LIST of jtoye-images -> HTTP 403 (level blob: no anonymous list, #626)
+anonymous GET of a seed blob -> HTTP 200
+A8 (az signs UseDevelopmentStorage=true with the emulator key): the same signed list with the default string -> HTTP 200; with an emulator-form string carrying a WRONG key -> HTTP 403 (az --debug connectionpool lines); anonymous -> 403. So the 200 is a correctly signed request.
+
+================================================================================
+## (4) runtime parity gates
+================================================================================
+  HEAD         : 36e32d6b (phase-36-azure-blob-storage)
+  core-java    FRESH  image tagged 2026-09-29 07:20:31 UTC >= newest build-input commit a3a213a8 (2026-09-29 06:36:47 UTC)
+  edge-go      FRESH  image tagged 2026-09-29 07:19:37 UTC >= newest build-input commit 5c1bb364 (2026-08-30 20:53:05 UTC)
+  frontend     FRESH  image tagged 2026-09-29 07:19:41 UTC >= newest build-input commit 60d1075c (2026-09-28 22:18:52 UTC)
+  mcp-server   FRESH  image tagged 2026-09-29 07:19:11 UTC >= newest build-input commit 1736daf1 (2026-09-07 00:41:37 UTC)
+PASS: 4 running built service(s) match the source tree (0 unverified).
+check-runtime-freshness rc=0
+--- fail direction
+### freshness arm: edge-go stopped -> expect VOID (2)
+stopped edge-go rc=0
+  edge-go — container 'jtoye-edge-go' is 'exited', not 'running' (nothing to verify)
+PARSE ERROR: 1 of 4 built service(s) could not be verified, listed above — 3 checked. A service that is not running cannot be proven fresh, so this assertion is VOID, not passing. Start the missing service(s), or scope the gate with --compose-file if you are deliberately running a subset.
+fresh rc=2
+started edge-go rc=0
+edge-go image id before=sha256:cd432b1549a87a634348797368a1f6fc5c424fb4c38c3921996838b304647cc6 after=sha256:cd432b1549a87a634348797368a1f6fc5c424fb4c38c3921996838b304647cc6
+PASS: 4 running built service(s) match the source tree (0 unverified).
+fresh (closing clean) rc=0
+  base branch  : origin/main  (resolved from refs/remotes/origin/HEAD)
+  base head    : db725c94
+PASS: HEAD contains every commit on origin/main (db725c94); it is 83 commit(s) ahead and 0 behind.
+check-branch-behind-base rc=0
+--- fail direction: --base origin/dependabot/github_actions/minor-and-patch-f90f7e205e (a ref with 1 commit not on HEAD) -> FAIL rc=1 (run 2026-09-29T07:22Z)
+
+### Port trap (memory env_gotchas_local_stack), hit once and recovered
+After the first compose up: core-java published 0.0.0.0:9090. A plain 'docker restart' (run for the readiness trace) re-bound it to 0.0.0.0:9091 (the 9090-9091 range).
+Recovered with: docker compose -f docker-compose.full-stack.yml up -d --force-recreate --no-deps core-java  -> 9090 on the first attempt.
+now: 9090/tcp -> 0.0.0.0:9090 9090/tcp -> [::]:9090 
+
+================================================================================
+## (5) the servable-URL gate on the live stack
+================================================================================
+==============================================================================
+ check-media-urls-resolve — stored image URLs vs the DELIVERED object store
+ db=jtoye as jtoye (RLS-exempt)  store=jtoye-azurite  (2026-09-29T07:32:14Z)
+ public URL : http://localhost:10000/devstoreaccount1/jtoye-images  [running core-java STORAGE_PUBLIC_URL]
+ scope      : all tenants
+==============================================================================
+
+  references checked against http://localhost:10000/devstoreaccount1/jtoye-images (U-3 denominator, must be >= 1) .. 23
+    ...distinct URLs HEADed anonymously ..................................... 23
+    ...not answering 200 (U-1, must be 0) ..................................... 0
+  retired-origin references (U-2, must be 0) .................................. 0
+  unrecognised URL shapes (must be 0) ......................................... 0
+  external absolute URLs (reported, not fetched) .............................. 0
+  relative paths skipped (frontend-served, e.g. /brand/) ...................... 3
+
+------------------------------------------------------------------------------
+PASS: 23 reference(s) (23 distinct URLs) answer 200 anonymously; 0 point at the retired origin.
+------------------------------------------------------------------------------
+check-media-urls-resolve rc=0
+independent cross-check (superuser SQL): products with an image_url under the public origin / non-null / total = 21 / 21 / 23; ACTIVE media_asset = 1 (21 seed + 1 ACTIVE upload x {derivative, thumbnail} = 23)
+
+### URL gate with the stack DOWN (acceptance: rc=2)
+jtoye-postgres Exited (0) About an hour ago
+jtoye-azurite Exited (0) About an hour ago
+VOID: container 'jtoye-postgres' (the database) is 'exited', not running
+  (a result that cannot be evaluated is never a clean bill)
+urls rc=2
+
+## URL gate arms (2026-09-29T07:22:48Z); planted rows go on the unpublished tenant-B probe shop d97a3190-1bf8-4320-9ccd-d288a14141ec (banner_url NULL), triggers off (session_replication_role=replica), restore verified by whole-row md5
+row md5 before: 87532fb5a6a4e86b0c72679b735b41bc
+### clean
+PASS: 21 reference(s) (21 distinct URLs) answer 200 anonymously; 0 point at the retired origin.
+urls rc=0
+### arm U-2: banner_url = retired-origin URL -> expect rc=1 'unrewritten old-origin URL'
+plant rc=0
+  retired-origin references (U-2, must be 0) .................................. 1
+FAIL: 1 stored image reference(s) do not resolve on the delivered store:
+        unrewritten old-origin URL  shops.banner_url  id=d97a3190-1bf8-4320-9ccd-d288a14141ec  http://localhost:9000/jtoye-images/00000000-0000-0000-0000-000000000002/banner.jpg
+urls rc=1
+### arm shape: banner_url = 'banner.jpg' (relative, no leading /) -> expect rc=1 'unrecognised URL shape'
+plant rc=0
+  unrecognised URL shapes (must be 0) ......................................... 1
+FAIL: 1 stored image reference(s) do not resolve on the delivered store:
+        unrecognised URL shape  shops.banner_url  id=d97a3190-1bf8-4320-9ccd-d288a14141ec  banner.jpg
+urls rc=1
+### arm external: banner_url = https://images.example.com/b.jpg -> expect rc=0, external=1, not fetched
+plant rc=0
+  external (not fetched): shops.banner_url  id=d97a3190-1bf8-4320-9ccd-d288a14141ec  https://images.example.com/b.jpg
+  external absolute URLs (reported, not fetched) .............................. 1
+PASS: 21 reference(s) (21 distinct URLs) answer 200 anonymously; 0 point at the retired origin.
+urls rc=0
+### arm 404 under the public origin: banner_url = <public>/nope/does-not-exist.jpg -> expect rc=1 'HTTP 404'
+plant rc=0
+FAIL: 1 stored image reference(s) do not resolve on the delivered store:
+        HTTP 404  shops.banner_url  id=d97a3190-1bf8-4320-9ccd-d288a14141ec  http://localhost:10000/devstoreaccount1/jtoye-images/nope/does-not-exist.jpg
+urls rc=1
+### restore banner_url = NULL
+restore rc=0
+row md5 after: 87532fb5a6a4e86b0c72679b735b41bc  (equal to before: yes)
+### arm U-3: --only-tenant <random uuid> -> expect rc=2
+ scope      : 8ce1d4b3-3a9f-489d-8084-54cf9b8e696e
+  references checked against http://localhost:10000/devstoreaccount1/jtoye-images (U-3 denominator, must be >= 1) .. 0
+VOID: U-3: 0 references under http://localhost:10000/devstoreaccount1/jtoye-images were found (scope: 8ce1d4b3-3a9f-489d-8084-54cf9b8e696e). An empty checked set is indistinguishable from a broken enumeration
+urls(--only-tenant 8ce1d4b3-3a9f-489d-8084-54cf9b8e696e) rc=2
+### positive scope control: --only-tenant 00000000-0000-0000-0000-000000000001 -> expect rc=0, 21
+PASS: 21 reference(s) (21 distinct URLs) answer 200 anonymously; 0 point at the retired origin.
+urls rc=0
+### clean (closing)
+PASS: 21 reference(s) (21 distinct URLs) answer 200 anonymously; 0 point at the retired origin.
+urls rc=0
+
+================================================================================
+## Upload round trip on the running stack (real vendor, real JPEG, quarantine -> worker -> WebP)
+================================================================================
+token: obtained for admin-user (length and value not printed)
+products visible to the vendor: 22
+product: d3325cbb-f16b-41d4-9fc4-65de07cb9984 (MAK-JOL / Jollof Rice)
+fixture: JPEG image data, JFIF standard 1.01, aspect ratio, density 0; 370307 bytes; sha256=b4c317a3f7d223fae8357524fe2d67ff4a7878ed526fc6eaca9980a7a154f824
+expected quarantine key: 00000000-0000-0000-0000-000000000001/quarantine/b4c317a3f7d223fae8357524fe2d67ff4a7878ed526fc6eaca9980a7a154f824.jpg
+POST /api/v1/products/d3325cbb-f16b-41d4-9fc4-65de07cb9984/image (Idempotency-Key 36-12-1790666637-14704, is_primary=false) -> HTTP 202
+{"assetId":"a5da9e44-cc37-4013-9771-d46660918816","status":"PENDING"}
+anonymous GET quarantine/00000000-0000-0000-0000-000000000001/quarantine/b4c317a3f7d223fae8357524fe2d67ff4a7878ed526fc6eaca9980a7a154f824.jpg right after accept -> HTTP 403 (must not be 200)
+asset a5da9e44-cc37-4013-9771-d46660918816 status after 5s of script time: ACTIVE
+media entry: {"assetId":"a5da9e44-cc37-4013-9771-d46660918816","status":"ACTIVE","flagged":false,"failureReason":null,"url":"http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/media/a5da9e44-cc37-4013-9771-d46660918816.webp","thumbnailUrl":"http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/media/a5da9e44-cc37-4013-9771-d46660918816_thumb.webp","width":1200,"height":900,"redrivable":false,"delayed":false}
+--- anonymous GET http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/media/a5da9e44-cc37-4013-9771-d46660918816.webp
+HTTP/1.1 200 OK
+content-length: 92020
+content-type: image/webp
+cache-control: public, max-age=31536000, immutable
+    body: RIFF (little-endian) data, Web/P image, VP8 encoding, 1200x900, Scalin
+--- anonymous GET http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/media/a5da9e44-cc37-4013-9771-d46660918816_thumb.webp
+HTTP/1.1 200 OK
+content-length: 10478
+content-type: image/webp
+cache-control: public, max-age=31536000, immutable
+    body: RIFF (little-endian) data, Web/P image, VP8 encoding, 400x300, Scaling
+anonymous GET quarantine/00000000-0000-0000-0000-000000000001/quarantine/b4c317a3f7d223fae8357524fe2d67ff4a7878ed526fc6eaca9980a7a154f824.jpg after ACTIVE -> HTTP 403
+az list jtoye-quarantine --prefix 00000000-0000-0000-0000-000000000001/quarantine/b4c317a3f7d223fae8357524fe2d67ff4a7878ed526fc6eaca9980a7a154f824 -> rc=0, 0 matching blob(s): ''
+context: az list jtoye-quarantine total blob count -> rc=0, 0
+positive control: same prefix-list form on jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/dodo.jpg -> 1 (expect 1)
+ASSET_ID=a5da9e44-cc37-4013-9771-d46660918816 PRODUCT_ID=d3325cbb-f16b-41d4-9fc4-65de07cb9984 DERIVATIVE=http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/media/a5da9e44-cc37-4013-9771-d46660918816.webp THUMB=http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/media/a5da9e44-cc37-4013-9771-d46660918816_thumb.webp QKEY=00000000-0000-0000-0000-000000000001/quarantine/b4c317a3f7d223fae8357524fe2d67ff4a7878ed526fc6eaca9980a7a154f824.jpg
+script rc=0
+core-java pipeline log lines for that asset:
+(read at 2026-09-29T07:24Z with docker logs from container fbc0261d6f76, before it was force-recreated; lines cut at 230 chars; local time = UTC+1)
+2026-09-29 08:23:57 [core-java,6abb678db26cc18790e90dd494ed84e6,b5986c14deca2ec6] INFO  u.jtoye.core.storage.StorageService - Stored object by key: 00000000-0000-0000-0000-000000000001/quarantine/b4c317a3f7d223fae8357524fe2d67ff4a7878ed526fc6eaca9980a7a154f824
+2026-09-29 08:23:58 [core-java,6abb678db26cc18790e90dd494ed84e6,b5986c14deca2ec6] INFO  u.jtoye.core.media.MediaAssetService - Accepted upload for product d3325cbb-f16b-41d4-9fc4-65de07cb9984: PENDING asset a5da9e44-cc37-4013-9771-d46660918816 quarantined at 0
+2026-09-29 08:23:58 [core-java,6abb678e16e4739011d084775e93024f,11d084775e93024f] INFO  u.j.c.media.MediaEventOutboxFlusher - Flushed media outbox event (id=06d3ab48-38f2-409b-868c-ea1ca2ab6825, asset=a5da9e44-cc37-4013-9771-d46660918816)
+2026-09-29 08:23:59 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Stored object by key: 00000000-0000-0000-0000-000000000001/media/a5da9e44-cc37-4013-9771-d46660918816.webp (92020 bytes, image/webp)
+2026-09-29 08:23:59 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Stored object by key: 00000000-0000-0000-0000-000000000001/media/a5da9e44-cc37-4013-9771-d46660918816_thumb.webp (10478 bytes, image/webp)
+2026-09-29 08:23:59 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Deleted object from storage by key: 00000000-0000-0000-0000-000000000001/quarantine/b4c317a3f7d223fae8357524fe2d67ff4a7878ed526fc6eaca9980a7a154f824.jpg
+2026-09-29 08:23:59 [core-java,,] INFO  u.j.core.media.MediaProcessingWorker - event=media_process_active asset=a5da9e44-cc37-4013-9771-d46660918816 derivative=00000000-0000-0000-0000-000000000001/media/a5da9e44-cc37-4013-9771-d46660918816.webp size=1200x900 b
+=> the quarantine object existed from 07:23:57 to 07:23:59 UTC; the anonymous GET "right after accept" (403) fell inside that window, so it measured a PRIVATE existing object, not an absent one.
+
+================================================================================
+## Redis residue (products::* and shops::* values holding the retired origin)
+================================================================================
+ping: PONG
+dbsize: 2
+pattern products::*: keys=1 strings=1 retired-origin(localhost:9000)=0 new-origin(localhost:10000/devstoreaccount1)=1
+pattern shops::*: keys=0 strings=0 retired-origin(localhost:9000)=0 new-origin(localhost:10000/devstoreaccount1)=0
+pattern *: keys=2 strings=2 retired-origin(localhost:9000)=0 new-origin(localhost:10000/devstoreaccount1)=1
+### control arm: a scratch key products::claude-3612-control holding a retired-origin URL
+  RESIDUE: products::claude-3612-control
+products::* retired-origin hits with the control planted: 1 (expect 1)
+del: 1
+products::* retired-origin hits after del: 0 (expect 0); dbsize=2
+=> residue 0; NO flush was needed. Note: the first attempt read the password from redis's /proc/1/cmdline, which redis rewrites (setproctitle); it failed LOUDLY (WRONGPASS/NOAUTH, keys=0) and was not recorded as a pass. The run above passes REDISCLI_AUTH to docker exec by NAME from .env.
+
+================================================================================
+## PENDING — the delete-one-seed-blob arm (plan Task 2) is BLOCKED, not run
+================================================================================
+The plan's arm is: az storage blob delete one seed blob in the LOCAL Azurite -> the URL gate exits 1
+naming that URL -> restart core-java so the seeder's putIfAbsent re-uploads it -> downloaded sha256
+equals the classpath image's sha256 -> clean re-run.
+The machine's az-mutation PreToolUse guard refused `az storage blob delete` (policy: the jtoye-cloud
+READ-ONLY ruling; it cannot tell the emulator from the Azure estate and asks for a literal [az-ok]
+token that only a human may sanction). Per the standing ruling "a blocked command is the answer",
+no other tool was used to delete the blob. What IS already proven without it:
+  - U-1 can fail on this stack: a planted reference to a non-existent blob under the public origin
+    -> HTTP 404 FAIL rc=1 (URL gate arms above);
+  - the seeder's re-upload semantics: a plain restart logged 21 x "Seed image already present,
+    skipping upload" (putIfAbsent is idempotent), and the first boot logged 21 x "Uploaded seed image".
+What is NOT proven until the arm runs: that a blob missing from the store (with its DB row intact)
+is detected by the gate AND restored byte-identically by the next boot.
