@@ -167,12 +167,23 @@ data:
   stomp.broker.relay-host: "rabbitmq.jtoye-infrastructure.svc.cluster.local"
   stomp.broker.relay-port: "61613"
 
-  # pg-backup CronJob S3 target (#90). Leave s3.backup.endpoint empty for real
-  # AWS S3; set it to a MinIO/other S3 endpoint URL for non-AWS targets.
-  s3.backup.bucket: "jtoye-db-backups"
-  s3.backup.prefix: "backups"
-  s3.backup.region: "eu-west-2"
-  s3.backup.endpoint: ""
+  # --- pg-backup CronJob Blob target (#90; Phase 36 D-01, D-02, D-07, D-11) --
+  # The logical dump goes to a DEDICATED backup storage account, separate from
+  # the media account and in a different Azure region (ukwest, paired with the
+  # uksouth media account), whose jtoye-db-backups container carries a WORM
+  # time-based retention, blob soft delete and a lifecycle delete rule
+  # (docs/runbooks/azure-blob-provisioning.md). The job authenticates with AKS
+  # Workload Identity (D-02): NO account key, connection string or SAS is held in
+  # any Secret, sealed or not. Its identity is write-only, so there is no prune
+  # here and none in the image — retention belongs to the container.
+  # The endpoint is the account's raw Blob endpoint, no port and no path.
+  # Base carries the PRODUCTION account (jtoyeprodbackup, D-11); staging patches
+  # its own. Consumed by k8s/base/pg-backup-cronjob.yaml as STORAGE_AUTH_MODE /
+  # STORAGE_ENDPOINT / BACKUP_CONTAINER / BACKUP_PREFIX (infra/backups/k8s-backup.sh).
+  backup.blob.auth-mode: "workload-identity"
+  backup.blob.endpoint: "https://jtoyeprodbackup.blob.core.windows.net"
+  backup.blob.container: "jtoye-db-backups"
+  backup.blob.prefix: "backups"
 
   # ===========================================================================
   # DEF-6 / D-15 / D-19 (Phase 26 / INFRA-02): base-manifest config drift versus
@@ -249,23 +260,42 @@ data:
   # SOURCE: application-prod.yml `${LOG_PATH:/var/log/jtoye}` — identical.
   log.path: "/var/log/jtoye"
 
-  # --- Media storage (S3) — IMG-01..04 / Phase 24 ----------------------------
-  # Unsupplied, storage.s3.* resolved to a dev MinIO endpoint with the
-  # well-known minioadmin/minioadmin credentials, so every vendor image upload
-  # in staging/production wrote to a target that does not exist there.
-  # SOURCE: s3.region is the committed s3.backup.region above; s3.bucket is
-  # application.yml `${S3_BUCKET:jtoye-images}`; s3.endpoint is the AWS regional
-  # S3 endpoint FOR that committed region; s3.public-url is the two
-  # concatenated. Credentials are NOT here — they come from the OPTIONAL
-  # s3-media-credentials Secret (see core-java-deployment.yaml).
-  s3.endpoint: "https://s3.eu-west-2.amazonaws.com"
-  s3.region: "eu-west-2"
-  s3.bucket: "jtoye-images"
-  s3.public-url: "https://s3.eu-west-2.amazonaws.com/jtoye-images"
+  # --- Media storage (Azure Blob) — IMG-01..04 / Phase 24, Phase 36 ---------
+  # Unsupplied, storage.blob.* resolves to the Azurite emulator
+  # (application.yml), so every vendor image upload in staging/production would
+  # aim at a target that does not exist there — the DEF-6 class. Every value is
+  # therefore stated here and asserted on the render by INV-8/INV-9/INV-10 in
+  # k8s/scripts/check-render-invariants.sh.
+  #
+  # CREDENTIALS (D-02): AKS Workload Identity. NO account key, connection string
+  # or SAS is held in any Secret, sealed or not, and no connection-string key
+  # exists in this ConfigMap outside the local overlay. The AZURE_CLIENT_ID /
+  # AZURE_TENANT_ID / AZURE_FEDERATED_TOKEN_FILE the SDK needs are injected at
+  # admission by the workload-identity webhook — never by a manifest — and
+  # core-java's startup shape check fails fast when they are missing.
+  #
+  # ENDPOINT (D-06): the account's RAW Blob endpoint, no CDN and no custom
+  # domain. public-url is that endpoint + /jtoye-images, and it is embedded in
+  # every persisted image URL, so moving it later is a tenant-looped rewrite.
+  # Base carries the PRODUCTION media account (jtoyeprodmedia, uksouth, D-11);
+  # staging patches its own. The backup dump uses a DIFFERENT account in another
+  # region (backup.blob.* above, D-01).
+  #
+  # CONTAINERS (D-07): jtoye-images is public at access level `blob` (derivatives
+  # only, never listable, #626); jtoye-quarantine is private (raw uploads).
+  # create-containers is "false": Set Container ACL cannot be authorized with an
+  # Entra token, so both containers are provisioned out of band (the provisioning
+  # runbook) and only asserted at boot.
+  storage.blob.auth-mode: "workload-identity"
+  storage.blob.endpoint: "https://jtoyeprodmedia.blob.core.windows.net"
+  storage.blob.public-container: "jtoye-images"
+  storage.blob.quarantine-container: "jtoye-quarantine"
+  storage.blob.public-url: "https://jtoyeprodmedia.blob.core.windows.net/jtoye-images"
+  storage.blob.create-containers: "false"
 
   # --- Email (SMTP) — Phase 22 shipped SES-over-SMTP -------------------------
-  # SOURCE: smtp.host is the AWS SES SMTP endpoint for the committed
-  # s3.backup.region (eu-west-2); smtp.port/auth/starttls are byte-identical to
+  # SOURCE: smtp.host is the AWS SES SMTP endpoint for eu-west-2, the region the
+  # retired object-store keys used to commit here; smtp.port/auth/starttls are byte-identical to
   # application.yml's `${SMTP_PORT:587}` / `${SMTP_AUTH:false}` /
   # `${SMTP_STARTTLS:true}`.
   #

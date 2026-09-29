@@ -11,10 +11,13 @@
 # Egress:
 #   - DNS to kube-dns.
 #   - jtoye-infrastructure namespace on Postgres (app-config `db.port`), Redis
-#     (6379), RabbitMQ AMQP (5672), RabbitMQ STOMP (61613), MinIO (9000),
-#     Alertmanager (9093).
+#     (6379), RabbitMQ AMQP (5672), RabbitMQ STOMP (61613), Alertmanager (9093).
 #   - Public 443/TCP for Keycloak (auth.olajay.co.uk), Stripe (api.stripe.com),
-#     Ollama remote (if configured), S3 public endpoints, image CDNs.
+#     Ollama remote (if configured), image CDNs, the Azure Blob media account
+#     (<account>.blob.core.windows.net) and the Entra ID token endpoint
+#     (login.microsoftonline.com) that Workload Identity exchanges its projected
+#     token at. Workload Identity needs no IMDS (169.254.169.254) egress.
+#     No object store lives in-cluster any more (Phase 36), so there is no 9000.
 #     See 15-RESEARCH.md §4 for the Stripe CIDR tradeoff rationale.
 #
 # Enforces STRIDE T-15-04 (DNS egress scoped) + narrows remote egress to 443 only.
@@ -107,12 +110,14 @@ spec:
       ports:
         - protocol: TCP
           port: 5432   # Postgres — replaced from app-config db.port
-    # In-cluster infrastructure namespace: Redis, RabbitMQ, MinIO, Alertmanager.
-    # These five are still literals. That is a KNOWN, deliberate limit of this
+    # In-cluster infrastructure namespace: Redis, RabbitMQ, Alertmanager.
+    # These four are still literals. That is a KNOWN, deliberate limit of this
     # change: #271 is about the Postgres port, and redis.port / rabbitmq.port /
     # stomp.broker.relay-port already exist as app-config keys, so routing them
     # the same way is a clean follow-up rather than something this change smuggles
-    # in. INV-7 asserts all five explicitly, so they cannot drift unnoticed.
+    # in. INV-7 asserts all four explicitly, so they cannot drift unnoticed.
+    # (The MinIO 9000 port was removed in Phase 36: media storage is Azure Blob,
+    # reached over the public 443 rule below.)
     - to:
         - namespaceSelector:
             matchLabels:
@@ -125,10 +130,9 @@ spec:
         - protocol: TCP
           port: 61613  # RabbitMQ STOMP
         - protocol: TCP
-          port: 9000   # MinIO
-        - protocol: TCP
           port: 9093   # Alertmanager
-    # Public internet for Keycloak, Stripe, Ollama remote, S3 public, CDNs
+    # Public internet for Keycloak, Stripe, Ollama remote, CDNs, the Azure Blob
+    # media account and the Entra ID token endpoint (Workload Identity).
     # See 15-RESEARCH.md §4 Stripe CIDR tradeoff.
     - to:
         - ipBlock:

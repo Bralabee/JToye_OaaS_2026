@@ -32,6 +32,11 @@ spec:
         prometheus.io/port: "9091"
         prometheus.io/path: "/actuator/prometheus"
     spec:
+      # Dedicated ServiceAccount (k8s/base/serviceaccounts.yaml), never
+      # `default`: Workload Identity federates ONE Kubernetes identity
+      # (system:serviceaccount:<ns>:core-java) to the media account's managed
+      # identity, so the subject must name this workload and nothing else.
+      serviceAccountName: core-java
       # Pod anti-affinity: Don't schedule multiple pods on same node
       affinity:
         podAntiAffinity:
@@ -361,45 +366,45 @@ spec:
             configMapKeyRef:
               name: app-config
               key: log.path
-        # --- Media storage (Phase 24 IMG-01..04) ---
-        - name: S3_ENDPOINT
+        # --- Media storage: Azure Blob (Phase 24 IMG-01..04, Phase 36) ---
+        # Every value comes from app-config storage.blob.* (see configmap.yaml).
+        # There is deliberately NO credential here, not even an optional one
+        # (D-02): staging/production authenticate with AKS Workload Identity via
+        # this pod's dedicated `core-java` ServiceAccount, and the webhook injects
+        # AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_FEDERATED_TOKEN_FILE at
+        # admission. STORAGE_CONNECTION_STRING is supplied ONLY by
+        # k8s/local/storage-env-patch.yaml (the Azurite emulator string, which
+        # holds no key); INV-9 forbids it in any staging/production render.
+        - name: STORAGE_AUTH_MODE
           valueFrom:
             configMapKeyRef:
               name: app-config
-              key: s3.endpoint
-        - name: S3_REGION
+              key: storage.blob.auth-mode
+        - name: STORAGE_ENDPOINT
           valueFrom:
             configMapKeyRef:
               name: app-config
-              key: s3.region
-        - name: S3_BUCKET
+              key: storage.blob.endpoint
+        - name: STORAGE_PUBLIC_CONTAINER
           valueFrom:
             configMapKeyRef:
               name: app-config
-              key: s3.bucket
-        - name: S3_PUBLIC_URL
+              key: storage.blob.public-container
+        - name: STORAGE_QUARANTINE_CONTAINER
           valueFrom:
             configMapKeyRef:
               name: app-config
-              key: s3.public-url
-        # OPTIONAL Secret (s3-media-credentials). The secretKeyRef `optional`
-        # flag below is load-bearing: a namespace that has not created it keeps
-        # exactly today's behaviour — the env stays UNSET, application.yml's own
-        # default applies and the media path stays inert — instead of putting
-        # every core-java pod into CreateContainerConfigError. Supplying the
-        # Secret is the deliberate act that activates real S3 writes.
-        - name: S3_ACCESS_KEY
+              key: storage.blob.quarantine-container
+        - name: STORAGE_PUBLIC_URL
           valueFrom:
-            secretKeyRef:
-              name: s3-media-credentials
-              key: access-key
-              optional: true
-        - name: S3_SECRET_KEY
+            configMapKeyRef:
+              name: app-config
+              key: storage.blob.public-url
+        - name: STORAGE_CREATE_CONTAINERS
           valueFrom:
-            secretKeyRef:
-              name: s3-media-credentials
-              key: secret-key
-              optional: true
+            configMapKeyRef:
+              name: app-config
+              key: storage.blob.create-containers
         # --- Email (Phase 22 COMMS-*) ---
         - name: SMTP_HOST
           valueFrom:
