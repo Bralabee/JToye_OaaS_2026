@@ -3,7 +3,8 @@
 Operational reference for the JToye OaaS PostgreSQL backups. Two paths exist: the
 host script (`infra/backups/backup.sh`, local/docker → gzip'd plain dump) covered
 first, and the in-cluster **Kubernetes CronJob** (`k8s/base/pg-backup-cronjob.yaml`
-→ custom-format dump to S3) covered in [Kubernetes CronJob backups to S3](#kubernetes-cronjob-backups-to-s3-90).
+→ custom-format dump to Azure Blob Storage) covered in
+[Kubernetes CronJob backups to Azure Blob](#kubernetes-cronjob-backups-to-azure-blob-90-phase-36).
 Covers how backups run, how to verify one, the metrics the script emits, the alert
 that should fire when backups go stale, and the restore-testing cadence.
 
@@ -191,7 +192,7 @@ A backup that has never been restored is a hypothesis, not a safeguard.
      data beside production data and makes the blast radius of a typo the real
      database. The script uses a disposable container with no published ports.
   2. **Wrong artifact format.** The k8s CronJob writes **custom format** (`pg_dump -Fc`,
-     `k8s-backup.sh:55`); `gunzip -c … | psql` only reads a plain-SQL dump. The
+     `k8s-backup.sh:57`); `gunzip -c … | psql` only reads a plain-SQL dump. The
      documented drill could not have opened the artifact the pipeline produces.
   3. **`\dt | head` is a truncating filter used as proof.** It lists table *names*,
      never row counts, and `head` cuts the list. A restore that creates 40 empty
@@ -211,185 +212,271 @@ A backup that has never been restored is a hypothesis, not a safeguard.
 
 ---
 
-## Kubernetes CronJob backups to S3 (#90)
+## Kubernetes CronJob backups to Azure Blob (#90, Phase 36)
 
-The in-cluster nightly backup (`k8s/base/pg-backup-cronjob.yaml`) is separate from
-the host `backup.sh` above: it streams a **custom-format** dump straight to S3.
+The in-cluster nightly backup (`k8s/base/pg-backup-cronjob.yaml`) is separate from the host
+`backup.sh` above: it writes a **custom-format** dump and uploads it to **Azure Blob Storage**
+with `blobctl`. It never prunes and never deletes.
+
+> **Status (2026-09-29).** The image and script below are the Blob pipeline. The CronJob
+> manifest, the image-tag references tracked by the parity gate, and the rendered goldens move to
+> the `:15-blob` tag and the Workload Identity wiring **together**, in one change (D-10). Until
+> that lands, `k8s/base/pg-backup-cronjob.yaml` still names the pre-Blob image. The Azure estate
+> itself is provisioned in Phase 29.
+
+### Destination (D-01, D-11)
+
+| | Staging | Production |
+|---|---|---|
+| Storage account | `jtoyestgbackup` (`ukwest`) | `jtoyeprodbackup` (`ukwest`) |
+| Container | `jtoye-db-backups` (**private**) | `jtoye-db-backups` (**private**) |
+| Blob name | `backups/jtoye-backup-YYYYMMDD-HHMMSS.dump` | same |
+
+- The backup account is **dedicated**: separate from the media account, and in a different region
+  from staging (`uksouth`). `uksouth` and `ukwest` are an Azure region pair.
+- **The trade D-01 records, deliberately:** this survives object deletion and a compromised app
+  credential. It does **not** survive loss of the whole Azure subscription. An off-Azure copy was
+  considered and not chosen; revisit it before real customer data if that risk is re-weighed.
+- The first line of defence is the managed database's own point-in-time restore. This dump is the
+  second line.
+- Account, container, data protection, identities and RBAC are specified in
+  [`azure-blob-provisioning.md`](./azure-blob-provisioning.md). Every `az` line there pins the
+  subscription. That runbook is executed in Phase 29.
+
+### Credential: Workload Identity, no Secret (D-02)
+
+- The job runs under ServiceAccount **`pg-backup`**, with the pod-template label
+  `azure.workload.identity/use: "true"` (staging identity `jtoye-staging-backup-id`, federated
+  subject `system:serviceaccount:jtoye-staging:pg-backup`).
+- The webhook projects a federated token and sets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and
+  `AZURE_FEDERATED_TOKEN_FILE`. The job sets `STORAGE_AUTH_MODE=workload-identity` and
+  `STORAGE_ENDPOINT=https://jtoyestgbackup.blob.core.windows.net`.
+- **No account key, SAS or connection string is stored in any Secret**, sealed or not.
+- The identity's data-plane role is **write-only** on `jtoye-db-backups`: it can create blobs; it
+  cannot read, list or delete (provisioning runbook §6). So the job has **no post-upload read-back**
+  — it cannot list what it wrote — and a compromised job cannot read, delete or replace old dumps,
+  which hold every tenant's PII.
+- The database half is unchanged: `DB_USER` / `PGPASSWORD` come from the `postgres-credentials`
+  secret's `backup-username` / `backup-password` keys, and must be the BYPASSRLS role below.
 
 ### The image
-Built from `infra/backups/Dockerfile` (`FROM postgres:15-bookworm`) with `pg_dump`,
-`pg_restore`, **aws-cli**, and GNU coreutils/grep baked in, running
-`infra/backups/k8s-backup.sh` as its ENTRYPOINT. This replaces the old
-`postgres:15-alpine` + runtime `apk add aws-cli` (which failed on busybox GNU-isms
-and under the default-deny NetworkPolicy). Build & push so the tag matches the
-manifest:
+
+Built from `infra/backups/Dockerfile`, a two-stage build:
+
+1. `golang:1.27-alpine` compiles **`blobctl`** (`infra/backups/blobctl`) after `go mod verify`,
+   as a static, stripped binary. The stage is build-only; only the binary is copied out.
+2. `postgres:15-bookworm` supplies `pg_dump` / `pg_restore` and GNU coreutils. Its major is
+   governed by `scripts/check-postgres-major-parity.sh`; do not change it on its own. Only
+   `ca-certificates` is added.
+
+The image runs `infra/backups/k8s-backup.sh` as its ENTRYPOINT, as uid 1000, with `HOME=/tmp`.
+
 ```bash
-docker build -t ghcr.io/bralabee/jtoye-pg-backup:15 infra/backups
-docker push ghcr.io/bralabee/jtoye-pg-backup:15
+docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/backups
+docker push ghcr.io/bralabee/jtoye-pg-backup:15-blob
 ```
+
+The tag changed from `:15` because the contents changed (D-10).
+
+`blobctl` in one paragraph: `upload <file> <container> <blob>` never overwrites (it sends
+`If-None-Match: *` on both its single-shot and its staged path, and exits **3** if the blob
+exists); `list <container> <prefix>` prints sorted names; `download <container> <blob> <out>`
+writes a new 0600 file and exits **4** if the blob is missing. It has **no delete** code path.
+One switch, `STORAGE_AUTH_MODE`, selects `workload-identity` or `connection-string`, and
+connection-string mode accepts **only** the Azurite emulator form
+(`UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://<host>`). Exit codes: 0 ok, 1 error,
+2 usage, 3 exists, 4 not found.
+
+### Environment contract of `k8s-backup.sh`
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `DB_HOST` / `DB_NAME` | yes | — | Source database. |
+| `DB_PORT` | no | `5432` | |
+| `DB_USER` / `PGPASSWORD` | yes | — | Must be a **BYPASSRLS** role (see below). |
+| `BACKUP_CONTAINER` | yes | — | The Blob container, `jtoye-db-backups`. |
+| `STORAGE_AUTH_MODE` | yes | — | `workload-identity` (staging/production) or `connection-string` (Azurite). |
+| `BACKUP_PREFIX` | no | `backups` | Blob name prefix; the blob is `<prefix>/jtoye-backup-<UTC timestamp>.dump`. |
+| `MIN_BACKUP_BYTES` | no | `1000` | Size floor. |
+| `STORAGE_ENDPOINT` | WI only | — | `https://<account>.blob.core.windows.net`, read by `blobctl`. |
+| `STORAGE_CONNECTION_STRING` | Azurite only | — | The emulator form only, read by `blobctl`. |
+
+A missing required variable fails the job **before** the dump is taken.
+
+### What the job verifies — and what it cannot
+
+1. `pg_dump` runs with an **explicit return-code check**. A partial file after a non-zero exit is
+   deleted, never uploaded.
+2. A **size floor** (`MIN_BACKUP_BYTES`).
+3. `pg_restore --list`: the archive's table of contents is readable.
+4. `blobctl upload`; any non-zero exit (including 3, "already exists") fails the job.
+
+**Checks 2 and 3 both pass on a dump that holds no tenant rows.** The schema and the non-tenant
+reference data alone are far above the floor, and a table of contents lists perfectly with nothing
+behind it. Only a restore-and-count tells a real backup from a hollow one. That is the two-arm
+drill below, and it runs every night.
+
+### Retention: the container, not the script (D-01)
+
+There is **no prune in the script**; it was removed in Phase 36. Retention is enforced by the
+backup container itself (values recorded in D-11, applied by the provisioning runbook §4):
+
+- **Blob soft delete, 14 days.** Enabled first.
+- **Container-level time-based immutability (WORM), 30 days.** It stays **unlocked** through the
+  Phase 29 restore drill; then a human locks it (provisioning runbook §4.4). A locked policy
+  cannot be shortened or removed until it lapses. Under WORM a blob can be created but never
+  overwritten, and not deleted inside retention.
+- **A lifecycle rule** deletes `backups/` blobs after **35 days**, once WORM allows it.
+
+Because expiry is the account's job, the CronJob identity needs create permission only.
+
+**Locally, against Azurite, there is no lifecycle rule and no WORM.** Dev dumps and the drill's
+own dumps (under `drill/<run>/`) therefore accumulate in the `azurite_data` volume. On the current
+dev database a dump is about 15 MB, and each drill run writes two. This is accepted: it is dev
+only, and the nightly's Azurite is destroyed with its runner.
 
 ### The BYPASSRLS dump role (critical — FORCE RLS trap)
-Tenant tables use **FORCE ROW LEVEL SECURITY**, which applies RLS even to the table
-owner. A `pg_dump` run as the app role with no `app.tenant_id` GUC set therefore
-**silently captures ZERO rows** from every tenant table. Proven against the live DB:
 
-| Connected as | `SELECT count(*) FROM products` |
+Tenant tables use **FORCE ROW LEVEL SECURITY**, which applies RLS even to the table owner. Measured
+on the dev database, 2026-09-29 (PostgreSQL 15):
+
+| Connected as | What happens |
 | --- | --- |
-| `jtoye_app` (app role, FORCE RLS, no tenant) | **0** ← the trap |
-| superuser / `jtoye_backup` (BYPASSRLS) | **25** |
+| `jtoye_app` (owner, FORCE RLS, no tenant GUC) — plain `SELECT count(*) FROM products` | **0**, silently. That is the trap. |
+| `jtoye_app` — `pg_dump` | **Exits 1**: `ERROR: query would be affected by row-level security policy for table "customers"`. `pg_dump` asks for `row_security=off`, which Postgres refuses to a non-BYPASSRLS role. |
+| `jtoye_app` — `pg_dump --enable-row-security` | **Exits 0** with a dump holding **zero** tenant rows, which passes the size floor and the TOC read. |
+| `jtoye_backup` (BYPASSRLS) | **23** products, the full data. |
 
-Create the least-privilege dump role **as the postgres superuser** (not a Flyway
-migration — the app role can't grant `BYPASSRLS`). It needs SELECT on tables **and
-sequences** (`pg_dump` reads `last_value`, else it fails with "permission denied for
-sequence revinfo_seq"):
+So the job's return-code check is a real safety net, and so is its deletion of the partial file.
+Neither makes the BYPASSRLS role optional: a hollow dump is still one flag away.
+
+Create the least-privilege dump role **as the postgres superuser** (not a Flyway migration: the
+app role cannot grant `BYPASSRLS`). It needs SELECT on tables **and sequences**; `pg_dump` reads
+`last_value` and otherwise fails with "permission denied for sequence revinfo_seq". Hand the
+password to psql through the environment so it never appears on a command line:
+
 ```bash
-psql -U <superuser> -d jtoye \
-  -v backup_password="$(<secret manager>)" \
-  -f infra/backups/create-backup-role.sql
+export BACKUP_PW="$(<secret manager>)"
+{ printf '\\getenv backup_password BACKUP_PW\n'; cat infra/backups/create-backup-role.sql; } \
+  | psql -U <superuser> -d jtoye -v ON_ERROR_STOP=1
 ```
-Put the same password in the `postgres-credentials` secret's `backup-password` key,
-and the S3 creds in `s3-backup-credentials` (reference shape:
-`k8s/base/secrets-template.yaml.example`). Both secrets must be created
-out-of-band — the kustomize builds ship no Secret objects (#100); see
-`docs/runbooks/sealed-secrets.md` for the required-secrets table.
 
-### Local end-to-end proof (2026-07-10, dev-sized DB)
-Run against the local stack (Postgres + MinIO), backup image + restore drill:
-
-- **Backup:** exit **0**; 133 KiB custom-format dump; verified (size floor +
-  `pg_restore --list`); uploaded to `s3://jtoye-db-backups/backups/`.
-- **Retention:** a seeded `…-20250101-…` object was **pruned**; recent kept; job did
-  not abort (`Pruned 1 old backup(s)`).
-- **Restore drill:** downloaded from S3 → `pg_restore` into a scratch DB in **~5s
-  (RTO)**; restored row counts **products=25, orders=57, customers=4, shops=10** —
-  i.e. the BYPASSRLS dump captured the full tenant data the app-role dump would have
-  dropped.
-- **RPO:** nightly schedule → **≤24h**; dump itself completes in ~2s on the dev DB.
-
-> These figures are from the **dev-sized** DB. RPO/RTO scale with data volume —
-> re-measure on the first prod-cluster drill and record here.
+Put the same password in the `postgres-credentials` secret's `backup-password` key. There is **no
+storage credential to create**: Blob access is the Workload Identity above. The kustomize builds
+ship no Secret objects (#100); see `docs/runbooks/sealed-secrets.md` for the required-secrets table.
 
 ### Restore procedure (custom format)
+
+**Who reads a dump.** The CronJob's identity is write-only, so it cannot download anything. A
+restore from a real backup account is done by a **human** with a **time-bound Storage Blob Data
+Reader** assignment on `jtoye-db-backups`, removed afterwards (provisioning runbook §6):
+
 ```bash
-aws s3 cp s3://<bucket>/backups/<file>.dump /tmp/r.dump   # + --endpoint-url for MinIO
+SUB=c483d353-5f61-4587-a790-addb9ab5fb94          # the J'Toye subscription, always explicit
+ACCT=jtoyestgbackup                                # or jtoyeprodbackup
+az storage blob list --subscription "$SUB" --account-name "$ACCT" --auth-mode login \
+  --container-name jtoye-db-backups --prefix backups/ --query '[].name' -o tsv   # names sort by time
+az storage blob download --subscription "$SUB" --account-name "$ACCT" --auth-mode login \
+  --container-name jtoye-db-backups --name backups/<file>.dump --file /tmp/r.dump
+```
+
+**Locally, against Azurite,** use `blobctl` from the backup image. This is exactly what the drill
+does:
+
+```bash
+docker run --rm --network <compose network> \
+  -e STORAGE_AUTH_MODE=connection-string \
+  -e 'STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://azurite' \
+  -v /tmp:/out --entrypoint blobctl ghcr.io/bralabee/jtoye-pg-backup:15-blob \
+  download jtoye-db-backups backups/<file>.dump /out/r.dump
+```
+
+**Then restore into a throwaway database, never the live one:**
+
+```bash
 createdb -U <superuser> jtoye_restore_drill
-pg_restore -U <superuser> -d jtoye_restore_drill --no-owner --no-acl /tmp/r.dump
-psql -U <superuser> -d jtoye_restore_drill -c 'SELECT count(*) FROM products;'
+pg_restore -U <superuser> -d jtoye_restore_drill --no-owner --no-acl --exit-on-error /tmp/r.dump
+psql -U <superuser> -d jtoye_restore_drill -c 'SELECT current_database(), count(*) FROM products;'
 dropdb -U <superuser> jtoye_restore_drill
 ```
 
-### Falsifying the dump — the two-arm recipe (added 2026-07-25, Phase 26 / INFRA-02c)
+Count as the superuser (or a BYPASSRLS role). A count taken as the app role returns 0 on a full
+table, and a zero-vs-zero comparison proves nothing.
 
-**Every automated check in this pipeline passes on a schema-only, zero-row dump.** That is the whole
-reason this section exists. `infra/backups/k8s-backup.sh` verifies the artifact two ways:
+### The two-arm drill — executed by `scripts/check-backup-restore-drill.sh`
 
-- `MIN_BACKUP_BYTES` (default **1000**) — a size floor. Sixty Flyway migrations of DDL comfortably
-  exceed 1 KiB, so an empty database clears it easily.
-- `pg_restore --list` — a table-of-contents read. A zero-row dump lists its schema perfectly.
+A confirmation adds nothing here. Only a **restore-and-count** falsifies the pipeline, and only
+with the counterexample alongside it:
 
-Combine that with the FORCE RLS trap documented above (a `pg_dump` as the app role with no tenant GUC
-captures **zero rows** from every tenant table, silently) and you have a pipeline that can report a
-verified, uploaded, retained backup containing no data at all. A confirmation adds nothing here. Only
-a **restore-and-count** falsifies it, and only with the counterexample alongside:
-
-| Arm | Take the dump as | Restore, then `SELECT count(*) FROM products` | What it establishes |
+| Arm | Dump taken as | Must | What it establishes |
 |---|---|---|---|
-| **A — the counterexample** | the **app** role (`jtoye_app`: NOSUPERUSER, subject to FORCE RLS, no `app.current_tenant_id` GUC set) | must be **`products = 0`** | That the trap is real in *this* database, so the size floor and the TOC listing are demonstrably not the thing doing the work. A non-zero count here means RLS is not enforcing and the isolation model needs investigating before the backup does. |
-| **B — the real backup** | the **BYPASSRLS** dump role (`jtoye_backup`) | must be **`products > 0`** | That the artifact the CronJob actually uploads carries tenant data. |
+| **A-job** | the backup **job** as the app role `jtoye_app` | exit non-zero and upload **nothing** | the return-code check and partial-file deletion keep a refused dump out of Blob |
+| **A-dump — the counterexample** | `pg_dump --enable-row-security` as `jtoye_app` | pass the size floor and the TOC read, then restore to **`products = 0`** | the trap is real in *this* database, so the content checks demonstrably do not do the work. A non-zero count means RLS is not enforcing: investigate isolation before the backup |
+| **B — the real backup** | the backup job as the **BYPASSRLS** `jtoye_backup` | restore to **`products` = the live count, > 0** | the artifact the CronJob uploads carries the tenant data |
 
-Run **both, in the same session, against the same database.** Arm B on its own is exactly the result a
-broken pipeline also produces once, by luck; arm A is what makes arm B mean something. Record both
-counts, not just "restored OK".
+Run all arms in the same session against the same database. Arm B on its own is exactly the result
+a broken pipeline also produces once, by luck (a count read from the wrong database, for instance,
+passes arm B and fails arm A). The gate therefore also requires every count to report
+`current_database()` equal to that run's scratch database.
 
-Use the commands already proven in [Restore procedure (custom format)](#restore-procedure-custom-format)
-verbatim for each arm — they are not repeated here, so they cannot drift. The only difference between
-the arms is which role took the dump; the restore side is identical (restore as the superuser into a
-throwaway database, count, drop).
+**How the gate runs it.** It ensures `jtoye_backup` from `infra/backups/create-backup-role.sql`,
+with the password taken from `.env`'s `DB_BACKUP_PASSWORD`. It reads the live `products` count as
+that role; a count of 0 is a VOID. Then it runs the pg-backup image exactly as the CronJob does,
+against the compose Postgres and Azurite. A second container of the same image lists, downloads,
+restores into a scratch database and counts. Credentials travel only in 0600 env files and are
+never printed; scratch databases are dropped on exit.
 
-Producing arm A is a one-off `pg_dump` under the app role's credentials — it is not something the
-CronJob will ever do for you, because the CronJob is wired to the `backup-username` /
-`backup-password` keys of `postgres-credentials` on purpose.
+```bash
+docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/backups
+docker compose -f docker-compose.full-stack.yml up -d postgres azurite    # core-java is not needed
+bash scripts/check-backup-restore-drill.sh      # 0 PASS · 1 an arm failed · 2 VOID
+```
 
-For the local-cluster rehearsal of this recipe (how to trigger the CronJob on demand, and where the
-captured counts are recorded), see `k8s/LOCAL.md` § "Backup rehearsal" and its rehearsal-evidence row
-**L4**. The BYPASSRLS role is bootstrapped there by `scripts/k8s-local-secrets.sh`, which invokes
-`infra/backups/create-backup-role.sql` rather than restating the role's privileges.
+**Nightly.** `.github/workflows/e2e-nightly.yml` builds the image and runs the gate on every
+scheduled run once the stack is up. A red or VOID drill fails the nightly. It is the restore path's
+only standing coverage: nothing else in CI builds the image.
 
-### In-cluster result — local minikube (2026-07-25, Phase 26 / plan 26-07)
+**First execution, 2026-09-29 (dev DB):**
+- arm A restored products = **0**
+- arm B restored products = **23**, equal to live **23**
+- the hollow A-dump was 15,762,631 bytes against a floor of 1000, with a 412-entry TOC — it passed
+  both content checks
+- the A-job exited 1 with the row-security refusal and uploaded nothing
 
-The first execution of this CronJob **inside a real Kubernetes cluster**. Namespace
-`jtoye-local` on the `jtoye` minikube profile, image
-`ghcr.io/bralabee/jtoye-pg-backup:15` (`sha256:943a78f6…`, rebuilt during this run — the
-on-host `:15` tag beforehand dated 2026-07-10 and predated Phases 23–25).
+The fail directions recorded with it:
+- a job run as the app role in arm B → exit 1
+- arm A run as `jtoye_backup` → exit 1
+- a truncated, bit-rotted, empty or missing dump in Blob → exit 1
+- a count read from the live database → exit 1
+- Azurite stopped → exit 2
 
-Triggered on demand with
-`kubectl --context jtoye -n jtoye-local create job pg-backup-rehearsal --from=cronjob/pg-backup`.
+### What Azurite cannot prove
 
-- **Job result:** `.status.succeeded` = **1**; `kubectl wait --for=condition=complete`
-  reported `condition met`, exit 0.
-- **Connection:** dumped as **`jtoye_backup`** against `host.minikube.internal:5433` —
-  the in-cluster job reached the compose-hosted Postgres over the pod host, on the port
-  supplied by the `postgres-credentials` secret rather than a hardcoded 5432.
-- **Artifact:** `s3://jtoye-db-backups/backups/jtoye-backup-20260725-204829.dump`,
-  **214370 bytes**, verified by the size floor and `pg_restore --list`, uploaded via the
-  `--endpoint-url` path to host MinIO (`s3.backup.endpoint` =
-  `http://host.minikube.internal:9000`).
-- **Retention:** `Pruned 0 old backup(s)` — correct, the bucket was new. The prune loop
-  tolerated the near-empty listing without aborting the job.
-- **Not world-readable:** an unauthenticated `GET` of that object key returns **403**,
-  while the same probe against a known `jtoye-images` object returns **200**. Existence
-  was confirmed from the job log's key plus the bucket listing *before* the 403 was
-  interpreted — MinIO answers 403 for a nonexistent key too, so an unordered probe would
-  be satisfiable by absence.
+- **Blob immutability (WORM), soft delete and lifecycle deletion** are not in Azurite's support
+  matrix. The retention half of D-01 is therefore proven only by the Phase 29 read-backs
+  (provisioning runbook §8): `az storage container immutability-policy show`,
+  `az storage account blob-service-properties show`, `az storage account management-policy show`.
+- **RBAC.** Azurite does not enforce data-plane roles, so the write-only backup role can only be
+  probed on the real account.
+- **The Workload Identity path.** Locally the job authenticates with the emulator connection string.
+- **Row contents.** The drill compares row counts, not values.
 
-**Both arms of the falsification, run in the same session against the same database:**
+### Pending (Phase 29)
 
-| Arm | Dump taken as | Restored counts | Verdict |
-|---|---|---|---|
-| **A — counterexample** | `jtoye_app` (NOSUPERUSER, FORCE RLS, no tenant GUC) | `products=0 orders=0 customers=0 shops=0` | the trap is real in this database |
-| **B — the real backup** | `jtoye_backup` (BYPASSRLS), i.e. the object above | `products=47 orders=23 customers=12 shops=5` | the uploaded artifact carries tenant data |
+- [ ] Backup account, container, soft delete, WORM (unlocked) and lifecycle created, with the
+  provisioning runbook §8 read-backs recorded both ways.
+- [ ] The first staging CronJob run exits 0 and leaves exactly one new `.dump` under `backups/`.
+- [ ] A **staging restore drill** from the real account (a human with a time-bound Reader, the
+  procedure above), with staging-scale RPO and RTO recorded here.
+- [ ] After that drill, a human locks the WORM policy (provisioning runbook §4.4).
 
-Arm B cross-checks exactly against the live database read through the BYPASSRLS role
-(`products=47 customers=12 orders=23 shops=5`), so the dump captured the full data rather
-than a subset. Restore was `pg_restore` rc=0 with 0 errors, **RTO 9s** on this dev-sized
-DB. Both scratch databases were dropped afterwards.
+### History
 
-**Why arm A is not optional.** Arm A's zero-row artifact **passes both of this pipeline's
-automated verifications**: 149268 bytes against a `MIN_BACKUP_BYTES` floor of 1000 (149x
-clear), and a clean `pg_restore --list` with 393 TOC entries. Neither check can tell the
-two arms apart. Only the row count does.
+The dated rehearsal records of the pre-Phase-36 pipeline are kept verbatim in
+[`docs/archive/backups-rehearsal-evidence-2026-07.md`](../archive/backups-rehearsal-evidence-2026-07.md):
+- the 2026-07-10 local end-to-end proof (products=25, RTO about 5s)
+- the 2026-07-25 in-cluster rehearsal on the local minikube (plan 26-07), with its two-arm table
+  (A = 0, B = 47) and the first measurement of the `pg_dump` row-security refusal
+- the pending list as it stood then
 
-**One correction to the mechanism described above.** This section previously said an
-app-role dump "silently captures ZERO rows". Measured on PostgreSQL 15 with 36 tables
-`ENABLE` RLS, all 36 `FORCE`, the behaviour is two-part:
-
-- a plain `SELECT` as `jtoye_app` with no GUC does return **0 rows, silently** — that is
-  the trap, and it is what arm A's restore surfaces;
-- `pg_dump` additionally requests `row_security=off`, which Postgres **refuses** for a
-  non-BYPASSRLS role on a FORCE-RLS table, so `pg_dump` itself **exits 1** with
-  `ERROR: query would be affected by row-level security policy for table "customers"`.
-
-So `pg_dump` fails loudly rather than silently — a safety net this runbook did not claim.
-It does **not** retire the BYPASSRLS role and does not make arm A redundant: the partial
-artifact left behind still clears both content checks while restoring to zero rows.
-`k8s-backup.sh`'s explicit return-code check and its `rm -f "$TMP"` on failure are what
-prevent that artifact reaching S3 — both are load-bearing, and neither is implied by the
-size floor or the TOC read.
-
-Full captured evidence, including the verbatim job log, is in `k8s/LOCAL.md` §11 rows
-**L3** and **L4**.
-
-### Pending (needs a live cluster — flagged, not yet done)
-The following ACs require the prod/staging cluster (AKS `sipbihs2aks` currently
-unreachable):
-
-- [x] CronJob completes **in-cluster** (exit 0) — done 2026-07-25 on the **local**
-  minikube cluster, artifact in the **local MinIO** `jtoye-db-backups` bucket (see the
-  dated section above). The **prod** S3 bucket half of this AC is NOT met and is carried
-  by the unticked item below.
-- [ ] The artifact in the **prod** S3 bucket, from a CronJob run in the prod cluster.
-- [ ] A **prod restore drill** executed against prod S3, with prod-scale RPO/RTO
-  recorded above.
-
-The mechanism is now proven **in-cluster** rather than only on the host; what remains is
-execution against production infrastructure.
+The dump/verify half of the job is unchanged since then, so those measurements still describe it.

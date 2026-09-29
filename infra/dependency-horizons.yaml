@@ -397,7 +397,7 @@ dependencies:
 
   - id: golang
     pin: "golang:1.27-alpine"
-    sites: ["edge-go/Dockerfile:11"]
+    sites: ["edge-go/Dockerfile:11", "infra/backups/Dockerfile:32"]
     kind: image
     owner: maintainer
     eol_slug: go
@@ -407,7 +407,8 @@ dependencies:
       Catalogue `eol: false`. Go's real policy is support until two newer majors ship. 1.27
       adopted via dependabot #674 (2026-08), so it loses support when 1.29 does. That is a
       horizon without a date, so no `vendor_eol` is recorded — inventing one would be the
-      same fabrication this file exists to prevent.
+      same fabrication this file exists to prevent. Second site (Phase 36): the build-only
+      stage of the pg-backup image that compiles blobctl; nothing from it ships but the binary.
 
   - id: node
     pin: "node:24-alpine"
@@ -448,7 +449,7 @@ dependencies:
   # ------------------------------------------------------------------ toolchains
   - id: go-toolchain
     pin: "go 1.27.0"
-    sites: ["edge-go/go.mod:3"]
+    sites: ["edge-go/go.mod:3", "infra/backups/blobctl/go.mod:3"]
     kind: toolchain
     owner: maintainer
     eol_slug: go
@@ -457,7 +458,8 @@ dependencies:
     note: >-
       Distinct from the `golang` image row: go.mod's directive sets the LANGUAGE version the
       module compiles against, the image sets the compiler that builds it. They can drift
-      apart, so they are two rows and H-5 checks both sites.
+      apart, so they are two rows and H-5 checks both sites. blobctl (infra/backups/blobctl,
+      Phase 36) is the repository's second Go module and moves in lockstep with edge-go.
 
   - id: go-ci-setup
     pin: "go-version: '1.27'"
