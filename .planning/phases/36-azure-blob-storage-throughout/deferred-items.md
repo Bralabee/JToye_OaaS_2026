@@ -30,7 +30,8 @@ caused by it; none breaks a gate this phase owns.
   goldens, so it belongs with the next pg-backup manifest change.
 
 - 36-18: core-java image Trivy gate is red on jackson-databind 2.21.4 (CVE-2026-68497, HIGH, fixed in 2.21.6)
-  status: open
+  status: resolved 2026-09-29 — fixed on main by PR #760 (cce0723b, `extra["jackson-bom.version"] = "2.21.6"`;
+  main's post-merge image gate green, run 36576427573: app.jar 0 findings) and merged into this branch at 5e9edaab.
   **What:** CI/CD runs 36552432346 (536daf41) and 36555251078 (ae4ceb43) on the phase branch both
   fail only at "Build and Push Images (core-java) / Trivy image gate — fail on fixable CRITICAL/HIGH",
   with one finding: `com.fasterxml.jackson.core:jackson-databind (app.jar) CVE-2026-68497 HIGH,

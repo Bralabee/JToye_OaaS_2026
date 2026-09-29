@@ -142,9 +142,9 @@ extra["rabbit-amqp-client.version"] = "5.34.0"
 // `dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind --configuration runtimeClasspath`.
 // That gate is the enforcement; this line is only the fix.
 //
-// WHEN TO DELETE IT: once Boot's own BOM manages jackson-bom at or above 2.21.6. A pin
-// left behind a newer Boot would hold Jackson BELOW Boot's managed version -- the same
-// shape of defect the httpcore5 block above describes.
+// WHEN TO DELETE IT: once Boot's own BOM manages Jackson 2 at or above 2.21.6; a pin left
+// behind a newer Boot holds Jackson BELOW Boot's version. Under Boot 4 (#706) this key names
+// the Jackson 3 BOM and Jackson 2 moves to `jackson-2-bom.version`: re-key, do not delete.
 extra["jackson-bom.version"] = "2.21.6"
 
 dependencies {
