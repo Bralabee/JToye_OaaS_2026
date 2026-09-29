@@ -256,7 +256,7 @@ products::* retired-origin hits after del: 0 (expect 0); dbsize=2
 => residue 0; NO flush was needed. Note: the first attempt read the password from redis's /proc/1/cmdline, which redis rewrites (setproctitle); it failed LOUDLY (WRONGPASS/NOAUTH, keys=0) and was not recorded as a pass. The run above passes REDISCLI_AUTH to docker exec by NAME from .env.
 
 ================================================================================
-## PENDING — the delete-one-seed-blob arm (plan Task 2) is BLOCKED, not run
+## (RESOLVED 2026-09-29 — owner sanctioned the write; the arm is recorded in "Sanctioned write arms" at the end) the delete-one-seed-blob arm (plan Task 2) was BLOCKED at first
 ================================================================================
 The plan's arm is: az storage blob delete one seed blob in the LOCAL Azurite -> the URL gate exits 1
 naming that URL -> restart core-java so the seeder's putIfAbsent re-uploads it -> downloaded sha256
@@ -383,6 +383,173 @@ PASS: every gate either runs in CI or has a declared reason it cannot.
 ge (closing clean) rc=0
 
 ================================================================================
-## PENDING — the text/html upload arm (plan Task 3) is BLOCKED, not run
+## (RESOLVED 2026-09-29 — owner sanctioned the write; the arm is recorded in "Sanctioned write arms" at the end) the text/html upload arm (plan Task 3) was BLOCKED at first
 ================================================================================
 The arm needs an az WRITE into the local Azurite (upload a text/html blob into jtoye-images, run the gate -> exit 1 naming it, delete it, clean run). The az mutation guard refuses it without a human-sanctioned [az-ok] token. The A-1 FAIL branch is therefore not yet shown against the real store; the A-2/VOID branches are (above).
+
+================================================================================
+## Sanctioned write arms (owner answered "A: sanction" 2026-09-29; exactly three az writes, local Azurite only, each carrying [az-ok])
+================================================================================
+## Task 2 arm: delete one seed blob (sanctioned write 1) — 2026-09-29T07:57:46Z
+### target proof (read-only): AZURE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true via env; no AZURE_* vars otherwise set; no [storage] defaults in ~/.azure/config; no --account-name, no --subscription
+read-only list rc=0 -> '00000000-0000-0000-0000-000000000001/products/seed/dodo.jpg'
+hosts contacted by that az call (from --debug connectionpool lines):
+      1 Starting new HTTP connection (1): 127.0.0.1:10000
+request URLs (path only up to container):
+### baseline hashes
+anonymous GET served dodo.jpg -> HTTP 200 165274 bytes
+served (before)   sha256=76e0294e46dba6fdce10e9c1fb785525afae954c4c2f05da744270cbf7c00a34
+classpath source  sha256=76e0294e46dba6fdce10e9c1fb785525afae954c4c2f05da744270cbf7c00a34  (165274 bytes)
+unzip from running jar rc=0
+running-jar copy  sha256=76e0294e46dba6fdce10e9c1fb785525afae954c4c2f05da744270cbf7c00a34  (165274 bytes)
+### clean (before arm)
+  references checked against http://localhost:10000/devstoreaccount1/jtoye-images (U-3 denominator, must be >= 1) .. 23
+    ...not answering 200 (U-1, must be 0) ..................................... 0
+PASS: 23 reference(s) (23 distinct URLs) answer 200 anonymously; 0 point at the retired origin.
+urls rc=0
+### write 1 (sanctioned): AZURE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true az storage blob delete -c jtoye-images -n 00000000-0000-0000-0000-000000000001/products/seed/dodo.jpg  # [az-ok] local Azurite only, 36-12 arm -> rc=0
+anonymous GET after delete -> HTTP 404
+az prefix-list count for the key -> 0 (expect 0)
+### arm: gate with the blob deleted, DB row intact -> expect rc=1 naming it
+  references checked against http://localhost:10000/devstoreaccount1/jtoye-images (U-3 denominator, must be >= 1) .. 23
+    ...distinct URLs HEADed anonymously ..................................... 23
+    ...not answering 200 (U-1, must be 0) ..................................... 1
+  retired-origin references (U-2, must be 0) .................................. 0
+  unrecognised URL shapes (must be 0) ......................................... 0
+  external absolute URLs (reported, not fetched) .............................. 0
+  relative paths skipped (frontend-served, e.g. /brand/) ...................... 3
+
+------------------------------------------------------------------------------
+FAIL: 1 stored image reference(s) do not resolve on the delivered store:
+        HTTP 404  products.image_url  id=fda34f79-f51b-4648-b373-47a2eee11251  http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/dodo.jpg
+  A browser renders each of these as a broken image. Re-upload the object, re-run the
+  seeder (restart core-java), or rewrite the row — never mark the gate green around it.
+urls rc=1
+### restore: docker compose -f docker-compose.full-stack.yml up -d --force-recreate --no-deps core-java (NOT docker restart)
+container before: 47464ed642fc image=sha256:356bca98c4b9fd0de4f476779651141b45ecf2944a4fd1e660e19ec0dd1a00bb
+tag image id    : sha256:356bca98c4b9fd0de4f476779651141b45ecf2944a4fd1e660e19ec0dd1a00bb
+ Container jtoye_oaas_2026-core-java-1 Recreated 
+ Container jtoye_oaas_2026-core-java-1 Starting 
+ Container jtoye_oaas_2026-core-java-1 Started 
+recreate rc=0
+container after : 64f588652223 image=sha256:356bca98c4b9fd0de4f476779651141b45ecf2944a4fd1e660e19ec0dd1a00bb
+docker port: 9090/tcp -> 0.0.0.0:9091 9090/tcp -> [::]:9091 
+first recreate took host :9091 (9090 was momentarily held while the old proxy released; ss afterwards showed 9090 free) -> recreate again
+ Container jtoye_oaas_2026-core-java-1 Started 
+recreate#2 rc=0
+container: c4512441c9cf image=sha256:356bca98c4b9fd0de4f476779651141b45ecf2944a4fd1e660e19ec0dd1a00bb
+docker port: 9090/tcp -> 0.0.0.0:9090 9090/tcp -> [::]:9090 
+core-java healthy, root /actuator/health UP at 07:59:00Z (bounded wait, deadline 600s)
+--- seeder lines from the current container (c4512441c9cf):
+2026-09-29 08:58:59 [core-java,,] INFO  u.jtoye.core.storage.StorageService - Uploaded seed image: http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/dodo.jpg (165274 
+  (+ 20 x "Seed image already present, skipping upload" lines for the other seeds)
+  "Uploaded seed image" lines in this boot: 1
+2026-09-29 08:58:59 [core-java,,] INFO  uk.jtoye.core.dev.DemoDataSeeder - DemoDataSeeder complete for tenant 00000000-0000-0000-0000-000000000001: 0 shop(s) created, 0 product(s) created, 0 customer(
+--- restore verified by content
+anonymous GET served dodo.jpg -> HTTP 200 165274 bytes content-type=image/jpeg
+served (after)    sha256=76e0294e46dba6fdce10e9c1fb785525afae954c4c2f05da744270cbf7c00a34
+classpath source  sha256=76e0294e46dba6fdce10e9c1fb785525afae954c4c2f05da744270cbf7c00a34
+byte-identical: YES
+cmp rc=0
+### clean (after restore) -> expect rc=0, 23/23
+  references checked against http://localhost:10000/devstoreaccount1/jtoye-images (U-3 denominator, must be >= 1) .. 23
+    ...not answering 200 (U-1, must be 0) ..................................... 0
+PASS: 23 reference(s) (23 distinct URLs) answer 200 anonymously; 0 point at the retired origin.
+urls rc=0
+
+## Task 3 arm: text/html on the public container (sanctioned writes 2 and 3) — 2026-09-29T07:59:18Z
+scratch file: /tmp/claude-3612/xss.html 193 bytes sha256=51ac865579fd7f4247cb14c11e7aa0b2b66732d978736d5b8b0d5951819d2719 (static markup, no script)
+target: same env-only UseDevelopmentStorage=true as write 1 (proved above: only 127.0.0.1:10000 contacted); no --account-name, no --subscription
+### clean (before arm)
+       blobs enumerated (M, denominator, must be >= 1) ......... 23
+       ...whose Content-Type is OUTSIDE the allowlist (N) ...... 0   (must be 0)
+PASS: 0 of 23 stored blobs carry a Content-Type outside the allowlist.
+ct rc=0
+### write 2 (sanctioned): AZURE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true az storage blob upload -c jtoye-images -n 36-12-arm/xss.html -f /tmp/claude-3612/xss.html --content-type text/html  # [az-ok] local Azurite only, 36-12 arm -> rc=0 (etag 0x25E444F18703060)
+anonymous GET of the planted object (what a browser would receive):
+HTTP/1.1 200 OK
+content-type: text/html
+  served body sha256=51ac865579fd7f4247cb14c11e7aa0b2b66732d978736d5b8b0d5951819d2719 (= the scratch file)
+### arm A-1: gate with a text/html blob on the public origin -> expect rc=1 naming 36-12-arm/xss.html
+CONTEXT — stored Content-Type census (recorded, NOT asserted; pinning it reds on any upload)
+            21 image/jpeg
+             2 image/webp
+             1 text/html
+
+A-1/A-2  the relation
+       blobs enumerated (M, denominator, must be >= 1) ......... 24
+       ...whose Content-Type is OUTSIDE the allowlist (N) ...... 1   (must be 0)
+
+------------------------------------------------------------------------------
+FAIL (A-1): 1 of 24 stored blob(s) carry a Content-Type outside the allowlist
+  MediaNormalizer enforces on upload (image/gif image/jpeg image/png image/webp).
+  The store serves a blob with the Content-Type it was STORED with, and this container
+  is a public origin, so a non-image type here is a stored-XSS primitive on the
+  storefront's own origin regardless of the bytes. The offending blobs:
+       text/html   36-12-arm/xss.html
+  Re-pipeline or delete each one; do not simply rewrite the Content-Type header,
+  which would leave unvalidated bytes on the origin under an image label.
+ct rc=1
+### write 3 (sanctioned): AZURE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true az storage blob delete -c jtoye-images -n 36-12-arm/xss.html  # [az-ok] local Azurite only, 36-12 arm -> rc=0
+full listing of jtoye-images: rc=0, 23 blob(s)
+  names under 36-12-arm/ in the listing: 0 (expect 0)
+  positive control, dodo.jpg in the same listing: 1 (expect 1)
+anonymous GET of the planted URL after delete -> HTTP 404
+### clean (closing) -> expect rc=0, 23, N=0
+CONTEXT — stored Content-Type census (recorded, NOT asserted; pinning it reds on any upload)
+            21 image/jpeg
+             2 image/webp
+
+A-1/A-2  the relation
+       blobs enumerated (M, denominator, must be >= 1) ......... 23
+       ...whose Content-Type is OUTSIDE the allowlist (N) ...... 0   (must be 0)
+
+------------------------------------------------------------------------------
+PASS: 0 of 23 stored blobs carry a Content-Type outside the allowlist.
+------------------------------------------------------------------------------
+ct rc=0
+
+================================================================================
+## Closing runtime checks — 2026-09-29T07:59:49Z
+  HEAD         : d685ad14 (phase-36-azure-blob-storage)
+  core-java    FRESH  image tagged 2026-09-29 07:20:31 UTC >= newest build-input commit a3a213a8 (2026-09-29 06:36:47 UTC)
+  edge-go      FRESH  image tagged 2026-09-29 07:19:37 UTC >= newest build-input commit 5c1bb364 (2026-08-30 20:53:05 UTC)
+  frontend     FRESH  image tagged 2026-09-29 07:19:41 UTC >= newest build-input commit 60d1075c (2026-09-28 22:18:52 UTC)
+  mcp-server   FRESH  image tagged 2026-09-29 07:19:11 UTC >= newest build-input commit 1736daf1 (2026-09-07 00:41:37 UTC)
+PASS: 4 running built service(s) match the source tree (0 unverified).
+check-runtime-freshness rc=0
+Branch-behind-base gate
+  base branch  : origin/main  (resolved from refs/remotes/origin/HEAD)
+  base head    : db725c94
+PASS: HEAD contains every commit on origin/main (db725c94); it is 86 commit(s) ahead and 0 behind.
+check-branch-behind-base rc=0
+PASS: every gate either runs in CI or has a declared reason it cannot.
+check-gate-enforcement rc=0
+      NOTE: this gate cannot detect semantic rot — a green run is not "the handoff is accurate".
+check-handoff-contract rc=0
+bash: scripts/check-env-contract.sh: No such file or directory
+check-env-contract rc=127
+  - [frontend (b)] CUSTOMER_KEYCLOAK_ISSUER_INTERNAL
+
+PASS: core-java 64 injected / 158 read; edge-go 4 injected / 14 read; frontend 10 injected / 7 build-arg / 32 read. Both directions hold for all three services, with 33 allowlisted omission(s), of which 5 are tracked OPEN DEFECTS listed above.
+k8s/scripts/check-env-contract rc=0
+## Final running state handed to 36-13 (stack LEFT RUNNING) — 2026-09-29T08:00:16Z
+  azurite      jtoye-azurite                running  healthy  img=830430c1da1a ports=127.0.0.1:10000
+  core-java    jtoye_oaas_2026-core-java-1  running  healthy  img=356bca98c4b9 ports=0.0.0.0:9090
+  edge-go      jtoye-edge-go                running  healthy  img=cd432b1549a8 ports=0.0.0.0:8089
+  frontend     jtoye-frontend               running  healthy  img=e9e3eb4af373 ports=0.0.0.0:3000
+  keycloak     jtoye-keycloak               running  healthy  img=f8ade94c1d0a ports=127.0.0.1:8085
+  mailhog      jtoye-mailhog                running  healthy  img=8d76a3d4ffa3 ports=127.0.0.1:1025,127.0.0.1:8025
+  mcp-server   jtoye-mcp-server             running  healthy  img=5faed32b5dac ports=0.0.0.0:9100
+  postgres     jtoye-postgres               running  healthy  img=f7d23353e1b1 ports=127.0.0.1:5433
+  rabbitmq     jtoye-rabbitmq               running  healthy  img=44bf7eb50fe1 ports=127.0.0.1:5672,127.0.0.1:15672,127.0.0.1:61613
+  redis        jtoye-redis                  running  healthy  img=858f009f9709 ports=127.0.0.1:6379
+  (retired object-store service absent from ps --services)
+  named volumes, all created before this session (none deleted or recreated):
+    jtoye_oaas_2026_azurite_data created=2026-09-28T23:06:34+01:00
+    jtoye_oaas_2026_keycloak_data created=2026-08-30T15:21:52+01:00
+    jtoye_oaas_2026_minio_data created=2026-08-30T15:21:52+01:00
+    jtoye_oaas_2026_ollama_data created=2026-08-30T15:21:52+01:00
+    jtoye_oaas_2026_postgres_data created=2026-08-30T15:21:52+01:00
+    jtoye_oaas_2026_rabbitmq_data created=2026-08-30T15:21:52+01:00
+    jtoye_oaas_2026_redis_data created=2026-08-30T15:21:52+01:00
