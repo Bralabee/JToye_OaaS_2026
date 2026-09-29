@@ -186,7 +186,7 @@ cp "$R/neg.md" "$R/fresh-neg.md"; stage; run_gate
 check "a fresh file of only negative controls (SES host, blob:, jtoye-images, jtoye-db-backups, UI-SPEC S3) exits 0" 0 "PASS" "!fresh-neg.md"
 
 setup_repo; run_gate GATE_SCAN_PATHSPEC=neg.md
-check "scanning only the negative-control file exits 0 (entries outside the scope are not judged)" 0 "PASS" "!VIOLATION"
+check "scanning only the negative-control file exits 0 (entries outside the scope are not judged)" 0 "PASS" "!VIOLATION" "were NOT judged"
 
 # ---- 6. region entries cover their lines and nothing past them -------------------------------------
 setup_repo

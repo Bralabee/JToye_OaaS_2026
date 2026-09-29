@@ -328,5 +328,12 @@ if [ "$VIOLATIONS" -gt 0 ] || [ "$STALE" -gt 0 ] || [ "$HYGIENE" -gt 0 ]; then
     exit 1
 fi
 
-echo "PASS: no retired object-store residue in $N_FILES tracked file(s); $ALLOWED hit line(s) covered by $N_ENTRIES reasoned, live allowlist entr(ies)."
+JUDGED=$((N_ENTRIES - NOT_JUDGED))
+if [ "$NOT_JUDGED" -gt 0 ]; then
+    # A narrowed scope must not read as a whole-tree pass: say how much of the allowlist was
+    # actually exercised, so an arm's green line cannot be quoted as the repository's.
+    echo "PASS (narrowed scope '$SCOPE'): no retired object-store residue in $N_FILES tracked file(s); $ALLOWED hit line(s) covered by $JUDGED judged allowlist entr(ies); $NOT_JUDGED entr(ies) outside the scope were NOT judged."
+else
+    echo "PASS: no retired object-store residue in $N_FILES tracked file(s); $ALLOWED hit line(s) covered by $JUDGED reasoned, live allowlist entr(ies)."
+fi
 exit 0
