@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### core-java image gate green again: jackson-bom 2.21.6 for CVE-2026-68497 — 2026-09-29
+### core-java image gate green again: jackson-bom 2.21.6 for CVE-2026-68497 (#760) — 2026-09-29
 
 - **jackson-databind 2.21.4 → 2.21.6, via the BOM property.** The Trivy image gate
   (`build-and-push`, core-java) went red on 2026-09-29 (runs 36552432346 and 36555251078) on
