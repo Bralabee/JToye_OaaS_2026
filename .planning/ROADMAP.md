@@ -788,7 +788,7 @@ Plans:
   5. The pg-backup job writes to Azure Blob through a write-only uploader and a two-arm restore drill (zero-row arm caught, live-count arm matched) runs every night; k8s base/staging/production/local carry the Blob config with Workload Identity, dedicated ServiceAccounts, no storage Secret, no port 9000, updated invariants and goldens; Phase 29 has a handoff on main with the provisioning spec, the operator-secret list change (7 → 3) and a merge-conflict map. (BLOB-06, BLOB-07, BLOB-10)
   6. Frontend `remotePatterns` and CSP `img-src` admit the Azurite origin and nothing broader (tests fail on a wildcard); a repo-wide, fail-armed CI gate finds no MinIO/S3 residue outside a reasoned allowlist; horizons carry an azurite row; the content-type gate is re-targeted to Blob; docs and test metrics are current. (BLOB-08, BLOB-09)
 
-**Plans:** 15/18 plans executed (8 waves)
+**Plans:** 16/18 plans executed (8 waves)
 
 Plans:
 
@@ -824,7 +824,7 @@ Plans:
 
 **Wave 6**
 
-- [ ] 36-16-PLAN.md — Repo-wide, fail-armed object-store residue gate with a reasoned allowlist, wired into CI
+- [x] 36-16-PLAN.md — Repo-wide, fail-armed object-store residue gate with a reasoned allowlist, wired into CI
 
 **Wave 7**
 
