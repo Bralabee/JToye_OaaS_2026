@@ -100,8 +100,16 @@ class StorageDeleteTenantGuardIntegrationTest {
         assertThat(anonymousGet(bUrl).statusCode()).as("blob after an unscoped delete of %s", bUrl).isEqualTo(200);
     }
 
+    /**
+     * Store-behaviour evidence, NOT evidence of the guard. Measured 2026-09-29: this test is green
+     * with no D-09 guard at all and with only the dot-segment check removed, because Azurite and
+     * the Java SDK address these keys literally (no path normalisation), so none of them reaches
+     * tenant B's blob here. The guard's refusal of such keys is proven in {@code StorageServiceTest}
+     * ({@code d09DotSegmentTraversalIsRefused}); this test would go red only if the store began
+     * normalising paths AND that check were missing, which is the case it is kept for.
+     */
     @Test
-    @DisplayName("Dot segments and encoded separators cannot walk from tenant A's segment into tenant B's key")
+    @DisplayName("On Azurite, dot-segment and encoded keys under tenant A's segment never reach tenant B's blob")
     void traversalFromOwnSegmentIntoForeignKeyIsRefused() throws Exception {
         String suffix = "products/" + UUID.randomUUID() + "/x.webp";
         String bKey = tenantB + "/" + suffix;
