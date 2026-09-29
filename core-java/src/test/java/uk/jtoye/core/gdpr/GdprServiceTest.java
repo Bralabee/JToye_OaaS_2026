@@ -107,7 +107,7 @@ class GdprServiceTest {
     }
 
     @Test
-    @DisplayName("Erasure: reaches guest orders by email, deletes S3 photos, scrubs _aud, persists PII-free record")
+    @DisplayName("Erasure: reaches guest orders by email, deletes stored photos, scrubs _aud, persists PII-free record")
     void eraseCustomerData_anonymisesAllPii() {
         // A customer-linked order (found via customer_id).
         Order linkedOrder = new Order();
@@ -148,6 +148,9 @@ class GdprServiceTest {
         when(customerRepository.scrubCustomerAudit(eq(tenantId), eq(customerId), eq("[REDACTED]")))
                 .thenReturn(1);
         when(erasureRecordRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        // Both photos are really removed by the store (WR-02: only true results are counted).
+        when(storageService.delete("https://cdn.example.com/1/reviews/a/photo1.jpg")).thenReturn(true);
+        when(storageService.delete("https://cdn.example.com/1/reviews/a/photo2.jpg")).thenReturn(true);
 
         var result = gdprService.eraseCustomerData(customerId);
 
@@ -178,7 +181,7 @@ class GdprServiceTest {
         assertNull(guestOrder.getCustomerPhone());
         assertNull(guestOrder.getNotes());
 
-        // Review PII anonymised + photos physically deleted from S3.
+        // Review PII anonymised + photos physically deleted from storage.
         assertEquals("[REDACTED]", review.getCustomerName());
         assertNull(review.getComment());
         assertNull(review.getPhotoUrls());
@@ -203,6 +206,49 @@ class GdprServiceTest {
         assertEquals(64, saved.getSubjectEmailSha256().length(), "SHA-256 hex is 64 chars");
         assertNotEquals("jane@example.com", saved.getSubjectEmailSha256(), "must never store plaintext email");
         assertTrue(saved.getSubjectEmailSha256().matches("[0-9a-f]{64}"), "lowercase hex digest");
+    }
+
+    @Test
+    @DisplayName("Erasure (WR-02): a photo the store did NOT delete is never counted as deleted in the record")
+    void eraseCustomerData_countsOnlyPhotosTheStoreActuallyDeleted() {
+        // Review photo URLs are client-supplied: one is the tenant's own stored photo, one is
+        // another tenant's URL (refused by the D-09 guard), one is external. Only the first is
+        // a deletion, and the Article 17 record must say 1, not 3.
+        String own = "http://localhost:10000/devstoreaccount1/jtoye-images/" + tenantId + "/reviews/r/own.webp";
+        String foreign = "http://localhost:10000/devstoreaccount1/jtoye-images/" + UUID.randomUUID() + "/reviews/r/x.webp";
+        String external = "https://cdn.example.com/elsewhere.jpg";
+        Review review = new Review();
+        review.setCustomerEmail("jane@example.com");
+        review.setCustomerName("Jane Doe");
+        review.setPhotoUrls(new ArrayList<>(List.of(own, foreign, external)));
+
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
+        when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
+        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
+        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of(review));
+        when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.scrubOrdersAudit(eq(tenantId), eq(customerId), any(), eq("[REDACTED]"))).thenReturn(0);
+        when(customerRepository.scrubCustomerAudit(eq(tenantId), eq(customerId), eq("[REDACTED]"))).thenReturn(0);
+        when(erasureRecordRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(storageService.delete(own)).thenReturn(true);
+        when(storageService.delete(foreign)).thenReturn(false);
+        when(storageService.delete(external)).thenReturn(false);
+
+        var result = gdprService.eraseCustomerData(customerId);
+
+        // Every URL was attempted, and every URL is cleared from the review either way.
+        verify(storageService).delete(own);
+        verify(storageService).delete(foreign);
+        verify(storageService).delete(external);
+        assertNull(review.getPhotoUrls());
+        // ...but only the real removal is counted, in the response AND in the durable record.
+        assertEquals(1, result.photosDeleted());
+        ArgumentCaptor<ErasureRecord> captor = ArgumentCaptor.forClass(ErasureRecord.class);
+        verify(erasureRecordRepository).save(captor.capture());
+        assertEquals(1, captor.getValue().getPhotosDeleted(),
+                "the Article 17 record must not claim the refused and external photos were erased");
     }
 
     @Test

@@ -43,8 +43,8 @@ You own the server-side Java in `~/IdeaProjects/JToye_OaaS_2026/core-java/`.
 ## The media pipeline
 
 The v2.3 `media_asset` model is copy-on-write: store only the validated, normalized derivative,
-never the raw upload. Prove it by reading the object back out of MinIO — a filesystem `find` is
-not evidence about object storage.
+never the raw upload. Prove it by reading the object back out of Blob storage (Azurite locally) — a filesystem `find`
+is not evidence about object storage.
 
 ## What you escalate rather than decide
 

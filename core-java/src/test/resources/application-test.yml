@@ -42,6 +42,17 @@ jtoye:
       # exercised at 1.7 M rows on every unrelated test.
       enabled: false
 
+storage:
+  blob:
+    # TEST-CONTEXT opt-out of the boot-time container probe (StorageStartupValidator), NOT a
+    # runtime one: D-08 keeps the probe ON in every runtime, and main application.yml sets it as a
+    # literal true that no env var maps. Test contexts stub storage or never touch it and have no
+    # Azurite, so the probe would fail every one of them at startup. The probe itself is proven
+    # against a real Azurite by StorageStartupValidatorIntegrationTest, both directions. The shape
+    # rules still run in every test context (they need no network), and the application.yml
+    # emulator default passes them.
+    validate-on-startup: false
+
 rate-limiting:
   enabled: false
 

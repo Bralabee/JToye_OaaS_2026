@@ -21,7 +21,7 @@ import java.util.UUID;
  * sharing/dedup (IMG-01). A {@code Product} references an asset via
  * {@link ProductMedia} and never owns bytes; editing a shared asset mints a NEW
  * asset and repoints only the one affected {@code product_media} row (D-01); a
- * physical MinIO delete happens only at reference-count 0.
+ * physical Blob delete happens only at reference-count 0.
  *
  * <p>Dedup is per-tenant on {@link #sha256} of the RAW upload (V53
  * {@code uq_media_asset_tenant_sha}). The {@link #productId}/{@link #isPrimary}/
@@ -50,7 +50,7 @@ public class MediaAsset {
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
-    /** Server-generated MinIO key ({@code <tenant>/media/<id>.webp} for ACTIVE, quarantine key for PENDING). */
+    /** Server-generated Blob key ({@code <tenant>/media/<id>.webp} for ACTIVE, quarantine key for PENDING). */
     @Column(name = "object_key", nullable = false)
     private String objectKey;
 

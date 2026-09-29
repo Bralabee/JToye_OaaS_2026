@@ -11,6 +11,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -55,6 +56,11 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 @SpringBootTest
 @Testcontainers
 @ActiveProfiles("dev")
+// 36-06: this dev-profile context has no Azurite (application-test.yml does not apply here), so it
+// opts out of the boot-time storage probe explicitly. Test-context opt-out only; the probe stays ON
+// in every runtime (D-08) and is proven by StorageStartupValidatorIntegrationTest. The demo seeder
+// still meets an unreachable store and skips its images, as before.
+@TestPropertySource(properties = "storage.blob.validate-on-startup=false")
 @Tag("testcontainers")
 class PublicRateLimitIntegrationTest {
 

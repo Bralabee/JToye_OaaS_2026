@@ -6,16 +6,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.DeleteObjectResponse;
-import software.amazon.awssdk.services.s3.model.S3Exception;
+import uk.jtoye.core.storage.BlobObjectStore;
 import uk.jtoye.core.storage.StorageProperties;
 import uk.jtoye.core.storage.StorageService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 /**
@@ -26,30 +24,34 @@ import static org.mockito.Mockito.when;
  * and only {@code log.warn}s, so no caller can learn whether the delete worked.
  * {@code MediaQuarantineRetentionSweep} needs exactly that fact: "these bytes are gone" is the
  * ONLY termination condition of its {@code quarantine_reclaimed_at} sentinel. If the sentinel were
- * stamped unconditionally, a transient S3 error would strand the object forever — and, because
+ * stamped unconditionally, a transient storage error would strand the object forever — and, because
  * {@code deleteByKey} swallows the exception, nothing would ever complain.
+ *
+ * <p><strong>Phase 36 (Blob).</strong> The retired store deleted a missing key successfully; Blob's plain delete
+ * does NOT, it answers 404. The store port therefore deletes IF EXISTS and reports "was absent" as
+ * {@code false}, and {@code deleteByKeyChecked} must still count that as gone, or the sweep would
+ * never stamp the sentinel for an object that is already gone.
  */
 @ExtendWith(MockitoExtension.class)
 class MediaQuarantineRetentionSweepTest {
 
-    @Mock private S3Client s3Client;
+    @Mock private BlobObjectStore store;
 
     private StorageService storageService;
 
     @BeforeEach
     void setUp() {
         StorageProperties properties = new StorageProperties();
-        properties.getS3().setBucket("jtoye-images");
         // This test only exercises deleteByKeyChecked, which never touches the normalizer;
         // the collaborator is wired only because issue #445 made it a constructor dependency.
-        storageService = new StorageService(s3Client, properties, new MediaNormalizer(new MediaProperties()));
+        storageService = new StorageService(store, properties, new MediaNormalizer(new MediaProperties()));
     }
 
     @Test
-    @DisplayName("AC-1.5: a failing S3 delete returns false and still never throws")
+    @DisplayName("AC-1.5: a failing storage delete returns false and still never throws")
     void checkedDeleteReportsFailure() {
-        when(s3Client.deleteObject(any(DeleteObjectRequest.class)))
-                .thenThrow(S3Exception.builder().message("transient").build());
+        when(store.deleteIfExists(anyString(), anyString()))
+                .thenThrow(new RuntimeException("transient"));
 
         assertThat(storageService.deleteByKeyChecked("t/quarantine/abc"))
                 .as("a swallowed exception must surface as false, or the sweep stamps its "
@@ -62,19 +64,24 @@ class MediaQuarantineRetentionSweepTest {
     }
 
     @Test
-    @DisplayName("AC-1.5: a successful S3 delete returns true and still never throws")
+    @DisplayName("AC-1.5: a successful delete, AND a delete of an already-absent object, both return true")
     void checkedDeleteReportsSuccess() {
-        when(s3Client.deleteObject(any(DeleteObjectRequest.class)))
-                .thenReturn(DeleteObjectResponse.builder().build());
+        when(store.deleteIfExists(anyString(), anyString())).thenReturn(true, false);
 
-        assertThat(storageService.deleteByKeyChecked("t/quarantine/abc")).isTrue();
+        assertThat(storageService.deleteByKeyChecked("t/quarantine/abc"))
+                .as("the object was removed")
+                .isTrue();
+        assertThat(storageService.deleteByKeyChecked("t/quarantine/abc"))
+                .as("the object was already absent (deleteIfExists=false) — that is 'gone', not a "
+                        + "failure, or the sweep never stamps the sentinel for a missing object")
+                .isTrue();
 
         assertThatCode(() -> storageService.deleteByKey("t/quarantine/abc"))
                 .doesNotThrowAnyException();
     }
 
     @Test
-    @DisplayName("AC-1.5: a blank key is 'already gone', not a failure — and hits no S3 call")
+    @DisplayName("AC-1.5: a blank key is 'already gone', not a failure — and hits no storage call")
     void blankKeyIsTreatedAsAlreadyGone() {
         assertThat(storageService.deleteByKeyChecked(null)).isTrue();
         assertThat(storageService.deleteByKeyChecked("  ")).isTrue();
@@ -163,14 +170,14 @@ class MediaQuarantineRetentionSweepTest {
             when(mediaAssetRepository.findAllById(any())).thenReturn(java.util.List.of(asset));
             when(storage.deleteByKeyChecked(key)).thenReturn(false, true);
 
-            sweep.sweep();   // tick 1 — S3 error
+            sweep.sweep();   // tick 1 — storage error
             assertThat(asset.getQuarantineReclaimedAt())
                     .as("stamping here would strand an object that still exists, forever, and "
                             + "deleteByKey swallows the error so nothing would complain")
                     .isNull();
             assertThat(meters.counter("media.quarantine.reclaim_failed").count()).isEqualTo(1.0);
 
-            sweep.sweep();   // tick 2 — S3 recovered
+            sweep.sweep();   // tick 2 — storage recovered
             assertThat(asset.getQuarantineReclaimedAt()).isNotNull();
             assertThat(meters.counter("media.quarantine.reclaim_failed").count())
                     .as("the failure counter must not advance on the successful tick")

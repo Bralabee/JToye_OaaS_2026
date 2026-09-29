@@ -143,6 +143,13 @@ class DatabaseConfigurationValidatorOwnershipTest {
         p.put("jtoye.geo.coordinate-backfill.enabled", "false");
         p.put("server.port", "0");
         p.put("spring.main.banner-mode", "off");
+        // 36-06: this boot runs under the DEFAULT profile, so application-test.yml's opt-out does not
+        // apply, and there is no Azurite. The storage probe runs at ApplicationStartedEvent, BEFORE
+        // this class's subject (the database validator, at ApplicationReadyEvent), so leaving it on
+        // would fail both directions on storage and hide the ownership check entirely. Test-context
+        // opt-out only: the probe stays ON in every runtime (D-08) and is proven by
+        // StorageStartupValidatorIntegrationTest.
+        p.put("storage.blob.validate-on-startup", "false");
         return p.entrySet().stream()
                 .map(e -> "--" + e.getKey() + "=" + e.getValue())
                 .toArray(String[]::new);

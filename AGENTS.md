@@ -12,7 +12,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16, Go 1.27, PostgreSQL 15
 - **Java version**: JDK 25 (Temurin) on Gradle 9.7.1 — JDK 25 requires Gradle ≥ 9.1 (migrated from JDK 21/Gradle 8.10.2, 2026-08-31)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 4042 logical invocations passing (1897 Java `@Test` methods across 295 files + 1873 Jest `it/test` blocks across 172 files + 84 top-level Go `Test*` funcs across 11 files + 127 Playwright `test()` blocks across 27 specs + 61 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
+- **Testing**: All new code requires tests — project standard is 4137 logical invocations passing (1972 Java `@Test` methods across 303 files + 1878 Jest `it/test` blocks across 172 files + 98 top-level Go `Test*` funcs across 13 files + 128 Playwright `test()` blocks across 28 specs + 61 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -73,7 +73,8 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - PostgreSQL JDBC Driver 42.7.13 - Database connectivity
 - Hibernate ORM (via Spring Boot 3.5.16) - JPA implementation
 - Hibernate Envers - Audit history tracking
-- AWS SDK v2 (2.54.9) - S3 API for image storage
+- Azure Storage Blob SDK (12.35.1) - Blob API for image storage
+- Azure Identity (1.18.6) - Workload Identity credential for Blob in AKS
 - Stripe React/JS 6.8.2, 9.15.0 - Payment processing UI integration
 - Axios 1.19.0 - HTTP client for API calls
 - Framer Motion 13.1.1 - Animation library
@@ -81,7 +82,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Redis 7 - Session and cache store
 - RabbitMQ 4.3.4 - Message queue (AMQP)
 - Keycloak 24.0.5 - Identity provider (OIDC/OAuth2)
-- MinIO (latest) - S3-compatible object storage for images
+- Azurite 3.37.0 - Azure Blob emulator (local, hybrid, nightly); Azure Blob Storage in staging/production
 - Ollama (latest) - Local LLM for image analysis
 - Mailhog v1.0.1 - Local SMTP for email testing
 - Resilience4j 2.4.0 - Circuit breakers and retry logic
@@ -126,14 +127,14 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Redis 7+ (external or managed service)
 - RabbitMQ **3.13+** minimum (4.3 recommended — the dev/compose stack pins 4.3.4). The deployed staging/production broker's version is **unverified from this repository** — see `docs/runbooks/rabbitmq-broker-upgrade.md` and ADR-0002.
 - Keycloak 24.0+ (external identity provider)
-- AWS S3 (or S3-compatible storage like MinIO)
+- Azure Blob Storage (Azurite locally)
 - SMTP server (SendGrid, AWS SES, etc.)
 - Spring Boot: 3.5.16 (Java 25)
 - PostgreSQL: 15-alpine
 - Keycloak: 24.0.5
 - Redis: 7-alpine
 - RabbitMQ: 4.3.4-management-alpine
-- MinIO: latest
+- Azurite: 3.37.0
 - Go: 1.27-alpine
 - Node.js: 24+
 - Next.js: 16.3.4
@@ -290,7 +291,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Purpose: Full REST API surface with CRUD operations, state management, tenant isolation
 - Location: `core-java/src/main/java/uk/jtoye/core/`
 - Contains: REST controllers, service layer, repository layer, domain entities, mappers, configurations
-- Depends on: PostgreSQL database (RLS-enabled), Redis cache, RabbitMQ, Stripe API, S3/MinIO storage, Keycloak
+- Depends on: PostgreSQL database (RLS-enabled), Redis cache, RabbitMQ, Stripe API, Azure Blob Storage, Keycloak
 - Used by: Frontend, Edge gateway, batch sync operations, webhook processors
 - Purpose: ORM abstraction for tenant-scoped database queries
 - Location: `core-java/src/main/java/uk/jtoye/core/*/` (repository interfaces in each domain folder)
@@ -439,8 +440,8 @@ You own the server-side Java in `~/IdeaProjects/JToye_OaaS_2026/core-java/`.
 ## The media pipeline
 
 The v2.3 `media_asset` model is copy-on-write: store only the validated, normalized derivative,
-never the raw upload. Prove it by reading the object back out of MinIO — a filesystem `find` is
-not evidence about object storage.
+never the raw upload. Prove it by reading the object back out of Blob storage (Azurite locally) — a filesystem `find`
+is not evidence about object storage.
 
 ## What you escalate rather than decide
 
@@ -599,7 +600,7 @@ You own `k8s/`, `infra/`, the compose files, and the monitoring stack for J'Toye
 ## What is actually running
 
 Sixteen containers: `core-java`, `frontend`, `edge-go`, `mcp-server`, plus `postgres:15-alpine`,
-`redis:7-alpine`, `keycloak:24.0.5`, `minio`, `mailhog`, `rabbitmq:4.3.4`, `prometheus:v2.48.0`,
+`redis:7-alpine`, `keycloak:24.0.5`, `azurite:3.37.0`, `mailhog`, `rabbitmq:4.3.4`, `prometheus:v2.48.0`,
 `alertmanager:v0.27.0`, `grafana:10.2.2`, `ollama`, and two exporters. There is a committed
 `k8s/local` overlay and a minikube machine at `~/.minikube/machines/jtoye`.
 

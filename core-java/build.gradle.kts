@@ -20,7 +20,9 @@ layout.buildDirectory.set(file("build-local"))
 
 // Override the netty version managed by Spring Boot 3.5.16's BOM. Netty is not
 // declared below — it arrives transitively via reactor-netty (starter-webflux)
-// and software.amazon.awssdk:netty-nio-client, and every artifact is pinned by
+// and com.azure:azure-core-http-netty 1.16.7 (the Azure Blob SDK's HTTP client,
+// Phase 36), which itself declares 4.1.137.Final, the same version as this pin.
+// Every netty artifact is pinned by
 // io.spring.dependency-management ("selected by rule" in dependencyInsight).
 // Boot's documented override is this property, which re-points the imported
 // netty-bom so the whole netty family moves together; forcing the flagged
@@ -37,7 +39,7 @@ layout.buildDirectory.set(file("build-local"))
 // treating this line as a load-bearing auth control: SslClientHelloHandler is
 // netty's SERVER-side SNI handler, and this service does not serve over netty --
 // it serves over Tomcat (spring-boot-starter-web below), and reactor-netty and
-// netty-nio-client are CLIENTS. `git grep SniHandler|SslClientHello|clientAuth
+// azure-core-http-netty are CLIENTS. `git grep SniHandler|SslClientHello|clientAuth
 // -- core-java/src` is empty; the only netty API implemented against here is
 // io.netty.resolver (SsrfGuardAddressResolverGroup). So the SNI/mTLS bypass is
 // NOT reachable in this topology. The bump is taken because the vulnerable jar
@@ -50,22 +52,6 @@ layout.buildDirectory.set(file("build-local"))
 // on HTTP/2 header-value validation by default, which is a behaviour change with
 // its own blast radius and its own decision.
 extra["netty.version"] = "4.1.137.Final"
-
-// Same shape, same reason, different family. Spring Boot 3.5.16's BOM pins
-// httpcore5 to 5.3.6, and that pin DOWNGRADES what the AWS SDK asks for:
-// software.amazon.awssdk:apache5-client:2.53.2 requests httpcore5 5.4.3 and
-// httpclient5 5.6.4, and dependencyInsight shows "5.3.6 -> 5.4.3 (selected by
-// rule)". So the vulnerable version is not something we or the SDK chose — it
-// is Boot's managed version winning over a newer request.
-//
-// 5.4.3 is the exact fixed version for the Trivy image-gate findings
-// CVE-2026-54399 (httpcore5) and CVE-2026-54428 (httpcore5-h2), both HIGH and
-// both marked fixable. The two artifacts are released together from one
-// project, so moving the property moves both and cannot leave them out of
-// step. 5.5-beta2 is also listed as fixed and is deliberately NOT taken: a
-// beta is not a version to put in an image over a HIGH that a stable release
-// already closes.
-extra["httpcore5.version"] = "5.4.3"
 
 // Override Tomcat version managed by Spring Boot 3.5.16 (10.1.55) to remediate
 // critical authorization/authentication bypass CVEs in 10.1.57 and earlier.
@@ -156,9 +142,9 @@ extra["rabbit-amqp-client.version"] = "5.34.0"
 // `dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind --configuration runtimeClasspath`.
 // That gate is the enforcement; this line is only the fix.
 //
-// WHEN TO DELETE IT: once Boot's own BOM manages jackson-bom at or above 2.21.6. A pin
-// left behind a newer Boot would hold Jackson BELOW Boot's managed version -- the same
-// shape of defect the httpcore5 block above describes.
+// WHEN TO DELETE IT: once Boot's own BOM manages Jackson 2 at or above 2.21.6; a pin left
+// behind a newer Boot holds Jackson BELOW Boot's version. Under Boot 4 (#706) this key names
+// the Jackson 3 BOM and Jackson 2 moves to `jackson-2-bom.version`: re-key, do not delete.
 extra["jackson-bom.version"] = "2.21.6"
 
 dependencies {
@@ -192,9 +178,25 @@ dependencies {
     // Email notifications
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
-    // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod)
-    implementation(platform("software.amazon.awssdk:bom:2.54.9"))
-    implementation("software.amazon.awssdk:s3")
+    // Azure Blob Storage (Phase 36, owner ruling 2026-09-28: Blob throughout). Azurite locally
+    // and in the nightly (connection-string mode), AKS Workload Identity in staging/production.
+    // Explicit latest-GA versions rather than azure-sdk-bom 1.3.8, which lags one patch.
+    // Coordinates checked against Maven Central and github.com/Azure/azure-sdk-for-java
+    // (36-RESEARCH.md, Package Legitimacy Audit).
+    implementation("com.azure:azure-storage-blob:12.35.1")
+    implementation("com.azure:azure-identity:1.18.6") {
+        // Desktop token-cache persistence only; it pulls jna + jna-platform native libraries that
+        // WorkloadIdentityCredential never loads (assumption A1, proven by 36-06's
+        // credential-build test).
+        exclude(group = "com.microsoft.azure", module = "msal4j-persistence-extension")
+        // azure-identity 1.18.6 ALSO declares jna-platform 5.17.0 directly (not only through the
+        // extension above), so excluding the extension alone left jna on the runtime classpath.
+        // Measured in its class files: the JNA references sit in the Windows credential store,
+        // the Linux keyring, the IntelliJ/VS Code caches, the persistent token cache and one
+        // Platform.isWindows() call inside IdentityClient.authenticateWithAzurePowerShell. None
+        // is on WorkloadIdentityCredential's path.
+        exclude(group = "net.java.dev.jna")
+    }
 
     // Phase 24 (IMG-02) — WebP transcode + image normalize pipeline.
     // scrimage-core decodes (via ImageIO) + resizes; scrimage-webp encodes the
@@ -257,6 +259,8 @@ dependencies {
     testImplementation("org.testcontainers:postgresql:1.21.4")
     // #92: real-broker fan-out proof for the per-instance SSE queues
     testImplementation("org.testcontainers:rabbitmq:1.21.4")
+    // Phase 36: org.testcontainers.azure.AzuriteContainer for the real-Blob storage tests
+    testImplementation("org.testcontainers:azure:1.21.4")
     testImplementation("org.testcontainers:junit-jupiter:1.21.4")
     testImplementation("com.h2database:h2") // for lightweight unit tests
 }
@@ -275,6 +279,17 @@ tasks.test {
     // selected DockerClientProviderStrategy uses, it negotiates an API the daemon accepts.
     environment("DOCKER_API_VERSION", "1.45")
     systemProperty("api.version", "1.45")
+
+    // 36-06, assumption A1: WorkloadIdentityCredentialBuildTest proves the credential works with
+    // JNA excluded by loading azure-identity from a class loader made ONLY of the production
+    // runtimeClasspath. The test classpath cannot answer that question: Testcontainers'
+    // docker-java-transport-zerodep puts net.java.dev.jna:jna on it. The test fails closed when
+    // this property is absent.
+    val productionRuntimeClasspath = configurations.runtimeClasspath.get()
+    inputs.files(productionRuntimeClasspath).withPropertyName("productionRuntimeClasspath")
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Djtoye.productionRuntimeClasspath=" + productionRuntimeClasspath.asPath)
+    })
 }
 
 // QA-council #71: dedicated task for the @Tag("testcontainers") integration
@@ -315,10 +330,16 @@ tasks.register<Test>("integrationTest") {
     //   - Post-fix, listener threads are gone from the picture: peak drops 1880 -> 859 (-54%),
     //     time-to-500-threads moves 0s -> 100s, and the OOM instead lands on
     //     `HttpClient-N-SelectorManager` and `idle-connection-reaper` — the reactive WebClient's
-    //     selector pool and AWS SDK v2's S3/MinIO connection reaper.
+    //     selector pool and AWS SDK v2's object-store connection reaper.
     //
     // So the accumulation had TWO causes; 27-04 fixed one. Until the WebClient/AWS-SDK clients are
-    // shared or shut down per context, forkEvery must stay. Do not "simplify" it away on the
+    // shared or shut down per context, forkEvery must stay.
+    //
+    // Phase 36 (36-01) replaced the AWS SDK with the Azure Blob SDK, whose azure-core-http-netty
+    // client has its own event-loop and connection pools. The measurement above was NOT re-taken
+    // for it, so nothing here licenses dropping forkEvery: the first full run after the swap
+    // (4 forks, forkEvery=4) passed 719/719 with no OOM, which says the setting still works, not
+    // that it is no longer needed. Do not "simplify" it away on the
     // reasoning that the listener bug is fixed — that is the specific wrong conclusion this block
     // exists to prevent, and re-deriving it costs an hour of wall clock.
     //

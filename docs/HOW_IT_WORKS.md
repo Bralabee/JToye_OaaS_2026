@@ -113,9 +113,12 @@ When an order changes state (e.g. staff marks it READY):
 4. The UI review queue surfaces PENDING (processing), ACTIVE (WebP with dims), FAILED (reason +
    re-upload), and flagged-ACTIVE (Keep-or-Replace).
 
-CoW model: `media_asset` is sha256-deduped per tenant; the physical MinIO object is deleted only at
-ref-count 0. Objects are anonymously readable **by key** (deliberate) but the bucket is **not**
-anonymously listable (fixed, #626 — verified live: unauthenticated ListObjects → 403).
+CoW model: `media_asset` is sha256-deduped per tenant; the physical object is deleted only at
+ref-count 0. Objects are anonymously readable **by URL** (deliberate) but the public container is
+**not** anonymously listable (#626): `jtoye-images` is access level `blob`, never `container`, and
+core-java's boot-time storage probe (`StorageStartupValidator`, Phase 36) refuses to start if it is
+ever set to `container` or if `jtoye-quarantine` is anything but private. The store is Azure Blob Storage in
+staging/production (Workload Identity, raw Blob endpoint) and the Azurite emulator locally.
 
 ---
 

@@ -9,7 +9,7 @@
 import { render, screen, fireEvent } from "@testing-library/react"
 import { AssetImage } from "@/components/ui/asset-image"
 
-const WEBP = "http://localhost:9000/jtoye-images/tenant-a/media/asset-1.webp"
+const WEBP = "http://localhost:10000/devstoreaccount1/jtoye-images/tenant-a/media/asset-1.webp"
 
 describe("AssetImage", () => {
   it("PENDING renders a processing indicator (no servable <img> yet)", () => {
@@ -37,7 +37,7 @@ describe("AssetImage", () => {
   })
 
   it("ACTIVE with useThumbnail renders the thumbnail derivative", () => {
-    const thumb = "http://localhost:9000/jtoye-images/tenant-a/media/asset-1_thumb.webp"
+    const thumb = "http://localhost:10000/devstoreaccount1/jtoye-images/tenant-a/media/asset-1_thumb.webp"
     render(
       <AssetImage
         status="ACTIVE"

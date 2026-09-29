@@ -25,7 +25,8 @@
 #
 #     node      -> 301 -> nodejs           alpine   -> 301 -> alpine-linux
 #     postgres  -> 301 -> postgresql       golang   -> (image name; slug is `go`)
-#     minio 404 · minio/mc 404 · ollama 404 · mailhog 404 · alertmanager 404
+#     the retired object-store server and client images 404 (rows removed in Phase 36)
+#     ollama 404 · mailhog 404 · alertmanager 404
 #     redis-exporter 404 · postgres-exporter 404 · scratch 404
 #     java 404 · openjdk 404  (the Java horizon is tracked via `eclipse-temurin`, the
 #                              distribution this repo actually builds on)
@@ -193,97 +194,40 @@ dependencies:
       expires: "2026-11-30"
       tracked_by: "#724"
 
-  - id: minio
-    pin: "quay.io/minio/minio:${MINIO_IMAGE_TAG:-latest}"
-    sites: ["docker-compose.full-stack.yml:597"]
+  - id: azurite
+    pin: "mcr.microsoft.com/azure-storage/azurite:${AZURITE_IMAGE_TAG:-3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5}"
+    sites: ["docker-compose.full-stack.yml:609", "infra/docker-compose.yml:110"]
     kind: image
     owner: maintainer
     eol_slug: null
     note: >-
-      endoflife.date has no `minio` product (404, measured 2026-07-27), and the pin is a
-      floating `:latest` behind an env override, so there is no cycle to resolve even if the
-      product existed. Horizon is UNKNOWN by construction, not by omission.
+      Phase 36 (36-02): the Azure Blob emulator that replaced the retired self-hosted object
+      store in BOTH local runtimes (the canonical compose stack and the hybrid start-dev.sh
+      stack, D-08) and in the nightly's SERVICES list. endoflife.date has no Azurite product, so
+      the horizon is UNKNOWN by construction and this row passes only while its dated
+      manual_review is unexpired.
 
-      2026-09-12: RELOCATED from Docker Hub to quay.io — `pin` carries the registry prefix because
-      H-1 compares it to the `image:` string character for character. MinIO's Docker Hub repos
-      began requiring authentication on/before that date (anonymous manifest probe: 401 on
-      minio/minio:latest and minio/mc:latest AND on minio/mc's pinned tag, while
-      library/redis:7-alpine and library/postgres:15-alpine returned 200 on the same probe), which
-      blacked out the nightly E2E lane at the build step. quay.io serves the identical bytes under
-      the identical tag, so this is a registry relocation and NOT a version change: the floating
-      `:latest` position, and therefore this row's UNKNOWN horizon, are unaltered.
+      Azurite 3.37.0 = Blob service version 2026-06-06 = azure-storage-blob 12.35.1's default
+      service version (both verified in 36-RESEARCH.md). The compose command also passes
+      --skipApiVersionCheck, so an SDK bump does not require an emulator bump; the trade-off,
+      accepted, is that a genuinely unsupported newer feature fails at runtime rather than at
+      the version check. Re-check this row whenever azure-storage-blob moves a service version.
+
+      The default is DIGEST-PINNED (tag@sha256) because the tag alone is mutable. TWO sites are
+      declared, one per compose file, and both carry the identical string. H-1 discovers only
+      docker-compose.full-stack.yml (infra/docker-compose.yml is not in its declared set), so the
+      hybrid file's line is protected by H-5 alone: a divergent pin there removes this string
+      from every non-comment line of that file, which is exit 2 (VOID), not a NOTE.
     manual_review:
-      last_checked: "2026-07-27"
-      expires: "2027-01-27"
-      url: "https://github.com/minio/minio/releases"
-
-  - id: minio-mc
-    pin: "quay.io/minio/mc:${MINIO_MC_IMAGE_TAG:-latest}"
-    sites: ["docker-compose.full-stack.yml:628", "docker-compose.full-stack.yml:638", "scripts/k8s-local-secrets.sh:299"]
-    kind: image
-    owner: maintainer
-    eol_slug: null
-    note: >-
-      Same 404 + floating-tag position as `minio`. Separate row because it is a separate
-      pinned artifact with its own env override.
-
-      2026-09-12: RELOCATED from Docker Hub to quay.io alongside `minio` — same 401 measurement,
-      and the digest is byte-identical across the move (quay.io/minio/mc at
-      RELEASE.2025-08-13T08-35-41Z reports docker-content-digest
-      sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727, exactly the digest
-      pinned in .env.example; an all-zeros digest on the same quay repo 404s, so the probe
-      discriminates).
-
-      THREE sites are declared deliberately:
-
-        1. the compose `image:` line -- the pull site H-1 discovery finds on its own;
-        2. the MINIO_MC_IMAGE_REF env var, which the bootstrap echoes at run time as
-           `minio-init-image-ref=` so a run STATES which image it ran. H-1 scans `image:` lines
-           only, so the provenance line is invisible to it; declaring it here is what makes
-           H-5's exact-line check look at it;
-        3. scripts/k8s-local-secrets.sh:299 -- the `docker run --entrypoint` pull site for the
-           k8s-local bootstrap, in a DIFFERENT file, which is what makes it blocking (below).
-
-      THE SAME-FILE LIMIT DOES NOT GENERALISE, and the third site proves it. A declared site in a
-      DIFFERENT file IS blocking, because the H-5 VOID arm asks whether the pin appears on any
-      non-comment line of THAT file. Measured 2026-09-13 on scripts/k8s-local-secrets.sh:299, the
-      real "docker run" pull site for the k8s-local bootstrap: clean rc=0 site-unresolvable=0;
-      reverting only that line to the Docker Hub form gives rc=2 site-unresolvable=1 and names the
-      site; restoring gives rc=0 site-unresolvable=0.
-
-      Reverting THIS SCRIPT now fails the build at H-5 (exit 2), where before it was invisible.
-      Reverting the compose image: line was already caught -- by H-1 coverage, exit 1 -- and H-5
-      gives only a NOTE there, because the provenance line keeps the pin present in that same file.
-      So the compose image: line's protection is H-1's, not H-5's: H-5's file-wide search is
-      satisfied by the provenance line, which is a log string and not a pull site. Measured
-      2026-09-13: reverting BOTH compose lines gives site-unresolvable=2, naming both, which is
-      what isolates line 638 as the cause of H-5 staying quiet over a broken image: line.
-      Only the provenance line's divergence escapes EVERY non-zero exit (measured 2026-09-13:
-      rc=0, missing-row=0, one NOTE naming :638, pin-not-at-site 4 -> 5). Under H-5 alone the
-      compose image: line is equally NOTE-limited while the provenance line carries the pin --
-      what catches that one is H-1, at exit 1. So two of the three declared sites are
-      NOTE-limited under H-5, not one; only the script's divergence reaches exit 2.
-
-      MEASURED LIMIT, recorded so nobody overstates this — it is NOTE class, NOT exit 2. Reverting
-      ONLY the provenance line to `minio/mc:` while leaving `image:` on quay was run on
-      2026-09-12: the gate exits 0 and emits `NOTE minio-mc: pin not at
-      docker-compose.full-stack.yml:638; found at line(s) 628`, lifting pin-not-at-site from 4 to
-      5. H-5's VOID arm fires only when the pin is absent from EVERY non-comment line of the file,
-      and the `image:` line always satisfies that, so no manifest shape can make this divergence
-      fail the build. The second site is still worth declaring: the control arm — the same break
-      with the old single-site declaration — produced NO minio-mc NOTE at all and left
-      pin-not-at-site at 4, i.e. total silence. So this buys advisory detection in CI output, not
-      enforcement. Do not cite it as a blocking gate.
-    manual_review:
-      last_checked: "2026-07-27"
-      expires: "2027-01-27"
-      url: "https://github.com/minio/mc/releases"
+      last_checked: "2026-09-28"
+      expires: "2026-12-27"
+      url: "https://github.com/Azure/Azurite/releases"
 
   - id: ollama
     pin: "ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}"
     sites:
-      - "docker-compose.full-stack.yml:621"
-      - "docker-compose.full-stack.yml:686"
+      - "docker-compose.full-stack.yml:636"
+      - "docker-compose.full-stack.yml:701"
     kind: image
     owner: maintainer
     eol_slug: null
@@ -298,7 +242,7 @@ dependencies:
 
   - id: mailhog
     pin: "mailhog/mailhog:v1.0.1"
-    sites: ["docker-compose.full-stack.yml:702"]
+    sites: ["docker-compose.full-stack.yml:717"]
     kind: image
     owner: maintainer
     eol_slug: null
@@ -419,7 +363,7 @@ dependencies:
 
   - id: golang
     pin: "golang:1.27-alpine"
-    sites: ["edge-go/Dockerfile:11"]
+    sites: ["edge-go/Dockerfile:11", "infra/backups/Dockerfile:34"]
     kind: image
     owner: maintainer
     eol_slug: go
@@ -429,7 +373,8 @@ dependencies:
       Catalogue `eol: false`. Go's real policy is support until two newer majors ship. 1.27
       adopted via dependabot #674 (2026-08), so it loses support when 1.29 does. That is a
       horizon without a date, so no `vendor_eol` is recorded — inventing one would be the
-      same fabrication this file exists to prevent.
+      same fabrication this file exists to prevent. Second site (Phase 36): the build-only
+      stage of the pg-backup image that compiles blobctl; nothing from it ships but the binary.
 
   - id: node
     pin: "node:24-alpine"
@@ -470,7 +415,7 @@ dependencies:
   # ------------------------------------------------------------------ toolchains
   - id: go-toolchain
     pin: "go 1.27.0"
-    sites: ["edge-go/go.mod:3"]
+    sites: ["edge-go/go.mod:3", "infra/backups/blobctl/go.mod:3"]
     kind: toolchain
     owner: maintainer
     eol_slug: go
@@ -479,7 +424,8 @@ dependencies:
     note: >-
       Distinct from the `golang` image row: go.mod's directive sets the LANGUAGE version the
       module compiles against, the image sets the compiler that builds it. They can drift
-      apart, so they are two rows and H-5 checks both sites.
+      apart, so they are two rows and H-5 checks both sites. blobctl (infra/backups/blobctl,
+      Phase 36) is the repository's second Go module and moves in lockstep with edge-go.
 
   - id: go-ci-setup
     pin: "go-version: '1.27'"
@@ -570,7 +516,7 @@ dependencies:
   #  escape the manifest, because H-1 discovers it and demands a row.
   - id: jtoye-core-java
     pin: "ghcr.io/bralabee/jtoye-core-java:2.1.0"
-    sites: ["k8s/base/core-java-deployment.yaml:50"]
+    sites: ["k8s/base/core-java-deployment.yaml:55"]
     kind: first_party
     owner: maintainer
     eol_slug: null
@@ -590,15 +536,17 @@ dependencies:
     eol_slug: null
 
   - id: jtoye-pg-backup
-    pin: "ghcr.io/bralabee/jtoye-pg-backup:15"
-    sites: ["k8s/base/pg-backup-cronjob.yaml:47"]
+    pin: "ghcr.io/bralabee/jtoye-pg-backup:15-blob"
+    sites: ["k8s/base/pg-backup-cronjob.yaml:54"]
     kind: first_party
     owner: maintainer
     eol_slug: null
     note: >-
-      The `:15` tag tracks the postgres major it backs up, not a first-party semver. It must
-      move in lockstep with the `postgres` row; they are deliberately separate rows so a
-      postgres major upgrade that forgets the backup image shows up as two rows disagreeing
+      The `:15-blob` tag's `15` tracks the postgres major it backs up, not a first-party
+      semver; the `-blob` suffix marks the Phase 36 contents change (AWS CLI out, blobctl in,
+      D-10), made so a node holding the old `:15` can never run it under the new env contract.
+      It must move in lockstep with the `postgres` row; they are deliberately separate rows so
+      a postgres major upgrade that forgets the backup image shows up as two rows disagreeing
       rather than as one silent skew.
 
   # ------------------------------------------------------------------ out of repo

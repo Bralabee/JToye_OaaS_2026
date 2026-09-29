@@ -11,7 +11,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
   - SDK/Client: `com.stripe:stripe-java:33.4.0` (server); `@stripe/react-stripe-js` 6.8.2 + `@stripe/stripe-js` 9.15.0 (browser Elements)
   - Client classes: `core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java`, `StripeRefundClient.java`, `StripeProperties.java`
   - Auth: `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` (both default empty — feature is inert without them)
-  - Circuit breaker: `resilience4j.circuitbreaker.instances.stripe` (`core-java/src/main/resources/application.yml:727-732` — `sliding-window-size` 10, `failure-rate-threshold` 50)
+  - Circuit breaker: `resilience4j.circuitbreaker.instances.stripe` (`core-java/src/main/resources/application.yml:745-750` — `sliding-window-size` 10, `failure-rate-threshold` 50)
   - Config: `stripe.currency` (default `gbp`), `stripe.platform-fee-bps` (basis points, default 0), `stripe.connect.country` (default `GB`)
   - **LOCAL-DEV and STAGING/PROD identical mechanism** — Stripe is a real external API in every environment; only the key differs (test vs live).
 
@@ -53,10 +53,10 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
   - Keycloak also persists to the SAME Postgres instance (`keycloak` DB) — `KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak`
 
 **File Storage:**
-- S3-compatible object storage — copy-on-write `media_asset` model (Phase 24), safe async upload pipeline (quarantine → validate → transcode → WebP derivative + thumbnail).
-  - LOCAL-DEV: MinIO (`minio/minio:${MINIO_IMAGE_TAG:-latest}`), console on `9001`, S3 API on `9000` (both loopback-only). Bucket `jtoye-images` bootstrapped by a digest-pinned `minio-init` job (`minio/mc:${MINIO_MC_IMAGE_TAG}`) with an anonymous `s3:GetObject`-only policy (no `s3:ListBucket` — objects are readable by URL but not enumerable).
-  - STAGING/PROD: real AWS S3 (or equivalent), via `software.amazon.awssdk:s3` (BOM 2.54.9). `frontend/next.config.mjs` has a commented-out placeholder for production S3/CloudFront `remotePatterns` — not yet activated.
-  - Config: `storage.s3.endpoint/region/bucket/access-key/secret-key/public-url`, all `${ENV:default}`, defaults pointing at local MinIO.
+- Azure Blob Storage (Phase 36; it replaced the retired self-hosted store) — copy-on-write `media_asset` model (Phase 24), safe async upload pipeline (quarantine → validate → transcode → WebP derivative + thumbnail). One switch, `storage.blob.auth-mode`, selects the credential; a boot-time probe (`StorageStartupValidator`) stops core-java if a container is missing or has the wrong access level.
+  - LOCAL-DEV / HYBRID / NIGHTLY: the Azurite emulator (`mcr.microsoft.com/azure-storage/azurite`, digest-pinned through `AZURITE_IMAGE_TAG`), Blob service on `10000` (loopback-only), no credential (`auth-mode: connection-string`, `UseDevelopmentStorage=true`). core-java creates `jtoye-images` (public, access level `blob`: readable by URL, not listable, #626) and `jtoye-quarantine` (private) on first boot (`STORAGE_CREATE_CONTAINERS`, emulator only) and checks both on every boot.
+  - STAGING/PROD: Azure Blob Storage via `com.azure:azure-storage-blob`, authenticated with AKS Workload Identity (`com.azure:azure-identity`, `auth-mode: workload-identity`); no account key, connection string or SAS exists. Images are served from the raw Blob endpoint `https://<account>.blob.core.windows.net/jtoye-images/...` (Phase 36 D-06); logical backups go to `jtoye-db-backups` in a separate, immutable backup account (D-01). `frontend/next.config.mjs` `remotePatterns` whitelists only the local Azurite origin, because images render through a plain `<img>`. Provisioning: `docs/runbooks/azure-blob-provisioning.md`.
+  - Config: `storage.blob.auth-mode/connection-string/endpoint/public-container/quarantine-container/public-url/create-containers`, all `${ENV:default}` (`STORAGE_*`), defaults pointing at local Azurite.
 
 **Caching:**
 - Redis 7
@@ -133,7 +133,6 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 - `KEYCLOAK_ADMIN_PASSWORD`, `KC_DB_PASSWORD`
 - `REDIS_PASSWORD` (staging/prod: no default at all, must be set)
 - `RABBITMQ_DEFAULT_PASS`
-- `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`
 - `NEXTAUTH_SECRET`, `KEYCLOAK_CLIENT_SECRET`, `EDGE_API_CLIENT_SECRET`
 - `NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL` (required build-arg, inlined into the frontend bundle)
 - `KC_SEED_USER_PASSWORD`, `INTEGRATION_CATALOG_RO_SECRET`, `INTEGRATION_ORDERS_RW_SECRET`, `CUSTOMER_STOREFRONT_REDIRECT_URIS`, `CUSTOMER_STOREFRONT_WEB_ORIGINS` (Keycloak realm render inputs)

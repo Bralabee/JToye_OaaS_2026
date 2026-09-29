@@ -19,7 +19,7 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storage.StorageService;
-import software.amazon.awssdk.core.exception.SdkClientException;
+import uk.jtoye.core.storage.StorageUnavailableException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -67,7 +67,7 @@ import java.util.stream.Collectors;
  * <p><strong>Product photography (#15 — reversed 260713-kds):</strong> curated
  * products now carry seeded, license-verified dish imagery. Each of the 21
  * bundled Wikimedia photos (CC0/CC-BY/CC-BY-SA, zero NC/ND — attributed in
- * {@code docs/CREDITS-demo-images.md}) is uploaded to MinIO via
+ * {@code docs/CREDITS-demo-images.md}) is uploaded to object storage via
  * {@link uk.jtoye.core.storage.StorageService#putSeedImage} at a deterministic
  * {@code <tenant>/products/seed/<filename>} key and its public URL stamped onto
  * the matching product's {@code image_url} by {@link #seedProductImages}. A
@@ -350,7 +350,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         upsertCustomer(result, "James Okafor", "james.okafor@example.com", "07700 900567");
 
         // ADDITIVE image-seeding step (260713-kds): now that the curated products
-        // are persisted, upload each bundled dish photo to MinIO and stamp the
+        // are persisted, upload each bundled dish photo to object storage and stamp the
         // matching product's image_url under the seeder-owns overwrite policy.
         seedProductImages(result);
 
@@ -389,7 +389,7 @@ public class DemoDataSeeder implements ApplicationRunner {
      * (260713-kds — reverses the phase 19-09 "no image_url" design note). For each
      * of the 21 manifest entries: resolve the target shop slug, find the curated
      * {@link MenuItem} whose title matches the manifest dish (to get its SKU), load
-     * the persisted {@link Product}, upload the bundled image to MinIO via
+     * the persisted {@link Product}, upload the bundled image to object storage via
      * {@link StorageService#putSeedImage} (idempotent, deterministic key), then
      * apply the SEEDER-OWNS OVERWRITE POLICY:
      * <ul>
@@ -469,10 +469,10 @@ public class DemoDataSeeder implements ApplicationRunner {
                     productRepository.save(product);
                     result.imagesSeeded++;
                 }
-            } catch (SdkClientException e) {
-                // Client-side failure means the object store is unreachable — e.g. a
+            } catch (StorageUnavailableException e) {
+                // A transport failure means the object store is unreachable — e.g. a
                 // dev-profile integration test (@ActiveProfiles("dev")) boots Postgres/
-                // Redis but no MinIO. Honour the seeder's "never fatal to dev boot"
+                // Redis but no Azurite. Honour the seeder's "never fatal to dev boot"
                 // contract: abort image seeding entirely rather than incur one
                 // connection-timeout per remaining manifest entry. Data seeding above
                 // has already committed; only the (optional) image URLs are skipped.

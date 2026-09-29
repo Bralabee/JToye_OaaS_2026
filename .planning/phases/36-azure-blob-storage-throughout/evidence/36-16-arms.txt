@@ -1,0 +1,218 @@
+== 36-16 in-tree arms, HEAD 1c50a239, 2026-09-29T09:01:20Z
+== tracked changes before: 0
+### CLEAN (before arms)
+    expected rc=0  actual rc=0  [MATCH]
+    | SUMMARY files_scanned=2516 raw_hits=1657 unique_lines=1502 allowlisted=1502 violations=0 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | PASS: no retired object-store residue in 2516 tracked file(s); 1502 hit line(s) covered by 52 reasoned, live allowlist entr(ies).
+### fresh tracked file, line 2 = 'the MinIO console'
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION zz-arm-fresh.md:2: [R-1] the MinIO console
+    | SUMMARY files_scanned=2517 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+### fresh tracked file, line 2 = 'minio lower'
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION zz-arm-fresh.md:2: [R-1] minio lower
+    | SUMMARY files_scanned=2517 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+### fresh tracked file, line 2 = 'MINIO_ROOT_USER=x'
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION zz-arm-fresh.md:2: [R-1] MINIO_ROOT_USER=x
+    | SUMMARY files_scanned=2517 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+### fresh tracked file, line 2 = 'S3_BUCKET=jtoye-images'
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION zz-arm-fresh.md:2: [R-1b] S3_BUCKET=jtoye-images
+    | SUMMARY files_scanned=2517 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+### fresh tracked file, line 2 = 'http://localhost:9000/jtoye-images/a.webp'
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION zz-arm-fresh.md:2: [R-1] http://localhost:9000/jtoye-images/a.webp
+    | SUMMARY files_scanned=2517 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+### fresh tracked file, line 2 = 'image: quay.io/minio/minio:RELEASE.2025'
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION zz-arm-fresh.md:2: [R-1] image: quay.io/minio/minio:RELEASE.2025
+    | SUMMARY files_scanned=2517 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+### fresh tracked file, line 2 = 'kubectl delete secret s3-media-credentials'
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION zz-arm-fresh.md:2: [R-1] kubectl delete secret s3-media-credentials
+    | SUMMARY files_scanned=2517 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+### neighbour of allowlisted .env.example:192 -> token 'MinIO' appended to line 193
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION .env.example:193: [R-1] # no longer read by either compose stack, nor (since 36-10) by the k8s-local bootstrap MinIO
+    | SUMMARY files_scanned=2516 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+    restored .env.example by content (blob 83df3f8c592d079319324979026db9f0c20b4e20)
+### neighbour of allowlisted .env.example:192 -> token 'S3_ENDPOINT' appended to line 193
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION .env.example:193: [R-1b] # no longer read by either compose stack, nor (since 36-10) by the k8s-local bootstrap S3_ENDPOINT
+    | SUMMARY files_scanned=2516 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+    restored .env.example by content (blob 83df3f8c592d079319324979026db9f0c20b4e20)
+### neighbour of allowlisted .env.example:192 -> token 'localhost:9000' appended to line 193
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION .env.example:193: [R-1] # no longer read by either compose stack, nor (since 36-10) by the k8s-local bootstrap localhost:9000
+    | SUMMARY files_scanned=2516 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+    restored .env.example by content (blob 83df3f8c592d079319324979026db9f0c20b4e20)
+### neighbour of allowlisted .env.example:192 -> token 'quay.io/minio/minio' appended to line 193
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION .env.example:193: [R-1] # no longer read by either compose stack, nor (since 36-10) by the k8s-local bootstrap quay.io/minio/minio
+    | SUMMARY files_scanned=2516 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+    restored .env.example by content (blob 83df3f8c592d079319324979026db9f0c20b4e20)
+### neighbour of allowlisted .env.example:192 -> token 's3-backup-credentials' appended to line 193
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION .env.example:193: [R-1] # no longer read by either compose stack, nor (since 36-10) by the k8s-local bootstrap s3-backup-credentials
+    | SUMMARY files_scanned=2516 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+    restored .env.example by content (blob 83df3f8c592d079319324979026db9f0c20b4e20)
+### one line past the allowlisted region k8s/LOCAL.md:1105-1106 (token on 1107)
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION k8s/LOCAL.md:1107: [R-1] ``` MinIO
+    | SUMMARY files_scanned=2516 raw_hits=1658 unique_lines=1503 allowlisted=1502 violations=1 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 1 residue line(s), 0 stale and 0 malformed allowlist entr(ies).
+    restored k8s/LOCAL.md by content (blob 07172cb6e1c2e0ffd6137b4fc258409182181ce2)
+### fresh tracked file of ONLY negative controls
+    expected rc=0  actual rc=0  [MATCH]
+    | SUMMARY files_scanned=2517 raw_hits=1657 unique_lines=1502 allowlisted=1502 violations=0 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | PASS: no retired object-store residue in 2517 tracked file(s); 1502 hit line(s) covered by 52 reasoned, live allowlist entr(ies).
+### blank reason on a live entry (docs/reports/|)
+    expected rc=1  actual rc=1  [MATCH]
+    |   ALLOWLIST scripts/gates/object-store-residue-allowlist.conf:29: blank reason for 'docs/reports/' — an exemption must say why
+    | SUMMARY files_scanned=2516 raw_hits=1657 unique_lines=1502 allowlisted=1502 violations=0 stale_entries=0 hygiene_failures=1 entries_not_judged=0
+    | FAIL: 0 residue line(s), 0 stale and 1 malformed allowlist entr(ies).
+    awk reason check on the broken allowlist: 52 1
+    restored scripts/gates/object-store-residue-allowlist.conf by content (blob 1c19213bf5eb581f0d339e6fd2b141d98c0e9180)
+### duplicate entry (k8s/LOCAL.md:139 twice)
+    expected rc=1  actual rc=1  [MATCH]
+    |   ALLOWLIST scripts/gates/object-store-residue-allowlist.conf:86: duplicate entry 'k8s/LOCAL.md:139' (first at line 46)
+    | SUMMARY files_scanned=2516 raw_hits=1657 unique_lines=1502 allowlisted=1502 violations=0 stale_entries=0 hygiene_failures=1 entries_not_judged=0
+    | FAIL: 0 residue line(s), 0 stale and 1 malformed allowlist entr(ies).
+    restored scripts/gates/object-store-residue-allowlist.conf by content (blob 1c19213bf5eb581f0d339e6fd2b141d98c0e9180)
+### stale entry (a line 36-15 already cleaned)
+    expected rc=1  actual rc=1  [MATCH]
+    |   ALLOWLIST scripts/gates/object-store-residue-allowlist.conf:86: stale entry 'docs/runbooks/sealed-secrets.md:37' covers no current hit (hits in docs/runbooks/sealed-secrets.md are now at line(s): none) — delete it, or renumber it in the same change that moved the line
+    | SUMMARY files_scanned=2516 raw_hits=1657 unique_lines=1502 allowlisted=1502 violations=0 stale_entries=1 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 0 residue line(s), 1 stale and 0 malformed allowlist entr(ies).
+    restored scripts/gates/object-store-residue-allowlist.conf by content (blob 1c19213bf5eb581f0d339e6fd2b141d98c0e9180)
+### an edit that SHIFTS two allowlisted lines (check-media-urls-resolve.sh:22, :91)
+    expected rc=1  actual rc=1  [MATCH]
+    |   VIOLATION scripts/check-media-urls-resolve.sh:23: [R-1] #   U-2  No stored value starts with the RETIRED origin (http://localhost:9000/). Such a value
+    |   VIOLATION scripts/check-media-urls-resolve.sh:92: [R-1] RETIRED_ORIGIN="http://localhost:9000/"
+    |   ALLOWLIST scripts/gates/object-store-residue-allowlist.conf:64: stale entry 'scripts/check-media-urls-resolve.sh:22' covers no current hit (hits in scripts/check-media-urls-resolve.sh are now at line(s): 23 92 ) — delete it, or renumber it in the same change that moved the line
+    |   ALLOWLIST scripts/gates/object-store-residue-allowlist.conf:65: stale entry 'scripts/check-media-urls-resolve.sh:91' covers no current hit (hits in scripts/check-media-urls-resolve.sh are now at line(s): 23 92 ) — delete it, or renumber it in the same change that moved the line
+    | SUMMARY files_scanned=2516 raw_hits=1657 unique_lines=1502 allowlisted=1500 violations=2 stale_entries=2 hygiene_failures=0 entries_not_judged=0
+    | FAIL: 2 residue line(s), 2 stale and 0 malformed allowlist entr(ies).
+    restored scripts/check-media-urls-resolve.sh by content (blob 92a06dc1c675948fd50ded457ebb66dcf0dffded)
+### scan pathspec matching no tracked file
+    expected rc=2  actual rc=2  [MATCH]
+    | VOID: zero tracked files in scope 'no-such-dir/' — refusing to report clean over an empty scan
+### allowlist missing
+    expected rc=2  actual rc=2  [MATCH]
+    | VOID: allowlist missing or unreadable: scripts/gates/object-store-residue-allowlist.conf
+### allowlist with comments only (no entries)
+    expected rc=2  actual rc=2  [MATCH]
+    | VOID: scripts/gates/object-store-residue-allowlist.conf declares no entries — an empty allowlist is a broken file, not a clean tree
+### unparseable allowlist line
+    expected rc=2  actual rc=2  [MATCH]
+    | VOID: scripts/gates/object-store-residue-allowlist.conf:34 is unparseable (no '|' separator): 'docs/archive/ no separator here'
+    restored scripts/gates/object-store-residue-allowlist.conf by content (blob 1c19213bf5eb581f0d339e6fd2b141d98c0e9180)
+### self-test: R-1 no longer contains the product name (pattern blind to a positive control)
+    expected rc=2  actual rc=2  [MATCH]
+    | VOID: self-test: r1-pos.txt matched 22 of 25 positive controls — a pattern class cannot see what it exists to catch
+    restored scripts/check-no-object-store-residue.sh by content (blob 6532ffc4f605b5f0fed4f5d4bbb1d46cd3469e3b)
+### self-test: R-2 is not a valid PCRE (engine error)
+    expected rc=2  actual rc=2  [MATCH]
+    | VOID: self-test: git grep -P failed (rc=128) — PCRE lookbehind unsupported or the pattern is invalid: fatal: -e option, '(?<!UI-SPEC \bS3\b': missing closing parenthesis
+    restored scripts/check-no-object-store-residue.sh by content (blob 6532ffc4f605b5f0fed4f5d4bbb1d46cd3469e3b)
+### git not on PATH
+    expected rc=2  actual rc=2  [MATCH]
+    | VOID: git not found
+### narrowed scope to a clean tracked file (entries outside are not judged)
+    expected rc=0  actual rc=0  [MATCH]
+    | SUMMARY files_scanned=1 raw_hits=0 unique_lines=0 allowlisted=0 violations=0 stale_entries=0 hygiene_failures=0 entries_not_judged=52
+    | PASS: no retired object-store residue in 1 tracked file(s); 0 hit line(s) covered by 52 reasoned, live allowlist entr(ies).
+    52 entries reported 'not judged'
+### CLEAN (after arms)
+    expected rc=0  actual rc=0  [MATCH]
+    | SUMMARY files_scanned=2516 raw_hits=1657 unique_lines=1502 allowlisted=1502 violations=0 stale_entries=0 hygiene_failures=0 entries_not_judged=0
+    | PASS: no retired object-store residue in 2516 tracked file(s); 1502 hit line(s) covered by 52 reasoned, live allowlist entr(ies).
+== tracked changes after: 0
+== untracked arm residue: 0
+== arm mismatches: 0
+== pre-phase tree arm: base 394335ce24cc1141ff09c86b4822cb9e3b3055a8 (parent of the first Phase 36 commit), gate + allowlist copied in, GATE_SCAN_PATHSPEC unset
+rc=1
+SUMMARY files_scanned=2437 raw_hits=1988 unique_lines=1819 allowlisted=1162 violations=657 stale_entries=22 hygiene_failures=0 entries_not_judged=0
+FAIL: 657 residue line(s), 22 stale and 0 malformed allowlist entr(ies).
+violations by top-level path:
+    188 core-java/src
+     75 k8s/base
+     64 k8s/goldens
+     41 docker-compose.full-stack.yml
+     36 scripts/k8s-local-secrets.sh
+     29 k8s/LOCAL.md
+     20 docs/runbooks
+     19 .env.example
+     18 scripts/check-media-content-types.sh
+     18 k8s/scripts
+     18 infra/dependency-horizons.yaml
+     17 infra/backups
+     14 docs/architecture
+     12 k8s/local
+     10 k8s/QUICK_START.md
+      7 k8s/DEPLOYMENT.md
+      7 AGENTS.md
+      6 core-java/build.gradle.kts
+      6 CLAUDE.md
+      5 frontend/components
+      4 scripts/verify-env.sh
+      4 .github/workflows
+      3 frontend/lib
+      3 docs/guides
+      2 scripts/restore-drill.sh
+first 10 violations:
+  VIOLATION .cursor/rules/oaas-core-java.mdc:46: [R-1] never the raw upload. Prove it by reading the object back out of MinIO — a filesystem `find` is
+  VIOLATION .cursor/rules/oaas-platform.mdc:23: [R-1] `redis:7-alpine`, `keycloak:24.0.5`, `minio`, `mailhog`, `rabbitmq:4.3.4`, `prometheus:v2.48.0`,
+  VIOLATION .env.example:185: [R-1,R-2] # MinIO / S3 (Image Storage)
+  VIOLATION .env.example:186: [R-1,R-2] # Rotate both — MINIO_ROOT_USER/PASSWORD are the S3 credentials for minio AND the
+  VIOLATION .env.example:188: [R-1] MINIO_ROOT_USER=CHANGE_ME
+  VIOLATION .env.example:189: [R-1] MINIO_ROOT_PASSWORD=CHANGE_ME
+  VIOLATION .env.example:190: [R-1,R-1b] S3_ENDPOINT=http://localhost:9000
+  VIOLATION .env.example:194: [R-1] # Browse releases at https://github.com/minio/minio/releases and https://github.com/ollama/ollama/releases
+  VIOLATION .env.example:196: [R-1] # BOTH MinIO images are pulled from quay.io, not Docker Hub: MinIO's Docker Hub repos began
+  VIOLATION .env.example:197: [R-1] # requiring authentication on/before 2026-09-12 (401 on minio/minio:latest, minio/mc:latest AND
+
+== Task 3 wiring arms, HEAD 27276b77, 2026-09-29T09:02:28Z
+### gate-enforcement, real tree: rc=0
+    |   gates     : 45
+    | PASS: every gate either runs in CI or has a declared reason it cannot.
+    removed |       - name: Assert no retired object-store residue in tracked files (Phase 36)
+    removed |         run: |
+    removed |           chmod +x ./scripts/check-no-object-store-residue.sh
+    removed |           bash ./scripts/gates/object-store-residue-selftest.sh
+    removed |           ./scripts/check-no-object-store-residue.sh
+    workflow references left: 0
+### gate-enforcement, step removed: rc=1 (expected 1)
+    | FAIL: 1 gate(s) are referenced by no workflow and carry no exemption:
+    |         check-no-object-store-residue.sh
+    restored ci-cd.yaml by content (blob 627797a1daa6171e886b830a91aa813b1d2a2616)
+### gate-enforcement, restored: rc=0
+### handoff-contract, real tree: rc=0
+    | PASS: HANDOFF.md — 1 gate-count claim(s) and 28 state claim(s) hold; 0 commit(s) behind (budget 3).
+### handoff-contract, EXPECT reverted to 45: rc=1 (expected 1)
+    | FAIL: H-1 HANDOFF.md's resume block says 'EXPECT 45 x rc=0' but the repo has 46 gate script(s)
+    |   H-1 gates : 1 claim(s), repo has 46 gate script(s)
+    | FAILED: HANDOFF.md states something that is no longer true (see above).
+    restored HANDOFF.md by content
+### AC: git grep check-no-object-store-residue in ci-cd.yaml: rc=0 lines=2
+    | .github/workflows/ci-cd.yaml:975:          chmod +x ./scripts/check-no-object-store-residue.sh
+    | .github/workflows/ci-cd.yaml:977:          ./scripts/check-no-object-store-residue.sh
+### AC: git grep -i minio -- .github/workflows (HEAD tree): rc=1 []
+### AC fail direction: same grep at 7a41324e (before the GREEN commit): rc=0
+    | 7a41324e:.github/workflows/ci-cd.yaml:412:  # + MinIO), so none of them run here — which left layout, image rendering and
+    | 7a41324e:.github/workflows/ci-cd.yaml:636:  #      outage under an enforcing CNI), no localhost/minioadmin literal in a
+### actionlint ci-cd.yaml: rc=0
+== tracked changes after: 0

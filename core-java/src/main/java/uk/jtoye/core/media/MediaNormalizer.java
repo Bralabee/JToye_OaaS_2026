@@ -38,7 +38,7 @@ import java.util.Set;
  *   <li><b>(f) encode</b> — a WebP derivative + a WebP thumbnail via cwebp.</li>
  * </ol>
  *
- * <p>No DB, no MinIO — bytes in, bytes out — so the async worker (24-04) can call
+ * <p>No DB, no object store — bytes in, bytes out — so the async worker (24-04) can call
  * it after pinning the tenant GUC. Every dimension/quality figure is read from
  * {@link MediaProperties}; this class carries NO numeric image budget literal
  * (GLOBAL_RULE_6 / ARCHITECTURE_RULE_8).

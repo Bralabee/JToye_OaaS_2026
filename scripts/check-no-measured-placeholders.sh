@@ -8,7 +8,7 @@
 #   `${JTOYE_RABBIT_MEDIA_PREFETCH:<<MEASURED>>}` left in application.yml
 #     - compiles and builds clean
 #     - PASSES k8s/scripts/check-env-contract.sh, because that gate fails only on a MISSING
-#       default or a LOCAL-ONLY default (localhost, guest, minioadmin, ...). A `<<MEASURED>>`
+#       default or a LOCAL-ONLY default (localhost, guest, UseDevelopmentStorage=true, ...). A `<<MEASURED>>`
 #       default is neither, so it is classified `pass by rule` and the gate exits 0.
 #     - fails only at CONTAINER START, with a NumberFormatException binding the property.
 #   i.e. without this gate the defect SHIPS, and is discovered by a crash-looping pod.

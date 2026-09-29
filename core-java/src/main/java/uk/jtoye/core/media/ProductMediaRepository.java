@@ -12,7 +12,7 @@ import java.util.UUID;
  * Repository for {@link ProductMedia} join rows (V53 {@code product_media}).
  *
  * <p>Backs the two IMG-01 invariants: {@link #countByAssetId} is the reference
- * count for the delete-at-0 rule (a physical MinIO delete happens ONLY when no
+ * count for the delete-at-0 rule (a physical Blob delete happens ONLY when no
  * {@code product_media} row references the asset), and {@link #repoint} is the
  * one-row copy-on-write UPDATE (editing a shared asset mints a new asset and
  * repoints only the affected row — D-01). {@link #findPrimaryActiveObjectKey}

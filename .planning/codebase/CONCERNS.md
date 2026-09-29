@@ -30,7 +30,7 @@ All 14 items marked "P1/P2 Tech Debt" plus most of the "Deferred/Out-of-scope" i
 | Work Order K (edge distributed rate limiter / OTel) | **unverified whether resolved** — not re-checked this pass; no open issue found naming it explicitly. |
 | Work Order M bulk import silent partial-failure / OOM | **LIKELY IMPROVED, not fully re-verified** | `core-java/.../product/BulkImportService.java` now has explicit per-row `try/catch` (lines 155, 250) with a documented distinction between a row-level failure and a caller-level `ShopAccessDeniedException` (line 143) — this addresses the "silent partial failure" half; large-file OOM behaviour was not re-measured. |
 | Strix pentest backlog (11 findings, #548-#552) | **RESOLVED — all CLOSED** | `gh issue view 548/549/550/551/552` → all `state: CLOSED` (Phase 28, "Security Triage + the Dev/Prod Boundary," completed 2026-08-10). Prior memory note calling this an "untracked pentest backlog" is stale. |
-| P3-12 unused JasperReports in prod JAR | **RESOLVED** | `core-java/build.gradle.kts:230-238` — comment records removal 2026-07-27: zero imports, zero `.jrxml`/`.jasper` templates existed; also closed 3 CVEs (beanutils + 2 jasper CVEs). |
+| P3-12 unused JasperReports in prod JAR | **RESOLVED** | `core-java/build.gradle.kts:232-240` — comment records removal 2026-07-27: zero imports, zero `.jrxml`/`.jasper` templates existed; also closed 3 CVEs (beanutils + 2 jasper CVEs). |
 | Work Order O WhatsApp order idempotency | **NOT RE-VERIFIED — inconclusive** | `edge-go/internal/whatsapp/` has a parser + tests but no idempotency-key handling found in a targeted grep; the WhatsApp *ordering* flow itself remains incomplete per open issue **#208** `[AI-6] Complete the WhatsApp conversational channel`, so the idempotency question is largely moot until that ships. |
 
 **Still genuinely open from the prior audit, unchanged:**
@@ -89,7 +89,7 @@ All governed by `infra/dependency-horizons.yaml` + `scripts/check-dependency-hor
 | Grafana 10.2.2 | 2024-07-24 | 2026-12-31 | DEFERRED-27 |
 | Spring Boot 3.5.16 (OSS support ended) | 2026-06-30 | **2027-02-28** (Boot 4.1 is a scoped migration, not a bump — dependabot's naive PR #676 failed 5 CI jobs) | **#706** |
 
-Several third-party images (minio, minio/mc, ollama, mailhog, alertmanager, redis-exporter, postgres-exporter) have no `endoflife.date` entry at all (404) and are tracked via dated `manual_review` (`expires: 2027-01-27`) rather than a horizon — by design, not a gap.
+Several third-party images (ollama, mailhog, alertmanager, redis-exporter, postgres-exporter) have no `endoflife.date` entry at all (404) and are tracked via dated `manual_review` (`expires: 2027-01-27`) rather than a horizon — by design, not a gap. The Azurite emulator (Phase 36) is the same kind: no `endoflife.date` product, its own `manual_review` in `infra/dependency-horizons.yaml` (`expires: 2026-12-27`).
 
 ---
 

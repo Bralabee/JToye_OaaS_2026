@@ -59,8 +59,10 @@ readonly K8S_LOCAL_KUSTOMIZATION="k8s/local/kustomization.yaml"
 readonly K8S_LOCAL_APP_SERVICES="core-java frontend edge-go mcp-server"
 
 # compose BACKING services — the cluster CONSUMES these over the pod host, so
-# they must be UP for the overlay to work at all (D-04, other half).
-readonly K8S_LOCAL_BACKING_SERVICES="postgres redis rabbitmq keycloak minio mailhog"
+# they must be UP for the overlay to work at all (D-04, other half). `azurite`
+# is the Blob emulator (Phase 36): the pods write media and the pg-backup dumps
+# to it over the pod host on K8S_LOCAL_AZURITE_PORT.
+readonly K8S_LOCAL_BACKING_SERVICES="postgres redis rabbitmq keycloak azurite mailhog"
 
 # The ONLY docker container states in which an APP service is provably not a
 # writer on the shared dev Postgres. Threat T-26-29.
@@ -119,7 +121,9 @@ readonly K8S_LOCAL_SYSTEM_NAMESPACES="kube-system kube-public kube-node-lease in
 readonly K8S_LOCAL_TERMINAL_PHASE_SELECTOR="status.phase!=Succeeded,status.phase!=Failed"
 
 # The K8S_LOCAL_* contract every caller depends on. Asserted set + non-empty by
-# k8s_local_load_env, by NAME.
+# k8s_local_load_env, by NAME. There is no backup-container key: the container
+# name is app-config backup.blob.container in the local render, and blobctl
+# creates it on the first upload (scripts/k8s-local-secrets.sh STEP 4 note).
 K8S_LOCAL_REQUIRED_KEYS=(
   K8S_LOCAL_POD_HOST
   K8S_LOCAL_DB_PORT
@@ -127,13 +131,12 @@ K8S_LOCAL_REQUIRED_KEYS=(
   K8S_LOCAL_REDIS_PORT
   K8S_LOCAL_AMQP_PORT
   K8S_LOCAL_STOMP_PORT
-  K8S_LOCAL_MINIO_PORT
+  K8S_LOCAL_AZURITE_PORT
   K8S_LOCAL_SMTP_PORT
   K8S_LOCAL_KUBE_CONTEXT
   K8S_LOCAL_MINIKUBE_PROFILE
   K8S_LOCAL_MINIKUBE_CPUS
   K8S_LOCAL_MINIKUBE_MEMORY
-  K8S_LOCAL_BACKUP_BUCKET
 )
 readonly K8S_LOCAL_REQUIRED_KEYS
 

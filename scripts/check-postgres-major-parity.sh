@@ -229,5 +229,6 @@ fi
 echo "  server : $server_major   tooling: $tool_major   ($rows site(s) checked)"
 echo "PASS: backup tooling and server agree on PostgreSQL major $server_major."
 echo "      NOTE: this proves the DECLARED majors match. It does not prove a backup"
-echo "      restores — nothing in this repo executes a restore drill."
+echo "      restores — that is scripts/check-backup-restore-drill.sh (nightly) and"
+echo "      scripts/restore-drill.sh (manual)."
 exit 0

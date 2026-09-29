@@ -63,7 +63,7 @@ class MediaBackfillMigrationIntegrationTest {
 
     private static final String RLS_MIGRATOR = "rls_migrator";
     private static final String RLS_MIGRATOR_PW = "rls_migrator_pw";
-    private static final String PUBLIC_URL = "http://localhost:9000/jtoye-images/";
+    private static final String PUBLIC_URL = "http://localhost:10000/devstoreaccount1/jtoye-images/";
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")

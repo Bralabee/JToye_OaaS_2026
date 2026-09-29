@@ -8,9 +8,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import uk.jtoye.core.media.MediaNormalizer;
 import uk.jtoye.core.media.MediaProperties;
 import uk.jtoye.core.storage.StorageService.ImageType;
@@ -29,10 +26,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /**
  * Issue #489 — a shop logo/banner is served {@code public, max-age=31536000, immutable},
@@ -60,17 +56,17 @@ import static org.mockito.Mockito.when;
  *   <li>{@link StorageService#upload} (product gallery) — already
  *       {@code .../<random UUID>.webp}, a fresh key per upload, so {@code immutable} was
  *       always honest. Pinned below by {@link #productGalleryKeyWasAlreadyUniquePerUpload()};</li>
- *   <li>{@code putSeedImage} — deterministic, but it {@code HeadObject}-skips the PUT when the
- *       object exists, so the bytes at that key are written once and never replaced (and it is
+ *   <li>{@code putSeedImage} — deterministic, but it writes create-only (no PUT when the
+ *       object exists), so the bytes at that key are written once and never replaced (and it is
  *       a dev-only classpath-asset seam);</li>
  *   <li>{@code putBytes} — the async pipeline's keys are server-generated per asset id /
  *       per raw sha256, never reused across different bytes for a served derivative.</li>
  * </ul>
  *
- * <p><b>Why no Testcontainers / no MinIO.</b> The behaviour under test is entirely the object
+ * <p><b>Why no Testcontainers / no object store.</b> The behaviour under test is entirely the object
  * KEY chosen for a PUT, captured at the choke point every one of the three legacy synchronous
- * endpoints passes through. Nothing about tenancy, RLS or persistence changes, and the S3
- * client is mocked because the assertion is about the request, not the store. The end-to-end
+ * endpoints passes through. Nothing about tenancy, RLS or persistence changes, and the object
+ * store port is mocked because the assertion is about the request, not the store. The end-to-end
  * "the vendor sees the new logo" claim additionally rests on
  * {@code ShopService.uploadLogo/uploadBanner} persisting the RETURNED url onto the shop row
  * and evicting the {@code shops} cache entry, which they already do.
@@ -79,7 +75,7 @@ import static org.mockito.Mockito.when;
 class ShopBrandImageKeyTest {
 
     @Mock
-    private S3Client s3Client;
+    private BlobObjectStore store;
 
     private StorageService storageService;
     private UUID tenantId;
@@ -93,10 +89,9 @@ class ShopBrandImageKeyTest {
         StorageProperties properties = new StorageProperties();
         properties.setMaxFileSizeBytes(5_242_880);
         properties.setAllowedContentTypes(List.of("image/jpeg", "image/png", "image/webp", "image/gif"));
-        properties.getS3().setBucket("jtoye-images");
-        properties.getS3().setPublicUrl("http://localhost:9000/jtoye-images");
+        properties.getBlob().setPublicUrl("http://localhost:10000/devstoreaccount1/jtoye-images");
 
-        storageService = new StorageService(s3Client, properties, new MediaNormalizer(new MediaProperties()));
+        storageService = new StorageService(store, properties, new MediaNormalizer(new MediaProperties()));
     }
 
     // ------------------------------------------------------------------
@@ -106,8 +101,6 @@ class ShopBrandImageKeyTest {
     @Test
     @DisplayName("Re-uploading a DIFFERENT logo to the same shop must produce a different key and url")
     void reUploadedLogoMustNotReuseTheImmutableKey() throws Exception {
-        acceptPuts();
-
         String firstUrl = storageService.uploadNamed(
                 tenantId, "shops", shopId, "logo", logo(Color.ORANGE, Color.BLUE));
         String secondUrl = storageService.uploadNamed(
@@ -135,8 +128,6 @@ class ShopBrandImageKeyTest {
     @Test
     @DisplayName("Re-uploading a DIFFERENT banner to the same shop must produce a different key and url")
     void reUploadedBannerMustNotReuseTheImmutableKey() throws Exception {
-        acceptPuts();
-
         String firstUrl = storageService.uploadNamed(
                 tenantId, "shops", shopId, "banner", banner(Color.ORANGE, Color.BLUE));
         String secondUrl = storageService.uploadNamed(
@@ -154,8 +145,6 @@ class ShopBrandImageKeyTest {
     @Test
     @DisplayName("The logo key is the sha256 OF THE STORED BYTES, so 'immutable' is now true by construction")
     void logoKeyIsDerivedFromTheStoredDerivativeBytes() throws Exception {
-        acceptPuts();
-
         String url = storageService.uploadNamed(tenantId, "shops", shopId, "logo", logo(Color.ORANGE, Color.BLUE));
 
         Put put = capturePuts(1).get(0);
@@ -165,14 +154,12 @@ class ShopBrandImageKeyTest {
                         + "promise hold even if the jtoye.media.* budget later changes the "
                         + "derivative produced from the same source file")
                 .isEqualTo(expectedKey);
-        assertThat(url).isEqualTo("http://localhost:9000/jtoye-images/" + expectedKey);
+        assertThat(url).isEqualTo("http://localhost:10000/devstoreaccount1/jtoye-images/" + expectedKey);
     }
 
     @Test
     @DisplayName("The banner key is the sha256 of the stored bytes, under its own 'banner-' prefix")
     void bannerKeyIsDerivedFromTheStoredDerivativeBytes() throws Exception {
-        acceptPuts();
-
         storageService.uploadNamed(tenantId, "shops", shopId, "banner", banner(Color.ORANGE, Color.BLUE));
 
         Put put = capturePuts(1).get(0);
@@ -188,8 +175,6 @@ class ShopBrandImageKeyTest {
     @Test
     @DisplayName("PASSES BOTH TREES: re-uploading the IDENTICAL logo reuses the same key (content-addressed, not random)")
     void reUploadingTheIdenticalLogoReusesTheSameKey() throws Exception {
-        acceptPuts();
-
         // Deliberately two independently-built fixtures with the same content, not one
         // byte array used twice, so this measures the pipeline's determinism.
         String firstUrl = storageService.uploadNamed(tenantId, "shops", shopId, "logo", logo(Color.ORANGE, Color.BLUE));
@@ -207,8 +192,6 @@ class ShopBrandImageKeyTest {
     @Test
     @DisplayName("PASSES BOTH TREES: logo and banner of the SAME image stay distinct objects")
     void logoAndBannerOfTheSameImageStayDistinct() throws Exception {
-        acceptPuts();
-
         storageService.uploadNamed(tenantId, "shops", shopId, "logo", square(Color.ORANGE, Color.BLUE));
         storageService.uploadNamed(tenantId, "shops", shopId, "banner", square(Color.ORANGE, Color.BLUE));
 
@@ -228,8 +211,6 @@ class ShopBrandImageKeyTest {
     @Test
     @DisplayName("PASSES BOTH TREES: 'immutable' is still declared — the point of the fix is to make it TRUE, not to drop it")
     void immutableCacheControlIsRetained() throws Exception {
-        acceptPuts();
-
         storageService.uploadNamed(tenantId, "shops", shopId, "logo", logo(Color.ORANGE, Color.BLUE));
 
         assertThat(capturePuts(1).get(0).cacheControl())
@@ -245,7 +226,6 @@ class ShopBrandImageKeyTest {
         // not: its key has always carried a per-upload UUID.randomUUID(), so no two uploads
         // ever share a key and 'immutable' has always been honest there. Recorded as a test
         // rather than a comment so the claim cannot silently rot back into a "fix".
-        acceptPuts();
 
         storageService.upload(tenantId, "products", shopId, product(Color.ORANGE, Color.BLUE), ImageType.PRODUCT);
         storageService.upload(tenantId, "products", shopId, product(Color.ORANGE, Color.BLUE), ImageType.PRODUCT);
@@ -262,20 +242,18 @@ class ShopBrandImageKeyTest {
     private record Put(String key, String contentType, String cacheControl, byte[] bytes) {
     }
 
-    private void acceptPuts() {
-        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenReturn(null);
-    }
-
     private List<Put> capturePuts(int expected) throws IOException {
-        ArgumentCaptor<PutObjectRequest> reqCaptor = ArgumentCaptor.forClass(PutObjectRequest.class);
-        ArgumentCaptor<RequestBody> bodyCaptor = ArgumentCaptor.forClass(RequestBody.class);
-        verify(s3Client, times(expected)).putObject(reqCaptor.capture(), bodyCaptor.capture());
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<byte[]> bytesCaptor = ArgumentCaptor.forClass(byte[].class);
+        ArgumentCaptor<String> contentTypeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> cacheControlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(store, times(expected)).put(eq("jtoye-images"), keyCaptor.capture(), bytesCaptor.capture(),
+                contentTypeCaptor.capture(), cacheControlCaptor.capture());
 
         List<Put> puts = new ArrayList<>();
         for (int i = 0; i < expected; i++) {
-            PutObjectRequest req = reqCaptor.getAllValues().get(i);
-            byte[] stored = bodyCaptor.getAllValues().get(i).contentStreamProvider().newStream().readAllBytes();
-            puts.add(new Put(req.key(), req.contentType(), req.cacheControl(), stored));
+            puts.add(new Put(keyCaptor.getAllValues().get(i), contentTypeCaptor.getAllValues().get(i),
+                    cacheControlCaptor.getAllValues().get(i), bytesCaptor.getAllValues().get(i)));
         }
         return puts;
     }

@@ -1,0 +1,270 @@
+36-13 browser proof: storefront images load from the object store (BLOB-05)
+===========================================================================
+Branch phase-36-azure-blob-storage, plan base 946756a4. Runs 2026-09-29, 08:05Z-08:15Z.
+Spec: frontend/e2e/storage-images.spec.ts (final bytes sha256 37070e2531a2ed51...)
+Stack: the rebuilt compose stack left by 36-12, not rebuilt here.
+Terminal colour codes are stripped from every excerpt below. Nothing here
+contains a credential.
+
+------------------------------------------------------------------------------
+PRECONDITION (read-only, before any write)
+------------------------------------------------------------------------------
+$ docker compose -f docker-compose.full-stack.yml ps
+  azurite running (healthy) 127.0.0.1:10000; core-java running (healthy); frontend
+  running (healthy) 0.0.0.0:3000; edge-go, keycloak, mailhog, mcp-server,
+  postgres, rabbitmq, redis all running (healthy)
+$ docker port <core-java> 9090   -> 0.0.0.0:9090, [::]:9090   rc=0
+$ bash scripts/check-runtime-freshness.sh
+  PASS: 4 running built service(s) match the source tree (0 unverified).  rc=0
+
+------------------------------------------------------------------------------
+WHAT THE SPEC ASSERTS (and why it is stricter than the plan's filter)
+------------------------------------------------------------------------------
+1. Discovery reads served HTML only: the /shop listing in order, then the first
+   shop page whose SERVER-RENDERED HTML has an <img> whose src starts with
+   STORAGE + "/". So discovery does not depend on the store being up.
+   STORAGE = PLAYWRIGHT_STORAGE_PUBLIC_URL, default
+   http://localhost:10000/devstoreaccount1/jtoye-images. That is the same value
+   as docker-compose.full-stack.yml:361 STORAGE_PUBLIC_URL.
+2. Browser: goto (domcontentloaded, not networkidle), walk to the bottom in steps
+   and back, then poll every storage-origin <img>'s `complete` against a 20 s
+   deadline.
+3. VOID: zero storage-origin <img> in the DOM fails, naming the filter.
+4. Every storage-origin <img> must be complete with naturalWidth > 0.
+5. ADDED BEYOND THE PLAN: every storage src the server rendered must be a loaded
+   <img> in the browser. SafeImage (components/ui/safe-image.tsx) swaps a failed
+   <img> for a fallback <div> via onError, so the failed image LEAVES the DOM and
+   check 4 cannot see it. Arm B below measures that hole.
+
+Pre-measurement (throwaway probe /tmp/claude-3613/probe.cjs, not committed):
+  /shop renders only 3 <img>, all /brand/logo-*.png (frontend-served).
+  /shop/mama-ades-kitchen: 1 /brand logo + 9 storage-origin <img>, all nw > 0.
+  The storage-origin <img> srcs in the served HTML equal the browser set on all
+  three shops (7 unique each: brixton-village-grill, mama-ades-kitchen,
+  peckham-jollof-co).
+
+------------------------------------------------------------------------------
+RUN 1: live stack (GREEN)
+------------------------------------------------------------------------------
+$ cd frontend && npx playwright test e2e/storage-images.spec.ts --reporter=line
+  Running 2 tests using 1 worker
+  [mobile]  storage-images: shop=brixton-village-grill server-rendered=7 in-dom=9 loaded=9 first=http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/beef-suya-wrap.jpg
+  [desktop] storage-images: shop=brixton-village-grill server-rendered=7 in-dom=9 loaded=9 first=http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/beef-suya-wrap.jpg
+    2 passed (4.2s)
+  rc=0
+  (in-dom 9 > server-rendered 7 unique: beef-suya-wrap renders twice, once in
+  the featured row and once in its category. Each copy must load on its own.)
+
+------------------------------------------------------------------------------
+ARM A: wrong storage origin -> VOID (RED)
+------------------------------------------------------------------------------
+$ PLAYWRIGHT_STORAGE_PUBLIC_URL=http://localhost:10000/devstoreaccount1/no-such-container \
+    npx playwright test e2e/storage-images.spec.ts --reporter=line --project=desktop
+  Error: VOID: none of 3 listed shop pages (brixton-village-grill, mama-ades-kitchen,
+  peckham-jollof-co) server-renders an <img> whose src starts with
+  http://localhost:10000/devstoreaccount1/no-such-container/. Either the data does
+  not point at the object store or PLAYWRIGHT_STORAGE_PUBLIC_URL is not the origin
+  the app uses.
+    1 failed
+  rc=1
+  Shows that a page with no storage-origin images cannot pass, and that the
+  /brand/ logos on the same pages do not count.
+
+------------------------------------------------------------------------------
+ARM B: one blob unreachable in the browser only -> check 5 fires (RED)
+------------------------------------------------------------------------------
+Temporary copy frontend/e2e/zz-arm-3613.spec.ts = the spec plus one line after
+discovery: `await page.route(expected[0], (r) => r.abort())`. The route is
+browser-side only; the store is not touched. The copy was deleted right after
+the run (`ls` rc=2, and git status shows only the real spec).
+$ npx playwright test e2e/zz-arm-3613.spec.ts --reporter=line --project=desktop
+  storage-images: shop=brixton-village-grill server-rendered=7 in-dom=7 loaded=7 first=.../products/seed/peri-peri-chicken.jpg
+  Error: server-rendered storage-origin images with no loaded <img> in the browser (swapped for a fallback?)
+    - Array []
+    + Array [
+    +   "http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/beef-suya-wrap.jpg",
+    + ]
+    1 failed
+  rc=1
+  READING: in-dom fell 9 -> 7 and loaded is 7/7. Both beef-suya-wrap <img> were
+  swapped for fallback tiles and left the DOM. So check 4 (the plan's
+  "every storage img has naturalWidth > 0") PASSED on this broken page, and only
+  check 5 went red. Without check 5, a single missing blob is invisible.
+
+------------------------------------------------------------------------------
+RUN 2: Azurite stopped (RED)
+------------------------------------------------------------------------------
+$ docker inspect jtoye-azurite   -> running healthy started=2026-09-29T07:20:36Z
+$ docker compose -f docker-compose.full-stack.yml stop azurite
+  Container jtoye-azurite Stopped      (state: exited)
+$ curl anon GET .../products/seed/dodo.jpg  -> 000, curl rc=7 (connection refused)
+$ cd frontend && npx playwright test e2e/storage-images.spec.ts --reporter=line
+  [mobile]  storage-images: shop=brixton-village-grill server-rendered=7 in-dom=0 loaded=0 first=(none)
+    Error: VOID: no <img> on /shop/brixton-village-grill has a src starting with
+    http://localhost:10000/devstoreaccount1/jtoye-images/. The page may be showing
+    fallback tiles instead of store images.
+    Expected: > 0
+    Received:   0
+  [desktop] storage-images: shop=brixton-village-grill server-rendered=7 in-dom=0 loaded=0 first=(none)
+    Error: VOID: no <img> on /shop/brixton-village-grill ... (same)
+    2 failed
+  rc=1
+  READING: the plan predicted "red with naturalWidth 0". The MEASURED mechanism
+  is different. Every <img> errored and SafeImage replaced each one with a
+  fallback tile, so 0 storage-origin <img> remained and the VOID assertion fired.
+  Discovery still found 7 server-rendered storage images, so the spec failed on
+  the pixels and not on discovery. It is red either way. If an <img> ever errors
+  BEFORE hydration attaches onError, it stays in the DOM with naturalWidth 0 and
+  check 4 catches it instead.
+
+  TDD RED-evidence checker: gsd_run check tdd-red-evidence /tmp/claude-3613/red-evidence.json
+    verdict INVALID_RED, reason zero_tests_discovered, tests 0, and the process
+    rc=0 despite "passed": false.
+    The checker parses node-test TAP output. Playwright's line reporter is not
+    TAP, so this instrument cannot read this run. Its verdict is about the
+    instrument, not the run: the target test's own assertion failure is quoted
+    above. The rc=0 with passed=false means this checker's exit code cannot be
+    trusted as a gate either (noted, not filed: it is outside this project).
+
+------------------------------------------------------------------------------
+RUN 3: Azurite restarted (GREEN)
+------------------------------------------------------------------------------
+$ docker compose -f docker-compose.full-stack.yml start azurite
+  (not a built service, so start is correct: there is nothing to rebuild)
+  health poll with a 90 s deadline -> healthy after 10 s; rc=0
+$ curl anon GET .../products/seed/dodo.jpg  -> 200 ; docker port jtoye-azurite 10000 -> 127.0.0.1:10000
+$ cd frontend && npx playwright test e2e/storage-images.spec.ts --reporter=line
+  [mobile]  storage-images: shop=brixton-village-grill server-rendered=7 in-dom=9 loaded=9 first=.../products/seed/beef-suya-wrap.jpg
+  [desktop] storage-images: shop=brixton-village-grill server-rendered=7 in-dom=9 loaded=9 first=.../products/seed/beef-suya-wrap.jpg
+    2 passed (4.1s)
+  rc=0
+
+RUN 4: re-run on the FINAL committed bytes (runs 1-3 were before a
+comment-only reword that removed a literal tag token from the docblock)
+  sha256 37070e2531a2ed51...; 2 passed (4.0s); rc=0; same counts as run 3.
+
+------------------------------------------------------------------------------
+PLACEMENT: nightly yes, per-PR stack-free gate no
+------------------------------------------------------------------------------
+$ cd frontend && npx playwright test --list
+  [mobile]  > storage-images.spec.ts:134:7 > Storefront images from the object store (Phase 36, BLOB-05) > a seeded shop's images load ...
+  [desktop] > storage-images.spec.ts:134:7 > ...
+  Total: 325 tests in 28 files        rc=0, storage-images entries=2
+  e2e-nightly.yml:363 runs `npx playwright test --reporter=json` over the whole
+  suite with no spec filter, so the spec is in the nightly by construction.
+$ git grep -n 'storage-images' -- .github/workflows/ci-cd.yaml ; echo rc=$?
+  rc=1                                   (absent from the per-PR browser gate)
+  control: the same grep on a /tmp copy of ci-cd.yaml with the spec appended to
+  the l.545 spec list prints "545: ... e2e/storage-images.spec.ts", rc=0
+  The spec has no title tag (grep -c 'stack-free' = 0), so the l.587
+  `--grep "@stack-free"` step could not select it even if it were widened.
+
+------------------------------------------------------------------------------
+SKIP BUDGET: unchanged (VOID before and after), and no skip added
+------------------------------------------------------------------------------
+$ bash scripts/check-e2e-skip-budget.sh    BEFORE (08:05:58Z)
+  VOID: report describes a DIFFERENT spec set than the tree - re-run the suite.
+  report 2708b398..., tree 67be7c09...               rc=2
+$ bash scripts/check-e2e-skip-budget.sh    AFTER
+  VOID: report describes a DIFFERENT spec set than the tree - re-run the suite.  rc=2
+  "Unchanged" is TRUE but VACUOUS: the local report (2026-09-07) predates this
+  phase, so the gate cannot measure either tree. This pre-existing state is not
+  caused by this spec (#686). The static fact that stands in for it:
+  $ grep -cE 'test\.skip|\.skip\(' frontend/e2e/storage-images.spec.ts   -> 0
+    control: the same grep on frontend/e2e/vendor-credentials.ts          -> 1
+  The spec has no skip path. It needs no vendor login and no feature flag.
+
+------------------------------------------------------------------------------
+OTHER GATES TOUCHED BY ADDING A SPEC
+------------------------------------------------------------------------------
+$ bash scripts/check-e2e-baseurl-contract.sh
+  scanned 28 spec file(s); declared 15 local fallback(s), 0 divergent; PASS rc=0
+  (the spec declares NO base URL; it navigates relatively)
+$ npx eslint e2e/storage-images.spec.ts                    rc=0
+$ npx tsc --noEmit -p tsconfig.json (tsconfig includes **/*.ts, so e2e is covered)
+  rc=0, 0 error lines
+  arm: a temp copy with `const LOAD_DEADLINE_MS: number = "20s"` ->
+  rc=2 "e2e/zz-tsarm-3613.spec.ts(65,7): error TS2322"; copy deleted (ls rc=2)
+$ bash scripts/check-test-count-oracle.sh playwright
+  WITHOUT the spec (file moved out and restored, sha256 37070e25... before
+  and after, equal):                   runner=127 manifest=127  PASS rc=0
+  WITH the spec:                       runner=128 manifest=127  FAIL rc=1
+  This is the +1 test() block (2 enumerated tests: 1 x 2 projects) this plan
+  adds. docs/metrics.json is regenerated by 36-17, per the phase's ownership.
+  It is NOT regenerated here, and scripts/docs-freshness.sh was already red
+  before this plan (inherited from 36-12).
+
+------------------------------------------------------------------------------
+STACK AFTER TASK 1
+------------------------------------------------------------------------------
+  all 10 services running (healthy); core-java 0.0.0.0:9090;
+  check-runtime-freshness PASS 4/4 (0 unverified) rc=0. Only azurite was stopped
+  and started; nothing else was stopped, recreated or rebuilt.
+
+==============================================================================
+TASK 2: post-scroll screenshots for the end-of-phase human look
+==============================================================================
+Tool: Node Playwright 1.62.1 from frontend/node_modules. This is the engine the
+webapp-testing toolkit drives, but the toolkit's scripts are Python, and the
+machine's block-base-python guard refused /usr/bin/python3 (no conda env is
+declared for this project). A blocked command is the answer, so the capture
+script is Node: /tmp/claude-3613/shots.cjs (not committed).
+Each page: goto (domcontentloaded; no networkidle, because dashboard pages
+hold SSE), walk to the bottom in half-viewport steps, pause, back to the top,
+pause, then a full-page screenshot.
+Vendor credential: KC_SEED_USER_PASSWORD from the stack's .env, sourced in a
+subshell. It was never echoed or logged. The shot was taken on
+/dashboard/media/review after login, and `input[type=password]` count on
+that page = 0, so no credential field is visible in any capture.
+
+Directory: frontend/e2e-artifacts/36-13/   (NOT committed)
+  $ git check-ignore -v frontend/e2e-artifacts/36-13/*.png
+    .gitignore:185:e2e-artifacts/  (all three)  rc=0;  git status --ignored: "!! frontend/e2e-artifacts/"
+
+Plan verify:
+  $ ls frontend/e2e-artifacts/36-13/*.png > "$SCRATCH/shots.txt"; echo rc=$?  -> rc=0, shots=3
+  control: the same on an empty directory                                     -> rc=2, shots=0
+
+1. shop-brixton-village-grill-390.png   (390 x 3074, sha256 8e43644a0555980d...)
+   /shop/brixton-village-grill at 390x844, isMobile + hasTouch. Measured at
+   capture: 10 <img>, 9 storage-origin, 9 loaded (naturalWidth > 0), first
+   .../products/seed/beef-suya-wrap.jpg.
+   Shows: header, shop hero, Popular / Drinks / Mains / Sides. EVERY product
+   card carries a real food photo (Beef Suya Wrap, Peri Peri Chicken, Mango
+   Lassi, Sobo Punch, Lamb Kebab, Coleslaw, Sweet Potato Fries), no fallback
+   tiles, no empty scroll-reveal bands, then the footer. The fixed cookie notice
+   (not dismissed) overlays part of the Peri Peri Chicken card in the Popular
+   row. That is a position:fixed capture artifact, not a layout defect.
+2. shop-brixton-village-grill-1280.png  (1280 x 1983, sha256 2dca36c34b8490e1...)
+   The same page at 1280x800: 10 <img>, 9 storage-origin, 9 loaded. Two-column
+   card grid, every card with its photo, footer present. The cookie notice
+   overlays the right edge of the Peri Peri Chicken / Sobo Punch cards.
+3. vendor-media-review-1280.png         (1280 x 800, sha256 1bcb9eee63b12a1e...)
+   /dashboard/media/review signed in as the dev vendor (heading "Image
+   review"). The dashboard scrolls inside its own container, so the full-page
+   capture is one viewport. The whole queue still fits: all three cards and the
+   page footer are in frame. "Rejected uploads" lists 3 cards, each "Upload
+   rejected" with a red "Rejected" chip:
+     - "Processing stalled before it finished"  [Re-upload] [Re-process]
+     - "That file is not a supported image"      [Re-upload]
+     - "Bytes not carried over in the Phase 36 dev reseed (D-04) -- re-upload"  [Re-upload]
+   Measured: getByRole("button", /re-?upload/i) count = 3; the Phase 36 reason
+   is visible (exact line above).
+   NOTE FOR THE HUMAN CHECK: the vendor UI labels a FAILED asset "Upload
+   rejected / Rejected", and the word "FAILED" appears nowhere on the page
+   (count 0). Confirmed by content that these cards ARE the FAILED rows
+   (read-only, superuser, so RLS cannot blind it):
+     select status, count(*), string_agg(failure_reason) from media_asset group by status
+       ACTIVE | 1 | (null)                     <- 36-12's real upload on Jollof Rice
+       FAILED | 3 | Processing stalled before it finished ;; That file is not a
+                    supported image ;; Bytes not carried over in the Phase 36 dev
+                    reseed (D-04) -- re-upload
+   3 FAILED rows = 3 Rejected cards. Exactly 1 carries the Phase 36 reason. That
+   matches 36-11's apply evidence ("1 media_asset -> FAILED on ...0001, 0
+   everywhere else"). The other two FAILED rows predate Phase 36.
+
+INCREMENTAL BETTERMENT reading: the demo imagery is preserved, not dropped.
+All 21 seed product images render from the new store (7 per shop x 3 shops,
+check-media-urls-resolve 23/23 in 36-12, and 9/9 <img> loaded here). The one
+asset whose bytes could not be carried over is surfaced to the vendor with its
+reason and a Re-upload action, not silently lost.

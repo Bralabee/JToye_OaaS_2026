@@ -1,0 +1,41 @@
+# workload-identity-patch.yaml — AKS Workload Identity opt-in for the two Blob
+# Storage workloads in staging (Phase 36, D-02).
+#
+# The AKS Workload Identity overview states the pod label
+# `azure.workload.identity/use: "true"` is "required in the pod template spec":
+# only pods carrying it are mutated by the workload-identity webhook, which then
+# injects AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_FEDERATED_TOKEN_FILE /
+# AZURE_AUTHORITY_HOST and projects the federated token volume. Without it the
+# pod starts with no identity and core-java refuses to boot (storage shape
+# validation names the missing AZURE_* variables) — fail fast, not at first upload.
+#
+# It is a POD-TEMPLATE label, so it goes on spec.template (Deployment) and
+# spec.jobTemplate.spec.template (CronJob), never on the controller's own
+# metadata. The client-id half — the `azure.workload.identity/client-id`
+# annotation on the core-java and pg-backup ServiceAccounts — is Phase 29's, added
+# once the managed identities exist (docs/runbooks/azure-blob-provisioning.md).
+#
+# Deliberately NOT in k8s/base or k8s/local: local runs the Azurite emulator path
+# and has no webhook. INV-10 in k8s/scripts/check-render-invariants.sh asserts the
+# label, the serviceAccountName and the ServiceAccounts on this render.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-java
+spec:
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup
+spec:
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            azure.workload.identity/use: "true"

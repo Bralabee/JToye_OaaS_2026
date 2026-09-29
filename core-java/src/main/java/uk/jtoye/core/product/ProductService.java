@@ -383,7 +383,7 @@ public class ProductService {
      *
      * <p>IMG-01 delete surface (24-05): the one place a human triggers primary-image
      * deletion. It now drops the {@code is_primary} {@code product_media} row and
-     * ref-count-releases its asset (a physical MinIO delete happens ONLY at ref-count 0
+     * ref-count-releases its asset (a physical Blob delete happens ONLY at ref-count 0
      * — a still-referenced shared asset is preserved) BEFORE the legacy flat cleanup, so a
      * vendor deletion never orphans the join row + {@code media_asset}. The flat
      * {@code image_url} cleanup + {@code setImageUrl(null)} are retained for the dual-read
@@ -439,7 +439,7 @@ public class ProductService {
      * {@code additional_image_urls[]} list, which aligns positionally with the product's
      * non-primary {@code product_media} rows in {@code sort_order} (the V53 backfill mapped
      * the array to gallery rows preserving order). So the row for the removed gallery entry
-     * is dropped and its asset ref-count-released (physical MinIO delete only at ref-count 0;
+     * is dropped and its asset ref-count-released (physical Blob delete only at ref-count 0;
      * remaining gallery rows untouched), alongside the retained flat-array cleanup.
      */
     public ProductDto removeAdditionalImage(UUID productId, int index) {
@@ -467,7 +467,7 @@ public class ProductService {
 
     /**
      * Drop the product's {@code is_primary} {@code product_media} row (if any) and
-     * ref-count-release its asset (IMG-01): the physical MinIO delete + {@code media_asset}
+     * ref-count-release its asset (IMG-01): the physical Blob delete + {@code media_asset}
      * removal happen only when no other {@code product_media} row still references the asset
      * (a shared asset is preserved). Tenant-scoped by RLS + the caller's SHOP_MANAGER gate.
      */

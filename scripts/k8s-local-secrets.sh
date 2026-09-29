@@ -8,8 +8,15 @@
 #      running infra/backups/create-backup-role.sql — this file NEVER writes its
 #      own role SQL, it invokes that one, so there is exactly one definition of
 #      the role's privileges
-#   3. the backup bucket in host MinIO, with NO public-read policy
-#   4. every Secret the base manifests consume, rendered client-side and applied
+#   3. every Secret the base manifests consume, rendered client-side and applied
+#
+# WHAT IT NO LONGER CREATES (Phase 36, D-02)
+#   No object-store bucket and no object-store credential Secret. Local k8s runs
+#   the Azurite emulator on the HOST (the compose `azurite` service, Blob port
+#   10000). The pg-backup CronJob reaches it with the emulator connection string
+#   from k8s/local/storage-env-patch.yaml, which holds no key, and blobctl creates
+#   the backup container PRIVATE on the CronJob's first upload in emulator mode.
+#   So there is nothing to pre-create and no credential to hand over.
 #
 # WHY THIS IS A SCRIPT AND NOT A DOC STEP
 #   The 2026-07-14 first-live-deploy rehearsal reached 11/11 pods READY through a
@@ -37,8 +44,8 @@
 #   documents it, and the host is a single-user development machine.)
 #
 # AUTHORED IN PLAN 26-05, FIRST EXECUTED IN PLAN 26-07
-#   Steps 2-5 mutate SHARED state: an RLS-bypassing role on the dev Postgres, a
-#   bucket in host MinIO, and cluster objects. That needs the human approval plan
+#   Steps 2-5 mutate SHARED state: an RLS-bypassing role on the dev Postgres and
+#   cluster objects (a backup bucket too, until Phase 36). That needs the human approval plan
 #   26-07's checkpoint carries, so plan 26-05 authored and statically verified
 #   this file WITHOUT ever invoking it (26-REVIEWS.md Adjudication J). Plan 26-05
 #   proved the refusal two ways that mutate nothing by construction: the guard
@@ -61,7 +68,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=scripts/lib/k8s-local-guards.sh
 . "$SCRIPT_DIR/lib/k8s-local-guards.sh"
 
-echo "=== J'Toye local Kubernetes bootstrap: secrets + backup role + bucket ==="
+echo "=== J'Toye local Kubernetes bootstrap: secrets + backup role (backups go to host Azurite) ==="
 
 # ---------------------------------------------------------------------------
 # STEP 1 — GUARDS. Every one of these precedes every mutating call below, so a
@@ -70,8 +77,8 @@ echo "=== J'Toye local Kubernetes bootstrap: secrets + backup role + bucket ==="
 # ALL FOUR guards run here, including k8s_local_assert_cluster_xor (audit flag
 # UF-26-04). It used to be called ONLY from scripts/k8s-local-up.sh STEP 3b, while
 # the USAGE block above advertises this script as directly runnable — so a
-# standalone run created the BYPASSRLS dump role, the backup bucket and every
-# Secret against a cluster that might already carry a stale writer namespace. A
+# standalone run created the BYPASSRLS dump role and every Secret (and, before
+# Phase 36, a backup bucket) against a cluster that might already carry a stale writer namespace. A
 # guard reachable through one of two entry points is a guard with a bypass, and
 # this is the entry point where the mutations actually happen.
 #
@@ -114,8 +121,6 @@ REQUIRED_VALUES=(
   KEYCLOAK_ADMIN_PASSWORD
   KEYCLOAK_CLIENT_SECRET
   NEXTAUTH_SECRET
-  MINIO_ROOT_USER
-  MINIO_ROOT_PASSWORD
 )
 missing=0
 for var in "${REQUIRED_VALUES[@]}"; do
@@ -188,11 +193,8 @@ echo "OK: target namespace ${NS} (parsed from the local kustomization)"
 
 # Container names come from docker-compose.full-stack.yml's `container_name:`
 # fields — in-repo constants, not environment-varying endpoints, and using them
-# means no host psql/mc client and no published-port literal is needed.
+# means no host psql client and no published-port literal is needed.
 PG_CONTAINER="jtoye-postgres"
-MINIO_CONTAINER="jtoye-minio"
-# In-network DNS name of the MinIO service on the compose network.
-MINIO_SERVICE="minio"
 ROLE_SQL="$REPO_ROOT/infra/backups/create-backup-role.sql"
 
 # The dump role's NAME is defined by the SQL file, so parse it from there rather
@@ -262,55 +264,25 @@ fi
 echo "OK: role ${BACKUP_ROLE} exists with rolbypassrls = t"
 
 # ---------------------------------------------------------------------------
-# STEP 4 — backup bucket in host MinIO
+# STEP 4 — (removed in Phase 36) no backup-store bootstrap
 #
-# Mechanism mirrors the compose `minio-init` service: the minio/mc image on the
-# compose network, credentials expanded INSIDE the container from the environment
-# (the established in-repo pattern). The container port is resolved from the
-# running container by looking up the published port .env declares, so no port
-# literal is needed AND the lookup doubles as a check that .env's MinIO port is
-# really the one that container publishes.
-#
-# NOTE: unlike the images bucket, this one gets NO public-read anonymous-download
-# policy. Database dumps must not be world-readable (threat T-26-26).
+# This step used to pull a third-party object-store client image, create the
+# backup bucket in the host object store and hand the root credentials to two
+# Secrets. None of that exists any more, and nothing replaces it here:
+#   - the backup target is the host Azurite (compose service `azurite`, Blob port
+#     K8S_LOCAL_AZURITE_PORT), reached from the pods as the pod host;
+#   - the local backup container jtoye-db-backups (app-config backup.blob.container)
+#     is created as PRIVATE by blobctl on the CronJob's first upload in emulator
+#     mode (infra/backups/blobctl/commands.go, EnsurePrivateContainer; it sends no
+#     public-access header), so no bootstrap step is needed;
+#   - the emulator connection string comes from app-config via
+#     k8s/local/storage-env-patch.yaml and names no key, so no credential Secret
+#     is needed either. Staging and production have NO storage Secret by design
+#     (Workload Identity, D-02; render invariant INV-9).
+# Clusters bootstrapped before Phase 36 still hold the two retired object-store
+# credential Secrets; .env.example (K8S_LOCAL_* block) gives the local-context-only
+# delete command.
 # ---------------------------------------------------------------------------
-echo "--- backup bucket ${K8S_LOCAL_BACKUP_BUCKET} ---"
-MINIO_NETWORK="$(docker inspect "$MINIO_CONTAINER" \
-  --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' | head -1)"
-[ -n "$MINIO_NETWORK" ] || { echo "PARSE ERROR: could not resolve the compose network of ${MINIO_CONTAINER}" >&2; exit 2; }
-
-MINIO_CTR_PORT="$(docker inspect "$MINIO_CONTAINER" \
-  --format "{{range \$p, \$b := .NetworkSettings.Ports}}{{range \$b}}{{if eq .HostPort \"${K8S_LOCAL_MINIO_PORT}\"}}{{\$p}}{{\"\n\"}}{{end}}{{end}}{{end}}" | head -1)"
-MINIO_CTR_PORT="${MINIO_CTR_PORT%%/*}"
-[ -n "$MINIO_CTR_PORT" ] || {
-  echo "PARSE ERROR: ${MINIO_CONTAINER} publishes no port matching K8S_LOCAL_MINIO_PORT — check that key against docker-compose.full-stack.yml" >&2
-  exit 2
-}
-
-# quay.io, NOT Docker Hub: MinIO's Hub repos require authentication as of 2026-09-12 — the
-# PINNED tag 401s too, not just :latest. quay.io serves the identical digest under the identical
-# tag, so MINIO_MC_IMAGE_TAG is unchanged by the move. Full measurement and the reason the
-# prefix is inline rather than an env var: the `minio` service comment in
-# docker-compose.full-stack.yml.
-docker run --rm --network "$MINIO_NETWORK" \
-  -e MINIO_ROOT_USER -e MINIO_ROOT_PASSWORD \
-  -e MC_BUCKET="$K8S_LOCAL_BACKUP_BUCKET" \
-  -e MC_URL="http://${MINIO_SERVICE}:${MINIO_CTR_PORT}" \
-  --entrypoint /bin/sh "quay.io/minio/mc:${MINIO_MC_IMAGE_TAG:-latest}" -c '
-    set -e
-    mc alias set bootstrap "$MC_URL" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" > /dev/null
-    mc mb --ignore-existing "bootstrap/$MC_BUCKET"
-    # Verify with mc itself, NOT `mc ls | grep`: the minio/mc image is minimal and
-    # ships no grep (nor sed nor awk), so the piped form died with
-    # "grep: command not found" — AFTER mc had already created the bucket, which
-    # left the bootstrap half-applied (role + bucket created, no Secrets) and
-    # reported a failure for a step that had actually succeeded. `mc ls <bucket>`
-    # exits 0 when the bucket exists and 1 when it does not, which is the whole
-    # assertion with no external binary. (Found in plan 26-07, the first execution
-    # of this script.)
-    mc ls "bootstrap/$MC_BUCKET" > /dev/null
-  '
-echo "OK: bucket ${K8S_LOCAL_BACKUP_BUCKET} exists in host MinIO (no public-read policy applied)"
 
 # ---------------------------------------------------------------------------
 # STEP 5 — Secrets
@@ -356,15 +328,8 @@ apply_secret keycloak-credentials \
 apply_secret nextauth-secret \
   "--from-literal=secret=$NEXTAUTH_SECRET"
 
-# Both S3 secrets carry the MinIO root credentials locally; they stay two objects
-# because the manifests reference them separately (media vs backup).
-apply_secret s3-backup-credentials \
-  "--from-literal=access-key=$MINIO_ROOT_USER" \
-  "--from-literal=secret-key=$MINIO_ROOT_PASSWORD"
-
-apply_secret s3-media-credentials \
-  "--from-literal=access-key=$MINIO_ROOT_USER" \
-  "--from-literal=secret-key=$MINIO_ROOT_PASSWORD"
+# No storage credential Secret: the local overlay authenticates to the host
+# Azurite with the key-less emulator string (STEP 4 note above).
 
 if [ -n "${NOTIFICATION_UNSUBSCRIBE_SECRET:-}" ]; then
   apply_secret notification-credentials \
@@ -389,7 +354,7 @@ skip_secret smtp-credentials "Mailhog accepts any sender with no auth, and the m
 echo
 echo "=== bootstrap summary (namespace ${NS}) ==="
 echo "role   : ${BACKUP_ROLE} (rolbypassrls = t)"
-echo "bucket : ${K8S_LOCAL_BACKUP_BUCKET} (private)"
+echo "backups: host Azurite; blobctl creates the private backup container on the first upload"
 echo "secrets created (${#CREATED[@]}):"
 for s in "${CREATED[@]}"; do
   case "$s" in
@@ -398,8 +363,6 @@ for s in "${CREATED[@]}"; do
     rabbitmq-credentials)   echo "  - $s: username, password, stomp-login, stomp-passcode" ;;
     keycloak-credentials)   echo "  - $s: admin-username, admin-password, frontend-client-secret" ;;
     nextauth-secret)        echo "  - $s: secret" ;;
-    s3-backup-credentials)  echo "  - $s: access-key, secret-key" ;;
-    s3-media-credentials)   echo "  - $s: access-key, secret-key" ;;
     notification-credentials) echo "  - $s: unsubscribe-signing-secret" ;;
     stripe-credentials)     echo "  - $s: api-key, webhook-secret" ;;
     *)                      echo "  - $s" ;;

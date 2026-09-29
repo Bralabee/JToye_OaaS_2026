@@ -21,7 +21,7 @@
 #   `ollama-init` pulls `gemma3:12b` (~8 GB; a GitHub-hosted runner has ~14 GB of disk in
 #   total) and `ollama` declares `deploy.resources.reservations.devices: [nvidia]`, which
 #   no GitHub-hosted runner provides. Neither is reachable from the rest of the stack's
-#   startup path: `core-java.depends_on` is postgres/keycloak/redis/rabbitmq only, and the
+#   startup path: `core-java.depends_on` is postgres/keycloak/redis/rabbitmq/azurite only, and the
 #   sole consumer of ollama is image analysis, which no spec asserts on. The service list
 #   below is therefore explicit rather than "everything" — see SERVICES.
 #
@@ -29,6 +29,7 @@
 #   * the stack does not become healthy within the deadline
 #   * the Playwright JSON report is absent, empty, or reports ZERO tests
 #   * `check-e2e-skip-budget.sh` exits non-zero (1 = violation, 2 = VOID)
+#   * `check-backup-restore-drill.sh` exits non-zero (1 = an arm failed, 2 = VOID)
 #   `continue-on-error` appears NOWHERE in this file on purpose. A job that cannot go red
 #   is the exact failure mode #420 exists to remove.
 #
@@ -46,7 +47,7 @@
 # job's fail-closed contract.
 #
 # CREDENTIALS
-#   No repository secret is consumed. All 16 of verify-env.sh's REQUIRED_VARS are
+#   No repository secret is consumed. All 18 of verify-env.sh's REQUIRED_VARS are
 #   generated per-run for a stack that lives ~40 minutes and is then destroyed. They must
 #   be genuinely random: verify-env.sh rejects the weak deny-list and any CHANGE_ME*
 #   value, so placeholders would fail the preflight rather than silently weaken the run.
@@ -73,7 +74,7 @@ env:
   # implicit so adding a service to compose is a deliberate decision here too.
   SERVICES: >-
     postgres keycloak-realm-render keycloak redis rabbitmq
-    core-java edge-go frontend mcp-server minio minio-init mailhog
+    core-java edge-go frontend mcp-server azurite mailhog
 
 jobs:
   full-suite:
@@ -241,11 +242,12 @@ jobs:
           # shellcheck disable=SC2086
           docker compose -f "$COMPOSE_FILE" up -d --build $SERVICES
 
-      # Explicit polling rather than `--wait`: two of these services are one-shot
-      # containers that exit 0 (keycloak-realm-render, minio-init), and a health probe
+      # Explicit polling rather than `--wait`: one of these services is a one-shot
+      # container that exits 0 (keycloak-realm-render), and a health probe
       # that cannot distinguish "exited cleanly" from "died" is not evidence. Poll the
       # things the SUITE actually needs, and dump logs on timeout rather than failing mute.
       - name: Wait for core-java and the frontend
+        id: stack-up
         run: |
           set -euo pipefail
           deadline=$(( SECONDS + 600 ))
@@ -266,6 +268,32 @@ jobs:
           docker compose -f "$COMPOSE_FILE" ps
           docker compose -f "$COMPOSE_FILE" logs --tail 200
           exit 1
+
+      # BLOB-05 / BLOB-09 (Phase 36). Every image URL the API can serve — products.image_url,
+      # additional_image_urls, shop logo/banner, review photos, and every ACTIVE media_asset's
+      # derivative (+ _thumb) — must answer an ANONYMOUS HEAD 200 on this stack's Azurite, and
+      # no stored value may still point at the retired :9000 origin. A green upload and a 200
+      # page title say nothing about whether stored URLs resolve; this does.
+      #
+      # WHY RIGHT AFTER THE WAIT: DemoDataSeeder writes the demo products and their seed
+      # images in ONE transaction, and under the dev profile's health probes /actuator/health
+      # stays OUT_OF_SERVICE until ApplicationReadyEvent, i.e. until every ApplicationRunner
+      # (the seeder included) has returned. So "core-java UP" above already implies the seed
+      # rows and their blobs are committed. An empty checked set is VOID (exit 2), never a
+      # pass, so a seeder that did nothing fails here rather than reading as clean.
+      - name: Gate — every stored image URL resolves on the object store
+        run: bash scripts/check-media-urls-resolve.sh
+
+      # T-36-44 / #488. Every blob in the PUBLIC container (jtoye-images) must carry a stored
+      # Content-Type inside MediaNormalizer's allowlist: the store serves a blob with the type
+      # it was stored with, so a text/html blob on this origin is a stored-XSS primitive on the
+      # storefront's own origin whatever its bytes are. Listed with the runner's preinstalled
+      # az CLI against this stack's Azurite; the emulator connection string reaches az through
+      # the environment (the script's default), never argv. The private quarantine container is
+      # out of scope by design. Exit 2 (VOID) on an empty listing, a failed listing or a missing
+      # az — never a pass.
+      - name: Gate — stored Content-Types on the public container stay inside the image allowlist
+        run: bash scripts/check-media-content-types.sh
 
       # The OpenAPI contract, checked against the SERVICE rather than against the source
       # tree (33-06). This is the ONLY workflow in the repository with a running core-java,
@@ -417,6 +445,39 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000
         run: node --env-file=.env frontend/e2e/cart-identity-boundary.verify.mjs
+
+      # BLOB-06 (Phase 36). The two-arm restore drill of docs/runbooks/backups.md, EXECUTED.
+      # Every check inside the backup pipeline (the size floor, `pg_restore --list`) passes on
+      # a dump that holds no tenant rows; only restore-and-count falsifies it, and until this
+      # step that recipe was prose that had run once, by hand. The pg-backup image is built
+      # HERE — nothing else in CI builds it — and runs exactly as the CronJob does, uploading to
+      # this stack's Azurite with blobctl. Arm B (dump as the BYPASSRLS jtoye_backup) must
+      # restore from Blob to exactly the live products count, > 0; arm A (the app role) must
+      # fail the job and upload nothing, and its zero-row dump must restore 0 products.
+      #
+      # POSITION AND `if:` — the cart-identity reasoning above applies unchanged. The drill
+      # needs only postgres + azurite, so it keys on the stack having come up (`stack-up`), not
+      # on the suite: a red Playwright run must not skip the backup proof, and a red backup
+      # proof must not skip the suite, which is why it sits at the end rather than straight
+      # after the Wait step.
+      #
+      # DB_BACKUP_PASSWORD is not in verify-env.sh's REQUIRED_VARS, so the generator leaves
+      # .env.example's CHANGE_ME and the drill would VOID on it. An ephemeral value is appended
+      # here (never printed); the drill creates the jtoye_backup role with it from
+      # infra/backups/create-backup-role.sql. Exit 1 = an arm failed, 2 = VOID; both fail the job.
+      - name: Gate — a backup restored from Blob carries tenant rows, and a zero-row dump is caught
+        if: always() && steps.stack-up.outcome == 'success'
+        run: |
+          set -euo pipefail
+          docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/backups
+          cur=$(sed -n 's/^DB_BACKUP_PASSWORD=//p' .env | tail -n 1)
+          case "$cur" in
+            ''|CHANGE_ME*)
+              echo "DB_BACKUP_PASSWORD=ci$(openssl rand -hex 24)" >> .env
+              echo "appended an ephemeral DB_BACKUP_PASSWORD to .env"
+              ;;
+          esac
+          bash scripts/check-backup-restore-drill.sh
 
       - name: Upload Playwright report and traces
         if: always()

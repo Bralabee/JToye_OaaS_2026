@@ -67,10 +67,11 @@ ROOT_GRADLE="build.gradle.kts"
 WRAPPER="gradle/wrapper/gradle-wrapper.properties"
 PKG="frontend/package.json"
 GOMOD="edge-go/go.mod"
+COMPOSE="docker-compose.full-stack.yml"
 
 void() { echo "VOID: $*" >&2; exit 2; }
 
-for f in "$GRADLE" "$PKG" "$GOMOD" "$ROOT_GRADLE" "$WRAPPER"; do
+for f in "$GRADLE" "$PKG" "$GOMOD" "$ROOT_GRADLE" "$WRAPPER" "$COMPOSE"; do
 	[ -r "$ROOT/$f" ] || void "cannot read $f — cannot resolve actual versions"
 done
 
@@ -134,6 +135,24 @@ go_version() {
 	command grep -oE '^go [0-9]+\.[0-9]+' "$GOMOD" | head -1 | sed 's/^go //'
 }
 
+azurite_version() {
+	# The Azurite emulator version, read from the DEFAULT of the compose image line
+	# (`azurite:${AZURITE_IMAGE_TAG:-3.37.0@sha256:...}`) -- the part before '@sha256'.
+	#
+	# WHY THIS ROW EXISTS (Phase 36, 36-15). The docs name the emulator's version in the
+	# stack lists ("Azurite 3.37.0", "Azurite: 3.37.0") and in the specialist roster's image
+	# list (`azurite:3.37.0`). The version it replaced was documented as "latest", which is no
+	# claim at all; a pinned, digest-locked emulator deserves a claim that is checked, or the
+	# next dependabot digest bump leaves the prose behind exactly as the SDK rows once did.
+	# check-dependency-horizons.sh already ties the same compose line to its horizons row,
+	# so this row closes the last leg: build file -> docs.
+	#
+	# Anchored on the image path, so a comment that merely mentions azurite cannot feed it,
+	# and on the `:-` default so an operator's AZURITE_IMAGE_TAG override is never read.
+	command grep -oE 'azure-storage/azurite:\$\{AZURITE_IMAGE_TAG:-[0-9]+\.[0-9]+\.[0-9]+@sha256' "$COMPOSE" |
+		head -1 | sed -E 's/.*:-//; s/@sha256$//'
+}
+
 # --- the claim table ---------------------------------------------------------
 #
 # Each row: label | ERE matching the doc claim | actual version.
@@ -165,7 +184,13 @@ SPECS=(
 	"Testcontainers|Testcontainers [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.testcontainers:testcontainers')"
 	"MapStruct|MapStruct [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.mapstruct:mapstruct')"
 	"PostgreSQL JDBC|PostgreSQL JDBC( Driver)? [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.postgresql:postgresql')"
-	"AWS SDK v2|AWS SDK v2 (BOM |\()[0-9]+\.[0-9]+\.[0-9]+|$(g 'software.amazon.awssdk:bom')"
+	# Phase 36 replaced the retired object-store SDK row (its BOM left the build) with the two
+	# Azure coordinates that build.gradle.kts pins explicitly.
+	"Azure Storage Blob SDK|Azure Storage Blob SDK \(?[0-9]+\.[0-9]+\.[0-9]+|$(g 'com.azure:azure-storage-blob')"
+	"Azure Identity|Azure Identity \(?[0-9]+\.[0-9]+\.[0-9]+|$(g 'com.azure:azure-identity')"
+	# Azurite (Phase 36). Matches "Azurite 3.37.0", "Azurite: 3.37.0" and the image form
+	# `azurite:3.37.0`; the version must be three-part, so a port ("azurite:10000") never matches.
+	"Azurite|Azurite:? ?[0-9]+\.[0-9]+\.[0-9]+|$(azurite_version)"
 	"Resilience4j|Resilience4j( Spring Boot 3 Starter)? [0-9]+\.[0-9]+\.[0-9]+|$(g 'io.github.resilience4j:resilience4j-spring-boot3')"
 	"Stripe Java SDK|Stripe Java SDK [0-9]+\.[0-9]+\.[0-9]+|$(g 'com.stripe:stripe-java')"
 	"Bucket4j|Bucket4j( core)? [0-9]+\.[0-9]+\.[0-9]+|$(g 'com.bucket4j:bucket4j-core')"

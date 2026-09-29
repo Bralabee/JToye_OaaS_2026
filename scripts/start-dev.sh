@@ -3,7 +3,7 @@
 #
 # This is NOT the canonical full-stack Compose runtime and it never reads
 # docker-compose.full-stack.yml. It starts:
-#   1. infra/docker-compose.yml  — Postgres + Keycloak ONLY, in Docker.
+#   1. infra/docker-compose.yml  — PostgreSQL, Keycloak, Azurite ONLY, in Docker.
 #                                  That file reads infra/.env, NOT the repo-root .env,
 #                                  and declares seven ${VAR:?} guards; without infra/.env
 #                                  step 1 fails. The preflight below validates the
@@ -12,7 +12,7 @@
 #   2. ./gradlew :core-java:bootRun  — as a HOST process.
 #   3. npm run dev (frontend)        — as a HOST process.
 # Teardown: scripts/stop-dev.sh (its "HYBRID" arm pairs with this script).
-# Never run alongside docker-compose.full-stack.yml: both bind host ports 5433 and 8085.
+# Never run alongside docker-compose.full-stack.yml: both bind host ports 5433, 8085 and 10000.
 #
 # FLAGS: `-h` / `--help` prints this usage and exits 0 BEFORE anything is started or
 # any host port is bound. Every OTHER argument is forwarded verbatim to
@@ -32,7 +32,7 @@ for arg in "$@"; do
 Usage: scripts/start-dev.sh [ENV_FILE] [--with-stack]
 
 Start the J'Toye OaaS HYBRID development runtime:
-  1. infra/docker-compose.yml   Postgres + Keycloak in Docker (reads infra/.env)
+  1. infra/docker-compose.yml   PostgreSQL, Keycloak, Azurite in Docker (reads infra/.env)
   2. ./gradlew :core-java:bootRun  host process, logs/backend.log
   3. npm run dev (frontend)        host process, logs/frontend.log
 
@@ -42,7 +42,7 @@ Options:
   --with-stack   Also run verify-env.sh's live running-stack smoke tests.
 
 Teardown: scripts/stop-dev.sh
-Never run alongside docker-compose.full-stack.yml (both bind host ports 5433 and 8085).
+Never run alongside docker-compose.full-stack.yml (both bind host ports 5433, 8085 and 10000).
 USAGE
       exit 0
       ;;
@@ -66,7 +66,7 @@ echo -e "\n${YELLOW}Preflight: verifying environment (scripts/verify-env.sh)${NC
 bash scripts/verify-env.sh "$@" || { echo 'verify-env failed — fix the named variable(s) in your .env before starting the stack'; exit 1; }
 
 # Step 1: Start Infrastructure
-echo -e "\n${YELLOW}Step 1: Starting Infrastructure (PostgreSQL, Keycloak)${NC}"
+echo -e "\n${YELLOW}Step 1: Starting Infrastructure (PostgreSQL, Keycloak, Azurite)${NC}"
 cd infra
 docker compose up -d
 cd ..
@@ -94,6 +94,12 @@ docker exec jtoye-postgres pg_isready -U jtoye > /dev/null 2>&1 && echo -e "${GR
 
 # Step 2: Start Backend
 echo -e "\n${YELLOW}Step 2: Starting Backend (Spring Boot)${NC}"
+# D-08 (Phase 36): the fail-fast storage check stays ON in every runtime, this one included,
+# so the host process must be allowed to create jtoye-images (access level blob) and
+# jtoye-quarantine (private) in the hybrid Azurite on a fresh volume. application.yml's
+# emulator default (UseDevelopmentStorage=true) already targets 127.0.0.1:10000, which
+# infra/docker-compose.yml publishes, so no connection string or key is set here.
+export STORAGE_CREATE_CONTAINERS=true
 ./gradlew :core-java:bootRun > logs/backend.log 2>&1 &
 BACKEND_PID=$!
 echo "Backend started with PID: $BACKEND_PID"

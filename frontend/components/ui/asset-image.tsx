@@ -36,8 +36,9 @@ import type { MediaAssetStatus } from "@/types/api"
  * action beside Re-upload, not instead of it. When `delayed`/`redrivable` are
  * false this component renders what it rendered before 27-01.
  *
- * No `next.config.mjs` change is needed: derivatives stay on the same MinIO
- * host/path the existing remotePatterns already allow.
+ * Rendered through a plain <img>, not next/image, so `next.config.mjs`
+ * remotePatterns does not gate it; locally the derivatives are served by the
+ * Azurite Blob emulator (http://localhost:10000/devstoreaccount1/jtoye-images/…).
  */
 export interface AssetImageProps {
   status: MediaAssetStatus

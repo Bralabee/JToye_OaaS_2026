@@ -17,19 +17,14 @@ const nextConfig = {
     tsconfigPath: 'tsconfig.build.json',
   },
   images: {
+    // Staging/production images render through a plain <img> (no next/image import exists), so no production hostname is needed here; any future entry must be an exact hostname, never a wildcard (enforced by __tests__/csp-headers.test.ts).
     remotePatterns: [
       {
         protocol: 'http',
         hostname: 'localhost',
-        port: '9000',
-        pathname: '/jtoye-images/**',
+        port: '10000',
+        pathname: '/devstoreaccount1/jtoye-images/**',
       },
-      // Add production S3/CloudFront patterns here
-      // {
-      //   protocol: 'https',
-      //   hostname: '*.amazonaws.com',
-      //   pathname: '/jtoye-images/**',
-      // },
     ],
   },
   async headers() {

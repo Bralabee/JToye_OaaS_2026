@@ -50,7 +50,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * </ul>
  *
  * <p>{@link StorageService} is a {@code @SpyBean} so the quarantine PUT is asserted without a
- * live MinIO (the real {@code detectContentType} still runs on the raw bytes). NOT
+ * live object store (the real {@code detectContentType} still runs on the raw bytes). NOT
  * {@code @Transactional}: the accept commits so the post-request row assertions observe it
  * (Testcontainers superuser bypasses RLS, mirroring the sibling media integration tests).
  */
@@ -94,8 +94,8 @@ class MediaUploadControllerTest {
                         + "VALUES (?, ?, now(), ?, ?, ?, 0, 1000, 0, true, false, ?, 0, 0)",
                 productId, TENANT, "SKU-MEDIA-" + productId.toString().substring(0, 8), "Jollof Rice",
                 "rice, tomato", shopId);
-        // Quarantine PUT stubbed — no live MinIO; the real detectContentType still runs.
-        Mockito.doReturn("http://minio/quarantine-object")
+        // Quarantine PUT stubbed — no live object store; the real detectContentType still runs.
+        Mockito.doReturn("http://store/quarantine-object")
                 .when(storageService).putBytes(ArgumentMatchers.anyString(), ArgumentMatchers.any(), ArgumentMatchers.anyString());
     }
 

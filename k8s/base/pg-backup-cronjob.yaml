@@ -33,6 +33,11 @@ spec:
           labels:
             app.kubernetes.io/name: pg-backup
         spec:
+          # Dedicated ServiceAccount (k8s/base/serviceaccounts.yaml): Workload
+          # Identity federates system:serviceaccount:<ns>:pg-backup to the
+          # backup-writer managed identity, so it must not be `default` and must
+          # not be shared with core-java (least privilege: media vs backup).
+          serviceAccountName: pg-backup
           restartPolicy: OnFailure
           securityContext:
             runAsNonRoot: true
@@ -41,10 +46,12 @@ spec:
           containers:
             - name: pg-backup
               # Purpose-built image (infra/backups/Dockerfile): pg_dump/pg_restore
-              # + aws-cli + GNU coreutils baked in, and the hardened k8s-backup.sh
-              # as its ENTRYPOINT. No runtime `apk add` (blocked by default-deny
-              # NetworkPolicy), no busybox GNU-isms. Tag must track the built image.
-              image: ghcr.io/bralabee/jtoye-pg-backup:15
+              # + blobctl (the static Go Blob uploader: never overwrites, never
+              # lists, never deletes) + GNU coreutils baked in, and the hardened
+              # k8s-backup.sh as its ENTRYPOINT. No AWS CLI. No runtime package
+              # install (blocked by default-deny NetworkPolicy), no busybox
+              # GNU-isms. Tag must track the built image.
+              image: ghcr.io/bralabee/jtoye-pg-backup:15-blob
               imagePullPolicy: IfNotPresent
               env:
                 # --- database (dumps as the BYPASSRLS backup role, see
@@ -75,37 +82,34 @@ spec:
                     secretKeyRef:
                       name: postgres-credentials
                       key: backup-password
-                # --- S3 target ---
-                - name: S3_BUCKET
+                # --- Blob target (Phase 36 D-01/D-02, BLOB-06) ---
+                # All four from app-config backup.blob.*: a DEDICATED backup
+                # account, not the media one. There is deliberately NO credential
+                # here: staging/production use AKS Workload Identity through this
+                # pod's `pg-backup` ServiceAccount (write-only role on the backup
+                # container), and the webhook injects the AZURE_* env at admission.
+                # STORAGE_CONNECTION_STRING (the Azurite emulator string) is added
+                # ONLY by k8s/local/storage-env-patch.yaml.
+                - name: STORAGE_AUTH_MODE
                   valueFrom:
                     configMapKeyRef:
                       name: app-config
-                      key: s3.backup.bucket
-                - name: S3_PREFIX
+                      key: backup.blob.auth-mode
+                - name: STORAGE_ENDPOINT
                   valueFrom:
                     configMapKeyRef:
                       name: app-config
-                      key: s3.backup.prefix
-                - name: S3_ENDPOINT
+                      key: backup.blob.endpoint
+                - name: BACKUP_CONTAINER
                   valueFrom:
                     configMapKeyRef:
                       name: app-config
-                      key: s3.backup.endpoint
-                - name: AWS_DEFAULT_REGION
+                      key: backup.blob.container
+                - name: BACKUP_PREFIX
                   valueFrom:
                     configMapKeyRef:
                       name: app-config
-                      key: s3.backup.region
-                - name: AWS_ACCESS_KEY_ID
-                  valueFrom:
-                    secretKeyRef:
-                      name: s3-backup-credentials
-                      key: access-key
-                - name: AWS_SECRET_ACCESS_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: s3-backup-credentials
-                      key: secret-key
+                      key: backup.blob.prefix
                 # --- retention ---
                 - name: RETENTION_DAYS
                   value: "30"

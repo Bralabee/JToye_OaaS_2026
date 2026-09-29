@@ -1,6 +1,68 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged) and 2026-09-22 (runtime re-proven, stack torn down for a planned pause). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened) and 2026-09-29 (Phase 36 executed through plan 36-17). Replaces the 2026-08-18 block.** This is the only live block in this file.
+
+**2026-09-29 delta — Phase 36 executed through 36-17; only 36-18 (the nightly on a runner) remains. Resume here.**
+**Where things stand.** Branch `phase-36-azure-blob-storage`, 17 of 18 plans with a SUMMARY
+(`.planning/phases/36-azure-blob-storage-throughout/`). The remote copy of the branch is still at
+`5b6e76bd` (pushed when the phase opened, measured with `git ls-remote` on 2026-09-29), so the
+plan work is local only, and no PR exists for the branch. core-java stores
+media through the Azure Blob SDK: Azurite locally (the digest-pinned 3.37.0 image, loopback 10000,
+public `jtoye-images` and private `jtoye-quarantine`), and Workload Identity against `jtoyestgmedia`
+/ `jtoyestgbackup` in staging (`jtoyeprodmedia` / `jtoyeprodbackup` in production). The pg-backup
+image is `:15-blob` and uploads with `blobctl`. A repo-wide gate,
+`scripts/check-no-object-store-residue.sh`, keeps the retired store out.
+`docs/metrics.json` was regenerated once, in 36-17, to **4130** logical invocations.
+**Requirements:** BLOB-01, 03, 05, 07, 08, 09 and 10 are complete. BLOB-02 and BLOB-06 are partial
+until Phase 29 provisions the real accounts. BLOB-04 is partial until 36-18 runs the nightly. Each
+row in `.planning/REQUIREMENTS.md` names its remaining limb.
+**Phase 29 hand-off:** `.planning/phases/36-azure-blob-storage-throughout/36-PHASE29-HANDOFF.md`
+covers the superseded decisions, the operator secrets dropping from 7 to 3, the provisioning order
+(the runbook `docs/runbooks/azure-blob-provisioning.md`), the verification items, and a
+35-file merge-conflict map for `phase-29-research`. That branch was read, never written.
+**Resume:** run plan 36-18. It is not autonomous: it needs the owner's approval to push the branch
+and dispatch one nightly run, then it reads that run to its report and takes the final
+`scripts/check-runtime-freshness.sh` and `scripts/check-branch-behind-base.sh` readings. The broken
+windows open in `.planning/WINDOWS.md` (#1 name check, #2 nightly drill never run on a runner, #3
+live AKS admission path) belong to 36-18 and Phase 29.
+
+**2026-09-28 delta — state analysis, `main` green again, and Phase 36 (Azure Blob) opened.**
+**Where things stand.** `main` = `db725c94`. PR #757 is MERGED: `amqp-client` 5.33.1 → 5.34.0 for
+CVE-2026-75516 (issue #754 CLOSED) plus the missing `fi` that had kept
+`base-image-freshness.yml`'s tracking-issue step from ever filing. `main`'s post-merge run
+`36457853757` succeeded with the Trivy image gate step itself green on core-java — the first green
+image gate on `main` since 2026-09-13. The gap that let the `fi` hide (nothing parses shell inside
+workflow `run:` blocks) is issue #758, OPEN.
+**Why the stack cannot simply be restarted.** Two findings from the analysis, both still true: the
+weekly `docker-prune-weekly` run on 2026-09-27 deleted EVERY project image because the stack was
+down (volumes survived — `postgres_data` 448.2MB and the retired object store's data volume 3.6MB,
+matching the 09-22 checkpoint); and the retired object store's vendor withdrew its community images
+for good (repo archived 2026-04-25, its `quay.io` images answer 401 to anonymous pulls — control
+images on the same registry answer 200).
+That second fact is the whole cause of the nightly E2E being red since 2026-09-25 (issue #683 OPEN;
+its body still points at core-java health, which is wrong). Do NOT try to re-source the retired store.
+**Owner ruling: object storage becomes Azure Blob throughout (Phase 36).** Staging/prod on Azure
+Blob Storage, Azurite (`mcr.microsoft.com/azure-storage/azurite`) locally and in the nightly;
+the self-hosted store it replaced and the never-provisioned AWS object-store target retired. Four
+decisions are locked in
+`.planning/phases/36-azure-blob-storage-throughout/36-CONTEXT.md`: backups to a separate immutable
+Azure account in another region (SUPERSEDES Phase 29 D-12, the subscription-loss trade recorded),
+AKS Workload Identity (no stored key), reseed local media (leave the retired store's data volume in place, 36-CONTEXT D-04), raw Blob
+endpoint (custom domain deferred to Phase 32). Phase 36 blocks Phase 29 plans 29-11 onward and cuts
+Phase 29's unfilled operator secrets from 7 to 3.
+**Resume:** Phase 36 is planned and in execution on branch `phase-36-azure-blob-storage`; plan
+progress is in `.planning/ROADMAP.md` and each plan's SUMMARY under
+`.planning/phases/36-azure-blob-storage-throughout/`. The runtime now stores media in Azurite
+locally (containers `jtoye-images` public, `jtoye-quarantine` private) and targets Azure Blob
+Storage with Workload Identity in staging/production.
+**Still open from the analysis, not started:** dependabot PR #739 (springdoc 3.1.1) cannot merge on
+Boot 3.5 — its parent POM is Boot 4.1.0 — and belongs after #706; #751/#749 are low-risk but need
+the doc-quoted versions updated; #756 fails 6 Jest tests under React 19.3; issue #648 is fixed in
+code by #726 (`SyncBatchAuthorizationIntegrationTest`) but still OPEN; the Base Image Freshness
+workflow has been red daily since 2026-09-08 (libexpat CVE-2026-93990 on the published image); the
+review-gate script vendored at `scripts/gates/review-record-check.sh` lags the canonical copy
+(missing the #249 cancelled-run supersession); `.planning/state.json` is an untracked GSD Core
+artefact, deliberately never committed.
 
 **2026-09-22 delta — the runtime was re-proven fresh, then deliberately torn down; ordinary work resumes 2026-10-01.**
 The local stack was found RUNNING but stale: `scripts/check-runtime-freshness.sh` failed with the
@@ -105,9 +167,12 @@ and memory `project_qa_council_20260902.md`; the procedure lessons went into
 filed except the RabbitMQ horizon (#724, deferred to 2026-11-30 by PR #725) — still unfiled: 2
 Criticals, the top Highs, a docs epic, amendments to #648/#453/#711, and 9 new defects the refuter
 surfaced — and `/qa-remediate 20260902-134741` has not run.
-The gate expectation at "Resume here" is 43 (42 `scripts/check-*.sh` + `scripts/docs-freshness.sh`,
+The gate expectation at "Resume here" is 46 (45 `scripts/check-*.sh` + `scripts/docs-freshness.sh`,
 which is exactly what `check-handoff-contract.sh` H-1 counts) — this line said 41 until 2026-09-04,
-contradicting the EXPECT 43 claim below it in the same file. H-1 does not read this sentence (no `**`
+contradicting the EXPECT claim below it in the same file (43 then; 44 since plan 36-08 added
+`scripts/check-backup-restore-drill.sh`, 2026-09-29; 45 since plan 36-12 added
+`scripts/check-media-urls-resolve.sh`, 2026-09-29; 46 since plan 36-16 added
+`scripts/check-no-object-store-residue.sh`, 2026-09-29). H-1 does not read this sentence (no `**`
 marker), which is the semantic rot that gate's own closing NOTE says it cannot detect.
 
 **2026-09-04 delta — the remediation RAN, and this file said it had not.** The block above ends
@@ -243,7 +308,7 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 43 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 46 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
@@ -274,8 +339,8 @@ done
 | `main` HEAD | tip of `main` at or after the **PR #658** merge — deliberately NOT a sha, see below |
 | Phase 31 | `42ac6dc3` — `feat(31): consumer safety and the legal floor (#633)`, 18/18 plans |
 | Working tree | clean, no worktrees in use |
-| Schema head | **V64** (re-measured 2026-08-31; V64 is #661's TRUNCATE grant) |
-| Test manifest | **3572** logical invocations (Java 1730/275 files, Jest 1583/146, Playwright 127/27, Go 84/11, MCP 48/8) — `docs/metrics.json`, re-measured 2026-08-31 |
+| Schema head | **V66** (re-measured 2026-09-29 from `core-java/src/main/resources/db/migration/`; V66 is COR-4's `orders.unit_count`) |
+| Test manifest | **4130** logical invocations (Java 1965/303 files, Jest 1878/172, Playwright 128/28, Go 98/13, MCP 61/8) — `docs/metrics.json`, regenerated 2026-09-29 on `phase-36-azure-blob-storage` (plan 36-17) |
 | Gate sweep 2026-08-25 | **36 PASS, 1 FAIL, 0 VOID** across all 37 gate scripts, measured after the runtime re-sync AND the E2E run. The one non-pass is `check-e2e-skip-budget` **FAIL** (65 skipped vs a budget of 8, plus an undeclared skip) — it was VOID until a completed run replaced the stale report, so this is a real answer rather than an unanswerable one. Progression that day: 34/2/1 → 36/0/1 → 36/1/0 |
 
 > **Why the HEAD row names a PR and not a sha — do not "helpfully" put one back.** A document that
@@ -410,7 +475,7 @@ done
   frees 9091 for core-java, killing browser-side API calls and blocking Prometheus in one move.
   Measured: six local-only test failures cleared by a `--force-recreate` with no code change.
 - The handoff PR **#668** and the fix PR both merged; local + remote branch cleanup done
-  (`chore/agents-md-resync`, `feature/deps-awssdk-stripe-bump`, `docs/system-tour-2026-08-19`
+  (`chore/agents-md-resync`, the retired-SDK + Stripe dependency-bump branch, `docs/system-tour-2026-08-19`
   deleted against verified MERGED PR state; `phase-29-research` kept deliberately).
 
 ## Environment state — measured 2026-08-24, not remembered
@@ -597,7 +662,7 @@ Three mechanics that are not obvious until they bite:
 already passed; node 24 is LTS to 2028-04-30. The support-horizon gate is correct.
 **#605 CLOSED** (springdoc 2.8.6→3.1.0, MAJOR): the OpenAPI spec cannot be generated, so the app
 likely does not boot. Needs real work. **#631 CLOSED** (frontend npm, 10 updates): real break across
-the frontend build. **#604 CLOSED** (awssdk) was superseded by **#638 CLOSED**, merged as `9387b3bf`;
+the frontend build. **#604 CLOSED** (the retired object-store SDK) was superseded by **#638 CLOSED**, merged as `9387b3bf`;
 its failure was `scripts/check-doc-versions.sh`, because dependabot cannot know to edit `CLAUDE.md`,
 `AGENTS.md` and `.planning/codebase/STACK.md`, which each pin the version in prose. **Any future SDK
 bump carries the same four-site requirement.**

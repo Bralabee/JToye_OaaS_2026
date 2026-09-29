@@ -58,6 +58,9 @@ images:
 # behaviour-preserving replacement for the deprecated `patchesStrategicMerge`.
 patches:
   - path: configmap-patch.yaml
+  # AKS Workload Identity pod-template label on core-java and pg-backup
+  # (Phase 36 D-02). Two documents in one file, matched by GVK + name.
+  - path: workload-identity-patch.yaml
   # Ingress hostnames. WITHOUT these two, staging rendered the PRODUCTION hosts
   # (api./app.) inside namespace jtoye-staging while configmap-patch.yaml told the
   # app it lived at api-staging./app-staging. — so the app was configured for hosts

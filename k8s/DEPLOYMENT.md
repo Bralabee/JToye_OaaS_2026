@@ -101,9 +101,44 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 > below must exist in the target namespace before deployment, or pods stay in
 > `CreateContainerConfigError` and the pg-backup CronJob fails:
 > `postgres-credentials` (incl. `backup-username`/`backup-password`),
-> `s3-backup-credentials`, `keycloak-credentials`, `nextauth-secret`,
-> `redis-credentials`, `rabbitmq-credentials`.
+> `keycloak-credentials`, `nextauth-secret`, `redis-credentials`,
+> `rabbitmq-credentials`.
 > CI guard: `k8s/scripts/check-no-plaintext-secrets.sh`.
+>
+> **Object storage has no Secret, by design (Phase 36, D-02).** Media and the
+> pg-backup dumps live in Azure Blob Storage, reached through **AKS Workload
+> Identity**. Do not create a storage credential Secret of any kind — no account
+> key, connection string or SAS. See "Object storage: Workload Identity" below.
+
+#### Object storage: Workload Identity (no Secret)
+
+- **What the manifests already carry.** ServiceAccounts `core-java` and
+  `pg-backup` (`k8s/base/serviceaccounts.yaml`, `automountServiceAccountToken:
+  false`), and the pod-template label `azure.workload.identity/use: "true"` on
+  the core-java Deployment and the pg-backup CronJob in staging and production
+  only (`k8s/staging|production/workload-identity-patch.yaml`). The account
+  endpoints and containers are app-config `storage.blob.*` / `backup.blob.*`
+  keys, separate media and backup accounts per environment (D-01, D-11).
+- **What Phase 29 adds per overlay.** The annotation
+  `azure.workload.identity/client-id: "<client id of the user-assigned managed
+  identity>"` on each of the two ServiceAccounts: the media identity on
+  `core-java`, the backup identity on `pg-backup`. Until it is present the
+  webhook injects nothing, and core-java refuses to boot by design (its storage
+  validator names the missing `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+  `AZURE_FEDERATED_TOKEN_FILE`).
+- **How to provision.** Storage accounts, containers, backup immutability and
+  lifecycle, the managed identities, their federated credentials and the
+  container-scoped role assignments are all in
+  [`docs/runbooks/azure-blob-provisioning.md`](../docs/runbooks/azure-blob-provisioning.md).
+  The cluster also needs the Workload Identity webhook enabled
+  (`--enable-oidc-issuer --enable-workload-identity`), which that runbook
+  covers too.
+- **Enforced, not just described.** `check-render-invariants.sh` INV-9 fails the
+  build on any storage Secret reference or connection-string env in a staging or
+  production render, INV-10 on a missing or misplaced Workload Identity label,
+  and INV-8 on a wrong account shape.
+- **Local k8s** uses the host Azurite emulator with a key-less emulator
+  connection string from `k8s/local/storage-env-patch.yaml`; see `k8s/LOCAL.md`.
 
 #### Option A: Manual Secret Creation (Not Recommended for Production)
 ```bash
@@ -119,12 +154,8 @@ kubectl create secret generic postgres-credentials \
   --from-literal=backup-password='YOUR_BACKUP_ROLE_PASSWORD_HERE' \
   -n jtoye-production
 
-# S3 credentials for the pg-backup CronJob (#90) — scope to a bucket-limited
-# IAM user / MinIO service account (PutObject/ListBucket/DeleteObject only)
-kubectl create secret generic s3-backup-credentials \
-  --from-literal=access-key='YOUR_S3_ACCESS_KEY' \
-  --from-literal=secret-key='YOUR_S3_SECRET_KEY' \
-  -n jtoye-production
+# (No storage credential Secret: pg-backup and core-java use Workload
+#  Identity — see "Object storage: Workload Identity" above.)
 
 # Redis credentials
 kubectl create secret generic redis-credentials \
@@ -380,7 +411,7 @@ bash k8s/scripts/check-no-plaintext-secrets.sh \
 | `check-no-plaintext-secrets.sh` | `k8s/base` and every overlay build, and no build output contains a top-level `kind: Secret` or a `REPLACE_WITH_*` placeholder (outside the known non-secret `deployment.timestamp` annotation). Plaintext Secret material can never become a live kustomize resource (#100). |
 | `check-connection-math.sh` | HPA `maxReplicas` × Hikari pool (+ Keycloak + pg-backup + exporter + reserved slots) fits Postgres `max_connections` with ≥20% headroom, the k8s `DB_POOL_SIZE` env matches the `application-prod.yml` default, and the core-java HPA carries no memory metric (#94). See "Database Connection Budget" above. |
 | `check-env-contract.sh` | The env contract in **both** directions for **all three built services** (core-java, edge-go, frontend — widened from core-java-only by #298). Direction (a): every env name a Deployment injects is read by that service (a wrong name silently resolves to the service's own default — this is how the AMQP pool authenticated as the wrong user). Direction (b): every name a service reads is supplied, or carries an **explicit allowlist entry with a reason**. Per-service specifics: core-java parses `${PLACEHOLDER}`s across `application*.yml` and fails a default that is absent, local-only, **or an unresolved Spring property chain**; edge-go parses `os.Getenv`/`getEnv` literals and uses the strong form (read-and-not-injected is a violation) because the weak default-shape form would have been vacuous for `JWT_EXPECTED_ISSUER`, whose default is a variable; the frontend parses literal `process.env.NAME` **plus** the names `env-validation.ts` declares for its dynamic `process.env[expr]` reads, and encodes the **build-time/runtime split** — a `NEXT_PUBLIC_*` name is supplied by an `ARG` in `frontend/Dockerfile`, and one that is *both* ARG-declared and injected as a runtime `env:` is a non-allowlistable dead-config violation (D-18). Every extractor is self-tested against a synthetic control, so a regex that matches nothing exits **2 (VOID)** instead of reporting a clean contract over an unexamined service. The allowlists are themselves gated: a blank reason, a duplicate, a now-unnecessary entry, or an `OPEN DEFECT` reason citing no issue number all fail; `OPEN DEFECT` entries are printed under their own heading on every run. Requires GNU `grep -P`. |
-| `check-render-invariants.sh` | Assertions on the kustomize **render**, which is what actually reaches a cluster: no hardcoded Postgres port in the base; no EnvVar carrying both `value` and `valueFrom` (accepted by `kubectl kustomize`, **rejected** by the API server at apply time); no common labels injected into the kube-dns DNS-egress `podSelector` (that selector then matches nothing and core-java loses all DNS egress under an enforcing CNI); no `localhost`/`127.0.0.1`/`minioadmin` literal in a non-local render; and no DB **superuser** named as the `postgres-credentials` app username in `k8s/QUICK_START.md` or `k8s/base/secrets-template.yaml.example`. |
+| `check-render-invariants.sh` | Assertions on the kustomize **render**, which is what actually reaches a cluster: no hardcoded Postgres port in the base; no EnvVar carrying both `value` and `valueFrom` (accepted by `kubectl kustomize`, **rejected** by the API server at apply time); no common labels injected into the kube-dns DNS-egress `podSelector` (that selector then matches nothing and core-java loses all DNS egress under an enforcing CNI); no `localhost`/`127.0.0.1` literal, emulator connection string, emulator account name or storage account key in a non-local render; on staging and production, the Blob storage model (INV-8), no stored storage credential (INV-9) and Workload Identity on exactly the two Blob workloads (INV-10); and no DB **superuser** named as the `postgres-credentials` app username in `k8s/QUICK_START.md` or `k8s/base/secrets-template.yaml.example`. |
 | `render-golden.sh` | The `kubectl kustomize k8s/staging` and `k8s/production` output is byte-identical to the reviewed goldens in `k8s/goldens/`. A `k8s/base` edit that changes either render without a regenerated golden fails the PR. |
 
 **Exit-code convention (shared by all five):**

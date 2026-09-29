@@ -32,7 +32,7 @@ import java.util.UUID;
  *   <li><b>Copy-on-write repoint (D-01)</b> — editing a shared asset never mutates
  *       bytes; a new asset is minted and only the one affected {@code product_media}
  *       row is repointed ({@link #repoint}).</li>
- *   <li><b>Reference-counted delete (IMG-01)</b> — a physical MinIO delete happens
+ *   <li><b>Reference-counted delete (IMG-01)</b> — a physical Blob delete happens
  *       ONLY when no {@code product_media} row still references the asset
  *       ({@link #releaseAsset}); a still-referenced asset is left intact.</li>
  *   <li><b>sha256 dedup (IMG-01)</b> — an identical raw upload within a tenant
@@ -313,7 +313,7 @@ public class MediaAssetService {
 
     /**
      * Reference-counted delete (IMG-01): if no {@code product_media} row references
-     * {@code oldAssetId}, physically delete its MinIO object AND remove the row.
+     * {@code oldAssetId}, physically delete its Blob object AND remove the row.
      * A still-referenced asset is a no-op (neither the object nor the row is touched).
      */
     public void releaseAsset(UUID oldAssetId) {
@@ -323,7 +323,7 @@ public class MediaAssetService {
             return;
         }
         mediaAssetRepository.findById(oldAssetId).ifPresent(asset -> {
-            storageService.deleteByKey(asset.getObjectKey());   // physical MinIO delete ONLY at ref-count 0
+            storageService.deleteByKey(asset.getObjectKey());   // physical Blob delete ONLY at ref-count 0
             mediaAssetRepository.delete(asset);
             log.info("Released asset {} (ref-count 0): deleted object {} and row", oldAssetId, asset.getObjectKey());
         });

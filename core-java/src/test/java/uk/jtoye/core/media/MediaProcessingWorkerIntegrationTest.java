@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * IMG-02 worker-side proof over real Postgres + the real {@link MediaNormalizer}
- * (Scrimage/cwebp) — MinIO is a {@code @SpyBean} so the quarantine read is stubbed
+ * (Scrimage/cwebp) — {@link StorageService} is a {@code @SpyBean} so the quarantine read is stubbed
  * and the derivative write is captured without a live object store.
  *
  * <p>Proves the async worker: pins the tenant GUC (visible + updatable under a
@@ -93,8 +93,8 @@ class MediaProcessingWorkerIntegrationTest {
         jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
                 tenant, "test-" + tenant);
         TenantContext.set(tenant);
-        // MinIO is stubbed — the derivative write and raw delete are asserted via the spy.
-        Mockito.doReturn("http://minio/derivative").when(storageService).putBytes(
+        // Storage is stubbed — the derivative write and raw delete are asserted via the spy.
+        Mockito.doReturn("http://store/derivative").when(storageService).putBytes(
                 Mockito.anyString(), Mockito.any(byte[].class), Mockito.anyString());
         Mockito.doNothing().when(storageService).deleteByKey(Mockito.anyString());
     }

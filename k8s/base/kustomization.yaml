@@ -25,6 +25,9 @@ resources:
   # streaming timeouts + buffering off, which are per-Ingress nginx annotations.
   - sse-ingress.yaml
   - pg-backup-cronjob.yaml
+  # Dedicated ServiceAccounts for the two Blob Storage workloads (Phase 36 D-02,
+  # AKS Workload Identity). See the file header for why they are not `default`.
+  - serviceaccounts.yaml
   # NetworkPolicies (Phase 15 / INF-01) — default-deny baseline + tier allow-lists.
   # See k8s/base/networkpolicies/README.md for the flow matrix and rollback steps.
   - networkpolicies/00-default-deny.yaml

@@ -38,7 +38,7 @@ the four services talk to Core directly — the "edge gateway" fronts almost not
      │  (5 AI tools)    │  (core is the RLS    │  │ 15 (RLS)   │  │
      └──────────────────┘   validator)         │  └────────────┘  │
                                                │  Redis · Rabbit  │
-     ┌──────────────────┐                      │  MinIO · Keycloak│
+     ┌──────────────────┐                      │  Blob · Keycloak │
      │  edge-go :8089   │  POST /sync/batch ──▶│  Ollama          │
      │  Gin/Go 1.27     │  (the ONE JWT route) │                  │
      │  + WhatsApp HMAC │  WhatsApp → orders ─▶│                  │
@@ -182,7 +182,8 @@ carries a per-request CSP nonce (built in `middleware.ts` — which explicitly d
 **Notable current facts:**
 - **`next/image` has zero importers.** Every image ships through a plain `<img>` (`SafeImage` /
   `AssetImage`). Consequence: `images.remotePatterns` is inert config today and a latent staging/prod
-  trap on any future adoption (the S3 `eu-west-2` hostname it would need is not whitelisted). CLS is
+  trap on any future adoption (the raw Blob endpoint `<account>.blob.core.windows.net` it would need
+  is not whitelisted). CLS is
   handled by forwarded width/height; payload by the server-side WebP derivative pipeline.
 - **The edge is never called from app code** (only one E2E spec hits `:8089` directly). Realtime is
   SSE (orders) + STOMP (kitchen, with a poll fallback) — two transports, token-per-connect.
@@ -236,7 +237,7 @@ snapshot (V63).
 - **Compose (canonical local dev + E2E).** `docker-compose.full-stack.yml` (11 app containers) +
   `infra/monitoring/docker-compose.monitoring.yml` (5 containers) = **16 running**. Infrastructure
   ports bind to `127.0.0.1`; the application tier (core/edge/frontend/mcp) binds to `0.0.0.0` by
-  design. Stateful set: `postgres_data, redis_data, rabbitmq_data, keycloak_data, minio_data,
+  design. Stateful set: `postgres_data, redis_data, rabbitmq_data, keycloak_data, azurite_data,
   ollama_data` (+ monitoring volumes).
 - **Kubernetes (staging/prod deploy target).** `k8s/base` + `staging`/`production`/`local` overlays,
   Sealed Secrets, 6 NetworkPolicies (default-deny + tier allow-lists). **Neither deploy job is

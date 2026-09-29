@@ -1,0 +1,97 @@
+# 36-18 — the nightly on the phase branch, read to its report (BLOB-04 nightly limb)
+# Owner decision (Task 1): push-and-dispatch, 2026-09-29, via the orchestrator's question tool.
+# Every value below was read from the run itself (gh run view --json, the downloaded
+# e2e-nightly-report artifact, gh run view --log), never from a badge.
+
+## Pre-push local suite (HEAD 536daf41, before any push)
+java_unit=tests 1297 failures 0 errors 0 skipped 1 (166 TEST-*.xml, core-java/build-local/test-results/test, all newer than run start)
+java_integration=tests 738 failures 0 errors 0 skipped 1 (149 TEST-*.xml, build-local/test-results/integrationTest, all newer than run start)
+java_gradle=BUILD SUCCESSFUL in 30m 2s, rc=0; neither :test nor :integrationTest UP-TO-DATE/FROM-CACHE (grep rc=1)
+jest=172 suites, 1878 tests passed, 2 snapshots, rc=0
+k8s_gates=check-render-invariants rc=0, render-golden rc=0 (staging+production match goldens), check-env-contract rc=0
+
+## Push
+push_1=5b6e76bd..536daf41 (fast-forward, no --force, no --no-verify); pre-push P-2/P-3/P-4 ok; ls-remote == HEAD 536daf41
+
+## The dispatched run
+dispatch_time=2026-09-29T09:56:48Z
+run_id=36552435811
+run_url=https://github.com/Bralabee/JToye_OaaS_2026/actions/runs/36552435811
+run_created_at=2026-09-29T09:56:50Z   (2 s after dispatch; headSha 536daf413c52acf2efab94c44962f99e9453f995 == pushed HEAD; the only match)
+run_updated_at=2026-09-29T10:19:31Z   (about 22.7 min; the watch deadline was 60 min)
+event=workflow_dispatch  branch=phase-36-azure-blob-storage
+status=completed
+conclusion=success
+watch_end_state=END_STATE=completed-success (watch rc 0)
+
+## Playwright, read from the downloaded artifact e2e-nightly-report/e2e-artifacts/report.json (439875 bytes)
+playwright_executed=325
+playwright_passed=319
+playwright_failed=0
+playwright_skipped=6
+playwright_stats={"expected":319,"skipped":6,"unexpected":0,"flaky":0,"duration":782636.897}
+playwright_spec_files=28
+storage_images_spec=frontend/e2e/storage-images.spec.ts mobile=passed desktop=passed
+report_step_log=total=325 passed=319 failed=0 skipped=6
+skip_budget_step_log=PASS: all 6 skip(s) are declared and within the budget of 6.
+
+## Step conclusions (gh run view --json jobs), job "Full Playwright suite against a real stack" = success
+step_07_build_and_start_the_stack=success   (log: "azurite Pulled", "core-java Built", "Container jtoye-azurite Healthy", "core-java-1 Healthy"; 0 lines matching unauthorized|manifest unknown|pull access denied)
+step_08_wait_for_core_java_and_frontend=success   (log: core-java UP after 0s, frontend 200 after 6s)
+step_09_url_resolution_gate=success
+url_gate=PASS: 21 reference(s) (21 distinct URLs) answer 200 anonymously; 0 point at the retired origin.
+step_10_content_type_gate=success
+content_type_gate=PASS: 0 of 21 stored blobs carry a Content-Type outside the allowlist.
+step_11_openapi_vs_running_service=success
+step_12_keycloak_logout_uri=success
+step_13_seed_fixtures=success
+step_16_run_playwright=success
+step_17_assert_report_real=success
+step_18_skip_budget=success
+step_19_cart_identity_boundary=success
+step_20_restore_drill=success
+restore_drill=PASS: arm A restored 0, arm B restored 23 = live 23 (> 0).
+step_22_dump_logs_on_failure=skipped
+step_23_escalate=skipped
+
+## Historical fail direction (#683 era; the same workflow on main, before this branch)
+historical_run_id=36511482252   (schedule, main, 2026-09-29T02:12:11Z, conclusion=failure)
+historical_failed_step=Build and start the stack (no ollama)
+historical_services=postgres keycloak-realm-render keycloak redis rabbitmq core-java edge-go frontend mcp-server minio minio-init mailhog
+historical_log=minio-init Error unauthorized: access to the requested resource is not authorized
+historical_log=Error response from daemon: unauthorized: access to the requested resource is not authorized
+historical_playwright_executed=0   (steps 8-20 never ran; the escalate step ran)
+historical_series=36084997191 (09-25), 36210706222 (09-26), 36287831600 (09-27), 36369216648 (09-28), 36511482252 (09-29): all failure in 1.5-4 min; last success 35946039057 (09-24)
+pull_error_pattern_control=the same rg pattern counts 2 lines in 36511482252's log and 0 in 36552435811's
+
+## Instrument fail arms (each shown failing before its pass was trusted)
+resolver_bogus_branch=rc 2 UNRESOLVED
+resolver_real_branch_wrong_sha=rc 2 UNRESOLVED
+resolver_positive_control=rc 0 run_id=34722659896 (a known dispatch run)
+watcher_on_failed_run_36511482252=rc 1 END_STATE=completed-failure
+watcher_on_success_run_35946039057=rc 0 END_STATE=completed-success
+watcher_on_bogus_id=rc 4 END_STATE=unreachable
+report_gate_empty_report={"suites":[]} counts total=0 -> [ total -gt 0 ] exits 1
+report_gate_zero_byte_report=[ -s ] false -> exits 1
+
+## Push-triggered CI/CD (recorded separately; NOT the nightly's verdict)
+ci_run_1=36552432346 on 536daf41: Operational Contracts FAILED at check-doc-citations.sh (C-3, 5 citations in
+  .planning/codebase/STACK.md + INTEGRATIONS.md named lines Phase 36 had shifted); 14 later ops steps skipped.
+  Reproduced locally rc=1, fixed in ae4ceb43 (rc=0 after), pushed 536daf41..ae4ceb43.
+ci_run_2=36555251078 on ae4ceb43: completed failure. Operational Contracts, Integration Tests, Run Tests, Lint, Security Scan,
+  MCP, OpenAPI gate, Frontend E2E, K8s secret guard: success. The only failure is Build and Push Images (core-java) /
+  Trivy image gate: jackson-databind 2.21.4 CVE-2026-68497 HIGH (fixed 2.21.6). That version comes from the Boot BOM,
+  unchanged by Phase 36; the same job passed on 5b6e76bd 2026-09-28T19:49Z. Recorded in deferred-items.md.
+  run_1 36552432346 failed the same Trivy gate in addition to the citation step.
+
+## Final parity readings (HEAD ae4ceb43, the compose stack running since 36-12's rebuild)
+fresh_rc=0
+fresh=core-java FRESH (image 2026-09-29 07:20:31 UTC >= a3a213a8 06:36:47 UTC); edge-go FRESH; frontend FRESH; mcp-server FRESH
+fresh=PASS: 4 running built service(s) match the source tree (0 unverified).
+fresh_fail_arm=throwaway clone + one core-java commit, same compose project: rc 1, core-java DRIFT [image-not-rebuilt]
+fresh_void_arm=RUNTIME_FRESHNESS_COMPOSE_FILE=/nonexistent.yml: rc 2
+behind_rc=0
+behind=PASS: HEAD contains every commit on origin/main (db725c94); it is 119 commit(s) ahead and 0 behind.
+behind_fail_arm=--head origin/main~3: rc 1 (3 behind)
+behind_void_arm=--base origin/does-not-exist: rc 2
+core_java_health=http://localhost:9090/actuator/health -> 200

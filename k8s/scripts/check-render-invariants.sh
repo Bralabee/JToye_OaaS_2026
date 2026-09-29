@@ -83,11 +83,14 @@
 #          and a forward scan returns 0 on the poisoned baseline too.
 #
 #   INV-4  DEF-6 recurrence, RENDER level, per target except local overlays. A
-#          staging or production render must contain no `localhost`, `127.0.0.1`
-#          or `minioadmin` literal. Thirteen placeholders used to resolve to
-#          local-only defaults; plan 26-02 supplied them. This is the
-#          non-regression half — check-env-contract.sh guards the config side,
-#          this guards the rendered side.
+#          staging or production render must contain no `localhost`, `127.0.0.1`,
+#          `UseDevelopmentStorage`, `devstoreaccount1` or `AccountKey=` literal.
+#          Thirteen placeholders used to resolve to local-only defaults; plan
+#          26-02 supplied them. This is the non-regression half —
+#          check-env-contract.sh guards the config side, this guards the rendered
+#          side. The three storage literals replaced the retired object store's
+#          default credential in Phase 36 (T-36-34): an Azurite emulator string, the
+#          emulator account name or ANY account key must never render outside local.
 #
 #   INV-5  DEF-2 / INFRA-02b, DOCS level. Neither k8s/QUICK_START.md nor
 #          k8s/base/secrets-template.yaml.example may name the DB SUPERUSER as
@@ -154,8 +157,9 @@
 #               `db.port` substituted — not "is db.port somewhere in the list".
 #               The weak form passes on a tree where the replacement got
 #               retargeted onto Redis (db.port lands in the set, 6379 is lost);
-#               the exact form fails. The other five ports are literals here on
-#               purpose: they are outside #271's scope, and an exact allow-list is
+#               the exact form fails. The other four ports are literals here on
+#               purpose (the fifth, the retired object store's 9000, was removed in Phase 36 with the
+#               in-cluster object store it permitted): they are outside #271's scope, and an exact allow-list is
 #               strictly stronger than a partial one — a new datastore port must
 #               be added here in the same change, which is the right friction for
 #               an egress allow-list.
@@ -181,6 +185,76 @@
 #          shape as the RABBITMQ_USER pre-rollout check in
 #          k8s/base/core-java-deployment.yaml.
 #
+#   INV-8  PHASE 36 D-01/D-06/D-07/D-11, RENDER level, staging + production only
+#          (WI_TARGETS). The storage model is ENFORCED, not described: both
+#          storage.blob.auth-mode and backup.blob.auth-mode are workload-identity;
+#          storage.blob.endpoint and backup.blob.endpoint each match
+#          ^https://[a-z0-9]{3,24}\.blob\.core\.windows\.net$ (a raw account
+#          endpoint, no port, no path — the shape core-java's validator and
+#          blobctl both demand); public-url is EXACTLY the media endpoint +
+#          /jtoye-images (D-06: the origin every persisted image URL carries);
+#          the containers are jtoye-images / jtoye-quarantine (D-07);
+#          create-containers is "false" (Set Container ACL cannot be authorized
+#          with Entra ID); and the media endpoint DIFFERS from the backup endpoint
+#          (D-01: a separate backup account, so a compromised media identity
+#          cannot reach the dumps).
+#
+#   INV-9  PHASE 36 D-02 / T-36-32, RENDER level, staging + production only. No
+#          stored storage credential of any kind: zero secretKeyRef, envFrom
+#          secretRef or volume secretName whose Secret name matches
+#          s3|storage|blob|azure (case-insensitive); zero env named
+#          STORAGE_CONNECTION_STRING, AZURE_CLIENT_SECRET, or starting AWS_ or
+#          AZURE_STORAGE_; zero app-config key containing `connection-string`.
+#          Workload Identity means the credential is a projected, short-lived
+#          token the webhook mounts — never something a manifest names.
+#
+#   INV-10 PHASE 36 D-02 / T-36-33 / T-36-36, RENDER level, staging + production
+#          only. The pod TEMPLATES of Deployment core-java and CronJob pg-backup
+#          (spec.jobTemplate.spec.template) carry the label
+#          azure.workload.identity/use: "true" and serviceAccountName core-java /
+#          pg-backup; ServiceAccounts core-java and pg-backup exist with
+#          automountServiceAccountToken false; and NO other pod template opts in
+#          (least privilege — only the two Blob workloads get an Entra token).
+#          Without the label the webhook injects nothing and core-java refuses to
+#          boot; on the controller's own metadata instead of the pod template it
+#          does nothing at all, which is why the PATH is asserted, not the token.
+#
+#          ASSERTION SHAPE FOR INV-8..INV-10 + LOC-7. Each document is walked into
+#          full key PATHS by indentation (RENDER_PATHS_AWK), list items indexed,
+#          and values read by exact path. kubectl kustomize sorts map keys, so in
+#          a container `env:` is emitted BEFORE its own `name:` — a forward scan
+#          from the container name sees none of its env. Paths are immune to that
+#          ordering by construction.
+#
+#   INV-11 PHASE 36 D-08 (code review WR-01), RENDER level, EVERY target. No
+#          render can switch off core-java's boot-time storage probe
+#          (StorageStartupValidator, the runtime check behind #626). The probe is
+#          gated on storage.blob.validate-on-startup, and application.yml sets it
+#          as a literal `true` — but a literal in application.yml is not a guard:
+#          Spring's relaxed binding lets an env var (STORAGE_BLOB_VALIDATEONSTARTUP,
+#          STORAGE_BLOB_VALIDATE_ON_STARTUP, or the dotted name itself, which a
+#          Kubernetes env name may carry), SPRING_APPLICATION_JSON, a command-line
+#          argument or a -D system property (JAVA_OPTS, which core-java's image
+#          ENTRYPOINT expands) outrank it and silently remove the bean. This makes
+#          "no runtime switches it off" true for every rendered target:
+#            a. the render text contains NO spelling of validate-on-startup at all
+#               (case-insensitive, `-`/`_`/`.`/nothing between the words). One
+#               raw-text rule covers every visible channel at once: env names and
+#               values, args, command, ConfigMap keys and values reached through
+#               configMapKeyRef, JSON bodies and block scalars the path walker skips;
+#            b. no core-java container sets SPRING_APPLICATION_JSON (any spelling),
+#               and none sources JAVA_OPTS / JAVA_TOOL_OPTIONS / JDK_JAVA_OPTIONS
+#               from a Secret — a Secret's value never appears in the render, so
+#               rule (a) could not see a flag arriving that way;
+#            c. no core-java container uses envFrom, which imports env names the
+#               render cannot enumerate when the source is a Secret.
+#          "core-java container" = any container, in any workload kind, whose image
+#          is the core-java image, found by exact PATH (::containers::[i]::image),
+#          so a second workload running the image is covered too. Zero such
+#          containers in a render is a PARSE ERROR (blind), never a pass.
+#          Test contexts keep their opt-out: they read core-java/src/test/resources,
+#          which no render contains.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -188,9 +262,10 @@
 #   2026-07-14 live-deploy rehearsal.
 #
 #   LOC-1  Endpoint shims. Each of redis.host, rabbitmq.host,
-#          stomp.broker.relay-host, s3.endpoint, s3.backup.endpoint, smtp.host,
-#          keycloak.issuer.uri and keycloak.admin.base-url must resolve to a
-#          host.minikube.internal value. Asserted PER KEY BY NAME, not by a total
+#          stomp.broker.relay-host, storage.blob.connection-string,
+#          backup.blob.connection-string, smtp.host, keycloak.issuer.uri and
+#          keycloak.admin.base-url must resolve to a host.minikube.internal value
+#          (the two connection strings carry it as DevelopmentStorageProxyUri). Asserted PER KEY BY NAME, not by a total
 #          count: a count alone lets a LOST shim hide behind an ADDED one, which
 #          is not hypothetical — it was demonstrated (redis.host -> localhost plus
 #          one extra shimmed value keeps the total at 8 and a count-only
@@ -207,11 +282,13 @@
 #          than against hardcoded numbers, so a legitimate future base change
 #          carries through instead of going stale.
 #
-#   LOC-3  The backup repoint (INFRA-01 / INFRA-02c). s3.backup.endpoint is
-#          exactly http://host.minikube.internal:9000. Base leaves it EMPTY,
-#          which means "real AWS S3" — locally that aims a database dump at real
-#          AWS with no credentials, and makes the #101 restore rehearsal
-#          impossible to run.
+#   LOC-3  The backup repoint (INFRA-01 / INFRA-02c, Phase 36). backup.blob.auth-mode
+#          is exactly connection-string and backup.blob.connection-string is
+#          exactly UseDevelopmentStorage=true;DevelopmentStorageProxyUri=
+#          http://host.minikube.internal — the host Azurite. Base names the
+#          PRODUCTION backup account under workload identity; locally that aims a
+#          database dump at a real Azure account with no identity, and makes the
+#          #101 restore rehearsal impossible to run.
 #
 #   LOC-4  Ingress admissibility (PIT-1 / PIT-10). No configuration-snippet, no
 #          cert-manager issuer, no limit-rps/limit-connections/
@@ -227,6 +304,16 @@
 #          hosts are exactly api.jtoye.local and app.jtoye.local, no production
 #          hostname survives into the local render, and no Ingress routes to a
 #          Service named keycloak.
+#
+#   LOC-7  The local emulator storage path is WIRED (Phase 36). storage.blob.auth-mode
+#          is connection-string, storage.blob.create-containers is "true" (Azurite
+#          starts empty), and BOTH the core-java and the pg-backup container carry
+#          a STORAGE_CONNECTION_STRING env from app-config (keys
+#          storage.blob.connection-string / backup.blob.connection-string).
+#          Without it core-java dials its bare UseDevelopmentStorage=true default —
+#          127.0.0.1:10000, the POD's own loopback — and every upload fails, and
+#          blobctl refuses to start. Those two keys exist only in k8s/local, so an
+#          unwired key would otherwise be a silently ignored value.
 #
 #   LOC-6  D-01 at the SOURCE level. No authored file under k8s/local/ may use
 #          kustomize secret generation or carry an unsubstituted placeholder
@@ -290,8 +377,8 @@ parse_fail() { echo "PARSE ERROR: $*" >&2; exit 2; }
 # k8s/local exists as of plan 26-04, and the exclusion is load-bearing rather
 # than defensive: that overlay DELIBERATELY carries localhost-family literals.
 # Two of its values must be BROWSER-reachable rather than pod-reachable —
-# `s3.public-url` (http://localhost:9000/jtoye-images: the browser is what loads
-# image URLs) and `keycloak.public.issuer.uri` (http://localhost:8085/...: the
+# `storage.blob.public-url` (http://localhost:10000/devstoreaccount1/jtoye-images:
+# the browser is what loads image URLs) and `keycloak.public.issuer.uri` (http://localhost:8085/...: the
 # issuer Keycloak actually stamps into `iss`) — so INV-4 would be asserting
 # against the CORRECT content there. Every other target ships to a real cluster,
 # where such a literal is the DEF-6 defect.
@@ -331,7 +418,12 @@ DB_SUPERUSER_ROLE="jtoye"
 FORBIDDEN_RENDER_LITERALS=(
   'localhost'
   '127\.0\.0\.1'
-  'minioadmin'
+  # Phase 36 (T-36-34): an Azurite emulator string, the emulator account name or
+  # ANY storage account key. These replaced the retired object store's default
+  # credential; the emulator path is local-only and D-02 stores no key anywhere.
+  'UseDevelopmentStorage'
+  'devstoreaccount1'
+  'AccountKey='
 )
 
 # ---------------------------------------------------------------------------
@@ -352,13 +444,88 @@ FORBIDDEN_RENDER_LITERALS=(
 # rename (only namespace and labels differ per target).
 # ---------------------------------------------------------------------------
 declare -A NETPOL_INFRA_EXPECTED=(
-  [core-java-allow]="__DB_PORT__ 5672 6379 9000 9093 61613"
-  [pg-backup-allow]="__DB_PORT__ 9000"
+  [core-java-allow]="__DB_PORT__ 5672 6379 9093 61613"
+  [pg-backup-allow]="__DB_PORT__"
 )
+# Phase 36: 9000 (the retired in-cluster object store) is gone from both lists. Azure Blob and the
+# Entra ID token endpoint are reached over each policy's public 443 rule, which is
+# not an infrastructure-namespace rule and so is not in this multiset. Re-adding
+# 9000 to either policy now FAILS INV-7 — an egress hole with no target is still a
+# hole.
 INFRA_NAMESPACE_LABEL="jtoye-infrastructure"
+
+# ---------------------------------------------------------------------------
+# INV-8 / INV-9 / INV-10 (Phase 36): the targets that ship to a real AKS cluster
+# and must therefore run Azure Blob under Workload Identity with no stored
+# credential. Matched on the EXACT repo-relative path, like LOCAL_ONLY_TARGETS.
+#
+# Every entry must be FOUND among the discovered targets (checked after the
+# loop): if an overlay is renamed, these invariants must not quietly stop
+# running against it — that would be the vacuous pass this gate exists to refuse.
+# k8s/base is deliberately absent: it carries the production values but not the
+# pod-template label, which each real overlay adds (and local must never carry).
+# ---------------------------------------------------------------------------
+WI_TARGETS=(
+  "k8s/staging"
+  "k8s/production"
+)
+WI_LABEL_KEY="azure.workload.identity/use"
+# A raw account endpoint: https, a 3-24 char lower-case alphanumeric account
+# name, the public-cloud Blob suffix, no port, no path, no trailing slash. The
+# same shape StorageProperties.ACCOUNT_ENDPOINT and blobctl require.
+BLOB_ACCOUNT_ENDPOINT_RE='^https://[a-z0-9]{3,24}\.blob\.core\.windows\.net$'
+BLOB_PUBLIC_CONTAINER="jtoye-images"        # D-07
+BLOB_QUARANTINE_CONTAINER="jtoye-quarantine" # D-07
+# Secret names that would mean a STORED storage credential (INV-9).
+STORAGE_SECRET_NAME_RE='s3|storage|blob|azure'
+# Env names that would mean a stored credential or a connection string (INV-9).
+STORAGE_CRED_ENV_RE='^(STORAGE_CONNECTION_STRING|AZURE_CLIENT_SECRET|AWS_.*|AZURE_STORAGE_.*)$'
+# The workloads allowed to opt into Workload Identity, as "<kind>/<name>" with the
+# pod-template path prefix and the ServiceAccount each must run as (INV-10).
+declare -A WI_WORKLOAD_TEMPLATE=(
+  [Deployment/core-java]="spec::template"
+  [CronJob/pg-backup]="spec::jobTemplate::spec::template"
+)
+declare -A WI_WORKLOAD_SA=(
+  [Deployment/core-java]="core-java"
+  [CronJob/pg-backup]="pg-backup"
+)
+
+# INV-11 (Phase 36 D-08, code review WR-01): the storage-probe switch in every
+# spelling Spring's relaxed binding accepts, matched case-insensitively on the raw
+# render text; the image that makes a container a core-java container; and the
+# env names that could carry the switch from a source the render cannot read.
+PROBE_SWITCH_RE='validate[-_.]?on[-_.]?startup'
+CORE_JAVA_IMAGE_RE='/jtoye-core-java(:|@|$)'
+PROBE_JSON_ENV_NORM='springapplicationjson'
+PROBE_JVM_OPTS_ENV_NORM_RE='^(javaopts|javatooloptions|jdkjavaoptions)$'
 
 command -v kubectl > /dev/null \
     || parse_fail "kubectl not on PATH (client-side 'kubectl kustomize' is required)."
+
+# INV-11 self-test: PROBE_SWITCH_RE, through the SAME engine and flags as the scan
+# (grep -iE on a file), must see every spelling of the switch and none of its
+# neighbours. A pattern that cannot match makes rule (a) pass on anything.
+inv11_selftest() {
+    local pos neg n_pos n_neg want rc_pos=0 rc_neg=0
+    pos="$(mktemp)"; neg="$(mktemp)"
+    printf '%s\n' 'storage.blob.validate-on-startup=false' 'STORAGE_BLOB_VALIDATEONSTARTUP' \
+        'STORAGE_BLOB_VALIDATE_ON_STARTUP' '{"storage":{"blob":{"validateOnStartup":false}}}' \
+        '-Dstorage.blob.validate.on.startup=false' > "$pos"
+    printf '%s\n' 'STORAGE_CREATE_CONTAINERS' 'storage.blob.create-containers' 'validate' \
+        'startupProbe' 'on-startup' > "$neg"
+    want=$(wc -l < "$pos")
+    n_pos=$(grep -ciE -e "$PROBE_SWITCH_RE" "$pos") || rc_pos=$?
+    n_neg=$(grep -ciE -e "$PROBE_SWITCH_RE" "$neg") || rc_neg=$?
+    rm -f "$pos" "$neg"
+    if (( rc_pos > 1 )) || [[ "$n_pos" != "$want" ]]; then
+        parse_fail "INV-11 self-test: PROBE_SWITCH_RE matched ${n_pos:-?} of $want spellings of the probe switch (grep rc=$rc_pos). Rule (a) would be blind. Fix the pattern, do not delete the invariant."
+    fi
+    if (( rc_neg > 1 )) || [[ "$n_neg" != "0" ]]; then
+        parse_fail "INV-11 self-test: PROBE_SWITCH_RE matched ${n_neg:-?} negative control(s) (grep rc=$rc_neg) — it would fire on a legitimate neighbour."
+    fi
+}
+inv11_selftest
 [[ -f "$QUICK_START" ]]      || parse_fail "not found: $QUICK_START"
 [[ -f "$SECRETS_TEMPLATE" ]] || parse_fail "not found: $SECRETS_TEMPLATE"
 
@@ -620,6 +787,95 @@ END { flush() }
 # injected rather than duplicated as a second literal.
 NETPOL_INFRA_AWK="${NETPOL_INFRA_AWK//INFRA_NS/$INFRA_NAMESPACE_LABEL}"
 
+# --- awk: walk every document into full key PATHS (INV-8/9/10, LOC-7).
+#     Output: <kind> <TAB> <metadata.name> <TAB> <path> <TAB> <raw value>
+#     Path segments are joined with "::"; a sequence item becomes "[i]", indexed
+#     from 0 per parent path, so containers::[0]::env::[3]::name is unambiguous.
+#
+#     WHY PATHS. kubectl kustomize sorts map keys alphabetically, so inside a
+#     container `env:` is emitted BEFORE that container's own `name:`, and inside
+#     a pod template `metadata:` precedes `spec:`. Any scan that finds a container
+#     by its name and reads FORWARD sees none of its env — the ordering trap INV-3
+#     and INV-7 already document. A full path is independent of emission order.
+#
+#     kustomize emits a sequence at the SAME indent as its parent key
+#     ("containers:" and "- env:" share a column), which is why a list item pops
+#     only deeper frames and earlier sibling items, never its parent. Block
+#     scalars (| and >) are skipped whole so their text is never read as keys.
+RENDER_PATHS_AWK='
+function flush(  i) {
+    if (n == 0) return
+    kind = ""; nm = ""
+    for (i = 1; i <= n; i++) {
+        if (buf[i] ~ /^kind: /)   { kind = buf[i]; sub(/^kind:[[:space:]]*/, "", kind) }
+        if (nm == "" && buf[i] ~ /^  name: /) { nm = buf[i]; sub(/^  name:[[:space:]]*/, "", nm) }
+    }
+    sp = 0; delete sind; delete sseg; delete slist; delete cnt; blockind = -1
+    for (i = 1; i <= n; i++) walk(buf[i])
+    n = 0; delete buf
+}
+function path(  j, p) {
+    p = ""
+    for (j = 1; j <= sp; j++) p = p (p == "" ? "" : "::") sseg[j]
+    return p
+}
+function keyline(rest, ind,   k, v) {
+    k = rest; sub(/:([[:space:]].*)?$/, "", k)
+    v = rest; if (v ~ /^[^:]*:[[:space:]]/) sub(/^[^:]*:[[:space:]]*/, "", v); else v = ""
+    sp++; sind[sp] = ind; sseg[sp] = k; slist[sp] = 0
+    printf "%s\t%s\t%s\t%s\n", kind, nm, path(), v
+    if (v ~ /^[|>][-+0-9]*$/) blockind = ind
+}
+function walk(l,   ind, rest, P) {
+    if (l ~ /^[[:space:]]*$/ || l ~ /^[[:space:]]*#/) return
+    ind = match(l, /[^ ]/) - 1
+    if (blockind >= 0) { if (ind > blockind) return; blockind = -1 }
+    rest = substr(l, ind + 1)
+    if (rest ~ /^- / || rest == "-") {
+        while (sp > 0 && (sind[sp] > ind || (sind[sp] == ind && slist[sp]))) sp--
+        P = path()
+        sp++; sind[sp] = ind; sseg[sp] = "[" (cnt[P]++) "]"; slist[sp] = 1
+        rest = substr(rest, 3)
+        if (rest ~ /^[A-Za-z0-9_.\/-]+:([[:space:]]|$)/) keyline(rest, ind + 2)
+        else if (rest != "") printf "%s\t%s\t%s\t%s\n", kind, nm, path(), rest
+        return
+    }
+    while (sp > 0 && sind[sp] >= ind) sp--
+    if (rest ~ /^[A-Za-z0-9_.\/-]+:([[:space:]]|$)/) keyline(rest, ind)
+}
+/^---[[:space:]]*$/ { flush(); next }
+{ buf[++n] = $0 }
+END { flush() }
+'
+
+# cfg_get <cfg.tsv> <key> — the app-config value with ONE pair of surrounding
+# quotes removed, or "(ABSENT)". kustomize quotes values that would otherwise
+# parse as non-strings ("false", "", "5432") and leaves URLs bare, so comparing
+# raw tokens would make an assertion depend on YAML quoting rather than content.
+cfg_get() {
+    awk -F'\t' -v k="$2" '
+        $1 == k { v = $2; if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2); print v; found = 1; exit }
+        END { if (!found) print "(ABSENT)" }' "$1"
+}
+
+# path_get <paths.tsv> <kind> <name> <path> — the raw value at an exact path, or
+# "(ABSENT)". Raw on purpose: INV-10 must tell the string "true" from a bare
+# boolean true (a label value must be a string; the bare form is rejected at apply).
+path_get() {
+    awk -F'\t' -v k="$2" -v n="$3" -v p="$4" '
+        $1 == k && $2 == n && $3 == p { print $4; found = 1; exit }
+        END { if (!found) print "(ABSENT)" }' "$1"
+}
+
+is_wi_target() {
+    local rel="$1" t
+    for t in "${WI_TARGETS[@]}"; do
+        [[ "$rel" == "$t" ]] && return 0
+    done
+    return 1
+}
+declare -A WI_TARGET_SEEN=()
+
 is_local_only_target() {
     local rel="$1" excluded
     for excluded in "${LOCAL_ONLY_TARGETS[@]}"; do
@@ -774,7 +1030,7 @@ for dir in "${TARGETS[@]}"; do
             FAILED=1
             inv4_msg="FAIL"
         else
-            inv4_msg="OK (0 localhost / 127.0.0.1 / minioadmin literals)"
+            inv4_msg="OK (0 localhost / 127.0.0.1 / UseDevelopmentStorage / devstoreaccount1 / AccountKey= literals)"
         fi
     fi
 
@@ -902,12 +1158,205 @@ for dir in "${TARGETS[@]}"; do
         inv7_msg="OK ($inv7_checked policy/policies, db.port=$db_port honoured)"
     fi
 
-    if [[ "$inv1_msg" == FAIL* || "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
-          || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg" >&2
+    # ---------------- INV-8 / INV-9 / INV-10 (Phase 36) ----------------
+    # Staging and production only (WI_TARGETS). Every value is read by exact key
+    # or exact PATH, never by a forward scan (kustomize sorts map keys).
+    if is_wi_target "$rel"; then
+        WI_TARGET_SEEN["$rel"]=1
+        awk "$RENDER_PATHS_AWK" "$render" > "$TMP/paths.tsv"
+        (( $(wc -l < "$TMP/paths.tsv") > 0 )) || parse_fail "[$rel] INV-8..INV-10: the path walker emitted 0 records for the render — it is blind, and every storage assertion below would pass vacuously. Fix RENDER_PATHS_AWK, do not delete the invariants."
+        if [[ "$(path_get "$TMP/paths.tsv" Deployment core-java 'spec::template::spec::containers::[0]::name')" == "(ABSENT)" ]]; then
+            parse_fail "[$rel] INV-8..INV-10: no Deployment core-java container found by path — either the render lost core-java (a far bigger problem) or the path walker is blind. Fix it, do not delete the invariants."
+        fi
+
+        # ---- INV-8: the storage model ----
+        inv8_bad=0
+        m_mode="$(cfg_get "$TMP/cfg.tsv" storage.blob.auth-mode)"
+        b_mode="$(cfg_get "$TMP/cfg.tsv" backup.blob.auth-mode)"
+        m_ep="$(cfg_get "$TMP/cfg.tsv" storage.blob.endpoint)"
+        b_ep="$(cfg_get "$TMP/cfg.tsv" backup.blob.endpoint)"
+        m_url="$(cfg_get "$TMP/cfg.tsv" storage.blob.public-url)"
+        m_pub="$(cfg_get "$TMP/cfg.tsv" storage.blob.public-container)"
+        m_quar="$(cfg_get "$TMP/cfg.tsv" storage.blob.quarantine-container)"
+        m_create="$(cfg_get "$TMP/cfg.tsv" storage.blob.create-containers)"
+        for pair in "storage.blob.auth-mode=$m_mode" "backup.blob.auth-mode=$b_mode"; do
+            if [[ "${pair#*=}" != "workload-identity" ]]; then
+                echo "  FAIL [$rel] INV-8: app-config '${pair%%=*}' is '${pair#*=}', expected 'workload-identity' (D-02)." >&2
+                inv8_bad=1
+            fi
+        done
+        for pair in "storage.blob.endpoint=$m_ep" "backup.blob.endpoint=$b_ep"; do
+            if [[ ! "${pair#*=}" =~ $BLOB_ACCOUNT_ENDPOINT_RE ]]; then
+                echo "  FAIL [$rel] INV-8: app-config '${pair%%=*}' is '${pair#*=}', which is not a raw Blob account endpoint ($BLOB_ACCOUNT_ENDPOINT_RE, D-06)." >&2
+                inv8_bad=1
+            fi
+        done
+        if [[ "$m_url" != "$m_ep/$BLOB_PUBLIC_CONTAINER" ]]; then
+            echo "  FAIL [$rel] INV-8: storage.blob.public-url is '$m_url', expected exactly the media endpoint + /$BLOB_PUBLIC_CONTAINER = '$m_ep/$BLOB_PUBLIC_CONTAINER' (D-06: it is the origin every persisted image URL carries)." >&2
+            inv8_bad=1
+        fi
+        if [[ "$m_pub" != "$BLOB_PUBLIC_CONTAINER" || "$m_quar" != "$BLOB_QUARANTINE_CONTAINER" ]]; then
+            echo "  FAIL [$rel] INV-8: containers are public='$m_pub' quarantine='$m_quar', expected '$BLOB_PUBLIC_CONTAINER' / '$BLOB_QUARANTINE_CONTAINER' (D-07)." >&2
+            inv8_bad=1
+        fi
+        if [[ "$m_create" != "false" ]]; then
+            echo "  FAIL [$rel] INV-8: storage.blob.create-containers is '$m_create', expected 'false' — Set Container ACL cannot be authorized with Entra ID, and core-java refuses 'true' in workload-identity mode." >&2
+            inv8_bad=1
+        fi
+        if [[ "$m_ep" == "$b_ep" ]]; then
+            echo "  FAIL [$rel] INV-8: the media and backup endpoints are the SAME account ('$m_ep'). D-01 puts the logical dump in a DEDICATED account (another region), so a compromised media identity cannot reach it." >&2
+            inv8_bad=1
+        fi
+        if (( inv8_bad != 0 )); then
+            FAILED=1
+            inv8_msg="FAIL"
+        else
+            inv8_msg="OK (workload-identity x2, media ${m_ep#https://} != backup ${b_ep#https://}, public-url = media + /$BLOB_PUBLIC_CONTAINER)"
+        fi
+
+        # ---- INV-9: no stored storage credential ----
+        inv9_bad=0
+        secret_refs=$(awk -F'\t' '$3 ~ /::secretKeyRef::name$/ || $3 ~ /::secretRef::name$/ || $3 ~ /::secret::secretName$/ || $3 ~ /::sources::\[[0-9]+\]::secret::name$/' "$TMP/paths.tsv")
+        [[ -n "$secret_refs" ]] || parse_fail "[$rel] INV-9 found 0 Secret references in the render. core-java and pg-backup both read postgres-credentials, so zero means the path walker is blind and the 'no storage Secret' assertion would pass vacuously. Fix it, do not delete the invariant."
+        secret_ref_count=$(wc -l <<< "$secret_refs")
+        while IFS=$'\t' read -r k n pth v; do
+            if [[ "${v,,}" =~ $STORAGE_SECRET_NAME_RE ]]; then
+                echo "  FAIL [$rel] INV-9: $k/$n references Secret '$v' at $pth — a stored storage credential (D-02 forbids one in any Secret, sealed or not)." >&2
+                inv9_bad=1
+            fi
+        done <<< "$secret_refs"
+        env_names=$(awk -F'\t' '$3 ~ /::env::\[[0-9]+\]::name$/' "$TMP/paths.tsv")
+        [[ -n "$env_names" ]] || parse_fail "[$rel] INV-9 found 0 env names by path — the path walker is blind. Fix it, do not delete the invariant."
+        while IFS=$'\t' read -r k n pth v; do
+            if [[ "$v" =~ $STORAGE_CRED_ENV_RE ]]; then
+                echo "  FAIL [$rel] INV-9: $k/$n sets env '$v' ($pth) — a connection string or stored cloud credential outside the local overlay (D-02)." >&2
+                inv9_bad=1
+            fi
+        done <<< "$env_names"
+        if awk -F'\t' '$1 ~ /connection-string/ { found = 1 } END { exit !found }' "$TMP/cfg.tsv"; then
+            echo "  FAIL [$rel] INV-9: app-config carries a connection-string key: $(awk -F'\t' '$1 ~ /connection-string/ { printf "%s ", $1 }' "$TMP/cfg.tsv")" >&2
+            inv9_bad=1
+        fi
+        if (( inv9_bad != 0 )); then
+            FAILED=1
+            inv9_msg="FAIL"
+        else
+            inv9_msg="OK ($secret_ref_count Secret ref(s), none storage; 0 connection-string/AWS_/AZURE_STORAGE_ env; 0 connection-string key)"
+        fi
+
+        # ---- INV-10: Workload Identity wiring ----
+        inv10_bad=0
+        for wl in $(printf '%s\n' "${!WI_WORKLOAD_TEMPLATE[@]}" | sort); do
+            wk="${wl%%/*}"; wn="${wl#*/}"; tp="${WI_WORKLOAD_TEMPLATE[$wl]}"
+            lbl="$(path_get "$TMP/paths.tsv" "$wk" "$wn" "$tp::metadata::labels::$WI_LABEL_KEY")"
+            san="$(path_get "$TMP/paths.tsv" "$wk" "$wn" "$tp::spec::serviceAccountName")"
+            if [[ "$lbl" != '"true"' ]]; then
+                echo "  FAIL [$rel] INV-10: $wl pod template label $WI_LABEL_KEY is $lbl, expected the STRING \"true\" at $tp::metadata::labels. Without it the webhook injects no identity and core-java refuses to boot." >&2
+                inv10_bad=1
+            fi
+            if [[ "$san" != "${WI_WORKLOAD_SA[$wl]}" ]]; then
+                echo "  FAIL [$rel] INV-10: $wl runs as serviceAccountName '$san', expected '${WI_WORKLOAD_SA[$wl]}' (the federated credential's subject names exactly that ServiceAccount)." >&2
+                inv10_bad=1
+            fi
+        done
+        for sa in $(printf '%s\n' "${WI_WORKLOAD_SA[@]}" | sort -u); do
+            am="$(path_get "$TMP/paths.tsv" ServiceAccount "$sa" automountServiceAccountToken)"
+            if [[ "$am" != "false" ]]; then
+                echo "  FAIL [$rel] INV-10: ServiceAccount '$sa' has automountServiceAccountToken=$am, expected false (it must exist, and neither workload needs a Kubernetes API token)." >&2
+                inv10_bad=1
+            fi
+        done
+        # Least privilege: no pod template other than the two Blob workloads opts in.
+        while IFS=$'\t' read -r k n pth v; do
+            [[ -n "$k" ]] || continue
+            tp="${WI_WORKLOAD_TEMPLATE[$k/$n]:-}"
+            if [[ -z "$tp" || "$pth" != "$tp::metadata::labels::$WI_LABEL_KEY" ]]; then
+                echo "  FAIL [$rel] INV-10: $k/$n carries $WI_LABEL_KEY at $pth — only the pod templates of ${!WI_WORKLOAD_TEMPLATE[*]} may opt into Workload Identity." >&2
+                inv10_bad=1
+            fi
+        done <<< "$(awk -F'\t' -v key="$WI_LABEL_KEY" '{ n = split($3, seg, "::"); if (seg[n] == key) print }' "$TMP/paths.tsv")"
+        if (( inv10_bad != 0 )); then
+            FAILED=1
+            inv10_msg="FAIL"
+        else
+            inv10_msg="OK (${#WI_WORKLOAD_TEMPLATE[@]} pod templates labelled + dedicated SA; 2 ServiceAccounts, automount false; no other opt-in)"
+        fi
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg"
+        inv8_msg="SKIP (not in WI_TARGETS)"
+        inv9_msg="SKIP (not in WI_TARGETS)"
+        inv10_msg="SKIP (not in WI_TARGETS)"
     fi
+
+    # ---------------- INV-11 (Phase 36 D-08, code review WR-01) ----------------
+    # EVERY target: no render can switch off the boot-time storage probe.
+    inv11_bad=0
+    # (a) raw render text, every document, every field.
+    inv11_hits=""; inv11_rc=0
+    inv11_hits=$(grep -niE -e "$PROBE_SWITCH_RE" "$render") || inv11_rc=$?
+    if (( inv11_rc > 1 )); then
+        parse_fail "[$rel] INV-11: grep failed (rc=$inv11_rc) reading the render — refusing to report 'no probe switch' from a scan that did not run."
+    fi
+    if [[ -n "$inv11_hits" ]]; then
+        while IFS= read -r hit; do
+            echo "  FAIL [$rel] INV-11: the render names the storage-probe switch (render line ${hit%%:*}): ${hit#*:}" >&2
+        done <<< "$inv11_hits"
+        inv11_bad=1
+    fi
+    # (b) + (c) per core-java container, by exact path.
+    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv11_paths.tsv"
+    inv11_ctrs=$(awk -F'\t' -v img="$CORE_JAVA_IMAGE_RE" \
+        '$3 ~ /::containers::\[[0-9]+\]::image$/ && $4 ~ img { p = $3; sub(/::image$/, "", p); print $1 "\t" $2 "\t" p }' \
+        "$TMP/inv11_paths.tsv")
+    [[ -n "$inv11_ctrs" ]] || parse_fail "[$rel] INV-11 found 0 containers running the core-java image by path — either the render lost core-java or the path walker is blind, and the per-container probe checks would pass vacuously. Fix it, do not delete the invariant."
+    inv11_n=0
+    while IFS=$'\t' read -r ck cn cp; do
+        (( ++inv11_n ))
+        while IFS=$'\t' read -r _k _n pth v; do
+            sub="${pth#"$cp"::}"
+            if [[ "$sub" == envFrom ]]; then
+                echo "  FAIL [$rel] INV-11: $ck/$cn container at $cp uses envFrom ($pth) — it imports env names the render cannot enumerate, so the storage-probe switch could arrive unseen (D-08)." >&2
+                inv11_bad=1
+            elif [[ "$sub" =~ ^env::\[([0-9]+)\]::name$ ]]; then
+                # Capture the index NOW: the next =~ overwrites BASH_REMATCH.
+                item="$cp::env::[${BASH_REMATCH[1]}]"
+                norm="${v,,}"; norm="${norm//[^a-z0-9]/}"
+                if [[ "$norm" == "$PROBE_JSON_ENV_NORM" ]]; then
+                    echo "  FAIL [$rel] INV-11: $ck/$cn container at $cp sets env '$v' — SPRING_APPLICATION_JSON can set any property, the storage-probe switch included (D-08)." >&2
+                    inv11_bad=1
+                elif [[ "$norm" =~ $PROBE_JVM_OPTS_ENV_NORM_RE ]]; then
+                    if [[ "$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$item::valueFrom::secretKeyRef::name")" != "(ABSENT)" ]]; then
+                        echo "  FAIL [$rel] INV-11: $ck/$cn container at $cp sources '$v' from a Secret — a -D flag in it would switch the storage probe off where no render check can read it (D-08)." >&2
+                        inv11_bad=1
+                    fi
+                fi
+            fi
+        done < <(awk -F'\t' -v k="$ck" -v n="$cn" -v p="$cp::" '$1 == k && $2 == n && index($3, p) == 1' "$TMP/inv11_paths.tsv")
+    done <<< "$inv11_ctrs"
+    if (( inv11_bad != 0 )); then
+        echo "        D-08: the boot-time storage probe (#626 container levels) is ON in every runtime." >&2
+        echo "        A literal in application.yml does not make that true — env, SPRING_APPLICATION_JSON," >&2
+        echo "        args and -D all outrank it. Remove the override; test contexts opt out in" >&2
+        echo "        core-java/src/test/resources, never in a manifest." >&2
+        FAILED=1
+        inv11_msg="FAIL"
+    else
+        inv11_msg="OK ($inv11_n core-java container(s); 0 probe-switch spellings in the render; no SPRING_APPLICATION_JSON, no Secret-sourced JVM options, no envFrom)"
+    fi
+
+    if [[ "$inv1_msg" == FAIL* || "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
+          || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
+          || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
+          || "$inv11_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg" >&2
+    else
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg"
+    fi
+done
+
+# WI_TARGETS non-vacuity: a renamed or removed overlay must not make INV-8..INV-10
+# silently stop running. Every listed target must have been rendered and checked.
+for t in "${WI_TARGETS[@]}"; do
+    [[ -n "${WI_TARGET_SEEN[$t]:-}" ]] || parse_fail "INV-8..INV-10: WI_TARGETS names '$t', but no kustomize target at that path was discovered, so its storage invariants never ran. Update WI_TARGETS in the SAME change that renames an overlay."
 done
 echo
 
@@ -1017,15 +1466,15 @@ fi
 echo
 
 # ===========================================================================
-# LOC-1..LOC-6 — the k8s/local overlay (Phase 26 / INFRA-01)
+# LOC-1..LOC-7 — the k8s/local overlay (Phase 26 / INFRA-01; LOC-7 Phase 36)
 #
 # CONDITIONAL BY DESIGN: if the overlay is ever removed this section is skipped
 # and the script stays valid, rather than failing on a missing directory.
 # ===========================================================================
-LOCAL_SECTION="LOC-1..LOC-6 SKIPPED (k8s/local/kustomization.yaml not present)"
+LOCAL_SECTION="LOC-1..LOC-6, LOC-7 SKIPPED (k8s/local/kustomization.yaml not present)"
 
 if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
-    echo "LOC-1..LOC-6 (INFRA-01, k8s/local): the committed local overlay's shape"
+    echo "LOC-1..LOC-7 (INFRA-01 + Phase 36, k8s/local): the committed local overlay's shape"
 
     LOCAL_RENDER="$TMP/loc_local.yaml"
     if ! kubectl kustomize "$LOCAL_DIR" > "$LOCAL_RENDER" 2> "$TMP/stderr"; then
@@ -1048,8 +1497,12 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
       'redis.host'
       'rabbitmq.host'
       'stomp.broker.relay-host'
-      's3.endpoint'
-      's3.backup.endpoint'
+      # Phase 36: the pod reaches the host Azurite through the emulator string's
+      # DevelopmentStorageProxyUri, so the CONNECTION STRINGS carry the shim
+      # (storage.blob.endpoint / backup.blob.endpoint are empty: unused in
+      # connection-string mode).
+      'storage.blob.connection-string'
+      'backup.blob.connection-string'
       'smtp.host'
       'keycloak.issuer.uri'
       'keycloak.admin.base-url'
@@ -1082,9 +1535,9 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
         echo "        that is the POD's own loopback. minikube maintains the host-gateway mapping as" >&2
         echo "        '$LOCAL_HOST_SHIM' (its underlying IP varies by driver, so an IP literal is" >&2
         echo "        the DEF-1 defect class). An unshimmed endpoint fails at RUNTIME, per feature," >&2
-        echo "        not at build time: a wrong s3.endpoint breaks image upload only, a wrong" >&2
-        echo "        smtp.host breaks email only. DELIBERATE EXCEPTIONS, both browser-reachable and" >&2
-        echo "        both correctly NOT in the list above: s3.public-url (the browser loads image" >&2
+        echo "        not at build time: a wrong storage.blob.connection-string breaks image upload" >&2
+        echo "        only, a wrong smtp.host breaks email only. DELIBERATE EXCEPTIONS, both browser-" >&2
+        echo "        reachable and both correctly NOT in the list above: storage.blob.public-url (the browser loads image" >&2
         echo "        URLs) and keycloak.public.issuer.uri (the issuer Keycloak STAMPS into 'iss')." >&2
         FAILED=1
         loc1_msg="FAIL"
@@ -1139,17 +1592,20 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
     fi
 
     # ---------------- LOC-3 ----------------
-    LOCAL_BACKUP_ENDPOINT="http://$LOCAL_HOST_SHIM:9000"
-    backup_val="$(cfg_value 's3.backup.endpoint')"
-    if [[ "$backup_val" != "$LOCAL_BACKUP_ENDPOINT" ]]; then
-        echo "  FAIL [k8s/local] LOC-3: app-config 's3.backup.endpoint' is '$backup_val', expected exactly '$LOCAL_BACKUP_ENDPOINT'." >&2
-        echo "        The base value is the EMPTY string, which the backup script reads as \"real AWS" >&2
-        echo "        S3\". Locally that aims a database dump at real AWS with no credentials, and it" >&2
-        echo "        makes the restore rehearsal (issue #101) impossible to run at all." >&2
+    # Phase 36: the backup target is the host Azurite, through the emulator string.
+    LOCAL_BACKUP_CONNECTION_STRING="UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://$LOCAL_HOST_SHIM"
+    backup_mode="$(cfg_get "$TMP/loc_cfg.tsv" backup.blob.auth-mode)"
+    backup_cs="$(cfg_get "$TMP/loc_cfg.tsv" backup.blob.connection-string)"
+    if [[ "$backup_mode" != "connection-string" || "$backup_cs" != "$LOCAL_BACKUP_CONNECTION_STRING" ]]; then
+        echo "  FAIL [k8s/local] LOC-3: app-config backup.blob.auth-mode='$backup_mode' backup.blob.connection-string='$backup_cs';" >&2
+        echo "        expected exactly 'connection-string' and '$LOCAL_BACKUP_CONNECTION_STRING'." >&2
+        echo "        Base names the PRODUCTION backup account under workload identity. Locally that" >&2
+        echo "        aims a database dump at a real Azure account with no identity, and it makes the" >&2
+        echo "        restore rehearsal (issue #101) impossible to run at all." >&2
         FAILED=1
         loc3_msg="FAIL"
     else
-        loc3_msg="OK ($backup_val)"
+        loc3_msg="OK (connection-string -> $backup_cs)"
     fi
 
     # ---------------- LOC-4 ----------------
@@ -1260,9 +1716,59 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
         loc6_msg="OK (no kustomize secret generation, no placeholder literal)"
     fi
 
+    # ---------------- LOC-7 ----------------
+    # Phase 36: the emulator path is WIRED, not just configured. The connection
+    # strings exist only in k8s/local, so an unwired key is a silently ignored value.
+    awk "$RENDER_PATHS_AWK" "$LOCAL_RENDER" > "$TMP/loc_paths.tsv"
+    (( $(wc -l < "$TMP/loc_paths.tsv") > 0 )) || parse_fail "LOC-7: the path walker emitted 0 records for the k8s/local render — it is blind. Fix RENDER_PATHS_AWK, do not delete the invariant."
+    loc7_bad=0
+    loc_mode="$(cfg_get "$TMP/loc_cfg.tsv" storage.blob.auth-mode)"
+    loc_create="$(cfg_get "$TMP/loc_cfg.tsv" storage.blob.create-containers)"
+    if [[ "$loc_mode" != "connection-string" ]]; then
+        echo "  FAIL [k8s/local] LOC-7: storage.blob.auth-mode is '$loc_mode', expected 'connection-string' (local has no Workload Identity webhook)." >&2
+        loc7_bad=1
+    fi
+    if [[ "$loc_create" != "true" ]]; then
+        echo "  FAIL [k8s/local] LOC-7: storage.blob.create-containers is '$loc_create', expected 'true' (Azurite starts empty)." >&2
+        loc7_bad=1
+    fi
+    # <kind> <name> <pod-template path prefix> <container> <expected app-config key>
+    for spec in "Deployment core-java spec::template core-java storage.blob.connection-string" \
+                "CronJob pg-backup spec::jobTemplate::spec::template pg-backup backup.blob.connection-string"; do
+        read -r wk wn tp cn want <<< "$spec"
+        wired=$(awk -F'\t' -v k="$wk" -v n="$wn" -v tp="$tp" -v cn="$cn" -v want="$want" '
+            $1 != k || $2 != n { next }
+            index($3, tp "::spec::containers::[") == 1 {
+                rest = substr($3, length(tp "::spec::containers::[") + 1)
+                ci = rest; sub(/\].*$/, "", ci); tail = rest; sub(/^[0-9]+\]::/, "", tail)
+                if (tail == "name") cname[ci] = $4
+                if (tail ~ /^env::\[[0-9]+\]::name$/ && $4 == "STORAGE_CONNECTION_STRING") { ei = tail; sub(/^env::\[/, "", ei); sub(/\].*$/, "", ei); envat[ci] = ei }
+                if (tail ~ /^env::\[[0-9]+\]::valueFrom::configMapKeyRef::key$/) { ei = tail; sub(/^env::\[/, "", ei); sub(/\].*$/, "", ei); keyof[ci "," ei] = $4 }
+            }
+            END {
+                for (c in cname) if (cname[c] == cn && (c in envat) && keyof[c "," envat[c]] == want) { print "yes"; exit }
+                print "no"
+            }' "$TMP/loc_paths.tsv")
+        if [[ "$wired" != "yes" ]]; then
+            echo "  FAIL [k8s/local] LOC-7: $wk/$wn container '$cn' has no STORAGE_CONNECTION_STRING env from app-config '$want'." >&2
+            loc7_bad=1
+        fi
+    done
+    if (( loc7_bad != 0 )); then
+        echo "        Without it core-java falls back to the bare UseDevelopmentStorage=true default," >&2
+        echo "        which dials 127.0.0.1:10000 — the POD's own loopback — so every upload fails, and" >&2
+        echo "        blobctl refuses to run the backup. The env comes from k8s/local/storage-env-patch.yaml;" >&2
+        echo "        check it is listed under patches: in k8s/local/kustomization.yaml." >&2
+        FAILED=1
+        loc7_msg="FAIL"
+    else
+        loc7_msg="OK (connection-string, create-containers true, STORAGE_CONNECTION_STRING wired on core-java + pg-backup)"
+    fi
+
     if [[ "$loc1_msg" == FAIL* || "$loc2_msg" == FAIL* || "$loc3_msg" == FAIL* \
-          || "$loc4_msg" == FAIL* || "$loc5_msg" == FAIL* || "$loc6_msg" == FAIL* ]]; then
-        echo "FAIL [k8s/local]: LOC-1 $loc1_msg | LOC-2 $loc2_msg | LOC-3 $loc3_msg | LOC-4 $loc4_msg | LOC-5 $loc5_msg | LOC-6 $loc6_msg" >&2
+          || "$loc4_msg" == FAIL* || "$loc5_msg" == FAIL* || "$loc6_msg" == FAIL* \
+          || "$loc7_msg" == FAIL* ]]; then
+        echo "FAIL [k8s/local]: LOC-1 $loc1_msg | LOC-2 $loc2_msg | LOC-3 $loc3_msg | LOC-4 $loc4_msg | LOC-5 $loc5_msg | LOC-6 $loc6_msg | LOC-7 $loc7_msg" >&2
     else
         echo "  OK   [k8s/local] LOC-1 $loc1_msg"
         echo "  OK   [k8s/local] LOC-2 $loc2_msg"
@@ -1270,8 +1776,9 @@ if [[ -f "$LOCAL_KUSTOMIZATION" ]]; then
         echo "  OK   [k8s/local] LOC-4 $loc4_msg"
         echo "  OK   [k8s/local] LOC-5 $loc5_msg"
         echo "  OK   [k8s/local] LOC-6 $loc6_msg"
+        echo "  OK   [k8s/local] LOC-7 $loc7_msg"
     fi
-    LOCAL_SECTION="LOC-1..LOC-6 checked on k8s/local"
+    LOCAL_SECTION="LOC-1..LOC-6, LOC-7 checked on k8s/local"
     echo
 fi
 
@@ -1280,4 +1787,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7 hold across ${#TARGETS[@]} kustomize target(s); $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7 and INV-11 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10 hold on ${WI_TARGETS[*]}; $LOCAL_SECTION."

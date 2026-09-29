@@ -51,7 +51,7 @@
 #
 # WHAT THIS DOES NOT DO
 #
-#   It seeds DATABASE state only. No object is written to MinIO, so clicking Re-process
+#   It seeds DATABASE state only. No object is written to the object store, so clicking Re-process
 #   on the redrivable fixture would fail at the storage layer. That is honest for this
 #   spec, which asserts the control is VISIBLE and UNCLIPPED at 320px and never clicks
 #   it. If a future spec clicks Re-process, this script is not sufficient — extend it,

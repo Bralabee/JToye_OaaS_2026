@@ -130,9 +130,14 @@ public class GdprService {
      *       guest storefront orders (customer_id NULL) that share the subject's email,
      *       de-duplicated by order id. The email sweep is the line that reaches guest
      *       orders which a customer_id-only walk misses.</li>
-     *   <li><b>S3 cleanup</b> — physically deletes each review photo from S3/MinIO via
+     *   <li><b>Photo cleanup</b> — physically deletes each review photo from Azure Blob via
      *       {@link StorageService#delete} (idempotent, WARN-and-continue) before nulling
-     *       the URLs.</li>
+     *       the URLs. Only a photo that call actually removed is counted in
+     *       {@code photosDeleted} (code review WR-02): review photo URLs are client-supplied,
+     *       so an external URL, another tenant's URL (refused by D-09), an already-absent
+     *       object or a failed delete is NOT a deletion and is never recorded as one. Those
+     *       are counted separately and logged at WARN, because the {@link ErasureRecord} is the
+     *       Article 17 evidence row and must not claim an erasure that did not happen.</li>
      *   <li><b>Audit scrub</b> — scrubs pre-erasure PII from the append-only Envers
      *       {@code orders_aud}/{@code customers_aud} history via tenant-scoped native
      *       UPDATEs (deliberate Article-17 exception; Envers stays enabled).</li>
@@ -190,16 +195,21 @@ public class GdprService {
         int ordersAnonymised = ordersById.size();
         orderRepository.saveAll(new ArrayList<>(ordersById.values()));
 
-        // Anonymise PII on reviews AND physically delete their S3/MinIO photos.
+        // Anonymise PII on reviews AND physically delete their stored photos.
         List<Review> reviews = reviewRepository.findByCustomerEmail(originalEmail);
         int reviewsAnonymised = 0;
         int photosDeleted = 0;
+        int photosNotDeleted = 0;
         for (Review review : reviews) {
             List<String> photoUrls = review.getPhotoUrls();
             if (photoUrls != null) {
                 for (String url : photoUrls) {
-                    storageService.delete(url);
-                    photosDeleted++;
+                    // WR-02: count what the store actually removed, not what was attempted.
+                    if (storageService.delete(url)) {
+                        photosDeleted++;
+                    } else {
+                        photosNotDeleted++;
+                    }
                 }
             }
             review.setCustomerName(ANONYMISED);
@@ -239,6 +249,14 @@ public class GdprService {
                         + "{} audit rows scrubbed, {} photos deleted, {} directory rows erased; record {}",
                 customerId, ordersAnonymised, reviewsAnonymised, audRowsScrubbed, photosDeleted,
                 directoryRowsErased, record.getId());
+        if (photosNotDeleted > 0) {
+            // The URLs are nulled on the review either way; this says how many stored photos the
+            // record does NOT vouch for (external, refused cross-tenant, already absent, or failed).
+            log.warn("GDPR erasure for customer {} — {} review photo URL(s) were NOT deleted from storage "
+                            + "(external, refused by the tenant guard, already absent, or a store failure) "
+                            + "and are not counted in record {}",
+                    customerId, photosNotDeleted, record.getId());
+        }
 
         return new GdprController.ErasureResponse(
                 customerId,

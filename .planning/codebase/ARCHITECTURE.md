@@ -59,7 +59,7 @@
 | RabbitMQ | Transactional-outbox event fan-out (payment, media) + STOMP relay for KDS | `infra/rabbitmq/`, `core-java/.../config/RabbitMQConfig.java` |
 | Keycloak | OIDC/OAuth2 identity provider — vendor realm + customer realm | `infra/keycloak/` |
 | Redis | Tenant-scoped cache (Spring Cache), session support | `core-java/.../config/CacheConfig.java` |
-| MinIO / S3 | Object storage for normalized media derivatives | `core-java/.../media/MediaAssetService.java` |
+| Azure Blob Storage (Azurite locally) | Object storage for normalized media derivatives (`jtoye-images` public, `jtoye-quarantine` private) | `core-java/.../storage/StorageService.java`, `core-java/.../media/MediaAssetService.java` |
 
 ## Pattern Overview
 
@@ -94,7 +94,7 @@
 - Purpose: Full REST API surface — CRUD, state machines, business rules, tenant isolation enforcement
 - Location: `core-java/src/main/java/uk/jtoye/core/` — one package per domain (`shop`, `product`, `order`, `customer`, `payment`, `media`, `onboarding`, `security/access`, `gdpr`, `webhook`, `notification`, `finance`, `geo`, `storefront`, `sync`, `tenant`, `ai`, `audit`, `review`, `storage`, `common`, `exception`, `config`, `security`, `websocket`)
 - Contains: `@RestController` classes, `@Service` business logic, `@Repository`/`JpaRepository` data access, JPA entities, MapStruct mappers, `@Aspect` cross-cutting concerns (tenant GUC pinning)
-- Depends on: PostgreSQL (RLS-enabled), Redis (cache), RabbitMQ (outbox + STOMP relay), Stripe API, S3/MinIO, Keycloak (JWKS + admin API for deprovisioning), Ollama (image analysis, `ai` package)
+- Depends on: PostgreSQL (RLS-enabled), Redis (cache), RabbitMQ (outbox + STOMP relay), Stripe API, Azure Blob Storage (Workload Identity in AKS; Azurite locally), Keycloak (JWKS + admin API for deprovisioning), Ollama (image analysis, `ai` package)
 - Used by: Frontend, edge gateway (one route), MCP server, batch sync clients
 
 **Repository Layer:**
@@ -143,7 +143,7 @@
 1. Vendor uploads via `MediaUploadController` → reject-early on `Content-Length` (413), then a `MediaAsset` row is created `PENDING` and bytes go to quarantine storage
 2. An outbox row is enqueued; `MediaProcessingWorker` (`@RabbitListener`) pins the tenant GUC, magic-byte-sniffs the format, guards against decompression bombs on header read, decode-verifies, strips EXIF, transcodes to WebP + a 400px thumbnail
 3. On success the asset flips to `ACTIVE` (optimistic-locked via `media_asset.version` so a stale `MediaPendingReaper` sweep can never race the worker and flip an already-ACTIVE asset back to `FAILED`); on failure it flips `FAILED` with a reason
-4. `product_media` is a join table (`product_id`, `asset_id`, `is_primary`, `sort_order`) — a product references assets rather than owning bytes, and physical MinIO deletion only happens at ref-count `COUNT(*)=0`
+4. `product_media` is a join table (`product_id`, `asset_id`, `is_primary`, `sort_order`) — a product references assets rather than owning bytes, and physical object deletion only happens at ref-count `COUNT(*)=0`
 
 **State Management:**
 - Order state: `Order.status` column, DB-sourced, machine-validated

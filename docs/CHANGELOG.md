@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 36: object storage is Azure Blob throughout, Azurite locally and in the nightly (#763) — 2026-09-29
+
+- **Why.** The retired self-hosted object store's community images are gone for good: the
+  repo was archived 2026-04-25, and its registry answers 401 to anonymous pulls. That kept
+  the nightly E2E red from 2026-09-25 (issue #683), and after the 2026-09-27 image prune
+  the local stack could not restart. The AWS object-store target in `k8s/{staging,production}`
+  was never provisioned, so there was no real data to migrate. The owner ruled on
+  2026-09-28: Azure Blob throughout.
+- **core-java.** Media goes through the Azure Blob SDK behind the unchanged `StorageService`
+  surface. Derivatives live in a public container and quarantine in a private one.
+  The #626 rule is asserted by a probe at every boot: anonymous GET by URL returns 200,
+  anonymous LIST is refused, and quarantine is unreadable. A storage misconfiguration now
+  fails at startup, not at the first upload. The AWS SDK is gone from the runtime classpath.
+- **Cross-tenant URL delete closed (D-09).** It was reproduced end to end first, under
+  NOSUPERUSER RLS: tenant A saved tenant B's image URL and deleted B's image. Now
+  `StorageService.delete(url)` refuses any key outside the caller's tenant, and fails closed
+  with no tenant context. GDPR erasure counts only blobs it actually removed (review WR-02).
+- **Backups.** pg-backup `:15-blob` uploads through `blobctl`. It is a write-only Go CLI with
+  no delete command, and it never overwrites. The image carries no AWS CLI (628 MB, down
+  from 832 MB). A two-arm restore drill runs in the nightly: arm A restores 0 rows, and
+  arm B matches the live count.
+- **k8s.** Staging and production use AKS Workload Identity through dedicated `core-java`
+  and `pg-backup` ServiceAccounts. There is no stored storage credential and no port 9000.
+  Media and backup live in separate accounts (D-11), and backups go to an immutable account
+  in another region (D-01).
+- **Runtimes and gates.**
+  - Compose, the hybrid runtime and the nightly run Azurite 3.37.0, pinned by digest, on
+    loopback 10000.
+  - Frontend CSP and `remotePatterns` admit that exact origin only.
+  - `scripts/check-no-object-store-residue.sh` fails CI on any retired-store token outside
+    a reasoned, line-level allowlist. It found 657 violations on the pre-phase tree.
+  - New nightly gates check that every stored image URL resolves anonymously and that
+    every stored Content-Type is an image type.
+  - A Playwright spec passes only when real pixels decode from the Azurite origin.
+- **Evidence.**
+  - Nightly `workflow_dispatch` run 36552435811 on the phase branch: 319 passed, 0 failed,
+    6 skipped. Its URL, Content-Type and restore-drill gates were green.
+  - CI/CD run 36616059803 on `b1066fe8`: every job green.
+  - `36-VERIFICATION.md` passed 6/6. It was re-run after the review fixes.
+  - `docs/metrics.json`: 4042 → 4130 logical invocations.
+- **Left to Phase 29** (`36-PHASE29-HANDOFF.md`). Provisioning the real accounts, the #626
+  read-back on staging, a live Workload Identity token exchange and locking the WORM policy.
+  Operator secrets drop from 7 to 3.
+
 ### core-java image gate green again: jackson-bom 2.21.6 for CVE-2026-68497 (#760) — 2026-09-29
 
 - **jackson-databind 2.21.4 → 2.21.6, via the BOM property.** The Trivy image gate

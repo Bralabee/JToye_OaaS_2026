@@ -125,7 +125,7 @@ Runtime Assumptions (Dev)
 - PostgreSQL: Port 5433 (Docker)
 - Keycloak: Port 8085, issuer `http://localhost:8085/realms/jtoye-dev`
 - Frontend: Port 3000
-- MinIO API: Port 9000, Console: Port 9001
+- Azurite (Azure Blob emulator, Phase 36): Port 10000, loopback-only, no credential to configure; public images at `http://localhost:10000/devstoreaccount1/jtoye-images`
 - Ollama: Port 11434
 - Mailhog SMTP: Port 1025, Web UI: Port 8025
 - JWT must contain `tenant_id` (PRODUCTION) or use `X-Tenant-Id` header as fallback (DEV ONLY).
@@ -163,7 +163,7 @@ Key Environment Variables:
 - Core: `DB_HOST`, `DB_PORT`, `KC_ISSUER_URI`, `SERVER_PORT`, **`DB_USER=jtoye_app` (MUST NOT be jtoye!)**
 - Edge: `CORE_API_URL`, `KC_ISSUER_URI`, `PORT`
 - Infra: `DB_PASSWORD`, `KC_ADMIN_PASSWORD` (Docker Compose only)
-- S3/MinIO: `S3_ENDPOINT` (MinIO/S3 endpoint URL), `S3_BUCKET` (image storage bucket name), `S3_PUBLIC_URL` (public URL prefix for stored images), `S3_ACCESS_KEY` (MinIO/S3 access key), `S3_SECRET_KEY` (MinIO/S3 secret key)
+- Object storage (Azure Blob; Azurite locally): `STORAGE_AUTH_MODE` (`connection-string` = the Azurite emulator only; `workload-identity` in AKS staging/production), `STORAGE_CONNECTION_STRING` (emulator only, e.g. `UseDevelopmentStorage=true`), `STORAGE_ENDPOINT` (Blob service endpoint, workload-identity mode), `STORAGE_PUBLIC_CONTAINER` / `STORAGE_QUARANTINE_CONTAINER` (`jtoye-images` public at access level blob, `jtoye-quarantine` private), `STORAGE_PUBLIC_URL` (public URL prefix for stored images). Staging/production configure no account key, connection string or SAS: core-java authenticates with Workload Identity
 - AI: `AI_PROVIDER` ("ollama" for local/free or "anthropic" for cloud/paid), `OLLAMA_URL` (Ollama server URL), `OLLAMA_MODEL` (vision model name, default: gemma3:12b), `ANTHROPIC_API_KEY` (only needed if AI_PROVIDER=anthropic)
 - Tenant IDs: `00000000-0000-0000-0000-000000000001` (Tenant A), `00000000-0000-0000-0000-000000000002` (Tenant B)
 

@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Guards the bundled demo-catalog imagery (quick task 260713-kds) against drift.
- * Pure classpath + POJO assertions — NO Spring context, NO MinIO, NO
+ * Pure classpath + POJO assertions — NO Spring context, NO object store, NO
  * Testcontainers — so it runs in the fast unit slice.
  *
  * <p>The load-bearing assertion is {@link #everyEntryMapsToACuratedProduct()}:

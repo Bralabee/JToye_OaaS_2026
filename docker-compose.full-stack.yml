@@ -1,5 +1,5 @@
 # Full-stack Docker Compose for local development and testing
-# Includes: PostgreSQL, Keycloak, Redis, RabbitMQ, core-java, edge-go, frontend, MinIO (S3), Ollama (AI), Mailhog (SMTP)
+# Includes: PostgreSQL, Keycloak, Redis, RabbitMQ, core-java, edge-go, frontend, Azurite (Azure Blob emulator), Ollama (AI), Mailhog (SMTP)
 #
 # Requires a .env file — copy .env.example to .env and fill in values.
 #
@@ -347,11 +347,19 @@ services:
       SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
       NOTIFICATION_EMAIL_ENABLED: "true"
       NOTIFICATION_EMAIL_TRACKING_BASE_URL: "http://localhost:3000"
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
-      S3_BUCKET: jtoye-images
-      S3_PUBLIC_URL: http://localhost:9000/jtoye-images
+      # Object storage (Phase 36, D-02 local path): the Azurite emulator below. The
+      # connection string names NO key: UseDevelopmentStorage=true makes the Azure SDK
+      # supply Microsoft's published emulator key itself, and DevelopmentStorageProxyUri
+      # points it at the in-network host (the SDK always appends :10000/devstoreaccount1).
+      # So no object-store credential exists in this file or in .env.
+      # STORAGE_PUBLIC_URL is the BROWSER origin (split horizon): images load from the
+      # host's loopback 10000, never from the in-network name core-java writes to.
+      # STORAGE_CREATE_CONTAINERS lets core-java create jtoye-images (access level blob,
+      # #626) and the private jtoye-quarantine on a fresh volume.
+      STORAGE_AUTH_MODE: connection-string
+      STORAGE_CONNECTION_STRING: "UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://azurite"
+      STORAGE_PUBLIC_URL: http://localhost:10000/devstoreaccount1/jtoye-images
+      STORAGE_CREATE_CONTAINERS: "true"
       AI_PROVIDER: ${AI_PROVIDER:-ollama}
       AI_ENABLED: "true"
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
@@ -373,6 +381,10 @@ services:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      # A HARD dependency since Phase 36: core-java checks the store at startup and fails
+      # fast when it cannot reach it (36-06), so it must not start before Azurite answers.
+      azurite:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -570,93 +582,52 @@ services:
     networks:
       - jtoye-network
 
-  # MinIO — S3-compatible object storage for images
+  # Azurite — the Azure Blob Storage emulator (Phase 36). Staging and production use a real
+  # Azure storage account; this is the same Blob API locally and in the nightly.
   #
-  # REGISTRY IS quay.io, NOT Docker Hub — do not "tidy" this back to `minio/minio`.
-  # MinIO's Docker Hub repositories began requiring authentication between 2026-09-09 and
-  # 2026-09-12. Anonymous manifest probes, measured 2026-09-12, returned 401 for
-  # minio/minio:latest, minio/mc:latest AND the pinned tag minio/mc:RELEASE.2025-08-13T08-35-41Z,
-  # while library/redis:7-alpine and library/postgres:15-alpine on the SAME probe returned 200 —
-  # so this is MinIO's auth gate, not a broken probe. quay.io serves the identical artifact:
-  # quay.io/minio/mc at that same tag reports docker-content-digest
-  # sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727, which is exactly the
-  # digest already pinned in .env.example, and an all-zeros digest on the same quay repo 404s, so
-  # the probe discriminates. Nightly E2E run 34722659896 died at `Build and start the stack (no
-  # ollama)` with `pull access denied for minio/mc`, and because that step fails every later
-  # step — the whole Playwright suite and all four gates — was skipped.
+  # REGISTRY IS mcr.microsoft.com, written INLINE. The supply-chain ORIGIN of this image is
+  # not settable from the environment (#270): only the tag@digest varies, through
+  # AZURITE_IMAGE_TAG (see .env.example), and the default is DIGEST-PINNED so a mutable tag
+  # can never swap what runs here. infra/dependency-horizons.yaml carries the exact pin (row
+  # `azurite`), and the horizons gate fails when this line and that row disagree.
   #
-  # The prefix is written INLINE rather than behind a MINIO_REGISTRY environment variable: the
-  # registry does not vary by environment (one runtime pulls these images — this compose stack,
-  # serving local dev and the nightly — and it reaches the public internet in both), and making
-  # the supply-chain ORIGIN of a root-credentialed container settable from the environment would
-  # weaken the property the digest pin exists for (#270). The part that genuinely varies — the
-  # tag/digest — is already injected through one config layer (MINIO_IMAGE_TAG and
-  # MINIO_MC_IMAGE_TAG in .env.example). In-file precedent: the `keycloak` service's
-  # quay.io/keycloak/keycloak:24.0.5, the only other registry-prefixed image in this file.
-  minio:
-    image: quay.io/minio/minio:${MINIO_IMAGE_TAG:-latest}
-    container_name: jtoye-minio
+  # 3.37.0 = Blob service version 2026-06-06 = azure-storage-blob 12.35.1's default.
+  # Flags:
+  #   --disableProductStyleUrl  load-bearing for k8s/local: a host name containing a dot
+  #                             (host.minikube.internal) would otherwise be parsed as the
+  #                             account name and every request would fail.
+  #   --skipApiVersionCheck     decouples SDK bumps from this pin. Trade-off, accepted: a
+  #                             genuinely unsupported newer feature fails at RUNTIME rather
+  #                             than at the version check.
+  #   --disableTelemetry        no usage data leaves the machine.
+  #
+  # #626 (anonymous read BY URL, no anonymous LIST) is no longer a bucket policy applied once
+  # by an init container. It is a container ACCESS LEVEL — `blob` on jtoye-images, private on
+  # jtoye-quarantine — that core-java creates and then asserts on every boot, so there is no
+  # init service and no credential here at all.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_IMAGE_TAG:-3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5}
+    container_name: jtoye-azurite
     restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+    command: >-
+      azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data
+      --disableProductStyleUrl --skipApiVersionCheck --disableTelemetry
     ports:
-      # Loopback-only by default (#441). S3_PUBLIC_URL stays
-      # http://localhost:9000/... — the BROWSER loads those images from the
-      # host, and the image components render a plain <img>, so nothing
-      # server-side inside a container ever fetches this port.
-      - "${JTOYE_BIND_HOST:-127.0.0.1}:9000:9000"   # S3 API
-      - "${JTOYE_BIND_HOST:-127.0.0.1}:9001:9001"   # Console UI
+      # Loopback-only by default (#441). STORAGE_PUBLIC_URL is
+      # http://localhost:10000/devstoreaccount1/... — the BROWSER loads images from
+      # this port on the host, and the image components render a plain <img>, so nothing
+      # server-side inside a container fetches it (core-java uses the in-network name).
+      - "${JTOYE_BIND_HOST:-127.0.0.1}:10000:10000"   # Blob service
     volumes:
-      - minio_data:/data
+      - azurite_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # The image has node, wget and nc but NOT curl (probed at this digest, 2026-09-28).
+      # An unauthenticated service LIST is refused WITH an HTTP status, which proves the
+      # listener answers; any status exits 0, a connection error exits 1.
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:10000/devstoreaccount1?comp=list', () => process.exit(0)).on('error', () => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - jtoye-network
-
-  # MinIO init — creates the bucket and applies its anonymous access policy.
-  # Runs minio/mc holding the ROOT object-storage credentials, so the image is
-  # DIGEST-PINNED via MINIO_MC_IMAGE_TAG (#270): a mutable tag would run whatever
-  # `latest` resolves to next with full bucket authority. The pin lives as a
-  # one-line, reviewable value in .env/.env.example (name:tag@sha256:...), and a
-  # WRONG digest fails the pull loudly rather than silently falling back to latest.
-  minio-init:
-    image: quay.io/minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
-    container_name: jtoye-minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
-      # The exact reference this bootstrap was launched with, echoed at run time so
-      # a future run STATES which minio/mc it ran instead of leaving it inferred.
-      MINIO_MC_IMAGE_REF: quay.io/minio/mc:${MINIO_MC_IMAGE_TAG:-latest}
-      # Anonymous bucket policy (#626): s3:GetObject ONLY, on the OBJECT arn (/*).
-      # Deliberately grants NO s3:ListBucket / GetBucketLocation on the bucket arn, so a
-      # storefront image stays anonymously readable BY URL while the object inventory is
-      # no longer anonymously ENUMERABLE. Applied via `mc anonymous set-json` because the
-      # built-in `download` preset bundles ListBucket with GetObject and has no GetObject-only
-      # form (verified against minio/mc RELEASE.2025-08-13 + MinIO docs).
-      ANON_BUCKET_POLICY: '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::jtoye-images/*"]}]}'
-    # Exec-list form (not a folded string): a single /bin/sh, so the JSON policy above
-    # expands from one env var with no nested-quote or glob hazard. `set -e` keeps it fail-loud.
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        set -e
-        echo "minio-init-image-ref=$$MINIO_MC_IMAGE_REF"
-        mc --version
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
-        mc mb --ignore-existing local/jtoye-images
-        printf '%s' "$$ANON_BUCKET_POLICY" > /tmp/anon-getobject-policy.json
-        mc anonymous set-json /tmp/anon-getobject-policy.json local/jtoye-images
-        echo 'Bucket jtoye-images ready: anonymous s3:GetObject only, no s3:ListBucket (#626)'
     networks:
       - jtoye-network
 
@@ -772,5 +743,10 @@ volumes:
   redis_data:
   rabbitmq_data:
   keycloak_data:
-  minio_data:
+  # The pre-Phase-36 object-store volume is deliberately NO LONGER DECLARED here, and is
+  # deliberately left on disk (D-04; standing ruling "leave all volumes", 2026-08-16). Its
+  # bytes are in the retired store's own on-disk format and are not migrated: dev media is
+  # reseeded into Azurite instead. Undeclaring it is what protects it — `down -v` removes
+  # only the volumes a compose file declares, so no compose command can delete it now.
+  azurite_data:
   ollama_data:

@@ -116,6 +116,7 @@ enforced by the `docs-freshness` CI gate)
 |---|---|
 | [runbooks/alerts.md](runbooks/alerts.md) | Every alert, what it means, what to do |
 | [runbooks/backups.md](runbooks/backups.md) | Backup + restore drill |
+| [runbooks/azure-blob-provisioning.md](runbooks/azure-blob-provisioning.md) | Azure Blob estate spec for Phase 29: accounts (D-11), containers + access levels (#626), WORM/soft delete/lifecycle, Workload Identity, container-scoped RBAC, read-backs |
 | [runbooks/sealed-secrets.md](runbooks/sealed-secrets.md) | Secret names, keys, and the sealing workflow |
 
 ## Reference

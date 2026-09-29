@@ -20,7 +20,7 @@
 - JVM — Java 25 (Temurin), Core API execution. `gradle.properties` enables toolchain auto-detect/auto-download.
 - Node.js 24 — Frontend build/runtime (`frontend/Dockerfile` builder+runner both `node:24-alpine`; CI `node-version: '24'`) and MCP server runtime (`mcp-server/Dockerfile` `node:24-alpine`).
 - Go 1.27 runtime — Edge gateway, statically linked (`CGO_ENABLED=0`), deployed on a `scratch` base image (`edge-go/Dockerfile`).
-- PostgreSQL 15-alpine — Database (`docker-compose.full-stack.yml:43` `postgres:15-alpine`; `infra/docker-compose.yml:13-14` `image: postgres:15` for `jtoye-postgres`; `infra/backups/Dockerfile` uses `postgres:15-bookworm` for pg_dump tooling).
+- PostgreSQL 15-alpine — Database (`docker-compose.full-stack.yml:43` `postgres:15-alpine`; `infra/docker-compose.yml:19-20` `image: postgres:15` for `jtoye-postgres`; `infra/backups/Dockerfile` uses `postgres:15-bookworm` for pg_dump tooling).
 
 **Package Manager:**
 - Gradle 9.7.1 (Kotlin DSL) — `gradle/wrapper/gradle-wrapper.properties` pins `distributionUrl` to `gradle-9.7.1-bin.zip`. Lockfile: none (Gradle doesn't use one by default here); dependency versions pinned via `io.spring.dependency-management` BOM + explicit `implementation(...)` coordinates in `core-java/build.gradle.kts`.
@@ -32,8 +32,8 @@
 **Core:**
 - Spring Boot 3.5.16 — Web framework, DI, auto-configuration (`core-java/build.gradle.kts:2`).
 - Embedded Tomcat 10.1.59 — security override of Boot's managed Tomcat family (`tomcat.version` in `core-java/build.gradle.kts`, PR #733).
-- io.netty — security override of Boot's managed netty family, pinned to 4.1.137.Final via the `netty.version` Gradle extra property (`core-java/build.gradle.kts:21-52`; NOT a direct dependency — it arrives transitively via reactor-netty and `netty-nio-client`). Raised twice for security: 4.1.136.Final in PR #318 for four Trivy-flagged codec CVEs, then 4.1.137.Final in PR #752 for CVE-2026-75595 / CVE-2026-75596 in netty-handler. The second pair is NOT reachable in this topology (server-side SNI; core-java serves over Tomcat) and was taken for image hygiene — see the in-file comment before changing it.
-- Jackson (`com.fasterxml.jackson`) — security override of Boot's managed Jackson family, pinned to 2.21.6 via the `jackson-bom.version` Gradle extra property (`core-java/build.gradle.kts:118-162`; NOT a direct dependency — it arrives through the web/json starters, and the property re-points the imported jackson-bom so the whole family moves together). Taken for CVE-2026-68497 (HIGH, jackson-databind 2.21.4, Trivy image gate) as the smallest clearing bump; 2.21.7 and 2.22.x deliberately not taken. jackson-annotations stays at `2.21` by the BOM's own major.minor versioning. Delete the pin once Boot manages jackson-bom at or above 2.21.6 — see the in-file comment.
+- io.netty — security override of Boot's managed netty family, pinned to 4.1.137.Final via the `netty.version` Gradle extra property (`core-java/build.gradle.kts:21-54`; NOT a direct dependency — it arrives transitively via reactor-netty and `azure-core-http-netty`, the Azure Blob SDK's HTTP client). Raised twice for security: 4.1.136.Final in PR #318 for four Trivy-flagged codec CVEs, then 4.1.137.Final in PR #752 for CVE-2026-75595 / CVE-2026-75596 in netty-handler. The second pair is NOT reachable in this topology (server-side SNI; core-java serves over Tomcat) and was taken for image hygiene — see the in-file comment before changing it.
+- Jackson (`com.fasterxml.jackson`) — security override of Boot's managed Jackson family, pinned to 2.21.6 via the `jackson-bom.version` Gradle extra property (`core-java/build.gradle.kts:104-148`; NOT a direct dependency — it arrives through the web/json starters, and the property re-points the imported jackson-bom so the whole family moves together). Taken for CVE-2026-68497 (HIGH, jackson-databind 2.21.4, Trivy image gate) as the smallest clearing bump; 2.21.7 and 2.22.x deliberately not taken. jackson-annotations stays at `2.21` by the BOM's own major.minor versioning. Delete the pin once Boot manages Jackson 2 at or above 2.21.6; under Boot 4 (#706) `jackson-bom.version` names the Jackson 3 BOM, so the pin must be re-keyed to `jackson-2-bom.version`, not deleted — see the in-file comment.
 - Spring Data JPA + Hibernate ORM (Boot-managed version) — ORM/persistence, plus Hibernate Envers for `_aud` audit-history tables.
 - Spring Security + Spring OAuth2 Resource Server — JWT/OIDC validation against Keycloak, dual-realm (staff `jtoye-dev` + customer `jtoye-customers`).
 - Spring WebFlux (`spring-boot-starter-webflux`) — non-blocking `WebClient` used for the Anthropic/AI call path and other outbound HTTP (FHRS, Companies House, webhook delivery).
@@ -49,7 +49,7 @@
 - JUnit 5 (via `spring-boot-starter-test`) — Java unit/integration tests.
 - Testcontainers 1.21.4 (`testcontainers`, `postgresql`, `rabbitmq`, `junit-jupiter` modules) — real Postgres + RLS and real-broker fan-out proofs; run via the dedicated `integrationTest` Gradle task, tagged `testcontainers`, excluded from the default `test` task.
 - H2 (`com.h2database:h2`) — lightweight in-memory unit tests.
-- JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:440` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
+- JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:461` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
 - Jest 30.5.1 + @testing-library/react 16.3.0 + jest-environment-jsdom 30.5.1 — Frontend unit/component tests. `overrides` pins the transitive `nwsapi` at 2.2.24: 2.2.27 breaks Radix-Select role queries (two suites timeout deterministically; bisected 2026-09-07, exit criteria in #736).
 - jest-axe 11.0.0 + @axe-core/playwright 4.13.0 + axe-core 4.13.0 — Accessibility testing.
 - @playwright/test 1.62.1 — E2E browser automation (`frontend/playwright.config.ts`).
@@ -67,8 +67,8 @@
 ## Key Dependencies
 
 **Critical:**
-- PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:241`) — explicit pin, not Boot-managed.
-- AWS SDK v2 BOM 2.54.9 (`software.amazon.awssdk:bom`) + `software.amazon.awssdk:s3` — S3-compatible object storage client (MinIO in dev, real S3 in prod).
+- PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:243`) — explicit pin, not Boot-managed.
+- Azure Storage Blob SDK 12.35.1 (`com.azure:azure-storage-blob`) + Azure Identity 1.18.6 (`com.azure:azure-identity`) — the object-store client (Azurite emulator locally, Azure Blob Storage in staging/production) and the Workload Identity credential used in AKS.
 - Stripe Java SDK 33.4.0 — Payment intents, Connect (destination charges), webhook signature verification.
 - @stripe/react-stripe-js 6.8.2 + @stripe/stripe-js 9.15.0 — Frontend Stripe Elements integration.
 - next-auth 5.0.0-beta.32 (`@auth/core` pinned via `overrides` to `0.41.3`) — Session/auth middleware, Keycloak OIDC provider.
@@ -106,7 +106,7 @@
 
 **Build:**
 - Gradle: root `build.gradle.kts` (plugin versions, JDK 25 toolchain, `group = "uk.jtoye"`, `version = "2.3.0"`), `settings.gradle.kts` (single subproject: `core-java`), `core-java/build.gradle.kts` (dependencies, JaCoCo, integrationTest task, OpenAPI snapshot tasks).
-- Next.js: `frontend/next.config.mjs` (`output: 'standalone'`, `typescript.tsconfigPath: 'tsconfig.build.json'` — shipped code only, tests type-checked separately by bare `tsc --noEmit` in CI; image `remotePatterns` allow `localhost:9000/jtoye-images/**` for local MinIO).
+- Next.js: `frontend/next.config.mjs` (`output: 'standalone'`, `typescript.tsconfigPath: 'tsconfig.build.json'` — shipped code only, tests type-checked separately by bare `tsc --noEmit` in CI; image `remotePatterns` allow `localhost:10000/devstoreaccount1/jtoye-images/**` for local Azurite).
 - TypeScript: `frontend/tsconfig.json` (strict, `@/*` path alias to frontend root), `mcp-server/tsconfig.json` (separate project).
 - ESLint: `frontend/eslint.config.mjs` (flat config, ESLint 9).
 - Go: `edge-go/go.mod` / `go.sum`; `edge-go/Dockerfile` (Go version, CI setup-go pins, and `infra/dependency-horizons.yaml` Go rows must all move in lockstep per that Dockerfile's own header comment).
@@ -131,7 +131,7 @@
 - Redis 7+ (external/managed).
 - RabbitMQ 4.3.4-management-alpine pinned in compose; **the deployed staging/production broker version is unverified from this repository** (see `docs/runbooks/rabbitmq-broker-upgrade.md`, ADR-0002) — minimum supported is 3.13+. RabbitMQ 4.3 community support ends **2026-11-30**, tracked in `infra/dependency-horizons.yaml`.
 - Keycloak 24.0.5 (external IdP in prod).
-- S3 (AWS or S3-compatible) for image storage — MinIO is dev-only.
+- Azure Blob Storage for image storage and backups (Workload Identity, raw Blob endpoint; `docs/runbooks/azure-blob-provisioning.md`) — Azurite 3.37.0 is the local/nightly emulator.
 - SMTP provider (Mailhog is dev-only, e.g. SendGrid/SES in prod).
 
 ## Observability Stack (self-hosted, compose-based)

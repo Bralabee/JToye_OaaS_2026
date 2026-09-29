@@ -39,8 +39,8 @@ REQUIRED_VARS=(
   RABBITMQ_DEFAULT_PASS
   DB_PASSWORD
   # Runtime/migrator split (SEC-04 / #552, D-01). DB_MIGRATION_USER is a role
-  # NAME (jtoye_app) rather than a secret, but it belongs here for the same reason
-  # MINIO_ROOT_USER does: it must be SET, and a half-applied split — the app moved
+  # NAME (jtoye_app) rather than a secret, but it belongs here all the same:
+  # it must be SET, and a half-applied split — the app moved
   # to jtoye_runtime with no migrator declared — silently points Flyway at a role
   # with no CREATE, so the app never boots on a fresh database. Cross-checks in
   # sections (d)/(d2) below add the "set, but to the WRONG role" case a presence
@@ -48,8 +48,6 @@ REQUIRED_VARS=(
   DB_MIGRATION_USER
   DB_MIGRATION_PASSWORD
   RABBITMQ_PASSWORD
-  MINIO_ROOT_USER
-  MINIO_ROOT_PASSWORD
   NEXTAUTH_SECRET
   KEYCLOAK_CLIENT_SECRET
   EDGE_API_CLIENT_SECRET
@@ -73,7 +71,6 @@ REQUIRED_VARS=(
 DENY_EXACT=(
   ADMIN123
   PASSWORD123
-  MINIOADMIN
   CHANGEME
   # Added for issues #438 / #439 — both defects were a single dictionary word
   # sitting in a variable this list did not name. Enumerating tokens can only

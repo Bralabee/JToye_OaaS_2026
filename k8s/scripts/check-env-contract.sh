@@ -14,7 +14,7 @@
 #
 #   DEF-6 (the local-default class). Thirteen further placeholders that NO
 #   manifest supplied at all, each carrying a LOCAL-ONLY default: media uploads
-#   resolved to a dev MinIO endpoint with a dev access key, notification email
+#   resolved to a dev object-store endpoint with a dev access key, notification email
 #   resolved to a loopback relay, and every production unsubscribe link and
 #   Stripe Connect vendor return pointed at http://localhost:3000.
 #
@@ -101,9 +101,10 @@
 #      exist). Defaults are collected as a SET per name and the local-only rule
 #      trips if ANY member matches — matched per-default, never against a joined
 #      string, because an anchored test on a joined string misses the member.
-#   6. Local-only means bare words as much as URLs. `minioadmin` and a bare-word
-#      broker default are the DEF-4/DEF-6 signature; a URL-only regex misses
-#      both.
+#   6. Local-only means bare words as much as URLs. A bare-word credential
+#      default (the retired object store's root-user default, now the Azurite
+#      `UseDevelopmentStorage=true` shorthand) and a bare-word broker default are
+#      the DEF-4/DEF-6 signature; a URL-only regex misses both.
 #   7. Every extractor is SELF-TESTED against a synthetic control string before
 #      it is trusted (see selftest_regex). A regex that silently matches nothing
 #      returns an EMPTY set, which is indistinguishable from "this service is
@@ -161,8 +162,9 @@ ALLOW_CORE_B=(
   'ZIPKIN_ENDPOINT|Reviewed omission (issue #303): no in-cluster Zipkin/OTLP collector is deployed, and Micrometer tracing export is best-effort — spans are dropped silently and no request path degrades. A supplied-but-wrong endpoint would be worse than an unreachable default. Revisit when the observability phase actually adds a collector (overlaps #98); until then this entry, not a manifest value, is the record.'
   'CUSTOMER_KC_ISSUER_URI|OPEN DEFECT #299 — the customer-storefront realm is unconfigured in EVERY k8s environment (base, staging, production and local). This is a tracked live gap, NOT a reasoned omission. It is carried here rather than half-fixed because supplying only this one issuer would make a broken realm look configured; the whole set (this, CUSTOMER_JWT_EXPECTED_ISSUER, and the frontend CUSTOMER_KEYCLOAK_* trio) has to land together with the storefront/CID work.'
   'CUSTOMER_JWT_EXPECTED_ISSUER|OPEN DEFECT #299 — same realm, same gap. Its default is the property chain ${jtoye.security.customer-jwt.issuer-uri}, which resolves to ${CUSTOMER_KC_ISSUER_URI:http://localhost:8085/realms/jtoye-customers}, i.e. transitively local-only. Before the chained-default rule existed this name scored as "pass by rule (safe non-local default)" and #299 was HALF-INVISIBLE to its own gate.'
-  'DB_MIGRATION_USER|Reviewed omission (Phase 28 SEC-04 / D-01, the runtime/migrator role split). Unlike the #299 chains above, THIS one terminates in a manifest-supplied secret, not a localhost literal: unset, spring.flyway.user (application.yml:115) falls back to ${spring.datasource.username} = ${DB_USER}, which k8s supplies from the postgres-credentials secret (core-java-deployment.yaml:98-102, key username). This gate does not resolve property chains, hence the entry naming where it lands. The compose/local stack splits the app role (jtoye_runtime, DML-only) from the migrator (jtoye_app, owner); the k8s cluster still connects as a single role and adopts the split with the Phase 29 deploy work (DPLY), at which point a distinct migration-username secret key is wired here alongside an in-cluster jtoye_runtime role. Supplying a distinct migrator credential now, before that role exists in-cluster, would break Flyway.'
-  'DB_MIGRATION_PASSWORD|Reviewed omission (Phase 28 SEC-04 / D-01). Unset, spring.flyway.password (application.yml:116) falls back to ${spring.datasource.password} = ${DB_PASSWORD}, supplied by k8s from the postgres-credentials secret (core-java-deployment.yaml:103-107, key password). Same terminates-in-a-secret rationale and the same Phase 29 (DPLY) revisit as DB_MIGRATION_USER — the migration credential pair is wired to a distinct secret key when the runtime/migrator split is deployed to the cluster.'
+  'DB_MIGRATION_USER|Reviewed omission (Phase 28 SEC-04 / D-01, the runtime/migrator role split). Unlike the #299 chains above, THIS one terminates in a manifest-supplied secret, not a localhost literal: unset, spring.flyway.user (application.yml:115) falls back to ${spring.datasource.username} = ${DB_USER}, which k8s supplies from the postgres-credentials secret (core-java-deployment.yaml:103-107, key username). This gate does not resolve property chains, hence the entry naming where it lands. The compose/local stack splits the app role (jtoye_runtime, DML-only) from the migrator (jtoye_app, owner); the k8s cluster still connects as a single role and adopts the split with the Phase 29 deploy work (DPLY), at which point a distinct migration-username secret key is wired here alongside an in-cluster jtoye_runtime role. Supplying a distinct migrator credential now, before that role exists in-cluster, would break Flyway.'
+  'DB_MIGRATION_PASSWORD|Reviewed omission (Phase 28 SEC-04 / D-01). Unset, spring.flyway.password (application.yml:116) falls back to ${spring.datasource.password} = ${DB_PASSWORD}, supplied by k8s from the postgres-credentials secret (core-java-deployment.yaml:108-112, key password). Same terminates-in-a-secret rationale and the same Phase 29 (DPLY) revisit as DB_MIGRATION_USER — the migration credential pair is wired to a distinct secret key when the runtime/migrator split is deployed to the cluster.'
+  'STORAGE_CONNECTION_STRING|Reviewed omission, and one that MUST STAY AN OMISSION in base: it is deliberately never supplied by base/staging/production (Phase 36 D-02: no connection string in any staging/production manifest, and INV-9 in k8s/scripts/check-render-invariants.sh fails any staging/production render that carries one). Those environments run storage.blob.auth-mode workload-identity, where the connection string is not used at all. It is supplied only by k8s/local/storage-env-patch.yaml, from the local-only app-config key storage.blob.connection-string. Its default is the Azurite emulator string, the only form storage shape validation accepts (StorageProperties.validateShape refuses any real account key or SAS in every mode), so even an absent value can never carry a credential.'
 )
 
 # ===========================================================================
@@ -205,7 +207,7 @@ ALLOW_FE_B=(
   'NEXT_RUNTIME|Reviewed omission: set by the Next.js runtime itself, never by an operator. frontend/instrumentation.ts:12 reads it only to tell the nodejs runtime from the edge runtime. Injecting it would override a value Next.js owns.'
   'APP_PUBLIC_ORIGIN|Reviewed omission, and one that SHOULD stay omitted: it is an optional override at the head of the resolvePublicOrigin chain (frontend/lib/public-origin.ts:87), not a required input. Absent, resolution falls straight through to NEXTAUTH_URL, which k8s/base/frontend-deployment.yaml:148-152 supplies from app-config/frontend.url — patched per overlay to the real public origin in every environment — and which frontend/lib/env-validation.ts:45 already lists as REQUIRED. So the value this name would carry is already supplied, correctly, by the very next term. It exists for the day the app public origin and NextAuth s diverge, or NextAuth is replaced; supplying it now would be a second source of truth for one origin, and the #504 defect it was written for was a bind address reaching an IdP, which resolvePublicOrigin rejects via isBindAddress regardless of which term wins.'
   'CSP_REPORT_ONLY|Reviewed omission, and one that must stay an omission in staging/production: unset means the Content-Security-Policy is ENFORCING (frontend/middleware.ts:33). Setting it to "true" would downgrade the policy to report-only cluster-wide. The only legitimate value is a temporary local one.'
-  'CSP_UPGRADE_INSECURE_REQUESTS|Reviewed omission with a known caveat: unset means the CSP omits upgrade-insecure-requests. frontend/lib/security-headers.ts:33-40 records that real HTTPS deployments SHOULD set it to "true", so staging/production are leaving a hardening directive on the table. It is deliberately off in base because the base render is shared with the local overlay, which serves http and would break MinIO images at http://localhost:9000 under an unconditional upgrade. Needs a per-overlay value, not a base one.'
+  'CSP_UPGRADE_INSECURE_REQUESTS|Reviewed omission with a known caveat: unset means the CSP omits upgrade-insecure-requests. frontend/lib/security-headers.ts:33-40 records that real HTTPS deployments SHOULD set it to "true", so staging/production are leaving a hardening directive on the table. It is deliberately off in base because the base render is shared with the local overlay, which serves http and would break Azurite images at http://localhost:10000 under an unconditional upgrade. Needs a per-overlay value, not a base one.'
   'CUSTOMER_KEYCLOAK_ISSUER|OPEN DEFECT #299 — the customer-storefront realm is unconfigured in EVERY k8s environment. Read by frontend/lib/customer-token-refresh.ts:42 for the customer refresh-token exchange; supplied by docker-compose only. This is a tracked live gap, NOT a reasoned omission. Note that #299 named three variables and this is one of THREE MORE it did not name.'
   'CUSTOMER_KEYCLOAK_ISSUER_INTERNAL|OPEN DEFECT #299 — same realm, same gap. The pod-reachable half of the customer issuer split (frontend/lib/customer-token-refresh.ts:41). Unsupplied, the refresh falls through to CUSTOMER_KEYCLOAK_ISSUER, which is itself unsupplied.'
   'CUSTOMER_KEYCLOAK_CLIENT_ID|OPEN DEFECT #299 — same realm, same gap. frontend/lib/customer-token-refresh.ts:48 falls back to the literal "storefront-client", so the refresh silently assumes a client id instead of being configured with one.'
@@ -230,7 +232,10 @@ LOCAL_ONLY_WORDS=(
   localhost
   127.0.0.1
   0.0.0.0
-  minioadmin
+  # The Azurite emulator shorthand (Phase 36). It replaced the retired object
+  # store's default credential here: outside a developer laptop an emulator
+  # connection string is always wrong.
+  UseDevelopmentStorage=true
   guest
   mailhog
   host.docker.internal

@@ -325,7 +325,7 @@ class MediaDurabilityIntegrationTest {
     void markerLifecycle() throws Exception {
         UUID productId = seedProduct();
         byte[] raw = jpegOf(800, 600);
-        Mockito.doReturn("http://minio/q").when(storageService)
+        Mockito.doReturn("http://store/q").when(storageService)
                 .putBytes(Mockito.anyString(), Mockito.any(byte[].class), Mockito.anyString());
 
         UUID assetId = txTemplate.execute(s -> {
@@ -391,7 +391,7 @@ class MediaDurabilityIntegrationTest {
     void readFailureRetainsBytes() {
         String key = tenant + "/quarantine/unreadable.jpg";
         UUID assetId = seedReclaimable(key, "PENDING", OffsetDateTime.now().plusHours(72));
-        Mockito.doThrow(new RuntimeException("S3 blip")).when(storageService).getBytes(key);
+        Mockito.doThrow(new RuntimeException("storage blip")).when(storageService).getBytes(key);
 
         worker.onMediaEvent(new MediaProcessingEvent(tenant, assetId));
 

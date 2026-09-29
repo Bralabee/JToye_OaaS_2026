@@ -138,6 +138,19 @@ jobs:
           chmod +x ./scripts/check-go-coverage.sh
           ./scripts/check-go-coverage.sh
 
+      # Phase 36 (BLOB-06): blobctl, the Azure Blob uploader baked into the
+      # pg-backup image. Its own module, so the edge-go step above never ran it.
+      # go mod verify fails on a go.sum that does not match the module proxy
+      # (supply chain, T-36-SC); -count=1 so a cached result can never stand in
+      # for a real run. The tests are hermetic: an in-process fake of the Blob
+      # REST service, no network and no container. Reuses the Go set up above
+      # (no new setup-go site: the go-ci-setup horizon row pins the existing ones).
+      - name: Run blobctl tests (backup uploader, Phase 36)
+        working-directory: infra/backups/blobctl
+        run: |
+          go mod verify
+          go test -count=1 ./...
+
       - name: Validate edge-go OpenAPI spec (@seriousme/openapi-schema-validator)
         # ROADMAP DOC-01 success criterion #1: /openapi.json is a valid
         # OpenAPI spec per an openapi-spec-validator. We use
@@ -396,7 +409,7 @@ jobs:
   #
   # WHY THIS EXISTS: until now nothing in CI opened a browser. Every other spec
   # in frontend/e2e needs the full docker stack (Postgres + Keycloak + core-java
-  # + MinIO), so none of them run here — which left layout, image rendering and
+  # + Azurite), so none of them run here — which left layout, image rendering and
   # interaction with ZERO automated coverage while text had three static gates.
   # Four consecutive user-reported defects landed in exactly that blind spot
   # (a modal that changed shape per photo, content gated behind scroll, a search
@@ -620,7 +633,7 @@ jobs:
   #      Phase 26 fixes: no hardcoded Postgres port, no EnvVar with both `value`
   #      and `valueFrom` (the API server rejects that apply), no common labels
   #      injected into the kube-dns DNS-egress podSelector (D-17 — a total DNS
-  #      outage under an enforcing CNI), no localhost/minioadmin literal in a
+  #      outage under an enforcing CNI), no localhost/storage-emulator literal in a
   #      non-local render, and no DB superuser in the secret recipe or template.
   #   5. render-golden.sh — byte-compares the staging and production renders
   #      against the reviewed goldens in k8s/goldens/. A k8s/base edit that
@@ -943,6 +956,25 @@ jobs:
         run: |
           chmod +x ./scripts/check-no-create-extension.sh
           ./scripts/check-no-create-extension.sh
+
+      # Phase 36 (SC6, BLOB-09). Phase 36 retired the self-hosted object store and moved every
+      # environment to Azure Blob Storage (Azurite locally). The removal was proven by a
+      # search, and a search run once proves nothing about next month, so this makes it a
+      # property every PR re-proves. The hermetic arms run FIRST: each builds a throwaway
+      # git repo, plants one condition (a residue token in a fresh file and on the line next
+      # to an allowlisted line, a blank/duplicate/stale allowlist entry, an empty scan) and
+      # asserts the gate's exit code and the file:line it names — so a gate that can no
+      # longer fail goes red here rather than passing quietly below. Exemptions live in
+      # scripts/gates/object-store-residue-allowlist.conf, line by line, each with a reason.
+      #
+      # Static by construction: reads tracked files through git ls-files / git grep, touches
+      # no database and makes no network call, so it behaves identically on a hosted runner.
+      # Needs git with PCRE (`git grep -P`); the gate's own self-test exits 2 without it.
+      - name: Assert no retired object-store residue in tracked files (Phase 36)
+        run: |
+          chmod +x ./scripts/check-no-object-store-residue.sh
+          bash ./scripts/gates/object-store-residue-selftest.sh
+          ./scripts/check-no-object-store-residue.sh
 
       # Plan 31-06 (LGL-01, D-08). docs/retention-manifest.json is the source of truth for a
       # LEGALLY OPERATIVE document — the published per-category retention schedule. A period
@@ -1286,6 +1318,20 @@ jobs:
         working-directory: edge-go
         run: go vet ./...
 
+      - name: Check blobctl formatting (gofmt, Phase 36)
+        working-directory: infra/backups/blobctl
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "The following Go files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet blobctl (go vet ./..., Phase 36)
+        working-directory: infra/backups/blobctl
+        run: go vet ./...
+
   # Job 3: Build and push Docker images
   #
   # CR-01 (Phase 26 code review): this `needs:` list used to be
@@ -1338,7 +1384,18 @@ jobs:
       # only thing that changes is that the other two legs are allowed to finish.
       fail-fast: false
       matrix:
-        service: [core-java, edge-go, frontend]
+        # pg-backup (WR-03, Phase 36 code review): the nightly backup CronJob's image.
+        # Phase 36 put first-party code in it (blobctl, an Azure SDK Go binary) and moved
+        # its tag to :15-blob (D-10), but no job built, pushed or scanned it — the only
+        # route to the registry was a manual `docker push` in docs/runbooks/backups.md.
+        # A CronJob in ImagePullBackOff pages nobody, so backups would stop silently on
+        # the first deploy, and its postgres:15-bookworm layer and Go stdlib were never
+        # put through the Trivy image gate every other shipped image passes. It now
+        # builds, pushes and gates here like the rest. On the default branch it then
+        # publishes the exact tag the CronJob pulls, AFTER the image gate, as a copy of
+        # the gated sha image (see "Publish the CronJob's tag from the gated image").
+        # The deploy jobs do not pin it by sha: the CronJob keeps its manifest tag.
+        service: [core-java, edge-go, frontend, pg-backup]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1352,6 +1409,47 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # WR-03: the CronJob pulls ghcr.io/<owner>/jtoye-pg-backup:<tag> by its manifest
+      # tag, so that tag must be one this workflow publishes. It is READ from the
+      # manifests (k8s/base and both goldens, which k8s-validate proves equal the
+      # staging/production renders), never restated here, and the repository it names
+      # must be the one this job pushes to. Any disagreement fails the leg before a
+      # push, instead of shipping a CronJob whose image does not exist.
+      - name: Resolve the tag the pg-backup CronJob pulls (pg-backup leg only)
+        id: cronjob_image
+        if: matrix.service == 'pg-backup'
+        env:
+          IMAGE_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          refs="$(grep -hoE 'image:[[:space:]]*[^[:space:]]*/jtoye-pg-backup[:@][^[:space:]]*' \
+                    k8s/base/pg-backup-cronjob.yaml k8s/goldens/staging.yaml k8s/goldens/production.yaml)" || refs=""
+          if [ -z "$refs" ]; then
+            echo "FATAL: found no jtoye-pg-backup image reference in the CronJob or the goldens; nothing to publish against." >&2
+            exit 2
+          fi
+          distinct="$(sed -E 's/^image:[[:space:]]*//' <<< "$refs" | sort -u)"
+          if [ "$(wc -l <<< "$distinct")" -ne 1 ]; then
+            echo "FATAL: the CronJob and the goldens disagree on the pg-backup image:" >&2
+            printf '  %s\n' $distinct >&2
+            exit 1
+          fi
+          case "$distinct" in
+            *@*) echo "FATAL: '$distinct' is a digest pin; this step publishes a TAG. Update it together with the manifest." >&2; exit 1 ;;
+          esac
+          repo="${distinct%:*}"; tag="${distinct##*:}"
+          published_repo="${REGISTRY}/${IMAGE_OWNER,,}/jtoye-pg-backup"
+          if [ "$repo" != "$published_repo" ]; then
+            echo "FATAL: the CronJob pulls '$repo', but this job publishes '$published_repo'. The CronJob would never find its image." >&2
+            exit 1
+          fi
+          if [ -z "$tag" ] || [ "$tag" = "$distinct" ]; then
+            echo "FATAL: '$distinct' carries no tag." >&2
+            exit 1
+          fi
+          echo "the CronJob pulls $distinct; this leg publishes that tag on the default branch, after the image gate"
+          echo "ref=$distinct" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
         id: meta
@@ -1370,12 +1468,16 @@ jobs:
             # ImagePullBackOff on every deploy (the latent bug this PR closes).
             type=raw,value=${{ github.sha }}
             type=raw,value=latest,enable={{is_default_branch}}
+            # NOT the CronJob's tag (:15-blob). The CronJob pulls that tag directly, with no
+            # deploy job in between, so pushing it here would publish an image the Trivy gate
+            # below has not passed yet (PR #763 review round 1). It is published by the last
+            # step of this job, after the gate, as a copy of the gated sha image.
 
       - name: Build and push Docker image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          context: ${{ matrix.service == 'core-java' && '.' || matrix.service }}
-          file: ${{ matrix.service }}/Dockerfile
+          context: ${{ matrix.service == 'core-java' && '.' || matrix.service == 'pg-backup' && 'infra/backups' || matrix.service }}
+          file: ${{ matrix.service == 'pg-backup' && 'infra/backups/Dockerfile' || format('{0}/Dockerfile', matrix.service) }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -1402,9 +1504,9 @@ jobs:
           # the whole point of the fix. The three optional ones degrade gracefully
           # (frontend/lib/env-validation.ts optionalEnvVars / resolveSupportChannel).
           #
-          # Passed on ALL THREE matrix legs on purpose. core-java/Dockerfile and
-          # edge-go/Dockerfile declare no matching ARG, so BuildKit logs
-          # "one or more build-args were not consumed" for those two legs — a
+          # Passed on EVERY matrix leg on purpose. core-java/Dockerfile and
+          # edge-go/Dockerfile (and infra/backups/Dockerfile) declare no matching ARG, so BuildKit logs
+          # "one or more build-args were not consumed" for those legs — a
           # warning, not an error. Do NOT "fix" that warning by deleting these
           # lines; a conditional per-leg expression cannot emit a multi-line
           # build-args block (GitHub expressions have no newline literal), and
@@ -1424,8 +1526,11 @@ jobs:
           # frontend is amd64-only: its arm64 build runs under QEMU emulation
           # (Next.js npm-install + next build) and took ~30 min vs ~1-7 min for
           # the Go/Java services, whose arm64 builds are cheap. Drop arm64 for
-          # frontend, keep multi-arch for core-java/edge-go.
-          platforms: ${{ matrix.service == 'frontend' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          # frontend, keep multi-arch for core-java/edge-go. pg-backup is amd64-only
+          # too: its Dockerfile compiles blobctl in the TARGET platform's stage (no
+          # BUILDPLATFORM cross-compile), so arm64 would be an emulated Go build, and
+          # an amd64-only frontend already means the cluster's nodes are amd64.
+          platforms: ${{ (matrix.service == 'frontend' || matrix.service == 'pg-backup') && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
 
       - name: Scan Docker image with Trivy (SARIF report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -1452,6 +1557,31 @@ jobs:
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
           exit-code: '1'
+
+      - name: Publish the CronJob's tag from the gated image (pg-backup leg, default branch only)
+        # Runs only if every step above passed, the image gate included: a red gate ends the
+        # job here, and the tag the CronJob pulls keeps pointing at the last image that passed.
+        # imagetools copies the manifest list of the exact sha image the gate scanned, so the
+        # published tag is byte-for-byte that image, not a rebuild.
+        if: matrix.service == 'pg-backup' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          GATED: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
+          CRONJOB_REF: ${{ steps.cronjob_image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CRONJOB_REF" ]; then
+            echo "FATAL: the CronJob image reference was not resolved; refusing to publish." >&2
+            exit 2
+          fi
+          gated="${GATED,,}"
+          docker buildx imagetools create --tag "$CRONJOB_REF" "$gated"
+          src="$(docker buildx imagetools inspect --raw "$gated" | sha256sum | cut -d' ' -f1)"
+          dst="$(docker buildx imagetools inspect --raw "$CRONJOB_REF" | sha256sum | cut -d' ' -f1)"
+          if [ -z "$src" ] || [ "$src" != "$dst" ]; then
+            echo "FATAL: $CRONJOB_REF resolves to $dst, not the gated $gated ($src)." >&2
+            exit 1
+          fi
+          echo "published $CRONJOB_REF = $gated ($src), after the image gate"
 
   # Job 4: Deploy to staging
   #

@@ -17,7 +17,7 @@ updates:
   # same file — core-java/build.gradle.kts — and opened two PRs for each bump.
   #
   # Measured on 2026-07-28: of 22 open dependabot PRs, four were pure duplicate pairs
-  # (awssdk #235/#238, stripe-java #236/#240, Spring Boot #237/#242, springdoc #241/#246),
+  # (the then-current object-store SDK #235/#238, stripe-java #236/#240, Spring Boot #237/#242, springdoc #241/#246),
   # i.e. ~18% of the backlog was the same work proposed twice. Reviewing a duplicate costs
   # the same as reviewing a real one, and merging one silently strands its twin.
   #
@@ -35,6 +35,18 @@ updates:
   # --- Edge gateway (Go modules) ---
   - package-ecosystem: "gomod"
     directory: "/edge-go"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # --- Backup uploader (Go modules, Phase 36) ---
+  # blobctl ships inside the pg-backup image, which holds database credentials,
+  # so its Azure SDK dependencies are watched on the same schedule as edge-go.
+  - package-ecosystem: "gomod"
+    directory: "/infra/backups/blobctl"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

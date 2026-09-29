@@ -14,7 +14,7 @@ kind: Kustomization
 #
 # WHAT LOCAL IS FOR (and what it is NOT)
 #   The local cluster consumes the SHARED docker-compose backing services
-#   (Postgres, Redis, RabbitMQ, Keycloak, MinIO, Mailhog) over
+#   (Postgres, Redis, RabbitMQ, Keycloak, Azurite, Mailhog) over
 #   `host.minikube.internal`, so every endpoint is shimmed in
 #   configmap-patch.yaml. It is a DEPLOY-LAYER rehearsal — the one surface no
 #   other local runtime exercises (the Ingress path, real rollout/probe
@@ -47,8 +47,10 @@ kind: Kustomization
 #      gitignored .env and applies each Secret idempotently via
 #      `kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`.
 #      Secrets required before apply: postgres-credentials,
-#      s3-backup-credentials, redis-credentials, rabbitmq-credentials,
-#      keycloak-credentials, nextauth-secret.
+#      redis-credentials, rabbitmq-credentials, keycloak-credentials,
+#      nextauth-secret. No object-store credential is among them any more
+#      (Phase 36): the Azurite emulator string carries no key, so it is a
+#      local-only ConfigMap value wired by storage-env-patch.yaml, not a Secret.
 #
 #   3. NO SPRING_PROFILES_ACTIVE override. Local keeps the base value `prod`
 #      (D-10). Rehearsing the PRODUCTION config path — internal 9091 management
@@ -127,7 +129,7 @@ labels:
 # to imply otherwise was dead config and was removed in plan 26-02.
 # scripts/k8s-local-up.sh (plan 26-05) owns the build + load sequence.
 #
-# The pg-backup image (ghcr.io/bralabee/jtoye-pg-backup:15, built from
+# The pg-backup image (ghcr.io/bralabee/jtoye-pg-backup:15-blob, built from
 # infra/backups/Dockerfile) is NOT retagged: its base tag is already immutable
 # and environment-independent, so it is loaded as-is.
 images:
@@ -149,6 +151,10 @@ patches:
   - path: scale-patch.yaml
   - path: ingress-patch.yaml
   - path: sse-ingress-patch.yaml
+  # STORAGE_CONNECTION_STRING (the Azurite emulator string, no key) on core-java
+  # and pg-backup — local ONLY; staging/production have none (D-02, INV-9).
+  # Two documents, matched by GVK + name. LOC-7 asserts it is wired.
+  - path: storage-env-patch.yaml
 
 # Local runs ONE of each service (D-09, DEF-3).
 #

@@ -33,9 +33,9 @@ export interface CspOptions {
   apiOrigin?: string
   /**
    * Emit `upgrade-insecure-requests`. Off by default: the local Docker stack
-   * runs NODE_ENV=production yet serves over http with MinIO images at
-   * http://localhost:9000, so an unconditional upgrade would break images.
-   * Real HTTPS deployments set CSP_UPGRADE_INSECURE_REQUESTS=true.
+   * runs NODE_ENV=production yet serves over http with images from the Azurite
+   * Blob emulator at http://localhost:10000, so an unconditional upgrade would
+   * break images. Real HTTPS deployments set CSP_UPGRADE_INSECURE_REQUESTS=true.
    */
   upgradeInsecure?: boolean
 }
@@ -91,7 +91,7 @@ export function buildCsp({
     // No 'unsafe-inline' (issue #89): nonce + strict-dynamic govern script trust.
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""} https://js.stripe.com https://*.js.stripe.com`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https://*.stripe.com https: http://localhost:9000",
+    "img-src 'self' data: blob: https://*.stripe.com https: http://localhost:10000",
     "font-src 'self' data:",
     `connect-src 'self' https://api.stripe.com https://*.stripe.com ${apiOrigin} ${wsOrigin} ${keycloakSources.join(" ")}`
       .replace(/\s+/g, " ")

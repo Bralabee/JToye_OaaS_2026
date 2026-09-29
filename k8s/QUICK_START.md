@@ -34,6 +34,17 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 > see `docs/runbooks/sealed-secrets.md`; the commands below are the
 > bootstrap path. Reference key shapes:
 > `k8s/base/secrets-template.yaml.example`.
+>
+> **No object-storage Secret, by design (Phase 36, D-02).** Media and the
+> pg-backup dumps go to Azure Blob Storage through **AKS Workload Identity**:
+> ServiceAccounts `core-java` and `pg-backup` (shipped in `k8s/base`) get the
+> annotation `azure.workload.identity/client-id` for their user-assigned managed
+> identity, which Phase 29 adds per overlay. Provision the storage accounts,
+> identities, federated credentials and role assignments with
+> [`docs/runbooks/azure-blob-provisioning.md`](../docs/runbooks/azure-blob-provisioning.md).
+> Never create an account key, connection string or SAS Secret: the render gate
+> (`k8s/scripts/check-render-invariants.sh` INV-9) refuses one in staging and
+> production, and core-java refuses to boot until the annotation is in place.
 
 ```bash
 # Generate secure passwords
@@ -100,12 +111,8 @@ kubectl create secret generic postgres-credentials \
   --from-literal=backup-password="$POSTGRES_BACKUP_PASSWORD" \
   -n jtoye-production
 
-# S3 credentials for pg-backup uploads (#90) — use a bucket-limited IAM /
-# MinIO service account (PutObject/ListBucket/DeleteObject only).
-kubectl create secret generic s3-backup-credentials \
-  --from-literal=access-key='YOUR_S3_ACCESS_KEY' \
-  --from-literal=secret-key='YOUR_S3_SECRET_KEY' \
-  -n jtoye-production
+# (No storage credential Secret: pg-backup uploads with Workload Identity as
+#  ServiceAccount pg-backup — see the note above Step 1's commands.)
 
 kubectl create secret generic redis-credentials \
   --from-literal=password="$REDIS_PASSWORD" \
@@ -149,20 +156,15 @@ kubectl create secret generic nextauth-secret \
 # OPTIONAL secrets (Phase 26 / DEF-6 / D-15) — create ONLY the ones whose
 # feature you are activating in this environment.
 #
-# core-java references all four with the secretKeyRef `optional` flag set, so
+# core-java references all three with the secretKeyRef `optional` flag set, so
 # skipping one does NOT block pod start: the env stays unset, application.yml's
 # own default applies, and that feature stays INERT. That is deliberately the
 # same behaviour these environments had before Phase 26 supplied the config.
 # Creating the Secret is the act that switches the feature on.
 # ---------------------------------------------------------------------------
 
-# OPTIONAL — vendor media uploads (Phase 24). Bucket-limited IAM user / MinIO
-# service account (GetObject/PutObject/DeleteObject only) for the bucket named by
-# app-config s3.bucket. A NARROWER, separate grant from s3-backup-credentials.
-kubectl create secret generic s3-media-credentials \
-  --from-literal=access-key='YOUR_S3_MEDIA_ACCESS_KEY' \
-  --from-literal=secret-key='YOUR_S3_MEDIA_SECRET_KEY' \
-  -n jtoye-production
+# (Vendor media uploads need no Secret any more: core-java reaches Blob Storage
+#  with Workload Identity as ServiceAccount core-java — see the note above.)
 
 # OPTIONAL — outbound email (Phase 22). SES SMTP credentials (an IAM SMTP user),
 # not an IAM access key pair. Creating this alone is NOT enough: also flip

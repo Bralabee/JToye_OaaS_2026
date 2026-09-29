@@ -17,7 +17,7 @@
 #
 #   1. REAL HTTP uploads of REAL JPEGs through POST /api/v1/products/{id}/image, so the
 #      full pipeline runs: quarantine -> magic-byte sniff -> bomb guard -> decode-verify ->
-#      EXIF strip -> resize -> WebP derivative -> WebP thumbnail -> MinIO -> CoW placement.
+#      EXIF strip -> resize -> WebP derivative -> WebP thumbnail -> object store -> CoW placement.
 #   2. The container is PINNED TO 1 CPU, because the k8s pod limit is 1000m
 #      (k8s/base/core-java-deployment.yaml) and scrimage-webp forks a native cwebp per
 #      encode. An unpinned workstation number does not transfer to that pod (finding A6).

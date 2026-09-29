@@ -1,0 +1,313 @@
+cutover=2026-09-29T01:14:01Z
+dev-media-reseed  mode=dry-run  (2026-09-29T01:14:01Z)
+  old-origin     : http://localhost:9000/jtoye-images
+  new-public-url : http://localhost:10000/devstoreaccount1/jtoye-images
+  container      : jtoye-postgres
+  database       : jtoye (role jtoye_app)
+  docker endpoint: unix:///var/run/docker.sock (local)
+  identity       : database=jtoye role=jtoye_app rolsuper=false rolbypassrls=false
+
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000001 column=products.image_url rows_with_old=21 old_seed_values=21 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000001 column=products.additional_image_urls rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000001 column=shops.logo_url rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000001 column=shops.banner_url rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000001 column=reviews.photo_urls rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000002 column=products.image_url rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000002 column=products.additional_image_urls rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000002 column=shops.logo_url rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000002 column=shops.banner_url rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000002 column=reviews.photo_urls rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  visibility: unpinned products=0 pinned products total=23
+
+== visibility: rows counted as jtoye_app under FORCE RLS; tenant (GUC cleared) must be 0 ==
+                tenant                |    table    | rows_visible 
+--------------------------------------+-------------+--------------
+ (GUC cleared)                        | products    |            0
+ 00000000-0000-0000-0000-000000000001 | media_asset |            3
+ 00000000-0000-0000-0000-000000000001 | products    |           22
+ 00000000-0000-0000-0000-000000000001 | reviews     |            0
+ 00000000-0000-0000-0000-000000000001 | shops       |            4
+ 00000000-0000-0000-0000-000000000002 | media_asset |            0
+ 00000000-0000-0000-0000-000000000002 | products    |            1
+ 00000000-0000-0000-0000-000000000002 | reviews     |            0
+ 00000000-0000-0000-0000-000000000002 | shops       |            1
+
+== coverage: rows the tenant loop reached vs the physical total (ANALYZE) ==
+    table    | reached_by_loop | physical_rows 
+-------------+-----------------+---------------
+ media_asset |               3 |             3
+ products    |              23 |            23
+ reviews     |               0 |             0
+ shops       |               5 |             5
+
+== URL columns per tenant: before = as found, after = read back inside this transaction ==
+ stage  |                tenant                |             column             | rows_with_old | old_seed_values | old_other_values | new_origin_values | other_values |  other_md5   
+--------+--------------------------------------+--------------------------------+---------------+-----------------+------------------+-------------------+--------------+--------------
+ before | 00000000-0000-0000-0000-000000000001 | products.image_url             |            21 |              21 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000001 | products.additional_image_urls |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000001 | shops.logo_url                 |             0 |               0 |                0 |                 0 |            3 | dbbfbf3b1e9d
+ before | 00000000-0000-0000-0000-000000000001 | shops.banner_url               |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000001 | reviews.photo_urls             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000002 | products.image_url             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000002 | products.additional_image_urls |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000002 | shops.logo_url                 |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000002 | shops.banner_url               |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000002 | reviews.photo_urls             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000001 | products.image_url             |             0 |               0 |                0 |                21 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000001 | products.additional_image_urls |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000001 | shops.logo_url                 |             0 |               0 |                0 |                 0 |            3 | dbbfbf3b1e9d
+ after  | 00000000-0000-0000-0000-000000000001 | shops.banner_url               |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000001 | reviews.photo_urls             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000002 | products.image_url             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000002 | products.additional_image_urls |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000002 | shops.logo_url                 |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000002 | shops.banner_url               |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000002 | reviews.photo_urls             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+
+== URL column totals ==
+    stage     | rows_with_old | old_seed_values | old_other_values | new_origin_values | other_values 
+--------------+---------------+-----------------+------------------+-------------------+--------------
+ before-total |            21 |              21 |                0 |                 0 |            3
+ after-total  |             0 |               0 |                0 |                21 |            3
+
+== media_asset per tenant ==
+                       stage                        |                tenant                | n 
+----------------------------------------------------+--------------------------------------+---
+ before: ACTIVE/PENDING created < cutover (to FAIL) | 00000000-0000-0000-0000-000000000001 | 1
+ before: ACTIVE/PENDING created < cutover (to FAIL) | 00000000-0000-0000-0000-000000000002 | 0
+ before: ACTIVE/PENDING created >= cutover (kept)   | 00000000-0000-0000-0000-000000000001 | 0
+ before: ACTIVE/PENDING created >= cutover (kept)   | 00000000-0000-0000-0000-000000000002 | 0
+ before: carrying the Phase 36 reason               | 00000000-0000-0000-0000-000000000001 | 0
+ before: carrying the Phase 36 reason               | 00000000-0000-0000-0000-000000000002 | 0
+ after: ACTIVE/PENDING created < cutover            | 00000000-0000-0000-0000-000000000001 | 0
+ after: ACTIVE/PENDING created < cutover            | 00000000-0000-0000-0000-000000000002 | 0
+ after: carrying the Phase 36 reason                | 00000000-0000-0000-0000-000000000001 | 1
+ after: carrying the Phase 36 reason                | 00000000-0000-0000-0000-000000000002 | 0
+
+== rows updated per statement (each equals the rows seen carrying old values) ==
+                tenant                |           statement            | rows_updated 
+--------------------------------------+--------------------------------+--------------
+ 00000000-0000-0000-0000-000000000001 | media_asset -> FAILED          |            1
+ 00000000-0000-0000-0000-000000000001 | products.additional_image_urls |            0
+ 00000000-0000-0000-0000-000000000001 | products.image_url             |           21
+ 00000000-0000-0000-0000-000000000001 | reviews.photo_urls             |            0
+ 00000000-0000-0000-0000-000000000001 | shops.banner_url               |            0
+ 00000000-0000-0000-0000-000000000001 | shops.logo_url                 |            0
+ 00000000-0000-0000-0000-000000000002 | media_asset -> FAILED          |            0
+ 00000000-0000-0000-0000-000000000002 | products.additional_image_urls |            0
+ 00000000-0000-0000-0000-000000000002 | products.image_url             |            0
+ 00000000-0000-0000-0000-000000000002 | reviews.photo_urls             |            0
+ 00000000-0000-0000-0000-000000000002 | shops.banner_url               |            0
+ 00000000-0000-0000-0000-000000000002 | shops.logo_url                 |            0
+
+== samples: before -> after, read back from the row ==
+       column       |                                                  before                                                   |                                                            after                                                            
+--------------------+-----------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------
+ products.image_url | http://localhost:9000/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/grilled-tilapia.jpg | http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/grilled-tilapia.jpg
+ products.image_url | http://localhost:9000/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/lamb-kebab.jpg      | http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/lamb-kebab.jpg
+ products.image_url | http://localhost:9000/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/zobo.jpg            | http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/zobo.jpg
+
+RESULT: ROLLED BACK (dry run) -- nothing was written
+
+==================================================================================
+36-11 Task 1 evidence (appended below the raw dry run above; every appended line is
+prefixed '  | ' so the only line starting with 'cutover=' is the dry run's first line)
+==================================================================================
+script: scripts/dev-media-reseed.sh, committed ea0c8bb6, sha256 ce052341bccfd12cad7f4d29f057ec9fbf9e92d043e1c4604fd7cd65a9c324f8
+database: compose jtoye-postgres (container 79f92e95a9a7) on volume jtoye_oaas_2026_postgres_data;
+azurite: jtoye-azurite (7e3969d87560) on jtoye_oaas_2026_azurite_data. core-java: never created.
+
+## Precondition: no core-java container since 36-01's first commit b829e82f (2026-09-28T22:08:19+01:00)
+  | docker ps -a (all names) at dispatch: <empty>; filters name=jtoye-core-java and name=core-java: <empty>
+  | docker events --filter type=container --filter event=create since 2026-09-28T21:08:19Z: 3 creates, all
+  |   36-08 pg-backup drill containers (the daemon's event ring buffer is bounded: this is bounded evidence)
+  | CONTENT proof 1: Azurite holds containers=[jtoye-db-backups] only, 20 blobs all under drill/, 0 seed blobs.
+  |   A core-java boot (create-containers=true) creates jtoye-images, and DemoDataSeeder putIfAbsent writes
+  |   <tenant>/products/seed/*; neither exists.
+  | CONTENT proof 2: the 21 seed product URLs are still on http://localhost:9000; the seeder rewrites them on
+  |   its first Azurite boot.
+  | => precondition MET
+
+## Pre-flight facts (jtoye_app, read-only)
+  | jtoye_app rolsuper=false rolbypassrls=false; flyway head V66; tenants=2
+  | FORCE RLS: products, shops, reviews, media_asset (owner jtoye_app); tenants has no RLS
+  | policies: shops_public_read and reviews_tenant_read expose PUBLISHED rows to every tenant, so every
+  |   count/update also filters tenant_id = <pinned tenant>; reviews has SELECT+INSERT policies only (no UPDATE)
+  | triggers: trg_products_search_vector, trg_shops_search_vector (BEFORE INSERT/UPDATE); neither function body
+  |   references a URL column (prosrc regex false). No rules.
+  | no FK from products/media_asset to tenants -> the ANALYZE coverage check exists for that reason
+
+## Independent dev-state hash (script-external; tenant-looped as jtoye_app; rolled back)
+  | before arms: state rows=31 md5=83f13d9c5287bdce7364f14d8fc397e9
+  | control (one image_url mutated in-transaction): md5=01044f4b6edcf4d03cfac645212d1f16 (differs)
+  | after arm (b) restart: md5=83f13d9c5287bdce7364f14d8fc397e9
+  | after all arms (closing clean): md5=83f13d9c5287bdce7364f14d8fc397e9
+
+## Arm (c): a second and a third dry run with the same cutover -> identical
+  | diff dry1 vs dry2 (header timestamp excluded): rc=0, 0 lines (110 lines each)
+  | diff dry1 vs dry3 (closing clean, after every arm): rc=0, 0 lines
+  | control: the same diff with one count changed 21->22: rc=1, 14 lines
+
+## Arms (a), (b) and the guards, against the real dev container
+  | ### ARM a-wrong-origin
+  | $ bash scripts/dev-media-reseed.sh --dry-run --cutover 2026-09-29T01:14:01Z --old-origin http://localhost:1/nothing
+  | rc=1
+  | cutover=2026-09-29T01:14:01Z
+  | ERROR:  RESEED-REFUSED: nothing references the old origin http://localhost:1/nothing -- wrong --old-origin, or already reseeded
+  | REFUSED: the transaction refused and rolled back (psql rc=3); see the ERROR line above
+  | ### ARM guard-container
+  | $ PG_CONTAINER=jtoye-azurite bash scripts/dev-media-reseed.sh --cutover 2026-09-29T01:14:01Z
+  | rc=1
+  | cutover=2026-09-29T01:14:01Z
+  | REFUSED: container jtoye-azurite is compose service 'azurite', not the dev 'postgres' service
+  | ### ARM guard-container-missing
+  | $ PG_CONTAINER=jtoye-no-such-container bash scripts/dev-media-reseed.sh --cutover 2026-09-29T01:14:01Z
+  | rc=2
+  | cutover=2026-09-29T01:14:01Z
+  | VOID: container jtoye-no-such-container does not exist; start it: docker compose -f docker-compose.full-stack.yml up -d postgres azurite
+  | ### ARM guard-db
+  | $ RESEED_DB=keycloak bash scripts/dev-media-reseed.sh --cutover 2026-09-29T01:14:01Z
+  | rc=1
+  | cutover=2026-09-29T01:14:01Z
+  | REFUSED: connected database is 'keycloak', not the dev database 'jtoye'
+  | ### ARM guard-db-postgres
+  | $ RESEED_DB=postgres bash scripts/dev-media-reseed.sh --cutover 2026-09-29T01:14:01Z
+  | rc=1
+  | cutover=2026-09-29T01:14:01Z
+  | REFUSED: connected database is 'postgres', not the dev database 'jtoye'
+  | ### ARM guard-context-host
+  | $ DOCKER_HOST=tcp://10.255.255.1:2376 bash scripts/dev-media-reseed.sh --cutover 2026-09-29T01:14:01Z
+  | rc=1
+  | cutover=2026-09-29T01:14:01Z
+  | REFUSED: docker endpoint 'tcp://10.255.255.1:2376' is not a local unix:// socket; this script only touches a local dev container
+  | ### ARM guard-no-docker
+  | $ PATH=/nonexistent /bin/bash scripts/dev-media-reseed.sh --cutover 2026-09-29T01:14:01Z
+  | rc=2
+  | cutover=2026-09-29T01:14:01Z
+  | VOID: docker not on PATH
+  | ### ARM guard-no-cutover
+  | $ bash scripts/dev-media-reseed.sh --dry-run
+  | rc=1
+  | REFUSED: --cutover <ISO-8601 with zone> is required in both modes
+  | ### ARM guard-cutover-no-zone
+  | $ bash scripts/dev-media-reseed.sh --cutover 2026-09-29
+  | rc=1
+  | REFUSED: --cutover '2026-09-29' is not ISO-8601 with an explicit zone (e.g. 2026-09-29T01:00:00Z)
+  | ### ARM guard-cutover-future
+  | $ bash scripts/dev-media-reseed.sh --cutover 2099-01-01T00:00:00Z
+  | rc=1
+  | cutover=2099-01-01T00:00:00Z
+  | ERROR:  RESEED-REFUSED: --cutover 2099-01-01 00:00:00+00 is later than the database clock 2026-09-29 01:15:02.347841+00
+  | REFUSED: the transaction refused and rolled back (psql rc=3); see the ERROR line above
+  | ### ARM guard-both-modes
+  | $ bash scripts/dev-media-reseed.sh --dry-run --apply --cutover 2026-09-29T01:14:01Z
+  | rc=1
+  | REFUSED: --dry-run and --apply are mutually exclusive
+  | ### ARM guard-new-under-old
+  | $ bash scripts/dev-media-reseed.sh --cutover 2026-09-29T01:14:01Z --new-public-url http://localhost:9000/jtoye-images/sub
+  | rc=1
+  | REFUSED: --new-public-url lies under --old-origin
+  | ### ARM guard-context-remote
+  | $ DOCKER_CONFIG=<scratch> DOCKER_CONTEXT=remote-test bash scripts/dev-media-reseed.sh --cutover 2026-09-29T01:14:01Z
+  | rc=1
+  | cutover=2026-09-29T01:14:01Z
+  | REFUSED: docker endpoint 'tcp://10.255.255.1:2376' is not a local unix:// socket; this script only touches a local dev container
+  | ### ARM guard-context-unresolvable
+  | $ DOCKER_CONFIG=<scratch> DOCKER_CONTEXT=no-such-context bash scripts/dev-media-reseed.sh --cutover 2026-09-29T01:14:01Z
+  | rc=2
+  | cutover=2026-09-29T01:14:01Z
+  | VOID: cannot resolve the docker endpoint of the current context (rc=1)
+  | ### ARM b-postgres-stopped
+  | $ docker stop jtoye-postgres; bash scripts/dev-media-reseed.sh --dry-run --cutover 2026-09-29T01:14:01Z
+  | rc=2
+  | VOID: container jtoye-postgres is not running; start it: docker compose -f docker-compose.full-stack.yml up -d postgres azurite
+
+## Plan <verify> both directions
+  | real tree: rc=0 before_lines=30 after_lines=18 'pinned products total=23'
+  | wrong --old-origin: rc=1 before_lines=10 after_lines=0
+
+## Static criteria
+  | git grep -n 'psql -U': 2 lines (85 comment, 193 helper), both 'psql -U jtoye_app'; non-jtoye_app lines=0
+  | git grep -n 'docker exec -i': 2 lines (85, 193)
+  | fail direction (mutated temp copy: -U jtoye, -i removed): non-jtoye_app lines=1, docker exec -i lines=0
+  | strengthened: non-comment lines invoking docker exec/psql = exactly line 193 (the one helper)
+  | runtime arm, helper without -i: rc=2 'VOID: identity query returned nothing' (no silent pass)
+  | bash -n: rc=0. shellcheck: not installed on this host (rc=127), not run.
+  | core-java: docker ps -a --filter name=jtoye-core-java -q -> <empty>; name=core-java -> <empty>
+  |   (control: name=jtoye-postgres -> 79f92e95a9a7, so the filter can match)
+
+## Scratch harness: the branches the dev data does not reach
+  | A throwaway postgres:15-alpine (jtoye-reseed-scratch, no published port, labelled as the dev compose
+  | postgres service so the container guard admits it), jtoye_app NOSUPERUSER NOBYPASSRLS owning db jtoye,
+  | schema = pg_dump --schema-only of the dev DB, rows copied per tenant as INSERTs under RLS (COPY FROM is
+  | refused under RLS). Copy verified: state md5 83f13d9c... = dev. Removed afterwards with its anonymous
+  | volume; the named-volume list is identical to the pre-plan snapshot.
+  | Fixtures: a hand upload (old origin, non-seed); a mixed array [old seed, /brand/x.png, NULL, old non-seed,
+  | new seed]; an array holding only a dead value; tenant B shop banner (old non-seed) + CDN logo; tenant B seed;
+  | media ACTIVE before the cutover, PENDING after it, and ACTIVE with an existing quarantine_reclaimed_at.
+  | Scratch dry run totals:
+  | == URL column totals ==
+  |     stage     | rows_with_old | old_seed_values | old_other_values | new_origin_values | other_values 
+  | --------------+---------------+-----------------+------------------+-------------------+--------------
+  |  before-total |            25 |              22 |                4 |                 1 |            5
+  |  after-total  |             0 |               0 |                0 |                23 |            5
+  | 
+  | Scratch apply: rc=0 'RESULT: COMMITTED', post-commit old-origin values remaining=0; its count tables are
+  |   identical to the scratch dry run (diff rc=0, 0 lines).
+  | Independent read-back after apply (jtoye_app, pinned):
+  |   hand upload image_url            -> <null>
+  |   mixed array                      -> {<new>/…/seed/extra-1.jpg,/brand/x.png,NULL,<new>/…/seed/already.jpg}
+  |   dead-only array                  -> {} (not NULL)
+  |   tenant B banner / logo           -> <null> / https://cdn.example.com/b-logo.png (untouched)
+  |   tenant A /brand/ logos           -> /brand/logo-brixton-grill.png,/brand/logo-mama-ades.png,/brand/logo-peckham-jollof.png
+  |   media before cutover             -> FAILED 'Bytes not carried over in the Phase 36 dev reseed (D-04) -- re-upload', version+1
+  |   media PENDING after cutover      -> PENDING (kept)
+  |   existing quarantine_reclaimed_at -> 2026-09-01 12:00:00+00 (kept, not overwritten)
+  | Scratch arms (each fault injected, then restored and verified by catalog read or state md5):
+  | ### SCRATCH ARM post-apply-rerun
+  | rc=1
+  | ERROR:  RESEED-REFUSED: nothing references the old origin http://localhost:9000/jtoye-images -- wrong --old-origin, or already reseeded
+  | REFUSED: the transaction refused and rolled back (psql rc=3); see the ERROR line above
+  | ### SCRATCH ARM rls-not-forced
+  | rc=1
+  | ERROR:  RESEED-REFUSED: RLS not enforcing; investigate before rewriting (23 product(s) visible with the tenant GUC cleared)
+  | REFUSED: the transaction refused and rolled back (psql rc=3); see the ERROR line above
+  | ### SCRATCH ARM rls-blind
+  | rc=1
+  | ERROR:  RESEED-REFUSED: RLS blind or wrong database: 0 products visible with the tenant GUC pinned
+  | REFUSED: the transaction refused and rolled back (psql rc=3); see the ERROR line above
+  | ### SCRATCH ARM role-bypassrls
+  | rc=1
+  | REFUSED: role jtoye_app bypasses RLS (rolsuper=false rolbypassrls=true); the rewrite must go through the tenant wall
+  | ### SCRATCH ARM control-old-data-present
+  | rc=0
+  |  before-total |             2 |               1 |                1 |                22 |            5
+  |  after-total  |             0 |               0 |                0 |                23 |            5
+  | RESULT: ROLLED BACK (dry run) -- nothing was written
+  | ### SCRATCH ARM coverage-orphan-row
+  | rc=0
+  |  before-total |             2 |               1 |                1 |                22 |            5
+  |  after-total  |             0 |               0 |                0 |                23 |            5
+  | RESULT: ROLLED BACK (dry run) -- nothing was written
+  | ### SCRATCH ARM coverage-orphan-row (attempt 1 VACUOUS: the orphan INSERT failed WITH CHECK, rc=3, so no orphan existed; the rc=0 run above is not evidence)
+  | ### SCRATCH ARM coverage-orphan-row
+  | rc=1
+  | ERROR:  RESEED-REFUSED: products holds 24 row(s) but the tenant loop reached 23 -- rows under an unregistered tenant id would be skipped
+  | REFUSED: the transaction refused and rolled back (psql rc=3); see the ERROR line above
+  | ### SCRATCH ARM reviews-no-update-policy
+  | rc=1
+  | ERROR:  RESEED-FAILED: reviews.photo_urls for tenant 00000000-0000-0000-0000-000000000001 updated 0 row(s) but 1 carried old-origin values -- the UPDATE is blind (no UPDATE policy? GUC not applied?)
+  | REFUSED: the transaction failed and rolled back (psql rc=3); see the ERROR line above
+  | ### SCRATCH ARM trigger-reverts-rewrite
+  | rc=1
+  | ERROR:  RESEED-FAILED: products.image_url for tenant 00000000-0000-0000-0000-000000000001 still holds 1 old-origin value(s) after the rewrite
+  | REFUSED: the transaction failed and rolled back (psql rc=3); see the ERROR line above
+  | ### SCRATCH ARM trigger-alters-untouched-value
+  | rc=1
+  | ERROR:  RESEED-FAILED: shops.logo_url for tenant 00000000-0000-0000-0000-000000000002: values outside both origins changed (count 1 -> 1, md5 5dbd522ec64518ef2c2d1c60b36241f4 -> 7feb113814b589d583ba0a4f63c58fea)
+  | REFUSED: the transaction failed and rolled back (psql rc=3); see the ERROR line above
+  | ### SCRATCH ARM closing-control
+  | rc=0
+  |  before-total |             2 |               1 |                1 |                22 |            5
+  |  after-total  |             0 |               0 |                0 |                23 |            5
+  | RESULT: ROLLED BACK (dry run) -- nothing was written
