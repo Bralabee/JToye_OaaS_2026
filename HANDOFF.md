@@ -1,8 +1,32 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause) and 2026-09-28 (state analysis, `main` green again, Phase 36 opened). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened) and 2026-09-29 (Phase 36 executed through plan 36-17). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-09-28 delta — state analysis, `main` green again, and Phase 36 (Azure Blob) opened. Resume here.**
+**2026-09-29 delta — Phase 36 executed through 36-17; only 36-18 (the nightly on a runner) remains. Resume here.**
+**Where things stand.** Branch `phase-36-azure-blob-storage`, 17 of 18 plans with a SUMMARY
+(`.planning/phases/36-azure-blob-storage-throughout/`). The remote copy of the branch is still at
+`5b6e76bd` (pushed when the phase opened, measured with `git ls-remote` on 2026-09-29), so the
+plan work is local only, and no PR exists for the branch. core-java stores
+media through the Azure Blob SDK: Azurite locally (the digest-pinned 3.37.0 image, loopback 10000,
+public `jtoye-images` and private `jtoye-quarantine`), and Workload Identity against `jtoyestgmedia`
+/ `jtoyestgbackup` in staging (`jtoyeprodmedia` / `jtoyeprodbackup` in production). The pg-backup
+image is `:15-blob` and uploads with `blobctl`. A repo-wide gate,
+`scripts/check-no-object-store-residue.sh`, keeps the retired store out.
+`docs/metrics.json` was regenerated once, in 36-17, to **4130** logical invocations.
+**Requirements:** BLOB-01, 03, 05, 07, 08, 09 and 10 are complete. BLOB-02 and BLOB-06 are partial
+until Phase 29 provisions the real accounts. BLOB-04 is partial until 36-18 runs the nightly. Each
+row in `.planning/REQUIREMENTS.md` names its remaining limb.
+**Phase 29 hand-off:** `.planning/phases/36-azure-blob-storage-throughout/36-PHASE29-HANDOFF.md`
+covers the superseded decisions, the operator secrets dropping from 7 to 3, the provisioning order
+(the runbook `docs/runbooks/azure-blob-provisioning.md`), the verification items, and a
+35-file merge-conflict map for `phase-29-research`. That branch was read, never written.
+**Resume:** run plan 36-18. It is not autonomous: it needs the owner's approval to push the branch
+and dispatch one nightly run, then it reads that run to its report and takes the final
+`scripts/check-runtime-freshness.sh` and `scripts/check-branch-behind-base.sh` readings. The broken
+windows open in `.planning/WINDOWS.md` (#1 name check, #2 nightly drill never run on a runner, #3
+live AKS admission path) belong to 36-18 and Phase 29.
+
+**2026-09-28 delta — state analysis, `main` green again, and Phase 36 (Azure Blob) opened.**
 **Where things stand.** `main` = `db725c94`. PR #757 is MERGED: `amqp-client` 5.33.1 → 5.34.0 for
 CVE-2026-75516 (issue #754 CLOSED) plus the missing `fi` that had kept
 `base-image-freshness.yml`'s tracking-issue step from ever filing. `main`'s post-merge run
@@ -315,8 +339,8 @@ done
 | `main` HEAD | tip of `main` at or after the **PR #658** merge — deliberately NOT a sha, see below |
 | Phase 31 | `42ac6dc3` — `feat(31): consumer safety and the legal floor (#633)`, 18/18 plans |
 | Working tree | clean, no worktrees in use |
-| Schema head | **V64** (re-measured 2026-08-31; V64 is #661's TRUNCATE grant) |
-| Test manifest | **3572** logical invocations (Java 1730/275 files, Jest 1583/146, Playwright 127/27, Go 84/11, MCP 48/8) — `docs/metrics.json`, re-measured 2026-08-31 |
+| Schema head | **V66** (re-measured 2026-09-29 from `core-java/src/main/resources/db/migration/`; V66 is COR-4's `orders.unit_count`) |
+| Test manifest | **4130** logical invocations (Java 1965/303 files, Jest 1878/172, Playwright 128/28, Go 98/13, MCP 61/8) — `docs/metrics.json`, regenerated 2026-09-29 on `phase-36-azure-blob-storage` (plan 36-17) |
 | Gate sweep 2026-08-25 | **36 PASS, 1 FAIL, 0 VOID** across all 37 gate scripts, measured after the runtime re-sync AND the E2E run. The one non-pass is `check-e2e-skip-budget` **FAIL** (65 skipped vs a budget of 8, plus an undeclared skip) — it was VOID until a completed run replaced the stale report, so this is a real answer rather than an unanswerable one. Progression that day: 34/2/1 → 36/0/1 → 36/1/0 |
 
 > **Why the HEAD row names a PR and not a sha — do not "helpfully" put one back.** A document that
