@@ -60,7 +60,7 @@
 # WHY eol_slug IS A RECORDED FIELD AND NOT DERIVED FROM THE IMAGE NAME
 #
 #   Measured 2026-07-27: node -> 301 -> nodejs, alpine -> 301 -> alpine-linux,
-#   postgres -> 301 -> postgresql, and minio/ollama/mailhog/alertmanager/both exporters 404.
+#   postgres -> 301 -> postgresql, and the since-retired object store/ollama/mailhog/alertmanager/both exporters 404.
 #   Derived naively, five of the eleven resolvable rows here would either follow a
 #   redirect nobody recorded or read a 404 body as "no EOL data" and pass. The slug is
 #   recorded, and the gate REJECTS a slug that redirects even though curl -L would resolve
@@ -209,7 +209,7 @@ while IFS='|' read -r rid rpin rsite; do
     continue
   fi
   # Non-comment lines only, numbered. Fixed-string matching throughout: pins contain regex
-  # metacharacters (${MINIO_IMAGE_TAG:-latest}).
+  # metacharacters (${AZURITE_IMAGE_TAG:-3.37.0@sha256:...}).
   hits=$(command grep -nF -- "$rpin" "$sfile" 2>/dev/null \
          | command awk -F: '{ rest=$0; sub(/^[0-9]+:/,"",rest); if (rest !~ /^[[:space:]]*#/) print $1 }' || true)
   if [ -z "$hits" ]; then

@@ -201,7 +201,7 @@ dependencies:
     owner: maintainer
     eol_slug: null
     note: >-
-      Phase 36 (36-02): the Azure Blob emulator that replaced the retired S3-compatible object
+      Phase 36 (36-02): the Azure Blob emulator that replaced the retired self-hosted object
       store in BOTH local runtimes (the canonical compose stack and the hybrid start-dev.sh
       stack, D-08) and in the nightly's SERVICES list. endoflife.date has no Azurite product, so
       the horizon is UNKNOWN by construction and this row passes only while its dated

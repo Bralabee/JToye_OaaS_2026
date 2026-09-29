@@ -231,7 +231,7 @@ Merge monitoring services into `docker-compose.full-stack.yml` for unified deplo
    - Adjust via `--storage.tsdb.retention.time`
 
 2. **Long-term storage**:
-   - Export to S3/GCS via Thanos
+   - Export to object storage (Azure Blob, GCS, ...) via Thanos
    - Or use Cortex for centralized storage
 
 ## Troubleshooting

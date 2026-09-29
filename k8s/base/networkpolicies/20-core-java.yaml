@@ -116,7 +116,7 @@ spec:
     # stomp.broker.relay-port already exist as app-config keys, so routing them
     # the same way is a clean follow-up rather than something this change smuggles
     # in. INV-7 asserts all four explicitly, so they cannot drift unnoticed.
-    # (The MinIO 9000 port was removed in Phase 36: media storage is Azure Blob,
+    # (The retired object store's 9000 port was removed in Phase 36: media storage is Azure Blob,
     # reached over the public 443 rule below.)
     - to:
         - namespaceSelector:

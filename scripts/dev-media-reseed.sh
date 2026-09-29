@@ -3,7 +3,7 @@
 # dev-media-reseed.sh — Phase 36 (plan 36-11, BLOB-05 data half)
 #
 # Points the SHARED LOCAL DEV database at the Azurite object store after the move off
-# the retired S3-API store. It RESEEDS rather than migrates (D-04), and it goes THROUGH
+# the retired object store. It RESEEDS rather than migrates (D-04), and it goes THROUGH
 # the tenant wall, never around it (D-05).
 #
 # DEV ONLY. NEVER A FLYWAY MIGRATION.

@@ -54,7 +54,7 @@
 #   does not exercise the application against the restored database, and says
 #   nothing about PITR or about restoring into a DIFFERENT major. It also uses
 #   the live dev database as its source; a production drill needs the real dump
-#   artifact from S3.
+#   artifact from the Azure Blob backup container.
 #
 # EXIT CODES
 #   0 = restore verified · 1 = restore is WRONG · 2 = VOID (could not evaluate)
@@ -287,5 +287,5 @@ echo "PASS: restored ${src_tables} tables / ${src_rows} rows into a clean postgr
 echo "      Counted as a BYPASSRLS role on both sides, with a control proving an"
 echo "      unpinned app-role count is blind here — so this is not a 0 == 0 pass."
 echo "      NOTE: row COUNTS, not row contents. Not a PITR test, and not a"
-echo "      cross-major restore. Production drills need the real S3 artifact."
+echo "      cross-major restore. Production drills need the real Blob artifact."
 exit 0

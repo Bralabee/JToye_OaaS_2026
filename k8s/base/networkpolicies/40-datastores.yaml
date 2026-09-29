@@ -74,7 +74,7 @@ spec:
     # that Workload Identity exchanges the projected token at. Workload Identity
     # needs no IMDS (169.254.169.254) egress. Neither host has pinnable IPs, hence
     # the RFC1918-excluding 0.0.0.0/0 on 443 only. The in-cluster object-store rule
-    # (MinIO, port 9000) was removed in Phase 36: there is no in-cluster target.
+    # (port 9000) was removed in Phase 36: there is no in-cluster target.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

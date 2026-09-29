@@ -12,7 +12,7 @@ the full threat model, flow matrix, and design decisions that drove this.
 | File | Purpose |
 |------|---------|
 | `00-default-deny.yaml` | Deny-all baseline. Every pod is subject to NetworkPolicy; only subsequent allow-rules open flows. |
-| `10-frontend.yaml` | `app=frontend` — ingress from `ingress-nginx`, egress to core-java + DNS + public 443 (Keycloak, CDNs, S3). |
+| `10-frontend.yaml` | `app=frontend` — ingress from `ingress-nginx`, egress to core-java + DNS + public 443 (Keycloak, CDNs, the Azure Blob media endpoint). |
 | `20-core-java.yaml` | `app=core-java` — ingress from frontend, edge-go, Prometheus; egress to infra namespace (Postgres/Redis/RabbitMQ/Alertmanager) + public 443 (Keycloak/Stripe/Ollama/CDNs, the Azure Blob media account and the Entra ID token endpoint for Workload Identity). |
 | `30-edge-go.yaml` | `app=edge-go` — ingress from `ingress-nginx` + Prometheus; egress to core-java + DNS + public 443 (Keycloak JWKS). Deliberately no direct DB/cache/queue access. |
 | `40-datastores.yaml` | `pg-backup` CronJob egress policy (Postgres + public 443 for the Azure Blob backup account and the Entra ID token endpoint only; no in-cluster object store since Phase 36); documentation stub for `jtoye-infrastructure` to mirror. |

@@ -6,7 +6,7 @@
 #
 #   A green upload test and an HTTP 200 page title say nothing about whether the URLs already
 #   sitting in the database point at bytes that exist. Phase 36 moved the object store (the
-#   retired S3-compatible origin on :9000 -> Azurite / Azure Blob), rewrote the dev database's
+#   retired object-store origin on :9000 -> Azurite / Azure Blob), rewrote the dev database's
 #   stored URLs (plan 36-11) and relies on DemoDataSeeder to re-upload the demo images on the
 #   next boot. Each of those steps can go wrong silently: a row the reseed missed still points
 #   at the retired origin, a seed object that never landed leaves a URL that 404s, and a

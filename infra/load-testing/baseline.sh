@@ -35,7 +35,7 @@
 #
 #   MediaProcessingEvent is (UUID tenantId, UUID assetId) and MediaProcessingWorker re-reads
 #   the asset by id, treating the DB as the source of truth. A random assetId therefore logs
-#   `asset_not_visible` and ACKS — no dead-letter, no MinIO object, no DB write. So the
+#   `asset_not_visible` and ACKS — no dead-letter, no stored object, no DB write. So the
 #   default payload exercises the REAL consumer path (AMQP delivery -> tenant GUC set_config
 #   -> repository lookup -> ack) without creating state that 27-01 and 27-03 would then
 #   measure against. What it does NOT measure is image transcoding; that is 27-04's arm, which

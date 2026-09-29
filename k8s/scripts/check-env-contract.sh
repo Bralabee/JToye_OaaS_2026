@@ -14,7 +14,7 @@
 #
 #   DEF-6 (the local-default class). Thirteen further placeholders that NO
 #   manifest supplied at all, each carrying a LOCAL-ONLY default: media uploads
-#   resolved to a dev MinIO endpoint with a dev access key, notification email
+#   resolved to a dev object-store endpoint with a dev access key, notification email
 #   resolved to a loopback relay, and every production unsubscribe link and
 #   Stripe Connect vendor return pointed at http://localhost:3000.
 #
@@ -102,7 +102,7 @@
 #      trips if ANY member matches — matched per-default, never against a joined
 #      string, because an anchored test on a joined string misses the member.
 #   6. Local-only means bare words as much as URLs. A bare-word credential
-#      default (the retired object store's `minioadmin`, now the Azurite
+#      default (the retired object store's root-user default, now the Azurite
 #      `UseDevelopmentStorage=true` shorthand) and a bare-word broker default are
 #      the DEF-4/DEF-6 signature; a URL-only regex misses both.
 #   7. Every extractor is SELF-TESTED against a synthetic control string before
@@ -207,7 +207,7 @@ ALLOW_FE_B=(
   'NEXT_RUNTIME|Reviewed omission: set by the Next.js runtime itself, never by an operator. frontend/instrumentation.ts:12 reads it only to tell the nodejs runtime from the edge runtime. Injecting it would override a value Next.js owns.'
   'APP_PUBLIC_ORIGIN|Reviewed omission, and one that SHOULD stay omitted: it is an optional override at the head of the resolvePublicOrigin chain (frontend/lib/public-origin.ts:87), not a required input. Absent, resolution falls straight through to NEXTAUTH_URL, which k8s/base/frontend-deployment.yaml:148-152 supplies from app-config/frontend.url — patched per overlay to the real public origin in every environment — and which frontend/lib/env-validation.ts:45 already lists as REQUIRED. So the value this name would carry is already supplied, correctly, by the very next term. It exists for the day the app public origin and NextAuth s diverge, or NextAuth is replaced; supplying it now would be a second source of truth for one origin, and the #504 defect it was written for was a bind address reaching an IdP, which resolvePublicOrigin rejects via isBindAddress regardless of which term wins.'
   'CSP_REPORT_ONLY|Reviewed omission, and one that must stay an omission in staging/production: unset means the Content-Security-Policy is ENFORCING (frontend/middleware.ts:33). Setting it to "true" would downgrade the policy to report-only cluster-wide. The only legitimate value is a temporary local one.'
-  'CSP_UPGRADE_INSECURE_REQUESTS|Reviewed omission with a known caveat: unset means the CSP omits upgrade-insecure-requests. frontend/lib/security-headers.ts:33-40 records that real HTTPS deployments SHOULD set it to "true", so staging/production are leaving a hardening directive on the table. It is deliberately off in base because the base render is shared with the local overlay, which serves http and would break MinIO images at http://localhost:9000 under an unconditional upgrade. Needs a per-overlay value, not a base one.'
+  'CSP_UPGRADE_INSECURE_REQUESTS|Reviewed omission with a known caveat: unset means the CSP omits upgrade-insecure-requests. frontend/lib/security-headers.ts:33-40 records that real HTTPS deployments SHOULD set it to "true", so staging/production are leaving a hardening directive on the table. It is deliberately off in base because the base render is shared with the local overlay, which serves http and would break Azurite images at http://localhost:10000 under an unconditional upgrade. Needs a per-overlay value, not a base one.'
   'CUSTOMER_KEYCLOAK_ISSUER|OPEN DEFECT #299 — the customer-storefront realm is unconfigured in EVERY k8s environment. Read by frontend/lib/customer-token-refresh.ts:42 for the customer refresh-token exchange; supplied by docker-compose only. This is a tracked live gap, NOT a reasoned omission. Note that #299 named three variables and this is one of THREE MORE it did not name.'
   'CUSTOMER_KEYCLOAK_ISSUER_INTERNAL|OPEN DEFECT #299 — same realm, same gap. The pod-reachable half of the customer issuer split (frontend/lib/customer-token-refresh.ts:41). Unsupplied, the refresh falls through to CUSTOMER_KEYCLOAK_ISSUER, which is itself unsupplied.'
   'CUSTOMER_KEYCLOAK_CLIENT_ID|OPEN DEFECT #299 — same realm, same gap. frontend/lib/customer-token-refresh.ts:48 falls back to the literal "storefront-client", so the refresh silently assumes a client id instead of being configured with one.'

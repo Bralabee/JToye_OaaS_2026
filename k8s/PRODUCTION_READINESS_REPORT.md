@@ -635,6 +635,11 @@ runtime error (SMTP auth failure, or S3 403/404) instead of the previous silent 
 activates without one of those deliberate acts — `smtp.auth` ships `"false"` and all seven new
 credential refs are `optional: true`.
 
+> **Superseded in part (Phase 36, 2026-09-28):** media and backup storage moved to Azure Blob Storage,
+> reached through AKS Workload Identity. There is no object-store credential Secret to create any more, and
+> the render invariants (INV-9 in `k8s/scripts/check-render-invariants.sh`) fail a build that references one.
+> The containers are probed at boot by `StorageStartupValidator`. See `docs/runbooks/azure-blob-provisioning.md`.
+
 #### 3. Known broken landing destination (not blocking, recorded)
 
 `stripe.connect.return-url` / `refresh-url` now point at real platform routes

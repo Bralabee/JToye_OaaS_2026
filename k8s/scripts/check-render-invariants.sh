@@ -158,7 +158,7 @@
 #               The weak form passes on a tree where the replacement got
 #               retargeted onto Redis (db.port lands in the set, 6379 is lost);
 #               the exact form fails. The other four ports are literals here on
-#               purpose (the fifth, MinIO 9000, was removed in Phase 36 with the
+#               purpose (the fifth, the retired object store's 9000, was removed in Phase 36 with the
 #               in-cluster object store it permitted): they are outside #271's scope, and an exact allow-list is
 #               strictly stronger than a partial one — a new datastore port must
 #               be added here in the same change, which is the right friction for
@@ -418,7 +418,7 @@ declare -A NETPOL_INFRA_EXPECTED=(
   [core-java-allow]="__DB_PORT__ 5672 6379 9093 61613"
   [pg-backup-allow]="__DB_PORT__"
 )
-# Phase 36: 9000 (the in-cluster MinIO) is gone from both lists. Azure Blob and the
+# Phase 36: 9000 (the retired in-cluster object store) is gone from both lists. Azure Blob and the
 # Entra ID token endpoint are reached over each policy's public 443 rule, which is
 # not an infrastructure-namespace rule and so is not in this multiset. Re-adding
 # 9000 to either policy now FAILS INV-7 — an egress hole with no target is still a
