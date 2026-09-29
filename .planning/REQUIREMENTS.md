@@ -194,8 +194,8 @@ they implement are `36-CONTEXT.md` D-01..D-10 (owner, 2026-09-28). Phase 36 bloc
 - [ ] **BLOB-06**: The pg-backup CronJob writes to Azure Blob (Workload Identity in staging/production, Azurite locally) via a write-only uploader; a restore from an Azurite-stored dump is exercised two-arm (arm A zero-row, arm B row-count match) by a nightly-wired gate; the image tag moves from `:15` (D-10).
 - [x] **BLOB-07**: k8s base/staging/production/local config carries the Blob endpoints; dedicated ServiceAccounts plus the `azure.workload.identity/use` pod label on core-java and pg-backup in staging/production; no storage Secret reference renders in staging/production; NetworkPolicies drop 9000; render invariants, env contract and goldens updated.
 - [x] **BLOB-08**: Frontend CSP `img-src` swaps the retired dev origin for `http://localhost:10000` and gains nothing broader; `next.config.mjs` `remotePatterns` admits exact origins only, never `*.blob.core.windows.net`.
-- [ ] **BLOB-09**: Zero MinIO/S3 residue (repo-wide, fail-armed CI gate with a reasoned allowlist for historical records); horizons carry an azurite row; the content-type gate is re-targeted to Blob; docs and metrics are updated.
-- [ ] **BLOB-10**: Phase 29 handoff on main: a provisioning spec (accounts, `AllowBlobPublicAccess`, container access levels, WORM + soft delete, identities + federated credentials, RBAC scopes, `az aks update --enable-workload-identity`), the operator-secret list change (7 → 3) and the merge-conflict map for `phase-29-research`.
+- [x] **BLOB-09**: Zero MinIO/S3 residue (repo-wide, fail-armed CI gate with a reasoned allowlist for historical records); horizons carry an azurite row; the content-type gate is re-targeted to Blob; docs and metrics are updated.
+- [x] **BLOB-10**: Phase 29 handoff on main: a provisioning spec (accounts, `AllowBlobPublicAccess`, container access levels, WORM + soft delete, identities + federated credentials, RBAC scopes, `az aks update --enable-workload-identity`), the operator-secret list change (7 → 3) and the merge-conflict map for `phase-29-research`.
 
 ## Future Requirements (deferred — tracked, not lost)
 
