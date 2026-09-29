@@ -271,9 +271,16 @@ Built from `infra/backups/Dockerfile`, a two-stage build:
 
 The image runs `infra/backups/k8s-backup.sh` as its ENTRYPOINT, as uid 1000, with `HOME=/tmp`.
 
+CI publishes it. The `pg-backup` leg of `build-and-push` in `.github/workflows/ci-cd.yaml`
+builds this image, puts it through the same Trivy image gate as the other shipped images, and on
+every push to the default branch also pushes the exact tag the CronJob pulls. That tag is read
+from `k8s/base/pg-backup-cronjob.yaml` and both goldens, never restated in the workflow. The leg
+fails before pushing if those three disagree, or if the repository they name is not the one the
+job publishes to. So a tag change is a manifest change, made in the one D-10 change, and the next
+main build publishes it. A local build, for example for the restore drill, is:
+
 ```bash
 docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/backups
-docker push ghcr.io/bralabee/jtoye-pg-backup:15-blob
 ```
 
 The tag changed from `:15` because the contents changed (D-10).

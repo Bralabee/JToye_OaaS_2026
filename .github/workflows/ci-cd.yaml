@@ -1384,7 +1384,17 @@ jobs:
       # only thing that changes is that the other two legs are allowed to finish.
       fail-fast: false
       matrix:
-        service: [core-java, edge-go, frontend]
+        # pg-backup (WR-03, Phase 36 code review): the nightly backup CronJob's image.
+        # Phase 36 put first-party code in it (blobctl, an Azure SDK Go binary) and moved
+        # its tag to :15-blob (D-10), but no job built, pushed or scanned it — the only
+        # route to the registry was a manual `docker push` in docs/runbooks/backups.md.
+        # A CronJob in ImagePullBackOff pages nobody, so backups would stop silently on
+        # the first deploy, and its postgres:15-bookworm layer and Go stdlib were never
+        # put through the Trivy image gate every other shipped image passes. It now
+        # builds, pushes and gates here like the rest, and additionally pushes the exact
+        # tag the CronJob pulls (see "Resolve the tag the pg-backup CronJob pulls").
+        # The deploy jobs do not pin it by sha: the CronJob keeps its manifest tag.
+        service: [core-java, edge-go, frontend, pg-backup]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1398,6 +1408,47 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # WR-03: the CronJob pulls ghcr.io/<owner>/jtoye-pg-backup:<tag> by its manifest
+      # tag, so that tag must be one this workflow publishes. It is READ from the
+      # manifests (k8s/base and both goldens, which k8s-validate proves equal the
+      # staging/production renders), never restated here, and the repository it names
+      # must be the one this job pushes to. Any disagreement fails the leg before a
+      # push, instead of shipping a CronJob whose image does not exist.
+      - name: Resolve the tag the pg-backup CronJob pulls (pg-backup leg only)
+        id: cronjob_image
+        if: matrix.service == 'pg-backup'
+        env:
+          IMAGE_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          refs="$(grep -hoE 'image:[[:space:]]*[^[:space:]]*/jtoye-pg-backup[:@][^[:space:]]*' \
+                    k8s/base/pg-backup-cronjob.yaml k8s/goldens/staging.yaml k8s/goldens/production.yaml)" || refs=""
+          if [ -z "$refs" ]; then
+            echo "FATAL: found no jtoye-pg-backup image reference in the CronJob or the goldens; nothing to publish against." >&2
+            exit 2
+          fi
+          distinct="$(sed -E 's/^image:[[:space:]]*//' <<< "$refs" | sort -u)"
+          if [ "$(wc -l <<< "$distinct")" -ne 1 ]; then
+            echo "FATAL: the CronJob and the goldens disagree on the pg-backup image:" >&2
+            printf '  %s\n' $distinct >&2
+            exit 1
+          fi
+          case "$distinct" in
+            *@*) echo "FATAL: '$distinct' is a digest pin; this step publishes a TAG. Update it together with the manifest." >&2; exit 1 ;;
+          esac
+          repo="${distinct%:*}"; tag="${distinct##*:}"
+          published_repo="${REGISTRY}/${IMAGE_OWNER,,}/jtoye-pg-backup"
+          if [ "$repo" != "$published_repo" ]; then
+            echo "FATAL: the CronJob pulls '$repo', but this job publishes '$published_repo'. The CronJob would never find its image." >&2
+            exit 1
+          fi
+          if [ -z "$tag" ] || [ "$tag" = "$distinct" ]; then
+            echo "FATAL: '$distinct' carries no tag." >&2
+            exit 1
+          fi
+          echo "the CronJob pulls $distinct; this leg publishes that tag on the default branch"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
         id: meta
@@ -1416,12 +1467,13 @@ jobs:
             # ImagePullBackOff on every deploy (the latent bug this PR closes).
             type=raw,value=${{ github.sha }}
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.cronjob_image.outputs.tag || 'unused' }},enable=${{ matrix.service == 'pg-backup' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          context: ${{ matrix.service == 'core-java' && '.' || matrix.service }}
-          file: ${{ matrix.service }}/Dockerfile
+          context: ${{ matrix.service == 'core-java' && '.' || matrix.service == 'pg-backup' && 'infra/backups' || matrix.service }}
+          file: ${{ matrix.service == 'pg-backup' && 'infra/backups/Dockerfile' || format('{0}/Dockerfile', matrix.service) }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -1448,9 +1500,9 @@ jobs:
           # the whole point of the fix. The three optional ones degrade gracefully
           # (frontend/lib/env-validation.ts optionalEnvVars / resolveSupportChannel).
           #
-          # Passed on ALL THREE matrix legs on purpose. core-java/Dockerfile and
-          # edge-go/Dockerfile declare no matching ARG, so BuildKit logs
-          # "one or more build-args were not consumed" for those two legs — a
+          # Passed on EVERY matrix leg on purpose. core-java/Dockerfile and
+          # edge-go/Dockerfile (and infra/backups/Dockerfile) declare no matching ARG, so BuildKit logs
+          # "one or more build-args were not consumed" for those legs — a
           # warning, not an error. Do NOT "fix" that warning by deleting these
           # lines; a conditional per-leg expression cannot emit a multi-line
           # build-args block (GitHub expressions have no newline literal), and
@@ -1470,8 +1522,11 @@ jobs:
           # frontend is amd64-only: its arm64 build runs under QEMU emulation
           # (Next.js npm-install + next build) and took ~30 min vs ~1-7 min for
           # the Go/Java services, whose arm64 builds are cheap. Drop arm64 for
-          # frontend, keep multi-arch for core-java/edge-go.
-          platforms: ${{ matrix.service == 'frontend' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          # frontend, keep multi-arch for core-java/edge-go. pg-backup is amd64-only
+          # too: its Dockerfile compiles blobctl in the TARGET platform's stage (no
+          # BUILDPLATFORM cross-compile), so arm64 would be an emulated Go build, and
+          # an amd64-only frontend already means the cluster's nodes are amd64.
+          platforms: ${{ (matrix.service == 'frontend' || matrix.service == 'pg-backup') && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
 
       - name: Scan Docker image with Trivy (SARIF report)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
