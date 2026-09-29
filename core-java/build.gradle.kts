@@ -101,6 +101,52 @@ extra["tomcat.version"] = "10.1.59"
 // above: every minor step is a chance for a runtime default to move.
 extra["rabbit-amqp-client.version"] = "5.34.0"
 
+// Override the Jackson family managed by Spring Boot 3.5.16's BOM. Jackson is not
+// declared below -- it arrives through the web/json starters (and flyway, swagger-core),
+// and every artifact is pinned by io.spring.dependency-management ("selected by rule"
+// in dependencyInsight). Boot manages it through ONE property, `jackson-bom.version`,
+// set to 2.21.4 at line 79 of spring-boot-dependencies-3.5.16.pom, which imports
+// com.fasterxml.jackson:jackson-bom:${jackson-bom.version} at lines 2188-2190.
+//
+// WHY THE PIN EXISTS AT ALL (2026-09-29): the Trivy image gate named
+// com.fasterxml.jackson.core:jackson-databind 2.21.4 in app.jar for CVE-2026-68497
+// (HIGH; fixed in 2.18.10 / 2.21.6 / 2.22.2). The same gate was green on 2026-09-28
+// (run 36469503402) and red on 2026-09-29 (runs 36552432346, 36555251078). No change in
+// this tree caused it: the vulnerability DB moved. 2.21.6 also closes the six medium
+// advisories 2.21.4 carries -- CVE-2026-83557 and CVE-2026-19032 (fixed in 2.21.6), and
+// CVE-2026-77310, CVE-2026-59889, GHSA-mhm7-754m-9p8w and CVE-2026-54515 (fixed in 2.21.5).
+//
+// WHY THE BOM PROPERTY and not a forced artifact: the property re-points the imported
+// jackson-bom, so jackson-core, jackson-databind and the datatype/dataformat/module
+// artifacts move together. Forcing jackson-databind alone would leave its siblings on
+// 2.21.4, out of step. jackson-annotations resolves as `2.21` both before and after,
+// by the BOM's own major.minor versioning (`jackson.version.annotations`) -- that is
+// expected, not a leftover.
+//
+// THE PROPERTY NAME IS LOAD-BEARING. It must match the key Boot's BOM declares,
+// `jackson-bom.version`. A near-miss sets a property nothing reads and silently changes
+// nothing. Measured on this tree with
+// `dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind`:
+//   near-miss key `jackson.bom.version` = "2.21.6"  ->  2.21.4   (VULNERABLE)
+//   correct key   `jackson-bom.version` = "2.21.6"  ->  2.21.6
+// Do NOT add a direct `implementation("com.fasterxml.jackson...")` to prove it works:
+// the amqp-client block above records how a second mechanism masked a broken property.
+//
+// WHY 2.21.6 and not 2.21.7 or 2.22.x: it is the smallest clearing bump on the 2.21 line
+// Boot 3.5.16 already manages, for the same reason as the amqp-client bump above --
+// every step is a chance for a runtime default to move.
+//
+// ENFORCEMENT: the image gate lives in `build-and-push`, which runs on push and release
+// ONLY, never on a pull request. A revert of this line merges green and turns `main` red
+// afterwards. So a PR that touches this line must prove resolution itself, with
+// `dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind --configuration runtimeClasspath`.
+// That gate is the enforcement; this line is only the fix.
+//
+// WHEN TO DELETE IT: once Boot's own BOM manages jackson-bom at or above 2.21.6. A pin
+// left behind a newer Boot would hold Jackson BELOW Boot's managed version -- the same
+// shape of defect the httpcore5 block above describes.
+extra["jackson-bom.version"] = "2.21.6"
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")

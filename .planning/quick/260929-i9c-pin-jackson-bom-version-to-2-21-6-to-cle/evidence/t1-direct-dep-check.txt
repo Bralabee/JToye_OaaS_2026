@@ -1,0 +1,8 @@
+noncomment lines HEAD: 184
+HEAD non-comment jackson-databind count=0 (expect 0)
+FAIL ARM scratch (+1 direct dep) non-comment jackson-databind count=1 (expect 1)
+scratch removed: yes
+HEAD non-comment pin line count=1 (expect 1)
+git show db725c94 rc=0 lines=485
+FAIL ARM db725c94 non-comment pin line count=0 (expect 0)
+(control: comment lines mentioning jackson-databind in HEAD=5, proving the filter matters)

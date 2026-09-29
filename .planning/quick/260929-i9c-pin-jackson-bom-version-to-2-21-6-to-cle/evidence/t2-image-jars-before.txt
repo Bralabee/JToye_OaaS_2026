@@ -1,0 +1,9 @@
+# jtoye-jackson-check:before  sha256:dc3c919d9e047dac47543d744701d1b05f8935e0aae6c9c985b5990b311f3e16 2026-09-29T13:27:00.907068523+01:00 amd64  (docker run unzip rc=0)
+    82104  02-01-1980 00:00   BOOT-INF/lib/jackson-annotations-2.21.jar
+   594183  02-01-1980 00:00   BOOT-INF/lib/jackson-core-2.21.4.jar
+  1702879  02-01-1980 00:00   BOOT-INF/lib/jackson-databind-2.21.4.jar
+    57575  02-01-1980 00:00   BOOT-INF/lib/jackson-dataformat-toml-2.21.4.jar
+    60606  02-01-1980 00:00   BOOT-INF/lib/jackson-dataformat-yaml-2.21.4.jar
+    36040  02-01-1980 00:00   BOOT-INF/lib/jackson-datatype-jdk8-2.21.4.jar
+   136585  02-01-1980 00:00   BOOT-INF/lib/jackson-datatype-jsr310-2.21.4.jar
+    10187  02-01-1980 00:00   BOOT-INF/lib/jackson-module-parameter-names-2.21.4.jar

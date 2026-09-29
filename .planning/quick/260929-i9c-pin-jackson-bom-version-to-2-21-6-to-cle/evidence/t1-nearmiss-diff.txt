@@ -1,0 +1,12 @@
+diff --git a/core-java/build.gradle.kts b/core-java/build.gradle.kts
+index 40712282..b579d094 100644
+--- a/core-java/build.gradle.kts
++++ b/core-java/build.gradle.kts
+@@ -114,6 +114,7 @@ extra["tomcat.version"] = "10.1.59"
+ // Taken as the smallest clearing bump, not the newest (5.36.0), for the same reason as
+ // above: every minor step is a chance for a runtime default to move.
+ extra["rabbit-amqp-client.version"] = "5.34.0"
++extra["jackson.bom.version"] = "2.21.6"
+ 
+ dependencies {
+     implementation("org.springframework.boot:spring-boot-starter-web")

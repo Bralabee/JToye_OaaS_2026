@@ -1,0 +1,8 @@
+# Near-miss key proof: jackson.bom.version (dots) is declared by nothing in the BOM chain
+rg -uu -F 'jackson.bom.version' spring-boot-dependencies-3.5.16.pom: rc=1 
+rg -uu -F 'jackson.bom.version' jackson-bom-2.21.4.pom: rc=1 
+rg -uu -F 'jackson.bom.version' jackson-parent-2.21.pom: rc=1 
+POSITIVE CONTROL rg -uu -F 'jackson-bom.version' spring-boot-dependencies-3.5.16.pom: rc=0
+79:    <jackson-bom.version>2.21.4</jackson-bom.version>
+2190:        <version>${jackson-bom.version}</version>
+rg -uu -F 'jackson.bom.version' oss-parent-75.pom: rc=1 

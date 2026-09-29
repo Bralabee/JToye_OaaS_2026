@@ -1,0 +1,3 @@
+restore by content: hash-object=40712282526df1d93ae6837f30768250c0f71d83 HEAD-blob=40712282526df1d93ae6837f30768250c0f71d83
+RESTORE VERIFIED (equal)
+near-miss token count in working file after restore: 0
