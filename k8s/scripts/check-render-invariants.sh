@@ -226,6 +226,35 @@
 #          from the container name sees none of its env. Paths are immune to that
 #          ordering by construction.
 #
+#   INV-11 PHASE 36 D-08 (code review WR-01), RENDER level, EVERY target. No
+#          render can switch off core-java's boot-time storage probe
+#          (StorageStartupValidator, the runtime check behind #626). The probe is
+#          gated on storage.blob.validate-on-startup, and application.yml sets it
+#          as a literal `true` — but a literal in application.yml is not a guard:
+#          Spring's relaxed binding lets an env var (STORAGE_BLOB_VALIDATEONSTARTUP,
+#          STORAGE_BLOB_VALIDATE_ON_STARTUP, or the dotted name itself, which a
+#          Kubernetes env name may carry), SPRING_APPLICATION_JSON, a command-line
+#          argument or a -D system property (JAVA_OPTS, which core-java's image
+#          ENTRYPOINT expands) outrank it and silently remove the bean. This makes
+#          "no runtime switches it off" true for every rendered target:
+#            a. the render text contains NO spelling of validate-on-startup at all
+#               (case-insensitive, `-`/`_`/`.`/nothing between the words). One
+#               raw-text rule covers every visible channel at once: env names and
+#               values, args, command, ConfigMap keys and values reached through
+#               configMapKeyRef, JSON bodies and block scalars the path walker skips;
+#            b. no core-java container sets SPRING_APPLICATION_JSON (any spelling),
+#               and none sources JAVA_OPTS / JAVA_TOOL_OPTIONS / JDK_JAVA_OPTIONS
+#               from a Secret — a Secret's value never appears in the render, so
+#               rule (a) could not see a flag arriving that way;
+#            c. no core-java container uses envFrom, which imports env names the
+#               render cannot enumerate when the source is a Secret.
+#          "core-java container" = any container, in any workload kind, whose image
+#          is the core-java image, found by exact PATH (::containers::[i]::image),
+#          so a second workload running the image is covered too. Zero such
+#          containers in a render is a PARSE ERROR (blind), never a pass.
+#          Test contexts keep their opt-out: they read core-java/src/test/resources,
+#          which no render contains.
+#
 # THE LOCAL-OVERLAY INVARIANTS (LOC-*), Phase 26 / INFRA-01
 #   These run ONLY when k8s/local/kustomization.yaml exists, so the script stays
 #   valid if the overlay is ever removed. They assert the shape of the committed
@@ -462,8 +491,41 @@ declare -A WI_WORKLOAD_SA=(
   [CronJob/pg-backup]="pg-backup"
 )
 
+# INV-11 (Phase 36 D-08, code review WR-01): the storage-probe switch in every
+# spelling Spring's relaxed binding accepts, matched case-insensitively on the raw
+# render text; the image that makes a container a core-java container; and the
+# env names that could carry the switch from a source the render cannot read.
+PROBE_SWITCH_RE='validate[-_.]?on[-_.]?startup'
+CORE_JAVA_IMAGE_RE='/jtoye-core-java(:|@|$)'
+PROBE_JSON_ENV_NORM='springapplicationjson'
+PROBE_JVM_OPTS_ENV_NORM_RE='^(javaopts|javatooloptions|jdkjavaoptions)$'
+
 command -v kubectl > /dev/null \
     || parse_fail "kubectl not on PATH (client-side 'kubectl kustomize' is required)."
+
+# INV-11 self-test: PROBE_SWITCH_RE, through the SAME engine and flags as the scan
+# (grep -iE on a file), must see every spelling of the switch and none of its
+# neighbours. A pattern that cannot match makes rule (a) pass on anything.
+inv11_selftest() {
+    local pos neg n_pos n_neg want rc_pos=0 rc_neg=0
+    pos="$(mktemp)"; neg="$(mktemp)"
+    printf '%s\n' 'storage.blob.validate-on-startup=false' 'STORAGE_BLOB_VALIDATEONSTARTUP' \
+        'STORAGE_BLOB_VALIDATE_ON_STARTUP' '{"storage":{"blob":{"validateOnStartup":false}}}' \
+        '-Dstorage.blob.validate.on.startup=false' > "$pos"
+    printf '%s\n' 'STORAGE_CREATE_CONTAINERS' 'storage.blob.create-containers' 'validate' \
+        'startupProbe' 'on-startup' > "$neg"
+    want=$(wc -l < "$pos")
+    n_pos=$(grep -ciE -e "$PROBE_SWITCH_RE" "$pos") || rc_pos=$?
+    n_neg=$(grep -ciE -e "$PROBE_SWITCH_RE" "$neg") || rc_neg=$?
+    rm -f "$pos" "$neg"
+    if (( rc_pos > 1 )) || [[ "$n_pos" != "$want" ]]; then
+        parse_fail "INV-11 self-test: PROBE_SWITCH_RE matched ${n_pos:-?} of $want spellings of the probe switch (grep rc=$rc_pos). Rule (a) would be blind. Fix the pattern, do not delete the invariant."
+    fi
+    if (( rc_neg > 1 )) || [[ "$n_neg" != "0" ]]; then
+        parse_fail "INV-11 self-test: PROBE_SWITCH_RE matched ${n_neg:-?} negative control(s) (grep rc=$rc_neg) — it would fire on a legitimate neighbour."
+    fi
+}
+inv11_selftest
 [[ -f "$QUICK_START" ]]      || parse_fail "not found: $QUICK_START"
 [[ -f "$SECRETS_TEMPLATE" ]] || parse_fail "not found: $SECRETS_TEMPLATE"
 
@@ -1225,12 +1287,69 @@ for dir in "${TARGETS[@]}"; do
         inv10_msg="SKIP (not in WI_TARGETS)"
     fi
 
+    # ---------------- INV-11 (Phase 36 D-08, code review WR-01) ----------------
+    # EVERY target: no render can switch off the boot-time storage probe.
+    inv11_bad=0
+    # (a) raw render text, every document, every field.
+    inv11_hits=""; inv11_rc=0
+    inv11_hits=$(grep -niE -e "$PROBE_SWITCH_RE" "$render") || inv11_rc=$?
+    if (( inv11_rc > 1 )); then
+        parse_fail "[$rel] INV-11: grep failed (rc=$inv11_rc) reading the render — refusing to report 'no probe switch' from a scan that did not run."
+    fi
+    if [[ -n "$inv11_hits" ]]; then
+        while IFS= read -r hit; do
+            echo "  FAIL [$rel] INV-11: the render names the storage-probe switch (render line ${hit%%:*}): ${hit#*:}" >&2
+        done <<< "$inv11_hits"
+        inv11_bad=1
+    fi
+    # (b) + (c) per core-java container, by exact path.
+    awk "$RENDER_PATHS_AWK" "$render" > "$TMP/inv11_paths.tsv"
+    inv11_ctrs=$(awk -F'\t' -v img="$CORE_JAVA_IMAGE_RE" \
+        '$3 ~ /::containers::\[[0-9]+\]::image$/ && $4 ~ img { p = $3; sub(/::image$/, "", p); print $1 "\t" $2 "\t" p }' \
+        "$TMP/inv11_paths.tsv")
+    [[ -n "$inv11_ctrs" ]] || parse_fail "[$rel] INV-11 found 0 containers running the core-java image by path — either the render lost core-java or the path walker is blind, and the per-container probe checks would pass vacuously. Fix it, do not delete the invariant."
+    inv11_n=0
+    while IFS=$'\t' read -r ck cn cp; do
+        (( ++inv11_n ))
+        while IFS=$'\t' read -r _k _n pth v; do
+            sub="${pth#"$cp"::}"
+            if [[ "$sub" == envFrom ]]; then
+                echo "  FAIL [$rel] INV-11: $ck/$cn container at $cp uses envFrom ($pth) — it imports env names the render cannot enumerate, so the storage-probe switch could arrive unseen (D-08)." >&2
+                inv11_bad=1
+            elif [[ "$sub" =~ ^env::\[([0-9]+)\]::name$ ]]; then
+                # Capture the index NOW: the next =~ overwrites BASH_REMATCH.
+                item="$cp::env::[${BASH_REMATCH[1]}]"
+                norm="${v,,}"; norm="${norm//[^a-z0-9]/}"
+                if [[ "$norm" == "$PROBE_JSON_ENV_NORM" ]]; then
+                    echo "  FAIL [$rel] INV-11: $ck/$cn container at $cp sets env '$v' — SPRING_APPLICATION_JSON can set any property, the storage-probe switch included (D-08)." >&2
+                    inv11_bad=1
+                elif [[ "$norm" =~ $PROBE_JVM_OPTS_ENV_NORM_RE ]]; then
+                    if [[ "$(path_get "$TMP/inv11_paths.tsv" "$ck" "$cn" "$item::valueFrom::secretKeyRef::name")" != "(ABSENT)" ]]; then
+                        echo "  FAIL [$rel] INV-11: $ck/$cn container at $cp sources '$v' from a Secret — a -D flag in it would switch the storage probe off where no render check can read it (D-08)." >&2
+                        inv11_bad=1
+                    fi
+                fi
+            fi
+        done < <(awk -F'\t' -v k="$ck" -v n="$cn" -v p="$cp::" '$1 == k && $2 == n && index($3, p) == 1' "$TMP/inv11_paths.tsv")
+    done <<< "$inv11_ctrs"
+    if (( inv11_bad != 0 )); then
+        echo "        D-08: the boot-time storage probe (#626 container levels) is ON in every runtime." >&2
+        echo "        A literal in application.yml does not make that true — env, SPRING_APPLICATION_JSON," >&2
+        echo "        args and -D all outrank it. Remove the override; test contexts opt out in" >&2
+        echo "        core-java/src/test/resources, never in a manifest." >&2
+        FAILED=1
+        inv11_msg="FAIL"
+    else
+        inv11_msg="OK ($inv11_n core-java container(s); 0 probe-switch spellings in the render; no SPRING_APPLICATION_JSON, no Secret-sourced JVM options, no envFrom)"
+    fi
+
     if [[ "$inv1_msg" == FAIL* || "$inv2_msg" == FAIL* || "$inv3_msg" == FAIL* \
           || "$inv4_msg" == FAIL* || "$inv6_msg" == FAIL* || "$inv7_msg" == FAIL* \
-          || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* ]]; then
-        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg" >&2
+          || "$inv8_msg" == FAIL* || "$inv9_msg" == FAIL* || "$inv10_msg" == FAIL* \
+          || "$inv11_msg" == FAIL* ]]; then
+        echo "FAIL [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg" >&2
     else
-        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg"
+        echo "OK   [$rel]: INV-1 $inv1_msg | INV-2 $inv2_msg | INV-3 $inv3_msg | INV-4 $inv4_msg | INV-6 $inv6_msg | INV-7 $inv7_msg | INV-8 $inv8_msg | INV-9 $inv9_msg | INV-10 $inv10_msg | INV-11 $inv11_msg"
     fi
 done
 
@@ -1668,4 +1787,4 @@ if (( FAILED != 0 )); then
     fail "one or more rendered-manifest invariants are broken — see above. Each invariant pins a defect that already shipped once; fix the manifest or the docs rather than relaxing the assertion."
 fi
 
-echo "PASS: INV-1..INV-7 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10 hold on ${WI_TARGETS[*]}; $LOCAL_SECTION."
+echo "PASS: INV-1..INV-7 and INV-11 hold across ${#TARGETS[@]} kustomize target(s); INV-8, INV-9, INV-10 hold on ${WI_TARGETS[*]}; $LOCAL_SECTION."

@@ -590,8 +590,13 @@ storage:
     try-timeout-seconds: ${STORAGE_TRY_TIMEOUT_SECONDS:30}
     # The boot-time container probe (StorageStartupValidator): both containers exist, the public
     # one is access level blob (never container, #626) and the quarantine one is private. ON in
-    # every runtime (D-08). A literal on purpose, NOT mapped from an env var, so no runtime can
-    # switch it off through its environment; only test contexts that never touch storage opt out.
+    # every runtime (D-08). A literal on purpose, with no env placeholder, so no runtime gets a
+    # named env knob for it. A literal is NOT a guard on its own: like any property, Spring's
+    # relaxed binding still lets an env var (STORAGE_BLOB_VALIDATEONSTARTUP or
+    # STORAGE_BLOB_VALIDATE_ON_STARTUP), SPRING_APPLICATION_JSON, a command-line argument or a -D
+    # system property override it. What keeps it on for every k8s target is render invariant
+    # INV-11 in k8s/scripts/check-render-invariants.sh, which fails any render that carries such
+    # an override. Only test contexts that never touch storage opt out (src/test/resources).
     validate-on-startup: true
   max-file-size-bytes: 5242880
   allowed-content-types: image/jpeg,image/png,image/webp,image/gif

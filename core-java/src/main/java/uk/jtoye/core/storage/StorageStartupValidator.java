@@ -34,8 +34,11 @@ import uk.jtoye.core.storage.BlobObjectStore.ContainerAccess;
  * traffic yet at either event, so no request is served by an unchecked store.
  *
  * <p>Gated on {@code storage.blob.validate-on-startup} (default {@code true}, and a literal
- * {@code true} in application.yml that no env var maps), NOT on a profile: the switch exists only
- * for test contexts that never touch storage.
+ * {@code true} in application.yml with no env placeholder), NOT on a profile: the switch exists only
+ * for test contexts that never touch storage. Like any property it can still be overridden from
+ * outside the file (relaxed-binding env var, {@code SPRING_APPLICATION_JSON}, a command-line
+ * argument, a {@code -D} property); for every k8s target, render invariant INV-11 in
+ * {@code k8s/scripts/check-render-invariants.sh} fails any render that carries such an override.
  *
  * <p><b>Known limitation.</b> The container's access-level PROPERTY can read {@code blob} while
  * anonymous reads still fail, when the storage ACCOUNT disallows public blob access

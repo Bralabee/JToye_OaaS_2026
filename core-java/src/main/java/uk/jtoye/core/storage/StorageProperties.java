@@ -70,9 +70,13 @@ public class StorageProperties {
         private int tryTimeoutSeconds = 30;
         /**
          * The boot-time container probe ({@link StorageStartupValidator}). ON by default and in every
-         * runtime (decision D-08); application.yml sets it as a literal, deliberately not mapped from
-         * an env var, so no runtime can switch it off by environment. Only test contexts that never
-         * touch storage turn it off.
+         * runtime (decision D-08); application.yml sets it as a literal with no env placeholder. That
+         * literal is not a guard by itself: relaxed binding still lets an env var
+         * ({@code STORAGE_BLOB_VALIDATEONSTARTUP}), {@code SPRING_APPLICATION_JSON}, a command-line
+         * argument or a {@code -D} property override it, as for any property. Every k8s render is
+         * kept free of such overrides by render invariant INV-11
+         * ({@code k8s/scripts/check-render-invariants.sh}). Only test contexts that never touch
+         * storage turn it off.
          */
         private boolean validateOnStartup = true;
 
