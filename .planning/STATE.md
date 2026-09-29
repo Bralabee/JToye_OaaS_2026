@@ -5,7 +5,7 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 36
 current_phase_name: Azure Blob Storage Throughout
 status: executing
-stopped_at: "Phase 36 EXECUTING — waves 1-5 complete (15/18 plans); next wave 6 (36-16 residue CI gate); rebuilt compose stack RUNNING for the end-of-phase human check"
+stopped_at: "Phase 36 EXECUTING — waves 1-6 complete (16/18 plans); next wave 7 (36-17 metrics + Phase 29 handoff); rebuilt compose stack RUNNING for the end-of-phase human check"
 last_updated: "2026-09-28T20:45:05.335Z"
 last_activity: 2026-09-28
 last_activity_desc: "Phase 36 (Azure Blob Storage Throughout) planned: research, validation strategy, pattern map, 18 plans in 8 waves, plan-checker PASSED; owner decisions D-07..D-10 recorded in 36-CONTEXT.md"
@@ -29,7 +29,8 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 36 (Azure Blob Storage Throughout) — EXECUTING (15/18 plans; started 2026-09-28)
+Phase: 36 (Azure Blob Storage Throughout) — EXECUTING (16/18 plans; started 2026-09-28)
+Wave 6 DONE 2026-09-29: 36-16 retired-object-store residue gate (scripts/check-no-object-store-residue.sh + reasoned line-level allowlist + 41-arm selftest) wired into ci-cd.yaml and enforced by check-gate-enforcement; rc=0 on the tree (0 violations), 657 violations on the pre-phase tree; handoff gate count 45 -> 46. Line-level allowlist entries fail CI when an edit moves an allowed line (deliberate; the message names the new line). .planning/ is allowlisted whole (per plan).
 Wave 5 DONE 2026-09-29: 36-15 live docs (27 files incl. CLAUDE.md/AGENTS.md/HANDOFF.md, .planning/codebase, agent-context mirrors) on Azure Blob/Azurite 3.37.0; ADR-0002 gets an appended "Superseded in part" note (original lines untouched); check-doc-versions now also gates the Azurite version (157 claims). Doc gates green (citations back at its 5 pre-existing .planning/codebase failures). OPEN outside this repo: jtoye-orgos charters/oaas-core-java.md:46 and oaas-platform.md:18 still name the retired store — regenerating the roster from orgos would undo 36-15's hand edits to AGENTS.md + 6 mirrors.
 Wave 4 DONE 2026-09-29: 36-13 Playwright storage-images.spec green live / red with Azurite stopped / green after restart, plus a stricter "every SSR storage image loads" check (SafeImage hides failed images, so the plan's own check passed on a broken page) — BLOB-05 complete; screenshots in frontend/e2e-artifacts/36-13/ (gitignored) for the end-of-phase human check. 36-10 k8s/local bootstrap + secrets template + k8s runbooks on Workload Identity/Azurite — BLOB-07 complete; Azurite bind NOT widened (every backing service follows JTOYE_BIND_HOST since #441). OWNER .env action before the next k8s/local rehearsal only: rename K8S_LOCAL_MINIO_PORT -> K8S_LOCAL_AZURITE_PORT=10000, delete K8S_LOCAL_BACKUP_BUCKET (the guard refuses and names the key until then). Reds carried to 36-17: docs-freshness counts, playwright count oracle 128 vs 127.
 Wave 3 DONE 2026-09-29: 36-09 k8s Blob + Workload Identity on every target, D-11 accounts, pg-backup :15-blob, check-env-contract GREEN again (live AKS admission path is a Phase 29 read-back — WINDOWS.md #3; jtoye-staging-aks has WI off and is stopped); 36-14 core-java MinIO/S3 residue gone except applied V42 (BLOB-01 complete); 36-12 first real boot on Azurite from a full rebuild — runtime freshness PASS 4/4, jar config byte-identical to HEAD, boot probe + seeder OK, real vendor upload ACTIVE, servable-URL and stored-Content-Type gates wired into the nightly and shown failing on the real store (owner sanctioned the 3 local-emulator [az-ok] writes). Runtime: full compose stack UP (core-java on :9090) for 36-13; 1 real uploaded asset kept on Jollof Rice.
