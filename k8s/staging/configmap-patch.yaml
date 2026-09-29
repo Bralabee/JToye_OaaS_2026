@@ -21,9 +21,22 @@ data:
   # the base carries — so a staging email link, a staging CORS origin and a
   # staging Stripe Connect return all resolve to the staging platform.
   #
-  # Media storage (s3.*) and SMTP are deliberately NOT overridden here: those
-  # base values are the correct AWS eu-west-2 regional endpoints for staging and
-  # production alike, and smtp.auth stays "false" in both.
+  # SMTP is deliberately NOT overridden here: the base value is the correct AWS
+  # eu-west-2 SES endpoint for staging and production alike, and smtp.auth stays
+  # "false" in both.
+
+  # Media + backup storage (Phase 36, D-01/D-06/D-11): staging has its OWN two
+  # storage accounts, never production's. Media is jtoyestgmedia (uksouth, with
+  # the AKS cluster); the logical dump goes to jtoyestgbackup (ukwest), a
+  # different account in a different region. Both are raw Blob endpoints (D-06),
+  # and public-url is the media endpoint + /jtoye-images — the origin every
+  # persisted staging image URL carries. auth-mode (workload-identity), the
+  # container names and create-containers ("false") are inherited from base;
+  # INV-8 in k8s/scripts/check-render-invariants.sh asserts the whole set on the
+  # render. No connection string exists anywhere in this overlay (D-02).
+  storage.blob.endpoint: "https://jtoyestgmedia.blob.core.windows.net"
+  storage.blob.public-url: "https://jtoyestgmedia.blob.core.windows.net/jtoye-images"
+  backup.blob.endpoint: "https://jtoyestgbackup.blob.core.windows.net"
 
   # D-13 split-horizon: in staging one host serves both roles today, so this is
   # byte-identical to keycloak.issuer.uri above — the key exists so the two can

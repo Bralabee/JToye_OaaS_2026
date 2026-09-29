@@ -1,0 +1,62 @@
+# storage-env-patch.yaml — the LOCAL-ONLY STORAGE_CONNECTION_STRING env for the
+# two Blob Storage workloads (Phase 36).
+#
+# WHY IT LIVES HERE AND NOWHERE ELSE
+#   D-02: no connection string exists in any staging or production manifest. Base
+#   therefore injects NO STORAGE_CONNECTION_STRING, and INV-9 in
+#   k8s/scripts/check-render-invariants.sh fails any staging/production render
+#   that carries one. Local runs the connection-string auth mode against the host
+#   Azurite, so this overlay alone adds the env, sourced from the local-only
+#   app-config keys storage.blob.connection-string (core-java) and
+#   backup.blob.connection-string (pg-backup) in configmap-patch.yaml.
+#
+# WHY A CONFIGMAP KEY AND NOT A SECRET
+#   The value is the Azurite emulator shorthand
+#   (UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://host.minikube.internal).
+#   It carries NO key: the SDKs supply the published devstoreaccount1 key
+#   themselves. core-java's storage shape validation and blobctl both refuse any
+#   connection string that is not an emulator form, so a real account key cannot
+#   be configured here even by mistake.
+#
+# WHAT BREAKS WITHOUT IT
+#   core-java defaults STORAGE_CONNECTION_STRING to the bare
+#   UseDevelopmentStorage=true, which dials 127.0.0.1:10000 — the POD's own
+#   loopback, where nothing listens — so every upload fails; pg-backup's blobctl
+#   refuses to start with no connection string in connection-string mode. LOC-7
+#   asserts this patch is wired.
+#
+# Strategic merge: `containers` merge on `name`, `env` merges on `name`, so this
+# ADDS one env item to each container and leaves the base env list intact.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-java
+spec:
+  template:
+    spec:
+      containers:
+        - name: core-java
+          env:
+            - name: STORAGE_CONNECTION_STRING
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: storage.blob.connection-string
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: pg-backup
+              env:
+                - name: STORAGE_CONNECTION_STRING
+                  valueFrom:
+                    configMapKeyRef:
+                      name: app-config
+                      key: backup.blob.connection-string

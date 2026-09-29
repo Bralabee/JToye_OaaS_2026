@@ -6,8 +6,9 @@
 #   A strategic-merge patch on a ConfigMap MERGES the keys listed here into the
 #   base's `data` map — it does NOT replace `data` (verified, 26-RESEARCH.md
 #   P-3). So this file lists only what CHANGES for local; every other base key
-#   (redis.port, rabbitmq.port, stomp.broker.mode, s3.region, s3.bucket,
-#   jwt.expected-audience, the webhook-delivery knobs, …) is inherited unchanged.
+#   (redis.port, rabbitmq.port, stomp.broker.mode, storage.blob.public-container,
+#   backup.blob.container, jwt.expected-audience, the webhook-delivery knobs, …)
+#   is inherited unchanged.
 #
 #   COROLLARY, and it is load-bearing: every key below must ALREADY EXIST in
 #   k8s/base/configmap.yaml. A merge patch happily introduces a brand-new key,
@@ -15,6 +16,14 @@
 #   so a typo'd key name produces a silently ignored value rather than an error.
 #   That is the DEF-6 defect class this phase exists to close, so do not add a
 #   key here without adding its base key and its env wiring in the same change.
+#
+#   THE ONE DELIBERATE EXCEPTION (Phase 36, D-02): storage.blob.connection-string
+#   and backup.blob.connection-string exist ONLY here. Putting a connection-string
+#   key in base would put one in staging and production, which D-02 forbids and
+#   INV-9 in k8s/scripts/check-render-invariants.sh fails on. So their env wiring
+#   lives in this overlay too — k8s/local/storage-env-patch.yaml adds the
+#   STORAGE_CONNECTION_STRING env that consumes each of them — and LOC-7 asserts
+#   that wiring is present, so neither key can become a silently ignored value.
 #
 # WHY host.minikube.internal AND NOT AN IP
 #   The local cluster consumes the docker-compose backing services running on the
@@ -28,9 +37,9 @@
 #   All host ports are the published compose values in
 #   docker-compose.full-stack.yml: Postgres 5433 (line 31 — shifted off 5432 to
 #   dodge the cohabiting OlaJay stack), Keycloak 8085 (line 102), Redis 6379
-#   (line 131), RabbitMQ 5672 AMQP + 61613 STOMP (lines 151-153), MinIO 9000
-#   (line 401), Mailhog SMTP 1025 (line 480). The realm is `jtoye-dev`, the realm
-#   compose imports.
+#   (line 131), RabbitMQ 5672 AMQP + 61613 STOMP (lines 151-153), Azurite Blob
+#   10000 (the `azurite` service), Mailhog SMTP 1025 (line 480). The realm is
+#   `jtoye-dev`, the realm compose imports.
 #
 # NOT HERE ON PURPOSE: DB_HOST, and the DB_PORT env var
 #   Neither is an app-config key. Both come from the `postgres-credentials`
@@ -140,26 +149,54 @@ data:
   # enforced rather than described.
   db.port: "5433"
 
-  # --- Media storage: pod-reachable vs BROWSER-reachable --------------------
+  # --- Media storage: the Azurite emulator path (Phase 36) ------------------
   #
-  # s3.endpoint is where the POD writes (server-side AWS SDK call) -> shimmed.
+  # Local runs the connection-string auth mode against the HOST Azurite (the
+  # compose `azurite` service, Blob port 10000). Staging/production run
+  # workload-identity; local has no AKS webhook, so it never carries the
+  # azure.workload.identity/use label (INV-10 is staging/production only).
   #
-  # s3.public-url is DELIBERATELY NOT SHIMMED, and this is the single least
-  # obvious value in this file. It is the origin baked into the image URLs that
-  # go out in API responses and are then fetched by the BROWSER on the developer's
-  # machine. `host.minikube.internal` does not resolve outside the cluster, so
-  # shimming it would render every product image broken while every server-side
-  # upload still succeeded — a silent, browser-only failure. localhost:9000 is
-  # exactly what compose serves (docker-compose.full-stack.yml:230).
-  s3.endpoint: "http://host.minikube.internal:9000"
-  s3.public-url: "http://localhost:9000/jtoye-images"
+  # storage.blob.connection-string is where the POD writes -> shimmed. It is the
+  # emulator shorthand: UseDevelopmentStorage=true makes the SDK use the
+  # PUBLISHED, well-known devstoreaccount1 key itself, so this string holds NO
+  # key and needs no Secret. DevelopmentStorageProxyUri must be a BARE http host
+  # (no port, no path): the SDK appends :10000/devstoreaccount1 and silently
+  # drops anything else, and core-java's shape validation refuses a port or path.
+  # Path-style addressing on a non-IP host works because compose runs Azurite
+  # with --disableProductStyleUrl.
+  #
+  # storage.blob.endpoint is EMPTY: it is not consulted in connection-string
+  # mode (the connection string names the endpoint). It is stated so the
+  # base's production account can never be dialled from a laptop.
+  #
+  # storage.blob.public-url is DELIBERATELY NOT SHIMMED, and this is the single
+  # least obvious value in this file. It is the origin baked into the image URLs
+  # that go out in API responses and are then fetched by the BROWSER on the
+  # developer's machine. `host.minikube.internal` does not resolve outside the
+  # cluster, so shimming it would render every product image broken while every
+  # server-side upload still succeeded — a silent, browser-only failure.
+  # localhost:10000/devstoreaccount1 is exactly what compose serves.
+  #
+  # create-containers is "true": Azurite starts empty, and against the emulator
+  # core-java may create jtoye-images (level blob) and jtoye-quarantine (private)
+  # at boot. Workload identity cannot (Set Container ACL needs a key), which is
+  # why base and the two real overlays say "false".
+  storage.blob.auth-mode: "connection-string"
+  storage.blob.connection-string: "UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://host.minikube.internal"
+  storage.blob.endpoint: ""
+  storage.blob.public-url: "http://localhost:10000/devstoreaccount1/jtoye-images"
+  storage.blob.create-containers: "true"
 
-  # --- Backup CronJob target (INFRA-01 / INFRA-02c) -------------------------
-  # Base leaves this EMPTY, which means "real AWS S3". Locally that would send a
-  # production database dump at real AWS with no credentials. Repointed at the
-  # host MinIO, which is also what makes the #101 restore rehearsal runnable
-  # locally. The bucket/prefix/region keys are inherited from base.
-  s3.backup.endpoint: "http://host.minikube.internal:9000"
+  # --- Backup CronJob target (INFRA-01 / INFRA-02c, Phase 36) ----------------
+  # Base names the PRODUCTION backup account (jtoyeprodbackup) under workload
+  # identity. Locally that would aim a database dump at a real Azure account with
+  # no identity at all. Repointed at the host Azurite through the same emulator
+  # string, which is also what makes the restore rehearsal runnable locally. The
+  # container/prefix keys (jtoye-db-backups, backups) are inherited from base;
+  # blobctl, like core-java, ignores the endpoint in connection-string mode.
+  backup.blob.auth-mode: "connection-string"
+  backup.blob.connection-string: "UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://host.minikube.internal"
+  backup.blob.endpoint: ""
 
   # --- Email: Mailhog -------------------------------------------------------
   # Mailhog accepts anything and offers no auth and no TLS, so auth/starttls are

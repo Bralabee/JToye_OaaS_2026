@@ -23,9 +23,24 @@ data:
   # every one is byte-identical to the base value — so this addition changes
   # nothing about the production render's effective behaviour.
   #
-  # Media storage (s3.*) and SMTP are deliberately NOT overridden here: the base
-  # values are already the correct AWS eu-west-2 regional endpoints, and
-  # smtp.auth stays "false".
+  # SMTP is deliberately NOT overridden here: the base value is already the
+  # correct AWS eu-west-2 SES endpoint, and smtp.auth stays "false".
+
+  # Media + backup storage (Phase 36, D-01/D-06/D-11), stated EXPLICITLY per this
+  # overlay's convention and byte-identical to base, so a future base edit can
+  # never silently move production's image origin or backup account. Media is
+  # jtoyeprodmedia (uksouth); the logical dump goes to jtoyeprodbackup (ukwest), a
+  # different account in a different region. public-url is the media raw Blob
+  # endpoint + /jtoye-images (D-06) and is embedded in every persisted production
+  # image URL, so changing it later is a tenant-looped rewrite plus a CSP change.
+  # No connection string exists anywhere in this overlay (D-02); INV-8/INV-9 in
+  # k8s/scripts/check-render-invariants.sh assert the set on the render.
+  storage.blob.auth-mode: "workload-identity"
+  storage.blob.endpoint: "https://jtoyeprodmedia.blob.core.windows.net"
+  storage.blob.public-url: "https://jtoyeprodmedia.blob.core.windows.net/jtoye-images"
+  storage.blob.create-containers: "false"
+  backup.blob.auth-mode: "workload-identity"
+  backup.blob.endpoint: "https://jtoyeprodbackup.blob.core.windows.net"
 
   # D-13 split-horizon: production serves both roles from one public host, so the
   # stamped issuer equals the JWKS host. The key exists so that stays a stated
