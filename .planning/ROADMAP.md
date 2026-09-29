@@ -788,7 +788,7 @@ Plans:
   5. The pg-backup job writes to Azure Blob through a write-only uploader and a two-arm restore drill (zero-row arm caught, live-count arm matched) runs every night; k8s base/staging/production/local carry the Blob config with Workload Identity, dedicated ServiceAccounts, no storage Secret, no port 9000, updated invariants and goldens; Phase 29 has a handoff on main with the provisioning spec, the operator-secret list change (7 → 3) and a merge-conflict map. (BLOB-06, BLOB-07, BLOB-10)
   6. Frontend `remotePatterns` and CSP `img-src` admit the Azurite origin and nothing broader (tests fail on a wildcard); a repo-wide, fail-armed CI gate finds no MinIO/S3 residue outside a reasoned allowlist; horizons carry an azurite row; the content-type gate is re-targeted to Blob; docs and test metrics are current. (BLOB-08, BLOB-09)
 
-**Plans:** 8/18 plans executed (8 waves)
+**Plans:** 9/18 plans executed (8 waves)
 
 Plans:
 
@@ -809,7 +809,7 @@ Plans:
 **Wave 3**
 
 - [ ] 36-09-PLAN.md — k8s base/overlays: Workload Identity, ServiceAccounts, local emulator shim, no port 9000, INV-8/9/10 + LOC-7, D-10 tag bump, goldens
-- [ ] 36-11-PLAN.md — Dev reseed script (D-04/D-05), dry run, owner-approved apply before any core-java boot (checkpoint)
+- [x] 36-11-PLAN.md — Dev reseed script (D-04/D-05), dry run, owner-approved apply before any core-java boot (checkpoint)
 - [ ] 36-14-PLAN.md — core-java comment and test-literal residue removed (V42 untouched)
 
 **Wave 4**
