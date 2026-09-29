@@ -56,6 +56,16 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
+# Drop the base image's gosu. Its only callers are the upstream server-start
+# scripts (docker-entrypoint.sh, docker-ensure-initdb.sh). This image never
+# starts a server, since the ENTRYPOINT below replaces them. It also runs as
+# UID 1000, where gosu cannot switch users anyway. The upstream binary is
+# built with an old Go stdlib (go1.24.6: 22 fixable CRITICAL/HIGH CVEs), so
+# keeping it would fail the build-and-push Trivy image gate on every build.
+# Plain rm, not rm -f: if a future base moves or drops gosu, the build fails
+# here and this line gets a second look.
+RUN rm /usr/local/bin/gosu
+
 COPY --from=builder /out/blobctl /usr/local/bin/blobctl
 COPY k8s-backup.sh /usr/local/bin/backup
 RUN chmod 0755 /usr/local/bin/backup /usr/local/bin/blobctl
