@@ -18,10 +18,12 @@
 # one statically linked binary whose module is `go mod verify`-checked below.
 #
 # Build (context = infra/backups):
-#   docker build -t ghcr.io/bralabee/jtoye-pg-backup:15 infra/backups
+#   docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/backups
 # The tag must match the image referenced in k8s/base/pg-backup-cronjob.yaml.
-# (D-10: the contents changed, so the published tag becomes :15-blob; 36-09
-# moves this line, the CronJob, the horizons pin and the goldens together.)
+# (D-10: the contents changed — the AWS CLI out, blobctl in — so the tag moved
+# from :15 to :15-blob; the CronJob, this line, the horizons pin and the goldens
+# moved together in one change. `15` still names the postgres major, which
+# scripts/check-postgres-major-parity.sh reads from each of those sites.)
 
 # --- Stage 1: build blobctl ---------------------------------------------------
 # Go version must match infra/backups/blobctl/go.mod's go directive (1.27.0),

@@ -51,7 +51,7 @@ spec:
               # k8s-backup.sh as its ENTRYPOINT. No AWS CLI. No runtime package
               # install (blocked by default-deny NetworkPolicy), no busybox
               # GNU-isms. Tag must track the built image.
-              image: ghcr.io/bralabee/jtoye-pg-backup:15
+              image: ghcr.io/bralabee/jtoye-pg-backup:15-blob
               imagePullPolicy: IfNotPresent
               env:
                 # --- database (dumps as the BYPASSRLS backup role, see

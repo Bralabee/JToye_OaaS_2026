@@ -101,9 +101,10 @@
 #      exist). Defaults are collected as a SET per name and the local-only rule
 #      trips if ANY member matches — matched per-default, never against a joined
 #      string, because an anchored test on a joined string misses the member.
-#   6. Local-only means bare words as much as URLs. `minioadmin` and a bare-word
-#      broker default are the DEF-4/DEF-6 signature; a URL-only regex misses
-#      both.
+#   6. Local-only means bare words as much as URLs. A bare-word credential
+#      default (the retired object store's `minioadmin`, now the Azurite
+#      `UseDevelopmentStorage=true` shorthand) and a bare-word broker default are
+#      the DEF-4/DEF-6 signature; a URL-only regex misses both.
 #   7. Every extractor is SELF-TESTED against a synthetic control string before
 #      it is trusted (see selftest_regex). A regex that silently matches nothing
 #      returns an EMPTY set, which is indistinguishable from "this service is
@@ -163,6 +164,7 @@ ALLOW_CORE_B=(
   'CUSTOMER_JWT_EXPECTED_ISSUER|OPEN DEFECT #299 — same realm, same gap. Its default is the property chain ${jtoye.security.customer-jwt.issuer-uri}, which resolves to ${CUSTOMER_KC_ISSUER_URI:http://localhost:8085/realms/jtoye-customers}, i.e. transitively local-only. Before the chained-default rule existed this name scored as "pass by rule (safe non-local default)" and #299 was HALF-INVISIBLE to its own gate.'
   'DB_MIGRATION_USER|Reviewed omission (Phase 28 SEC-04 / D-01, the runtime/migrator role split). Unlike the #299 chains above, THIS one terminates in a manifest-supplied secret, not a localhost literal: unset, spring.flyway.user (application.yml:115) falls back to ${spring.datasource.username} = ${DB_USER}, which k8s supplies from the postgres-credentials secret (core-java-deployment.yaml:98-102, key username). This gate does not resolve property chains, hence the entry naming where it lands. The compose/local stack splits the app role (jtoye_runtime, DML-only) from the migrator (jtoye_app, owner); the k8s cluster still connects as a single role and adopts the split with the Phase 29 deploy work (DPLY), at which point a distinct migration-username secret key is wired here alongside an in-cluster jtoye_runtime role. Supplying a distinct migrator credential now, before that role exists in-cluster, would break Flyway.'
   'DB_MIGRATION_PASSWORD|Reviewed omission (Phase 28 SEC-04 / D-01). Unset, spring.flyway.password (application.yml:116) falls back to ${spring.datasource.password} = ${DB_PASSWORD}, supplied by k8s from the postgres-credentials secret (core-java-deployment.yaml:103-107, key password). Same terminates-in-a-secret rationale and the same Phase 29 (DPLY) revisit as DB_MIGRATION_USER — the migration credential pair is wired to a distinct secret key when the runtime/migrator split is deployed to the cluster.'
+  'STORAGE_CONNECTION_STRING|Reviewed omission, and one that MUST STAY AN OMISSION in base: it is deliberately never supplied by base/staging/production (Phase 36 D-02: no connection string in any staging/production manifest, and INV-9 in k8s/scripts/check-render-invariants.sh fails any staging/production render that carries one). Those environments run storage.blob.auth-mode workload-identity, where the connection string is not used at all. It is supplied only by k8s/local/storage-env-patch.yaml, from the local-only app-config key storage.blob.connection-string. Its default is the Azurite emulator string, the only form storage shape validation accepts (StorageProperties.validateShape refuses any real account key or SAS in every mode), so even an absent value can never carry a credential.'
 )
 
 # ===========================================================================
@@ -230,7 +232,10 @@ LOCAL_ONLY_WORDS=(
   localhost
   127.0.0.1
   0.0.0.0
-  minioadmin
+  # The Azurite emulator shorthand (Phase 36). It replaced the retired object
+  # store's default credential here: outside a developer laptop an emulator
+  # connection string is always wrong.
+  UseDevelopmentStorage=true
   guest
   mailhog
   host.docker.internal
