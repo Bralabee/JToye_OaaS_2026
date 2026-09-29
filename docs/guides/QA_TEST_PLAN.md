@@ -87,8 +87,8 @@ docker compose -f docker-compose.full-stack.yml up
 # Check all containers running
 docker compose -f docker-compose.full-stack.yml ps
 
-# Should list 14 services, with postgres/keycloak/redis/rabbitmq/core-java/edge-go/frontend/
-# mcp-server/minio/mailhog/ollama healthy, and the three *-init / *-render jobs exited 0.
+# Should list 13 services, with postgres/keycloak/redis/rabbitmq/core-java/edge-go/frontend/
+# mcp-server/azurite/mailhog/ollama healthy, and the two *-init / *-render jobs exited 0.
 #
 # Note the SERVICE name (core-java), not a container name: core-java declares no
 # container_name (removed so `--scale core-java=N` works), so it is named
@@ -112,6 +112,20 @@ curl http://localhost:8089/health
 # Keycloak
 curl -I http://localhost:8085
 # Expected: HTTP/1.1 200
+```
+
+**Object storage (Azurite, Phase 36):**
+```bash
+# Every stored image URL answers an anonymous HEAD with 200, and none points at a retired origin
+bash scripts/check-media-urls-resolve.sh
+# Expected: exit 0, "PASS: N reference(s) (N distinct URLs) answer 200 anonymously; 0 point at the retired origin."
+
+# Every stored blob carries an allowlisted image Content-Type (a text/html blob on the public
+# origin would be a stored-XSS primitive)
+bash scripts/check-media-content-types.sh
+# Expected: exit 0, "PASS: 0 of N stored blobs carry a Content-Type outside the allowlist."
+
+# Both exit 2 (VOID) when the stack is down or nothing is stored: that is "not checked", never a pass.
 ```
 
 **Issues to Check:**

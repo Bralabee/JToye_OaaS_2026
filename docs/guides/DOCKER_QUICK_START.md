@@ -40,7 +40,7 @@ Wait 1-2 minutes for all services to start, then access:
 
 ## What Gets Started
 
-`docker-compose.full-stack.yml` defines 14 services:
+`docker-compose.full-stack.yml` defines 13 services:
 
 | Service | Port | Description |
 |---------|------|-------------|
@@ -53,11 +53,26 @@ Wait 1-2 minutes for all services to start, then access:
 | Edge Go Gateway | 8089 | Go API gateway |
 | Frontend | 3000 | Next.js 16 UI |
 | MCP server | 9100 | Model Context Protocol tool server |
-| MinIO | 9000, 9001 | S3-compatible object storage for media |
-| minio-init | - | Creates the media bucket, then exits |
+| Azurite | 10000 | Azure Blob Storage emulator for media (loopback-only, no credential). core-java creates `jtoye-images` (public, access level blob) and `jtoye-quarantine` (private) on first boot and checks them on every boot |
 | Mailhog | 8025 | Local SMTP inbox for email testing |
 | Ollama | 11434 | Local LLM for image analysis |
 | ollama-init | - | Pulls the model, then exits |
+
+### Inspecting stored images
+
+Azurite has no web console. To see what core-java stored, list the public container from the host
+with the Azure CLI, which reaches the emulator's well-known development account on
+`127.0.0.1:10000` with no key to type:
+
+```bash
+az storage blob list --connection-string "UseDevelopmentStorage=true" -c jtoye-images \
+  --query '[].{name:name,size:properties.contentLength}' -o table
+```
+
+Or open **Azure Storage Explorer** and attach to the local emulator (Blob port 10000). Stored image
+URLs load in a browser directly, e.g.
+`http://localhost:10000/devstoreaccount1/jtoye-images/<tenant-id>/products/seed/<file>.jpg`.
+`scripts/check-media-urls-resolve.sh` checks every stored URL at once.
 
 Grafana, Prometheus and Alertmanager are **not** in this file — they are a separate compose
 project, `infra/monitoring/docker-compose.monitoring.yml`.
@@ -330,6 +345,7 @@ that no longer authenticate against anything.
 | PostgreSQL application role (`jtoye_app`, RLS-enforced) | `DB_USER` | `DB_PASSWORD` |
 | RabbitMQ | `RABBITMQ_DEFAULT_USER` | `RABBITMQ_DEFAULT_PASS` |
 | Redis | - | `REDIS_PASSWORD` |
+| Azurite (object storage) | - | none: the emulator's well-known development account, reached with `UseDevelopmentStorage=true` |
 
 ⚠️ The application must run as `jtoye_app`, never as the `jtoye` superuser. Superusers bypass
 row-level security, and `DatabaseConfigurationValidator` refuses to start the app if it detects one.

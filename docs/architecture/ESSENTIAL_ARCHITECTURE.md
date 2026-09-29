@@ -44,7 +44,7 @@ webhook. **PostgreSQL 15 with Row-Level Security is the tenant boundary**; every
 
 ```
 Browser ──▶ frontend :3000 ──(SSR + SSE + STOMP)──▶ core-java :9090 ──▶ Postgres 15 (RLS)
-AI agent ──▶ mcp-server :9100 ──(Bearer passthrough)──▶ core ──▶ Redis · RabbitMQ · MinIO · Keycloak
+AI agent ──▶ mcp-server :9100 ──(Bearer passthrough)──▶ core ──▶ Redis · RabbitMQ · Azure Blob (Azurite locally) · Keycloak
 Meta   ──▶ edge-go :8089 ──(WhatsApp HMAC → orders; /sync/batch, no caller)──▶ core
 ```
 
@@ -76,7 +76,7 @@ Postgres **5433**, Keycloak **8085**, Grafana **3002**.
 ## The stack (fixed — do not migrate without a decision)
 
 Spring Boot 3.5.16 · JDK 25 (Gradle 9.7.1 wrapper — JDK 25 requires Gradle >= 9.1) · Next.js 16.3.4 / React 19 · Go 1.27 /
-Gin · PostgreSQL 15 · Redis 7 · RabbitMQ 4.3.4 · Keycloak 24.0.5 · MinIO · Ollama.
+Gin · PostgreSQL 15 · Redis 7 · RabbitMQ 4.3.4 · Keycloak 24.0.5 · Azure Blob Storage (Azurite 3.37.0 locally) · Ollama.
 
 ## The culture, in one line
 

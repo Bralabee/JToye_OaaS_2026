@@ -34,7 +34,6 @@ bootstrap only, `kubectl create secret generic` (`k8s/QUICK_START.md` Step 1).
 | Secret name | Keys | Consumed by |
 |---|---|---|
 | `postgres-credentials` | `host`, `port`, `database`, `username`, `password`, `backup-username`, `backup-password` | `core-java-deployment.yaml`, `pg-backup-cronjob.yaml` (#90 backup role) |
-| `s3-backup-credentials` | `access-key`, `secret-key` | `pg-backup-cronjob.yaml` (#90) |
 | `keycloak-credentials` | `admin-username`, `admin-password`, `frontend-client-secret`, `core-api-client-secret` | `frontend-deployment.yaml` |
 | `nextauth-secret` | `secret` | `frontend-deployment.yaml` |
 | `redis-credentials` | `password` | `core-java-deployment.yaml` |
@@ -42,6 +41,14 @@ bootstrap only, `kubectl create secret generic` (`k8s/QUICK_START.md` Step 1).
 
 The exact key shapes live in `k8s/base/secrets-template.yaml.example` — that
 file is reference-only and is never applied.
+
+**Object storage needs no Secret (Phase 36).** core-java and the pg-backup
+CronJob reach Azure Blob Storage with AKS Workload Identity: their
+ServiceAccounts carry the managed identity's client id and no account key,
+connection string or SAS exists to seal. Do not create or seal a storage
+credential Secret; the render invariants fail the build on one. The
+identities, federated credentials and role assignments are provisioned per
+`docs/runbooks/azure-blob-provisioning.md` §5-§6.
 
 ## Prerequisites
 
@@ -172,7 +179,6 @@ resources:
   - ../base
   - namespace.yaml
   - sealed-secrets/postgres-credentials.sealed.yaml
-  - sealed-secrets/s3-backup-credentials.sealed.yaml
   - sealed-secrets/keycloak-credentials.sealed.yaml
   - sealed-secrets/nextauth-secret.sealed.yaml
   - sealed-secrets/redis-credentials.sealed.yaml

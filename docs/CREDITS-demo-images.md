@@ -6,7 +6,8 @@ real food photography instead of the SafeImage branded fallback tile.
 
 Every image is **license-verified and visually confirmed** — all are **CC0**, **CC BY**,
 or **CC BY-SA** (zero NC/ND-restricted works). They are bundled on the classpath under
-`core-java/src/main/resources/dev/demo-images/` and uploaded to MinIO by the dev-only
+`core-java/src/main/resources/dev/demo-images/` and uploaded to the object store (the Azurite
+emulator locally, container `jtoye-images`) by the dev-only
 `DemoDataSeeder` (see `docs/` and the seeder Javadoc). This file discharges the
 CC-BY / CC-BY-SA **attribution duty** — one row per image, listing author, license
 (linked), and the Wikimedia Commons source page.

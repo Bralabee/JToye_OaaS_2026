@@ -84,13 +84,13 @@ graph drawn here: the compose service set, its ports and the AMQP exchanges are 
         ▲                     │                               │
         └─────────────────────┼───────────────────────────────┘
                               │
-              AMQP :5672      │      S3 HTTP
+              AMQP :5672      │      Blob API
          ┌────────────────────┴──────┬─────────────────┐
          │                           │                 │
    ┌─────▼──────────────┐   ┌────────▼────────┐   ┌────▼─────────────────┐
-   │   RabbitMQ 4.3.4   │   │  MinIO (S3)     │   │  Tenant webhook      │
-   │ :5672 AMQP         │   │ :9000 API       │   │  endpoints (external)│
-   │ :61613 STOMP relay │   │ :9001 console   │   │  HTTPS + HMAC        │
+   │   RabbitMQ 4.3.4   │   │  Azure Blob     │   │  Tenant webhook      │
+   │ :5672 AMQP         │   │ Azurite :10000  │   │  endpoints (external)│
+   │ :61613 STOMP relay │   │ (local/nightly) │   │  HTTPS + HMAC        │
    │ :15672 management  │   │ media assets    │   │  SSRF-guarded egress │
    └────────────────────┘   └─────────────────┘   └──────────────────────┘
 ```
@@ -146,7 +146,7 @@ third, independent ingress that forwards an agent's Bearer to the same core REST
 └──────────────┘   └────────────────┘  └──────────┘  └──────────────┘  └──────────┘
         │
 ┌───────▼──────────────┐
-│ S3-Compatible Storage│
+│ Azure Blob Storage   │
 │ (Backups + Assets)   │
 └──────────────────────┘
 ```
@@ -163,7 +163,7 @@ third, independent ingress that forwards an agent's Bearer to the same core REST
 | **postgresql** | Primary data store, RLS enforcement | PostgreSQL 15 | Vertical + read replicas |
 | **redis** | Cache, session storage, rate limit state | Redis 7 Cluster | Horizontal (cluster mode) |
 | **rabbitmq** | Domain events (outbox), STOMP relay for KDS | RabbitMQ 4.3.4 | Horizontal (HA queues) |
-| **minio / S3** | Media assets — validated WebP derivatives + thumbnails | MinIO (S3 API) | Managed / horizontal |
+| **blob storage** | Media assets — validated WebP derivatives + thumbnails | Azure Blob Storage (Azurite emulator locally) | Managed |
 | **ollama** | Local LLM image analysis (`AI_PROVIDER=ollama`) | Ollama + `gemma3:12b` | Vertical (GPU-bound) |
 | **smtp** | Transactional email (Mailhog locally, SES/SMTP upstream) | Mailhog v1.0.1 / SES | Managed |
 | **prometheus** | Metrics collection, alerting | Prometheus + Alertmanager | Vertical (single node + federation) |
@@ -862,7 +862,8 @@ jobs:
 > no replicas, no Patroni, no PgBouncer, **no WAL archiving and therefore no
 > PITR**. Backups are a daily 2 AM logical `pg_dump` via the hardened k8s
 > CronJob from #90 (custom-format, integrity-verified via `pg_restore --list`,
-> size-floor check, S3 prune; restore drill proven locally 2026-07-10 — RPO
+> size-floor check; since Phase 36 no in-job prune, retention is the backup container's
+> immutability + soft delete + lifecycle rule; restore drill proven locally 2026-07-10 — RPO
 > ≤ 24h, RTO ≈ minutes). WAL-based PITR and DB HA are tracked in **#101**;
 > the managed-vs-manifest decision is **ADR-0002 (Proposed)**.
 
@@ -887,7 +888,7 @@ The diagram below is the **TARGET** architecture, kept for planning purposes:
 │                                                             │
 │  Connection Pooling: PgBouncer (Transaction mode)          │
 │  Failover: Patroni + etcd (automatic promotion)            │
-│  Backup: WAL-G to S3 (PITR, 30-day retention)             │
+│  Backup: WAL-G to Azure Blob (PITR, 30-day retention)     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -1461,7 +1462,8 @@ Layer 1: Physical Security
 PostgreSQL:
   Full Backup: Daily at 2 AM UTC — logical pg_dump (custom format) via the
     hardened k8s CronJob (issue #90: BYPASSRLS backup role, integrity check
-    with pg_restore --list, size-floor guard, S3 prune)
+    with pg_restore --list, size-floor guard; since Phase 36 no in-job prune --
+    retention is the backup container's immutability + soft delete + lifecycle rule)
   Incremental: NONE
   WAL Archive: NONE — no archive_command, no WAL-G, no pgBackRest
   Test Restore: Drill proven locally 2026-07-10 (RTO ≈ minutes); NOT automated
@@ -1476,7 +1478,7 @@ PostgreSQL:
 PostgreSQL:
   Full Backup: Daily at 2 AM UTC
   Incremental: Every 6 hours
-  WAL Archive: Continuous (streaming to S3)
+  WAL Archive: Continuous (streaming to Azure Blob)
   Retention: 30 days online, 7 years cold storage
   Test Restore: Weekly (automated)
   PITR: Yes (point-in-time recovery to any second)
@@ -1539,7 +1541,7 @@ Application Config:
                   └──────────┬───────────────────┘
                              │
                     ┌────────▼──────────┐
-                    │  S3 Replication   │
+                    │  Blob replication │
                     │  (Cross-region)   │
                     └───────────────────┘
 ```

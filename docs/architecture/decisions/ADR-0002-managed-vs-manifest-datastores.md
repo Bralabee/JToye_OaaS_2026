@@ -76,3 +76,27 @@ own if the question is still open by then.
 
 **Status deliberately unchanged.** Resolving the operator question needs owner sign-off, which is a
 human decision and not an agent's to record.
+
+## Superseded in part (2026-09-28)
+
+Phase 36 (Azure Blob Storage throughout) supersedes two storage assumptions in this record. The
+text above is left as it was written; read it with these two changes applied.
+
+- **D-01 — the logical-dump destination.** The `pg-backup-cronjob` logical dump that this ADR keeps
+  "as a provider-independent second line" now goes to a **dedicated Azure storage account**,
+  separate from the media account and in a different Azure region from staging, with an
+  immutability (WORM) policy and soft delete on its container (`jtoye-db-backups`). The job
+  authenticates with AKS Workload Identity and no longer prunes: retention is the container's
+  immutability period, soft delete and lifecycle rule. The earlier "off-cluster AND off-Azure"
+  destination is dropped, and the trade is recorded in the phase context: this survives object
+  deletion and a compromised app credential, but not loss of the whole Azure subscription.
+- **D-06 — the media origin.** Staging and production serve images from the **raw Blob endpoint**
+  (`https://<account>.blob.core.windows.net/jtoye-images/...`); no CDN or custom domain in Phase 36.
+  Option 2's "WAL archiving to Blob/…" now has exactly one object store to target: Azure Blob.
+
+Decision record: [`.planning/phases/36-azure-blob-storage-throughout/36-CONTEXT.md`](../../../.planning/phases/36-azure-blob-storage-throughout/36-CONTEXT.md)
+(D-01, D-06). Procedures: [`docs/runbooks/azure-blob-provisioning.md`](../../runbooks/azure-blob-provisioning.md)
+and [`docs/runbooks/backups.md`](../../runbooks/backups.md).
+
+This note does not change the ADR's status: the PostgreSQL / Redis / RabbitMQ hosting decision above
+is still Proposed and still needs owner sign-off.
