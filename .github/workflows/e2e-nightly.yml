@@ -269,6 +269,21 @@ jobs:
           docker compose -f "$COMPOSE_FILE" logs --tail 200
           exit 1
 
+      # BLOB-05 / BLOB-09 (Phase 36). Every image URL the API can serve — products.image_url,
+      # additional_image_urls, shop logo/banner, review photos, and every ACTIVE media_asset's
+      # derivative (+ _thumb) — must answer an ANONYMOUS HEAD 200 on this stack's Azurite, and
+      # no stored value may still point at the retired :9000 origin. A green upload and a 200
+      # page title say nothing about whether stored URLs resolve; this does.
+      #
+      # WHY RIGHT AFTER THE WAIT: DemoDataSeeder writes the demo products and their seed
+      # images in ONE transaction, and under the dev profile's health probes /actuator/health
+      # stays OUT_OF_SERVICE until ApplicationReadyEvent, i.e. until every ApplicationRunner
+      # (the seeder included) has returned. So "core-java UP" above already implies the seed
+      # rows and their blobs are committed. An empty checked set is VOID (exit 2), never a
+      # pass, so a seeder that did nothing fails here rather than reading as clean.
+      - name: Gate — every stored image URL resolves on the object store
+        run: bash scripts/check-media-urls-resolve.sh
+
       # The OpenAPI contract, checked against the SERVICE rather than against the source
       # tree (33-06). This is the ONLY workflow in the repository with a running core-java,
       # which is why the gate is wired here and not in ci-cd.yaml: a hosted runner with no
