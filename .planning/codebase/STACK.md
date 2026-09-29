@@ -67,7 +67,7 @@
 
 **Critical:**
 - PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:195`) — explicit pin, not Boot-managed.
-- AWS SDK v2 BOM 2.54.9 (`software.amazon.awssdk:bom`) + `software.amazon.awssdk:s3` — S3-compatible object storage client (MinIO in dev, real S3 in prod).
+- Azure Storage Blob SDK 12.35.1 (`com.azure:azure-storage-blob`) + Azure Identity 1.18.6 (`com.azure:azure-identity`) — the object-store client (Azurite emulator locally, Azure Blob Storage in staging/production) and the Workload Identity credential used in AKS.
 - Stripe Java SDK 33.4.0 — Payment intents, Connect (destination charges), webhook signature verification.
 - @stripe/react-stripe-js 6.8.2 + @stripe/stripe-js 9.15.0 — Frontend Stripe Elements integration.
 - next-auth 5.0.0-beta.32 (`@auth/core` pinned via `overrides` to `0.41.3`) — Session/auth middleware, Keycloak OIDC provider.
@@ -105,7 +105,7 @@
 
 **Build:**
 - Gradle: root `build.gradle.kts` (plugin versions, JDK 25 toolchain, `group = "uk.jtoye"`, `version = "2.3.0"`), `settings.gradle.kts` (single subproject: `core-java`), `core-java/build.gradle.kts` (dependencies, JaCoCo, integrationTest task, OpenAPI snapshot tasks).
-- Next.js: `frontend/next.config.mjs` (`output: 'standalone'`, `typescript.tsconfigPath: 'tsconfig.build.json'` — shipped code only, tests type-checked separately by bare `tsc --noEmit` in CI; image `remotePatterns` allow `localhost:9000/jtoye-images/**` for local MinIO).
+- Next.js: `frontend/next.config.mjs` (`output: 'standalone'`, `typescript.tsconfigPath: 'tsconfig.build.json'` — shipped code only, tests type-checked separately by bare `tsc --noEmit` in CI; image `remotePatterns` allow `localhost:10000/devstoreaccount1/jtoye-images/**` for local Azurite).
 - TypeScript: `frontend/tsconfig.json` (strict, `@/*` path alias to frontend root), `mcp-server/tsconfig.json` (separate project).
 - ESLint: `frontend/eslint.config.mjs` (flat config, ESLint 9).
 - Go: `edge-go/go.mod` / `go.sum`; `edge-go/Dockerfile` (Go version, CI setup-go pins, and `infra/dependency-horizons.yaml` Go rows must all move in lockstep per that Dockerfile's own header comment).
@@ -130,7 +130,7 @@
 - Redis 7+ (external/managed).
 - RabbitMQ 4.3.4-management-alpine pinned in compose; **the deployed staging/production broker version is unverified from this repository** (see `docs/runbooks/rabbitmq-broker-upgrade.md`, ADR-0002) — minimum supported is 3.13+. RabbitMQ 4.3 community support ends **2026-11-30**, tracked in `infra/dependency-horizons.yaml`.
 - Keycloak 24.0.5 (external IdP in prod).
-- S3 (AWS or S3-compatible) for image storage — MinIO is dev-only.
+- Azure Blob Storage for image storage and backups (Workload Identity, raw Blob endpoint; `docs/runbooks/azure-blob-provisioning.md`) — Azurite 3.37.0 is the local/nightly emulator.
 - SMTP provider (Mailhog is dev-only, e.g. SendGrid/SES in prod).
 
 ## Observability Stack (self-hosted, compose-based)

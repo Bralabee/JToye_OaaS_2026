@@ -30,7 +30,7 @@ JToye_OaaS_2026/
 │   │   ├── security/                 # JWT filters, TenantContext, RLS GUC pinning (18 files)
 │   │   │   └── access/               #   shop_staff vendor-scoped access layer (16 files)
 │   │   ├── shop/                     # ShopController, Announcement, Promotion (18 files)
-│   │   ├── storage/                  # S3/MinIO abstraction (3 files)
+│   │   ├── storage/                  # Azure Blob object store + boot-time probe (8 files)
 │   │   ├── storefront/               # PublicStorefrontController — unauthenticated reads (3 files)
 │   │   ├── sync/                     # SyncController — batch sync from edge (3 files)
 │   │   ├── tenant/                   # TenantAdminController, DevTenantController (10 files)

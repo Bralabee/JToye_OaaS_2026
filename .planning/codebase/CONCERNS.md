@@ -89,7 +89,7 @@ All governed by `infra/dependency-horizons.yaml` + `scripts/check-dependency-hor
 | Grafana 10.2.2 | 2024-07-24 | 2026-12-31 | DEFERRED-27 |
 | Spring Boot 3.5.16 (OSS support ended) | 2026-06-30 | **2027-02-28** (Boot 4.1 is a scoped migration, not a bump — dependabot's naive PR #676 failed 5 CI jobs) | **#706** |
 
-Several third-party images (minio, minio/mc, ollama, mailhog, alertmanager, redis-exporter, postgres-exporter) have no `endoflife.date` entry at all (404) and are tracked via dated `manual_review` (`expires: 2027-01-27`) rather than a horizon — by design, not a gap.
+Several third-party images (ollama, mailhog, alertmanager, redis-exporter, postgres-exporter) have no `endoflife.date` entry at all (404) and are tracked via dated `manual_review` (`expires: 2027-01-27`) rather than a horizon — by design, not a gap. The Azurite emulator (Phase 36) is the same kind: no `endoflife.date` product, its own `manual_review` in `infra/dependency-horizons.yaml` (`expires: 2026-12-27`).
 
 ---
 
