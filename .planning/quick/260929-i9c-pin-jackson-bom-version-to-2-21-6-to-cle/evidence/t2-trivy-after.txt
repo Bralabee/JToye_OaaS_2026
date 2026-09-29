@@ -22,7 +22,7 @@ Legend:
 - '0': Clean (no security findings detected)
 
 
-📣 [34mNotices:[0m
+📣 Notices:
   - Version 0.74.0 of Trivy is now available, current version is 0.70.0
 
 To suppress version checks, run Trivy scans with the --skip-version-check flag

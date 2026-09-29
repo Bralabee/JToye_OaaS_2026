@@ -44,7 +44,7 @@ Total: 1 (HIGH: 1, CRITICAL: 0)
 │                                                       │                │          │        │                   │                         │ https://avd.aquasec.com/nvd/cve-2026-68497                 │
 └───────────────────────────────────────────────────────┴────────────────┴──────────┴────────┴───────────────────┴─────────────────────────┴────────────────────────────────────────────────────────────┘
 
-📣 [34mNotices:[0m
+📣 Notices:
   - Version 0.74.0 of Trivy is now available, current version is 0.70.0
 
 To suppress version checks, run Trivy scans with the --skip-version-check flag
