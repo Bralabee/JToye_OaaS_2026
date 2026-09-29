@@ -148,6 +148,42 @@ non-loopback `JTOYE_BIND_HOST` in `.env` (`0.0.0.0` is the documented opt-in) an
 services so the new bind takes effect; put it back to `127.0.0.1` afterwards. While it is set,
 `scripts/check-infra-exposure.sh` fails, which is the intended loud signal that the stack is exposed.
 
+**What that window exposes on Azurite (Phase 36 code review WR-04, accepted, not fixed).** Postgres,
+Redis, RabbitMQ and Keycloak use credentials generated per machine, which `scripts/verify-env.sh`
+requires. Azurite does not: it runs the emulator account `devstoreaccount1` with the key Microsoft
+publishes. So while the bind is non-loopback,
+anything that can reach port 10000 can read, write and delete every container:
+
+- `jtoye-db-backups` holds the restore-drill and CronJob dumps. They are taken as the BYPASSRLS
+  backup role, so they contain every tenant's rows in the dev database.
+- `jtoye-images` accepts a blob with any `Content-Type` under the origin the browser loads images
+  from.
+
+The red exposure gate says the port is open. It does not say that the credential on that port is
+public. The retired store had rotated credentials, so this is a regression in credential posture.
+It is accepted for three reasons:
+
+1. It exists only for the opt-in window. The default bind is loopback, and the gate stays red for
+   the whole window.
+2. Only local dev data is at stake. Emulator strings and account keys cannot reach a staging or
+   production render (INV-4, INV-9).
+3. The real fix is a generated key (`AZURITE_ACCOUNTS`), and it is not a small change. Every
+   consumer of `UseDevelopmentStorage=true` would move to the account-key form together: core-java
+   in compose, blobctl, the local overlay (LOC-1/LOC-3/LOC-7, where the key must move out of
+   app-config into a Secret), the restore drill, the nightly and the dev reseed scripts. That change
+   has to be proven on a rebuilt stack. Take that path if k8s-local rehearsals become routine or
+   this host joins a network you do not trust.
+
+Until then, for every rehearsal:
+- Rehearse only on a network you trust.
+- Keep the window as short as the rehearsal.
+- Restore `127.0.0.1` and recreate the backing services as soon as it ends.
+- Hold nothing in the dev database that you would not publish to that network.
+
+A bind narrower than `0.0.0.0`, such as the host address `host.minikube.internal` resolves to,
+would keep the port off the LAN. It has not been measured here, so it is not the documented
+procedure.
+
 Values live only in `.env`. This runbook names variables, never values; keep it that way.
 
 **`/etc/hosts`.** The ingress hostnames must resolve to the minikube node IP. One line, exact shape:
