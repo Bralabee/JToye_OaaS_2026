@@ -130,7 +130,7 @@ public class GdprService {
      *       guest storefront orders (customer_id NULL) that share the subject's email,
      *       de-duplicated by order id. The email sweep is the line that reaches guest
      *       orders which a customer_id-only walk misses.</li>
-     *   <li><b>S3 cleanup</b> — physically deletes each review photo from S3/MinIO via
+     *   <li><b>Photo cleanup</b> — physically deletes each review photo from Azure Blob via
      *       {@link StorageService#delete} (idempotent, WARN-and-continue) before nulling
      *       the URLs.</li>
      *   <li><b>Audit scrub</b> — scrubs pre-erasure PII from the append-only Envers
@@ -190,7 +190,7 @@ public class GdprService {
         int ordersAnonymised = ordersById.size();
         orderRepository.saveAll(new ArrayList<>(ordersById.values()));
 
-        // Anonymise PII on reviews AND physically delete their S3/MinIO photos.
+        // Anonymise PII on reviews AND physically delete their stored photos.
         List<Review> reviews = reviewRepository.findByCustomerEmail(originalEmail);
         int reviewsAnonymised = 0;
         int photosDeleted = 0;

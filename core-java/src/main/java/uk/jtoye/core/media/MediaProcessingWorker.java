@@ -85,9 +85,9 @@ import java.util.UUID;
  *
  * <p><b>The claim wait is BOUNDED (D-04a).</b> {@code SET LOCAL lock_timeout =
  * jtoye.media.claim-lock-timeout-ms} (default 10 s) is issued on this transaction's own connection
- * immediately before the claim. Worst-case hold by the WINNER, at shipped defaults: one S3/MinIO
+ * immediately before the claim. Worst-case hold by the WINNER, at shipped defaults: one Blob
  * GET (&le; 5 MB), one CPU-bound normalize (sniff, bomb guard, decode, EXIF strip, resize, WebP
- * encode), two S3/MinIO PUTs, a DB flush and one S3 DELETE — seconds, not minutes; plus 30 s when
+ * encode), two Blob PUTs, a DB flush and one Blob DELETE — seconds, not minutes; plus 30 s when
  * {@code MEDIA_VISION_ENABLED=true}, bounded only by Ollama's explicit reactive timeout. A blocked
  * loser holds BOTH an AMQP consumer thread and a Hikari connection (prod
  * {@code maximum-pool-size: 10}) for that whole duration — unreachable in-process at today's
@@ -215,7 +215,7 @@ public class MediaProcessingWorker {
         try {
             raw = storageService.getBytes(quarantineKey);
         } catch (RuntimeException e) {
-            // D-07: a read failure is a TRANSIENT S3/MinIO condition, not a verdict on the bytes.
+            // D-07: a read failure is a TRANSIENT storage condition, not a verdict on the bytes.
             // Deleting here converted a blip into permanent loss. Retain and stay re-drivable.
             failRetainingBytes(asset, "Could not read the quarantined upload");
             return;

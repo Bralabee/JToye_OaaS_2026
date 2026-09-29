@@ -95,11 +95,12 @@ public class MediaProperties {
      * <p>This number IS the plan's central trade: it converts <em>unbounded loss at 15 minutes</em>
      * (the old reaper deleted the vendor's only copy the moment a broker outage outlasted the
      * grace) into <em>bounded loss at 72 hours</em>. 72 h covers any realistic broker outage plus a
-     * weekend, while bounding the F-3 exposure window — the {@code jtoye-images} bucket grants
-     * anonymous {@code s3:GetObject} (GetObject-only since #626 removed the anonymous
-     * {@code s3:ListBucket} enumeration grant), so a quarantine object is STILL anonymously readable
-     * BY KEY for as long as it is retained — which is why D-06 needs a prefix-scoped policy and key
-     * obscurity is not a substitute.
+     * weekend, while bounding the F-3 exposure window. That window was set when quarantine keys
+     * shared the anonymously readable {@code jtoye-images} container, so a quarantine object was
+     * anonymously readable BY KEY for as long as it was retained and key obscurity was no
+     * substitute. Since Phase 36 (T-36-01) quarantine keys live in the PRIVATE quarantine container,
+     * so the horizon no longer bounds an anonymous-read exposure; it still bounds how long the raw,
+     * unvalidated vendor bytes are retained.
      */
     private long quarantineRetentionMs = 259_200_000L;
 

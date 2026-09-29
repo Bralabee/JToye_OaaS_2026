@@ -59,12 +59,12 @@ import java.util.UUID;
  * selection predicate can already satisfy, so stamping it genuinely terminates the row.
  *
  * <h2>Delete between two transactions</h2>
- * The irreversible S3 delete sits <em>between</em> the selection transaction and the stamping
+ * The irreversible Blob delete sits <em>between</em> the selection transaction and the stamping
  * transaction, never inside one. That is the §3(b) lesson applied to the class that legitimately
  * does delete: the old reaper deleted inside its {@code TransactionTemplate} callback, so a
  * {@code @Version} conflict rolled back the DB writes while the objects stayed deleted. And the
  * sentinel is stamped ONLY for objects {@link StorageService#deleteByKeyChecked} confirmed gone, so
- * a transient S3 error leaves the row for the next tick — correct retry, not the re-selection loop
+ * a transient storage error leaves the row for the next tick — correct retry, not the re-selection loop
  * above, because a <em>successful</em> delete is what terminates it.
  *
  * <p>Structural clone of {@code WebhookRetentionCleanup}: per-tenant, own transaction each,

@@ -529,7 +529,7 @@ public class ShopService {
     }
 
     // QA-council M3 (extended): the caller's tenant, required. Used to scope shop
-    // writes so a cross-tenant request 404s BEFORE any side effect (e.g. an S3
+    // writes so a cross-tenant request 404s BEFORE any side effect (e.g. a Blob
     // object delete) runs against another tenant's shop.
     private UUID requireTenantId() {
         return TenantContext.get()
