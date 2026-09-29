@@ -1,0 +1,3 @@
+trivy before rc=1
+trivy after rc=0
+version rc=0

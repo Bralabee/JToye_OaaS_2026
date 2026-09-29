@@ -1,0 +1,29 @@
+2026-09-29T12:29:30Z	INFO	[vuln] Vulnerability scanning is enabled
+2026-09-29T12:29:30Z	INFO	[secret] Secret scanning is enabled
+2026-09-29T12:29:30Z	INFO	[secret] If your scanning is slow, please try '--scanners vuln' to disable secret scanning
+2026-09-29T12:29:30Z	INFO	[secret] Please see https://trivy.dev/docs/v0.70/guide/scanner/secret#recommendation for faster secret detection
+2026-09-29T12:29:33Z	INFO	Detected OS	family="alpine" version="3.24.2"
+2026-09-29T12:29:33Z	WARN	This OS version is not on the EOL list	family="alpine" version="3.24"
+2026-09-29T12:29:33Z	INFO	[alpine] Detecting vulnerabilities...	os_version="3.24" repository="3.24" pkg_num=59
+2026-09-29T12:29:33Z	INFO	Number of language-specific files	num=1
+2026-09-29T12:29:33Z	INFO	[jar] Detecting vulnerabilities...
+
+Report Summary
+
+┌─────────────────────────────────┬────────┬─────────────────┬─────────┐
+│             Target              │  Type  │ Vulnerabilities │ Secrets │
+├─────────────────────────────────┼────────┼─────────────────┼─────────┤
+│ /scan/after.tar (alpine 3.24.2) │ alpine │        0        │    -    │
+├─────────────────────────────────┼────────┼─────────────────┼─────────┤
+│ app/app.jar                     │  jar   │        0        │    -    │
+└─────────────────────────────────┴────────┴─────────────────┴─────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+
+
+📣 [34mNotices:[0m
+  - Version 0.74.0 of Trivy is now available, current version is 0.70.0
+
+To suppress version checks, run Trivy scans with the --skip-version-check flag
+

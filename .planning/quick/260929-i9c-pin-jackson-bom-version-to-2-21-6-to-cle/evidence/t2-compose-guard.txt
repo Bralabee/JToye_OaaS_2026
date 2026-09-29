@@ -1,0 +1,8 @@
+docker images rc=0, docker ps rc=0; before files: 4 images, 10 containers
+diff images before/after rc=0 []
+diff containers before/after rc=0 []
+FAIL ARM diff (one ID char altered) rc=1:
+1c1
+< jtoye_oaas_2026-core-java:latest sha256:X56bca98c4b9fd0de4f476779651141b45ecf2944a4fd1e6
+---
+> jtoye_oaas_2026-core-java:latest sha256:356bca98c4b9fd0de4f476779651141b45ecf2944a4fd1e6

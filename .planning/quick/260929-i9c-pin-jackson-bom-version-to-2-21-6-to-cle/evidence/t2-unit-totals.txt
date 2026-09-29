@@ -1,0 +1,11 @@
+# Unit-suite freshness counter — pre-run state and fail arm
+marker: /tmp/claude-jackson-test-marker mtime=2026-09-29 13:29:55.692024149 +0100
+PRE-RUN: core-java/build-local/test-results/test/ does NOT exist (fresh worktree) -> 0 result XMLs of any age. (A first attempt piped find's 'No such file' error through grep -c and printed 1: invalid, discarded.)
+FILTER FAIL ARM: synthetic stale XML only -> find rc=0 fresh count=0 (expect 0)
+FILTER PASS ARM: + one XML touched after marker -> find rc=0 fresh count=1 (expect 1)
+## POST-RUN (gradle rc=0)
+3:> Task :core-java:cleanTest UP-TO-DATE
+159:> Task :core-java:test
+fresh XMLs newer than marker=162 (find rc=0); all XMLs on disk=162
+suites_parsed=162 tests=1233 failures=0 errors=0 skipped=1
+reference #757: 1233 tests / 0 failures / 0 errors / 1 skipped / 162 XMLs

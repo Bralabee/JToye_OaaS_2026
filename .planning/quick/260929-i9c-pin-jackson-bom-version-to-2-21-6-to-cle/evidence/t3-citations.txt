@@ -1,0 +1,101 @@
+# Strict start-on-anchor citation check (/tmp/claude-jackson-citecheck.sh, copied below). Target: core-java/build.gradle.kts at 1c587f06, wc -l=531
+## Step 0: the numbers each doc now carries (read from the docs, not from the records)
+doc STACK.md:36 carries :118-162  OK
+doc STACK.md:52 carries :440  OK
+doc STACK.md:70 carries :241  OK
+doc TESTING.md:119 carries :264-366  OK
+doc TESTING.md:122 carries :379-386  OK
+doc CONCERNS.md:33 carries :230-238  OK
+## Control: OLD pointers vs db725c94's file (must PASS: proves the records/anchors are right)
+PASS  STACK.md:51(old) :394-394
+PASS  STACK.md:69(old) :195-195
+PASS  TESTING.md:119(old) :218-320
+PASS  TESTING.md:122(old) :333-340
+PASS  CONCERNS.md:33(old) :184-192
+records=5 fails=0
+rc=0
+## NEW pointers vs final file (expect all PASS)
+PASS  STACK.md:51 :440-440
+PASS  STACK.md:69 :241-241
+PASS  TESTING.md:119 :264-366
+PASS  TESTING.md:122 :379-386
+PASS  CONCERNS.md:33 :230-238
+records=5 fails=0
+rc=0
+## FAIL ARM: OLD pointers vs final file (expect all 5 FAIL)
+FAIL  STACK.md:51(old) :394-394 -- start line 394 does not match anchor [toolVersion = "0.8.15"] (is: // A SKIPPED INTEGRATION JOB MUST VOID, NEVER PASS); range 394-394 lacks claim [toolVersion = "0.8.15"];
+FAIL  STACK.md:69(old) :195-195 -- start line 195 does not match anchor [implementation("org.postgresql:postgresql:42.7.13")] (is:     // AWS S3 SDK v2 (works with MinIO for dev, real S3 for prod));
+FAIL  TESTING.md:119(old) :218-320 -- start line 218 does not match anchor [=tasks.test {] (is: ); end line 320 does not match [=}] (is:     // So the accumulation had TWO causes; 27-04 fixed one. Until the );
+FAIL  TESTING.md:122(old) :333-340 -- start line 333 does not match anchor [counter] (is:     // This does NOT reopen the OOM the block above documents: forkEve); range 333-340 lacks claim [`integrationTest` contributes 607 tests across 132 classes];
+FAIL  CONCERNS.md:33(old) :184-192 -- start line 184 does not match anchor [// net.sf.jasperreports was REMOVED (2026-07-27)] (is: ); end line 192 does not match [not JasperReports.] (is:     // Email notifications);
+records=5 fails=5
+rc=1
+## Unaffected six vs final file (expect all PASS)
+PASS  STACK.md:8 :13-13
+PASS  STACK.md:33 :2-2
+PASS  STACK.md:35 :21-52
+PASS  infra/dependency-horizons.yaml:511 :13-13
+PASS  infra/dependency-horizons.yaml:550 :2-2
+PASS  k8s/LOCAL.md:1967 :19-19
+records=6 fails=0
+rc=0
+## New STACK jackson citation (expect PASS)
+PASS  STACK.md:36 (new jackson bullet) :118-162
+records=1 fails=0
+rc=0
+## FAIL ARM: jackson citation one line past the extra line (expect FAIL)
+FAIL  STACK.md:36 off-by-one (fail arm) :118-163 -- end line 163 does not match [extra["jackson-bom.version"] = "2.21.6"] (is: );
+records=1 fails=1
+rc=1
+## Cross-check: N = 531 - 485 = 46; old+46: 394->440 195->241 218-320->264-366 333-340->379-386 184-192->230-238 (anchor search and arithmetic agree on all five)
+## Records
+STACK.md:51|440|440|toolVersion = "0.8.15"|-|toolVersion = "0.8.15"
+STACK.md:69|241|241|implementation("org.postgresql:postgresql:42.7.13")|-|-
+TESTING.md:119|264|366|=tasks.test {|=}|tasks.register<Test>("integrationTest")
+TESTING.md:122|379|386|counter|-|`integrationTest` contributes 607 tests across 132 classes
+CONCERNS.md:33|230|238|// net.sf.jasperreports was REMOVED (2026-07-27)|not JasperReports.|-
+STACK.md:51(old)|394|394|toolVersion = "0.8.15"|-|toolVersion = "0.8.15"
+STACK.md:69(old)|195|195|implementation("org.postgresql:postgresql:42.7.13")|-|-
+TESTING.md:119(old)|218|320|=tasks.test {|=}|tasks.register<Test>("integrationTest")
+TESTING.md:122(old)|333|340|counter|-|`integrationTest` contributes 607 tests across 132 classes
+CONCERNS.md:33(old)|184|192|// net.sf.jasperreports was REMOVED (2026-07-27)|not JasperReports.|-
+STACK.md:8|13|13|JavaLanguageVersion.of(25)|-|-
+STACK.md:33|2|2|id("org.springframework.boot") version "3.5.16"|-|-
+STACK.md:35|21|52|// Override the netty version managed by|extra["netty.version"] = "4.1.137.Final"|-
+infra/dependency-horizons.yaml:511|13|13|JavaLanguageVersion.of(25)|-|-
+infra/dependency-horizons.yaml:550|2|2|id("org.springframework.boot") version "3.5.16"|-|-
+k8s/LOCAL.md:1967|19|19|layout.buildDirectory.set(file("build-local"))|-|-
+STACK.md:36 (new jackson bullet)|118|162|// Override the Jackson family managed by|extra["jackson-bom.version"] = "2.21.6"|-
+STACK.md:36 off-by-one (fail arm)|118|163|// Override the Jackson family managed by|extra["jackson-bom.version"] = "2.21.6"|-
+## Checker source
+#!/usr/bin/env bash
+# Strict start-on-anchor citation check.
+# usage: citecheck.sh TARGET_FILE RECORDS_FILE
+# record: label|start|end|start_anchor|end_anchor|claim
+#   anchors/claim are fixed substrings; a leading "=" means exact whole-line match;
+#   "-" means "not checked".
+set -u
+T="$1"; R="$2"
+[ -s "$T" ] || { echo "VOID: target $T missing/empty"; exit 2; }
+[ -s "$R" ] || { echo "VOID: records $R missing/empty"; exit 2; }
+total=$(wc -l < "$T")
+fails=0; n=0
+match() { # line pattern
+  local line="$1" pat="$2"
+  if [ "${pat:0:1}" = "=" ]; then [ "$line" = "${pat:1}" ]; else [[ "$line" == *"$pat"* ]]; fi
+}
+while IFS='|' read -r label s e sa ea claim; do
+  [ -z "$label" ] && continue
+  case "$label" in \#*) continue;; esac
+  n=$((n+1)); why=""
+  if [ "$s" -gt "$total" ] || [ "$e" -gt "$total" ]; then why="range $s-$e beyond EOF ($total)"; else
+    sl=$(sed -n "${s}p" "$T"); el=$(sed -n "${e}p" "$T"); rng=$(sed -n "${s},${e}p" "$T")
+    match "$sl" "$sa" || why="$why start line $s does not match anchor [$sa] (is: ${sl:0:70});"
+    if [ "$ea" != "-" ]; then match "$el" "$ea" || why="$why end line $e does not match [$ea] (is: ${el:0:70});"; fi
+    if [ "$claim" != "-" ]; then [[ "$rng" == *"$claim"* ]] || why="$why range $s-$e lacks claim [$claim];"; fi
+  fi
+  if [ -z "$why" ]; then echo "PASS  $label :$s-$e"; else echo "FAIL  $label :$s-$e --$why"; fails=$((fails+1)); fi
+done < "$R"
+[ "$n" -gt 0 ] || { echo "VOID: no records read"; exit 2; }
+echo "records=$n fails=$fails"
+[ "$fails" -eq 0 ]
