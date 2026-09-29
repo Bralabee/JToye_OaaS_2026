@@ -129,8 +129,8 @@ class SystemPrincipalGuardTest {
                 tenant, "SystemPrincipal Guard Tenant " + tenant);
         SecurityContextHolder.clearContext();
         TenantContext.set(tenant);
-        // MinIO is stubbed: the derivative write and the raw delete are captured, not performed.
-        Mockito.doReturn("http://minio/derivative").when(storageService).putBytes(
+        // Storage is stubbed: the derivative write and the raw delete are captured, not performed.
+        Mockito.doReturn("http://store/derivative").when(storageService).putBytes(
                 Mockito.anyString(), Mockito.any(byte[].class), Mockito.anyString());
         Mockito.doNothing().when(storageService).deleteByKey(Mockito.anyString());
     }

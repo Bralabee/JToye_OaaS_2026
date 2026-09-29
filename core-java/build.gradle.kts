@@ -284,7 +284,7 @@ tasks.register<Test>("integrationTest") {
     //   - Post-fix, listener threads are gone from the picture: peak drops 1880 -> 859 (-54%),
     //     time-to-500-threads moves 0s -> 100s, and the OOM instead lands on
     //     `HttpClient-N-SelectorManager` and `idle-connection-reaper` — the reactive WebClient's
-    //     selector pool and AWS SDK v2's S3/MinIO connection reaper.
+    //     selector pool and AWS SDK v2's object-store connection reaper.
     //
     // So the accumulation had TWO causes; 27-04 fixed one. Until the WebClient/AWS-SDK clients are
     // shared or shut down per context, forkEvery must stay.

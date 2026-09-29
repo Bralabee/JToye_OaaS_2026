@@ -107,7 +107,7 @@ class GdprServiceTest {
     }
 
     @Test
-    @DisplayName("Erasure: reaches guest orders by email, deletes S3 photos, scrubs _aud, persists PII-free record")
+    @DisplayName("Erasure: reaches guest orders by email, deletes stored photos, scrubs _aud, persists PII-free record")
     void eraseCustomerData_anonymisesAllPii() {
         // A customer-linked order (found via customer_id).
         Order linkedOrder = new Order();
@@ -178,7 +178,7 @@ class GdprServiceTest {
         assertNull(guestOrder.getCustomerPhone());
         assertNull(guestOrder.getNotes());
 
-        // Review PII anonymised + photos physically deleted from S3.
+        // Review PII anonymised + photos physically deleted from storage.
         assertEquals("[REDACTED]", review.getCustomerName());
         assertNull(review.getComment());
         assertNull(review.getPhotoUrls());

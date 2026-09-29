@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * IMG-01 delete surface (24-05, T-24-26) — the vendor image-delete paths
  * ({@code ProductService.removeImage} / {@code removeAdditionalImage}) now drop the
- * {@code product_media} join row and ref-count-release the asset: a physical MinIO
+ * {@code product_media} join row and ref-count-release the asset: a physical Blob
  * delete happens ONLY at reference-count 0, and a still-referenced (shared) asset is
  * preserved. Proven over real Postgres.
  *
@@ -43,7 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code MediaCopyOnWriteIntegrationTest}, this exercises the CoW/ref-count delete
  * MECHANICS, not tenant isolation (proven separately under the NOSUPERUSER downgrade).
  * {@link StorageService} is a {@code @SpyBean} so the physical delete is asserted without a
- * live MinIO; {@link ShopAccessService} is a {@code @MockBean} so the SHOP_MANAGER gate is a
+ * live object store; {@link ShopAccessService} is a {@code @MockBean} so the SHOP_MANAGER gate is a
  * no-op here (proven elsewhere) and these tests focus on the delete wiring.
  */
 @SpringBootTest
@@ -83,7 +83,7 @@ class ProductImageDeleteIntegrationTest {
         jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
                 tenant, "test-" + tenant);
         TenantContext.set(tenant);
-        // No live MinIO: stub both the key-addressed and flat deletes to no-ops.
+        // No live object store: stub both the key-addressed and flat deletes to no-ops.
         Mockito.doNothing().when(storageService).deleteByKey(Mockito.anyString());
         Mockito.doNothing().when(storageService).delete(Mockito.anyString());
     }
@@ -150,7 +150,7 @@ class ProductImageDeleteIntegrationTest {
 
     @Test
     void deletingLastReferenceReleasesAsset() {
-        UUID p = seedProduct("http://minio/jtoye-images/flat.jpg");
+        UUID p = seedProduct("http://store/jtoye-images/flat.jpg");
         MediaAsset asset = newAsset(MediaAsset.Status.ACTIVE);
         String key = asset.getObjectKey();
         newPm(p, asset.getId(), true, 0);
@@ -163,15 +163,15 @@ class ProductImageDeleteIntegrationTest {
                 .as("the primary product_media row is dropped").isEmpty();
         assertThat(assetExists(asset.getId()))
                 .as("sole reference removed -> media_asset deleted (ref-count 0)").isFalse();
-        Mockito.verify(storageService).deleteByKey(key);   // physical MinIO delete happened at ref-count 0
+        Mockito.verify(storageService).deleteByKey(key);   // physical Blob delete happened at ref-count 0
         assertThat(productRepository.findById(p).orElseThrow().getImageUrl())
                 .as("flat image_url dual-read cleanup preserved").isNull();
     }
 
     @Test
     void deletingWhileStillReferencedDoesNotDeleteAsset() {
-        UUID p1 = seedProduct("http://minio/jtoye-images/flat-1.jpg");
-        UUID p2 = seedProduct("http://minio/jtoye-images/flat-2.jpg");
+        UUID p1 = seedProduct("http://store/jtoye-images/flat-1.jpg");
+        UUID p2 = seedProduct("http://store/jtoye-images/flat-2.jpg");
         MediaAsset shared = newAsset(MediaAsset.Status.ACTIVE);
         String key = shared.getObjectKey();
         newPm(p1, shared.getId(), true, 0);
@@ -194,7 +194,7 @@ class ProductImageDeleteIntegrationTest {
 
     @Test
     void removeAdditionalImageReleasesCorrectGalleryRow() {
-        UUID p = seedProductWithGallery(null, "http://minio/jtoye-images/g1.jpg", "http://minio/jtoye-images/g2.jpg");
+        UUID p = seedProductWithGallery(null, "http://store/jtoye-images/g1.jpg", "http://store/jtoye-images/g2.jpg");
         MediaAsset g1 = newAsset(MediaAsset.Status.ACTIVE);
         MediaAsset g2 = newAsset(MediaAsset.Status.ACTIVE);
         String g1Key = g1.getObjectKey();
@@ -214,6 +214,6 @@ class ProductImageDeleteIntegrationTest {
                 .as("the remaining gallery join row is untouched").isEqualTo(1);
         assertThat(productRepository.findById(p).orElseThrow().getAdditionalImageUrls())
                 .as("flat additional_image_urls dual-read cleanup preserved (index 0 removed)")
-                .containsExactly("http://minio/jtoye-images/g2.jpg");
+                .containsExactly("http://store/jtoye-images/g2.jpg");
     }
 }

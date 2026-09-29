@@ -39,7 +39,7 @@ import static org.mockito.Mockito.verify;
  * {@code updateShop}/{@code deleteShop} and the four image methods — must 404
  * for a caller from another tenant BEFORE any side effect runs. The original
  * defect let a cross-tenant {@code removeLogo}/{@code removeBanner} delete
- * another tenant's object from S3/MinIO (storage delete ran before the
+ * another tenant's object from storage (the delete ran before the
  * FORCE-RLS write failed) and returned 200.
  *
  * <p>Runs against real Postgres with the role downgraded to NOSUPERUSER after
