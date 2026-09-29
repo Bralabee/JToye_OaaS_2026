@@ -11,7 +11,9 @@ package uk.jtoye.core.storage;
  *
  * <p>Failure contract for every method: a transport failure (the store could not be reached)
  * surfaces as {@link StorageUnavailableException}; an error the store ANSWERED with (for example
- * "blob not found" on {@link #get}) propagates as the SDK's own service exception.
+ * "blob not found" on {@link #get}) propagates as the SDK's own service exception; and any other
+ * runtime exception (a programming, validation or identity error) propagates unchanged, never
+ * disguised as unavailability.
  */
 public interface BlobObjectStore {
 

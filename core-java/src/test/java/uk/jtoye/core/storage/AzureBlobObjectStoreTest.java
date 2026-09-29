@@ -1,14 +1,25 @@
 package uk.jtoye.core.storage;
 
+import com.azure.storage.blob.BlobContainerClient;
+import com.azure.storage.blob.BlobServiceClient;
+import com.azure.storage.blob.models.BlobContainerProperties;
+import com.azure.storage.blob.models.PublicAccessType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.UncheckedIOException;
 import java.net.ServerSocket;
 import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * An unreachable object store surfaces as {@link StorageUnavailableException} (36-RESEARCH
@@ -69,5 +80,69 @@ class AzureBlobObjectStoreTest {
         assertThatThrownBy(() -> store.put("jtoye-images", "t/media/x.webp", new byte[]{1}, "image/webp", null))
                 .isInstanceOf(StorageUnavailableException.class)
                 .hasCauseInstanceOf(RuntimeException.class);
+    }
+
+    // ---- WR-06: only a TRANSPORT failure is "unavailable" ----------------------------------------
+    //
+    // The two tests above are the load-bearing half: they drive the real SDK into a refused
+    // connection, so if its failure did not carry an IOException/TimeoutException in the cause
+    // chain, the narrowed mapping below would stop calling it unavailable and they would fail.
+
+    @Test
+    @DisplayName("WR-06: an SDK validation error (IllegalArgumentException) propagates unchanged, not as 'unreachable'")
+    void programmingErrorIsNotReportedAsUnavailable() {
+        IllegalArgumentException bad = new IllegalArgumentException("blob name too long");
+
+        assertThatThrownBy(() -> AzureBlobObjectStore.call("put c/k", () -> { throw bad; }))
+                .isSameAs(bad);
+    }
+
+    @Test
+    @DisplayName("WR-06: a NullPointerException propagates unchanged, not as 'unreachable'")
+    void nullPointerIsNotReportedAsUnavailable() {
+        NullPointerException npe = new NullPointerException("key");
+
+        assertThatThrownBy(() -> AzureBlobObjectStore.call("get c/k", () -> { throw npe; }))
+                .isSameAs(npe);
+    }
+
+    @Test
+    @DisplayName("WR-06: transport shapes (IOException / TimeoutException anywhere in the chain) are unavailable")
+    void transportShapesAreUnavailable() {
+        List<RuntimeException> transport = List.of(
+                new UncheckedIOException(new java.net.ConnectException("Connection refused")),
+                new RuntimeException(new RuntimeException(new java.net.UnknownHostException("store"))),
+                // Reactor's block(Duration) timeout: IllegalStateException caused by a TimeoutException.
+                new IllegalStateException("Timeout on blocking read", new TimeoutException("30s")));
+        for (RuntimeException failure : transport) {
+            assertThatThrownBy(() -> AzureBlobObjectStore.call("get c/k", () -> { throw failure; }))
+                    .as("%s", failure)
+                    .isInstanceOf(StorageUnavailableException.class)
+                    .hasCause(failure);
+        }
+    }
+
+    @Test
+    @DisplayName("WR-06: a cyclic cause chain is walked once and does not loop")
+    void cyclicCauseChainTerminates() {
+        RuntimeException a = new RuntimeException("a");
+        RuntimeException b = new RuntimeException("b", a);
+        a.initCause(b);
+
+        assertThat(AzureBlobObjectStore.isTransportFailure(a)).isFalse();
+    }
+
+    @Test
+    @DisplayName("WR-06: an unrecognised container access level is a configuration error, not 'unreachable'")
+    void unrecognisedAccessLevelIsAConfigurationError() {
+        BlobServiceClient client = mock(BlobServiceClient.class);
+        BlobContainerClient container = mock(BlobContainerClient.class);
+        when(client.getBlobContainerClient("jtoye-images")).thenReturn(container);
+        when(container.getProperties()).thenReturn(new BlobContainerProperties(Map.of(), "etag", OffsetDateTime.now(),
+                null, null, null, PublicAccessType.fromString("tenant-only"), false, false));
+
+        assertThatThrownBy(() -> new AzureBlobObjectStore(client).containerAccess("jtoye-images"))
+                .isInstanceOf(StorageConfigurationException.class)
+                .hasMessageContaining("Unrecognised container access level");
     }
 }
