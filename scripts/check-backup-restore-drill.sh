@@ -408,7 +408,7 @@ if [ "$STEP_RC" -ne 0 ]; then
 else
     n_up=$(grep -c . <<< "$STEP_OUT" || true)
     note "        blobs under drill/$RUN_ID/A-job/: $n_up"
-    [ "$n_up" -eq 0 ] || fail "arm A-job: the failed job still uploaded $n_up blob(s) — a partial dump reached Blob"
+    [ "$n_up" -eq 0 ] || fail "arm A-job: $n_up blob(s) reached drill/$RUN_ID/A-job/ from a job run as $ARM_A_USER — an app-role dump must never reach Blob"
 fi
 
 # ---- Arm A-dump: the zero-row dump passes the pipeline's own checks, then restores 0 --------
