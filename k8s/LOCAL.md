@@ -53,7 +53,7 @@ other":
 | Compose layer | Required state while the cluster runs | Why |
 |---|---|---|
 | **App** services — `core-java`, `frontend`, `edge-go`, `mcp-server` | **DOWN** | Both they and the cluster pods write the **same shared dev Postgres**. Two writers on one database is the footgun this rule exists to stop. |
-| **Backing** services — `postgres`, `redis`, `rabbitmq`, `keycloak`, `minio`, `mailhog` | **UP** | The cluster does not run its own backing services. Every endpoint in the overlay is shimmed to `host.minikube.internal`, so the pods **consume** these six. |
+| **Backing** services — `postgres`, `redis`, `rabbitmq`, `keycloak`, `azurite`, `mailhog` | **UP** | The cluster does not run its own backing services. Every endpoint in the overlay is shimmed to `host.minikube.internal`, so the pods **consume** these six. |
 
 Bring the four app containers down (and leave the six backing services running):
 
@@ -112,19 +112,41 @@ K8S_LOCAL_KC_PORT             # 8085  published compose Keycloak port
 K8S_LOCAL_REDIS_PORT          # 6379
 K8S_LOCAL_AMQP_PORT           # 5672  RabbitMQ AMQP
 K8S_LOCAL_STOMP_PORT          # 61613 RabbitMQ STOMP
-K8S_LOCAL_MINIO_PORT          # 9000  MinIO S3 API
+K8S_LOCAL_AZURITE_PORT        # 10000 Azurite Blob (the host emulator; Phase 36)
 K8S_LOCAL_SMTP_PORT           # 1025  Mailhog SMTP
 K8S_LOCAL_KUBE_CONTEXT        # the ONLY context this tooling will target
 K8S_LOCAL_MINIKUBE_PROFILE    # profile name
 K8S_LOCAL_MINIKUBE_CPUS       # 4
 K8S_LOCAL_MINIKUBE_MEMORY     # 12g
-K8S_LOCAL_BACKUP_BUCKET       # bucket for the pg-backup CronJob dumps
 DB_BACKUP_PASSWORD            # BYPASSRLS dump-role password (refuses a CHANGE_ME value)
 NOTIFICATION_UNSUBSCRIBE_SECRET  # optional; empty keeps one-click unsubscribe inert
 ```
 
 Every port above is the **published compose value** — none is a script literal. If a compose port
 moves, change it here and nowhere else.
+
+**Phase 36 migration of an existing `.env`.** The retired object store's port key and the backup-bucket
+key are gone. Rename the port key to `K8S_LOCAL_AZURITE_PORT=10000` and delete the bucket key: the
+env-contract guard refuses by name until `K8S_LOCAL_AZURITE_PORT` is present. There is no bucket to
+name any more, because blobctl creates the private backup container `jtoye-db-backups` (app-config
+`backup.blob.container`) in the host Azurite on the CronJob's first upload.
+
+**Stale Secrets on a cluster bootstrapped before Phase 36.** The bootstrap no longer creates the two
+object-store credential Secrets, and nothing in the render reads them. Delete them from the **local
+context only** — never run this against staging or production:
+
+```bash
+kubectl --context jtoye -n jtoye-local delete secret s3-media-credentials s3-backup-credentials --ignore-not-found
+```
+
+**Backing services must be reachable from the minikube bridge.** Compose publishes every backing port
+on `JTOYE_BIND_HOST` (top of `.env.example`), which is **loopback-only `127.0.0.1` by default** since
+#441. `host.minikube.internal` resolves to the host's bridge gateway, not to loopback, so with the
+default bind step 5 reports every port unreachable — Azurite on 10000 exactly like Postgres, Redis,
+RabbitMQ, Keycloak and Mailhog; Azurite is not a special case. For the duration of a rehearsal set a
+non-loopback `JTOYE_BIND_HOST` in `.env` (`0.0.0.0` is the documented opt-in) and recreate the backing
+services so the new bind takes effect; put it back to `127.0.0.1` afterwards. While it is set,
+`scripts/check-infra-exposure.sh` fails, which is the intended loud signal that the stack is exposed.
 
 Values live only in `.env`. This runbook names variables, never values; keep it that way.
 
@@ -165,7 +187,7 @@ runnable by hand if one fails:
 | 5 | reachability | `minikube ssh -p <profile> -- nc -vz -w 3 host.minikube.internal <port>` for all seven ports. |
 | 6 | hosts file | Checks each rendered ingress hostname resolves to the node IP; prints the fix. |
 | 7 | images | Builds and loads all four images, then prints their identities. See §7 (stale-image rule). |
-| 8 | bootstrap | `scripts/k8s-local-secrets.sh` — namespace, BYPASSRLS dump role, backup bucket, all Secrets. |
+| 8 | bootstrap | `scripts/k8s-local-secrets.sh` — namespace, BYPASSRLS dump role, all Secrets. No backup bucket and no storage credential since Phase 36: blobctl creates the private backup container in the host Azurite on the first upload, and the emulator string holds no key. |
 | 9 | apply | `kubectl apply -f k8s/local/namespace.yaml` **first**, then `apply -k k8s/local --dry-run=server` printed verbatim, then the real apply. |
 | 10 | rollout | `rollout status deploy/core-java` (5m), `deploy/frontend` (3m), `deploy/edge-go` (3m). |
 | 11 | smoke | `curl` `<api>/health`, `<api>/public/shops`, `<app>/api/health` — **through the ingress hostnames**, never a loopback address. |
@@ -186,8 +208,9 @@ this host: the other kubectl context is employer infrastructure and must never b
 
 | Change | Value(s) | Why |
 |---|---|---|
-| Endpoint shims (8) | `keycloak.issuer.uri`, `keycloak.admin.base-url`, `redis.host`, `rabbitmq.host`, `stomp.broker.relay-host`, `s3.endpoint`, `s3.backup.endpoint`, `smtp.host` → `host.minikube.internal` | Pods consume the compose backing services on the host. The underlying gateway IP varies by driver, so the **name** is used, never an IP. |
-| Deliberately **not** shimmed | `s3.public-url` → `localhost:9000/…`, `keycloak.public.issuer.uri` → `localhost:8085/realms/jtoye-dev` | Browser-reachable, not pod-reachable. See the note below. |
+| Endpoint shims (8) | `keycloak.issuer.uri`, `keycloak.admin.base-url`, `redis.host`, `rabbitmq.host`, `stomp.broker.relay-host`, `smtp.host` → `host.minikube.internal`; `storage.blob.connection-string` and `backup.blob.connection-string` → `UseDevelopmentStorage=true;DevelopmentStorageProxyUri=http://host.minikube.internal` (the host Azurite, Blob port 10000 implied) | Pods consume the compose backing services on the host. The underlying gateway IP varies by driver, so the **name** is used, never an IP. |
+| Deliberately **not** shimmed | `storage.blob.public-url` → `http://localhost:10000/devstoreaccount1/jtoye-images`, `keycloak.public.issuer.uri` → `localhost:8085/realms/jtoye-dev` | Browser-reachable, not pod-reachable. See the note below. |
+| Storage auth mode | `storage.blob.auth-mode` and `backup.blob.auth-mode` = `connection-string` (base and the real overlays: `workload-identity`) | Local has no AKS Workload Identity webhook. The emulator string is local-only config (`k8s/local/storage-env-patch.yaml` injects it as `STORAGE_CONNECTION_STRING` into core-java and pg-backup), holds **no key** — the SDKs supply the published emulator key themselves — and therefore needs no Secret. Asserted by LOC-3 and LOC-7 in `k8s/scripts/check-render-invariants.sh`. |
 | Scale triple | `replicas: 1` ×3, HPA `minReplicas: 1` ×3, PDB `minAvailable: 1` ×3 | `replicas:` reaches Deployments only, so HPAs and PDBs need the second mechanism (`scale-patch.yaml`, one file, six documents). A PDB of 2 over 1 replica makes the pod undrainable. |
 | HPA `maxReplicas` | **UNCHANGED** from base | It is an input to `k8s/scripts/check-connection-math.sh`. Lowering it locally would make the local render stop proving the same connection arithmetic. An HPA with no metrics-server never scales up anyway. |
 | Ingress hosts | `api.jtoye.local` → `core-java:9090`, `app.jtoye.local` → `frontend:3000`; SSE ingress `api.jtoye.local/api/v1/orders/stream` (`pathType: Exact`) | The one deploy surface no other local runtime exercises, and it gives NextAuth a stable callback origin. 9091 is the internal management port and is published through no ingress. |
@@ -197,13 +220,19 @@ this host: the other kubectl context is employer infrastructure and must never b
 | `log.path` | `/tmp` | See §7, PIT-5. |
 | Secrets | **zero** `kind: Secret` in the render | Enforced by `k8s/scripts/check-no-plaintext-secrets.sh`, which auto-discovers every overlay. Secrets arrive out-of-band from `scripts/k8s-local-secrets.sh`. |
 
-**Why `s3.public-url` stays browser-reachable while `s3.endpoint` is pod-reachable.** They are
-consumed by two different clients. `s3.endpoint` is where the **pod** writes, via a server-side AWS
-SDK call, so it must be the shimmed host. `s3.public-url` is the origin baked into the image URLs
-that go out in API responses and are then fetched by the **browser on your own machine** — where
-`host.minikube.internal` does not resolve at all. Shimming it would leave every product image broken
-while every server-side upload still reported success: a silent, browser-only failure. The same
-asymmetry is why the Keycloak issuer pair holds two values.
+**Why `storage.blob.public-url` stays browser-reachable while the connection string is
+pod-reachable.** They are consumed by two different clients. The connection string is where the
+**pod** writes, via a server-side Azure SDK call, so its proxy host must be the shimmed
+`host.minikube.internal`. The public-url is the origin baked into the image URLs that go out in API
+responses and are then fetched by the **browser on your own machine** — where `host.minikube.internal`
+does not resolve at all. Shimming it would leave every product image broken while every server-side
+upload still reported success: a silent, browser-only failure. The same asymmetry is why the Keycloak
+issuer pair holds two values.
+
+**Why a non-IP proxy host works at all.** The Azure SDK addresses the emulator path-style
+(`http://host.minikube.internal:10000/devstoreaccount1/...`) only because compose runs Azurite with
+`--disableProductStyleUrl`; without that flag Azurite would read the first host label as the account
+name and reject every request.
 
 ---
 
@@ -247,9 +276,10 @@ rendered policy set would deny the **entire** local traffic pattern:
 - That same policy's only in-cluster allow targets `namespaceSelector: jtoye-infrastructure`, a
   namespace that **does not exist locally**.
 - The ports the local pattern actually needs — `5433` (Postgres), `8085` (Keycloak), `6379` (Redis),
-  `5672` (AMQP), `61613` (STOMP), `9000` (MinIO), `1025` (SMTP) — appear in no allowed egress rule
-  for the host gateway. The in-cluster rules list `<db.port>/6379/5672/61613/9000/9093`, but scoped
-  to that non-existent namespace.
+  `5672` (AMQP), `61613` (STOMP), `10000` (Azurite Blob), `1025` (SMTP) — appear in no allowed egress
+  rule for the host gateway. The in-cluster rules list `<db.port>/6379/5672/61613/9093`, but scoped
+  to that non-existent namespace. (Phase 36 removed the retired object store's port from every
+  policy; real-cluster Blob traffic rides the existing public 443 rule.)
 
 So "an enforcing CNI would need explicit egress rules" is concretely: a rule permitting TCP to the
 host gateway CIDR on those seven ports. The policy flow matrix and rollback steps are in
@@ -673,14 +703,16 @@ Two distinct cases, and telling them apart is the whole diagnosis:
    in `CreateContainerConfigError`, it is *not* one of these.
 
 **A host backing service is unreachable from inside the cluster (PIT-11)**
-Suspect a **host firewall on the minikube bridge before you touch a manifest.** minikube requires the
-host service to listen on all interfaces (`0.0.0.0`); every compose port already publishes that way,
-so the remaining risk is ufw/firewalld blocking the bridge subnet. Step 5 already probes this, and
-you can repeat it by hand:
+Suspect the **host side before you touch a manifest**, in this order. First the bind: compose
+publishes every backing port on `JTOYE_BIND_HOST`, which is loopback-only `127.0.0.1` by default
+(#441), and a loopback bind is invisible from the minikube bridge — see §3, "Backing services must be
+reachable from the minikube bridge". Then a host firewall (ufw/firewalld) blocking the bridge subnet.
+Step 5 already probes this, and you can repeat it by hand:
 
 ```bash
 minikube ssh -p <profile> -- "nc -vz -w 3 host.minikube.internal 5433"
 minikube ssh -p <profile> -- "nc -vz -w 3 host.minikube.internal 8085"
+minikube ssh -p <profile> -- "nc -vz -w 3 host.minikube.internal 10000"
 ```
 
 If the probe fails, do not start editing manifests.
@@ -697,7 +729,10 @@ pointing the context elsewhere.
 
 ## 9. Backup rehearsal
 
-Trigger the CronJob on demand rather than waiting for its schedule:
+The CronJob dumps with the BYPASSRLS role and uploads with **blobctl** (in the
+`jtoye-pg-backup:15-blob` image) to the host Azurite, container `jtoye-db-backups`, prefix `backups/`.
+In emulator mode blobctl creates that container **private** on the first upload; nothing needs to be
+pre-created. Trigger the CronJob on demand rather than waiting for its schedule:
 
 ```bash
 kubectl --context <ctx> -n jtoye-local create job pg-backup-manual --from=cronjob/pg-backup
@@ -732,8 +767,15 @@ The BYPASSRLS role is created by `scripts/k8s-local-secrets.sh` (which invokes
 from the database side via `rolbypassrls`. Nothing else provisions it: not compose, not Flyway,
 because only a superuser can grant `BYPASSRLS`.
 
-The backup bucket deliberately gets **no** public-read policy. The images bucket has one; database
-dumps must not be world-readable.
+The backup container is deliberately **private**: blobctl creates it with no public-access level.
+The images container `jtoye-images` is public-read (core-java creates it at the blob level); database
+dumps must not be world-readable. To confirm the upload from the host, list the container with the
+emulator string against the loopback-published port:
+
+```bash
+az storage blob list --connection-string "UseDevelopmentStorage=true" -c jtoye-db-backups \
+  --prefix backups/ --query '[].{name:name,size:properties.contentLength}' -o table
+```
 
 ---
 
@@ -763,6 +805,11 @@ at the cost of a full re-start and re-load. The `/etc/hosts` line is harmless to
 node IP is stable across `stop`/`start` for an existing profile, but re-check it after a `delete`.
 
 ### Phase 26 end state — PERFORMED 2026-07-26 (plan 26-09)
+
+> **Historical record — predates Phase 36.** This subsection records the Phase 26 end state as it was
+> performed. Its fenced outputs are kept **verbatim**, so they still name the object store local k8s
+> consumed then, which Phase 36 retired in favour of the host Azurite (§3, §5, §9). Read the service
+> list below as history, not as today's backing set.
 
 **A written teardown is not a performed one.** The section above was authored by plan 26-06; this
 subsection is the record of it actually being executed at the end of the phase, because no plan in
@@ -882,6 +929,14 @@ Two things changed as a result:
 ---
 
 ## 11. Rehearsal Evidence
+
+> **Historical record — predates Phase 36.** Every row below was captured in Phase 26 (2026-07-25 /
+> 2026-07-26), when local k8s backed up to, and served media from, an object store that Phase 36
+> retired. The fenced command outputs are kept **verbatim** because they are evidence, so they still
+> name that store, its port 9000, its backup bucket and the two object-store credential Secrets the old
+> bootstrap created. None of that is current: the bootstrap now creates no storage Secret and no bucket
+> (§3, §4 step 8), pods reach the host Azurite through the emulator connection string (§5), and backups
+> upload with blobctl (§9). Prose outside the fences has been worded without the retired product name.
 
 Rows **L1–L5 are FILLED** (plan 26-07, 2026-07-25, behind its human-action approval — which is what
 authorised the shared-state mutations).
@@ -1016,8 +1071,8 @@ $ docker exec jtoye-postgres psql -U jtoye -d jtoye -tAc \
 t|f
 ```
 
-**The backup bucket — EXISTENCE asserted FIRST, because a 403 alone proves nothing.** MinIO returns 403
-for a bucket that does not exist just as it does for a private one (tested live before creation), so a
+**The backup bucket — EXISTENCE asserted FIRST, because a 403 alone proves nothing.** The then-local
+object store returned 403 for a bucket that does not exist just as it does for a private one (tested live before creation), so a
 bare 403 would be satisfied by a bucket that was never created:
 
 ```
@@ -1080,7 +1135,7 @@ became a kustomize resource.
 
 **No secret value in the output.** Every high-entropy secret was checked as both its literal and its
 base64 form, all **0**: `DB_BACKUP_PASSWORD` (64 chars) 0/0, `NEXTAUTH_SECRET` (44) 0/0,
-`KEYCLOAK_CLIENT_SECRET` (64) 0/0, `MINIO_ROOT_PASSWORD` (64) 0/0. A naive
+`KEYCLOAK_CLIENT_SECRET` (64) 0/0, the retired object store's root password (64) 0/0. A naive
 `grep -cF "$DB_PASSWORD"` returns **9**, but that is unsatisfiable-by-vocabulary on this host rather
 than a leak: this dev `.env` sets `DB_PASSWORD` to the English word `secret` (6 chars; SHA-256 prefix
 `2bb80d537b1d` == `printf 'secret' | sha256sum`), and all 9 hits are the script's own key-**name**
@@ -1854,9 +1909,9 @@ verification example and the material it verifies must not share a namespace —
 trap this phase hit in 26-01, 26-02, 26-03, 26-04 and 26-05, arriving here one level more recursive.
 
 Two `127.0.0.1` strings DO appear inside those fences, and they are legitimate rather than an
-exception: they are the host-side MinIO bucket-privacy probes
+exception: they are the host-side object-store bucket-privacy probes
 (`http://127.0.0.1:9000/jtoye-db-backups/` → 403 and `/jtoye-images/` → 200). Those deliberately
-address **host MinIO**, a compose backing service the cluster consumes; they are not an application URL
+address **the host object store** (a compose backing service the cluster consumed then; retired in Phase 36); they are not an application URL
 and cannot be served through an ingress. Every URL that reaches an application in the evidence above is
 `http://api.jtoye.local` or `http://app.jtoye.local`. The §5 `localhost` values are configuration prose,
 outside §11 entirely.
@@ -1874,7 +1929,7 @@ blind. Restoration was by `cp` from a scratchpad copy and verified byte-identica
 `git checkout --` was used on an uncommitted file (26-04's recorded process incident).
 
 One further loopback string now appears inside these fences and is legitimate for the same reason the
-two MinIO probes are: `http://localhost:15672/api/connections`, the host RabbitMQ **management API**.
+two object-store probes are: `http://localhost:15672/api/connections`, the host RabbitMQ **management API**.
 That is a compose backing service the cluster consumes over the host gateway — and the only broker-side
 view that reports non-AMQP protocols at all — not an application endpoint, and it cannot be served
 through an ingress. The forbidden pattern remains specifically an application API base on the core-java
@@ -2033,7 +2088,7 @@ and the token's stamped `iss` accepted by core-java. L6 closes D-06's *identity*
 new one — the relay is reachable and correctly authenticated, and the KDS destination is invalid, so the
 KDS realtime path is unproven-because-broken rather than unproven-because-untested (§7 A3). Neither row
 touches TLS, the nginx header snippet, NetworkPolicy enforcement or HPA scaling — §6 stands unchanged and
-uncontradicted. The `s3.public-url` browser image path is likewise **not** exercised: the dashboard and
+uncontradicted. The browser image path (the storage public-url origin) is likewise **not** exercised: the dashboard and
 kitchen routes render zero `<img>` elements. **26-08 does not mark INFRA-01 or INFRA-02 complete
 either** — plan 26-09 owns that, and A3 is now an input to it.
 
