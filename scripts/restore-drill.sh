@@ -95,7 +95,7 @@ DB_NAME="${POSTGRES_DB:?POSTGRES_DB must be set}"
 #                                        = jtoye_backup     (the BYPASSRLS dump role)
 #   The first draft of this script used .env's DB_USER, dumped as jtoye_app, and
 #   pg_dump failed with "query would be affected by row-level security policy".
-#   That looked like a production fault and was not one — k8s/base/pg-backup-cronjob.yaml:68
+#   That looked like a production fault and was not one — k8s/base/pg-backup-cronjob.yaml:75
 #   sources a DIFFERENT secret key. Same variable name, different role, and only
 #   the k8s side is authoritative about what backups actually run as.
 DUMP_USER="${DRILL_DUMP_USER:-jtoye_backup}"

@@ -1496,7 +1496,7 @@ PREDICATE CAN FIRE: the identical guest        1   (applied to a synthetic fixtu
 ```
 
 `jtoye` is the value of `rabbitmq-credentials/stomp-login`, i.e. the dedicated STOMP login the
-deployment injects as `STOMP_CLIENT_LOGIN` (`k8s/base/core-java-deployment.yaml:307-311`). **No
+deployment injects as `STOMP_CLIENT_LOGIN` (`k8s/base/core-java-deployment.yaml:312-316`). **No
 passcode value appears anywhere in this document** — the login NAME is the only credential material
 recorded, and that is asserted below in the Sign-off.
 
