@@ -31,7 +31,7 @@
 #                     the fix, never escalate privilege
 #   7. images       — build + load all four with manifest-matching names and the
 #                     tag the overlay pins, then print their identities
-#   8. bootstrap    — secrets, dump role, backup bucket
+#   8. bootstrap    — secrets and dump role
 #   9. apply        — namespace first, then a server dry-run printed VERBATIM,
 #                     then the real apply
 #  10. rollout      — wait for the three Deployments
@@ -46,7 +46,7 @@
 #
 # AUTHORED IN PLAN 26-05, FIRST RUN TO COMPLETION IN PLAN 26-07
 #   Steps 3-9 mutate SHARED state: they start a cluster, create an RLS-bypassing
-#   role on the shared dev Postgres, create a bucket and create cluster objects.
+#   role on the shared dev Postgres and create cluster objects.
 #   Plan 26-07's checkpoint:human-action obtains approval for exactly that. The
 #   run additionally requires the compose app containers to be DOWN — which is
 #   the human's decision, not this script's: step 2 refuses, it never stops a
@@ -279,7 +279,7 @@ done
 step "STEP 5: host-service reachability from inside the cluster"
 UNREACHABLE=""
 for port in "$K8S_LOCAL_DB_PORT" "$K8S_LOCAL_KC_PORT" "$K8S_LOCAL_REDIS_PORT" \
-            "$K8S_LOCAL_AMQP_PORT" "$K8S_LOCAL_STOMP_PORT" "$K8S_LOCAL_MINIO_PORT" \
+            "$K8S_LOCAL_AMQP_PORT" "$K8S_LOCAL_STOMP_PORT" "$K8S_LOCAL_AZURITE_PORT" \
             "$K8S_LOCAL_SMTP_PORT"; do
   if minikube ssh -p "$PROFILE" -- "nc -vz -w 3 ${K8S_LOCAL_POD_HOST} ${port}" >/dev/null 2>&1; then
     echo "OK: ${K8S_LOCAL_POD_HOST}:${port} reachable from inside the cluster"
@@ -289,7 +289,7 @@ for port in "$K8S_LOCAL_DB_PORT" "$K8S_LOCAL_KC_PORT" "$K8S_LOCAL_REDIS_PORT" \
   fi
 done
 if [ -n "$UNREACHABLE" ]; then
-  die "port(s)${UNREACHABLE} on ${K8S_LOCAL_POD_HOST} are not reachable from inside the cluster. Most likely a HOST FIREWALL rule on the minikube bridge interface, not a manifest problem — check that the compose port is published on all interfaces and that the bridge is allowed. Do NOT start editing manifests first."
+  die "port(s)${UNREACHABLE} on ${K8S_LOCAL_POD_HOST} are not reachable from inside the cluster. Two host-side causes, neither a manifest problem: (1) compose publishes every backing port on JTOYE_BIND_HOST, which defaults to loopback-only 127.0.0.1 (#441), and a loopback bind is invisible from the minikube bridge — set a non-loopback JTOYE_BIND_HOST in .env for the rehearsal and recreate the backing services (scripts/check-infra-exposure.sh fails while it is set, by design; see k8s/LOCAL.md); (2) a HOST FIREWALL rule on the minikube bridge interface. Do NOT start editing manifests first."
 fi
 
 # ---------------------------------------------------------------------------
@@ -433,9 +433,10 @@ ID_BACKUP="$(image_identity "$IMG_BACKUP")"
 echo "OK: four images built and loaded"
 
 # ---------------------------------------------------------------------------
-# STEP 8 — secrets, dump role, backup bucket
+# STEP 8 — secrets and dump role (no backup bucket since Phase 36: blobctl
+# creates the private backup container in the host Azurite on the first upload)
 # ---------------------------------------------------------------------------
-step "STEP 8: bootstrap secrets, dump role and backup bucket"
+step "STEP 8: bootstrap secrets and dump role"
 bash "$SCRIPT_DIR/k8s-local-secrets.sh" || die "the bootstrap refused or failed — nothing was applied"
 
 # ---------------------------------------------------------------------------

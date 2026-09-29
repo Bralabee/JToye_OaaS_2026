@@ -25,7 +25,8 @@
 #
 #     node      -> 301 -> nodejs           alpine   -> 301 -> alpine-linux
 #     postgres  -> 301 -> postgresql       golang   -> (image name; slug is `go`)
-#     minio 404 · minio/mc 404 · ollama 404 · mailhog 404 · alertmanager 404
+#     the retired object-store server and client images 404 (rows removed in Phase 36)
+#     ollama 404 · mailhog 404 · alertmanager 404
 #     redis-exporter 404 · postgres-exporter 404 · scratch 404
 #     java 404 · openjdk 404  (the Java horizon is tracked via `eclipse-temurin`, the
 #                              distribution this repo actually builds on)
@@ -221,41 +222,6 @@ dependencies:
       last_checked: "2026-09-28"
       expires: "2026-12-27"
       url: "https://github.com/Azure/Azurite/releases"
-
-  - id: minio-mc
-    pin: "quay.io/minio/mc:${MINIO_MC_IMAGE_TAG:-latest}"
-    sites: ["scripts/k8s-local-secrets.sh:299"]
-    kind: image
-    owner: maintainer
-    eol_slug: null
-    note: >-
-      endoflife.date has no product for this client image (404, measured 2026-07-27) and the pin
-      floats behind an env override, so the horizon is UNKNOWN by construction.
-
-      TRANSITIONAL ROW (Phase 36). 36-02 removed the compose stack's object-store server and its
-      init container, and with them this row's two compose sites and the separate server row.
-      The one remaining site is the k8s-local bootstrap's `docker run --entrypoint` pull in
-      scripts/k8s-local-secrets.sh, and 36-10 deletes this row together with that script's last
-      use of the image. 36-02 also dropped this image's tag from .env.example, so a .env copied
-      fresh from it falls back to the floating tag here; an existing .env keeps its digest pin.
-      Both routes are unpullable anonymously since ~2026-09-24 (quay.io 401), which is the
-      reason for the phase.
-
-      2026-09-12: RELOCATED from Docker Hub to quay.io (Docker Hub began answering 401 to
-      anonymous manifest probes on/before that date while library/redis and library/postgres
-      answered 200 on the same probe). The digest was byte-identical across the move.
-
-      A DECLARED SITE IN A DIFFERENT FILE IS BLOCKING. The H-5 VOID arm asks whether the pin
-      appears on any non-comment line of THAT file. Measured 2026-09-13 on
-      scripts/k8s-local-secrets.sh:299: clean rc=0 site-unresolvable=0; reverting only that line
-      to the Docker Hub form gives rc=2 site-unresolvable=1 and names the site; restoring gives
-      rc=0 site-unresolvable=0. (The same-file limit recorded here before 36-02, where a second
-      line in the same file satisfied the file-wide search and reduced a divergence to a NOTE, is
-      in this file's git history; it applies to any row with two sites in one file.)
-    manual_review:
-      last_checked: "2026-07-27"
-      expires: "2027-01-27"
-      url: "https://github.com/minio/mc/releases"
 
   - id: ollama
     pin: "ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}"

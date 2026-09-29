@@ -169,7 +169,7 @@ fi
 #    Without this the failure surfaces as pg_dump's "query would be affected by
 #    row-level security policy for table ..." — accurate, but it names a TABLE
 #    when the fault is a ROLE, which is how a five-minute fix reads like a data
-#    problem. scripts/k8s-local-secrets.sh:257 asserts the same attribute before
+#    problem. scripts/k8s-local-secrets.sh:259 asserts the same attribute before
 #    it will create the Secret; this is the same check at the other end.
 # ---------------------------------------------------------------------------
 bypass="$(docker exec -e PGPASSWORD="$SUPER_PASS" "$SRC_CONTAINER" psql -U "$SUPER_USER" -d "$DB_NAME" -tAc \
