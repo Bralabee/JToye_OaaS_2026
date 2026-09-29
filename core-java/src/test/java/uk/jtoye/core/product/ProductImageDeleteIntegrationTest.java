@@ -85,7 +85,8 @@ class ProductImageDeleteIntegrationTest {
         TenantContext.set(tenant);
         // No live object store: stub both the key-addressed and flat deletes to no-ops.
         Mockito.doNothing().when(storageService).deleteByKey(Mockito.anyString());
-        Mockito.doNothing().when(storageService).delete(Mockito.anyString());
+        // delete(url) reports whether it removed an object (WR-02), so it is stubbed, not doNothing'd.
+        Mockito.doReturn(true).when(storageService).delete(Mockito.anyString());
     }
 
     @AfterEach

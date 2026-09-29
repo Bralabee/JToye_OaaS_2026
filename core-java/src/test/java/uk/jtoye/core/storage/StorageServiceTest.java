@@ -246,7 +246,7 @@ class StorageServiceTest {
     @Test
     @DisplayName("delete - Handles null URL gracefully (no exception)")
     void testDelete_NullUrl() {
-        assertDoesNotThrow(() -> storageService.delete(null));
+        assertFalse(assertDoesNotThrow(() -> storageService.delete(null)), "nothing was deleted");
         verify(store, never()).deleteIfExists(anyString(), anyString());
     }
 
@@ -267,7 +267,8 @@ class StorageServiceTest {
     @Test
     @DisplayName("delete - Skips external URL (not from our store)")
     void testDelete_ExternalUrl() {
-        assertDoesNotThrow(() -> storageService.delete("https://example.com/other-image.jpg"));
+        assertFalse(assertDoesNotThrow(() -> storageService.delete("https://example.com/other-image.jpg")),
+                "an external URL is skipped, so it must not be reported as deleted");
         verify(store, never()).deleteIfExists(anyString(), anyString());
     }
 
@@ -277,11 +278,28 @@ class StorageServiceTest {
         String key = tenantId + "/products/" + entityId + "/image.jpg";
         String fullUrl = "http://localhost:10000/devstoreaccount1/jtoye-images/" + key;
 
+        when(store.deleteIfExists("jtoye-images", key)).thenReturn(true);
+
         // D-09: every production caller runs with the owning tenant in context; the delete is
         // only honoured when the key's tenant segment is that tenant.
-        withTenant(tenantId, () -> storageService.delete(fullUrl));
+        boolean[] deleted = new boolean[1];
+        withTenant(tenantId, () -> deleted[0] = storageService.delete(fullUrl));
 
         verify(store).deleteIfExists("jtoye-images", key);
+        assertTrue(deleted[0], "the store removed the object, so delete reports true");
+    }
+
+    @Test
+    @DisplayName("delete (WR-02) - an object that was already absent is reported as NOT deleted")
+    void testDelete_AlreadyAbsentIsNotADeletion() {
+        String key = tenantId + "/products/" + entityId + "/image.jpg";
+        when(store.deleteIfExists("jtoye-images", key)).thenReturn(false);
+
+        boolean[] deleted = {true};
+        withTenant(tenantId, () -> deleted[0] = storageService.delete(PUBLIC + key));
+
+        verify(store).deleteIfExists("jtoye-images", key);
+        assertFalse(deleted[0], "deleteIfExists removed nothing, so delete must not claim a deletion");
     }
 
     @Test
@@ -295,8 +313,10 @@ class StorageServiceTest {
 
         // The tenant is set so the store IS reached and the catch is what is exercised; without
         // it the D-09 guard would return first and this test would pass without testing anything.
-        withTenant(tenantId, () -> assertDoesNotThrow(() -> storageService.delete(fullUrl)));
+        boolean[] deleted = {true};
+        withTenant(tenantId, () -> deleted[0] = assertDoesNotThrow(() -> storageService.delete(fullUrl)));
         verify(store).deleteIfExists("jtoye-images", key);
+        assertFalse(deleted[0], "a failed store delete must not be reported as a deletion (WR-02)");
     }
 
     // ---- Delete: the D-09 tenant guard (Phase 36) ----
@@ -325,10 +345,12 @@ class StorageServiceTest {
         UUID other = UUID.randomUUID();
         String key = other + "/products/" + entityId + "/x.webp";
 
+        boolean[] deleted = {true};
         List<ILoggingEvent> events = captureStorageLog(
-                () -> withTenant(tenantId, () -> storageService.delete(PUBLIC + key)));
+                () -> withTenant(tenantId, () -> deleted[0] = storageService.delete(PUBLIC + key)));
 
         verify(store, never()).deleteIfExists(anyString(), anyString());
+        assertFalse(deleted[0], "a refused cross-tenant delete must not be reported as a deletion (WR-02)");
         assertTrue(events.stream().anyMatch(e -> e.getLevel() == Level.WARN
                         && e.getFormattedMessage().contains(other.toString())
                         && e.getFormattedMessage().contains(tenantId.toString())),

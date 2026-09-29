@@ -267,14 +267,22 @@ public class StorageService {
      *
      * <p>The key-addressed deletes ({@link #deleteByKey}, {@link #deleteByKeyChecked}) are not
      * guarded: their keys come from tenant-scoped rows under RLS, never from a client.
+     *
+     * <p><b>Outcome (code review WR-02).</b> Returns {@code true} only when this call removed an
+     * object from the store. Every other outcome returns {@code false}: a null or blank URL, an
+     * external URL, a D-09 refusal, an object that was already absent, and a store failure. A
+     * caller that records deletions as evidence (the GDPR erasure record) must count the
+     * {@code true} results, never the calls; the skips stay WARN-and-continue, as before.
+     *
+     * @return {@code true} if an object was deleted by this call, otherwise {@code false}
      */
-    public void delete(String imageUrl) {
-        if (imageUrl == null || imageUrl.isBlank()) return;
+    public boolean delete(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) return false;
 
         String publicUrlPrefix = properties.getBlob().getPublicUrl() + "/";
         if (!imageUrl.startsWith(publicUrlPrefix)) {
             log.debug("Skipping delete for external URL: {}", imageUrl);
-            return;
+            return false;
         }
 
         String key = imageUrl.substring(publicUrlPrefix.length());
@@ -282,28 +290,34 @@ public class StorageService {
         int firstSlash = key.indexOf('/');
         if (firstSlash <= 0) {
             log.warn("Refusing URL delete without a tenant segment: {}", keyForLog);
-            return;
+            return false;
         }
         Optional<UUID> contextTenant = TenantContext.get();
         if (contextTenant.isEmpty()) {
             log.warn("Refusing URL delete with no tenant context: {}", keyForLog);
-            return;
+            return false;
         }
         String keyTenant = key.substring(0, firstSlash);
         if (!keyTenant.equals(contextTenant.get().toString())) {
             log.warn("Refusing cross-tenant URL delete: key tenant {} != context tenant {} (D-09): {}",
                     keyTenant, contextTenant.get(), keyForLog);
-            return;
+            return false;
         }
         if (!isPlainPath(key)) {
             log.warn("Refusing URL delete of a key with dot segments or encoded characters (D-09): {}", keyForLog);
-            return;
+            return false;
         }
         try {
-            store.deleteIfExists(properties.getBlob().getPublicContainer(), key);
-            log.info("Deleted image from storage: {}", key);
+            boolean removed = store.deleteIfExists(properties.getBlob().getPublicContainer(), key);
+            if (removed) {
+                log.info("Deleted image from storage: {}", key);
+            } else {
+                log.info("Image already absent from storage, nothing deleted: {}", key);
+            }
+            return removed;
         } catch (Exception e) {
             log.warn("Failed to delete image {}: {}", key, e.getMessage());
+            return false;
         }
     }
 
