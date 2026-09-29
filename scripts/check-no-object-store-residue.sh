@@ -88,8 +88,25 @@
 #      Every git grep exit code is captured on its own statement (1 = no match, >1 = error ->
 #      VOID), and matching is done on data in hand with here-strings, never `cmd | grep -q`
 #      (which inverts on a match under pipefail).
+#
+# REUSE: --print-retired-pattern
+#
+#   Other gates that must recognise the retired store (scripts/check-media-urls-resolve.sh, U-2)
+#   take the R-1 pattern from HERE instead of keeping a second hand-written list: a sibling that
+#   knew one spelling of the old origin while this gate knew several was fail-open on the rest
+#   (Phase 36 code review WR-05). With the flag, the script runs the SAME self-test (every
+#   positive control must match, no negative control may) and then prints R-1 alone on stdout
+#   and exits 0 without scanning; everything else it would print goes to stderr. A self-test
+#   miss is still a VOID (exit 2), so a caller never receives a pattern that cannot see its own
+#   controls. Match it case-insensitively with a PCRE engine (grep -iP), as the scan does.
 
 set -uo pipefail
+
+PRINT_RETIRED=0
+if [ "${1:-}" = "--print-retired-pattern" ]; then
+    PRINT_RETIRED=1
+    exec 3>&1 1>&2   # fd 3 carries the pattern; all normal output goes to stderr
+fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
@@ -155,6 +172,11 @@ for spec in "r1-pos.txt|i|$R1" "r1b-pos.txt|s|$R1B" "r2-pos.txt|s|$R2"; do
     [ "$got" = 0 ] || void "self-test: pattern for $f matched $got negative control line(s) — the gate would fire on a legitimate neighbour"
 done
 echo "  self-test  : 3 pattern classes see all $(( $(grep -c '' "$ST/r1-pos.txt") + $(grep -c '' "$ST/r1b-pos.txt") + $(grep -c '' "$ST/r2-pos.txt") )) positive controls and none of $(grep -c '' "$ST/neg.txt") negative controls"
+
+if [ "$PRINT_RETIRED" -eq 1 ]; then
+    printf '%s\n' "$R1" >&3
+    exit 0
+fi
 
 # ---- scope -----------------------------------------------------------------------------------------
 EXCLUDES=(":(exclude)$SELF_REL" ":(exclude)$ALLOWLIST_REL" ":(exclude)$SELFTEST_REL")

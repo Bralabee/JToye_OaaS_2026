@@ -19,8 +19,13 @@
 #   U-1  Every stored image URL under the public origin (the running core-java's
 #        STORAGE_PUBLIC_URL) answers an ANONYMOUS HEAD with 200. No Authorization header, no
 #        SAS, no cookie: a browser fetches these with nothing, so the gate does too.
-#   U-2  No stored value starts with the RETIRED origin (http://localhost:9000/). Such a value
-#        is a FAILURE, not a skip — it is a URL the reseed should have rewritten and did not.
+#   U-2  No stored value points at the RETIRED store, in ANY spelling the residue gate knows.
+#        Such a value is a FAILURE, not a skip — it is a URL the reseed should have rewritten
+#        and did not. The spellings are NOT kept here: the R-1 pattern is taken from
+#        scripts/check-no-object-store-residue.sh --print-retired-pattern (both loopback host
+#        spellings of the old :9000 origin, its in-network container name, its cloud hostnames).
+#        This gate used to match one literal prefix, so every other spelling of the same dead
+#        store was counted "external (not fetched)" and passed (Phase 36 code review WR-05).
 #   U-3  DENOMINATOR >= 1. An empty checked set is VOID, never a pass: a wrong tenant scope, a
 #        database the seeder never ran against, or an enumeration blinded by RLS all produce
 #        exactly "0 failures", and "I checked nothing" must never read as "everything resolves".
@@ -35,7 +40,7 @@
 #
 #   Classification of each value:
 #     starts with <public-url>/  -> HEADed, must be 200            (counted as CHECKED)
-#     starts with the retired origin -> FAIL "unrewritten old-origin URL"
+#     absolute http(s) URL matching the residue gate's R-1 -> FAIL "unrewritten old-store URL"
 #     any other absolute http(s) URL -> EXTERNAL, reported, not fetched (not ours to assert)
 #     a relative path starting with / -> SKIPPED and counted (frontend-served, e.g. /brand/)
 #     anything else                   -> FAIL "unrecognised URL shape" (no silent bucket)
@@ -56,11 +61,13 @@
 #   with a live compose stack, a freshly seeded database and a published :10000.
 #
 # EXIT CODES — uniform with the other ops gates
-#   0 = every checked URL answered 200 and nothing points at the retired origin
+#   0 = every checked URL answered 200 and nothing points at the retired store
 #   1 = at least one did not — each failure is NAMED with its source column and row id
 #   2 = VOID (cannot evaluate)
 #
-#   VOID on: missing docker or curl · jtoye-postgres or jtoye-azurite absent or not running ·
+#   VOID on: missing docker or curl · the residue gate's R-1 pattern unobtainable, or failing
+#   its own controls here (it must match every retired spelling below and must NOT match the
+#   public URL or an ordinary external URL) · jtoye-postgres or jtoye-azurite absent or not running ·
 #   psql unreachable inside the container · POSTGRES_USER/POSTGRES_DB unreadable · the
 #   enumerating role not RLS-exempt · the public URL unresolvable (no running core-java and
 #   no --public-url) or ambiguous (two running core-java replicas disagree) · a malformed
@@ -88,7 +95,7 @@ set -uo pipefail
 
 PG_CONTAINER="${POSTGRES_CONTAINER:-jtoye-postgres}"
 AZ_CONTAINER="${AZURITE_CONTAINER:-jtoye-azurite}"
-RETIRED_ORIGIN="http://localhost:9000/"
+RESIDUE_GATE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/check-no-object-store-residue.sh"
 CURL_TIMEOUT="${MEDIA_URL_TIMEOUT:-10}"
 
 VOID=2
@@ -126,6 +133,34 @@ fi
 
 command -v docker >/dev/null 2>&1 || void "docker is not on PATH — there is no stack to inspect"
 command -v curl >/dev/null 2>&1 || void "curl is not on PATH — nothing can be fetched"
+
+# ---- U-2's pattern: the residue gate's R-1, never a second hand-kept list (WR-05) ------------
+
+[ -f "$RESIDUE_GATE" ] || void "the residue gate is missing ($RESIDUE_GATE) — U-2 has no pattern"
+RETIRED_RE=$(bash "$RESIDUE_GATE" --print-retired-pattern 2>/dev/null); rc=$?
+[ "$rc" -eq 0 ] && [ -n "$RETIRED_RE" ] \
+    || void "could not obtain the retired-store pattern (R-1) from $RESIDUE_GATE (rc=$rc)"
+
+# is_retired <url> — 0 when the URL matches R-1 (case-insensitive PCRE, as the residue scan
+# matches), 1 when not; a grep error is a VOID, never a quiet "not retired".
+is_retired() {
+    local rc=0
+    grep -qiP -e "$RETIRED_RE" <<< "$1" || rc=$?
+    case "$rc" in
+        0) return 0 ;;
+        1) return 1 ;;
+        *) void "grep -P failed (rc=$rc) matching the retired-store pattern" ;;
+    esac
+}
+# The engine here must see what the residue gate's self-test sees. One sample per spelling
+# class this gate once missed; a miss means U-2 is blind, which is a VOID, not a pass.
+for sample in "http://localhost:9000/jtoye-images/t/x.webp" "http://127.0.0.1:9000/jtoye-images/t/x.webp" \
+              "http://minio:9000/jtoye-images/t/x.webp" "https://s3.eu-west-2.amazonaws.com/jtoye-images/t/x.webp" \
+              "https://jtoye-images.s3.eu-west-2.amazonaws.com/t/x.webp"; do
+    is_retired "$sample" || void "the retired-store pattern does not match '$sample' here — U-2 would pass it as external"
+done
+is_retired "https://cdn.example.com/images/x.jpg" \
+    && void "the retired-store pattern matches an ordinary external URL — U-2 would fail legitimate data"
 
 container_running() { # <name> <role>
     local state rc
@@ -183,6 +218,8 @@ if [ -n "$FLAG_PUBLIC_URL" ] && [ "$PUBLIC_SRC" != "${PUBLIC_SRC#running}" ] && 
 fi
 PUBLIC_URL="${PUBLIC_URL%/}"
 case "$PUBLIC_URL" in http://*|https://*) ;; *) void "public URL '$PUBLIC_URL' is not an http(s) URL" ;; esac
+is_retired "$PUBLIC_URL/" \
+    && void "the public URL '$PUBLIC_URL' itself matches the retired-store pattern — the delivered store and the retired one cannot be told apart"
 
 # ---- Enumeration (read-only) ----------------------------------------------------------------
 
@@ -251,13 +288,14 @@ while IFS= read -r row; do
                 FAILURES+=("HTTP $code  $src  id=$rid  $url")
             fi
             ;;
-        "$RETIRED_ORIGIN"*)
-            OLD=$((OLD + 1))
-            FAILURES+=("unrewritten old-origin URL  $src  id=$rid  $url")
-            ;;
         http://*|https://*)
-            EXTERNAL=$((EXTERNAL + 1))
-            echo "  external (not fetched): $src  id=$rid  $url"
+            if is_retired "$url"; then
+                OLD=$((OLD + 1))
+                FAILURES+=("unrewritten old-store URL  $src  id=$rid  $url")
+            else
+                EXTERNAL=$((EXTERNAL + 1))
+                echo "  external (not fetched): $src  id=$rid  $url"
+            fi
             ;;
         /*)
             SKIPPED=$((SKIPPED + 1))
@@ -273,7 +311,7 @@ echo
 echo "  references checked against $PUBLIC_URL (U-3 denominator, must be >= 1) .. $CHECKED"
 echo "    ...distinct URLs HEADed anonymously ..................................... ${#HEAD_CACHE[@]}"
 echo "    ...not answering 200 (U-1, must be 0) ..................................... $BAD"
-echo "  retired-origin references (U-2, must be 0) .................................. $OLD"
+echo "  retired-store references, any R-1 spelling (U-2, must be 0) ................ $OLD"
 echo "  unrecognised URL shapes (must be 0) ......................................... $UNRECOG"
 echo "  external absolute URLs (reported, not fetched) .............................. $EXTERNAL"
 echo "  relative paths skipped (frontend-served, e.g. /brand/) ...................... $SKIPPED"
@@ -290,6 +328,6 @@ fi
 
 [ "$CHECKED" -gt 0 ] || void "U-3: 0 references under $PUBLIC_URL were found (scope: ${ONLY_TENANT:-all tenants}). An empty checked set is indistinguishable from a broken enumeration"
 
-echo "PASS: $CHECKED reference(s) (${#HEAD_CACHE[@]} distinct URLs) answer 200 anonymously; 0 point at the retired origin."
+echo "PASS: $CHECKED reference(s) (${#HEAD_CACHE[@]} distinct URLs) answer 200 anonymously; 0 point at the retired store."
 echo "------------------------------------------------------------------------------"
 exit 0
