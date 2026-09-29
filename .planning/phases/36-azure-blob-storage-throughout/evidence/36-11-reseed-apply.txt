@@ -1,0 +1,180 @@
+cutover=2026-09-29T01:14:01Z
+dev-media-reseed  mode=apply  (2026-09-29T05:59:12Z)
+  old-origin     : http://localhost:9000/jtoye-images
+  new-public-url : http://localhost:10000/devstoreaccount1/jtoye-images
+  container      : jtoye-postgres
+  database       : jtoye (role jtoye_app)
+  docker endpoint: unix:///var/run/docker.sock (local)
+  identity       : database=jtoye role=jtoye_app rolsuper=false rolbypassrls=false
+
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000001 column=products.image_url rows_with_old=21 old_seed_values=21 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000001 column=products.additional_image_urls rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000001 column=shops.logo_url rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000001 column=shops.banner_url rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000001 column=reviews.photo_urls rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000002 column=products.image_url rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000002 column=products.additional_image_urls rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000002 column=shops.logo_url rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000002 column=shops.banner_url rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  before tenant=00000000-0000-0000-0000-000000000002 column=reviews.photo_urls rows_with_old=0 old_seed_values=0 old_other_values=0
+NOTICE:  visibility: unpinned products=0 pinned products total=23
+
+== visibility: rows counted as jtoye_app under FORCE RLS; tenant (GUC cleared) must be 0 ==
+                tenant                |    table    | rows_visible 
+--------------------------------------+-------------+--------------
+ (GUC cleared)                        | products    |            0
+ 00000000-0000-0000-0000-000000000001 | media_asset |            3
+ 00000000-0000-0000-0000-000000000001 | products    |           22
+ 00000000-0000-0000-0000-000000000001 | reviews     |            0
+ 00000000-0000-0000-0000-000000000001 | shops       |            4
+ 00000000-0000-0000-0000-000000000002 | media_asset |            0
+ 00000000-0000-0000-0000-000000000002 | products    |            1
+ 00000000-0000-0000-0000-000000000002 | reviews     |            0
+ 00000000-0000-0000-0000-000000000002 | shops       |            1
+
+== coverage: rows the tenant loop reached vs the physical total (ANALYZE) ==
+    table    | reached_by_loop | physical_rows 
+-------------+-----------------+---------------
+ media_asset |               3 |             3
+ products    |              23 |            23
+ reviews     |               0 |             0
+ shops       |               5 |             5
+
+== URL columns per tenant: before = as found, after = read back inside this transaction ==
+ stage  |                tenant                |             column             | rows_with_old | old_seed_values | old_other_values | new_origin_values | other_values |  other_md5   
+--------+--------------------------------------+--------------------------------+---------------+-----------------+------------------+-------------------+--------------+--------------
+ before | 00000000-0000-0000-0000-000000000001 | products.image_url             |            21 |              21 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000001 | products.additional_image_urls |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000001 | shops.logo_url                 |             0 |               0 |                0 |                 0 |            3 | dbbfbf3b1e9d
+ before | 00000000-0000-0000-0000-000000000001 | shops.banner_url               |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000001 | reviews.photo_urls             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000002 | products.image_url             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000002 | products.additional_image_urls |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000002 | shops.logo_url                 |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000002 | shops.banner_url               |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ before | 00000000-0000-0000-0000-000000000002 | reviews.photo_urls             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000001 | products.image_url             |             0 |               0 |                0 |                21 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000001 | products.additional_image_urls |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000001 | shops.logo_url                 |             0 |               0 |                0 |                 0 |            3 | dbbfbf3b1e9d
+ after  | 00000000-0000-0000-0000-000000000001 | shops.banner_url               |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000001 | reviews.photo_urls             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000002 | products.image_url             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000002 | products.additional_image_urls |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000002 | shops.logo_url                 |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000002 | shops.banner_url               |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+ after  | 00000000-0000-0000-0000-000000000002 | reviews.photo_urls             |             0 |               0 |                0 |                 0 |            0 | d41d8cd98f00
+
+== URL column totals ==
+    stage     | rows_with_old | old_seed_values | old_other_values | new_origin_values | other_values 
+--------------+---------------+-----------------+------------------+-------------------+--------------
+ before-total |            21 |              21 |                0 |                 0 |            3
+ after-total  |             0 |               0 |                0 |                21 |            3
+
+== media_asset per tenant ==
+                       stage                        |                tenant                | n 
+----------------------------------------------------+--------------------------------------+---
+ before: ACTIVE/PENDING created < cutover (to FAIL) | 00000000-0000-0000-0000-000000000001 | 1
+ before: ACTIVE/PENDING created < cutover (to FAIL) | 00000000-0000-0000-0000-000000000002 | 0
+ before: ACTIVE/PENDING created >= cutover (kept)   | 00000000-0000-0000-0000-000000000001 | 0
+ before: ACTIVE/PENDING created >= cutover (kept)   | 00000000-0000-0000-0000-000000000002 | 0
+ before: carrying the Phase 36 reason               | 00000000-0000-0000-0000-000000000001 | 0
+ before: carrying the Phase 36 reason               | 00000000-0000-0000-0000-000000000002 | 0
+ after: ACTIVE/PENDING created < cutover            | 00000000-0000-0000-0000-000000000001 | 0
+ after: ACTIVE/PENDING created < cutover            | 00000000-0000-0000-0000-000000000002 | 0
+ after: carrying the Phase 36 reason                | 00000000-0000-0000-0000-000000000001 | 1
+ after: carrying the Phase 36 reason                | 00000000-0000-0000-0000-000000000002 | 0
+
+== rows updated per statement (each equals the rows seen carrying old values) ==
+                tenant                |           statement            | rows_updated 
+--------------------------------------+--------------------------------+--------------
+ 00000000-0000-0000-0000-000000000001 | media_asset -> FAILED          |            1
+ 00000000-0000-0000-0000-000000000001 | products.additional_image_urls |            0
+ 00000000-0000-0000-0000-000000000001 | products.image_url             |           21
+ 00000000-0000-0000-0000-000000000001 | reviews.photo_urls             |            0
+ 00000000-0000-0000-0000-000000000001 | shops.banner_url               |            0
+ 00000000-0000-0000-0000-000000000001 | shops.logo_url                 |            0
+ 00000000-0000-0000-0000-000000000002 | media_asset -> FAILED          |            0
+ 00000000-0000-0000-0000-000000000002 | products.additional_image_urls |            0
+ 00000000-0000-0000-0000-000000000002 | products.image_url             |            0
+ 00000000-0000-0000-0000-000000000002 | reviews.photo_urls             |            0
+ 00000000-0000-0000-0000-000000000002 | shops.banner_url               |            0
+ 00000000-0000-0000-0000-000000000002 | shops.logo_url                 |            0
+
+== samples: before -> after, read back from the row ==
+       column       |                                                  before                                                   |                                                            after                                                            
+--------------------+-----------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------
+ products.image_url | http://localhost:9000/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/grilled-tilapia.jpg | http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/grilled-tilapia.jpg
+ products.image_url | http://localhost:9000/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/lamb-kebab.jpg      | http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/lamb-kebab.jpg
+ products.image_url | http://localhost:9000/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/zobo.jpg            | http://localhost:10000/devstoreaccount1/jtoye-images/00000000-0000-0000-0000-000000000001/products/seed/zobo.jpg
+
+RESULT: COMMITTED
+NOTICE:  post-commit (fresh transaction, pinned per tenant): old-origin values remaining=0
+
+==================================================================================
+36-11 Task 3 evidence (appended below the raw apply output above; every appended line is
+prefixed '  | ' so the only line starting with 'cutover=' is the apply's first line)
+==================================================================================
+owner decision (Task 2, 2026-09-29): backup-then-approve; backup at the default location (job scratch, outside the repo)
+script: scripts/dev-media-reseed.sh sha256 ce052341bccfd12cad7f4d29f057ec9fbf9e92d043e1c4604fd7cd65a9c324f8 (= the committed ea0c8bb6 copy the dry run used)
+
+## Pre-apply state re-verified (before any write)
+  | containers: jtoye-postgres 79f92e95a9a7 Up (healthy), jtoye-azurite 7e3969d87560 Up (healthy); docker ps -a lists only those two
+  | core-java: docker ps -a --filter name=core-java -q -> <empty> (control name=jtoye-postgres -> 79f92e95a9a7)
+  | fresh dry run, same cutover: rc=0, 110 lines; diff vs the recorded dry run (header timestamp line excluded,
+  |   separator blank trimmed): rc=0, 0 lines. Control (one before-total 21->22): diff rc=1
+  | independent pinned read (jtoye_app, READ ONLY, rolled back): unpinned products=0;
+  |   tenant ...0001 products=22 old_image_url=21 phase36_failed=0 active_or_pending=1; tenant ...0002 products=1 old=0
+
+## Backup (pg_dump -Fc as jtoye_backup [rolbypassrls=t, rolsuper=f], umask 077)
+  | path  : /home/sanmi/.claude/jobs/87c8a408/tmp/jtoye-pre-reseed-20260929T055855Z.dump (outside the repository; never staged)
+  | rc=0, size=15827965 bytes, mode=600, sha256=3281f7a53228c9a81d8dcb83459a046a6eb9cc8e7334862b8e5754d0f9cda1b1
+  | pg_restore --list: TABLE DATA entries=42
+  | genuinely pre-reseed (counts only, no content printed): products rows with an old-origin seed URL=21,
+  |   products rows with the new origin=0, products data rows=23 (live 23), media_asset data rows=3 (live 3)
+  | control: the first 4096 bytes of the dump as input -> pg_restore rc=1, old-origin count=0 (the check can fail)
+
+## Apply counts vs the dry run
+  | apply rc=0; diff (pre-apply dry run vs apply, header timestamp excluded) = only the result lines:
+  |   109c109,111
+  |   < RESULT: ROLLED BACK (dry run) -- nothing was written
+  |   ---
+  |   > RESULT: COMMITTED
+  |   > NOTICE:  post-commit (fresh transaction, pinned per tenant): old-origin values remaining=0
+  |   > 
+  | => every count table (before/after per column and tenant, totals, media_asset, rows updated) is identical:
+  |    21 products.image_url seed values rewritten on ...0001, 1 media_asset -> FAILED on ...0001, 0 everywhere else
+
+## Plan <verify>: post-apply dry run with the dry run's cutover (expected rc=1)
+  | NOTICE:  visibility: unpinned products=0 pinned products total=23
+  | ERROR:  RESEED-REFUSED: nothing references the old origin http://localhost:9000/jtoye-images -- wrong --old-origin, or already reseeded
+  | CONTEXT:  PL/pgSQL function inline_code_block line 85 at RAISE
+  | REFUSED: the transaction refused and rolled back (psql rc=3); see the ERROR line above
+  | rc=1
+  | pass direction, same command on the same database before the apply: rc=0 with before-total 21 (above)
+
+## Independent read-back after the apply (jtoye_app, READ ONLY, GUC pinned per tenant, rolled back)
+  | UNPINNED control: media_asset phase36_failed=0 media_asset rows=0
+  | UNPINNED control: products rows=0 new_origin_image_url=0
+  | PINNED tenant=00000000-0000-0000-0000-000000000001 media_asset rows=3 phase36_failed(reason+reclaimed)=1 failed_any=3 active_or_pending_pre_cutover=0
+  | PINNED tenant=00000000-0000-0000-0000-000000000001 products rows=22 new_origin_seed_image_url=21 old_origin_values(products)=0 old_origin_values(shops+reviews)=0
+  | PINNED tenant=00000000-0000-0000-0000-000000000002 media_asset rows=0 phase36_failed(reason+reclaimed)=0 failed_any=0 active_or_pending_pre_cutover=0
+  | PINNED tenant=00000000-0000-0000-0000-000000000002 products rows=1 new_origin_seed_image_url=0 old_origin_values(products)=0 old_origin_values(shops+reviews)=0
+  | PINNED TOTALS phase36_failed=1 new_origin_seed_image_url=21 old_origin_values_all_five_columns=0
+  | => pinned Phase-36 FAILED total 1 == script-reported media_asset -> FAILED 1; the unpinned control reads 0 rows,
+  |    so the pinned counts come from a query that can SEE rows. new-origin seed URLs 0 before -> 21 after.
+
+## Shop logos (/brand/) unchanged
+  | after: shop tenant=00000000-0000-0000-0000-000000000001 logo=/brand/logo-brixton-grill.png banner=<null>
+  | after: shop tenant=00000000-0000-0000-0000-000000000001 logo=/brand/logo-mama-ades.png banner=<null>
+  | after: shop tenant=00000000-0000-0000-0000-000000000001 logo=/brand/logo-peckham-jollof.png banner=<null>
+  | after: shop tenant=00000000-0000-0000-0000-000000000001 logo=<null> banner=<null>
+  | after: shop tenant=00000000-0000-0000-0000-000000000002 logo=<null> banner=<null>
+  | diff before vs after (shop rows): rc=0, 5 rows each; control (one logo mutated): rc=1
+
+## Pre-Phase-36 object-store volume still on disk (D-04)
+  | docker volume ls rc=0; grep -Fxq jtoye_oaas_2026_minio_data -> rc=0 (present); control jtoye_oaas_2026_minio_data_NOPE -> rc=1
+
+## core-java never started
+  | docker ps -a --filter name=core-java -q: <empty> before the apply, after the apply, and after every check
+  | personal data: the apply output adds 3 lines not in the dry-run evidence (mode header, RESULT, residue notice);
+  |   email-pattern hits 0 here and 0 in the dry-run evidence (control 1). The dump itself is never committed.
