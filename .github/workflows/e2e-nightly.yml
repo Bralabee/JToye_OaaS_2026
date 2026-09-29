@@ -284,6 +284,17 @@ jobs:
       - name: Gate — every stored image URL resolves on the object store
         run: bash scripts/check-media-urls-resolve.sh
 
+      # T-36-44 / #488. Every blob in the PUBLIC container (jtoye-images) must carry a stored
+      # Content-Type inside MediaNormalizer's allowlist: the store serves a blob with the type
+      # it was stored with, so a text/html blob on this origin is a stored-XSS primitive on the
+      # storefront's own origin whatever its bytes are. Listed with the runner's preinstalled
+      # az CLI against this stack's Azurite; the emulator connection string reaches az through
+      # the environment (the script's default), never argv. The private quarantine container is
+      # out of scope by design. Exit 2 (VOID) on an empty listing, a failed listing or a missing
+      # az — never a pass.
+      - name: Gate — stored Content-Types on the public container stay inside the image allowlist
+        run: bash scripts/check-media-content-types.sh
+
       # The OpenAPI contract, checked against the SERVICE rather than against the source
       # tree (33-06). This is the ONLY workflow in the repository with a running core-java,
       # which is why the gate is wired here and not in ci-cd.yaml: a hosted runner with no
