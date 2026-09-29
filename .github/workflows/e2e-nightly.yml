@@ -29,6 +29,7 @@
 #   * the stack does not become healthy within the deadline
 #   * the Playwright JSON report is absent, empty, or reports ZERO tests
 #   * `check-e2e-skip-budget.sh` exits non-zero (1 = violation, 2 = VOID)
+#   * `check-backup-restore-drill.sh` exits non-zero (1 = an arm failed, 2 = VOID)
 #   `continue-on-error` appears NOWHERE in this file on purpose. A job that cannot go red
 #   is the exact failure mode #420 exists to remove.
 #
@@ -246,6 +247,7 @@ jobs:
       # that cannot distinguish "exited cleanly" from "died" is not evidence. Poll the
       # things the SUITE actually needs, and dump logs on timeout rather than failing mute.
       - name: Wait for core-java and the frontend
+        id: stack-up
         run: |
           set -euo pipefail
           deadline=$(( SECONDS + 600 ))
@@ -417,6 +419,39 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:3000
         run: node --env-file=.env frontend/e2e/cart-identity-boundary.verify.mjs
+
+      # BLOB-06 (Phase 36). The two-arm restore drill of docs/runbooks/backups.md, EXECUTED.
+      # Every check inside the backup pipeline (the size floor, `pg_restore --list`) passes on
+      # a dump that holds no tenant rows; only restore-and-count falsifies it, and until this
+      # step that recipe was prose that had run once, by hand. The pg-backup image is built
+      # HERE — nothing else in CI builds it — and runs exactly as the CronJob does, uploading to
+      # this stack's Azurite with blobctl. Arm B (dump as the BYPASSRLS jtoye_backup) must
+      # restore from Blob to exactly the live products count, > 0; arm A (the app role) must
+      # fail the job and upload nothing, and its zero-row dump must restore 0 products.
+      #
+      # POSITION AND `if:` — the cart-identity reasoning above applies unchanged. The drill
+      # needs only postgres + azurite, so it keys on the stack having come up (`stack-up`), not
+      # on the suite: a red Playwright run must not skip the backup proof, and a red backup
+      # proof must not skip the suite, which is why it sits at the end rather than straight
+      # after the Wait step.
+      #
+      # DB_BACKUP_PASSWORD is not in verify-env.sh's REQUIRED_VARS, so the generator leaves
+      # .env.example's CHANGE_ME and the drill would VOID on it. An ephemeral value is appended
+      # here (never printed); the drill creates the jtoye_backup role with it from
+      # infra/backups/create-backup-role.sql. Exit 1 = an arm failed, 2 = VOID; both fail the job.
+      - name: Gate — a backup restored from Blob carries tenant rows, and a zero-row dump is caught
+        if: always() && steps.stack-up.outcome == 'success'
+        run: |
+          set -euo pipefail
+          docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/backups
+          cur=$(sed -n 's/^DB_BACKUP_PASSWORD=//p' .env | tail -n 1)
+          case "$cur" in
+            ''|CHANGE_ME*)
+              echo "DB_BACKUP_PASSWORD=ci$(openssl rand -hex 24)" >> .env
+              echo "appended an ephemeral DB_BACKUP_PASSWORD to .env"
+              ;;
+          esac
+          bash scripts/check-backup-restore-drill.sh
 
       - name: Upload Playwright report and traces
         if: always()

@@ -140,9 +140,10 @@ and memory `project_qa_council_20260902.md`; the procedure lessons went into
 filed except the RabbitMQ horizon (#724, deferred to 2026-11-30 by PR #725) — still unfiled: 2
 Criticals, the top Highs, a docs epic, amendments to #648/#453/#711, and 9 new defects the refuter
 surfaced — and `/qa-remediate 20260902-134741` has not run.
-The gate expectation at "Resume here" is 43 (42 `scripts/check-*.sh` + `scripts/docs-freshness.sh`,
+The gate expectation at "Resume here" is 44 (43 `scripts/check-*.sh` + `scripts/docs-freshness.sh`,
 which is exactly what `check-handoff-contract.sh` H-1 counts) — this line said 41 until 2026-09-04,
-contradicting the EXPECT 43 claim below it in the same file. H-1 does not read this sentence (no `**`
+contradicting the EXPECT claim below it in the same file (43 then; 44 since plan 36-08 added
+`scripts/check-backup-restore-drill.sh`, 2026-09-29). H-1 does not read this sentence (no `**`
 marker), which is the semantic rot that gate's own closing NOTE says it cannot detect.
 
 **2026-09-04 delta — the remediation RAN, and this file said it had not.** The block above ends
@@ -278,7 +279,7 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 43 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 44 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
