@@ -1,8 +1,86 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) and 2026-09-30 (Phase 36 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged) and 2026-09-30 evening (#764 and #771 fixed and merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-09-30 delta — Phase 36 is merged; `main` passes CI but its required Operational Contracts check is red until #768 merges. Resume here.**
+**2026-09-30 (evening) delta — GDPR erasure fixed twice over (#764, #771); `main` green; the stack runs `eb2e98fd`. Resume here.**
+**Where things stand.** `main` = `eb2e98fd`. Items 1-3 of the morning delta below have merged:
+#768 (terminal-state deferrals, which cleared the required Operational Contracts red), #766 (the
+review-gate vendored copy refreshed), #767 (Phase 36 state) and #770 (issue #764: V67 `reviews`
+UPDATE policy, tenant-scoped review lookup, photos deleted after commit). Then **#772 closed issue
+#771**. A review's client-supplied `photoUrls` could name the shop's own catalogue images, and
+erasure deleted them. Erasure now deletes a photo only if both hold:
+- its key is `<tenant>/reviews/<orderId>/<name>` (`ReviewPhotoKeys`);
+- no product, shop or media_asset row references it.
+
+Review creation refuses anything else with a 400 of type `invalid-review-photo`. Since nothing
+writes under that path yet, **no non-empty photoUrls value is accepted until a review-photo upload
+path exists**. No migration: V67 is still head. Record:
+`.planning/quick/260930-l63-fix-771-review-photourls-unvalidated-so-/`.
+
+Measured, not remembered:
+- **CI on #772's head (`e7b6cbdb`) passed.** The squash commit's tree is identical to that
+  head's tree (tree `81aa953f`).
+- **Nightly E2E:** ONE scheduled green, on 09-30 (on `c5d16ff6`). The 09-29 scheduled run
+  FAILED (on `db725c94`); the 09-29 green was a manual `workflow_dispatch` (on `536daf41`).
+  Neither green ran on a tree containing #770 or #772, so there is no full-suite E2E evidence
+  on `eb2e98fd` yet. Issue #683 stays OPEN per its own rule.
+- **Runtime:** core-java was rebuilt via `scripts/sync-runtime.sh`, and the freshness gate
+  passes 4/4 on `eb2e98fd`.
+- **Live probe:** a POST naming a real product image URL returned 400
+  `https://jtoye.uk/errors/invalid-review-photo`. The wrong-email control returned a different
+  400, and no row was written.
+
+**Review series on #772 ended at round 1 with 0 admissible findings; 10 were RECORDED on the PR.**
+Carry two forward to the review-photo upload design:
+- a catalogue-referenced own photo survives erasure;
+- the catalogue check runs in the transaction, but the delete runs in `afterCommit` with no
+  re-check.
+
+Neither is reachable through the application today: nothing in `core-java/src/main` writes
+under `reviews/`. An object placed there some other way (a manual upload, a fixture, a restored
+backup) is not excluded, and would make both reachable.
+
+Two pre-existing defects were seen but not filed; they fail the admission test:
+- `createReview` never checks that the order belongs to the slug's shop;
+- the review endpoint takes the reviewer's email as a bare query parameter.
+
+**Housekeeping (this evening).** Every gate passed: the claims gate (47/47), `check-doc-metrics`
+(37/37), `docs-freshness`, and edge-go vet/build/tidy/`test -race`. Eight merged branches were
+deleted locally and remotely; each tip equalled its merged PR's head.
+
+Deliberately kept:
+- `phase-29-research`, the canonical paused body;
+- `feature/archify-architecture-diagrams` and `feature/jackson-2.21.6-cve-2026-68497`, both
+  checked out in other worktrees.
+
+The jackson branch shows as "unpushed" only because its remote was deleted after PR #760 merged.
+Its tip `51fc3279` is #760's head, and the pin is on `main`. Its worktree
+`../JToye_OaaS_2026-jackson` can be removed by hand.
+
+Toolchain drift is reported, not applied: conda, npm, claude-code, gemini-cli, copilot, uv and
+antigravity-hub, plus carl-core PIN-BEHIND.
+
+**Next, in order:**
+1. The dependabot queue: #765, #756, #751 and #739. Their check state moves while they are
+   worked, so read it live (`gh pr checks <N>`) rather than from here. Durable facts: #756's
+   `Run Tests` red is 6 Jest timeouts, all in
+   `frontend/app/dashboard/__tests__/marketing-kitchen-shop-scope.test.tsx`, under the group
+   bump; #739 (springdoc 3.x) needs Boot 4.1 (issue #706) and reds the OpenAPI Breaking-Change
+   Gate, tests, integration tests, security scan and docs-freshness; a dependabot bump that
+   changes a version the docs quote reds docs-freshness via `scripts/check-doc-versions.sh`
+   until the live docs are updated on the PR.
+2. Issue #648: a within-tenant BOLA on `/api/v1/sync/batch`. #726 added the fix
+   (`@PreAuthorize` on `SyncController` plus `shopAccessService.require` in `SyncService`) and
+   `SyncBatchAuthorizationIntegrationTest`. Verify the authorization is on the production path
+   and the test fails with it removed, then close it. Issue #727 (sync-created products
+   orphaned) is in the same code.
+3. Gate-class issues that fail open: #761 and #769 (`check-doc-citations.sh`); also #758
+   (workflow `run:` shell unparsed), #762 and #759.
+4. Phase 29 stays PAUSED on the owner (staging DNS plus 3 operator secrets).
+5. Upstream, not this repo: dotfiles issues #279 and #280 (review-gate holes found by #766's
+   review).
+
+**2026-09-30 delta (SUPERSEDED by the evening delta above; #768, #766 and #770 merged) — Phase 36 is merged; `main` passes CI but its required Operational Contracts check is red until #768 merges.**
 **Where things stand.** Phase 36 is complete (18/18 plans with a SUMMARY). It merged as PR #763,
 squash commit `c5d16ff6` "Phase 36: Azure Blob Storage Throughout (#763)", on 2026-09-29 at
 22:14 UTC, after the D3 review series ended on round 2 with 0 admissible findings. The
