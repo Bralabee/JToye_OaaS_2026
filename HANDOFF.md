@@ -3,7 +3,7 @@
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged) and 2026-09-30 evening (#764 and #771 fixed and merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
 **2026-09-30 (evening) delta — GDPR erasure fixed twice over (#764, #771); `main` green; the stack runs `eb2e98fd`. Resume here.**
-**Where things stand.** `main` = `eb2e98fd`. Everything the morning delta below queued has merged:
+**Where things stand.** `main` = `eb2e98fd`. Items 1-3 of the morning delta below have merged:
 #768 (terminal-state deferrals, which cleared the required Operational Contracts red), #766 (the
 review-gate vendored copy refreshed), #767 (Phase 36 state) and #770 (issue #764: V67 `reviews`
 UPDATE policy, tenant-scoped review lookup, photos deleted after commit). Then **#772 closed issue
@@ -18,8 +18,12 @@ path exists**. No migration: V67 is still head. Record:
 `.planning/quick/260930-l63-fix-771-review-photourls-unvalidated-so-/`.
 
 Measured, not remembered:
-- **CI on #772's head passed.** The squash tree is identical to that head (`81aa953f`).
-- **The nightly passed twice** (09-29, 09-30). Issue #683 stays OPEN per its own rule.
+- **CI on #772's head (`e7b6cbdb`) passed.** The squash commit's tree is identical to that
+  head's tree (tree `81aa953f`).
+- **Nightly E2E:** ONE scheduled green, on 09-30 (on `c5d16ff6`). The 09-29 scheduled run
+  FAILED (on `db725c94`); the 09-29 green was a manual `workflow_dispatch` (on `536daf41`).
+  Neither green ran on a tree containing #770 or #772, so there is no full-suite E2E evidence
+  on `eb2e98fd` yet. Issue #683 stays OPEN per its own rule.
 - **Runtime:** core-java was rebuilt via `scripts/sync-runtime.sh`, and the freshness gate
   passes 4/4 on `eb2e98fd`.
 - **Live probe:** a POST naming a real product image URL returned 400
@@ -32,7 +36,9 @@ Carry two forward to the review-photo upload design:
 - the catalogue check runs in the transaction, but the delete runs in `afterCommit` with no
   re-check.
 
-Neither is reachable today, because no object can exist under `reviews/`.
+Neither is reachable through the application today: nothing in `core-java/src/main` writes
+under `reviews/`. An object placed there some other way (a manual upload, a fixture, a restored
+backup) is not excluded, and would make both reachable.
 
 Two pre-existing defects were seen but not filed; they fail the admission test:
 - `createReview` never checks that the order belongs to the slug's shop;
@@ -55,13 +61,21 @@ Toolchain drift is reported, not applied: conda, npm, claude-code, gemini-cli, c
 antigravity-hub, plus carl-core PIN-BEHIND.
 
 **Next, in order:**
-1. The dependabot queue: #765, #756 (6 Jest failures under React 19.3), #751, and #739 (needs
-   Boot 4.1, issue #706).
-2. Issue #648: a within-tenant BOLA on `/api/v1/sync/batch`, likely already fixed by
-   `SyncBatchAuthorizationIntegrationTest` (#726). Verify, then close it.
-3. Phase 29 stays PAUSED on the owner (staging DNS plus 3 operator secrets).
+1. The dependabot queue: #765 (docs-freshness: stale version claims), #756 (6 Jest timeouts
+   under the React 19.3 group, AND docs-freshness), #751, and #739 (needs Boot 4.1, issue #706).
+   Each also needs its review series before `review-record` goes green.
+2. Issue #648: a within-tenant BOLA on `/api/v1/sync/batch`. #726 added the fix
+   (`@PreAuthorize` on `SyncController` plus `shopAccessService.require` in `SyncService`) and
+   `SyncBatchAuthorizationIntegrationTest`. Verify the authorization is on the production path
+   and the test fails with it removed, then close it. Issue #727 (sync-created products
+   orphaned) is in the same code.
+3. Gate-class issues that fail open: #761 and #769 (`check-doc-citations.sh`); also #758
+   (workflow `run:` shell unparsed), #762 and #759.
+4. Phase 29 stays PAUSED on the owner (staging DNS plus 3 operator secrets).
+5. Upstream, not this repo: dotfiles issues #279 and #280 (review-gate holes found by #766's
+   review).
 
-**2026-09-30 delta (SUPERSEDED by the evening delta above; #768, #766 and #770 merged) — Phase 36 is merged; `main` passes CI but its required Operational Contracts check is red until #768 merges. Resume here.**
+**2026-09-30 delta (SUPERSEDED by the evening delta above; #768, #766 and #770 merged) — Phase 36 is merged; `main` passes CI but its required Operational Contracts check is red until #768 merges.**
 **Where things stand.** Phase 36 is complete (18/18 plans with a SUMMARY). It merged as PR #763,
 squash commit `c5d16ff6` "Phase 36: Azure Blob Storage Throughout (#763)", on 2026-09-29 at
 22:14 UTC, after the D3 review series ended on round 2 with 0 admissible findings. The
