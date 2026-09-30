@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Terminal-state deferrals expired 2026-09-30: five rows were already covered, nine re-dated (#PRNUM) — 2026-09-30
+
+- **Why.** Fourteen dated deferrals in `docs/ops/terminal-states.yaml` expired on 2026-09-30,
+  which turned the required `Operational Contracts` check (`check-terminal-states.sh` X-2)
+  red on every branch, `main` included. Re-examining each reason on its expiry date is the
+  register's design, and five reasons turned out to be false.
+- **Resolved (5).** TS-01, TS-03 and TS-04 (DLQ depth) have been covered by
+  `DeadLetterQueueNonEmpty` since 27-03 (PR #336), which was observed firing on a real batch.
+  **TS-02 was mis-recorded:** it named `DeadLetterQueueNonEmpty`, whose expression *excludes*
+  `payment.events.dlq`, so it claimed coverage from a rule that can never fire for it. It now
+  names `PaymentDeadLetterQueueNonEmpty`, the critical rule that actually covers it. TS-14's
+  wrong-subject defect was removed by 27-03 D-11, and it now names `HighMemoryUsage`.
+- **Re-dated to 2026-12-31 (9), by owner ruling.** TS-05 to TS-10, TS-16 and TS-17 point at
+  Phase 29 (DPLY-03), and TS-11 at `arch_no_platform_operator`. Each reason was re-measured
+  first (meter registration, the log-only path, absence from `alerts.yml`) and the
+  measurement is written into the row. 27-03 closed without building these rules, so
+  `tracked_by: 27-03` had become false.
+- **Evidence.** Before the change, `check-terminal-states.sh` gave rc=1 with 14
+  expired-deferral violations. After it, rc=0 with 9 dated deferrals and 0 expired.
+  `check-doc-citations.sh` resolves all 17 register citations.
+
 ### Phase 36: object storage is Azure Blob throughout, Azurite locally and in the nightly (#763) — 2026-09-29
 
 - **Why.** The retired self-hosted object store's community images are gone for good: the

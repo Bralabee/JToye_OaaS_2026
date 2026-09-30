@@ -33,15 +33,12 @@ states:
     subject: "DLQ_QUEUE"
     what_stops: "Order state-change events that exhausted retries. The kitchen display and the vendor's order list stop reflecting reality for those orders, and no customer-facing status ever updates again."
     owner: maintainer
+    resolved: "2026-09-30, at the deferral's expiry. 27-03 (PR #336) built the rule and it was observed FIRING on a real batch (27-03-EVIDENCE.md §14); the deferral reason — no per-queue series until the /metrics/detailed job — has been false since then (the job is in infra/monitoring/prometheus/prometheus.yml.tmpl). Re-measured 2026-09-30: alerts.yml carries DeadLetterQueueNonEmpty with expr rabbitmq_detailed_queue_messages{queue=~'.*[.]dlq', queue!='payment.events.dlq'} > 0, which matches this queue. Signal corrected from messages_ready to the series the rule actually reads."
     detection:
-      signal: 'rabbitmq_detailed_queue_messages_ready{queue="order.state-changes.dlq"}'
+      signal: 'rabbitmq_detailed_queue_messages{queue="order.state-changes.dlq"}'
       alert: DeadLetterQueueNonEmpty
     runbook: "docs/runbooks/terminal-states.md#ts-01"
     operator_action: "Peek non-destructively: rabbitmqadmin get queue=order.state-changes.dlq ackmode=reject_requeue_true count=10. NEVER ack — ack destroys the message and the evidence. Read x-death for the original exchange and failure count, decide replay vs discard, and record the decision before acting."
-    deferred:
-      reason: "No alert rule references any DLQ depth. The aggregated rabbitmq scrape emits no queue label, so no per-queue selector can match until 27-03 adds the /metrics/detailed job. Evidence: baselines/B-2.txt."
-      expires: 2026-09-30
-      tracked_by: "27-03"
 
   - id: TS-02
     name: payment.events.dlq
@@ -50,15 +47,12 @@ states:
     subject: "PAYMENT_EVENTS_DLQ"
     what_stops: "Payment events that exhausted retries. Money moved at Stripe but the platform's ledger never learns, so the vendor's revenue figures and the customer's receipt disagree with the card statement."
     owner: maintainer
+    resolved: "2026-09-30, at the deferral's expiry. 27-03 (PR #336) built the rule; the deferral reason — no per-queue series until the /metrics/detailed job — has been false since then. Re-measured 2026-09-30, which also corrected this row: it named DeadLetterQueueNonEmpty, whose expr EXCLUDES this queue (queue!='payment.events.dlq'), so the row claimed coverage by a rule that can never fire for it. The rule that covers it is PaymentDeadLetterQueueNonEmpty (rabbitmq_detailed_queue_messages{queue='payment.events.dlq'} > 0, for 1m, severity critical)."
     detection:
-      signal: 'rabbitmq_detailed_queue_messages_ready{queue="payment.events.dlq"}'
-      alert: DeadLetterQueueNonEmpty
+      signal: 'rabbitmq_detailed_queue_messages{queue="payment.events.dlq"}'
+      alert: PaymentDeadLetterQueueNonEmpty
     runbook: "docs/runbooks/terminal-states.md#ts-02"
     operator_action: "Peek non-destructively: rabbitmqadmin get queue=payment.events.dlq ackmode=reject_requeue_true count=10. NEVER ack. Reconcile each event against Stripe before deciding replay vs discard — a discarded payment event is a permanent ledger gap, not a lost notification."
-    deferred:
-      reason: "Same as TS-01 — no per-queue series exists to alert on until 27-03 lands the detailed scrape."
-      expires: 2026-09-30
-      tracked_by: "27-03"
 
   - id: TS-03
     name: webhook.deliveries.dlq
@@ -67,16 +61,13 @@ states:
     subject: "WEBHOOK_DELIVERIES_DLQ"
     what_stops: "Vendor webhook deliveries that exhausted retries. The vendor's integration silently stops receiving events — no error reaches them, their automation simply goes quiet."
     owner: maintainer
+    resolved: "2026-09-30, at the deferral's expiry. 27-03 (PR #336) built the rule and it was observed FIRING on a real batch (27-03-EVIDENCE.md §14); the deferral reason — no per-queue series until the /metrics/detailed job — has been false since then (the job is in infra/monitoring/prometheus/prometheus.yml.tmpl). Re-measured 2026-09-30: alerts.yml carries DeadLetterQueueNonEmpty with expr rabbitmq_detailed_queue_messages{queue=~'.*[.]dlq', queue!='payment.events.dlq'} > 0, which matches this queue. Signal corrected from messages_ready to the series the rule actually reads."
     detection:
-      signal: 'rabbitmq_detailed_queue_messages_ready{queue="webhook.deliveries.dlq"}'
+      signal: 'rabbitmq_detailed_queue_messages{queue="webhook.deliveries.dlq"}'
       alert: DeadLetterQueueNonEmpty
     runbook: "docs/runbooks/terminal-states.md#ts-03"
     operator_action: "Peek non-destructively: rabbitmqadmin get queue=webhook.deliveries.dlq ackmode=reject_requeue_true count=10. NEVER ack. THIS QUEUE HOLDS NINE REAL VENDOR EVENTS as of 2026-07-27, dead since 2026-07-15, deliberately preserved byte-identical (payloads, x-death and __TypeId__ intact). 27-03 archives and characterises them; 27-02's human checkpoint decides replay vs discard before the broker volume is destroyed. Do not purge. Assert on the DELTA, never on depth == 9."
     related: ["#205", "27-05"]
-    deferred:
-      reason: "Same as TS-01. The producer defect that filled this queue is fixed (27-05, commit 2f8eeca — untrusted-package deserialization); the batch itself is still awaiting disposition."
-      expires: 2026-09-30
-      tracked_by: "27-03"
 
   - id: TS-04
     name: media.process.dlq
@@ -85,15 +76,12 @@ states:
     subject: "MEDIA_EVENTS_DLQ"
     what_stops: "Image-processing jobs that exhausted retries. The vendor's uploaded photo stays stuck showing 'processing' forever, and the product it belongs to goes to market without an image."
     owner: maintainer
+    resolved: "2026-09-30, at the deferral's expiry. 27-03 (PR #336) built the rule and it was observed FIRING on a real batch (27-03-EVIDENCE.md §14); the deferral reason — no per-queue series until the /metrics/detailed job — has been false since then (the job is in infra/monitoring/prometheus/prometheus.yml.tmpl). Re-measured 2026-09-30: alerts.yml carries DeadLetterQueueNonEmpty with expr rabbitmq_detailed_queue_messages{queue=~'.*[.]dlq', queue!='payment.events.dlq'} > 0, which matches this queue. Signal corrected from messages_ready to the series the rule actually reads."
     detection:
-      signal: 'rabbitmq_detailed_queue_messages_ready{queue="media.process.dlq"}'
+      signal: 'rabbitmq_detailed_queue_messages{queue="media.process.dlq"}'
       alert: DeadLetterQueueNonEmpty
     runbook: "docs/runbooks/terminal-states.md#ts-04"
     operator_action: "Peek non-destructively: rabbitmqadmin get queue=media.process.dlq ackmode=reject_requeue_true count=10. NEVER ack. Cross-reference each job against media_asset rows in PENDING or FAILED — see TS-07, whose quarantined bytes may already have been deleted by the reaper."
-    deferred:
-      reason: "Same as TS-01."
-      expires: 2026-09-30
-      tracked_by: "27-03"
 
   - id: TS-05
     name: payment_event_outbox poison
@@ -114,9 +102,9 @@ states:
     runbook: "docs/runbooks/terminal-states.md#ts-05"
     operator_action: "SELECT id, aggregate_id, attempts, last_error FROM payment_event_outbox WHERE poison = true; — remember the table is RLS-scoped, so set the tenant GUC first or it returns zero rows and reads as clean. Fix the cause, then clear poison to allow the flusher to resurrect the row."
     deferred:
-      reason: "The counter payment_outbox_dead_letter_total is registered and exported (verified live at 0.0) but referenced by NO alert rule. 27-03 owns all alerts.yml rule content."
-      expires: 2026-09-30
-      tracked_by: "27-03"
+      reason: "The counter payment_outbox_dead_letter_total is registered and exported (verified live at 0.0) but referenced by NO alert rule. 27-03 owns all alerts.yml rule content. RE-MEASURED 2026-09-30 at expiry, reason still true: payment.outbox.dead_letter is still registered (PaymentEventOutboxFlusher.java:95) and no alerts.yml rule references payment_outbox_dead_letter_total. 27-03 closed (PR #336) without building this; re-dated by owner ruling 2026-09-30."
+      expires: 2026-12-31
+      tracked_by: "Phase 29 (DPLY-03: staging that alerts a human)"
 
   - id: TS-06
     name: media_event_outbox poison
@@ -133,9 +121,9 @@ states:
     runbook: "docs/runbooks/terminal-states.md#ts-06"
     operator_action: "SELECT id, aggregate_id, attempts, last_error FROM media_event_outbox WHERE poison = true; — RLS-scoped, set the tenant GUC first. Same resurrect procedure as TS-05."
     deferred:
-      reason: "Same as TS-05 — media_outbox_dead_letter_total is exported but referenced by no rule."
-      expires: 2026-09-30
-      tracked_by: "27-03"
+      reason: "Same as TS-05 — media_outbox_dead_letter_total is exported but referenced by no rule. RE-MEASURED 2026-09-30 at expiry, reason still true: media.outbox.dead_letter is still registered (MediaEventOutboxFlusher.java:85) and no alerts.yml rule references media_outbox_dead_letter_total. 27-03 closed (PR #336) without building this; re-dated by owner ruling 2026-09-30."
+      expires: 2026-12-31
+      tracked_by: "Phase 29 (DPLY-03: staging that alerts a human)"
 
   - id: TS-07
     name: media_asset FAILED
@@ -153,9 +141,9 @@ states:
     operator_action: "Check TS-17 FIRST — a suspended stall sweep means nothing is being classified at all. Then, RLS-scoped: SELECT id, tenant_id, created_at, failure_reason, quarantine_reclaimed_at, quarantine_expires_at FROM media_asset WHERE status = 'FAILED'; — rows with quarantine_reclaimed_at IS NULL still hold their bytes and the vendor can Re-process them from the review queue; rows with it stamped, or past quarantine_expires_at, need a re-upload. Check broker availability across the window before concluding a file was invalid."
     related: ["27-01", "TS-17"]
     deferred:
-      reason: "The signal above names a real exported counter (the reaper increments media.reaper.stalled_failed at the flip) but NO alert rule consumes it yet — 27-03 owns rule content. 27-01's code change has LANDED, so this row's prose and detection signal were rewritten in that PR: the previous text described the delete-then-FAIL ordering and cited a reaper line number that no longer performs a byte delete at all. Locators are deliberately written WITHOUT an inline line reference in prose here — a row that names the stale locator it is correcting re-trips the very check that catches it."
-      expires: 2026-09-30
-      tracked_by: "27-03"
+      reason: "The signal above names a real exported counter (the reaper increments media.reaper.stalled_failed at the flip) but NO alert rule consumes it yet — 27-03 owns rule content. 27-01's code change has LANDED, so this row's prose and detection signal were rewritten in that PR: the previous text described the delete-then-FAIL ordering and cited a reaper line number that no longer performs a byte delete at all. Locators are deliberately written WITHOUT an inline line reference in prose here — a row that names the stale locator it is correcting re-trips the very check that catches it. RE-MEASURED 2026-09-30 at expiry, reason still true: media.reaper.stalled_failed is still incremented (MediaPendingReaper.java:275) and no alerts.yml rule consumes it. 27-03 closed (PR #336) without building this; re-dated by owner ruling 2026-09-30."
+      expires: 2026-12-31
+      tracked_by: "Phase 29 (DPLY-03: staging that alerts a human)"
 
   - id: TS-08
     name: webhook_delivery FAILED
@@ -173,9 +161,9 @@ states:
     operator_action: "SELECT id, subscription_id, event_type, attempts, last_status_code FROM webhook_delivery WHERE status = 'FAILED'; — RLS-scoped. A 4xx last_status_code means the vendor's endpoint rejected it (their fix); 5xx or timeout means theirs was down (replay is appropriate). Contact the vendor before replaying anything financial."
     related: ["#205"]
     deferred:
-      reason: "No metric or alert exists for FAILED delivery counts. 27-03 owns rule content."
-      expires: 2026-09-30
-      tracked_by: "27-03"
+      reason: "No metric or alert exists for FAILED delivery counts. 27-03 owns rule content. RE-MEASURED 2026-09-30 at expiry, reason still true: core-java/src/main/java/uk/jtoye/core/webhook registers no Micrometer meter (rg for Counter/Gauge/MeterRegistry: no match) and no alert exists. 27-03 closed (PR #336) without building this; re-dated by owner ruling 2026-09-30."
+      expires: 2026-12-31
+      tracked_by: "Phase 29 (DPLY-03: staging that alerts a human)"
 
   - id: TS-09
     name: webhook_subscription AUTO_PAUSED
@@ -193,9 +181,9 @@ states:
     operator_action: "SELECT id, tenant_id, target_url, updated_at FROM webhook_subscription WHERE status = 'AUTO_PAUSED'; — RLS-scoped. Confirm the vendor's endpoint is healthy, THEN notify the vendor before re-enabling: silently resuming can flood a vendor with a backlog they did not expect."
     related: ["#205"]
     deferred:
-      reason: "No metric, no alert, and no vendor-facing notification. This is the highest-consequence unowned state in the register — a paying vendor's integration stops with nobody informed. 27-03 owns rule content; the vendor-notification half has no owner yet."
-      expires: 2026-09-30
-      tracked_by: "27-03"
+      reason: "No metric, no alert, and no vendor-facing notification. This is the highest-consequence unowned state in the register — a paying vendor's integration stops with nobody informed. 27-03 owns rule content; the vendor-notification half has no owner yet. RE-MEASURED 2026-09-30 at expiry, reason still true: no webhook metric exists (same measurement as TS-08), no alert, and no vendor-facing notification. 27-03 closed (PR #336) without building this; re-dated by owner ruling 2026-09-30."
+      expires: 2026-12-31
+      tracked_by: "Phase 29 (DPLY-03: staging that alerts a human)"
 
   - id: TS-10
     name: tenants.keycloak_deprovisioned_at NULL on an OFFBOARDED tenant
@@ -210,9 +198,9 @@ states:
     runbook: "docs/runbooks/terminal-states.md#ts-10"
     operator_action: "SELECT id, name, offboarded_at FROM tenants WHERE status = 'OFFBOARDED' AND keycloak_deprovisioned_at IS NULL; — the tenants table is deliberately RLS-free. Re-trigger with POST /api/v1/admin/tenants/{id}/keycloak/deprovision (idempotent). Requires jtoye.keycloak.admin.enabled=true and a base-url, or it returns RFC 7807 400 'not configured'."
     deferred:
-      reason: "Detected only by an ERROR log line, which nothing scrapes or alerts on. 27-03 owns rule content."
-      expires: 2026-09-30
-      tracked_by: "27-03"
+      reason: "Detected only by an ERROR log line, which nothing scrapes or alerts on. 27-03 owns rule content. RE-MEASURED 2026-09-30 at expiry, reason still true: KeycloakDeprovisionService still reports failure only as log.error event=tenant_keycloak_deprovision_failed (:92, :116) and alerts.yml has no deprovisioning rule. 27-03 closed (PR #336) without building this; re-dated by owner ruling 2026-09-30."
+      expires: 2026-12-31
+      tracked_by: "Phase 29 (DPLY-03: staging that alerts a human)"
 
   - id: TS-11
     name: onboarding stalled
@@ -227,8 +215,8 @@ states:
     runbook: "docs/runbooks/terminal-states.md#ts-11"
     operator_action: "SELECT id, tenant_id, status, updated_at FROM vendor_onboarding WHERE status IN ('VERIFYING','ACTION_REQUIRED') AND updated_at < now() - interval '7 days'; — RLS-scoped, so loop tenants or the result is empty and reads as clean. Then work the queue at GET /api/v1/onboarding/admin/reviews, which is tenant-scoped and therefore cannot show you every tenant at once."
     deferred:
-      reason: "owner is UNASSIGNED because there is no platform-operator identity to assign it TO — all admin in this system is tenant-scoped by design, so no role exists that could receive a cross-tenant stalled-onboarding alert. Naming a plausible team here would be fabrication and would make the register read as covered when it is not. Closing this needs a product decision about operator identity, not a rule."
-      expires: 2026-09-30
+      reason: "owner is UNASSIGNED because there is no platform-operator identity to assign it TO — all admin in this system is tenant-scoped by design, so no role exists that could receive a cross-tenant stalled-onboarding alert. Naming a plausible team here would be fabrication and would make the register read as covered when it is not. Closing this needs a product decision about operator identity, not a rule. RE-MEASURED 2026-09-30 at expiry, reason still true: the no-platform-operator architecture is unchanged; no role exists to receive the alert. 27-03 closed (PR #336) without building this; re-dated by owner ruling 2026-09-30."
+      expires: 2026-12-31
       tracked_by: "arch_no_platform_operator"
 
   - id: TS-12
@@ -268,16 +256,13 @@ states:
     subject: "HighMemoryUsage"
     what_stops: "core-java heap exhaustion and GC storms are unobserved. HighMemoryUsage (:96) and FrequentGarbageCollection (:111) both carry service: core-java but their jvm_* selectors are unqualified, so while core-java's target was down they bound to the only JVM Prometheus could see — Keycloak's. They are worse than dataless: a naive 'selector matches >= 1 series' liveness check reports them GREEN."
     owner: maintainer
+    resolved: "2026-09-30, at the deferral's expiry. The defect this row describes — a static service: core-java label on unqualified jvm_* selectors, so the alert named core-java while measuring whichever JVM it bound to — was removed by 27-03 D-11: the static label is DELETED from HighMemoryUsage and FrequentGarbageCollection (alerts.yml comments at both rules; check-alert-rules.sh LABEL_EXEMPT keeps it deleted), so each firing carries the measured series' own service label (core-api or keycloak) and a second JVM is alerted under its own name rather than re-binding. The deferral reason ('27-03 owns the rule fix') has been false since 27-03 merged. detection.alert was null; it is now HighMemoryUsage, the rule that observes core-java heap exhaustion."
     detection:
-      signal: 'count(jvm_memory_used_bytes{job="core-java"}) > 0'
-      alert: null
+      signal: 'jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} (per-series service label)'
+      alert: HighMemoryUsage
     runbook: "docs/runbooks/terminal-states.md#ts-14"
     operator_action: "Run count(jvm_memory_used_bytes) by (job) and confirm a job=\"core-java\" row exists alongside job=\"keycloak\". Before 27-00 Task 1 only keycloak appeared (8 series); after the scrape-port fix both appear. Any rule carrying a service: label must have its selector qualified by the matching job, or it silently watches whatever else exports that metric name."
     related: ["baselines/B-7.txt"]
-    deferred:
-      reason: "The scrape-port fix (27-00 Task 1) restored the core-java series so the rules can now see their subject, but the SELECTORS are still unqualified — a second JVM appearing in the scrape set would re-bind them. 27-03 owns the rule fix; 27-00 Task 4's L-2b subject-correctness check is what detects it."
-      expires: 2026-09-30
-      tracked_by: "27-03"
 
   - id: TS-15
     name: RedisDown watches the scrape target, not the exporter's upstream gauge
@@ -312,9 +297,9 @@ states:
     related: ["baselines/B-6-CONTROL-DEFECT.md"]
     detector_built: "2026-07-30, issue #347 — scripts/check-container-config-drift.sh. Compares CONTENT (healthcheck.test, restart policy, and image for non-built services) between `docker compose config` and `docker inspect`, per file, across docker-compose.full-stack.yml and infra/monitoring/docker-compose.monitoring.yml. First clean run: 15 compared, 0 drift, 4 declared-but-not-running (one-shot init containers, reported not skipped). Four break arms all fail correctly, including a re-declaration of the historical wget healthcheck. NOT in CI — a runner has no containers, same enforcement model as check-runtime-freshness.sh and check-alert-liveness.sh: its exit code goes in the phase-close record."
     deferred:
-      reason: "WHAT REMAINS DEFERRED IS THE ALERT, NOT THE DETECTOR — the detector shipped 2026-07-30 (see detector_built). detection.alert stays null because container config drift has no Prometheus series to alert on; it is caught by an executable gate run against a live stack, not by a rule. This block is retained solely because X-2 requires a named alert or a dated deferral, and inventing an alert name that will never exist would be the fabrication this register forbids. ORIGINAL FINDING, kept because it is the worked example: jtoye-redis-exporter ran a wget-based healthcheck that its scratch-based image cannot execute, reporting 'unhealthy' for 20 days while working perfectly (redis_up=1, metrics flowing). The compose file had ALREADY removed that healthcheck, with a comment explaining this exact failure, in commit 7dcaf93 at 2026-07-07 22:47:55 UTC — the container was created at 2026-07-07 22:23:46 UTC, 84 minutes earlier, and was never recreated. The image itself declares no healthcheck (verified null), so the container was the only source. Content-based sweep of all five monitoring services found redis-exporter to be the sole mismatch. Timestamp comparison alone is NOT a sufficient detector: it flagged jtoye-prometheus as stale when that container was recreated an hour before the commit that touched its block, so any gate for this must compare CONTENT, not creation time."
-      expires: 2026-09-30
-      tracked_by: "27-06"
+      reason: "WHAT REMAINS DEFERRED IS THE ALERT, NOT THE DETECTOR — the detector shipped 2026-07-30 (see detector_built). detection.alert stays null because container config drift has no Prometheus series to alert on; it is caught by an executable gate run against a live stack, not by a rule. This block is retained solely because X-2 requires a named alert or a dated deferral, and inventing an alert name that will never exist would be the fabrication this register forbids. ORIGINAL FINDING, kept because it is the worked example: jtoye-redis-exporter ran a wget-based healthcheck that its scratch-based image cannot execute, reporting 'unhealthy' for 20 days while working perfectly (redis_up=1, metrics flowing). The compose file had ALREADY removed that healthcheck, with a comment explaining this exact failure, in commit 7dcaf93 at 2026-07-07 22:47:55 UTC — the container was created at 2026-07-07 22:23:46 UTC, 84 minutes earlier, and was never recreated. The image itself declares no healthcheck (verified null), so the container was the only source. Content-based sweep of all five monitoring services found redis-exporter to be the sole mismatch. Timestamp comparison alone is NOT a sufficient detector: it flagged jtoye-prometheus as stale when that container was recreated an hour before the commit that touched its block, so any gate for this must compare CONTENT, not creation time. RE-MEASURED 2026-09-30 at expiry, reason still true: still true as written — no Prometheus series exists for container config drift; the detector remains the executable gate. 27-03 closed (PR #336) without building this; re-dated by owner ruling 2026-09-30."
+      expires: 2026-12-31
+      tracked_by: "Phase 29 (DPLY-03: staging that alerts a human)"
 
   - id: TS-17
     name: media stall sweep suspended
@@ -331,6 +316,6 @@ states:
     operator_action: "Confirm the broker is reachable and that media.process has consumers: rabbitmq_queue_consumers{queue=\"media.process\"}, or rabbitmqctl list_queues name consumers. If the queue is fine, the local listener container is the suspect — restart core-java and re-check. The suspension reason is logged verbatim at WARN as event=media_reaper_suspended reason=<Liveness>, which names which of the eight probes failed; read that before changing anything. URGENCY: the retention sweep keeps running, so a suspension lasting longer than jtoye.media.quarantine-retention-ms (72 h default) converts recoverable stalled uploads into expired, unrecoverable ones — see TS-07 sub-case (b)."
     related: ["27-01", "TS-07", "TS-04"]
     deferred:
-      reason: "media.reaper.suspended is incremented in code (MediaPendingReaper.java:185) but Micrometer only exports a counter after its first increment, so media_reaper_suspended_total is absent from /actuator/prometheus on a healthy stack — verified: the sibling media_reaper_undispatched_skipped_total reads 3.0 there because it HAS fired. No alert rule consumes it; 27-03 owns rule content and must also confirm the series exists before writing a rule against it."
-      expires: 2026-09-30
-      tracked_by: "27-03"
+      reason: "media.reaper.suspended is incremented in code (MediaPendingReaper.java:185) but Micrometer only exports a counter after its first increment, so media_reaper_suspended_total is absent from /actuator/prometheus on a healthy stack — verified: the sibling media_reaper_undispatched_skipped_total reads 3.0 there because it HAS fired. No alert rule consumes it; 27-03 owns rule content and must also confirm the series exists before writing a rule against it. RE-MEASURED 2026-09-30 at expiry, reason still true: media.reaper.suspended is still incremented at MediaPendingReaper.java:185 and no alerts.yml rule consumes media_reaper_suspended_total. 27-03 closed (PR #336) without building this; re-dated by owner ruling 2026-09-30."
+      expires: 2026-12-31
+      tracked_by: "Phase 29 (DPLY-03: staging that alerts a human)"
