@@ -1,8 +1,56 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened) and 2026-09-29 (Phase 36 executed through plan 36-17). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) and 2026-09-30 (Phase 36 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-09-29 delta — Phase 36 executed through 36-17; only 36-18 (the nightly on a runner) remains. Resume here.**
+**2026-09-30 delta — Phase 36 is merged; `main` passes CI but its required Operational Contracts check is red until #768 merges. Resume here.**
+**Where things stand.** Phase 36 is complete (18/18 plans with a SUMMARY). It merged as PR #763,
+squash commit `c5d16ff6` "Phase 36: Azure Blob Storage Throughout (#763)", on 2026-09-29 at
+22:14 UTC, after the D3 review series ended on round 2 with 0 admissible findings. The
+`phase-36-azure-blob-storage` branch is finished. Read from GitHub on 2026-09-30, not remembered:
+- **CI/CD run 36638381316 on `c5d16ff6` succeeded.** Every test job passed, including unit,
+  Testcontainers RLS integration, public E2E and MCP, as did lint, the security scan, operational
+  contracts (it ran on 09-29, the day before the deferrals expired), the OpenAPI gate and the k8s secret guard. All four image builds
+  passed: core-java, edge-go, frontend and pg-backup. pg-backup published `:15-blob` only after
+  its Trivy gate, with the scanned image's digest. The deploy jobs were skipped, as they were on
+  the previous `main` run (`cce0723b`).
+- **The first scheduled nightly on `c5d16ff6` (run 36658969040) succeeded.** Of 325 Playwright
+  tests, 319 ran and passed, 0 failed and 6 were skipped (budget 6). The restore drill passed,
+  with arm A restoring 0 and arm B restoring 23 = live 23. The five scheduled nightlies before it
+  (09-25 to 09-29) were red; the last green one was 09-24. Issue #683 is still OPEN. Per its own
+  rule, close it only when you can name the change that fixed it: the most likely one is Phase
+  36's removal of the withdrawn retired-store images, and one green run does not make the lane
+  trustworthy.
+- **Required check red on every branch since 2026-09-30.** Fourteen deferrals in
+  `docs/ops/terminal-states.yaml` expired that day, so `check-terminal-states.sh` X-2 fails the
+  required **Operational Contracts** check on `main` and on every PR. **PR #768 fixes it:** 7
+  rows resolved, because their rules already exist, and 7 re-dated to 2026-12-31 by owner
+  ruling. Nothing else merges until #768 does; after that, merge `main` into each open PR.
+- **Local runtime.** The compose stack is UP (10 containers healthy, core-java on :9090). The
+  post-merge hook reports core-java and frontend as DRIFT, because their images predate the squash
+  commit. The images were built from the phase branch, so whether the content actually differs is
+  not measured. Run `bash scripts/sync-runtime.sh` before trusting the runtime for E2E.
+**Next, in order:**
+1. **Merge PR #768**, the terminal-state deferrals. It unblocks everything below.
+2. **Merge PR #766** (review-gate vendored copy refreshed to canonical; its series ended at
+   round 1) and **this PR**, each after a merge from `main`.
+3. **Issue #764, the most serious open defect. It is TWO defects, and fixing only the first
+   makes things worse.**
+   - (a) `reviews` has no UPDATE policy, so erasure's anonymising UPDATE matches 0 rows and the
+     erasure rolls back, but only after the review photos are deleted.
+   - (b) `findByCustomerEmail` runs under `reviews_tenant_read`, which shows PUBLISHED reviews
+     across tenants.
+   - Shipping the UPDATE policy (V67) without the tenant-scoped lookup would let an erasure
+     anonymise, and delete photos for, **another tenant's** reviews. Photo deletion must also
+     move to after the commit.
+   - In progress as quick task `260930-bvp` on branch `fix/764-gdpr-erasure-reviews`.
+4. **Phase 29 stays PAUSED** on the owner's staging DNS and the 3 remaining operator secrets.
+   Phase 36 no longer blocks it. Its hand-off is
+   `.planning/phases/36-azure-blob-storage-throughout/36-PHASE29-HANDOFF.md`.
+5. Still open from before: dependabot PRs #765, #756, #751 and #739 (#739 needs Boot 4.1,
+   #706); issues #758 and #648. Two review-gate holes found by #766's review are filed
+   upstream as dotfiles issues #279 and #280.
+
+**2026-09-29 delta (SUPERSEDED by the 2026-09-30 delta above; 36-18 ran and the phase merged) — Phase 36 executed through 36-17; only 36-18 (the nightly on a runner) remains.**
 **Where things stand.** Branch `phase-36-azure-blob-storage`, 17 of 18 plans with a SUMMARY
 (`.planning/phases/36-azure-blob-storage-throughout/`). The remote copy of the branch is still at
 `5b6e76bd` (pushed when the phase opened, measured with `git ls-remote` on 2026-09-29), so the
@@ -338,9 +386,9 @@ done
 |---|---|
 | `main` HEAD | tip of `main` at or after the **PR #658** merge — deliberately NOT a sha, see below |
 | Phase 31 | `42ac6dc3` — `feat(31): consumer safety and the legal floor (#633)`, 18/18 plans |
-| Working tree | clean, no worktrees in use |
+| Working tree | NOT re-measured by the 2026-09-30 delta — at the time of writing, work was in flight on `fix/764-gdpr-erasure-reviews` (main checkout) and in linked worktrees for the #767/#768 branches; run `git status` and `git worktree list` before trusting this row |
 | Schema head | **V66** (re-measured 2026-09-29 from `core-java/src/main/resources/db/migration/`; V66 is COR-4's `orders.unit_count`) |
-| Test manifest | **4130** logical invocations (Java 1965/303 files, Jest 1878/172, Playwright 128/28, Go 98/13, MCP 61/8) — `docs/metrics.json`, regenerated 2026-09-29 on `phase-36-azure-blob-storage` (plan 36-17) |
+| Test manifest | **4137** logical invocations (Java 1972/303 files, Jest 1878/172, Playwright 128/28, Go 98/13, MCP 61/8) — `docs/metrics.json` as merged to `main` in PR #763 (36-17's 4130 plus 7 Java tests added on the branch after 36-17); re-measured 2026-09-30, `docs-freshness.sh` rc=0 |
 | Gate sweep 2026-08-25 | **36 PASS, 1 FAIL, 0 VOID** across all 37 gate scripts, measured after the runtime re-sync AND the E2E run. The one non-pass is `check-e2e-skip-budget` **FAIL** (65 skipped vs a budget of 8, plus an undeclared skip) — it was VOID until a completed run replaced the stale report, so this is a real answer rather than an unanswerable one. Progression that day: 34/2/1 → 36/0/1 → 36/1/0 |
 
 > **Why the HEAD row names a PR and not a sha — do not "helpfully" put one back.** A document that
