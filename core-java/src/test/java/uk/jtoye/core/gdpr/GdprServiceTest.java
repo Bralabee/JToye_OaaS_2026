@@ -1,5 +1,6 @@
 package uk.jtoye.core.gdpr;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,8 +17,12 @@ import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.review.Review;
 import uk.jtoye.core.review.ReviewRepository;
+import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.storage.StorageService;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -45,6 +50,10 @@ class GdprServiceTest {
     private ErasureRecordRepository erasureRecordRepository;
     @Mock
     private UserDirectoryRepository userDirectoryRepository;
+    // A mocked manager lets TransactionTemplate run its callback: getTransaction returns null and
+    // commit(null) is a no-op, so the post-commit count write executes inline in these tests.
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     @InjectMocks
     private GdprService gdprService;
@@ -63,6 +72,15 @@ class GdprServiceTest {
         customer.setNotes("Prefers extra sauce");
         setId(customer, "id", customerId);
         customer.setTenantId(tenantId);
+        TenantContext.clear();
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
@@ -82,7 +100,7 @@ class GdprServiceTest {
 
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of(order));
-        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of(review));
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of(review));
 
         var result = gdprService.exportCustomerData(customerId);
 
@@ -139,7 +157,7 @@ class GdprServiceTest {
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of(linkedOrder));
         when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com"))
                 .thenReturn(List.of(guestOrder));
-        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of(review));
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of(review));
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
         when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
@@ -201,7 +219,10 @@ class GdprServiceTest {
         assertEquals(2, saved.getOrdersAnonymised());
         assertEquals(1, saved.getReviewsAnonymised());
         assertEquals(4, saved.getAudRowsScrubbed());
-        assertEquals(2, saved.getPhotosDeleted());
+        // The record is written INSIDE the erasure transaction, before any photo is deleted, so it
+        // carries 0 at commit; the true count is written once, after the deletions (#764).
+        assertEquals(0, saved.getPhotosDeleted());
+        verify(erasureRecordRepository).recordPhotosDeleted(saved.getId(), tenantId, 2);
         assertNotNull(saved.getSubjectEmailSha256());
         assertEquals(64, saved.getSubjectEmailSha256().length(), "SHA-256 hex is 64 chars");
         assertNotEquals("jane@example.com", saved.getSubjectEmailSha256(), "must never store plaintext email");
@@ -225,7 +246,7 @@ class GdprServiceTest {
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
         when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
-        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of(review));
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of(review));
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
         when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
@@ -247,8 +268,10 @@ class GdprServiceTest {
         assertEquals(1, result.photosDeleted());
         ArgumentCaptor<ErasureRecord> captor = ArgumentCaptor.forClass(ErasureRecord.class);
         verify(erasureRecordRepository).save(captor.capture());
-        assertEquals(1, captor.getValue().getPhotosDeleted(),
-                "the Article 17 record must not claim the refused and external photos were erased");
+        // The Article 17 record must not claim the refused and external photos were erased: the
+        // count written after the deletions is 1, never 3.
+        verify(erasureRecordRepository).recordPhotosDeleted(captor.getValue().getId(), tenantId, 1);
+        verify(erasureRecordRepository, never()).recordPhotosDeleted(any(), any(), eq(3));
     }
 
     @Test
@@ -266,7 +289,7 @@ class GdprServiceTest {
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
         when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
-        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of());
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of());
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
         when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
@@ -290,11 +313,207 @@ class GdprServiceTest {
     void exportCustomerData_includesAllergenData() {
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
-        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of());
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of());
 
         var result = gdprService.exportCustomerData(customerId);
 
         assertEquals(5, result.customer().allergenRestrictions());
+    }
+
+    @Test
+    @DisplayName("#764: export and erase look reviews up in the CUSTOMER'S tenant, never by email alone")
+    void exportAndErase_scopeTheReviewLookupToTheCustomersTenant() {
+        // Another tenant's PUBLISHED review under the same email is visible through RLS, so a
+        // lookup that dropped the tenant would return it. Stub it under the WRONG tenant: a
+        // correctly scoped call never matches this stub and gets Mockito's empty default.
+        UUID otherTenant = UUID.randomUUID();
+        Review foreign = new Review();
+        foreign.setCustomerEmail("jane@example.com");
+        foreign.setCustomerName("Jane in another tenant");
+        foreign.setComment("not yours to erase");
+        lenient().when(reviewRepository.findByTenantIdAndCustomerEmail(otherTenant, "jane@example.com"))
+                .thenReturn(List.of(foreign));
+
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
+        when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
+
+        var export = gdprService.exportCustomerData(customerId);
+        assertEquals(0, export.reviews().size(), "the export must not carry another tenant's review");
+
+        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
+        when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.scrubOrdersAudit(eq(tenantId), eq(customerId), any(), eq("[REDACTED]"))).thenReturn(0);
+        when(customerRepository.scrubCustomerAudit(eq(tenantId), eq(customerId), eq("[REDACTED]"))).thenReturn(0);
+        when(erasureRecordRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        var erased = gdprService.eraseCustomerData(customerId);
+
+        assertEquals(0, erased.reviewsAnonymised(), "the erasure must not reach another tenant's review");
+        assertEquals("Jane in another tenant", foreign.getCustomerName());
+        assertEquals("not yours to erase", foreign.getComment());
+        verify(reviewRepository, times(2)).findByTenantIdAndCustomerEmail(tenantId, "jane@example.com");
+        verify(reviewRepository, never()).findByTenantIdAndCustomerEmail(eq(otherTenant), any());
+    }
+
+    // ---- #764: photo deletion runs only after the erasure commits ------------------------------
+
+    private static final String P1 = "http://store/p1.webp";
+    private static final String P2 = "http://store/p2.webp";
+    private static final String P3 = "http://store/p3.webp";
+
+    /** A subject with one review carrying {@code urls}; every repository call the erasure makes is stubbed. */
+    private Review stubErasureWithOneReview(String... urls) {
+        Review review = new Review();
+        review.setCustomerEmail("jane@example.com");
+        review.setCustomerName("Jane Doe");
+        review.setComment("Great!");
+        review.setPhotoUrls(new ArrayList<>(List.of(urls)));
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
+        when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
+        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of(review));
+        when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.scrubOrdersAudit(eq(tenantId), eq(customerId), any(), eq("[REDACTED]"))).thenReturn(0);
+        when(customerRepository.scrubCustomerAudit(eq(tenantId), eq(customerId), eq("[REDACTED]"))).thenReturn(0);
+        when(erasureRecordRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        return review;
+    }
+
+    private ErasureRecord savedRecord() {
+        ArgumentCaptor<ErasureRecord> captor = ArgumentCaptor.forClass(ErasureRecord.class);
+        verify(erasureRecordRepository).save(captor.capture());
+        return captor.getValue();
+    }
+
+    private static void fireAfterCommit() {
+        for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+            sync.afterCommit();
+        }
+    }
+
+    @Test
+    @DisplayName("#764: inside a transaction, the erasure deletes NO photo and records 0 until commit")
+    void erase_insideATransaction_defersEveryPhotoDelete() {
+        stubErasureWithOneReview(P1, P2);
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            var outcome = gdprService.eraseCustomerData(customerId);
+
+            verify(storageService, never()).delete(any());
+            assertEquals(0, savedRecord().getPhotosDeleted(), "nothing has been deleted at commit time");
+            assertFalse(outcome.photos().isSettled(), "the tally is not settled before commit");
+            IllegalStateException e = assertThrows(IllegalStateException.class, outcome::photosDeleted);
+            assertTrue(e.getMessage().contains("after the enclosing transaction commits"), e.getMessage());
+            assertThrows(IllegalStateException.class, outcome::toResponse);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("#764: afterCommit deletes each photo under the erasing tenant and writes the TRUE count once")
+    void erase_afterCommit_deletesUnderTheTenantAndRecordsTheTrueCountOnce() {
+        stubErasureWithOneReview(P1, P2, P3);
+        List<Object> tenantsSeenAtDelete = new ArrayList<>();
+        when(storageService.delete(any())).thenAnswer(i -> {
+            tenantsSeenAtDelete.add(TenantContext.get().orElse(null));
+            String url = i.getArgument(0);
+            return !P2.equals(url); // WR-02: true, false, true
+        });
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            var outcome = gdprService.eraseCustomerData(customerId);
+            verify(storageService, never()).delete(any());
+
+            fireAfterCommit();
+
+            verify(storageService).delete(P1);
+            verify(storageService).delete(P2);
+            verify(storageService).delete(P3);
+            assertEquals(List.of(tenantId, tenantId, tenantId), tenantsSeenAtDelete,
+                    "D-09 reads TenantContext: every delete must see the erasing tenant");
+            assertEquals(2, outcome.photosDeleted(), "WR-02: only true results are counted");
+            assertEquals(1, outcome.photos().notDeleted());
+            assertEquals(2, outcome.toResponse().photosDeleted());
+            UUID recordId = savedRecord().getId();
+            verify(erasureRecordRepository, times(1)).recordPhotosDeleted(recordId, tenantId, 2);
+            verify(transactionManager).getTransaction(argThat(def ->
+                    def.getPropagationBehavior() == org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("#764: when no photo was actually deleted, the record's count is never written")
+    void erase_afterCommit_withNothingDeleted_neverWritesTheCount() {
+        stubErasureWithOneReview(P1, P2);
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            var outcome = gdprService.eraseCustomerData(customerId);
+            fireAfterCommit();
+
+            verify(storageService, times(2)).delete(any());
+            assertEquals(0, outcome.photosDeleted());
+            verify(erasureRecordRepository, never()).recordPhotosDeleted(any(), any(), anyInt());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("#764: a rolled-back erasure deletes no photo")
+    void erase_rolledBack_deletesNothing() {
+        stubErasureWithOneReview(P1, P2);
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            var outcome = gdprService.eraseCustomerData(customerId);
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            }
+
+            verify(storageService, never()).delete(any());
+            verify(erasureRecordRepository, never()).recordPhotosDeleted(any(), any(), anyInt());
+            assertThrows(IllegalStateException.class, outcome::photosDeleted);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("#764: the photo step restores the caller's TenantContext (a prior value, or none)")
+    void erase_photoStep_restoresTheCallersTenantContext() {
+        stubErasureWithOneReview(P1);
+        UUID prior = UUID.randomUUID();
+        TenantContext.set(prior);
+        gdprService.eraseCustomerData(customerId);
+        assertEquals(Optional.of(prior), TenantContext.get(), "a prior tenant is put back");
+
+        TenantContext.clear();
+        gdprService.eraseCustomerData(customerId);
+        assertEquals(Optional.empty(), TenantContext.get(), "no prior tenant stays no tenant");
+    }
+
+    @Test
+    @DisplayName("#764: a failing count write never escapes the post-commit hook, and the tally stays truthful")
+    void erase_afterCommit_countWriteFailure_isContainedAndTallySettled() {
+        stubErasureWithOneReview(P1, P2);
+        when(storageService.delete(any())).thenReturn(true);
+        when(erasureRecordRepository.recordPhotosDeleted(any(), any(), anyInt()))
+                .thenThrow(new IllegalStateException("simulated count-write failure"));
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            var outcome = gdprService.eraseCustomerData(customerId);
+            assertDoesNotThrow(GdprServiceTest::fireAfterCommit);
+            assertEquals(2, outcome.photosDeleted(), "the photos WERE deleted; the tally says so");
+            assertEquals(Optional.empty(), TenantContext.get());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     // Assign a JPA @GeneratedValue id in a unit test (no setter on the entity).

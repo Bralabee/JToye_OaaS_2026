@@ -56,7 +56,8 @@ public class GdprController {
             @ApiResponse(responseCode = "404", description = "Customer not found")
     })
     public ResponseEntity<ErasureResponse> eraseData(@PathVariable UUID customerId) {
-        return ResponseEntity.ok(gdprService.eraseCustomerData(customerId));
+        // The proxied transactional call returns after commit, and so after the post-commit photo step.
+        return ResponseEntity.ok(gdprService.eraseCustomerData(customerId).toResponse());
     }
 
     // DTOs

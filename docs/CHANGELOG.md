@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### GDPR erasure works for customers who left a review (#770) — 2026-09-30
+
+- **Why.** Issue #764. Erasing a customer failed for anyone who had ever left a review.
+  `reviews` has FORCE RLS but no UPDATE policy, so the anonymising UPDATE matched 0 rows
+  for the application role, Hibernate refused it, and the erasure rolled back. By then the
+  review photos had already been deleted from Blob, and object storage does not roll back.
+  The lookup was also by email alone. `reviews_tenant_read` shows PUBLISHED reviews to every
+  tenant, so the erasure and the Article-20 export both reached another tenant's review.
+  The existing suites stayed green because they run as the Testcontainers superuser, which
+  bypasses FORCE RLS, and none of them inserts a review.
+- **Fix.** V67 adds a tenant-scoped UPDATE policy on `reviews`: USING and WITH CHECK both pin
+  `current_tenant_id()`, FOR UPDATE only. On `erasure_records` it adds a tenant-scoped
+  UPDATE policy limited to records whose `photos_deleted` is still 0, plus a BEFORE UPDATE
+  trigger (`erasure_records_write_once`) that refuses, for every role, any update other than
+  `photos_deleted` going from 0 to a positive count with every other column unchanged. A
+  policy alone is a row filter: round-1 review found it left every column of a zero-count
+  record rewritable. So the only write the Article-17 record accepts is its photo count,
+  once. A zero count can still be set once by its own tenant. The table owner or a superuser
+  can bypass a trigger; production's `jtoye_runtime` is neither. The review lookup on erase
+  and on export now names the tenant, and the email-only finder is deleted. Photos are deleted only after the
+  erasure commits, under the erasing tenant. The evidence row is still written inside the
+  transaction. The real WR-02 photo count is written onto it once, after commit, in its own
+  transaction. The admin response is unchanged, so there is no OpenAPI diff.
+- **Proof.** `GdprErasureReviewRlsIntegrationTest` runs under a NOSUPERUSER role with a real
+  Azurite. It has five arms: the happy path, another tenant's published review, a
+  rolled-back erasure, and two on the erasure record. Arm D checks that the app role cannot
+  rewrite a zero-count record's other columns. Arm E checks that a recorded record is final,
+  including for a BYPASSRLS role. The first three were RED on the unfixed tree. Five break
+  arms each turned their named arm RED: no reviews UPDATE policy, email-only lookup, inline
+  photo deletion, default propagation for the count write, and no write-once trigger (D and
+  E, which were also RED against the policy-only V67). The closing clean run is GREEN.
+
 ### Terminal-state deferrals expired 2026-09-30: seven rows were already covered, seven re-dated (#768) — 2026-09-30
 
 - **Why.** Fourteen dated deferrals in `docs/ops/terminal-states.yaml` expired on 2026-09-30,
