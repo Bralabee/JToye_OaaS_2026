@@ -30,6 +30,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their named arm RED: no reviews UPDATE policy, email-only lookup, inline photo deletion,
   and default propagation for the count write. The closing clean run is GREEN.
 
+### Terminal-state deferrals expired 2026-09-30: seven rows were already covered, seven re-dated (#768) — 2026-09-30
+
+- **Why.** Fourteen dated deferrals in `docs/ops/terminal-states.yaml` expired on 2026-09-30,
+  which turned the required `Operational Contracts` check (`check-terminal-states.sh` X-2)
+  red on every branch, `main` included. Re-examining each reason on its expiry date is the
+  register's design, and seven reasons turned out to be false.
+- **Resolved (7).**
+  - TS-01, TS-03 and TS-04 (DLQ depth) have been covered by `DeadLetterQueueNonEmpty` since
+    27-03 (PR #336). It was observed firing in 27-03's drills (§14 Group A), not on a real
+    batch.
+  - **TS-02 was mis-recorded.** It named `DeadLetterQueueNonEmpty`, whose expression *excludes*
+    `payment.events.dlq`, so it claimed coverage from a rule that can never fire for it. It
+    now names `PaymentDeadLetterQueueNonEmpty`, the critical rule that covers it.
+  - **TS-05 and TS-06** named `OutboxPoisonRows`, a rule that never existed, while
+    `OutboxDeadLetterRising` (27-03) has read both outbox dead-letter counters all along.
+  - TS-14's wrong-subject defect was removed by 27-03 D-11, and its runbook section is marked
+    RESOLVED.
+- **Re-dated to 2026-12-31 (7), by owner ruling.**
+  - TS-07 to TS-10 and TS-17 are now `UNPLANNED`: no phase builds those rules, and DPLY-03
+    runs the monitoring stack without authoring rules.
+  - TS-16 stays on 27-06. No alert can ever exist for it, so it will recur at every expiry
+    until X-2 accepts an executable detector in place of an alert.
+  - TS-11 stays on `arch_no_platform_operator`.
+  - Each reason carries its 2026-09-30 re-measurement.
+- **The lesson.** The first pass searched `alerts.yml` for the alert *name* each row gave,
+  and missed TS-05 and TS-06. Searching the *metric* is what finds coverage. The PR's round-1
+  review caught it.
+- **Evidence.** Before the change, `check-terminal-states.sh` gave rc=1 with 14
+  expired-deferral violations. After it, rc=0 with 7 dated deferrals and 0 expired.
+  `check-doc-citations.sh` and `check-alert-rules.sh` both pass (rc=0).
+
 ### Phase 36: object storage is Azure Blob throughout, Azurite locally and in the nightly (#763) — 2026-09-29
 
 - **Why.** The retired self-hosted object store's community images are gone for good: the
