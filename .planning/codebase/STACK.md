@@ -70,7 +70,7 @@
 - PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:243`) — explicit pin, not Boot-managed.
 - Azure Storage Blob SDK 12.35.1 (`com.azure:azure-storage-blob`) + Azure Identity 1.18.6 (`com.azure:azure-identity`) — the object-store client (Azurite emulator locally, Azure Blob Storage in staging/production) and the Workload Identity credential used in AKS.
 - Stripe Java SDK 33.4.0 — Payment intents, Connect (destination charges), webhook signature verification.
-- @stripe/react-stripe-js 6.12.0 + @stripe/stripe-js 9.15.0 — Frontend Stripe Elements integration.
+- @stripe/react-stripe-js 6.12.0 + @stripe/stripe-js 9.17.0 — Frontend Stripe Elements integration.
 - next-auth 5.0.0-beta.32 (`@auth/core` pinned via `overrides` to `0.41.3`) — Session/auth middleware, Keycloak OIDC provider.
 - @modelcontextprotocol/sdk ^1.29.0 — MCP server protocol implementation (`mcp-server/package.json`).
 - golang-jwt/jwt/v5 v5.3.1 — Edge gateway JWT validation against Keycloak JWKS.
