@@ -73,7 +73,8 @@ public class GdprService {
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
 
         List<Order> orders = orderRepository.findByCustomerId(customerId);
-        List<Review> reviews = reviewRepository.findByCustomerEmail(customer.getEmail());
+        List<Review> reviews = reviewRepository.findByTenantIdAndCustomerEmail(
+                customer.getTenantId(), customer.getEmail());
 
         var customerData = new GdprController.CustomerExport(
                 customer.getId(),
@@ -146,6 +147,9 @@ public class GdprService {
      *       (that table is keyed by vendor-staff {@code user_id}, with no {@code Customer}
      *       join). Zero matches is the normal case and never a failure; there is no
      *       {@code _aud} mirror to scrub (D-09).</li>
+     *   <li><b>Reviews in this tenant only (#764)</b> — the review lookup carries an explicit
+     *       tenant predicate because {@code reviews_tenant_read} shows PUBLISHED reviews across
+     *       tenants, so an email-only lookup would reach another tenant's review.</li>
      *   <li><b>Durable record</b> — persists exactly one PII-free {@link ErasureRecord}
      *       (SHA-256 email hash, never plaintext) as proof the erasure occurred.</li>
      * </ol>
@@ -196,7 +200,7 @@ public class GdprService {
         orderRepository.saveAll(new ArrayList<>(ordersById.values()));
 
         // Anonymise PII on reviews AND physically delete their stored photos.
-        List<Review> reviews = reviewRepository.findByCustomerEmail(originalEmail);
+        List<Review> reviews = reviewRepository.findByTenantIdAndCustomerEmail(tenantId, originalEmail);
         int reviewsAnonymised = 0;
         int photosDeleted = 0;
         int photosNotDeleted = 0;

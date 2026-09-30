@@ -82,7 +82,7 @@ class GdprServiceTest {
 
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of(order));
-        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of(review));
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of(review));
 
         var result = gdprService.exportCustomerData(customerId);
 
@@ -139,7 +139,7 @@ class GdprServiceTest {
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of(linkedOrder));
         when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com"))
                 .thenReturn(List.of(guestOrder));
-        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of(review));
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of(review));
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
         when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
@@ -225,7 +225,7 @@ class GdprServiceTest {
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
         when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
-        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of(review));
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of(review));
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
         when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
@@ -266,7 +266,7 @@ class GdprServiceTest {
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
         when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
-        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of());
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of());
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
         when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
@@ -290,11 +290,48 @@ class GdprServiceTest {
     void exportCustomerData_includesAllergenData() {
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
-        when(reviewRepository.findByCustomerEmail("jane@example.com")).thenReturn(List.of());
+        when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of());
 
         var result = gdprService.exportCustomerData(customerId);
 
         assertEquals(5, result.customer().allergenRestrictions());
+    }
+
+    @Test
+    @DisplayName("#764: export and erase look reviews up in the CUSTOMER'S tenant, never by email alone")
+    void exportAndErase_scopeTheReviewLookupToTheCustomersTenant() {
+        // Another tenant's PUBLISHED review under the same email is visible through RLS, so a
+        // lookup that dropped the tenant would return it. Stub it under the WRONG tenant: a
+        // correctly scoped call never matches this stub and gets Mockito's empty default.
+        UUID otherTenant = UUID.randomUUID();
+        Review foreign = new Review();
+        foreign.setCustomerEmail("jane@example.com");
+        foreign.setCustomerName("Jane in another tenant");
+        foreign.setComment("not yours to erase");
+        lenient().when(reviewRepository.findByTenantIdAndCustomerEmail(otherTenant, "jane@example.com"))
+                .thenReturn(List.of(foreign));
+
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
+        when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
+
+        var export = gdprService.exportCustomerData(customerId);
+        assertEquals(0, export.reviews().size(), "the export must not carry another tenant's review");
+
+        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
+        when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
+        when(orderRepository.scrubOrdersAudit(eq(tenantId), eq(customerId), any(), eq("[REDACTED]"))).thenReturn(0);
+        when(customerRepository.scrubCustomerAudit(eq(tenantId), eq(customerId), eq("[REDACTED]"))).thenReturn(0);
+        when(erasureRecordRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        var erased = gdprService.eraseCustomerData(customerId);
+
+        assertEquals(0, erased.reviewsAnonymised(), "the erasure must not reach another tenant's review");
+        assertEquals("Jane in another tenant", foreign.getCustomerName());
+        assertEquals("not yours to erase", foreign.getComment());
+        verify(reviewRepository, times(2)).findByTenantIdAndCustomerEmail(tenantId, "jane@example.com");
+        verify(reviewRepository, never()).findByTenantIdAndCustomerEmail(eq(otherTenant), any());
     }
 
     // Assign a JPA @GeneratedValue id in a unit test (no setter on the entity).
