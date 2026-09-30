@@ -17,6 +17,7 @@ import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.review.Review;
+import uk.jtoye.core.review.ReviewPhotoKeys;
 import uk.jtoye.core.review.ReviewRepository;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.UserDirectoryRepository;
@@ -148,8 +149,17 @@ public class GdprService {
      *       guest storefront orders (customer_id NULL) that share the subject's email,
      *       de-duplicated by order id. The email sweep is the line that reaches guest
      *       orders which a customer_id-only walk misses.</li>
-     *   <li><b>Photo cleanup, only after commit (#764)</b> — the review photo URLs are nulled
-     *       in the transaction and collected; each photo is physically deleted from Azure Blob via
+     *   <li><b>Only the review's own photos, never the catalogue (#771)</b> — review photo URLs
+     *       are client-supplied and were never validated, so a customer could name the shop's
+     *       product, gallery, logo, banner or media images, or another customer's review photo, and
+     *       have this erasure delete them. Every URL is still detached from the review, but only a
+     *       URL whose key is {@code <erasing tenant>/reviews/<that review's orderId>/<plain name>}
+     *       ({@link ReviewPhotoKeys}, an allow-list, so it fails closed) is ever scheduled for
+     *       deletion. Everything else is RETAINED — not deleted, not counted — and the retained
+     *       count is logged at WARN with the record id. This holds for rows written before
+     *       creation-time validation existed, because it does not depend on it.</li>
+     *   <li><b>Photo cleanup, only after commit (#764)</b> — the eligible review photo URLs are
+     *       collected in the transaction; each photo is physically deleted from Azure Blob via
      *       {@link StorageService#delete} (idempotent, WARN-and-continue) only once the erasure has
      *       COMMITTED. Object storage is not transactional, so deleting inside the transaction
      *       destroyed the photos of every erasure that then rolled back. Only a photo that call
@@ -228,13 +238,25 @@ public class GdprService {
         List<Review> reviews = reviewRepository.findByTenantIdAndCustomerEmail(tenantId, originalEmail);
         int reviewsAnonymised = 0;
         List<String> photoUrlsToDelete = new ArrayList<>();
+        int photoUrlsDetached = 0;
+        int retainedNotReviewPhoto = 0;
+        int retainedCatalogueReferenced = 0;
         for (Review review : reviews) {
             List<String> photoUrls = review.getPhotoUrls();
             if (photoUrls != null) {
                 for (String url : photoUrls) {
-                    if (url != null) {
-                        photoUrlsToDelete.add(url);
+                    if (url == null) {
+                        continue;
                     }
+                    photoUrlsDetached++;
+                    // #771: only a photo under THIS review's own order path, in the erasing tenant,
+                    // is ever deleted. The key comes from the same parse delete(url) acts on.
+                    Optional<String> key = storageService.publicKeyOf(url);
+                    if (key.isEmpty() || !ReviewPhotoKeys.isReviewPhotoKey(key.get(), tenantId, review.getOrderId())) {
+                        retainedNotReviewPhoto++;
+                        continue;
+                    }
+                    photoUrlsToDelete.add(url);
                 }
             }
             review.setCustomerName(ANONYMISED);
@@ -274,10 +296,19 @@ public class GdprService {
                 erasedBy, erasedAt));
 
         log.info("GDPR erasure for customer {} — {} orders, {} reviews anonymised, "
-                        + "{} audit rows scrubbed, {} review photo URL(s) detached (deleted after commit), "
-                        + "{} directory rows erased; record {}",
-                customerId, ordersAnonymised, reviewsAnonymised, audRowsScrubbed, photoUrlsToDelete.size(),
+                        + "{} audit rows scrubbed, {} review photo URL(s) detached, {} eligible for deletion "
+                        + "after commit, {} retained as not this review's photo, {} retained as referenced by "
+                        + "the catalogue, {} directory rows erased; record {}",
+                customerId, ordersAnonymised, reviewsAnonymised, audRowsScrubbed, photoUrlsDetached,
+                photoUrlsToDelete.size(), retainedNotReviewPhoto, retainedCatalogueReferenced,
                 directoryRowsErased, record.getId());
+        if (retainedNotReviewPhoto > 0 || retainedCatalogueReferenced > 0) {
+            // #771: detached from the review but NOT deleted, and never counted in the record. No URL
+            // is logged — the URLs are client-supplied.
+            log.warn("GDPR erasure record {} — {} review photo URL(s) retained as not this review's photo "
+                            + "and {} retained as referenced by the catalogue; detached, not deleted (#771)",
+                    record.getId(), retainedNotReviewPhoto, retainedCatalogueReferenced);
+        }
 
         PhotoErasureTally photos = new PhotoErasureTally();
         schedulePhotoErasure(tenantId, customerId, record.getId(), List.copyOf(photoUrlsToDelete), photos);

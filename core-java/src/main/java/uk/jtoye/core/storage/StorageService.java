@@ -250,6 +250,27 @@ public class StorageService {
     }
 
     /**
+     * The object key a public URL addresses: the text after {@code storage.blob.public-url + "/"},
+     * or empty for a null, blank or external URL (issue #771).
+     *
+     * <p>This is the ONE URL-to-key parse. {@link #delete(String)} takes its key from here, and so
+     * does every caller that must decide whether a URL is safe to delete (the GDPR erasure's
+     * review-photo allow-list, review creation), so classification and deletion can never parse
+     * the same URL differently. It performs no other check: the key may still name a foreign
+     * tenant, carry dot segments or a query — {@link #delete(String)}'s D-09 checks run after it.
+     */
+    public Optional<String> publicKeyOf(String url) {
+        if (url == null || url.isBlank()) {
+            return Optional.empty();
+        }
+        String publicUrlPrefix = properties.getBlob().getPublicUrl() + "/";
+        if (!url.startsWith(publicUrlPrefix)) {
+            return Optional.empty();
+        }
+        return Optional.of(url.substring(publicUrlPrefix.length()));
+    }
+
+    /**
      * Delete an image from object storage by its public URL. Only the public container is ever
      * addressed: a public URL never names a quarantined object.
      *
@@ -279,13 +300,13 @@ public class StorageService {
     public boolean delete(String imageUrl) {
         if (imageUrl == null || imageUrl.isBlank()) return false;
 
-        String publicUrlPrefix = properties.getBlob().getPublicUrl() + "/";
-        if (!imageUrl.startsWith(publicUrlPrefix)) {
+        Optional<String> parsed = publicKeyOf(imageUrl);
+        if (parsed.isEmpty()) {
             log.debug("Skipping delete for external URL: {}", imageUrl);
             return false;
         }
 
-        String key = imageUrl.substring(publicUrlPrefix.length());
+        String key = parsed.get();
         String keyForLog = withoutQuery(key);
         int firstSlash = key.indexOf('/');
         if (firstSlash <= 0) {

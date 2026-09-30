@@ -319,6 +319,38 @@ class StorageServiceTest {
         assertFalse(deleted[0], "a failed store delete must not be reported as a deletion (WR-02)");
     }
 
+    // ---- publicKeyOf: the one URL-to-key parse (#771) ----
+
+    @Test
+    @DisplayName("publicKeyOf (#771) - null, blank and external URLs have no key")
+    void publicKeyOf_NullBlankAndExternalAreEmpty() {
+        assertTrue(storageService.publicKeyOf(null).isEmpty(), "null");
+        assertTrue(storageService.publicKeyOf("").isEmpty(), "empty");
+        assertTrue(storageService.publicKeyOf("   ").isEmpty(), "blank");
+        assertTrue(storageService.publicKeyOf("https://example.com/other-image.jpg").isEmpty(), "external");
+    }
+
+    @Test
+    @DisplayName("publicKeyOf (#771) - the public URL without its trailing slash is not a key")
+    void publicKeyOf_PublicUrlWithoutSlashIsEmpty() {
+        assertTrue(storageService.publicKeyOf("http://localhost:10000/devstoreaccount1/jtoye-images").isEmpty());
+    }
+
+    @Test
+    @DisplayName("publicKeyOf (#771) - the same path on a different host is external")
+    void publicKeyOf_DifferentHostSamePathIsEmpty() {
+        String key = tenantId + "/reviews/" + entityId + "/p.webp";
+        assertTrue(storageService.publicKeyOf("http://evil.example:10000/devstoreaccount1/jtoye-images/" + key)
+                .isEmpty());
+    }
+
+    @Test
+    @DisplayName("publicKeyOf (#771) - a public URL yields exactly the key delete(url) addresses")
+    void publicKeyOf_PublicUrlYieldsExactKey() {
+        String key = tenantId + "/reviews/" + entityId + "/p.webp";
+        assertEquals(java.util.Optional.of(key), storageService.publicKeyOf(PUBLIC + key));
+    }
+
     // ---- Delete: the D-09 tenant guard (Phase 36) ----
     //
     // ProductMapper, ShopMapper and ReviewService persist client-supplied image URLs, and every
