@@ -61,9 +61,14 @@ Toolchain drift is reported, not applied: conda, npm, claude-code, gemini-cli, c
 antigravity-hub, plus carl-core PIN-BEHIND.
 
 **Next, in order:**
-1. The dependabot queue: #765 (docs-freshness: stale version claims), #756 (6 Jest timeouts
-   under the React 19.3 group, AND docs-freshness), #751, and #739 (needs Boot 4.1, issue #706).
-   Each also needs its review series before `review-record` goes green.
+1. The dependabot queue: #765, #756, #751 and #739. Their check state moves while they are
+   worked, so read it live (`gh pr checks <N>`) rather than from here. Durable facts: #756's
+   `Run Tests` red is 6 Jest timeouts, all in
+   `frontend/app/dashboard/__tests__/marketing-kitchen-shop-scope.test.tsx`, under the group
+   bump; #739 (springdoc 3.x) needs Boot 4.1 (issue #706) and reds the OpenAPI Breaking-Change
+   Gate, tests, integration tests, security scan and docs-freshness; a dependabot bump that
+   changes a version the docs quote reds docs-freshness via `scripts/check-doc-versions.sh`
+   until the live docs are updated on the PR.
 2. Issue #648: a within-tenant BOLA on `/api/v1/sync/batch`. #726 added the fix
    (`@PreAuthorize` on `SyncController` plus `shopAccessService.require` in `SyncService`) and
    `SyncBatchAuthorizationIntegrationTest`. Verify the authorization is on the production path
