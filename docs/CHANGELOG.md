@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### A review can no longer name a vendor's catalogue images for deletion — 2026-09-30
+### A review can no longer name a vendor's catalogue images for deletion (#772) — 2026-09-30
 
 - **Why.** Issue #771. A review's `photoUrls` came from the client and were never checked, and
   GDPR erasure deleted every object they named in the erasing tenant. A customer with a
