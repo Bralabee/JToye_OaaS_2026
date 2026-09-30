@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Terminal-state deferrals expired 2026-09-30: five rows were already covered, nine re-dated (#PRNUM) — 2026-09-30
+### Terminal-state deferrals expired 2026-09-30: five rows were already covered, nine re-dated (#768) — 2026-09-30
 
 - **Why.** Fourteen dated deferrals in `docs/ops/terminal-states.yaml` expired on 2026-09-30,
   which turned the required `Operational Contracts` check (`check-terminal-states.sh` X-2)
