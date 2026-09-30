@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### GDPR erasure works for customers who left a review — 2026-09-30
+### GDPR erasure works for customers who left a review (#770) — 2026-09-30
 
 - **Why.** Issue #764. Erasing a customer failed for anyone who had ever left a review.
   `reviews` has FORCE RLS but no UPDATE policy, so the anonymising UPDATE matched 0 rows
