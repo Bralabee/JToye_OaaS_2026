@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A review can no longer name a vendor's catalogue images for deletion (#772) — 2026-09-30
+
+- **Why.** Issue #771. A review's `photoUrls` came from the client and were never checked, and
+  GDPR erasure deleted every object they named in the erasing tenant. A customer with a
+  COMPLETED order could list the shop's own product, gallery, logo, banner and media images
+  (ref-counted derivatives and thumbnails included), or another customer's review photo, then
+  file an erasure and destroy them.
+- **Fix.** Erasure now deletes a review photo only when two independent checks pass. First,
+  its key must be `<erasing tenant>/reviews/<that review's orderId>/<one plain name>`
+  (`ReviewPhotoKeys`, an allow-list, so it fails closed). Second, no live catalogue row in the
+  tenant may reference it: `products.image_url`, `products.additional_image_urls`,
+  `shops.logo_url`, `shops.banner_url`, `media_asset.object_key` and the media thumbnail
+  sibling. Everything else is still detached from the review but kept, is never counted in
+  the Article-17 record, and is reported at WARN (counts only, no URLs). `StorageService.publicKeyOf`
+  is now the one URL-to-key parse, used by `delete(url)` itself, so the check and the delete
+  cannot read a URL differently. Review creation applies the same rule and refuses anything
+  else with a typed RFC 7807 400, `https://jtoye.uk/errors/invalid-review-photo`, whose detail
+  names the index and never echoes the URL. No migration, no request or response change.
+- **Displaced.** No non-empty `photoUrls` value is accepted until a review-photo upload path
+  exists, because nothing writes under `<tenant>/reviews/<orderId>/` yet; no first-party
+  client sends photos today. Existing reviews render exactly as before, and reviews without
+  photos are unaffected.
+- **Proof.** `GdprErasureReviewRlsIntegrationTest` gains arms F and G under a NOSUPERUSER role
+  with a real Azurite. Both were RED on the unfixed tree: F saw all eight catalogue and
+  foreign objects deleted (photosDeleted 9, not 1), and G saw a catalogue-referenced own-order
+  photo deleted. Six break arms each turned their named check RED: allow-list forced open (F
+  loses exactly the orphan and the other review's photo, all six catalogue objects survive,
+  which proves the reference query sees every catalogue column under RLS), order binding
+  dropped, reference count ignored, creation check removed, handler removed, and photo
+  deletion forced inline (the #764 rollback arm, still discriminating after its re-key). The
+  closing clean run is GREEN.
+
 ### GDPR erasure works for customers who left a review (#770) — 2026-09-30
 
 - **Why.** Issue #764. Erasing a customer failed for anyone who had ever left a review.

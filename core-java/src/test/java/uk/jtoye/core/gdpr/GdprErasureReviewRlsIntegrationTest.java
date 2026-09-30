@@ -2,6 +2,7 @@ package uk.jtoye.core.gdpr;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.assertj.core.api.SoftAssertions;
 import org.hibernate.Session;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,7 +42,9 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -50,7 +53,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Issue #764, proven against the real posture: Postgres 15 with every migration applied, the
+ * Issues #764 and #771, proven against the real posture: Postgres 15 with every migration applied, the
  * connection role downgraded to NOSUPERUSER so FORCE row-level security is genuinely enforced,
  * and a real Azurite with {@link StorageService} unstubbed.
  *
@@ -67,6 +70,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       column of every record whose count was still 0; D and E prove the only write the database
  *       accepts is the one-time photo count, and E proves it for a role that bypasses row-level
  *       security too.</li>
+ *   <li><b>F</b> (#771) — a review's {@code photo_urls} were never validated, and erasure deleted
+ *       every own-tenant object they named. A customer could therefore name the shop's catalogue
+ *       images (product image and gallery, shop logo and banner, a media_asset derivative and its
+ *       thumbnail) or ANOTHER customer's review photo, file an erasure, and destroy them. Arm F
+ *       proves erasure deletes only the photo under the review's OWN order path. Its review is
+ *       seeded by SQL on purpose: rows planted before creation-time validation existed bypass that
+ *       validation, so the erasure guard must hold on its own.</li>
+ *   <li><b>G</b> (#771) — a photo under the review's own order path that a catalogue row references
+ *       (the vendor pointed a product at it) is retained: deleting it would break a live catalogue
+ *       image, which is the #771 harm.</li>
  * </ol>
  *
  * <p>The class is deliberately NOT {@code @Transactional}: the post-commit photo step only fires
@@ -163,9 +176,10 @@ class GdprErasureReviewRlsIntegrationTest {
         byte[] a1Bytes = webpBytes();
         byte[] a2Bytes = webpBytes();
         byte[] bxBytes = webpBytes();
-        String a1 = putPhoto(a, a1Bytes);
-        String a2 = putPhoto(a, a2Bytes);
-        String bx = putPhoto(b, bxBytes);
+        String a1 = putPhoto(a, orderA, a1Bytes);
+        String a2 = putPhoto(a, orderA, a2Bytes);
+        // Same order, FOREIGN tenant: the most adversarial shape for a key that names this review.
+        String bx = putPhoto(b, orderA, bxBytes);
         UUID reviewId = seedReview(a, shopA, orderA, email, "Reviewer A", "lovely jollof",
                 a1, a2, EXTERNAL_URL, bx);
 
@@ -217,13 +231,13 @@ class GdprErasureReviewRlsIntegrationTest {
         UUID shopA = seedShop(a, false);
         UUID customerA = seedCustomer(a, email);
         UUID orderA = seedOrder(a, shopA, email);
-        String aPhoto = putPhoto(a, webpBytes());
+        String aPhoto = putPhoto(a, orderA, webpBytes());
         UUID reviewA = seedReview(a, shopA, orderA, email, "Reviewer in A", "comment in A", aPhoto);
 
         UUID shopB = seedShop(b, true);
         UUID orderB = seedOrder(b, shopB, email);
         byte[] bPhotoBytes = webpBytes();
-        String bPhoto = putPhoto(b, bPhotoBytes);
+        String bPhoto = putPhoto(b, orderB, bPhotoBytes);
         UUID reviewB = seedReview(b, shopB, orderB, email, "Reviewer in B", "comment in B", bPhoto);
         ReviewRow bBefore = readReview(b, reviewB);
 
@@ -265,7 +279,7 @@ class GdprErasureReviewRlsIntegrationTest {
         UUID customerId = seedCustomer(a, email);
         UUID orderA = seedOrder(a, shopA, email);
         byte[] photoBytes = webpBytes();
-        String photo = putPhoto(a, photoBytes);
+        String photo = putPhoto(a, orderA, photoBytes);
         UUID reviewId = seedReview(a, shopA, orderA, email, "Rollback Reviewer", "keep me", photo);
         assertThat(anonymousGet(photo).statusCode()).as("PRECONDITION: the photo is served").isEqualTo(200);
 
@@ -429,6 +443,126 @@ class GdprErasureReviewRlsIntegrationTest {
         }
     }
 
+    // ---- Arm F (#771) --------------------------------------------------------------------------
+
+    @Test
+    void erasureNeverDeletesCatalogueImagesOrAnotherReviewsPhoto() throws Exception {
+        UUID a = seedTenant();
+        String email = "reviewer-771-" + UUID.randomUUID() + "@example.com";
+        String otherEmail = "other-771-" + UUID.randomUUID() + "@example.com";
+        UUID shopId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID assetId = UUID.randomUUID();
+        String hex = HexFormat.of().formatHex(UUID.randomUUID().toString().getBytes()).substring(0, 16);
+
+        Stored pimg = store("PIMG", a + "/products/" + productId + "/" + UUID.randomUUID() + ".webp");
+        Stored padd = store("PADD", a + "/products/" + productId + "/" + UUID.randomUUID() + ".webp");
+        Stored logo = store("LOGO", a + "/shops/" + shopId + "/logo-" + hex + ".webp");
+        Stored banner = store("BANNER", a + "/shops/" + shopId + "/banner-" + hex + ".webp");
+        Stored mderiv = store("MDERIV", a + "/media/" + assetId + ".webp");
+        Stored mthumb = store("MTHUMB", a + "/media/" + assetId + "_thumb.webp");
+        Stored orph = store("ORPH", a + "/products/" + UUID.randomUUID() + "/" + UUID.randomUUID() + ".webp");
+
+        seedShopWithImages(a, shopId, logo.url(), banner.url());
+        seedProductWithImages(a, productId, pimg.url(), padd.url());
+        seedActiveMediaAsset(a, assetId, a + "/media/" + assetId + ".webp");
+        seedProductMedia(a, productId, assetId);
+
+        UUID customerId = seedCustomer(a, email);
+        UUID orderA = seedOrder(a, shopId, email);
+        seedCustomer(a, otherEmail);
+        UUID order2 = seedOrder(a, shopId, otherEmail);
+
+        Stored other = store("OTHER", a + "/reviews/" + order2 + "/p.webp");
+        Stored own = store("OWN", a + "/reviews/" + orderA + "/p.webp");
+        UUID otherReview = seedReview(a, shopId, order2, otherEmail, "Other Reviewer", "not mine", other.url());
+
+        List<Stored> kept = List.of(pimg, padd, logo, banner, mderiv, mthumb, orph, other);
+        List<Stored> all = new ArrayList<>(kept);
+        all.add(own);
+        // Seeded by SQL, NOT through ReviewService: a row planted before creation-time validation.
+        UUID reviewId = seedReview(a, shopId, orderA, email, "Reviewer 771", "names the catalogue",
+                all.stream().map(Stored::url).toArray(String[]::new));
+
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM reviews WHERE id = ?", reviewId))
+                .as("PRECONDITION: tenant A's session sees the subject review").isEqualTo(1L);
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM products WHERE id = ? AND image_url = ?", productId, pimg.url()))
+                .as("PRECONDITION: the product and its image_url are visible under tenant A's RLS").isEqualTo(1L);
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM media_asset WHERE id = ?", assetId))
+                .as("PRECONDITION: the media_asset row is visible under tenant A's RLS").isEqualTo(1L);
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM shops WHERE id = ? AND logo_url = ?", shopId, logo.url()))
+                .as("PRECONDITION: the shop and its logo_url are visible under tenant A's RLS").isEqualTo(1L);
+        Map<String, HttpResponse<byte[]>> before = fetchAll(all);
+        before.forEach((name, r) -> assertThat(r.statusCode()).as("PRECONDITION: %s is served", name).isEqualTo(200));
+
+        TenantContext.set(a);
+        var outcome = gdprService.eraseCustomerData(customerId);
+        TenantContext.clear();
+
+        Map<String, HttpResponse<byte[]>> after = fetchAll(all);
+        long durable = countUnder(a, "SELECT photos_deleted FROM erasure_records WHERE subject_customer_id = ?",
+                customerId);
+        ReviewRow subject = readReview(a, reviewId);
+        ReviewRow otherRow = readReview(a, otherReview);
+        SoftAssertions.assertSoftly(softly -> {
+            for (Stored o : kept) {
+                HttpResponse<byte[]> r = after.get(o.name());
+                softly.assertThat(r.statusCode()).as("%s after erasure", o.name()).isEqualTo(200);
+                softly.assertThat(r.body()).as("%s bytes after erasure", o.name()).isEqualTo(o.bytes());
+            }
+            softly.assertThat(after.get("OWN").statusCode()).as("OWN (the review's own-order photo) after erasure")
+                    .isEqualTo(404);
+            softly.assertThat(outcome.photosDeleted()).as("photosDeleted").isEqualTo(1);
+            softly.assertThat(outcome.reviewsAnonymised()).as("reviewsAnonymised").isEqualTo(1);
+            softly.assertThat(durable).as("durable erasure_records.photos_deleted").isEqualTo(1L);
+            softly.assertThat(subject.photoUrls()).as("the subject review's photo_urls").isNull();
+            softly.assertThat(otherRow.photoUrls()).as("the other customer's review photo_urls")
+                    .containsExactly(other.url());
+        });
+    }
+
+    // ---- Arm G (#771) --------------------------------------------------------------------------
+
+    @Test
+    void erasureKeepsAReviewPhotoTheCatalogueReferences() throws Exception {
+        UUID a = seedTenant();
+        String email = "shared-771-" + UUID.randomUUID() + "@example.com";
+        UUID shopA = seedShop(a, false);
+        UUID customerId = seedCustomer(a, email);
+        UUID orderA = seedOrder(a, shopA, email);
+
+        Stored shared = store("SHARED", a + "/reviews/" + orderA + "/shared.webp");
+        Stored own2 = store("OWN2", a + "/reviews/" + orderA + "/own.webp");
+        UUID p2 = UUID.randomUUID();
+        seedProductWithImages(a, p2, shared.url());
+        UUID reviewId = seedReview(a, shopA, orderA, email, "Reviewer 771 G", "shared photo",
+                shared.url(), own2.url());
+
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM reviews WHERE id = ?", reviewId))
+                .as("PRECONDITION: tenant A's session sees the subject review").isEqualTo(1L);
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM products WHERE id = ? AND image_url = ?", p2, shared.url()))
+                .as("PRECONDITION: P2 and its image_url are visible under tenant A's RLS").isEqualTo(1L);
+        Map<String, HttpResponse<byte[]>> before = fetchAll(List.of(shared, own2));
+        before.forEach((name, r) -> assertThat(r.statusCode()).as("PRECONDITION: %s is served", name).isEqualTo(200));
+
+        TenantContext.set(a);
+        var outcome = gdprService.eraseCustomerData(customerId);
+        TenantContext.clear();
+
+        Map<String, HttpResponse<byte[]>> after = fetchAll(List.of(shared, own2));
+        long durable = countUnder(a, "SELECT photos_deleted FROM erasure_records WHERE subject_customer_id = ?",
+                customerId);
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(after.get("SHARED").statusCode()).as("SHARED (catalogue-referenced) after erasure")
+                    .isEqualTo(200);
+            softly.assertThat(after.get("SHARED").body()).as("SHARED bytes after erasure").isEqualTo(shared.bytes());
+            softly.assertThat(after.get("OWN2").statusCode()).as("OWN2 (unreferenced own-order photo) after erasure")
+                    .isEqualTo(404);
+            softly.assertThat(outcome.photosDeleted()).as("photosDeleted").isEqualTo(1);
+            softly.assertThat(durable).as("durable erasure_records.photos_deleted").isEqualTo(1L);
+        });
+    }
+
     // ---- helpers -------------------------------------------------------------------------------
 
     private UUID seedTenant() {
@@ -476,8 +610,67 @@ class GdprErasureReviewRlsIntegrationTest {
         return id;
     }
 
-    private String putPhoto(UUID tenant, byte[] bytes) {
-        return storageService.putBytes(tenant + "/reviews/" + UUID.randomUUID() + "/p.webp", bytes, "image/webp");
+    /**
+     * A review photo keyed the way a review-photo upload path must store one:
+     * {@code <tenant>/reviews/<orderId>/<one plain name>}. Built here as a string rather than through
+     * the production rule so the class compiles on a tree that does not have that rule yet.
+     */
+    private String putPhoto(UUID tenant, UUID order, byte[] bytes) {
+        return putObject(tenant + "/reviews/" + order + "/" + UUID.randomUUID() + ".webp", bytes);
+    }
+
+    private String putObject(String key, byte[] bytes) {
+        return storageService.putBytes(key, bytes, "image/webp");
+    }
+
+    private void seedShopWithImages(UUID tenant, UUID id, String logoUrl, String bannerUrl) {
+        update(tenant, "INSERT INTO shops (id, tenant_id, name, slug, address, published, delivery_fee_pennies, "
+                        + "  logo_url, banner_url) VALUES (?, ?, ?, ?, ?, false, 0, ?, ?)",
+                id, tenant, "shop-" + id, "shop-771-" + id, "Test Address", logoUrl, bannerUrl);
+    }
+
+    private void seedProductWithImages(UUID tenant, UUID id, String imageUrl, String... galleryUrls) {
+        String array = galleryUrls.length == 0 ? "'{}'::text[]"
+                : "ARRAY[" + String.join(", ", java.util.Collections.nCopies(galleryUrls.length, "?")) + "]::text[]";
+        List<Object> params = new ArrayList<>(List.of(id, tenant, "SKU-" + id.toString().substring(0, 8),
+                "Product " + id, "Yam (100%)"));
+        params.add(imageUrl);
+        params.addAll(Arrays.asList(galleryUrls));
+        update(tenant, "INSERT INTO products (id, tenant_id, sku, title, ingredients_text, image_url, "
+                        + "  additional_image_urls) VALUES (?, ?, ?, ?, ?, ?, " + array + ")",
+                params.toArray());
+    }
+
+    private void seedActiveMediaAsset(UUID tenant, UUID id, String objectKey) {
+        byte[] sha = new byte[32];
+        ThreadLocalRandom.current().nextBytes(sha);
+        update(tenant, "INSERT INTO media_asset (id, tenant_id, object_key, sha256, content_type, status) "
+                        + "VALUES (?, ?, ?, ?, 'image/webp', 'ACTIVE')",
+                id, tenant, objectKey, HexFormat.of().formatHex(sha));
+    }
+
+    private void seedProductMedia(UUID tenant, UUID productId, UUID assetId) {
+        update(tenant, "INSERT INTO product_media (id, tenant_id, product_id, asset_id, is_primary, sort_order) "
+                        + "VALUES (?, ?, ?, ?, true, 0)",
+                UUID.randomUUID(), tenant, productId, assetId);
+    }
+
+    /** One named object in Blob and the bytes it was written with. */
+    private record Stored(String name, String url, byte[] bytes) {
+    }
+
+    private Stored store(String name, String key) {
+        byte[] bytes = webpBytes();
+        return new Stored(name, putObject(key, bytes), bytes);
+    }
+
+    /** Every object's GET, taken before any soft assertion so the block itself throws nothing checked. */
+    private static Map<String, HttpResponse<byte[]>> fetchAll(List<Stored> objects) throws Exception {
+        Map<String, HttpResponse<byte[]>> out = new LinkedHashMap<>();
+        for (Stored o : objects) {
+            out.put(o.name(), anonymousGet(o.url()));
+        }
+        return out;
     }
 
     private record ReviewRow(String customerName, String customerEmail, String comment, List<String> photoUrls) {

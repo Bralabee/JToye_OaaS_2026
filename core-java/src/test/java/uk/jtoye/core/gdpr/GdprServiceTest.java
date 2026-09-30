@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.media.MediaAssetRepository;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
@@ -32,6 +33,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -50,6 +52,9 @@ class GdprServiceTest {
     private ErasureRecordRepository erasureRecordRepository;
     @Mock
     private UserDirectoryRepository userDirectoryRepository;
+    // #771: the catalogue reference check. Unstubbed it answers 0 ("not referenced").
+    @Mock
+    private MediaAssetRepository mediaAssetRepository;
     // A mocked manager lets TransactionTemplate run its callback: getTransaction returns null and
     // commit(null) is a no-op, so the post-commit count write executes inline in these tests.
     @Mock
@@ -60,7 +65,11 @@ class GdprServiceTest {
 
     private UUID customerId;
     private UUID tenantId;
+    private UUID orderId;
     private Customer customer;
+
+    /** The public base URL the StorageService stub parses, as StorageService.publicKeyOf does. */
+    private static final String BASE = "http://localhost:10000/devstoreaccount1/jtoye-images";
 
     @BeforeEach
     void setUp() {
@@ -72,7 +81,23 @@ class GdprServiceTest {
         customer.setNotes("Prefers extra sauce");
         setId(customer, "id", customerId);
         customer.setTenantId(tenantId);
+        orderId = UUID.randomUUID();
+        P1 = photoUrl("p1.webp");
+        P2 = photoUrl("p2.webp");
+        P3 = photoUrl("p3.webp");
+        // #771: the erasure classifies each URL through StorageService.publicKeyOf. The stub mirrors
+        // the real parse (strip BASE + "/", else empty), so an unstubbed mock cannot hand back an
+        // empty Optional that would silently make every URL "external".
+        lenient().when(storageService.publicKeyOf(anyString())).thenAnswer(i -> {
+            String url = i.getArgument(0);
+            return url.startsWith(BASE + "/") ? Optional.of(url.substring(BASE.length() + 1)) : Optional.empty();
+        });
         TenantContext.clear();
+    }
+
+    /** A photo under the subject review's own order path: the only shape erasure may delete (#771). */
+    private String photoUrl(String name) {
+        return BASE + "/" + tenantId + "/reviews/" + orderId + "/" + name;
     }
 
     @AfterEach
@@ -149,9 +174,10 @@ class GdprServiceTest {
         review.setCustomerEmail("jane@example.com");
         review.setCustomerName("Jane Doe");
         review.setComment("Great!");
-        review.setPhotoUrls(new ArrayList<>(List.of(
-                "https://cdn.example.com/1/reviews/a/photo1.jpg",
-                "https://cdn.example.com/1/reviews/a/photo2.jpg")));
+        review.setOrderId(orderId);
+        String photo1 = photoUrl("photo1.jpg");
+        String photo2 = photoUrl("photo2.jpg");
+        review.setPhotoUrls(new ArrayList<>(List.of(photo1, photo2)));
 
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of(linkedOrder));
@@ -167,8 +193,8 @@ class GdprServiceTest {
                 .thenReturn(1);
         when(erasureRecordRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         // Both photos are really removed by the store (WR-02: only true results are counted).
-        when(storageService.delete("https://cdn.example.com/1/reviews/a/photo1.jpg")).thenReturn(true);
-        when(storageService.delete("https://cdn.example.com/1/reviews/a/photo2.jpg")).thenReturn(true);
+        when(storageService.delete(photo1)).thenReturn(true);
+        when(storageService.delete(photo2)).thenReturn(true);
 
         var result = gdprService.eraseCustomerData(customerId);
 
@@ -203,8 +229,8 @@ class GdprServiceTest {
         assertEquals("[REDACTED]", review.getCustomerName());
         assertNull(review.getComment());
         assertNull(review.getPhotoUrls());
-        verify(storageService).delete("https://cdn.example.com/1/reviews/a/photo1.jpg");
-        verify(storageService).delete("https://cdn.example.com/1/reviews/a/photo2.jpg");
+        verify(storageService).delete(photo1);
+        verify(storageService).delete(photo2);
 
         // Native tenant-scoped _aud scrub invoked with the customer's tenant + original email.
         verify(orderRepository).scrubOrdersAudit(tenantId, customerId, "jane@example.com", "[REDACTED]");
@@ -232,15 +258,17 @@ class GdprServiceTest {
     @Test
     @DisplayName("Erasure (WR-02): a photo the store did NOT delete is never counted as deleted in the record")
     void eraseCustomerData_countsOnlyPhotosTheStoreActuallyDeleted() {
-        // Review photo URLs are client-supplied: one is the tenant's own stored photo, one is
-        // another tenant's URL (refused by the D-09 guard), one is external. Only the first is
-        // a deletion, and the Article 17 record must say 1, not 3.
-        String own = "http://localhost:10000/devstoreaccount1/jtoye-images/" + tenantId + "/reviews/r/own.webp";
-        String foreign = "http://localhost:10000/devstoreaccount1/jtoye-images/" + UUID.randomUUID() + "/reviews/r/x.webp";
+        // Review photo URLs are client-supplied: one is the review's own photo, one is another
+        // tenant's URL, one is external. Only the first is a deletion, and the Article 17 record
+        // must say 1, not 3. Since #771 the foreign and external URLs never even reach delete:
+        // the erasure allow-list keeps them (D-09 at delete stays as a further layer).
+        String own = photoUrl("own.webp");
+        String foreign = BASE + "/" + UUID.randomUUID() + "/reviews/" + orderId + "/x.webp";
         String external = "https://cdn.example.com/elsewhere.jpg";
         Review review = new Review();
         review.setCustomerEmail("jane@example.com");
         review.setCustomerName("Jane Doe");
+        review.setOrderId(orderId);
         review.setPhotoUrls(new ArrayList<>(List.of(own, foreign, external)));
 
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
@@ -254,15 +282,13 @@ class GdprServiceTest {
         when(customerRepository.scrubCustomerAudit(eq(tenantId), eq(customerId), eq("[REDACTED]"))).thenReturn(0);
         when(erasureRecordRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(storageService.delete(own)).thenReturn(true);
-        when(storageService.delete(foreign)).thenReturn(false);
-        when(storageService.delete(external)).thenReturn(false);
 
         var result = gdprService.eraseCustomerData(customerId);
 
-        // Every URL was attempted, and every URL is cleared from the review either way.
+        // Only the review's own photo is attempted (#771), and every URL is cleared from the review.
         verify(storageService).delete(own);
-        verify(storageService).delete(foreign);
-        verify(storageService).delete(external);
+        verify(storageService, never()).delete(foreign);
+        verify(storageService, never()).delete(external);
         assertNull(review.getPhotoUrls());
         // ...but only the real removal is counted, in the response AND in the durable record.
         assertEquals(1, result.photosDeleted());
@@ -359,9 +385,11 @@ class GdprServiceTest {
 
     // ---- #764: photo deletion runs only after the erasure commits ------------------------------
 
-    private static final String P1 = "http://store/p1.webp";
-    private static final String P2 = "http://store/p2.webp";
-    private static final String P3 = "http://store/p3.webp";
+    // Under the subject review's own order path (set per test in setUp), so they pass the #771
+    // erasure allow-list and these tests keep exercising the post-commit step.
+    private String P1;
+    private String P2;
+    private String P3;
 
     /** A subject with one review carrying {@code urls}; every repository call the erasure makes is stubbed. */
     private Review stubErasureWithOneReview(String... urls) {
@@ -369,6 +397,7 @@ class GdprServiceTest {
         review.setCustomerEmail("jane@example.com");
         review.setCustomerName("Jane Doe");
         review.setComment("Great!");
+        review.setOrderId(orderId);
         review.setPhotoUrls(new ArrayList<>(List.of(urls)));
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
@@ -514,6 +543,49 @@ class GdprServiceTest {
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
+    }
+
+    // ---- #771: erasure deletes only a photo under the review's own order path ------------------
+
+    @Test
+    @DisplayName("#771: only a photo under the review's own order path ever reaches delete")
+    void erase_onlyTheReviewsOwnOrderPathPhotoReachesDelete() {
+        String own = photoUrl("own.webp");
+        String productShaped = BASE + "/" + tenantId + "/products/" + UUID.randomUUID() + "/p.webp";
+        String otherOrder = BASE + "/" + tenantId + "/reviews/" + UUID.randomUUID() + "/p.webp";
+        String external = "https://cdn.example.com/elsewhere.jpg";
+        Review review = stubErasureWithOneReview(own, productShaped, otherOrder, external);
+        when(storageService.delete(own)).thenReturn(true);
+
+        var outcome = gdprService.eraseCustomerData(customerId); // inline: no synchronization active
+
+        verify(storageService, times(1)).delete(any());
+        verify(storageService).delete(own);
+        assertNull(review.getPhotoUrls(), "every URL is detached from the review, kept or not");
+        assertEquals(1, outcome.photosDeleted());
+        UUID recordId = savedRecord().getId();
+        verify(erasureRecordRepository).recordPhotosDeleted(recordId, tenantId, 1);
+    }
+
+    @Test
+    @DisplayName("#771: an own-order review photo the catalogue references is retained")
+    void erase_ownOrderPhotoTheCatalogueReferences_isRetained() {
+        String shared = photoUrl("shared.webp");
+        String own = photoUrl("own.webp");
+        String sharedKey = tenantId + "/reviews/" + orderId + "/shared.webp";
+        stubErasureWithOneReview(shared, own);
+        when(mediaAssetRepository.countCatalogueReferences(any(), anyString())).thenReturn(0L);
+        when(mediaAssetRepository.countCatalogueReferences(tenantId, sharedKey)).thenReturn(1L);
+        when(storageService.delete(own)).thenReturn(true);
+
+        var outcome = gdprService.eraseCustomerData(customerId); // inline: no synchronization active
+
+        verify(storageService, never()).delete(shared);
+        verify(storageService, times(1)).delete(own);
+        assertEquals(1, outcome.photosDeleted());
+        // The reference check runs under the ERASING tenant, for each key that passed the allow-list.
+        verify(mediaAssetRepository).countCatalogueReferences(tenantId, sharedKey);
+        verify(mediaAssetRepository, never()).countCatalogueReferences(argThat(t -> !tenantId.equals(t)), anyString());
     }
 
     // Assign a JPA @GeneratedValue id in a unit test (no setter on the entity).

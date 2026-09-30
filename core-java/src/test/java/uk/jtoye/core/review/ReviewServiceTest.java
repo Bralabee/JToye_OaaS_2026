@@ -5,13 +5,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import uk.jtoye.core.exception.InvalidReviewPhotoException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.media.MediaNormalizer;
+import uk.jtoye.core.media.MediaProperties;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
@@ -19,7 +22,12 @@ import uk.jtoye.core.review.dto.CreateReviewRequest;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.storage.BlobObjectStore;
+import uk.jtoye.core.storage.StorageProperties;
+import uk.jtoye.core.storage.StorageService;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,7 +42,11 @@ class ReviewServiceTest {
     @Mock private ReviewRepository reviewRepository;
     @Mock private OrderRepository orderRepository;
     @Mock private ShopRepository shopRepository;
-    @InjectMocks private ReviewService reviewService;
+    @Mock private BlobObjectStore blobObjectStore;
+    private ReviewService reviewService;
+
+    /** The public base URL of the REAL StorageService below; publicKeyOf is deliberately not stubbed. */
+    private static final String BASE = "http://localhost:10000/devstoreaccount1/jtoye-images";
 
     private Shop shop;
     private Order order;
@@ -71,6 +83,14 @@ class ReviewServiceTest {
         order.setStatus(OrderStatus.COMPLETED);
         order.setCustomerEmail("test@example.com");
         order.setCustomerName("Test User");
+
+        // #771: a REAL StorageService (the StorageServiceTest recipe), so the photo rule is exercised
+        // through the same URL-to-key parse erasure uses, not a stub of it.
+        StorageProperties properties = new StorageProperties();
+        properties.getBlob().setPublicUrl(BASE);
+        StorageService storageService = new StorageService(blobObjectStore, properties,
+                new MediaNormalizer(new MediaProperties()));
+        reviewService = new ReviewService(reviewRepository, orderRepository, shopRepository, storageService);
     }
 
     @AfterEach
@@ -195,5 +215,103 @@ class ReviewServiceTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> reviewService.createReview("test-shop", "test@example.com", request));
+    }
+
+    // ---- #771: photoUrls must be this review's own photos -------------------------------------
+
+    private String ownPhoto(String name) {
+        return BASE + "/" + shop.getTenantId() + "/reviews/" + orderId + "/" + name;
+    }
+
+    private CreateReviewRequest requestWithPhotos(List<String> photoUrls) {
+        CreateReviewRequest request = new CreateReviewRequest();
+        request.setOrderId(orderId);
+        request.setFoodRating(5);
+        request.setPhotoUrls(photoUrls);
+        return request;
+    }
+
+    private void stubReviewableOrder() {
+        when(shopRepository.findBySlugAndPublishedTrue("test-shop")).thenReturn(Optional.of(shop));
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(reviewRepository.existsByOrderId(orderId)).thenReturn(false);
+    }
+
+    private InvalidReviewPhotoException assertRefused(String label, List<String> photoUrls) {
+        stubReviewableOrder();
+        InvalidReviewPhotoException e = assertThrows(InvalidReviewPhotoException.class,
+                () -> reviewService.createReview("test-shop", "test@example.com", requestWithPhotos(photoUrls)),
+                label);
+        verify(reviewRepository, never()).save(any());
+        return e;
+    }
+
+    @Test
+    @DisplayName("#771: the shop's own product image URL is refused")
+    void createReview_refusesTheShopsProductImage() {
+        assertRefused("product image",
+                List.of(BASE + "/" + shop.getTenantId() + "/products/" + UUID.randomUUID() + "/p.webp"));
+    }
+
+    @Test
+    @DisplayName("#771: an external URL is refused")
+    void createReview_refusesAnExternalUrl() {
+        assertRefused("external", List.of("https://tracker.example.com/pixel.gif"));
+    }
+
+    @Test
+    @DisplayName("#771: another tenant's review path is refused")
+    void createReview_refusesAnotherTenantsReviewPath() {
+        assertRefused("another tenant", List.of(BASE + "/" + UUID.randomUUID() + "/reviews/" + orderId + "/p.webp"));
+    }
+
+    @Test
+    @DisplayName("#771: ANOTHER order's review path is refused")
+    void createReview_refusesAnotherOrdersReviewPath() {
+        assertRefused("another order",
+                List.of(BASE + "/" + shop.getTenantId() + "/reviews/" + UUID.randomUUID() + "/p.webp"));
+    }
+
+    @Test
+    @DisplayName("#771: a null entry is refused")
+    void createReview_refusesANullEntry() {
+        assertRefused("null entry", new ArrayList<>(Arrays.asList(ownPhoto("p.webp"), null)));
+    }
+
+    @Test
+    @DisplayName("#771: the refusal names the index and never echoes the submitted URL")
+    void createReview_refusalNamesTheIndexNotTheUrl() {
+        String submitted = "https://tracker.example.com/pixel-" + UUID.randomUUID() + ".gif";
+        InvalidReviewPhotoException e = assertRefused("index", List.of(ownPhoto("p.webp"), submitted));
+        assertTrue(e.getMessage().contains("photoUrls[1]"), e.getMessage());
+        assertFalse(e.getMessage().contains(submitted), "the detail must not echo the submitted URL");
+        assertFalse(e.getMessage().contains("tracker.example.com"), "not even its host");
+    }
+
+    @Test
+    @DisplayName("#771: a photo under this review's own order path is accepted and stored verbatim")
+    void createReview_acceptsItsOwnOrderPhotoVerbatim() {
+        String own = ownPhoto("p.webp");
+        stubReviewableOrder();
+        when(reviewRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        var result = reviewService.createReview("test-shop", "test@example.com", requestWithPhotos(List.of(own)));
+
+        ArgumentCaptor<Review> captor = ArgumentCaptor.forClass(Review.class);
+        verify(reviewRepository).save(captor.capture());
+        assertEquals(List.of(own), captor.getValue().getPhotoUrls());
+        assertEquals(List.of(own), result.getPhotoUrls());
+    }
+
+    @Test
+    @DisplayName("#771: photoUrls null and [] are accepted as before")
+    void createReview_acceptsNoPhotos() {
+        stubReviewableOrder();
+        when(reviewRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        assertNotNull(reviewService.createReview("test-shop", "test@example.com", requestWithPhotos(null)));
+        TenantContext.clear();
+        assertNotNull(reviewService.createReview("test-shop", "test@example.com", requestWithPhotos(List.of())));
+        verify(reviewRepository, times(2)).save(any());
     }
 }

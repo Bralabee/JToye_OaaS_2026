@@ -6,6 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.exception.InvalidReviewPhotoException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.TenantAccessDeniedException;
 import uk.jtoye.core.order.Order;
@@ -16,7 +17,9 @@ import uk.jtoye.core.review.dto.ReviewDto;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.storage.StorageService;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -28,12 +31,14 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final OrderRepository orderRepository;
     private final ShopRepository shopRepository;
+    private final StorageService storageService;
 
     public ReviewService(ReviewRepository reviewRepository, OrderRepository orderRepository,
-                         ShopRepository shopRepository) {
+                         ShopRepository shopRepository, StorageService storageService) {
         this.reviewRepository = reviewRepository;
         this.orderRepository = orderRepository;
         this.shopRepository = shopRepository;
+        this.storageService = storageService;
     }
 
     public Page<ReviewDto> getShopReviews(String shopSlug, Pageable pageable) {
@@ -81,6 +86,8 @@ public class ReviewService {
                 throw new IllegalArgumentException("You have already reviewed this order");
             }
 
+            requireOwnReviewPhotos(request.getPhotoUrls(), tenantId, request.getOrderId());
+
             Review review = new Review();
             review.setTenantId(tenantId);
             review.setShopId(shop.getId());
@@ -99,6 +106,32 @@ public class ReviewService {
             return toDto(review);
         } finally {
             TenantContext.clear();
+        }
+    }
+
+    /**
+     * Issue #771: every {@code photoUrls} entry must be a public storage URL whose key is this
+     * review's own photo key — {@code <shop tenant>/reviews/<orderId>/<one plain name>}, the rule
+     * {@link ReviewPhotoKeys} owns and GDPR erasure applies again. The URL-to-key parse is
+     * {@link StorageService#publicKeyOf}, the same one {@code delete(url)} acts on.
+     *
+     * <p>No upload path writes review photos yet, so in practice only {@code null} or an empty list
+     * is accepted today; the shape is the storage contract for whichever upload path comes first.
+     * Object existence is not checked: a key naming a missing object renders a broken image and can
+     * only ever delete itself. The first null, unparseable or non-conforming entry is refused; the
+     * message names its index and the required shape, never the submitted URL.
+     */
+    private void requireOwnReviewPhotos(List<String> urls, UUID tenantId, UUID orderId) {
+        if (urls == null) {
+            return;
+        }
+        for (int i = 0; i < urls.size(); i++) {
+            String url = urls.get(i);
+            Optional<String> key = url == null ? Optional.empty() : storageService.publicKeyOf(url);
+            if (key.isEmpty() || !ReviewPhotoKeys.isReviewPhotoKey(key.get(), tenantId, orderId)) {
+                throw new InvalidReviewPhotoException("photoUrls[" + i + "] is not a photo of this review: each "
+                        + "entry must be a stored image under <tenant>/reviews/<orderId>/<name>");
+            }
         }
     }
 
