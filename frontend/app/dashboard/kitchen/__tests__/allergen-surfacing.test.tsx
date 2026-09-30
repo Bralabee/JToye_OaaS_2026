@@ -34,8 +34,12 @@ jest.mock("@/hooks/use-stomp", () => ({
   useStomp: jest.fn(() => ({ connected: true, reconnecting: false })),
 }))
 
+// A STABLE toast, like the real hook's module-level `toast`. KitchenPage lists
+// `toast` in fetchOrders' deps, so a fresh jest.fn() per render re-fires the
+// fetch effect in an endless loop (#756, same class as the marketing suite).
+const mockToast = jest.fn()
 jest.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: jest.fn() }),
+  useToast: () => ({ toast: mockToast }),
 }))
 
 const mockGet = jest.fn()
@@ -176,6 +180,8 @@ describe("KDS card — where the banner sits", () => {
     expect(banner).toHaveTextContent("ALLERGENS")
     expect(banner).toHaveTextContent("Gluten")
     expect(banner).toHaveTextContent("Sesame")
+    // One mount, one board read -- guards the per-render toast-mock refetch loop (#756).
+    expect(mockGet.mock.calls.filter(([u]) => String(u).includes("/api/v1/orders/kitchen"))).toHaveLength(1)
   })
 
   it("shows NO banner for an order that declared none — and the card is otherwise intact", async () => {
