@@ -34,11 +34,13 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.sql.Array;
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
@@ -60,6 +62,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>B</b> — {@code reviews_tenant_read} exposes PUBLISHED shops' reviews across tenants, so an
  *       email-only lookup pulled another tenant's review into this tenant's erasure.</li>
  *   <li><b>C</b> — photos were deleted inside the transaction, so a rollback could not undo them.</li>
+ *   <li><b>D, E</b> — the fix for C writes the photo count onto {@code erasure_records} AFTER commit, so
+ *       V67 had to open an UPDATE path on the Article-17 proof row. A row policy alone opened EVERY
+ *       column of every record whose count was still 0; D and E prove the only write the database
+ *       accepts is the one-time photo count, and E proves it for a role that bypasses row-level
+ *       security too.</li>
  * </ol>
  *
  * <p>The class is deliberately NOT {@code @Transactional}: the post-commit photo step only fires
@@ -98,6 +105,16 @@ class GdprErasureReviewRlsIntegrationTest {
     private static final AtomicBoolean DOWNGRADED = new AtomicBoolean(false);
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static final String EXTERNAL_URL = "https://example.invalid/not-ours.jpg";
+    /**
+     * A role the RLS policies do not apply to (NOSUPERUSER, BYPASSRLS). Arm E uses it to prove the
+     * erasure-record guard is role-agnostic: whatever a role's RLS posture, the evidence row accepts
+     * only the one-time photo count. Created while the bootstrap role is still a superuser, because
+     * only a superuser may grant BYPASSRLS.
+     */
+    private static final String BYPASS_ROLE = "erasure_764_bypass";
+    private static final String BYPASS_PW = "bypass-" + UUID.randomUUID();
+    /** A token only the V67 write-once guard's message carries — not an RLS or constraint refusal. */
+    private static final String GUARD_TOKEN = "erasure_records is write-once";
 
     @Autowired private GdprService gdprService;
     @Autowired private StorageService storageService;
@@ -116,6 +133,8 @@ class GdprErasureReviewRlsIntegrationTest {
             assertThat(postgres.getUsername())
                     .as("the role this test downgrades must be the one it names")
                     .isEqualTo(DOWNGRADED_APP_ROLE);
+            jdbc.execute("CREATE ROLE " + BYPASS_ROLE + " NOSUPERUSER BYPASSRLS LOGIN PASSWORD '" + BYPASS_PW + "'");
+            jdbc.execute("GRANT SELECT, UPDATE ON erasure_records TO " + BYPASS_ROLE);
             jdbc.execute("ALTER ROLE \"" + DOWNGRADED_APP_ROLE + "\" NOSUPERUSER");
         }
         assertThat(jdbc.queryForObject(
@@ -290,6 +309,122 @@ class GdprErasureReviewRlsIntegrationTest {
                 .as("a rolled-back erasure leaves no evidence row").isZero();
     }
 
+    // ---- Arm D ---------------------------------------------------------------------------------
+
+    /**
+     * The application role, tenant pinned, against a record whose photo count is still 0 — exactly the
+     * rows V67's {@code erasure_records_photo_count_update} policy makes UPDATE targets. A policy is a
+     * ROW filter, so on its own it lets every column of such a row be rewritten; the only write the
+     * evidence row may accept is photos_deleted going from 0 to a count, with nothing else changing.
+     */
+    @Test
+    void erasureRecordAcceptsOnlyTheOneTimePhotoCountFromTheAppRole() {
+        UUID a = seedTenant();
+        UUID b = seedTenant();
+        UUID recordId = seedErasureRecord(a, 0);
+
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM erasure_records WHERE id = ? AND photos_deleted = 0",
+                recordId))
+                .as("PRECONDITION: the record is visible to tenant A with a zero count, so V67's UPDATE policy "
+                        + "makes it a target — a refusal below cannot be RLS filtering the row away")
+                .isEqualTo(1L);
+        assertThat(countUnder(b, "SELECT COUNT(*) FROM erasure_records WHERE id = ?", recordId))
+                .as("PRECONDITION: RLS is really enforced on this role — tenant B cannot see A's record")
+                .isZero();
+        String before = recordJson(a, recordId);
+
+        Attempt forgedBy = attemptUnder(a, "UPDATE erasure_records SET erased_by = 'forged' WHERE id = ?", recordId);
+        assertRefusedByGuard(forgedBy, "rewriting erased_by on a zero-count record");
+        assertThat(recordJson(a, recordId)).as("the record after the refused erased_by rewrite").isEqualTo(before);
+
+        Attempt smuggled = attemptUnder(a,
+                "UPDATE erasure_records SET photos_deleted = 3, erased_by = 'forged' WHERE id = ?", recordId);
+        assertRefusedByGuard(smuggled, "a forged erased_by riding along with a legitimate photo count");
+        assertThat(recordJson(a, recordId)).as("the record after the refused smuggled rewrite").isEqualTo(before);
+
+        Attempt backdated = attemptUnder(a,
+                "UPDATE erasure_records SET erased_at = erased_at - interval '1 year' WHERE id = ?", recordId);
+        assertRefusedByGuard(backdated, "back-dating erased_at");
+        assertThat(recordJson(a, recordId)).as("the record after the refused back-dating").isEqualTo(before);
+
+        // The legitimate path — the SQL ErasureRecordRepository.recordPhotosDeleted issues — still works,
+        // and changes photos_deleted and nothing else.
+        Attempt legitimate = attemptUnder(a,
+                "UPDATE erasure_records SET photos_deleted = 3 WHERE id = ? AND tenant_id = ? AND photos_deleted = 0",
+                recordId, a);
+        assertThat((Throwable) legitimate.refusal()).as("the one-time photo count write").isNull();
+        assertThat(legitimate.rows()).as("the one-time photo count write").isEqualTo(1);
+        assertThat(countUnder(a, "SELECT photos_deleted FROM erasure_records WHERE id = ?", recordId)).isEqualTo(3L);
+        assertThat(recordJsonWithout(a, recordId, "photos_deleted"))
+                .as("every column except photos_deleted is unchanged by the legitimate write")
+                .isEqualTo(jsonWithout(before, "photos_deleted"));
+    }
+
+    // ---- Arm E ---------------------------------------------------------------------------------
+
+    /**
+     * Once a count is recorded the record is final — photos_deleted included — for the app role AND for
+     * a role row-level security does not apply to. The app-role half is ALREADY true under a bare V67
+     * policy (its USING clause stops matching the row), so it cannot discriminate on its own and is kept
+     * as the record; the bypass-role half is the discriminating one, and it is what makes the guard
+     * role-agnostic rather than a property of one role's policy posture.
+     */
+    @Test
+    void recordedErasureEvidenceIsFinalForEveryRole() throws Exception {
+        UUID a = seedTenant();
+        UUID recorded = seedErasureRecord(a, 2);
+        UUID unrecorded = seedErasureRecord(a, 0);
+        String recordedBefore = recordJson(a, recorded);
+        String unrecordedBefore = recordJson(a, unrecorded);
+        List<String> rewrites = List.of(
+                "UPDATE erasure_records SET photos_deleted = 7 WHERE id = ?",
+                "UPDATE erasure_records SET photos_deleted = 0 WHERE id = ?",
+                "UPDATE erasure_records SET erased_by = 'forged' WHERE id = ?");
+
+        for (String sql : rewrites) {
+            Attempt attempt = attemptUnder(a, sql, recorded);
+            assertThat(attempt.refusal() != null || attempt.rows() == 0)
+                    .as("app role: %s changed %s row(s) of a recorded record", sql, attempt.rows())
+                    .isTrue();
+            assertThat(recordJson(a, recorded)).as("app role: the recorded record after %s", sql)
+                    .isEqualTo(recordedBefore);
+        }
+
+        try (Connection bypass = DriverManager.getConnection(postgres.getJdbcUrl(), BYPASS_ROLE, BYPASS_PW)) {
+            try (PreparedStatement ps = bypass.prepareStatement(
+                    "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user");
+                 ResultSet rs = ps.executeQuery()) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getBoolean(1)).as("PRECONDITION: the bypass role is not a superuser").isFalse();
+                assertThat(rs.getBoolean(2)).as("PRECONDITION: the bypass role bypasses RLS").isTrue();
+            }
+            try (PreparedStatement ps = bypass.prepareStatement(
+                    "SELECT COUNT(*) FROM erasure_records WHERE id IN (?, ?)")) {
+                bind(ps, recorded, unrecorded);
+                try (ResultSet rs = ps.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getLong(1))
+                            .as("PRECONDITION: with NO tenant pinned the bypass role sees both records, so no "
+                                    + "RLS policy stands between it and the UPDATEs below")
+                            .isEqualTo(2L);
+                }
+            }
+
+            for (String sql : rewrites) {
+                assertRefusedByGuard(attemptOn(bypass, sql, recorded), "bypass role on a recorded record: " + sql);
+                assertThat(recordJson(a, recorded)).as("the recorded record after the bypass role's %s", sql)
+                        .isEqualTo(recordedBefore);
+            }
+
+            assertRefusedByGuard(attemptOn(bypass,
+                            "UPDATE erasure_records SET subject_email_sha256 = repeat('0', 64) WHERE id = ?",
+                            unrecorded),
+                    "bypass role rewriting the subject digest on a zero-count record");
+            assertThat(recordJson(a, unrecorded)).as("the zero-count record after the bypass role's rewrite")
+                    .isEqualTo(unrecordedBefore);
+        }
+    }
+
     // ---- helpers -------------------------------------------------------------------------------
 
     private UUID seedTenant() {
@@ -378,6 +513,87 @@ class GdprErasureReviewRlsIntegrationTest {
                 return ps.executeUpdate();
             }
         });
+    }
+
+    private UUID seedErasureRecord(UUID tenant, int photosDeleted) {
+        UUID id = UUID.randomUUID();
+        byte[] digest = new byte[32];
+        ThreadLocalRandom.current().nextBytes(digest);
+        update(tenant, "INSERT INTO erasure_records (id, tenant_id, subject_customer_id, subject_email_sha256, "
+                        + "  orders_anonymised, reviews_anonymised, aud_rows_scrubbed, photos_deleted, erased_by) "
+                        + "VALUES (?, ?, ?, ?, 1, 1, 2, ?, 'admin-764')",
+                id, tenant, UUID.randomUUID(), HexFormat.of().formatHex(digest), photosDeleted);
+        return id;
+    }
+
+    /** The whole row, by content, read in a fresh tenant-pinned transaction. */
+    private String recordJson(UUID tenant, UUID recordId) {
+        return recordJsonWithout(tenant, recordId, "");
+    }
+
+    private String recordJsonWithout(UUID tenant, UUID recordId, String column) {
+        return inTenant(tenant, connection -> {
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "SELECT (to_jsonb(e) - ?::text)::text FROM erasure_records e WHERE id = ?")) {
+                bind(ps, column, recordId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    assertThat(rs.next()).as("erasure record %s is visible to tenant %s", recordId, tenant).isTrue();
+                    return rs.getString(1);
+                }
+            }
+        });
+    }
+
+    /** Drops one key from a jsonb text value in the database, so both sides use the same rendering. */
+    private String jsonWithout(String json, String column) {
+        return jdbc.queryForObject("SELECT (?::jsonb - ?::text)::text", String.class, json, column);
+    }
+
+    /** The outcome of one UPDATE: its row count, or the SQLException that refused it. */
+    private record Attempt(int rows, SQLException refusal) {
+    }
+
+    private Attempt attemptUnder(UUID tenant, String sql, Object... params) {
+        try {
+            Integer rows = inTenant(tenant, connection -> {
+                try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                    bind(ps, params);
+                    return ps.executeUpdate();
+                }
+            });
+            return new Attempt(rows == null ? -1 : rows, null);
+        } catch (RuntimeException e) {
+            for (Throwable t = e; t != null; t = t.getCause()) {
+                if (t instanceof SQLException refusal) {
+                    return new Attempt(-1, refusal);
+                }
+            }
+            throw e;
+        }
+    }
+
+    private static Attempt attemptOn(Connection connection, String sql, Object... params) {
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            bind(ps, params);
+            return new Attempt(ps.executeUpdate(), null);
+        } catch (SQLException e) {
+            return new Attempt(-1, e);
+        }
+    }
+
+    /**
+     * Refused, and refused by the write-once guard specifically: SQLSTATE 42501 AND the guard's own
+     * message token, so an unrelated error (a typo, a lost connection, an RLS WITH CHECK) cannot pass.
+     */
+    private static void assertRefusedByGuard(Attempt attempt, String what) {
+        assertThat((Throwable) attempt.refusal())
+                .as("%s must be REFUSED by the database, but it updated %s row(s)", what, attempt.rows())
+                .isNotNull();
+        assertThat(attempt.refusal().getSQLState())
+                .as("%s: SQLSTATE (message: %s)", what, attempt.refusal().getMessage())
+                .isEqualTo("42501");
+        assertThat(attempt.refusal().getMessage()).as("%s: refused by the write-once guard", what)
+                .contains(GUARD_TOKEN);
     }
 
     private interface ConnectionWork<T> {
