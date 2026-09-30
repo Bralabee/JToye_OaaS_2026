@@ -30,8 +30,17 @@ jest.mock("@/lib/shop-context", () => ({
 }))
 const mockedGetShopContext = getShopContext as jest.MockedFunction<typeof getShopContext>
 
+// A STABLE toast reference, matching the real hook: `useToast()` returns the
+// module-level `toast`, so its identity never changes across renders. The
+// marketing page lists `toast` in the deps of `fetchPromotions`/`fetchAnnouncements`,
+// so a mock returning a fresh `jest.fn()` per render changed those callbacks on
+// every render and re-fired the fetch effect in an endless loop (~50-80 GETs/s).
+// Under React 19.2 the loaded rows were briefly visible between refetches and
+// waitFor caught them by luck; under React 19.3 they never are, and the six tests
+// that wait for a promotion row timed out (#756). Same pattern as ReviewQueue.test.tsx.
+const mockToast = jest.fn()
 jest.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: jest.fn() }),
+  useToast: () => ({ toast: mockToast }),
 }))
 
 // The KDS websocket is irrelevant to shop scoping and would open a real
@@ -220,6 +229,9 @@ describe("VSA-03 — shop-context scoping on Marketing & Kitchen", () => {
         expect(screen.getByText("Peckham Lunch Deal")).toBeInTheDocument()
       )
       expect(screen.getByText("Brixton Bakery Bundle")).toBeInTheDocument()
+      // One mount, one fetch. A refetch loop (see the useToast mock above) shows the
+      // rows only AFTER a refetch has fired, so it fails here by name, not as a timeout.
+      expect(callsTo("/api/v1/promotions?")).toHaveLength(1)
     })
 
     it("requests promotions without a shopId param (today's cross-shop behaviour)", async () => {
