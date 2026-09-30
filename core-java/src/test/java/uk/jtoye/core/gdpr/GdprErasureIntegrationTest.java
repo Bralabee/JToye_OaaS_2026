@@ -119,7 +119,7 @@ class GdprErasureIntegrationTest {
         assertThat(auditRowsWithGuestEmail()).isGreaterThan(0);
 
         // 3. Erase the subject.
-        GdprController.ErasureResponse response = gdprService.eraseCustomerData(customerId);
+        var response = gdprService.eraseCustomerData(customerId);
 
         // AC1: guest order was reached (email sweep), not just customer_id-linked rows.
         assertThat(response.ordersAnonymised()).isEqualTo(1);
@@ -275,7 +275,7 @@ class GdprErasureIntegrationTest {
 
         assertThat(directoryRows(TENANT_A, noDirEmail)).as("no directory row exists").isZero();
 
-        GdprController.ErasureResponse response = gdprService.eraseCustomerData(customerId);
+        var response = gdprService.eraseCustomerData(customerId);
         assertThat(response.recordId())
                 .as("erasure completes and persists a durable record even with zero directory matches")
                 .isNotNull();
