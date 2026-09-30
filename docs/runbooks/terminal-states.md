@@ -293,24 +293,28 @@ nothing. Test over the container network. Do not stop at the first cause.
 
 ## TS-14 — alert bound to the wrong subject
 
-**What stopped.** core-java heap exhaustion and GC storms are unobserved. `HighMemoryUsage`
-(`infra/monitoring/prometheus/alerts.yml:127`) and `FrequentGarbageCollection` (`:146`) carry
-`service: core-java` but their
-`jvm_*` selectors are unqualified, so while core-java's target was down they bound to the only JVM
-Prometheus could see — **Keycloak's**.
+**RESOLVED 2026-09-30** (PR #768). 27-03 D-11 deleted the static `service: core-java` label from
+`HighMemoryUsage` and `FrequentGarbageCollection` (`infra/monitoring/prometheus/alerts.yml`), and
+`check-alert-rules.sh` `LABEL_EXEMPT` keeps it deleted. Each firing now carries the measured
+series' own `service` label (`core-api` or `keycloak`), so a second JVM is alerted under its own
+name instead of re-binding a rule that claims to be core-java's.
+
+**What stopped (before 27-03).** core-java heap exhaustion and GC storms were unobserved: the two
+rules carried `service: core-java` over unqualified `jvm_*` selectors, so while core-java's target
+was down they bound to the only JVM Prometheus could see — **Keycloak's**.
 
 **How to see it.**
 ```bash
 curl -sG http://localhost:9091/api/v1/query --data-urlencode 'query=count(jvm_memory_used_bytes) by (job)'
 ```
-Both `job="core-java"` and `job="keycloak"` must appear. Before the scrape-port fix only `keycloak`
-did.
+Both `job="core-java"` and `job="keycloak"` must appear. If `core-java` is missing, `ServiceDown`
+(`up == 0`) should already be firing for that target.
 
-**What to do.** Qualify every rule selector by the job matching its `service:` label. L-2b in
-`check-alert-liveness.sh` enforces this.
+**What to do.** Do NOT re-add a static `service:` label to these rules — that reintroduces the
+defect, and `check-alert-rules.sh` fails on it as a stale exemption.
 
-**What NOT to do.** Do not accept "the selector matches ≥1 series" as proof a rule works — that is
-exactly the check these two rules pass while watching the wrong process.
+**What NOT to do.** Do not accept "the selector matches ≥1 series" as proof a rule watches
+core-java — Keycloak's series alone satisfy it.
 
 ## TS-15 — RedisDown watches the scrape target, not the exporter gauge
 

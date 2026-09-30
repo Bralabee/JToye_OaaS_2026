@@ -18,7 +18,12 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
 
     boolean existsByOrderId(UUID orderId);
 
-    List<Review> findByCustomerEmail(String customerEmail);
+    /**
+     * A subject's reviews in ONE tenant. The tenant predicate is explicit because RLS alone does
+     * not scope this: {@code reviews_tenant_read} shows the reviews of every PUBLISHED shop to every
+     * tenant, so an email-only lookup reaches other tenants' rows (#764).
+     */
+    List<Review> findByTenantIdAndCustomerEmail(UUID tenantId, String customerEmail);
 
     @Query(value = "SELECT COUNT(*) FROM reviews WHERE shop_id = :shopId", nativeQuery = true)
     long countByShopId(@Param("shopId") UUID shopId);

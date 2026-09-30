@@ -5,14 +5,22 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.media.MediaAssetRepository;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.review.Review;
+import uk.jtoye.core.review.ReviewPhotoKeys;
 import uk.jtoye.core.review.ReviewRepository;
+import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.storage.StorageService;
 
@@ -24,6 +32,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -48,19 +57,33 @@ public class GdprService {
     private final StorageService storageService;
     private final ErasureRecordRepository erasureRecordRepository;
     private final UserDirectoryRepository userDirectoryRepository;
+    /** #771: the catalogue reference check — an object a live catalogue row points at is never deleted. */
+    private final MediaAssetRepository mediaAssetRepository;
+    /**
+     * A NEW transaction for the post-commit photo-count write. Inside an {@code afterCommit} hook the
+     * erasure's transaction has committed but its synchronization is still active, so a
+     * default-propagation write would join that dead transaction and be silently lost — the same
+     * reason {@code KeycloakDeprovisionService.deprovision} is {@code REQUIRES_NEW}.
+     */
+    private final TransactionTemplate postCommitTransaction;
 
     public GdprService(CustomerRepository customerRepository,
                        OrderRepository orderRepository,
                        ReviewRepository reviewRepository,
                        StorageService storageService,
                        ErasureRecordRepository erasureRecordRepository,
-                       UserDirectoryRepository userDirectoryRepository) {
+                       UserDirectoryRepository userDirectoryRepository,
+                       MediaAssetRepository mediaAssetRepository,
+                       PlatformTransactionManager transactionManager) {
         this.customerRepository = customerRepository;
         this.orderRepository = orderRepository;
         this.reviewRepository = reviewRepository;
         this.storageService = storageService;
         this.erasureRecordRepository = erasureRecordRepository;
         this.userDirectoryRepository = userDirectoryRepository;
+        this.mediaAssetRepository = mediaAssetRepository;
+        this.postCommitTransaction = new TransactionTemplate(transactionManager);
+        this.postCommitTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /**
@@ -73,7 +96,8 @@ public class GdprService {
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
 
         List<Order> orders = orderRepository.findByCustomerId(customerId);
-        List<Review> reviews = reviewRepository.findByCustomerEmail(customer.getEmail());
+        List<Review> reviews = reviewRepository.findByTenantIdAndCustomerEmail(
+                customer.getTenantId(), customer.getEmail());
 
         var customerData = new GdprController.CustomerExport(
                 customer.getId(),
@@ -130,14 +154,30 @@ public class GdprService {
      *       guest storefront orders (customer_id NULL) that share the subject's email,
      *       de-duplicated by order id. The email sweep is the line that reaches guest
      *       orders which a customer_id-only walk misses.</li>
-     *   <li><b>Photo cleanup</b> — physically deletes each review photo from Azure Blob via
-     *       {@link StorageService#delete} (idempotent, WARN-and-continue) before nulling
-     *       the URLs. Only a photo that call actually removed is counted in
-     *       {@code photosDeleted} (code review WR-02): review photo URLs are client-supplied,
-     *       so an external URL, another tenant's URL (refused by D-09), an already-absent
-     *       object or a failed delete is NOT a deletion and is never recorded as one. Those
-     *       are counted separately and logged at WARN, because the {@link ErasureRecord} is the
-     *       Article 17 evidence row and must not claim an erasure that did not happen.</li>
+     *   <li><b>Only the review's own photos, never the catalogue (#771)</b> — review photo URLs
+     *       are client-supplied and were never validated, so a customer could name the shop's
+     *       product, gallery, logo, banner or media images, or another customer's review photo, and
+     *       have this erasure delete them. Every URL is still detached from the review, but only a
+     *       URL whose key is {@code <erasing tenant>/reviews/<that review's orderId>/<plain name>}
+     *       ({@link ReviewPhotoKeys}, an allow-list, so it fails closed) is ever scheduled for
+     *       deletion, and then only when no product, shop or media asset row in the tenant still
+     *       references that object ({@link MediaAssetRepository#countCatalogueReferences}, an
+     *       independent second layer: a vendor may point the catalogue at any URL). Everything else
+     *       is RETAINED — not deleted, not counted — and both retained counts are logged at WARN
+     *       with the record id. This holds for rows written before creation-time validation
+     *       existed, because it does not depend on it.</li>
+     *   <li><b>Photo cleanup, only after commit (#764)</b> — the eligible review photo URLs are
+     *       collected in the transaction; each photo is physically deleted from Azure Blob via
+     *       {@link StorageService#delete} (idempotent, WARN-and-continue) only once the erasure has
+     *       COMMITTED. Object storage is not transactional, so deleting inside the transaction
+     *       destroyed the photos of every erasure that then rolled back. Only a photo that call
+     *       actually removed is counted (code review WR-02): review photo URLs are
+     *       client-supplied, so an external URL, another tenant's URL (refused by D-09), an
+     *       already-absent object or a failed delete is NOT a deletion and is never recorded as
+     *       one. Those are counted separately and logged at WARN, because the {@link ErasureRecord}
+     *       is the Article 17 evidence row and must not claim an erasure that did not happen. The
+     *       record is written in the transaction with a count of 0 (true at commit) and the real
+     *       count is written onto it once, after the deletions, in its own transaction.</li>
      *   <li><b>Audit scrub</b> — scrubs pre-erasure PII from the append-only Envers
      *       {@code orders_aud}/{@code customers_aud} history via tenant-scoped native
      *       UPDATEs (deliberate Article-17 exception; Envers stays enabled).</li>
@@ -146,12 +186,18 @@ public class GdprService {
      *       (that table is keyed by vendor-staff {@code user_id}, with no {@code Customer}
      *       join). Zero matches is the normal case and never a failure; there is no
      *       {@code _aud} mirror to scrub (D-09).</li>
+     *   <li><b>Reviews in this tenant only (#764)</b> — the review lookup carries an explicit
+     *       tenant predicate because {@code reviews_tenant_read} shows PUBLISHED reviews across
+     *       tenants, so an email-only lookup would reach another tenant's review.</li>
      *   <li><b>Durable record</b> — persists exactly one PII-free {@link ErasureRecord}
      *       (SHA-256 email hash, never plaintext) as proof the erasure occurred.</li>
      * </ol>
      * Records are anonymised rather than deleted to preserve financial audit trails.
+     *
+     * @return the outcome; its photo count is readable only once the photo step has run, i.e. after
+     *         the transaction this call runs in has committed — see {@link ErasureOutcome}
      */
-    public GdprController.ErasureResponse eraseCustomerData(UUID customerId) {
+    public ErasureOutcome eraseCustomerData(UUID customerId) {
         Customer customer = customerRepository.findById(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
 
@@ -195,21 +241,37 @@ public class GdprService {
         int ordersAnonymised = ordersById.size();
         orderRepository.saveAll(new ArrayList<>(ordersById.values()));
 
-        // Anonymise PII on reviews AND physically delete their stored photos.
-        List<Review> reviews = reviewRepository.findByCustomerEmail(originalEmail);
+        // Anonymise PII on this tenant's reviews and COLLECT their photo URLs. Nothing is deleted
+        // from storage here: object storage cannot roll back, so the deletion waits for commit.
+        List<Review> reviews = reviewRepository.findByTenantIdAndCustomerEmail(tenantId, originalEmail);
         int reviewsAnonymised = 0;
-        int photosDeleted = 0;
-        int photosNotDeleted = 0;
+        List<String> photoUrlsToDelete = new ArrayList<>();
+        int photoUrlsDetached = 0;
+        int retainedNotReviewPhoto = 0;
+        int retainedCatalogueReferenced = 0;
         for (Review review : reviews) {
             List<String> photoUrls = review.getPhotoUrls();
             if (photoUrls != null) {
                 for (String url : photoUrls) {
-                    // WR-02: count what the store actually removed, not what was attempted.
-                    if (storageService.delete(url)) {
-                        photosDeleted++;
-                    } else {
-                        photosNotDeleted++;
+                    if (url == null) {
+                        continue;
                     }
+                    photoUrlsDetached++;
+                    // #771: only a photo under THIS review's own order path, in the erasing tenant,
+                    // is ever deleted. The key comes from the same parse delete(url) acts on.
+                    Optional<String> key = storageService.publicKeyOf(url);
+                    if (key.isEmpty() || !ReviewPhotoKeys.isReviewPhotoKey(key.get(), tenantId, review.getOrderId())) {
+                        retainedNotReviewPhoto++;
+                        continue;
+                    }
+                    // Second, independent layer: an object the tenant's catalogue still references is
+                    // catalogue content, whatever path it lives under. Deleting it would break a live
+                    // product or shop image — the #771 harm — so it is kept.
+                    if (mediaAssetRepository.countCatalogueReferences(tenantId, key.get()) > 0) {
+                        retainedCatalogueReferenced++;
+                        continue;
+                    }
+                    photoUrlsToDelete.add(url);
                 }
             }
             review.setCustomerName(ANONYMISED);
@@ -236,37 +298,118 @@ public class GdprService {
         // the complete erasure — there is no audit history to scrub.
         int directoryRowsErased = userDirectoryRepository.deleteByTenantIdAndEmail(tenantId, originalEmail);
 
-        // Durable, PII-free proof of erasure — SHA-256 hex of the email, never plaintext.
+        // Durable, PII-free proof of erasure — SHA-256 hex of the email, never plaintext. Written
+        // HERE, atomically with the anonymisation, so the evidence row can never be lost while the
+        // data was erased. photos_deleted is 0, which is literally true at commit: no photo has
+        // been deleted yet. The post-commit step writes the real count once.
         String subjectEmailSha256 = sha256Hex(originalEmail);
         String erasedBy = resolveErasedBy();
         OffsetDateTime erasedAt = OffsetDateTime.now();
         ErasureRecord record = erasureRecordRepository.save(new ErasureRecord(
                 tenantId, customerId, subjectEmailSha256,
-                ordersAnonymised, reviewsAnonymised, audRowsScrubbed, photosDeleted,
+                ordersAnonymised, reviewsAnonymised, audRowsScrubbed, 0,
                 erasedBy, erasedAt));
 
         log.info("GDPR erasure for customer {} — {} orders, {} reviews anonymised, "
-                        + "{} audit rows scrubbed, {} photos deleted, {} directory rows erased; record {}",
-                customerId, ordersAnonymised, reviewsAnonymised, audRowsScrubbed, photosDeleted,
+                        + "{} audit rows scrubbed, {} review photo URL(s) detached, {} eligible for deletion "
+                        + "after commit, {} retained as not this review's photo, {} retained as referenced by "
+                        + "the catalogue, {} directory rows erased; record {}",
+                customerId, ordersAnonymised, reviewsAnonymised, audRowsScrubbed, photoUrlsDetached,
+                photoUrlsToDelete.size(), retainedNotReviewPhoto, retainedCatalogueReferenced,
                 directoryRowsErased, record.getId());
-        if (photosNotDeleted > 0) {
-            // The URLs are nulled on the review either way; this says how many stored photos the
-            // record does NOT vouch for (external, refused cross-tenant, already absent, or failed).
-            log.warn("GDPR erasure for customer {} — {} review photo URL(s) were NOT deleted from storage "
-                            + "(external, refused by the tenant guard, already absent, or a store failure) "
-                            + "and are not counted in record {}",
-                    customerId, photosNotDeleted, record.getId());
+        if (retainedNotReviewPhoto > 0 || retainedCatalogueReferenced > 0) {
+            // #771: detached from the review but NOT deleted, and never counted in the record. No URL
+            // is logged — the URLs are client-supplied.
+            log.warn("GDPR erasure record {} — {} review photo URL(s) retained as not this review's photo "
+                            + "and {} retained as referenced by the catalogue; detached, not deleted (#771)",
+                    record.getId(), retainedNotReviewPhoto, retainedCatalogueReferenced);
         }
 
-        return new GdprController.ErasureResponse(
-                customerId,
-                erasedAt,
-                ordersAnonymised,
-                reviewsAnonymised,
-                audRowsScrubbed,
-                photosDeleted,
-                record.getId()
-        );
+        PhotoErasureTally photos = new PhotoErasureTally();
+        schedulePhotoErasure(tenantId, customerId, record.getId(), List.copyOf(photoUrlsToDelete), photos);
+
+        return new ErasureOutcome(customerId, erasedAt, ordersAnonymised, reviewsAnonymised,
+                audRowsScrubbed, record.getId(), photos);
+    }
+
+    /**
+     * Run the photo step when the surrounding transaction COMMITS, or inline when there is no
+     * transaction synchronization at all (the {@code TenantCacheEvictor} idiom). A rollback never
+     * reaches {@code afterCommit}, so a failed erasure deletes nothing.
+     */
+    private void schedulePhotoErasure(UUID tenantId, UUID customerId, UUID recordId,
+                                      List<String> urls, PhotoErasureTally tally) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    erasePhotosAfterCommit(tenantId, customerId, recordId, urls, tally);
+                }
+            });
+        } else {
+            erasePhotosAfterCommit(tenantId, customerId, recordId, urls, tally);
+        }
+    }
+
+    /**
+     * Delete the erased reviews' photos and record, once, how many the store really removed.
+     *
+     * <p>The erasure HAS committed when this runs, so nothing here may surface as a failed erasure
+     * (the {@code TenantLifecycleService} offboard-hook precedent): every failure is logged at ERROR
+     * with the record id and swallowed. The durable count can then under-claim, never over-claim
+     * (WR-02). Logs carry counts and ids only — no email and no URL (URLs are client-supplied).
+     */
+    private void erasePhotosAfterCommit(UUID tenantId, UUID customerId, UUID recordId,
+                                        List<String> urls, PhotoErasureTally tally) {
+        Optional<UUID> callerTenant = TenantContext.get();
+        int deleted = 0;
+        int notDeleted = 0;
+        try {
+            // D-09 in StorageService.delete compares each key's tenant with TenantContext and fails
+            // closed without one, so pin the ERASING tenant explicitly rather than trusting whatever
+            // the committing thread happens to carry.
+            TenantContext.set(tenantId);
+            for (String url : urls) {
+                // WR-02: count what the store actually removed, not what was attempted.
+                if (storageService.delete(url)) {
+                    deleted++;
+                } else {
+                    notDeleted++;
+                }
+            }
+            if (deleted > 0) {
+                final int count = deleted;
+                // REQUIRES_NEW (see postCommitTransaction). TenantContext is still set inside this
+                // template, so TenantSetLocalAspect pins the tenant GUC for the UPDATE.
+                Integer updated = postCommitTransaction.execute(status ->
+                        erasureRecordRepository.recordPhotosDeleted(recordId, tenantId, count));
+                if (updated == null || updated != 1) {
+                    log.error("GDPR erasure record {} — the post-commit photo count ({} deleted, {} not deleted) "
+                                    + "updated {} rows, expected 1; the record under-claims",
+                            recordId, deleted, notDeleted, updated);
+                }
+            }
+            log.info("GDPR erasure for customer {} — {} review photo(s) deleted after commit; record {}",
+                    customerId, deleted, recordId);
+            if (notDeleted > 0) {
+                // The URLs are nulled on the review either way; this says how many stored photos the
+                // record does NOT vouch for (external, refused cross-tenant, already absent, or failed).
+                log.warn("GDPR erasure for customer {} — {} review photo URL(s) were NOT deleted from storage "
+                                + "(external, refused by the tenant guard, already absent, or a store failure) "
+                                + "and are not counted in record {}",
+                        customerId, notDeleted, recordId);
+            }
+        } catch (RuntimeException e) {
+            log.error("GDPR erasure record {} — post-commit photo step failed after {} deletion(s): {}",
+                    recordId, deleted, e.getClass().getName());
+        } finally {
+            tally.settle(deleted, notDeleted);
+            if (callerTenant.isPresent()) {
+                TenantContext.set(callerTenant.get());
+            } else {
+                TenantContext.clear();
+            }
+        }
     }
 
     /**
@@ -295,6 +438,9 @@ public class GdprService {
      * runs under FORCE row-level security with the GUC pinned by the caller. The fan-out's reach
      * comes from iterating tenants, never from a query that ignores the wall.
      *
+     * <p>Each erasure's review photos are deleted when the caller's per-tenant transaction COMMITS
+     * (#764), not when this method returns — which is why the outcomes are not read here.
+     *
      * @param tenantId           the tenant currently pinned by the caller
      * @param subjectEmailSha256 the subject digest from {@code dsar_request}
      * @return how many customers were erased in this tenant — usually 0 or 1, since
@@ -316,6 +462,79 @@ public class GdprService {
             log.info("DSAR fan-out erased {} customer(s) for tenant {}", erased, tenantId);
         }
         return erased;
+    }
+
+    /**
+     * What an erasure did. Accessor names match {@link GdprController.ErasureResponse}, and
+     * {@link #toResponse()} builds that unchanged API record.
+     *
+     * <p>The photo count lives in {@link PhotoErasureTally}, which is settled only when the photo step
+     * has run — after the transaction commits. The admin controller calls {@link #toResponse()} after
+     * the proxied transactional call returns, so it is settled there. A caller still INSIDE an
+     * enclosing transaction gets an {@link IllegalStateException} rather than a false 0.
+     */
+    public record ErasureOutcome(
+            UUID customerId,
+            OffsetDateTime erasedAt,
+            int ordersAnonymised,
+            int reviewsAnonymised,
+            int auditRowsScrubbed,
+            UUID recordId,
+            PhotoErasureTally photos
+    ) {
+        /** Photos the store really removed (WR-02); throws until the post-commit step has run. */
+        public int photosDeleted() {
+            return photos.deleted();
+        }
+
+        /** The unchanged API response; throws until the post-commit photo step has run. */
+        public GdprController.ErasureResponse toResponse() {
+            return new GdprController.ErasureResponse(customerId, erasedAt, ordersAnonymised,
+                    reviewsAnonymised, auditRowsScrubbed, photosDeleted(), recordId);
+        }
+    }
+
+    /**
+     * The WR-02 photo tally of one erasure, settled exactly once by the post-commit photo step.
+     * Reading it before then throws: the only honest answer before commit is "not yet known".
+     */
+    public static final class PhotoErasureTally {
+        private volatile boolean settled;
+        private volatile int deleted;
+        private volatile int notDeleted;
+
+        public PhotoErasureTally() {
+        }
+
+        public void settle(int deleted, int notDeleted) {
+            if (settled) {
+                throw new IllegalStateException("photo erasure tally already settled");
+            }
+            this.deleted = deleted;
+            this.notDeleted = notDeleted;
+            this.settled = true;
+        }
+
+        public boolean isSettled() {
+            return settled;
+        }
+
+        public int deleted() {
+            requireSettled();
+            return deleted;
+        }
+
+        public int notDeleted() {
+            requireSettled();
+            return notDeleted;
+        }
+
+        private void requireSettled() {
+            if (!settled) {
+                throw new IllegalStateException("review photo deletion runs after the enclosing transaction "
+                        + "commits, so the count is not known yet; read the durable erasure record instead");
+            }
+        }
     }
 
     /**

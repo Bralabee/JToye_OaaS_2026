@@ -85,13 +85,16 @@ class GdprControllerTest {
     @DisplayName("DELETE /api/v1/gdpr/customers/{id}/erase returns 200 with erasure confirmation")
     void eraseData_returnsErasureResponse() throws Exception {
         UUID recordId = UUID.fromString("22222222-2222-2222-2222-222222222222");
-        var response = new GdprController.ErasureResponse(
+        // The photo tally is settled as the post-commit step would leave it: 4 really deleted.
+        var photos = new GdprService.PhotoErasureTally();
+        photos.settle(4, 0);
+        var outcome = new GdprService.ErasureOutcome(
                 CUSTOMER_ID,
                 OffsetDateTime.parse("2025-06-15T08:00:00Z"),
-                3, 2, 5, 4, recordId
+                3, 2, 5, recordId, photos
         );
 
-        when(gdprService.eraseCustomerData(CUSTOMER_ID)).thenReturn(response);
+        when(gdprService.eraseCustomerData(CUSTOMER_ID)).thenReturn(outcome);
 
         mockMvc.perform(delete("/api/v1/gdpr/customers/{id}/erase", CUSTOMER_ID))
                 .andExpect(status().isOk())

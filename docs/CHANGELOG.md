@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A review can no longer name a vendor's catalogue images for deletion (#772) — 2026-09-30
+
+- **Why.** Issue #771. A review's `photoUrls` came from the client and were never checked, and
+  GDPR erasure deleted every object they named in the erasing tenant. A customer with a
+  COMPLETED order could list the shop's own product, gallery, logo, banner and media images
+  (ref-counted derivatives and thumbnails included), or another customer's review photo, then
+  file an erasure and destroy them.
+- **Fix.** Erasure now deletes a review photo only when two independent checks pass. First,
+  its key must be `<erasing tenant>/reviews/<that review's orderId>/<one plain name>`
+  (`ReviewPhotoKeys`, an allow-list, so it fails closed). Second, no live catalogue row in the
+  tenant may reference it: `products.image_url`, `products.additional_image_urls`,
+  `shops.logo_url`, `shops.banner_url`, `media_asset.object_key` and the media thumbnail
+  sibling. Everything else is still detached from the review but kept, is never counted in
+  the Article-17 record, and is reported at WARN (counts only, no URLs). `StorageService.publicKeyOf`
+  is now the one URL-to-key parse, used by `delete(url)` itself, so the check and the delete
+  cannot read a URL differently. Review creation applies the same rule and refuses anything
+  else with a typed RFC 7807 400, `https://jtoye.uk/errors/invalid-review-photo`, whose detail
+  names the index and never echoes the URL. No migration, no request or response change.
+- **Displaced.** No non-empty `photoUrls` value is accepted until a review-photo upload path
+  exists, because nothing writes under `<tenant>/reviews/<orderId>/` yet; no first-party
+  client sends photos today. Existing reviews render exactly as before, and reviews without
+  photos are unaffected.
+- **Proof.** `GdprErasureReviewRlsIntegrationTest` gains arms F and G under a NOSUPERUSER role
+  with a real Azurite. Both were RED on the unfixed tree: F saw all eight catalogue and
+  foreign objects deleted (photosDeleted 9, not 1), and G saw a catalogue-referenced own-order
+  photo deleted. Six break arms each turned their named check RED: allow-list forced open (F
+  loses exactly the orphan and the other review's photo, all six catalogue objects survive,
+  which proves the reference query sees every catalogue column under RLS), order binding
+  dropped, reference count ignored, creation check removed, handler removed, and photo
+  deletion forced inline (the #764 rollback arm, still discriminating after its re-key). The
+  closing clean run is GREEN.
+
+### GDPR erasure works for customers who left a review (#770) — 2026-09-30
+
+- **Why.** Issue #764. Erasing a customer failed for anyone who had ever left a review.
+  `reviews` has FORCE RLS but no UPDATE policy, so the anonymising UPDATE matched 0 rows
+  for the application role, Hibernate refused it, and the erasure rolled back. By then the
+  review photos had already been deleted from Blob, and object storage does not roll back.
+  The lookup was also by email alone. `reviews_tenant_read` shows PUBLISHED reviews to every
+  tenant, so the erasure and the Article-20 export both reached another tenant's review.
+  The existing suites stayed green because they run as the Testcontainers superuser, which
+  bypasses FORCE RLS, and none of them inserts a review.
+- **Fix.** V67 adds a tenant-scoped UPDATE policy on `reviews`: USING and WITH CHECK both pin
+  `current_tenant_id()`, FOR UPDATE only. On `erasure_records` it adds a tenant-scoped
+  UPDATE policy limited to records whose `photos_deleted` is still 0, plus a BEFORE UPDATE
+  trigger (`erasure_records_write_once`) that refuses, for every role, any update other than
+  `photos_deleted` going from 0 to a positive count with every other column unchanged. A
+  policy alone is a row filter: round-1 review found it left every column of a zero-count
+  record rewritable. So the only write the Article-17 record accepts is its photo count,
+  once. A zero count can still be set once by its own tenant. The table owner or a superuser
+  can bypass a trigger; production's `jtoye_runtime` is neither. The review lookup on erase
+  and on export now names the tenant, and the email-only finder is deleted. Photos are deleted only after the
+  erasure commits, under the erasing tenant. The evidence row is still written inside the
+  transaction. The real WR-02 photo count is written onto it once, after commit, in its own
+  transaction. The admin response is unchanged, so there is no OpenAPI diff.
+- **Proof.** `GdprErasureReviewRlsIntegrationTest` runs under a NOSUPERUSER role with a real
+  Azurite. It has five arms: the happy path, another tenant's published review, a
+  rolled-back erasure, and two on the erasure record. Arm D checks that the app role cannot
+  rewrite a zero-count record's other columns. Arm E checks that a recorded record is final,
+  including for a BYPASSRLS role. The first three were RED on the unfixed tree. Five break
+  arms each turned their named arm RED: no reviews UPDATE policy, email-only lookup, inline
+  photo deletion, default propagation for the count write, and no write-once trigger (D and
+  E, which were also RED against the policy-only V67). The closing clean run is GREEN.
+
+### Terminal-state deferrals expired 2026-09-30: seven rows were already covered, seven re-dated (#768) — 2026-09-30
+
+- **Why.** Fourteen dated deferrals in `docs/ops/terminal-states.yaml` expired on 2026-09-30,
+  which turned the required `Operational Contracts` check (`check-terminal-states.sh` X-2)
+  red on every branch, `main` included. Re-examining each reason on its expiry date is the
+  register's design, and seven reasons turned out to be false.
+- **Resolved (7).**
+  - TS-01, TS-03 and TS-04 (DLQ depth) have been covered by `DeadLetterQueueNonEmpty` since
+    27-03 (PR #336). It was observed firing in 27-03's drills (§14 Group A), not on a real
+    batch.
+  - **TS-02 was mis-recorded.** It named `DeadLetterQueueNonEmpty`, whose expression *excludes*
+    `payment.events.dlq`, so it claimed coverage from a rule that can never fire for it. It
+    now names `PaymentDeadLetterQueueNonEmpty`, the critical rule that covers it.
+  - **TS-05 and TS-06** named `OutboxPoisonRows`, a rule that never existed, while
+    `OutboxDeadLetterRising` (27-03) has read both outbox dead-letter counters all along.
+  - TS-14's wrong-subject defect was removed by 27-03 D-11, and its runbook section is marked
+    RESOLVED.
+- **Re-dated to 2026-12-31 (7), by owner ruling.**
+  - TS-07 to TS-10 and TS-17 are now `UNPLANNED`: no phase builds those rules, and DPLY-03
+    runs the monitoring stack without authoring rules.
+  - TS-16 stays on 27-06. No alert can ever exist for it, so it will recur at every expiry
+    until X-2 accepts an executable detector in place of an alert.
+  - TS-11 stays on `arch_no_platform_operator`.
+  - Each reason carries its 2026-09-30 re-measurement.
+- **The lesson.** The first pass searched `alerts.yml` for the alert *name* each row gave,
+  and missed TS-05 and TS-06. Searching the *metric* is what finds coverage. The PR's round-1
+  review caught it.
+- **Evidence.** Before the change, `check-terminal-states.sh` gave rc=1 with 14
+  expired-deferral violations. After it, rc=0 with 7 dated deferrals and 0 expired.
+  `check-doc-citations.sh` and `check-alert-rules.sh` both pass (rc=0).
+
 ### Phase 36: object storage is Azure Blob throughout, Azurite locally and in the nightly (#763) — 2026-09-29
 
 - **Why.** The retired self-hosted object store's community images are gone for good: the
