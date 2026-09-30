@@ -87,7 +87,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Mailhog v1.0.1 - Local SMTP for email testing
 - Resilience4j 2.4.0 - Circuit breakers and retry logic
 - Bucket4j 8.10.1 - Token bucket rate limiting
-- Stripe Java SDK 33.4.0 - Payment intent creation and webhook handling
+- Stripe Java SDK 33.4.2 - Payment intent creation and webhook handling
 - OpenPDF 2.0.3 - PDF generation for allergen labels
 - Spring Data Redis (Lettuce) - Redis connection pooling
 ## Configuration

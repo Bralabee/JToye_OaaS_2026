@@ -69,7 +69,7 @@
 **Critical:**
 - PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:243`) — explicit pin, not Boot-managed.
 - Azure Storage Blob SDK 12.35.1 (`com.azure:azure-storage-blob`) + Azure Identity 1.18.6 (`com.azure:azure-identity`) — the object-store client (Azurite emulator locally, Azure Blob Storage in staging/production) and the Workload Identity credential used in AKS.
-- Stripe Java SDK 33.4.0 — Payment intents, Connect (destination charges), webhook signature verification.
+- Stripe Java SDK 33.4.2 — Payment intents, Connect (destination charges), webhook signature verification.
 - @stripe/react-stripe-js 6.8.2 + @stripe/stripe-js 9.15.0 — Frontend Stripe Elements integration.
 - next-auth 5.0.0-beta.32 (`@auth/core` pinned via `overrides` to `0.41.3`) — Session/auth middleware, Keycloak OIDC provider.
 - @modelcontextprotocol/sdk ^1.29.0 — MCP server protocol implementation (`mcp-server/package.json`).
@@ -81,7 +81,7 @@
 - Resilience4j 2.4.0 (`resilience4j-spring-boot3`) — circuit breakers for Stripe, FHRS, Companies House, email, AI, webhook egress (config in `core-java/src/main/resources/application.yml:724-775`, `resilience4j:` at 724).
 - Bucket4j 8.10.1 (`bucket4j-core`, `bucket4j-redis`) — Redis-backed token-bucket rate limiting.
 - Micrometer Prometheus + Micrometer Tracing (Brave/Zipkin bridge) — metrics + distributed tracing.
-- com.sksamuel.scrimage 4.6.7 (`scrimage-core`, `scrimage-webp`) + TwelveMonkeys ImageIO 3.14.0 (`imageio-webp`, `imageio-core`) — image decode/resize/WebP transcode pipeline (Phase 24 media pipeline); scrimage-webp's bundled `cwebp` is glibc-linked and does NOT run on the Alpine (musl) runtime image, so the Dockerfile installs `libwebp-tools` and points the JVM at `/usr/bin` via `-Dcom.sksamuel.scrimage.webp.binary.dir`.
+- com.sksamuel.scrimage 4.6.8 (`scrimage-core`, `scrimage-webp`) + TwelveMonkeys ImageIO 3.15.2 (`imageio-webp`, `imageio-core`) — image decode/resize/WebP transcode pipeline (Phase 24 media pipeline); scrimage-webp's bundled `cwebp` is glibc-linked and does NOT run on the Alpine (musl) runtime image, so the Dockerfile installs `libwebp-tools` and points the JVM at `/usr/bin` via `-Dcom.sksamuel.scrimage.webp.binary.dir`.
 - OpenPDF 2.0.3 (`com.github.librepdf:openpdf`) — PDF generation for allergen labels (JasperReports was removed 2026-07-27 as unused, closing 3 Trivy HIGHs).
 - Framer Motion 13.1.1, GSAP 3.15.0 (+`@gsap/react` 2.1.2) — animation.
 - Recharts 3.10.1 — dashboard charts.
