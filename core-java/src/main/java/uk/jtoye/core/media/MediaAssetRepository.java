@@ -108,4 +108,69 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM MediaAsset a WHERE a.id = :id")
     Optional<MediaAsset> lockForProcessing(@Param("id") UUID id);
+
+    /**
+     * How many live catalogue rows in {@code tenantId} reference the physical object
+     * {@code objectKey} (issue #771). GDPR erasure deletes a review photo only when this is 0: a
+     * review's photo URLs are client-supplied, and an object a product, shop or media asset still
+     * points at is catalogue content, whatever path it lives under.
+     *
+     * <p>Summed over every column that holds an image URL or object key (measured across the
+     * migrations and the entities' {@code @Column} names):
+     * <ul>
+     *   <li>{@code products.image_url} (V16);</li>
+     *   <li>any element of {@code products.additional_image_urls} (V19);</li>
+     *   <li>{@code shops.logo_url} and {@code shops.banner_url} (V16);</li>
+     *   <li>{@code media_asset.object_key} (V53), exact match;</li>
+     *   <li>the media asset's thumbnail sibling, which is not a column: it mirrors
+     *       {@code MediaAssetService.thumbnailKeyFor} exactly — only a key containing
+     *       {@code /media/} and ending {@code .webp} has one, at the key minus {@code .webp} plus
+     *       {@code _thumb.webp}.</li>
+     * </ul>
+     * A stored URL references the key when, after cutting it at the first {@code ?} and then at the
+     * first {@code #}, it equals the key or ends with {@code "/" + key}, so the match does not
+     * depend on the host or base URL a row was saved with. {@code right()} rather than
+     * {@code LIKE}, because {@code _} is a {@code LIKE} wildcard and object keys contain it.
+     *
+     * <p>Excluded, deliberately: the {@code _aud} tables (history, not live references); other
+     * tenants' rows (the erasure runs under the erasing tenant's RLS, and a foreign row that
+     * hotlinks this tenant's image is display-only, so it gets no veto); {@code product_media},
+     * which carries no key — its asset's {@code object_key} is what is checked.
+     *
+     * <p>Every clause carries an explicit {@code tenant_id = :tenantId} predicate in addition to
+     * RLS. It is a Spring Data repository method so {@code TenantSetLocalAspect} pins the tenant GUC
+     * on the transaction's own connection: a query blinded by RLS would return 0, and 0 here means
+     * "delete", so a blind query fails OPEN (T-771-06).
+     */
+    @Query(nativeQuery = true, value = """
+            SELECT
+              (SELECT COUNT(*) FROM products p
+                 WHERE p.tenant_id = :tenantId AND p.image_url IS NOT NULL
+                   AND (split_part(split_part(p.image_url, '?', 1), '#', 1) = CAST(:objectKey AS text)
+                     OR right(split_part(split_part(p.image_url, '?', 1), '#', 1),
+                              length(CAST(:objectKey AS text)) + 1) = '/' || CAST(:objectKey AS text)))
+            + (SELECT COUNT(*) FROM products p CROSS JOIN LATERAL unnest(p.additional_image_urls) AS g(url)
+                 WHERE p.tenant_id = :tenantId AND g.url IS NOT NULL
+                   AND (split_part(split_part(g.url, '?', 1), '#', 1) = CAST(:objectKey AS text)
+                     OR right(split_part(split_part(g.url, '?', 1), '#', 1),
+                              length(CAST(:objectKey AS text)) + 1) = '/' || CAST(:objectKey AS text)))
+            + (SELECT COUNT(*) FROM shops s
+                 WHERE s.tenant_id = :tenantId AND s.logo_url IS NOT NULL
+                   AND (split_part(split_part(s.logo_url, '?', 1), '#', 1) = CAST(:objectKey AS text)
+                     OR right(split_part(split_part(s.logo_url, '?', 1), '#', 1),
+                              length(CAST(:objectKey AS text)) + 1) = '/' || CAST(:objectKey AS text)))
+            + (SELECT COUNT(*) FROM shops s
+                 WHERE s.tenant_id = :tenantId AND s.banner_url IS NOT NULL
+                   AND (split_part(split_part(s.banner_url, '?', 1), '#', 1) = CAST(:objectKey AS text)
+                     OR right(split_part(split_part(s.banner_url, '?', 1), '#', 1),
+                              length(CAST(:objectKey AS text)) + 1) = '/' || CAST(:objectKey AS text)))
+            + (SELECT COUNT(*) FROM media_asset m
+                 WHERE m.tenant_id = :tenantId AND m.object_key = CAST(:objectKey AS text))
+            + (SELECT COUNT(*) FROM media_asset m
+                 WHERE m.tenant_id = :tenantId
+                   AND position('/media/' IN m.object_key) > 0
+                   AND right(m.object_key, 5) = '.webp'
+                   AND left(m.object_key, length(m.object_key) - 5) || '_thumb.webp' = CAST(:objectKey AS text))
+            """)
+    long countCatalogueReferences(@Param("tenantId") UUID tenantId, @Param("objectKey") String objectKey);
 }

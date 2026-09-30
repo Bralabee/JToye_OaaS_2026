@@ -28,6 +28,7 @@ import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
 import uk.jtoye.core.exception.InsufficientStockException;
+import uk.jtoye.core.exception.InvalidReviewPhotoException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
@@ -536,6 +537,19 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         problem.setTitle("Reserved Shop Slug");
         problem.setType(URI.create("https://jtoye.uk/errors/reserved-shop-slug"));
+        return problem;
+    }
+
+    /**
+     * Issue #771 — a new review's {@code photoUrls} named something other than that review's own
+     * photos. 400 like the sibling review refusals, with its own stable type so a machine client can
+     * tell it apart. The detail names the index and the required key shape, never the submitted URL.
+     */
+    @ExceptionHandler(InvalidReviewPhotoException.class)
+    public ProblemDetail handleInvalidReviewPhoto(InvalidReviewPhotoException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Invalid Review Photo");
+        problem.setType(URI.create("https://jtoye.uk/errors/invalid-review-photo"));
         return problem;
     }
 

@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.media.MediaAssetRepository;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderRepository;
 import uk.jtoye.core.order.OrderStatus;
@@ -51,6 +52,9 @@ class GdprServiceTest {
     private ErasureRecordRepository erasureRecordRepository;
     @Mock
     private UserDirectoryRepository userDirectoryRepository;
+    // #771: the catalogue reference check. Unstubbed it answers 0 ("not referenced").
+    @Mock
+    private MediaAssetRepository mediaAssetRepository;
     // A mocked manager lets TransactionTemplate run its callback: getTransaction returns null and
     // commit(null) is a no-op, so the post-commit count write executes inline in these tests.
     @Mock
@@ -561,6 +565,27 @@ class GdprServiceTest {
         assertEquals(1, outcome.photosDeleted());
         UUID recordId = savedRecord().getId();
         verify(erasureRecordRepository).recordPhotosDeleted(recordId, tenantId, 1);
+    }
+
+    @Test
+    @DisplayName("#771: an own-order review photo the catalogue references is retained")
+    void erase_ownOrderPhotoTheCatalogueReferences_isRetained() {
+        String shared = photoUrl("shared.webp");
+        String own = photoUrl("own.webp");
+        String sharedKey = tenantId + "/reviews/" + orderId + "/shared.webp";
+        stubErasureWithOneReview(shared, own);
+        when(mediaAssetRepository.countCatalogueReferences(any(), anyString())).thenReturn(0L);
+        when(mediaAssetRepository.countCatalogueReferences(tenantId, sharedKey)).thenReturn(1L);
+        when(storageService.delete(own)).thenReturn(true);
+
+        var outcome = gdprService.eraseCustomerData(customerId); // inline: no synchronization active
+
+        verify(storageService, never()).delete(shared);
+        verify(storageService, times(1)).delete(own);
+        assertEquals(1, outcome.photosDeleted());
+        // The reference check runs under the ERASING tenant, for each key that passed the allow-list.
+        verify(mediaAssetRepository).countCatalogueReferences(tenantId, sharedKey);
+        verify(mediaAssetRepository, never()).countCatalogueReferences(argThat(t -> !tenantId.equals(t)), anyString());
     }
 
     // Assign a JPA @GeneratedValue id in a unit test (no setter on the entity).
