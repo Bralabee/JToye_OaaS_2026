@@ -193,6 +193,12 @@ SPECS=(
 	"Azurite|Azurite:? ?[0-9]+\.[0-9]+\.[0-9]+|$(azurite_version)"
 	"Resilience4j|Resilience4j( Spring Boot 3 Starter)? [0-9]+\.[0-9]+\.[0-9]+|$(g 'io.github.resilience4j:resilience4j-spring-boot3')"
 	"Stripe Java SDK|Stripe Java SDK [0-9]+\.[0-9]+\.[0-9]+|$(g 'com.stripe:stripe-java')"
+	# The media-pipeline rows (2026-09-30, PR #765 review). STACK.md quoted both versions and
+	# no row read them, so dependabot's bump left them stale under a green gate. Each row reads
+	# ONE coordinate of a pair that build.gradle.kts pins in lockstep (scrimage-core/-webp,
+	# imageio-webp/-core); the doc names the pair with one version, so one coordinate suffices.
+	"Scrimage|scrimage [0-9]+\.[0-9]+\.[0-9]+|$(g 'com.sksamuel.scrimage:scrimage-core')"
+	"TwelveMonkeys ImageIO|TwelveMonkeys ImageIO [0-9]+\.[0-9]+\.[0-9]+|$(g 'com.twelvemonkeys.imageio:imageio-webp')"
 	"Bucket4j|Bucket4j( core)? [0-9]+\.[0-9]+\.[0-9]+|$(g 'com.bucket4j:bucket4j-core')"
 	"OpenPDF|OpenPDF [0-9]+\.[0-9]+\.[0-9]+|$(g 'com.github.librepdf:openpdf')"
 	"SpringDoc|SpringDoc OpenAPI [0-9]+\.[0-9]+\.[0-9]+|$(g 'org.springdoc:springdoc-openapi-starter-webmvc-ui')"
