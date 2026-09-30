@@ -6,7 +6,7 @@
 
 **Primary:**
 - Java 25 (Temurin) — Core API (`core-java/`), toolchain pinned in `core-java/build.gradle.kts:13` (`JavaLanguageVersion.of(25)`) and root `build.gradle.kts:9`. Docker build/runtime stages use `eclipse-temurin:25-jdk-alpine` / `eclipse-temurin:25-jre-alpine` (`core-java/Dockerfile`). CI pins `java-version: '25'` / `distribution: 'temurin'` via `actions/setup-java@v6` in `.github/workflows/ci-cd.yaml` (4 jobs: test, integration-tests, code-review-gate-checks, and one more).
-- TypeScript 5.9.3 — Frontend (`frontend/package.json` `devDependencies.typescript`), Next.js 16.3.4 + React 19.2.8. `frontend/tsconfig.json` strict mode, `target: ES2017`.
+- TypeScript 5.9.3 — Frontend (`frontend/package.json` `devDependencies.typescript`), Next.js 16.3.6 + React 19.3.0. `frontend/tsconfig.json` strict mode, `target: ES2017`.
 - Go 1.27 — Edge API gateway (`edge-go/go.mod:3` `go 1.27.0`; `edge-go/Dockerfile` builds on `golang:1.27-alpine`; CI pins `go-version: '1.27'` via `actions/setup-go@v7`). The prose in CLAUDE.md, AGENTS.md, README and the guides trailed one minor version behind the manifest until it was corrected in `9d4f53e8` (the superseded number is deliberately not written here — the `Go` row is total over its form, so naming it would make this sentence fail the rule it is describing); `scripts/check-doc-versions.sh` now carries a `Go` row so that claim cannot drift unnoticed again.
 
 **Secondary:**
@@ -42,7 +42,7 @@
 - Spring State Machine 4.0.2 (`spring-statemachine-starter`) — order lifecycle state machine.
 - Spring Cache + Spring Data Redis — tenant-aware caching.
 - Spring AOP — cross-cutting concerns (tenant pinning, caching).
-- Next.js 16.3.4 + React 19.2.8 — Frontend framework (file-based routing, standalone output build).
+- Next.js 16.3.6 + React 19.3.0 — Frontend framework (file-based routing, standalone output build).
 - Gin v1.12.0 — Go HTTP routing/middleware for the edge gateway (`edge-go/go.mod:6`).
 
 **Testing:**
@@ -50,16 +50,16 @@
 - Testcontainers 1.21.4 (`testcontainers`, `postgresql`, `rabbitmq`, `junit-jupiter` modules) — real Postgres + RLS and real-broker fan-out proofs; run via the dedicated `integrationTest` Gradle task, tagged `testcontainers`, excluded from the default `test` task.
 - H2 (`com.h2database:h2`) — lightweight in-memory unit tests.
 - JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:461` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
-- Jest 30.5.1 + @testing-library/react 16.3.0 + jest-environment-jsdom 30.5.1 — Frontend unit/component tests. `overrides` pins the transitive `nwsapi` at 2.2.24: 2.2.27 breaks Radix-Select role queries (two suites timeout deterministically; bisected 2026-09-07, exit criteria in #736).
+- Jest 30.5.2 + @testing-library/react 16.3.0 + jest-environment-jsdom 30.5.2 — Frontend unit/component tests. `overrides` pins the transitive `nwsapi` at 2.2.24: 2.2.27 breaks Radix-Select role queries (two suites timeout deterministically; bisected 2026-09-07, exit criteria in #736).
 - jest-axe 11.0.0 + @axe-core/playwright 4.13.0 + axe-core 4.13.0 — Accessibility testing.
-- @playwright/test 1.62.1 — E2E browser automation (`frontend/playwright.config.ts`).
+- @playwright/test 1.63.0 — E2E browser automation (`frontend/playwright.config.ts`).
 - vitest ^4 — MCP server unit tests (`mcp-server/package.json`).
 
 **Build/Dev:**
 - Spring Boot Gradle Plugin 3.5.16 — bootJar packaging, redirected to `core-java/build-local/` (`layout.buildDirectory.set(file("build-local"))`) — `core-java/build/` is a stale artifact directory, never read.
 - Flyway 3-part: `flyway-core` + `flyway-database-postgresql` (Boot-managed versions) — schema migration.
 - Lombok + MapStruct 1.6.3 (+ `lombok-mapstruct-binding` 0.2.0) — boilerplate reduction / compile-time DTO mapping.
-- ESLint 9 flat config (`frontend/eslint.config.mjs`) — the only lint config; Next 16 removed `next lint`. Spreads `eslint-config-next@16.3.4`'s native flat-config arrays (`/core-web-vitals`, `/typescript`) directly — do NOT wrap with `FlatCompat` (crashes with a circular-structure error per that file's own header).
+- ESLint 9 flat config (`frontend/eslint.config.mjs`) — the only lint config; Next 16 removed `next lint`. Spreads `eslint-config-next@16.3.6`'s native flat-config arrays (`/core-web-vitals`, `/typescript`) directly — do NOT wrap with `FlatCompat` (crashes with a circular-structure error per that file's own header).
 - TailwindCSS 3.4.1 + PostCSS 8.5.12 — Frontend styling.
 - tsx ^4 — MCP server dev-mode TS execution (`mcp-server/package.json` `dev` script).
 - cross-env 10.1.0 — cross-platform env var injection for `npm run dev`.
@@ -70,7 +70,7 @@
 - PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:243`) — explicit pin, not Boot-managed.
 - Azure Storage Blob SDK 12.35.1 (`com.azure:azure-storage-blob`) + Azure Identity 1.18.6 (`com.azure:azure-identity`) — the object-store client (Azurite emulator locally, Azure Blob Storage in staging/production) and the Workload Identity credential used in AKS.
 - Stripe Java SDK 33.4.2 — Payment intents, Connect (destination charges), webhook signature verification.
-- @stripe/react-stripe-js 6.8.2 + @stripe/stripe-js 9.15.0 — Frontend Stripe Elements integration.
+- @stripe/react-stripe-js 6.12.0 + @stripe/stripe-js 9.17.0 — Frontend Stripe Elements integration.
 - next-auth 5.0.0-beta.32 (`@auth/core` pinned via `overrides` to `0.41.3`) — Session/auth middleware, Keycloak OIDC provider.
 - @modelcontextprotocol/sdk ^1.29.0 — MCP server protocol implementation (`mcp-server/package.json`).
 - golang-jwt/jwt/v5 v5.3.1 — Edge gateway JWT validation against Keycloak JWKS.
@@ -83,11 +83,11 @@
 - Micrometer Prometheus + Micrometer Tracing (Brave/Zipkin bridge) — metrics + distributed tracing.
 - com.sksamuel.scrimage 4.6.8 (`scrimage-core`, `scrimage-webp`) + TwelveMonkeys ImageIO 3.15.2 (`imageio-webp`, `imageio-core`) — image decode/resize/WebP transcode pipeline (Phase 24 media pipeline); scrimage-webp's bundled `cwebp` is glibc-linked and does NOT run on the Alpine (musl) runtime image, so the Dockerfile installs `libwebp-tools` and points the JVM at `/usr/bin` via `-Dcom.sksamuel.scrimage.webp.binary.dir`.
 - OpenPDF 2.0.3 (`com.github.librepdf:openpdf`) — PDF generation for allergen labels (JasperReports was removed 2026-07-27 as unused, closing 3 Trivy HIGHs).
-- Framer Motion 13.1.1, GSAP 3.15.0 (+`@gsap/react` 2.1.2) — animation.
+- Framer Motion 13.4.4, GSAP 3.15.0 (+`@gsap/react` 2.1.2) — animation.
 - Recharts 3.10.1 — dashboard charts.
 - Radix UI (`@radix-ui/react-*`) — headless component primitives.
-- Zod 4.4.3 (core-java's DTOs use Bean Validation instead) / 4.x in frontend and mcp-server — schema validation.
-- React Hook Form 7.85.0 + @hookform/resolvers 5.9.1 — form state.
+- Zod 4.6.5 (core-java's DTOs use Bean Validation instead) / 4.x in frontend and mcp-server — schema validation.
+- React Hook Form 7.89.0 + @hookform/resolvers 5.9.1 — form state.
 - @stomp/stompjs 7.3.0 + @microsoft/fetch-event-source 2.0.1 — Frontend real-time (STOMP over WebSocket, SSE consumption).
 - pino ^10 — MCP server structured logging.
 - express ^5 — MCP server HTTP host (Streamable HTTP transport).

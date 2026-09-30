@@ -21,7 +21,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 
 ## Languages
 - Java 25 - Core API (Spring Boot 3.5.16)
-- TypeScript 5 - Frontend (Next.js 16.3.4, React 19)
+- TypeScript 5 - Frontend (Next.js 16.3.6, React 19)
 - Go 1.27 - Edge API gateway (Gin)
 - SQL (PostgreSQL) - Database migrations via Flyway
 - YAML - Configuration management
@@ -48,13 +48,13 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation
 - Micrometer Prometheus - Metrics export
 - Micrometer Tracing (Brave/Zipkin) - Distributed tracing
-- Next.js 16.3.4 - React framework with file-based routing
+- Next.js 16.3.6 - React framework with file-based routing
 - React 19 - UI component library
-- React Hook Form 7.85.0 - Form state management
+- React Hook Form 7.89.0 - Form state management
 - Next-Auth 5.0.0-beta.32 - Authentication middleware
 - TailwindCSS 3.4.1 - Utility-first CSS framework
 - Radix UI - Headless component library
-- Zod 4.4.3 - Schema validation
+- Zod 4.6.5 - Schema validation
 - Gin v1.12.0 - HTTP routing and middleware
 - golang-jwt/jwt v5 - JWT validation
 - uber/zap - Structured logging
@@ -62,9 +62,9 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - JUnit 5 - Java test framework
 - Testcontainers 1.21.4 - Docker-based integration testing
 - Spring Boot Test - Testing utilities and test containers
-- Jest 30.5.1 - JavaScript test runner
+- Jest 30.5.2 - JavaScript test runner
 - @testing-library/react - React component testing
-- @playwright/test 1.62.1 - E2E browser automation
+- @playwright/test 1.63.0 - E2E browser automation
 - Spring Boot Gradle Plugin 3.5.16 - JAR packaging
 - Flyway - Database migration management
 - Lombok - Boilerplate reduction (code generation)
@@ -75,9 +75,9 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Hibernate Envers - Audit history tracking
 - Azure Storage Blob SDK (12.35.1) - Blob API for image storage
 - Azure Identity (1.18.6) - Workload Identity credential for Blob in AKS
-- Stripe React/JS 6.8.2, 9.15.0 - Payment processing UI integration
+- Stripe React/JS 6.12.0, 9.17.0 - Payment processing UI integration
 - Axios 1.19.0 - HTTP client for API calls
-- Framer Motion 13.1.1 - Animation library
+- Framer Motion 13.4.4 - Animation library
 - Recharts 3.10.1 - Charts and data visualization
 - Redis 7 - Session and cache store
 - RabbitMQ 4.3.4 - Message queue (AMQP)
@@ -137,7 +137,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Azurite: 3.37.0
 - Go: 1.27-alpine
 - Node.js: 24+
-- Next.js: 16.3.4
+- Next.js: 16.3.6
 ## Performance Tuning
 - Connection pooling: HikariCP
 - Batch insert/update: Hibernate batch_size=20 (prod: 50)
@@ -492,7 +492,7 @@ edge answer a request without consulting the core.
 
 ### oaas-frontend
 
-Frontend engineer for the J'Toye OaaS Next.js app (frontend/). Use for vendor dashboard, storefront, onboarding UI, forms, and mobile-layout work. Knows Next 16.3.4 App Router, React 19, Tailwind, Radix, react-hook-form + Zod, and next-auth 5 beta. Runs Jest and Playwright over the existing suites. Prefer over a generic agent for any OaaS UI work.
+Frontend engineer for the J'Toye OaaS Next.js app (frontend/). Use for vendor dashboard, storefront, onboarding UI, forms, and mobile-layout work. Knows Next 16.3.6 App Router, React 19, Tailwind, Radix, react-hook-form + Zod, and next-auth 5 beta. Runs Jest and Playwright over the existing suites. Prefer over a generic agent for any OaaS UI work.
 
 **Write boundary.** WRITE: frontend/** only.
 
@@ -500,7 +500,7 @@ You own `~/IdeaProjects/JToye_OaaS_2026/frontend/`.
 
 ## Stack facts
 
-Next.js 16.3.4 (App Router), React 19, TailwindCSS 3.4, Radix UI primitives, react-hook-form
+Next.js 16.3.6 (App Router), React 19, TailwindCSS 3.4, Radix UI primitives, react-hook-form
 7.8x with Zod 4 resolvers, next-auth 5.0.0-beta.32. Node 24+. For suite sizes read `docs/metrics.json`
 in the app repo — it is the source of truth and two CI gates enforce it. Never restate a count
 here: this charter is emitted into that repo's own `AGENTS.md`, so a stale figure fails its

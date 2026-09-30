@@ -38,8 +38,12 @@ jest.mock("@/hooks/use-stomp", () => ({
 }))
 
 // Mock the toast hook — no-op
+// A STABLE toast, like the real hook's module-level `toast`. KitchenPage lists
+// `toast` in fetchOrders' deps, so a fresh jest.fn() per render re-fires the
+// fetch effect in an endless loop (#756, same class as the marketing suite).
+const mockToast = jest.fn()
 jest.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: jest.fn() }),
+  useToast: () => ({ toast: mockToast }),
 }))
 
 // Mock apiClient — hand-rolled so tests control the data
@@ -274,6 +278,9 @@ describe("KitchenPage", () => {
     expect(alice.length).toBeGreaterThanOrEqual(1)
     // Bump buttons show the current action label
     expect(screen.getAllByRole("button").some((b) => /Start Preparing|Mark Ready/.test(b.textContent || ""))).toBe(true)
+    // One mount, one board read. A per-render toast mock re-fires fetchOrders (it
+    // lists `toast` in its deps) in an endless loop -- ~2100 reads/s measured (#756).
+    expect(mockGet.mock.calls.filter(([u]) => String(u).includes("/api/v1/orders/kitchen"))).toHaveLength(1)
   })
 
   it("mute toggle persists state to localStorage", async () => {
