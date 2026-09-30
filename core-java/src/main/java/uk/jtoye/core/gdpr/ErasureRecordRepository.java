@@ -19,11 +19,13 @@ public interface ErasureRecordRepository extends JpaRepository<ErasureRecord, UU
      * Write the number of review photos the store ACTUALLY removed onto an erasure record — once.
      *
      * <p>Review photos are deleted only after the erasure transaction commits (#764), so the record
-     * is inserted with {@code photos_deleted = 0} and this sets the real count afterwards. It is
-     * write-once twice over: the {@code photos_deleted = 0} predicate here, and V67's
-     * {@code erasure_records_photo_count_update} policy, whose USING clause stops matching the row
-     * once a count is recorded. The explicit {@code tenant_id} predicate is scoping in its own right,
-     * not a stand-in for RLS.
+     * is inserted with {@code photos_deleted = 0} and this sets the real count afterwards. This is the
+     * ONLY update the database accepts on an erasure record: V67's
+     * {@code erasure_records_photo_count_update} policy limits the targets to this tenant's zero-count
+     * records, and its {@code erasure_records_write_once} trigger refuses (SQLSTATE 42501), for every
+     * role, any update that is not {@code photos_deleted} going from 0 to a positive count with every
+     * other column unchanged. Call it only with a positive count. The explicit {@code tenant_id}
+     * predicate is scoping in its own right, not a stand-in for RLS.
      *
      * <p>Post-commit only, and it MUST run in a {@code REQUIRES_NEW} transaction: inside an
      * {@code afterCommit} hook a default-propagation call joins the transaction that has already

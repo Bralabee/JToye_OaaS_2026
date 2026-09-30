@@ -347,6 +347,10 @@ class GdprErasureReviewRlsIntegrationTest {
         assertRefusedByGuard(backdated, "back-dating erased_at");
         assertThat(recordJson(a, recordId)).as("the record after the refused back-dating").isEqualTo(before);
 
+        Attempt negative = attemptUnder(a, "UPDATE erasure_records SET photos_deleted = -1 WHERE id = ?", recordId);
+        assertRefusedByGuard(negative, "a negative photo count");
+        assertThat(recordJson(a, recordId)).as("the record after the refused negative count").isEqualTo(before);
+
         // The legitimate path — the SQL ErasureRecordRepository.recordPhotosDeleted issues — still works,
         // and changes photos_deleted and nothing else.
         Attempt legitimate = attemptUnder(a,
