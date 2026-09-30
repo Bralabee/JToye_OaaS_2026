@@ -17,19 +17,51 @@
 # the DEFAULT branch, so those events only flip the status once this workflow has
 # merged. The PR that introduces it therefore shows a failing (not-yet-required)
 # status on itself; that is the bootstrap, not a defect.
+#
+# COST (2026-09-20). This repo is private, so every run bills the owner's Actions
+# allowance, and GitHub rounds EACH JOB up to a whole minute: a ~10-second verdict
+# costs the same as a 60-second one. September 1-20 measured 1,447 runs of this
+# file against 146 of verify.yml — ~70% of the 2,000-minute allowance, and the
+# reason every job then refused to start ("payments have failed or your spending
+# limit needs to be increased"), which blocked three merges. Of the first 1,000
+# runs: 438 pull_request_review, 437 pull_request_review_comment, 78 pull_request,
+# 42 issue_comment. Two trims, neither of which can lose a re-evaluation:
+#   - pull_request_review_comment is GONE. An inline comment posted through the
+#     API (what `/code-review --comment` does) is always wrapped in a single-
+#     comment review, so pull_request_review already fires for it — the 438/437
+#     pair above is the same events counted twice. MEASURED on PR #216 (review
+#     finding 2), not inferred: `POST /pulls/216/comments` → run 35497048304
+#     (pull_request_review); `POST /pulls/216/comments/{id}/replies` → run
+#     35497048450 (pull_request_review); one review carrying six comments
+#     (`POST /pulls/216/reviews`) → ONE run, 35496989719.
+#   - issue_comment is KEPT (the waiver path posts a `Review-Record:` comment and
+#     then polls for the status to flip — see gates/review-record-check.sh
+#     --await-status) but the job SKIPS unless the body carries the marker AND
+#     the author is OWNER or MEMBER — the only comments the brain counts as an
+#     R-3 record (review-record-check.sh, the author_association filter), so
+#     no comment that could change the verdict is skipped, and a drive-by
+#     marker comment on this private repo no longer buys a runner. A skipped
+#     job never starts one, so PR chatter costs nothing.
+# Concurrency cancel-in-progress does NOT save minutes (a cancelled job still
+# bills its started minute). It exists so the LAST verdict run for a PR is the
+# one that stands — and because the group is resolved BEFORE the job-level
+# `if:`, a chatter run would enter the group, cancel an in-flight verdict run
+# and then skip, leaving that head with no status (#216 review, finding 1).
+# Chatter runs therefore get their own `-chatter` group, keyed by the SAME
+# predicate the `if:` negates, and never touch a verdict run.
 name: review-record
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   pull_request_review:
     types: [submitted]
-  pull_request_review_comment:
-    types: [created]
   issue_comment:
     types: [created]
   # Manual re-drive (#156 review, finding 8): the waiver dedupe deliberately
   # does not re-post an identical record, so a cancelled/failed run would
-  # otherwise have no event left to re-trigger evaluation.
+  # otherwise have no event left to re-trigger evaluation. This is the ONLY
+  # re-drive: a `Review-Record:` comment is itself an R-3 record and would
+  # turn the status green without a review, and plain comments no longer run.
   workflow_dispatch:
     inputs:
       pr:
@@ -40,12 +72,28 @@ permissions:
   pull-requests: read
   contents: read
 concurrency:
-  group: review-record-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+  # The `-chatter` suffix is the exact negation of the job `if:` below: keep the
+  # two predicates identical, or a chatter run can cancel a verdict run.
+  group: >-
+    review-record-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}${{
+      (github.event_name == 'issue_comment'
+       && !(github.event.issue.pull_request
+            && contains(github.event.comment.body, 'Review-Record:')
+            && contains(fromJSON('["OWNER","MEMBER"]'), github.event.comment.author_association)))
+      && '-chatter' || '' }}
   cancel-in-progress: true
 jobs:
   verdict:
-    # issue_comment fires for plain issues too; only PR comments matter here.
-    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    # issue_comment fires for plain issues too, and for every line of PR chatter;
+    # only a PR comment carrying the `Review-Record:` marker FROM an OWNER/MEMBER
+    # can change the verdict (record class R-3, waivers included — the brain
+    # ignores every other author), so only that one gets a runner. Everything
+    # else is skipped BEFORE a job starts (0 billed minutes).
+    if: >-
+      github.event_name != 'issue_comment'
+      || (github.event.issue.pull_request
+          && contains(github.event.comment.body, 'Review-Record:')
+          && contains(fromJSON('["OWNER","MEMBER"]'), github.event.comment.author_association))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

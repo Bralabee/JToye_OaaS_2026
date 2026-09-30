@@ -187,6 +187,15 @@ SHIM
 	arm absent 1 2 'VOID: cannot resolve' 'no selector + dead API -> VOID'         "${R[@]}" pr merge
 
 	arm absent - 0 '^42$'                 'no selector resolves the CURRENT BRANCH'  "${R[@]}" pr merge
+	# Third review round: every value-taking flag `gh pr merge` has, and pflag's
+	# shorthand bundles, read as the wrapper's arity table reads them. Each of these
+	# VOIDed on the flag's VALUE before (the list lacked -A and read `-dR` as boolean).
+	arm absent - 0 '^151$'                '-A value is never the selector'            "${R[@]}" pr merge -A bot@x.com 151
+	arm absent - 0 '^151$'                '--author-email value is never the selector' "${R[@]}" pr merge --author-email bot@x.com 151
+	arm absent - 0 '^151$'                'bundle -dR takes the NEXT word'            "${R[@]}" pr merge -dR o/r 151
+	arm absent - 0 '^151$'                'bundle -dRo/r keeps its value attached'    "${R[@]}" pr merge -dRo/r 151
+	arm absent - 0 '^151$'                'bundle -sA takes the next word'            "${R[@]}" pr merge -sA bot@x.com 151 --squash
+	arm absent - 0 '^151$'                '--repo=o/r form is one word'               "${R[@]}" pr merge --repo=o/r 151
 
 	# ── waiver-record arms: a waive must become a forge artifact, or say it could not.
 	# The shim answers ONLY the exact endpoint+body shape the gate can later audit —
@@ -246,9 +255,15 @@ SHIM
 	GUARD="$(dirname "$SELF")/pr-merge-guard.sh"
 	BASHRC="$(dirname "$SELF")/../bash/.bashrc"
 	SKIPPED=0
+	# How many arms a VENDORED copy skips is a constant here — and a constant nobody
+	# compares drifts: it read 25 while the canonical-only tail was 35, then 38 (PR #199
+	# review). The canonical run now measures the tail it stands for and fails on a
+	# mismatch; _RR_TAIL_START marks where that tail begins.
+	_RR_TAIL_START=$((PASSED + FAILED))
+	_RR_VENDORED_SKIP=47
 	if [ ! -f "$GUARD" ] || [ ! -f "$BASHRC" ]; then
-		SKIPPED=22
-		printf '  SKIP  %s arms (guard dispatch + ledger + wrapper behavioral + slug fallback + list/ledger parity) — vendored context: no sibling pr-merge-guard.sh/.bashrc; canonical dotfiles runs them\n' "$SKIPPED"
+		SKIPPED=$_RR_VENDORED_SKIP
+		printf '  SKIP  %s arms (guard dispatch + ledger + wrapper behavioral + snapshot + slug fallback + list/ledger parity) — vendored context: no sibling pr-merge-guard.sh/.bashrc; canonical dotfiles runs them\n' "$SKIPPED"
 		printf 'review-record-check selftest: passed=%s failed=%s skipped=%s\n' "$PASSED" "$FAILED" "$SKIPPED"
 		[ "$FAILED" -eq 0 ] || exit 1
 		exit 0
@@ -282,6 +297,43 @@ SHIM
 	armg absent  '' 1 'G-4 ON.*review-gated'    'guard compare is case-insensitive'         --repo bralabee/jtoye_oaas_2026 --pr 1
 	armg absent  x/y 1 'G-4 ON.*review-gated'   'guard env ADDS, never drops the built-ins' --repo Bralabee/dotfiles --pr 1
 	armg garbage x/y 2 'VOID:'                  'guard G-4 VOIDs on unevaluable record'     "${G[@]}" --require-review
+
+	# ── G-2 arms (issue #249): a cancelled check-run superseded by a later success ──
+	# review-record.yml cancels each superseded `verdict` run; before this a PR whose
+	# last review round sat on its head with no fix commit after it could never pass
+	# G-2 (observed on #247: 8 "not green", every one a self-cancelled verdict).
+	# Fail direction FIRST: a cancelled run with NO successful successor stays red;
+	# a success followed by a LATER cancelled re-run is not superseded either.
+	CR_SUP='{"check_runs":[{"id":1,"name":"verdict","status":"completed","conclusion":"cancelled","started_at":"2026-09-23T12:08:11Z"},{"id":2,"name":"verdict","status":"completed","conclusion":"success","started_at":"2026-09-23T12:11:20Z"},{"id":3,"name":"verify","status":"completed","conclusion":"success","started_at":"2026-09-23T11:51:55Z"}]}'
+	CR_ALONE='{"check_runs":[{"id":1,"name":"verdict","status":"completed","conclusion":"cancelled","started_at":"2026-09-23T12:08:11Z"},{"id":3,"name":"verify","status":"completed","conclusion":"success","started_at":"2026-09-23T11:51:55Z"}]}'
+	CR_LATER='{"check_runs":[{"id":1,"name":"verdict","status":"completed","conclusion":"success","started_at":"2026-09-23T12:08:11Z"},{"id":2,"name":"verdict","status":"completed","conclusion":"cancelled","started_at":"2026-09-23T12:11:20Z"}]}'
+	CR_OTHER='{"check_runs":[{"id":1,"name":"verify","status":"completed","conclusion":"cancelled","started_at":"2026-09-23T12:08:11Z"},{"id":2,"name":"verdict","status":"completed","conclusion":"success","started_at":"2026-09-23T12:11:20Z"}]}'
+	for f in cansup canalone canlater canother; do mkfix "$f" "$EMPTY" "$EMPTY" "$EMPTY"; done
+	printf '%s' "$CR_SUP"   > "$WORK/cansup/checkruns.json"
+	printf '%s' "$CR_ALONE" > "$WORK/canalone/checkruns.json"
+	printf '%s' "$CR_LATER" > "$WORK/canlater/checkruns.json"
+	printf '%s' "$CR_OTHER" > "$WORK/canother/checkruns.json"
+	armg canalone x/y 1 'STOP: 1 check\(s\) not green' 'guard G-2: cancelled with no successor stays red' "${G[@]}"
+	armg canlater x/y 1 'STOP: 1 check\(s\) not green' 'guard G-2: cancelled AFTER the success is not superseded' "${G[@]}"
+	armg canother x/y 1 'STOP: 1 check\(s\) not green' 'guard G-2: a success of a DIFFERENT check supersedes nothing' "${G[@]}"
+	armg cansup   x/y 0 'superseded  : 1 cancelled run.*\(verdict\)' 'guard G-2: cancelled then later success -> superseded, printed, GO' "${G[@]}"
+	# #257 round 1: a run cancelled while still QUEUED has started_at null; `// ""`
+	# made it the EARLIEST time, so an OLDER success superseded it (false GO).
+	# Null falls back to check-run id order. And the successor may be any GREEN
+	# conclusion (G-2's own set), not success alone.
+	CR_NULLOLD='{"check_runs":[{"id":1,"name":"verdict","status":"completed","conclusion":"success","started_at":"2026-09-20T09:00:00Z"},{"id":2,"name":"verdict","status":"completed","conclusion":"cancelled","started_at":null}]}'
+	CR_NULLSUP='{"check_runs":[{"id":1,"name":"verdict","status":"completed","conclusion":"cancelled","started_at":null},{"id":2,"name":"verdict","status":"completed","conclusion":"success","started_at":"2026-09-23T12:11:20Z"}]}'
+	CR_NEUTRAL='{"check_runs":[{"id":1,"name":"verdict","status":"completed","conclusion":"cancelled","started_at":"2026-09-23T12:08:11Z"},{"id":2,"name":"verdict","status":"completed","conclusion":"neutral","started_at":"2026-09-23T12:11:20Z"}]}'
+	for f in cannullold cannullsup canneutral; do mkfix "$f" "$EMPTY" "$EMPTY" "$EMPTY"; done
+	printf '%s' "$CR_NULLOLD" > "$WORK/cannullold/checkruns.json"
+	printf '%s' "$CR_NULLSUP" > "$WORK/cannullsup/checkruns.json"
+	printf '%s' "$CR_NEUTRAL" > "$WORK/canneutral/checkruns.json"
+	armg cannullold x/y 1 'STOP: 1 check\(s\) not green' 'guard G-2: null started_at cancelled after an OLDER success stays red (no false GO)' "${G[@]}"
+	armg cannullsup x/y 0 'superseded  : 1 cancelled run.*\(verdict\)' 'guard G-2: queued-then-cancelled (null started_at) superseded by a later id -> GO' "${G[@]}"
+	armg canneutral x/y 0 'superseded  : 1 cancelled run.*\(verdict\)' 'guard G-2: a later neutral run supersedes too (the acceptance set, not success alone)' "${G[@]}"
+	# #257 round 1: the header grew and `sed -n '2,66p'` truncated --help mid-USAGE;
+	# the marker range (as this file uses) must print the header to its last section.
+	armg absent x/y 0 'PROVING IT WORKS' 'guard --help prints the whole header (marker range, not a line count)' -h
 
 	# ── ledger arms: review-repos.txt enrolls at call time, additively ───────────────
 	# Fail directions proven at introduction by a guard mutation (dropping
@@ -343,9 +395,12 @@ SHIM
 	# DOTFILES_REVIEW_WAIVE is pinned EMPTY — an exported waive flipped the
 	# sourced gh() into its waive branch and false-blocked every push (#161 r3).
 	WLEDGER="$WORK/wrap-ledger.txt"
+	# WSRC is WHAT the arm sources to obtain gh(): the real .bashrc by default, or
+	# the snapshot rendering of it built below (the snapshot arms).
+	WSRC="$BASHRC"
 	armw() { # <target-repo> <expected-rc> <output-regex|!regex> <label>
 		local tgt="$1" exp="$2" want="$3" label="$4" out rc okre=1
-		out=$(PATH="$WORK/bin:$PATH" bash -c "source '$BASHRC' 2>/dev/null
+		out=$(PATH="$WORK/bin:$PATH" bash -c "source '$WSRC' 2>/dev/null
 			DOTFILES_DIR='$WORK/emptydot' DOTFILES_REVIEW_REPOS_FILE='$WLEDGER' \
 			DOTFILES_REVIEW_REPOS='' DOTFILES_REPO_SLUG= DOTFILES_REVIEW_WAIVE= \
 			gh pr merge 1 -R '$tgt'" 2>&1); rc=$?
@@ -364,6 +419,39 @@ SHIM
 	# rc 64 is the gh SHIM's signature: the wrapper matched nothing and ran
 	# `command gh` — proof of clean fall-through, with no BLOCK in sight.
 	armw wrap/other 64 '!BLOCKED'                       'wrapper control: unenrolled falls through'
+	# argv-shaped arms (PR #182 second review round). The target must be read
+	# the way pflag and cobra read it — `-R=x`, -R inside a shorthand bundle
+	# (`-dR x`, `-dRx`), a value-taking flag BEFORE the verb (`gh -t x pr merge`
+	# is `pr merge` with -t as its --subject), a PR URL, a caller's IFS — and
+	# DOTFILES_REPO_SLUG must ADD a slug, never replace the built-in one. Each
+	# BLOCK arm reached the gh shim (rc 64) on the previous wrapper; the control
+	# proves a -t VALUE shaped like -R is not read as a target.
+	armv() { # <expected-rc> <output-regex|!regex> <label> -- <argv…>
+		local exp="$1" want="$2" label="$3" out rc okre=1 argv; shift 3; [ "${1:-}" = -- ] && shift
+		printf -v argv '%q ' "$@"
+		out=$(PATH="$WORK/bin:$PATH" bash -c "source '$WSRC' 2>/dev/null
+			DOTFILES_DIR='$WORK/emptydot' DOTFILES_REVIEW_REPOS_FILE='$WLEDGER' \
+			DOTFILES_REVIEW_REPOS='' DOTFILES_REVIEW_WAIVE= DOTFILES_MACHINE_ROLE_FILE=/nonexistent/role \
+			$argv" 2>&1); rc=$?
+		case "$want" in
+			!*) grep -Eq "${want#!}" <<< "$out" && okre=0 ;;
+			*)  grep -Eq "$want"     <<< "$out" || okre=0 ;;
+		esac
+		if [ "$rc" = "$exp" ] && [ "$okre" = 1 ]; then
+			printf '  ok    %-44s rc=%s\n' "$label" "$rc"; PASSED=$((PASSED+1))
+		else
+			printf '  NOT OK %-43s rc=%s (wanted rc=%s + /%s/)\n' "$label" "$rc" "$exp" "$want"
+			FAILED=$((FAILED+1)); printf '%s\n' "$out" | sed 's/^/          /' | head -4
+		fi
+	}
+	armv 1  'review gate not found' 'wrapper: -R=slug (= attached)'          -- gh pr merge 1 -R=wrap/led
+	armv 1  'review gate not found' 'wrapper: -R inside a shorthand bundle'  -- gh pr merge 1 -dR wrap/led
+	armv 1  'review gate not found' 'wrapper: bundled -dRslug attached'      -- gh pr merge 1 -dRwrap/led
+	armv 1  'review gate not found' 'wrapper: value flag before the verb'    -- gh -t x pr merge 1 -R wrap/led
+	armv 1  'review gate not found' 'wrapper: a PR URL fixes the repo'       -- gh pr merge https://github.com/wrap/led/pull/1
+	armv 1  'review gate not found' 'wrapper: caller IFS cannot un-gate'     -- IFS=: gh pr merge 1 -R wrap/led
+	armv 1  'PRIMARY machine'       'wrapper: DOTFILES_REPO_SLUG adds, never replaces' -- DOTFILES_REPO_SLUG=x/y gh pr merge 1 -R Bralabee/dotfiles
+	armv 64 '!BLOCKED'              'wrapper control: a -t value shaped like -R'  -- gh pr merge 1 -R wrap/other -t -Rwrap/led
 	# The dangerous harvest shapes must be proven through the WRAPPER's copy of
 	# the duplicated pipeline too, not only the guard's (#161 round 3: a
 	# wrapper-only regression would leave every guard-side arm green).
@@ -374,6 +462,76 @@ SHIM
 	WLEDGER="$WORK/wrap-decl.txt"
 	armw wrap/led   64 '!BLOCKED'                       'wrapper: decline lines do not enroll'
 	WLEDGER="$WORK/wrap-ledger.txt"
+
+	# SNAPSHOT arms (measured 2026-09-04). Claude Code's Bash tool never sources
+	# .bashrc: it replays a SNAPSHOT of the interactive shell's functions, built by
+	# its own snapshot script (2.1.257) as
+	#     declare -F | cut -d' ' -f3 | grep -vE '^_[^_]'
+	# — every single-underscore function is dropped as completion noise. gh()
+	# survived that filter; the helpers it calls did not. So in exactly the shells
+	# that run merges, `_gh_verb_pair "$@"` was rc 127 + empty, the wrapper's first
+	# test was always false, and every merge fell through to `command gh` ungated —
+	# an unreviewed asao#43 merged that way, the only symptom a line reading
+	# `_gh_verb_pair: command not found`. Every armw above sources the WHOLE file,
+	# so all of them stayed green while the deployed gate could not fire.
+	# These two arms render .bashrc through the SAME pipeline the snapshot uses
+	# (nothing else from the file survives) and load gh() from that rendering. The
+	# gate must still fire; the control proves the rendered wrapper is a working
+	# gh() that falls through when it should, so the BLOCK is the gate and not a
+	# broken shell. Proven failing (rc 64, the shim ran) against the pre-fix .bashrc,
+	# where the helpers were defined BESIDE gh() instead of inside it.
+	bash -c "source '$BASHRC' 2>/dev/null
+		declare -F | cut -d' ' -f3 | grep -vE '^_[^_]' | while read -r f; do
+			printf 'eval %q > /dev/null 2>&1\n' \"\$(declare -f \"\$f\")\"
+		done" > "$WORK/snapshot.sh"
+	if grep -Eq "^eval \\\$'gh \\(\\)" "$WORK/snapshot.sh"; then
+		printf '  ok    %-44s\n' 'snapshot rendering carries gh() (fixture is real)'; PASSED=$((PASSED+1))
+	else
+		printf '  NOT OK %-43s (the two arms below would be vacuous)\n' 'snapshot rendering carries gh() (fixture is real)'; FAILED=$((FAILED+1))
+	fi
+	WSRC="$WORK/snapshot.sh"
+	armw wrap/led   1  'BLOCKED — review gate not found' 'wrapper gate fires from the shell SNAPSHOT'
+	armw wrap/other 64 '!BLOCKED'                        'snapshot control: unenrolled still falls through'
+	armv 1  'review gate not found' 'snapshot: bundled -dR still gates'       -- gh pr merge 1 -dR wrap/led
+	armv 1  'review gate not found' 'snapshot: value flag before the verb'    -- gh -t x pr merge 1 -R wrap/led
+	WSRC="$BASHRC"
+
+	# zsh parity (2026-09-13). macOS logs in to zsh, whose ~/.zshrc TRAMPOLINES
+	# into the bash gh() rather than porting it. Prove the hop reaches the same
+	# verdicts as the bash arms above — enrolled BLOCKS, unenrolled falls through
+	# to the shim — and that it fails CLOSED when ~/.bashrc yields no gh(): VOID,
+	# never the shim. Hermetic: a scratch HOME whose ~/.bashrc symlinks the real
+	# one (the trampoline reads $HOME/.bashrc, as a Mac would). Skipped-not-
+	# sampled where zsh is absent: this box has none; ubuntu-latest and macOS
+	# both run these.
+	ZSHRC="$(dirname "$SELF")/../zsh/.zshrc"
+	if command -v zsh >/dev/null 2>&1 && [ -f "$ZSHRC" ]; then
+		mkdir -p "$WORK/zhome" "$WORK/zhome-bare"
+		ln -sfn "$BASHRC" "$WORK/zhome/.bashrc"
+		armz() { # <home> <target-repo> <expected-rc> <output-regex|!regex> <label>
+			local home="$1" tgt="$2" exp="$3" want="$4" label="$5" out rc okre=1
+			out=$(HOME="$home" PATH="$WORK/bin:$PATH" zsh -c "source '$ZSHRC' 2>/dev/null
+				DOTFILES_DIR='$WORK/emptydot' DOTFILES_REVIEW_REPOS_FILE='$WLEDGER' \
+				DOTFILES_REVIEW_REPOS='' DOTFILES_REPO_SLUG= DOTFILES_REVIEW_WAIVE= \
+				gh pr merge 1 -R '$tgt'" 2>&1); rc=$?
+			case "$want" in
+				!*) grep -Eq "${want#!}" <<< "$out" && okre=0 ;;
+				*)  grep -Eq "$want"     <<< "$out" || okre=0 ;;
+			esac
+			if [ "$rc" = "$exp" ] && [ "$okre" = 1 ]; then
+				printf '  ok    %-44s rc=%s\n' "$label" "$rc"; PASSED=$((PASSED+1))
+			else
+				printf '  NOT OK %-43s rc=%s (wanted rc=%s + /%s/)\n' "$label" "$rc" "$exp" "$want"
+				FAILED=$((FAILED+1)); printf '%s\n' "$out" | sed 's/^/          /' | head -4
+			fi
+		}
+		armz "$WORK/zhome"      wrap/led   1  'BLOCKED — review gate not found' 'zsh trampoline: enrolled repo BLOCKS (bash parity)'
+		armz "$WORK/zhome"      wrap/other 64 '!BLOCKED'                        'zsh trampoline: unenrolled falls through to the shim'
+		armz "$WORK/zhome-bare" wrap/led   2  'did not load'                    'zsh trampoline: no ~/.bashrc -> VOID, never the shim'
+	else
+		SKIPPED=$((SKIPPED + 3))
+		printf '  SKIP  3 zsh parity arms — zsh not installed here (ubuntu-latest and macOS run them)\n'
+	fi
 
 	# Ledger parity: BOTH gates must read the committed ledger through the same
 	# override var, or one side of the fleet silently stops honouring enrollments.
@@ -387,7 +545,21 @@ SHIM
 		FAILED=$((FAILED+1))
 	fi
 
-	printf 'review-record-check selftest: passed=%s failed=%s\n' "$PASSED" "$FAILED"
+	# Hold the vendored branch's skip CONSTANT to the tail it stands for: every arm after
+	# _RR_TAIL_START, whether it ran or SKIPPED here, plus this arm itself (+1). A consumer
+	# copy skips all of them. PR #199 review: the constant read 25 against a real 35, then
+	# 38, and nothing compared them.
+	_rr_tail=$(( PASSED + FAILED - _RR_TAIL_START + SKIPPED + 1 ))
+	if [ "$_rr_tail" = "$_RR_VENDORED_SKIP" ]; then
+		printf '  ok    %-44s %s arms\n' 'vendored skip constant matches the real tail' "$_rr_tail"; PASSED=$((PASSED+1))
+	else
+		printf '  NOT OK %-43s const=%s real=%s — set _RR_VENDORED_SKIP to the real value\n' 'vendored skip constant matches the real tail' "$_RR_VENDORED_SKIP" "$_rr_tail"
+		FAILED=$((FAILED+1))
+	fi
+
+	# skipped= is part of the verdict line (PR #199 review): 82/0 with 3 skipped and
+	# 85/0 with none are different runs, and the line must say which this was.
+	printf 'review-record-check selftest: passed=%s failed=%s skipped=%s\n' "$PASSED" "$FAILED" "$SKIPPED"
 	[ "$FAILED" -eq 0 ] || exit 1
 	exit 0
 fi
@@ -588,10 +760,27 @@ if [ "$RESOLVE" -eq 1 ]; then
 	[ "${1:-}" = "pr" ] && [ "${2:-}" = "merge" ] && shift 2
 	while [ $# -gt 0 ]; do
 		case "$1" in
-			-b|--body|-F|--body-file|-t|--subject|--match-head-commit|-R|--repo)
+			-b|--body|-F|--body-file|-t|--subject|-A|--author-email|--match-head-commit|-R|--repo)
 				shift 2 || break ;;              # value-taking flag: its value is NOT a selector
 				                                 # (a trailing value-flag would loop forever — #156 f9)
-			-*) shift ;;                         # boolean flag (and any --flag=value form)
+			--*) shift ;;                        # boolean long flag (and any --flag=value form)
+			-?*)
+				# A pflag shorthand BUNDLE, read as the wrapper's arity table reads it
+				# (third review round): the FIRST value-taking letter ends the bundle —
+				# with a rest attached (`-dRo/r`, `-R=o/r`) that rest IS the value, with
+				# nothing attached the NEXT argv word is. This list knew `-dR` only as a
+				# boolean, so `-dR o/r 151` VOIDed on 'o/r', and it did not know -A at
+				# all, so `-A bot@x 151` VOIDed on 'bot@x' — a legal numeric merge refused,
+				# and on the waive path the durable Review-Record comment skipped.
+				_b="${1#-}"; _take=0
+				while [ -n "$_b" ]; do
+					_l="${_b:0:1}"; _rest="${_b:1}"
+					case "$_l" in
+						R|t|b|F|A) [ -n "$_rest" ] || _take=1; break ;;
+						*)         _b="$_rest" ;;
+					esac
+				done
+				if [ "$_take" -eq 1 ]; then shift 2 || break; else shift; fi ;;
 			pr|merge) shift ;;                   # stray subcommand words, defensively
 			*) SEL="$1"; break ;;
 		esac
