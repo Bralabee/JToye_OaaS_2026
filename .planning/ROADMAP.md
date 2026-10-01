@@ -834,6 +834,16 @@ Plans:
 
 - [x] 36-18-PLAN.md — Owner-approved push + nightly `workflow_dispatch` proof (Playwright executed > 0) + final parity readings (checkpoint)
 
+### Phase 37: Spring Boot 4.1 Migration
+
+**Goal:** Move core-java from Spring Boot 3.5.16 to 4.1.x and prove the result green by test, gate and live runtime. Boot 3.5's OSS support ended 2026-06-30 (#706); the move also unblocks springdoc 3.1.1 (#739). Owner decisions D-01..D-04 (2026-10-01) and the spike evidence are in `37-CONTEXT.md` / `37-SPIKE.md`: Jackson 3 throughout, explicit per-module starters, spring-statemachine kept, and 401s kept as plain `Bearer`. Three defects that today's tests do not catch must be closed on the way: KeycloakAdminClient sends a garbage body under Jackson 3; 18 config keys are silently ignored, so it needs a new unknown-key gate; and the netty/Tomcat CVE pins need to move to their Boot-4 lines.
+**Requirements**: TBD (derived at plan time from 37-CONTEXT.md)
+**Depends on:** Phase 36
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 37 to break down)
+
 ---
 
 ## The two phases the disposition sweep created — Phases 33–34
