@@ -1,8 +1,64 @@
 # Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged) and 2026-09-30 evening (#764 and #771 fixed and merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged) and 2026-10-01 (Phase 37 opened, #648 closed). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-09-30 (evening) delta — GDPR erasure fixed twice over (#764, #771); `main` green; the stack runs `eb2e98fd`. Resume here.**
+**2026-10-01 delta — Phase 37 (Spring Boot 4.1) opened from a measured spike; #648 closed with break-arm evidence; the orgos charters went version-free. Resume here.**
+**Where things stand.** `main` = `43ed6bbf`. CI/CD on it succeeded, and the scheduled nightly
+on it succeeded (2026-10-01 02:19 UTC). The only open PR is dependabot #739 (springdoc 3.1.1),
+which cannot land before Boot 4.1. Issue #683 (nightly lane) is still OPEN; close it only once you can
+name the change that fixed it.
+- **Phase 37, Spring Boot 4.1 migration (#706).** It is on branch `phase-37-spring-boot-4-1`
+  (pushed, no PR yet), checked out at `../JToye_OaaS_2026-phase37`. **Its plans are not written yet.**
+  - The spike on 4.1.1, run on OpenJDK 25 because the host has no Temurin, was feasible:
+    unit 1330/2 fail, integration 745/1 fail. Flyway is proven to run. spring-statemachine 4.0.2
+    works on Framework 7.
+  - The spike found three defects that no test catches today:
+    - `KeycloakAdminClient` sends a garbage body under Jackson 3.
+    - 18 `application*.yml` keys are silently ignored, including the Zipkin endpoint and prod log retention.
+    - The netty and Tomcat CVE pins must move to their Boot-4 lines.
+  - Owner decisions D-01..D-04: Jackson 3 now, explicit starters, keep statemachine, keep a plain
+    `Bearer` 401.
+  - Read `.planning/phases/37-spring-boot-4-1-migration/37-CONTEXT.md` first, then `37-SPIKE.md`.
+    `37-SPIKE.patch` is a map of the package moves only: it used the classic starters, which D-02
+    reverses.
+- **Issue #648 is CLOSED.** The #726 fix was proven on the production path (edge → core, real chain,
+  real converter). Bracketed break arms, run on `43ed6bbf`:
+
+  | Run | Tests | Failures |
+  |---|---|---|
+  | clean | 16 | 0 |
+  | `@PreAuthorize` removed | 16 | 2 |
+  | `require()` ×2 removed | 16 | 3 |
+  | `requireGroupAdmin()` removed | 16 | 1 |
+  | clean again | 16 | 0 |
+
+  The evidence is in the issue's closing comment.
+- **orgos charters: jtoye-orgos#35 is OPEN (not merged).**
+  - The seven OaaS charters stop restating gate-enforced versions and point to `package.json`,
+    `go.mod` and the build files instead. Otherwise every dependabot bump either reds
+    `check-doc-versions` (it checks the ORGOS block too) or gets reverted by the next sync.
+    Charter source was `Next 16.2.12`; AGENTS.md was hand-edited to 16.3.4 and then 16.3.6.
+  - Worktree: `~/IdeaProjects/jtoye-orgos-charter-versions`.
+  - Its own review round is still owed: `/code-review 35 --comment`, run from the orgos checkout.
+**Next, in order:**
+1. `/gsd-plan-phase 37`, from `../JToye_OaaS_2026-phase37`.
+2. Review and merge jtoye-orgos#35. Then sync the OaaS side in its own PR: the ORGOS block in
+   AGENTS.md plus 21 generated `.github/chatmodes`, `.github/instructions` and `.cursor/rules`
+   files. All of them predate the R-16 charter sections, so the re-sync also adds those.
+   Rewriting `~/.claude/agents` is machine-session work, so leave it to a machine session.
+3. After Phase 37 merges, rebase or recreate #739. springdoc 3.1.1 is then part of the migration.
+**Housekeeping 2026-10-01:**
+- The merged branches #765, #756 and #773 were deleted.
+- Left in place:
+  - `feature/jackson-2.21.6-cve-2026-68497`: #760 merged, but the branch is still checked out at
+    `../JToye_OaaS_2026-jackson`.
+  - `feature/archify-architecture-diagrams`: #734 merged, but the branch is checked out at
+    `../oaas-archify-diagrams`.
+  - `phase-29-research`: never clean it up.
+- Toolchain drift was reported only, nothing applied: ripgrep, docker-ce and antigravity-hub are
+  DRIFT, and carl-core is PIN-BEHIND.
+
+**2026-09-30 (evening) delta — GDPR erasure fixed twice over (#764, #771); `main` green; the stack runs `eb2e98fd`.** (SUPERSEDED by the 2026-10-01 delta above.)
 **Where things stand.** `main` = `eb2e98fd`. Items 1-3 of the morning delta below have merged:
 #768 (terminal-state deferrals, which cleared the required Operational Contracts red), #766 (the
 review-gate vendored copy refreshed), #767 (Phase 36 state) and #770 (issue #764: V67 `reviews`
