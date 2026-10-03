@@ -296,3 +296,227 @@ this sweep and still gate everything downstream: the production domain, the host
 test-mode keys, and ADR-0002 sign-off. **A fifth now sits beside them in practice** — a WhatsApp
 Business API account (#208), because #461's payment request has to be delivered on the channel the
 customer used.
+
+---
+
+## Persona user-testing 2026-10-03 — 123 findings, epic #880 *(added 2026-10-04)*
+
+Two passes of in-character persona testing ran against the live local stack: 6 reports in pass 1 and 9 in pass 2 (vendor rush, multi-site owner, kitchen hand, older regular, screen-reader user, prankster, regulator, integrator, mid-journey chaos). They produced 250 findings, deduplicated into **123 clusters**, plus 40 goods to preserve. Each cluster is tracked **exactly once**:
+- 98 single-cluster issues;
+- 5 P3 polish bundles (17 clusters);
+- comments on 6 existing open issues (8 clusters);
+- epic **#880**.
+
+All carry the label `ux-persona-test`. Priorities: **P0 16 · P1 32 · P2 49 · P3 26**.
+
+Three closed issues reproduce and were filed as regressions without reopening the originals: #84 → #777, #88 → #782, #465 → #843. #727's label changed from P3 to P0, because pass 2 showed an order recording the wrong allergen mask.
+
+Sources:
+- the catalogue, with themes, membership reconciliation and operator-cleanup list, at `.planning/ux-persona-test-20261003-pass2/consolidated/CATALOGUE.md`;
+- the filing ledger at `consolidated/filed-issues.json`;
+- regression guards for the fixes at `consolidated/goods-to-preserve.md`.
+
+Screenshots and raw probe output stay local: the evidence folders hold session state.
+
+**Phase 37 is a PROPOSAL, not a ruled phase.** 87 clusters have no home in Phases 28–36. They are grouped below into sub-themes 37-A to 37-G as input to `/gsd-phase` (add) or `/gsd-review-backlog`. **Phase 31 is complete**, so its 17 clusters need a gap-closure plan (31.1) rather than new scope.
+
+These nine findings sit under P0 in more than one area. They gate a first real tenant regardless of where they land:
+- #777 and #778: DSAR erasure and access requests silently not done;
+- #779 and #780: staff default and revoke both lead to tenant-wide admin;
+- #781: cross-shop fake reviews;
+- #782: rate limit bypass through X-Forwarded-For;
+- #783: checkout charges a price the customer was not shown;
+- #784 and #785: the allergen acknowledgement is not stored, and the stored allergen set is never shown to the customer.
+
+### Phase 29 – Deployable Staging, With Its Own Monitoring (1)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-090 | P2 | #859 | Nothing asserts at deploy time that customer email verification is on; dev runs with it off |
+
+### Phase 30 – The Money Path, Executed (5)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-033 | P1 | #102 | The published £39/location subscription has no billing built and no billing UI |
+| UXT-034 | P1 | #102 | Vendors have no payments or payouts surface (/dashboard/payments returns 404) |
+| UXT-045 | P1 | #814 | The local compose stack can never exercise the card-payment path (Stripe env-var names and build-time key mismatch) |
+| UXT-059 | P2 | #828 | A completed cash order stays 'Payment status NONE / Unpaid' while counted as revenue |
+| UXT-060 | P2 | #829 | Cash-only is revealed only at the bottom of checkout, and the Place order button shows a card icon |
+
+### Phase 31 – Consumer-Safety and Legal Floor (17)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-001 | P0 | #777 | DSAR erasure is marked completed while nothing is erased for storefront customers |
+| UXT-002 | P0 | #778 | A verified DSAR access request is never fulfilled (ACCESS delivery not implemented) |
+| UXT-009 | P0 | #784 | The customer's allergen acknowledgement is never sent to or stored by the server |
+| UXT-010 | P0 | #785 | The customer never sees the allergen set recorded on their order, and it can differ from what they acknowledged |
+| UXT-012 | P0 | #787 | A product whose ingredients name an allergen (e.g. 'butter (MILK)') with no box ticked saves and shows as 'No allergens' |
+| UXT-014 | P0 | #789 | Customers are never given the seller's legal identity or any way to contact the shop |
+| UXT-015 | P1 | #793 | Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy |
+| UXT-019 | P1 | #794 | The platform's own registered office is not published anywhere on the site |
+| UXT-043 | P1 | #812 | An allergy request is a generic free-text note: no alert to the vendor, no acknowledgement, never echoed to the customer |
+| UXT-048 | P1 | #817 | Menu cards show allergens as an unnamed count, 'Add' works without seeing them, and 'none declared' is never stated |
+| UXT-069 | P2 | #838 | There is no account page: data access and erasure are mailto-only although a backend intake exists |
+| UXT-070 | P2 | #839 | The DSAR confirmation link does not open on compose and shows raw JSON when it does |
+| UXT-071 | P2 | #840 | The cookie policy omits keys that hold the customer's email and id and survive sign-out |
+| UXT-091 | P2 | #860 | The basket shows no allergens and checkout's combined set has no per-item attribution |
+| UXT-092 | P2 | #861 | No 'may contain' field exists, label use-by is computed at download time, and records use US date format |
+| UXT-113 | P3 | #871 | There is no marketing-consent choice or preferences page, and /unsubscribe says 'contact the vendor' |
+| UXT-114 | P3 | #878 | The accessibility statement is stale (claims no skip link, cites WCAG 2.1, excludes basket/confirmation/tracking) |
+
+### Phase 32 – Production Cutover + First Tenant (5)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-031 | P1 | #803 | A prospective vendor has no way in: 'Start your application' dead-ends at a login, and no sales or support contact exists |
+| UXT-032 | P1 | #804 | No merchant terms, pricing page, VAT basis or card-fee figure: /legal/terms, /pricing, /contact and /about all 404 |
+| UXT-067 | P2 | #836 | Internal strategy pages are public, expose a repo path, and contradict the landing page (incl. a 'payouts: Full' claim) |
+| UXT-068 | P2 | #837 | Test and demo data is visible to customers and vendors (E2E 20% OFF promo, weeks-old test orders, a real person's name and email) |
+| UXT-119 | P3 | #878 | Public pages: no vendor-to-vendor confidentiality statement; positioning excludes non-London, non-West-African operators |
+
+### Phase 33 – The Consumer Product (7)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-013 | P0 | #788 | Shops go live with a failed FSA match, self-approved by the vendor, while the site claims 'UK food-hygiene verified' |
+| UXT-024 | P1 | #452 | A second or third shop can never go live, while onboarding says 'Your storefront is live' |
+| UXT-025 | P1 | #452 | There is no way to invite a staff member: they must self-register, then auto-become Group admin |
+| UXT-030 | P1 | #460 | Delivery is accepted to any UK postcode with no radius check at checkout |
+| UXT-079 | P2 | #848 | Keycloak sign-in and registration fall below the storefront's accessibility bar and hide password rules until failure |
+| UXT-109 | P3 | #877 | The shop list uses gradients and initials instead of food photos |
+| UXT-112 | P3 | #877 | Postcode search cannot tell invalid, out-of-area and no-kitchens apart, and its result count may not be announced |
+
+### Phase 34 – Rendering + Test Truthfulness (1)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-061 | P2 | #830 | Menu 'Add' buttons are visible but ignore taps until hydration (4.2 s on 4G, 14 s on Slow 3G) |
+
+### Phase 37 (proposed) · 37-A Kitchen & order operations (15)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-011 | P0 | #786 | The kitchen screen ticket hides the customer's note (e.g. 'severe peanut allergy') and the fulfilment type |
+| UXT-020 | P1 | #795 | A new order makes no sound and never reaches the kitchen screen until someone confirms it on another page |
+| UXT-021 | P1 | #796 | When the all-day kitchen tablet's session lapses the board silently becomes a sign-in page |
+| UXT-022 | P1 | #797 | A vendor cannot pause or stop taking orders: no pause switch, no holiday closure, and free-text hours fail open and cannot be cleared |
+| UXT-049 | P2 | #818 | A double-tap on 'Start Preparing' jumps the order to READY and emails the customer 'Ready!' with no undo |
+| UXT-050 | P2 | #819 | Kitchen mute survives sign-out and the next person's icon shows sound on while new orders are silent |
+| UXT-051 | P2 | #820 | Cancelling an order is one unconfirmed tap with no reason, next to Confirm on small phone buttons |
+| UXT-052 | P2 | #821 | Unanswered orders stay Pending forever and the customer is never told |
+| UXT-053 | P2 | #822 | Orders and Customers have no search, so an order cannot be found by customer name at the counter |
+| UXT-054 | P2 | #823 | Every kitchen ticket cuts the order number to 'ORD-…', so tickets look identical |
+| UXT-055 | P2 | #824 | The kitchen board is not built for a wall tablet: wasted space, small text, newest-first ordering and very tall tickets |
+| UXT-088 | P2 | #857 | A vendor cannot show who prepared an order or when: no timeline, no export |
+| UXT-089 | P2 | #858 | 86ing an item or changing a price takes four taps and ~30 s in a long form |
+| UXT-099 | P3 | #866 | With the API unreachable but the socket up, the board says 'Live' for ~50 s while dropping an order |
+| UXT-101 | P3 | #875 | The orders table is clipped on tablet and the phone's first screen is an explainer, not orders |
+
+### Phase 37 (proposed) · 37-B Multi-site, staff access & finance (12)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-003 | P0 | #779 | Revoking a manager's last shop grant silently makes him tenant-wide Group admin |
+| UXT-004 | P0 | #780 | Every staff login is a tenant-wide Group admin by default (JIT provisioning, strict-scoping off) |
+| UXT-018 | P0 | #791 | A completed, paid order can be deleted, leaving ledger rows that point at nothing |
+| UXT-026 | P1 | #799 | CSV import ignores the selected shop and hides imported items from every storefront; a menu cannot be copied to another site |
+| UXT-027 | P1 | #800 | Per-shop dashboard and finance show the whole business's takings, and site managers get 'No financial data yet' instead of their shop's numbers |
+| UXT-046 | P1 | #815 | Products have no VAT-rate choice; everything is booked as Standard 20% |
+| UXT-047 | P1 | #816 | 'VAT (incl. 20%)' is shown for every vendor, with no VAT-registration status or number captured |
+| UXT-058 | P2 | #827 | Finance has no 'today', no date range, no export and no cash/card split |
+| UXT-087 | P2 | #856 | A kitchen hand sees far more customer personal data than needed to cook |
+| UXT-098 | P3 | #875 | Scoped users see nav items they cannot use, and a 403 renders as 'No endpoints yet' / 'storefront is live' |
+| UXT-100 | P3 | #867 | After access is removed the kitchen keeps showing that shop's tickets (with PII and live buttons) and blames the connection |
+| UXT-117 | P3 | #875 | Staff list masks emails so same-domain staff are indistinguishable; products table has no Shop column |
+
+### Phase 37 (proposed) · 37-C Checkout integrity & customer trust/retention (23)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-007 | P0 | #783 | Checkout never re-validates the stored basket: stale prices, removed and sold-out items surface only as a charge or a bare error |
+| UXT-008 | P1 | #792 | An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order |
+| UXT-029 | P1 | #802 | The order confirmation is rendered in place at /checkout: off-screen, unannounced, and lost on refresh |
+| UXT-044 | P1 | #813 | Reviews publish the reviewer's full checkout name with no notice, policy or moderation |
+| UXT-056 | P2 | #825 | No ready-by or delivery time exists anywhere: tickets, confirmation, tracking or emails |
+| UXT-057 | P2 | #826 | Order confirmation and every status email omit the shop, items, total and address, and come from inconsistent senders |
+| UXT-074 | P2 | #843 | On a slow network, returning after 5 minutes signs the customer out (parallel refreshes burn the single-use token) |
+| UXT-075 | P2 | #844 | Customers cannot order ahead for a time, and a closed shop takes no pre-orders |
+| UXT-076 | P2 | #845 | No 'order again' and no remembered address: a weekly order takes 10 taps and 85 keystrokes |
+| UXT-077 | P2 | #846 | Customers have no way to leave a review; the only path is an unauthenticated API call with an email in the URL |
+| UXT-078 | P2 | #847 | Password-reset links expire after 5 minutes |
+| UXT-086 | P2 | #855 | A delivery customer's tracking page says 'Ready for collection' |
+| UXT-093 | P2 | #862 | There is no allergen filter, and searching 'peanut' or 'gluten free' returns nothing |
+| UXT-102 | P3 | #868 | A customer cannot cancel an order |
+| UXT-103 | P3 | #876 | A network failure at Place order says only 'Failed to place order. Please try again.' |
+| UXT-104 | P3 | #876 | Back then Forward wipes the checkout address, phone and notes |
+| UXT-105 | P3 | #876 | Empty checkout submit skips the address and takes two rounds, with no error summary |
+| UXT-106 | P3 | #869 | The basket is device-local: not restored on sign-in and not shared across devices |
+| UXT-107 | P3 | #877 | Sign-out is a tiny unlabelled one-tap icon next to a person icon that does nothing |
+| UXT-108 | P3 | #870 | Menu items cannot be customised (no modifiers) |
+| UXT-110 | P3 | #877 | Storefront copy noise: duplicated dishes and alt text, descriptions repeating names, 'Co..', 'Draft' filter, status naming mismatch |
+| UXT-111 | P3 | #877 | React hydration error #418 on /shop/orders and /track, and 'Auto-refreshing' on finished orders |
+| UXT-116 | P3 | #877 | An unknown shop link returns a soft 404 (HTTP 200 'Shop not found') |
+
+### Phase 37 (proposed) · 37-D Abuse resistance (8)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-005 | P0 | #781 | A buyer of one shop can publish a 5-star review on a different shop of the same tenant |
+| UXT-006 | P0 | #782 | The public rate limiter trusts any X-Forwarded-For value, so rotating it defeats the limit |
+| UXT-039 | P1 | #808 | Anonymous traffic can exhaust the edge gateway's single process-wide rate limit and block every vendor's sync; its 429 is untyped |
+| UXT-041 | P1 | #810 | Anyone can place many fake cash orders in seconds with throwaway contact details |
+| UXT-042 | P1 | #811 | Item quantity has no upper bound: a £19 billion order is accepted and shown on the dashboard |
+| UXT-072 | P2 | #841 | Order contact details are barely validated, and API/MCP orders need no customer contact at all |
+| UXT-073 | P2 | #842 | Vendors have no bulk-reject and no fraud signal for junk orders |
+| UXT-118 | P3 | #872 | Another shop's order returns 403 not 404, and public image URLs embed the tenant UUID |
+
+### Phase 37 (proposed) · 37-E Integrator surface (API, MCP, webhooks, sync) (13)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-016 | P0 | #790 | Updating a product without quantityInStock silently turns stock tracking off |
+| UXT-017 | P0 | #727 | Products created by /sync/batch belong to no shop, are orderable at any shop, and record the wrong allergens |
+| UXT-035 | P1 | #805 | A vendor has no way to give a developer API credentials; the only path is the owner's password plus the confidential core-api client secret |
+| UXT-036 | P1 | #806 | An order taken by an AI agent through MCP stays DRAFT and the kitchen never sees it |
+| UXT-037 | P1 | #807 | /sync/batch has no stock or availability field and silently skips unknown items while reporting SUCCESS |
+| UXT-038 | P1 | #587 | Webhook endpoints auto-pause after ~46 s of failures and retries stop after 5 attempts, with nobody told |
+| UXT-040 | P1 | #809 | Asked for one shop's menu, an AI agent gets every product in the business with allergens only as an integer |
+| UXT-094 | P2 | #208 | A vendor cannot connect their own WhatsApp; WhatsApp ordering is one platform-wide setting |
+| UXT-095 | P2 | #863 | The MCP server cannot be added to hosted ChatGPT/Claude connectors (no OAuth discovery, 5-minute tokens) |
+| UXT-096 | P2 | #864 | Order webhooks carry only ids and status, with no items, totals or customer |
+| UXT-097 | P2 | #865 | Vendor API and MCP orders accept products marked unavailable |
+| UXT-122 | P3 | #879 | Webhooks have no test event, no request/response body, no delete, and do not follow redirects (Apps Script fails) |
+| UXT-123 | P3 | #879 | API/MCP contract polish: MCP drops typed error details, OpenAPI hygiene problems, replay indistinguishable from fresh |
+
+### Phase 37 (proposed) · 37-F Accessibility (6)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-080 | P2 | #849 | At large text sizes the basket, tracker and shop header truncate or overflow |
+| UXT-081 | P2 | #850 | Tracking pages are silent and unlabelled for screen readers (status changes, current step, copy button, lookup result, field name, contrast) |
+| UXT-082 | P2 | #851 | Shop cards on the kitchen list have no accessible name ('link, link, link') |
+| UXT-083 | P2 | #852 | Pressing Add/Remove drops focus to the page body and the basket announcement doubles the count without naming the item |
+| UXT-084 | P2 | #853 | Basket, checkout, confirmation and tracking all share the title 'J'Toye — Discover Local Vendors' |
+| UXT-085 | P2 | #854 | On mobile the cookie banner covers content and keyboard focus and is the 32nd tab stop |
+
+### Phase 37 (proposed) · 37-G Catalogue & shop-admin correctness (8)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-023 | P1 | #798 | Vendors cannot set a delivery fee, free-delivery threshold or collection-only: orders are charged £0 delivery and collection-only shops take deliveries |
+| UXT-028 | P1 | #801 | Every shop update regenerates the public URL slug, so shared links and QR codes break |
+| UXT-062 | P2 | #831 | Saving a shop overwrites its banner with the logo URL |
+| UXT-063 | P2 | #832 | Products cannot be deleted once they have a photo or any order (even cancelled): misleading 409 |
+| UXT-064 | P2 | #833 | Deleting a shop orphans its products, and editing an orphan silently moves it to 'All Shops' |
+| UXT-065 | P2 | #834 | The image dialog stays on 'Processing…' although the server has the image ACTIVE within ~6 s |
+| UXT-066 | P2 | #835 | The 'Publish to storefront' checkbox is ignored, or throws away the whole shop edit with a raw developer error |
+| UXT-115 | P3 | #875 | SKU is required when adding a product (jargon for a stall holder) |
+
+### Phase 37 (proposed) · unsorted (2)
+
+| Cluster | P | Issue | Finding |
+|---|---|---|---|
+| UXT-120 | P3 | #873 | No email campaigns, loyalty or vouchers |
+| UXT-121 | P3 | #874 | No custom storefront domain (SUSPECTED) |

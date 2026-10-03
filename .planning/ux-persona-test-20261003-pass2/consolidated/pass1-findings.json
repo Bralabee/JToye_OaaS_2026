@@ -1,0 +1,1522 @@
+[
+  {
+    "id": "ADE-01",
+    "title": "No self-serve vendor signup and no contact route; \"Start your application\" ends on a login with no register link",
+    "severity": "blocker",
+    "severityAsReported": "blocker",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "vendor-onboarding",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No self-serve vendor signup and no contact route; \"Start your application\" ends on a login with no register link",
+    "realWorldImpact": "",
+    "evidence": [
+      "`07`–`10`; s3, s4"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-02",
+    "title": "\"Update Shop\" overwrites `bannerUrl` with the logo URL",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED x2",
+    "area": "media",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "\"Update Shop\" overwrites `bannerUrl` with the logo URL",
+    "realWorldImpact": "",
+    "evidence": [
+      "s14, s16; `21`"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-03",
+    "title": "Every shop update regenerates the public slug, so shared links change (old-link 404 after publishing is SUSPECTED)",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED (3 slugs)",
+    "area": "storefront",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Every shop update regenerates the public slug, so shared links change (old-link 404 after publishing is SUSPECTED)",
+    "realWorldImpact": "",
+    "evidence": [
+      "s12, s14, s16"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-04",
+    "title": "Can't delete a product that has a photo: 409 with a false \"referenced by an existing order\" (`product_media_product_id_fkey`); raw error in the UI",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED x3",
+    "area": "catalogue",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Can't delete a product that has a photo: 409 with a false \"referenced by an existing order\" (`product_media_product_id_fkey`); raw error in the UI",
+    "realWorldImpact": "",
+    "evidence": [
+      "`33`, `35`; s23, s24, s26"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-05",
+    "title": "Shop delete orphans its products; editing an orphan moves it to \"All Shops\"",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "catalogue",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Shop delete orphans its products; editing an orphan moves it to \"All Shops\"",
+    "realWorldImpact": "",
+    "evidence": [
+      "s25, s27, s28"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-06",
+    "title": "Image dialog stuck on \"Processing…\" although the server is ACTIVE within about 6 s; no re-check",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED x3",
+    "area": "media",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Image dialog stuck on \"Processing…\" although the server is ACTIVE within about 6 s; no re-check",
+    "realWorldImpact": "",
+    "evidence": [
+      "`24`, `26`; s19, s20"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-07",
+    "title": "Public footer pages expose internal strategy and contradict the landing page",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Public footer pages expose internal strategy and contradict the landing page",
+    "realWorldImpact": "",
+    "evidence": [
+      "`04`, `05`"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-08",
+    "title": "Onboarding copy contradicts itself; the vendor self-approves the FSA check; the shop under review isn't named",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "vendor-onboarding",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Onboarding copy contradicts itself; the vendor self-approves the FSA check; the shop under review isn't named",
+    "realWorldImpact": "",
+    "evidence": [
+      "`14c`, `27`"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-09",
+    "title": "Ingredients naming MILK with no allergen ticked save as \"No allergens\", with no vendor warning",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "allergens",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Ingredients naming MILK with no allergen ticked save as \"No allergens\", with no vendor warning",
+    "realWorldImpact": "",
+    "evidence": [
+      "s18, s27"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-10",
+    "title": "No draft preview; a second shop can never be onboarded or seen",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "vendor-onboarding",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No draft preview; a second shop can never be onboarded or seen",
+    "realWorldImpact": "",
+    "evidence": [
+      "`28`, `14c`"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-11",
+    "title": "\"Publish to storefront\" checkbox silently ignored",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "vendor-onboarding",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "\"Publish to storefront\" checkbox silently ignored",
+    "realWorldImpact": "",
+    "evidence": [
+      "`18`, `19`"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-12",
+    "title": "SKU required (jargon for a stall holder)",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "catalogue",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "SKU required (jargon for a stall holder)",
+    "realWorldImpact": "",
+    "evidence": [
+      "`23`"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-13",
+    "title": "Non-admin sees Finance, Approvals, Staff and Webhooks; Finance fails silently with 403",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "staff-scoping",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Non-admin sees Finance, Approvals, Staff and Webhooks; Finance fails silently with 403",
+    "realWorldImpact": "",
+    "evidence": [
+      "s10, `15`"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-14",
+    "title": "Mama Ade's is Published while its onboarding is still in manual review",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "SUSPECTED",
+    "statusAsReported": "SUSPECTED (seed)",
+    "area": "vendor-onboarding",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Mama Ade's is Published while its onboarding is still in manual review",
+    "realWorldImpact": "",
+    "evidence": [
+      "`14c`, `36`"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-15",
+    "title": "Cookie banner overlays text on mobile",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Cookie banner overlays text on mobile",
+    "realWorldImpact": "",
+    "evidence": [
+      "`01`"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-16",
+    "title": "No collection-only option; opening hours are free text",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "vendor-onboarding",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No collection-only option; opening hours are free text",
+    "realWorldImpact": "",
+    "evidence": [
+      "`17`"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "ADE-17",
+    "title": "Unknown shop link returns a soft 404 (HTTP 200)",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "storefront",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Unknown shop link returns a soft 404 (HTTP 200)",
+    "realWorldImpact": "",
+    "evidence": [
+      "s21"
+    ],
+    "reconfirms": [],
+    "persona": "01-new-vendor-ade",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-01",
+    "title": "Delivery accepted to any postcode; no radius or serviceability check at checkout, although discovery computes distances",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED (2 shops, 2 postcodes)",
+    "area": "checkout",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Delivery accepted to any postcode; no radius or serviceability check at checkout, although discovery computes distances",
+    "realWorldImpact": "",
+    "evidence": [
+      "`21`, `23`; orders …B090D3F3, …6CC30687"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-02",
+    "title": "Add is visible at about 1 s but ignores taps until hydration (4.2 s on 4G; 14 s and 7 taps on Slow 3G), with no cue",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED (3 fresh contexts)",
+    "area": "performance",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Add is visible at about 1 s but ignores taps until hydration (4.2 s on 4G; 14 s and 7 taps on Slow 3G), with no cue",
+    "realWorldImpact": "",
+    "evidence": [
+      "`s17`, `36-*`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-03",
+    "title": "No ready or delivery time anywhere; no shop address on the collection confirmation",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "tracking",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No ready or delivery time anywhere; no shop address on the collection confirmation",
+    "realWorldImpact": "",
+    "evidence": [
+      "`14`, `15`, `mail1.json`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-04",
+    "title": "Unverified registration + My Orders linked by email → another person's order history is visible. Prod default `require-verified-email=true` blocks it.",
+    "severity": "minor",
+    "severityAsReported": "minor (dev-only, coordinator)",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED on dev",
+    "area": "accounts",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Unverified registration + My Orders linked by email → another person's order history is visible. Prod default `require-verified-email=true` blocks it.",
+    "realWorldImpact": "",
+    "evidence": [
+      "`27`, `realm-export-customers.json`, `application.yml:281`, `application-dev.yml:36`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-05",
+    "title": "Cash-only revealed only at the bottom of checkout; shop card, menu and basket say nothing",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "checkout",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Cash-only revealed only at the bottom of checkout; shop card, menu and basket say nothing",
+    "realWorldImpact": "",
+    "evidence": [
+      "`11`, `12`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-06",
+    "title": "Confirmation email is 4 plain lines: no shop, items, total, payment method or address",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "notifications",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Confirmation email is 4 plain lines: no shop, items, total, payment method or address",
+    "realWorldImpact": "",
+    "evidence": [
+      "`mail1.json`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-07",
+    "title": "Confirmation and tracking never list what was ordered",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "tracking",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Confirmation and tracking never list what was ordered",
+    "realWorldImpact": "",
+    "evidence": [
+      "`14`, `15`, `19`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-08",
+    "title": "Search can't distinguish invalid, out-of-area and no-kitchens-near",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "discovery",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Search can't distinguish invalid, out-of-area and no-kitchens-near",
+    "realWorldImpact": "",
+    "evidence": [
+      "`03b`, `03c`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-09",
+    "title": "Basket not restored on sign-in after sign-out",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "accounts",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Basket not restored on sign-in after sign-out",
+    "realWorldImpact": "",
+    "evidence": [
+      "`s16`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-10",
+    "title": "Sign-out is a 14 px icon; one tap, no confirmation",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "accounts",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Sign-out is a 14 px icon; one tap, no confirmation",
+    "realWorldImpact": "",
+    "evidence": [
+      "`32`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-11",
+    "title": "No item customisation",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "catalogue",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No item customisation",
+    "realWorldImpact": "",
+    "evidence": [
+      "`07`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-12",
+    "title": "Shop list uses gradients and initials, not photos",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "discovery",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Shop list uses gradients and initials, not photos",
+    "realWorldImpact": "",
+    "evidence": [
+      "`02`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-13",
+    "title": "Descriptions repeat the name; Popular duplicated under Mains; \"Co..\"; \"Draft\" in the customer filter; 30-character order number",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Descriptions repeat the name; Popular duplicated under Mains; \"Co..\"; \"Draft\" in the customer filter; 30-character order number",
+    "realWorldImpact": "",
+    "evidence": [
+      "`05`, `20`, `27`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-14",
+    "title": "React hydration error #418 on /shop/orders",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "SUSPECTED",
+    "statusAsReported": "SUSPECTED",
+    "area": "tracking",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "React hydration error #418 on /shop/orders",
+    "realWorldImpact": "",
+    "evidence": [
+      "`s13` console"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "J-15",
+    "title": "Cookie banner covers the first shop card",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Cookie banner covers the first shop card",
+    "realWorldImpact": "",
+    "evidence": [
+      "`01`"
+    ],
+    "reconfirms": [],
+    "persona": "04-hungry-customer-jordan",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-1",
+    "title": "Allergen copy says \"ask the kitchen\", but no published shop has a phone or email. The privacy notice says \"contact any shop directly\", which is impossible.",
+    "severity": "major",
+    "severityAsReported": "major (safety)",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED (coordinator re-checked)",
+    "area": "allergens",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Allergen copy says \"ask the kitchen\", but no published shop has a phone or email. The privacy notice says \"contact any shop directly\", which is impossible.",
+    "realWorldImpact": "",
+    "evidence": [
+      "public shops API; `02`"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-2",
+    "title": "No customer surface shows the acknowledged allergens after ordering. The snapshot is vendor-only.",
+    "severity": "major",
+    "severityAsReported": "major (safety)",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED (coordinator re-checked)",
+    "area": "allergens",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No customer surface shows the acknowledged allergens after ordering. The snapshot is vendor-only.",
+    "realWorldImpact": "",
+    "evidence": [
+      "`10`, `mailhog.json`, `11`, `12`, `14`"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-3",
+    "title": "No allergen filter; allergen search returns nothing",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "discovery",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No allergen filter; allergen search returns nothing",
+    "realWorldImpact": "",
+    "evidence": [
+      "`16`"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-4",
+    "title": "Card badge \"△N\" has no names and no accessible name; \"Add\" works without the allergens being seen",
+    "severity": "major",
+    "severityAsReported": "major (a11y and safety)",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "allergens",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Card badge \"△N\" has no names and no accessible name; \"Add\" works without the allergens being seen",
+    "realWorldImpact": "",
+    "evidence": [
+      "`02`, ARIA snapshot"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-5",
+    "title": "Detail omits the allergen section when nothing is declared",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "allergens",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Detail omits the allergen section when nothing is declared",
+    "realWorldImpact": "",
+    "evidence": [
+      "`03-detail-Peri-Peri-Chicken.png`, `22`"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-6",
+    "title": "Basket shows no allergens",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "allergens",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Basket shows no allergens",
+    "realWorldImpact": "",
+    "evidence": [
+      "`05`, `07`"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-7",
+    "title": "No \"may contain\" / cross-contact field exists",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "allergens",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No \"may contain\" / cross-contact field exists",
+    "realWorldImpact": "",
+    "evidence": [
+      "payload keys"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-8",
+    "title": "Allergy note is a generic notes field: not an alert for the vendor, never echoed to the customer",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "allergens",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Allergy note is a generic notes field: not an alert for the vendor, never echoed to the customer",
+    "realWorldImpact": "",
+    "evidence": [
+      "`14`"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-9",
+    "title": "Mismatch flags never reach the customer (`allergenFlags={null}`)",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "SUSPECTED",
+    "statusAsReported": "SUSPECTED",
+    "area": "allergens",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Mismatch flags never reach the customer (`allergenFlags={null}`)",
+    "realWorldImpact": "",
+    "evidence": [
+      "`checkout/page.tsx`"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-10",
+    "title": "No per-item attribution in the checkout allergen set",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "allergens",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No per-item attribution in the checkout allergen set",
+    "realWorldImpact": "",
+    "evidence": [
+      "`08`"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-11",
+    "title": "At 200% zoom the allergen box is below the fold, inside the modal",
+    "severity": "minor",
+    "severityAsReported": "minor (a11y)",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "At 200% zoom the allergen box is below the fold, inside the modal",
+    "realWorldImpact": "",
+    "evidence": [
+      "`25`"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "P05-12",
+    "title": "\"Co..\" double full stop; card icon on the Place-order button for a cash order",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "checkout",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "\"Co..\" double full stop; card icon on the Place-order button for a cash order",
+    "realWorldImpact": "",
+    "evidence": [
+      "`23`, `08`"
+    ],
+    "reconfirms": [],
+    "persona": "05-allergy-customer-priya",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-01",
+    "title": "Stripe JS and fraud telemetry load on a CASH-only checkout and set `__stripe_mid` (1 year, survives sign-out), `__stripe_sid` and m.stripe.com cookies. Contradicts the cookie policy's \"on the payment step\".",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "privacy",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Stripe JS and fraud telemetry load on a CASH-only checkout and set `__stripe_mid` (1 year, survives sign-out), `__stripe_sid` and m.stripe.com cookies. Contradicts the cookie policy's \"on the payment step\".",
+    "realWorldImpact": "",
+    "evidence": [
+      "s12, s13, `24`"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-02",
+    "title": "No self-serve data access or erasure: mailto only, no web form or account page, although a backend intake exists",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "privacy",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No self-serve data access or erasure: mailto only, no web form or account page, although a backend intake exists",
+    "realWorldImpact": "",
+    "evidence": [
+      "`38`, `37`"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-03",
+    "title": "Refreshing the confirmation loses it (\"Nothing to checkout\", no order number, no My orders link), so an impatient user may re-order",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "checkout",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Refreshing the confirmation loses it (\"Nothing to checkout\", no order number, no My orders link), so an impatient user may re-order",
+    "realWorldImpact": "",
+    "evidence": [
+      "`17`, `18`"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-04",
+    "title": "A customer cannot cancel an order",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "orders",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "A customer cannot cancel an order",
+    "realWorldImpact": "",
+    "evidence": [
+      "`30`, `34`"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-05",
+    "title": "Cookie policy not accurate: `jtoye-guest-orders` is written for signed-in orders, holds the email and survives sign-out; `jtoye-customer-last-signin` (customer UUID) not listed",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "privacy",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Cookie policy not accurate: `jtoye-guest-orders` is written for signed-in orders, holds the email and survives sign-out; `jtoye-customer-last-signin` (customer UUID) not listed",
+    "realWorldImpact": "",
+    "evidence": [
+      "s5/s19"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-06",
+    "title": "Network failure says only \"Failed to place order. Please try again.\", with no \"you're offline\" and no \"it may already be placed\"",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "checkout",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Network failure says only \"Failed to place order. Please try again.\", with no \"you're offline\" and no \"it may already be placed\"",
+    "realWorldImpact": "",
+    "evidence": [
+      "`26`, `28`"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-07",
+    "title": "Checkout accepts email `name@example` and phone `12`",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "checkout",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Checkout accepts email `name@example` and phone `12`",
+    "realWorldImpact": "",
+    "evidence": [
+      "`13`"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-08",
+    "title": "Back then Forward wipes the address, phone and notes",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "checkout",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Back then Forward wipes the address, phone and notes",
+    "realWorldImpact": "",
+    "evidence": [
+      "`20`"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-09",
+    "title": "\"Draft\" filter for customers; Received vs Pending mismatch; truncated placeholder; \"E2E 20% OFF\" test promo visible",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "\"Draft\" filter for customers; Received vs Pending mismatch; truncated placeholder; \"E2E 20% OFF\" test promo visible",
+    "realWorldImpact": "",
+    "evidence": [
+      "`30`, `31`, `01`"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-10",
+    "title": "With the API unreachable, checkout showed \"Delivery Free\", a lower total and \"allergen info not recorded\" instead of an error: it fails open on price",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "SUSPECTED",
+    "statusAsReported": "SUSPECTED (env-induced)",
+    "area": "checkout",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "With the API unreachable, checkout showed \"Delivery Free\", a lower total and \"allergen info not recorded\" instead of an error: it fails open on price",
+    "realWorldImpact": "",
+    "evidence": [
+      "`12`"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F-11",
+    "title": "Two domains (jtoye.uk sender vs olajay.co.uk privacy contact); the email omits the shop name and total",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "notifications",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Two domains (jtoye.uk sender vs olajay.co.uk privacy contact); the email omits the shop name and total",
+    "realWorldImpact": "",
+    "evidence": [
+      "Mailhog dump"
+    ],
+    "reconfirms": [],
+    "persona": "06-impatient-privacy-sam",
+    "source": "pass-1"
+  },
+  {
+    "id": "F1",
+    "title": "Cross-tenant product read → 404 for all 3 IDs",
+    "severity": "positive",
+    "severityAsReported": "positive",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "security",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Cross-tenant product read → 404 for all 3 IDs",
+    "realWorldImpact": "",
+    "evidence": [
+      "`probe-results.json`, `dele_probe.mjs`"
+    ],
+    "reconfirms": [],
+    "persona": "07-curious-rival-tenant-dele",
+    "source": "pass-1"
+  },
+  {
+    "id": "F2",
+    "title": "Webhook SSRF blocked (HTTPS + resolved private/loopback/link-local deny)",
+    "severity": "positive",
+    "severityAsReported": "positive",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "webhooks",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Webhook SSRF blocked (HTTPS + resolved private/loopback/link-local deny)",
+    "realWorldImpact": "",
+    "evidence": [
+      "`webhook-results.json`, `dele_webhook.mjs`"
+    ],
+    "reconfirms": [],
+    "persona": "07-curious-rival-tenant-dele",
+    "source": "pass-1"
+  },
+  {
+    "id": "F3",
+    "title": "Order tracking can't be enumerated (number + email)",
+    "severity": "positive",
+    "severityAsReported": "positive",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "tracking",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Order tracking can't be enumerated (number + email)",
+    "realWorldImpact": "",
+    "evidence": [
+      "journey step 5"
+    ],
+    "reconfirms": [],
+    "persona": "07-curious-rival-tenant-dele",
+    "source": "pass-1"
+  },
+  {
+    "id": "F4",
+    "title": "No cross-tenant path via edge or MCP",
+    "severity": "positive",
+    "severityAsReported": "positive",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "security",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No cross-tenant path via edge or MCP",
+    "realWorldImpact": "",
+    "evidence": [
+      "journey step 7"
+    ],
+    "reconfirms": [],
+    "persona": "07-curious-rival-tenant-dele",
+    "source": "pass-1"
+  },
+  {
+    "id": "F5",
+    "title": "Tenant UUID disclosed in public image URLs (maps shop → tenant)",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "security",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Tenant UUID disclosed in public image URLs (maps shop → tenant)",
+    "realWorldImpact": "",
+    "evidence": [
+      "`probe_public.py` output"
+    ],
+    "reconfirms": [],
+    "persona": "07-curious-rival-tenant-dele",
+    "source": "pass-1"
+  },
+  {
+    "id": "F6",
+    "title": "No vendor-to-vendor confidentiality assurance in the UI or legal copy",
+    "severity": "minor",
+    "severityAsReported": "minor (trust)",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "legal-compliance",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No vendor-to-vendor confidentiality assurance in the UI or legal copy",
+    "realWorldImpact": "",
+    "evidence": [
+      "`02-legal-page.png`"
+    ],
+    "reconfirms": [],
+    "persona": "07-curious-rival-tenant-dele",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-01",
+    "title": "Payouts claim contradicts across public pages",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Payouts claim contradicts across public pages",
+    "realWorldImpact": "",
+    "evidence": [
+      "`txt_competitive.txt`, `txt_for-operators.txt`, `txt_business-model-guide.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-02",
+    "title": "£39 subscription has no billing built; no billing UI",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "finance",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "£39 subscription has no billing built; no billing UI",
+    "realWorldImpact": "",
+    "evidence": [
+      "same + `dtxt_dashboard.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-03",
+    "title": "No vendor payments/payouts surface (404s); card flow not demonstrable in this env (Stripe unconfigured locally)",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "finance",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No vendor payments/payouts surface (404s); card flow not demonstrable in this env (Stripe unconfigured locally)",
+    "realWorldImpact": "",
+    "evidence": [
+      "`dtxt_dashboard_payments*.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-04",
+    "title": "No Terms or merchant agreement; /legal/terms, /pricing, /contact, /about all 404",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "legal-compliance",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No Terms or merchant agreement; /legal/terms, /pricing, /contact, /about all 404",
+    "realWorldImpact": "",
+    "evidence": [
+      "`shots/pub_legal_terms.png`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-05",
+    "title": "No sales or support contact, no SLA; only a non-brand-domain privacy inbox",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No sales or support contact, no SLA; only a non-brand-domain privacy inbox",
+    "realWorldImpact": "",
+    "evidence": [
+      "`txt_*.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-06",
+    "title": "Internal strategy docs served as public pages, incl. a repo path",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Internal strategy docs served as public pages, incl. a repo path",
+    "realWorldImpact": "",
+    "evidence": [
+      "`txt_business-model-guide.txt`, `txt_competitive.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-07",
+    "title": "Self-approved compliance vs \"UK food-hygiene verified\"; published shop with unresolved hygiene check; no rating on storefront",
+    "severity": "major",
+    "severityAsReported": "major",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "vendor-onboarding",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Self-approved compliance vs \"UK food-hygiene verified\"; published shop with unresolved hygiene check; no rating on storefront",
+    "realWorldImpact": "",
+    "evidence": [
+      "`dtxt_dashboard_onboarding*.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-08",
+    "title": "Positioning excludes non-London, non-West-African operators",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Positioning excludes non-London, non-West-African operators",
+    "realWorldImpact": "",
+    "evidence": [
+      "`shots/pub_for-operators.png`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-09",
+    "title": "No VAT basis or card-fee figure on pricing",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No VAT basis or card-fee figure on pricing",
+    "realWorldImpact": "",
+    "evidence": [
+      "`txt_for-operators.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-10",
+    "title": "Import gaps (no aggregator/Square import, bitmask allergens, undocumented `shop_id`)",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "catalogue",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Import gaps (no aggregator/Square import, bitmask allergens, undocumented `shop_id`)",
+    "realWorldImpact": "",
+    "evidence": [
+      "`template.csv`, `dtxt_import_photo.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-11",
+    "title": "No ICO number or registered office on site",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "legal-compliance",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No ICO number or registered office on site",
+    "realWorldImpact": "",
+    "evidence": [
+      "`txt_legal*.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-12",
+    "title": "Demo data visible: E2E promo on public shop, stale test orders, a real person's name and email, a `<b>x</b>` test customer",
+    "severity": "minor",
+    "severityAsReported": "minor",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "Demo data visible: E2E promo on public shop, stale test orders, a real person's name and email, a `<b>x</b>` test customer",
+    "realWorldImpact": "",
+    "evidence": [
+      "`shots/d_dashboard.png`, `shots/pub_shop_mama-ades-kitchen.png`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-13",
+    "title": "No email campaigns, loyalty or vouchers",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No email campaigns, loyalty or vouchers",
+    "realWorldImpact": "",
+    "evidence": [
+      "`dtxt_dashboard_marketing.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-14",
+    "title": "No custom storefront domain (not every shop-edit form opened)",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "SUSPECTED",
+    "statusAsReported": "SUSPECTED",
+    "area": "storefront",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "No custom storefront domain (not every shop-edit form opened)",
+    "realWorldImpact": "",
+    "evidence": [
+      "`dtxt_dashboard_shops.txt`"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  },
+  {
+    "id": "C-15",
+    "title": "`/competitive` missing from the sitemap",
+    "severity": "polish",
+    "severityAsReported": "polish",
+    "status": "CONFIRMED",
+    "statusAsReported": "CONFIRMED",
+    "area": "content",
+    "surface": "",
+    "steps": [],
+    "expected": "",
+    "actual": "`/competitive` missing from the sitemap",
+    "realWorldImpact": "",
+    "evidence": [
+      "curl output"
+    ],
+    "reconfirms": [],
+    "persona": "08-sceptical-evaluator-claire",
+    "source": "pass-1"
+  }
+]
