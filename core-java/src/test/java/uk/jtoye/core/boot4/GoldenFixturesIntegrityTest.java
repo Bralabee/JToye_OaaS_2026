@@ -30,8 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * recomputed, every fixture must be listed by exactly one manifest, and every recorded idempotency
  * hash must be the SHA-256 of its fixture's bytes.
  *
- * <p><b>Deliberately Jackson-free</b> (no {@code com.fasterxml} and no {@code tools.jackson}
- * import) so it compiles and means the same thing on both Boot lines. It reads the SOURCE tree,
+ * <p><b>Deliberately Jackson-free</b> (no import from either the Jackson 2 or the Jackson 3
+ * package line) so it compiles and means the same thing on both Boot lines. It reads the SOURCE tree,
  * not the processed classpath copy, because the source is what is committed. The Gradle test
  * working directory is {@code core-java/}.
  *

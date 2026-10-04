@@ -17,8 +17,8 @@ import java.util.UUID;
  * 38-10) rebuild the same objects on the Boot-4 / Jackson-3 tree and compare against the bytes the
  * Boot 3.5 serializers wrote.
  *
- * <p><b>Deliberately Jackson-free</b> (no {@code com.fasterxml} and no {@code tools.jackson}
- * import): this class must compile unchanged on both Boot lines.
+ * <p><b>Deliberately Jackson-free</b> (no import from either the Jackson 2 or the Jackson 3
+ * package line): this class must compile unchanged on both Boot lines.
  */
 public final class GoldenSamples {
 
