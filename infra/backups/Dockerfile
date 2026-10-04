@@ -52,8 +52,12 @@ FROM postgres:15-bookworm
 # pg_dump / pg_restore ship with the postgres base. CA certs are for TLS to the
 # Blob endpoint and the Entra token endpoint. --no-install-recommends keeps the
 # layer small; clean apt lists so no cache bloat.
+# libpcre2-8-0 is already in the base: naming it upgrades it to the current
+# bookworm revision (CVE-2026-103111, fixed in 10.42-1+deb12u2). Never add
+# --only-upgrade here (it would skip ca-certificates, which the base lacks) and
+# never pin =<version> (bookworm mirrors keep only the current revision).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates libpcre2-8-0 \
  && rm -rf /var/lib/apt/lists/*
 
 # Drop the base image's gosu. Its only callers are the upstream server-start
