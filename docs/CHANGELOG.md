@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### pg-backup image takes the fixed pcre2, clearing CVE-2026-103111 from the image gate (#890) — 2026-10-04
+
+- **`libpcre2-8-0` 10.42-1+deb12u1 → 10.42-1+deb12u2, named on the existing `apt-get install`
+  line in `infra/backups/Dockerfile`.** `Build and Push Images (pg-backup)` went red on `main`
+  (run 37193466380) on CVE-2026-103111 (HIGH, a pcre2 out-of-bounds write) in the floating
+  `postgres:15-bookworm` base. No code change caused it: the job passed on `c55e545a` at 01:24Z
+  and failed from 09:19Z on commits that never touched `infra/backups/`, so the vulnerability DB
+  moved. Naming an installed package upgrades it to the current candidate, so only that one
+  dependency moves. A comment records the two traps: `--only-upgrade` would also apply to
+  `ca-certificates`, which the base lacks, so it would never be installed and blobctl's TLS
+  would fail; and a `=version` pin breaks once bookworm's mirrors move past it.
+- **Proof, both directions, one base digest** (`postgres@sha256:539ceaaa…`, both built with
+  `--pull`). Trivy 0.70.0 with the gate's flags (`--severity CRITICAL,HIGH --ignore-unfixed
+  --exit-code 1`): the `main` Dockerfile rc=1, its one finding being CVE-2026-103111 on
+  `libpcre2-8-0 10.42-1+deb12u1`; the branch rc=0, with 145 debian packages and the blobctl
+  binary scanned. In the branch image `dpkg-query` reads `libpcre2-8-0 10.42-1+deb12u2` and
+  `ca-certificates 20250419~deb12u1` installed, and `/etc/ssl/certs` holds 303 entries (the
+  same count as `main`). PR CI never runs the image gate, so this is the PR's own proof.
+
 ### jackson-bom 2.21.7 clears four HIGH CVEs from the core-java image gate (#886) — 2026-10-04
 
 - **jackson-core / jackson-databind 2.21.6 → 2.21.7, via the same BOM property.** The Trivy
