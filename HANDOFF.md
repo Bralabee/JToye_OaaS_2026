@@ -1,4 +1,4 @@
-# Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
+# Handoff: persona testing became Phase 37, Spring Boot 4.1 is Phase 38, `main` red on Jackson CVEs
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed) and 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
@@ -7,15 +7,23 @@
 - **`main` is red in two places, neither caused by a code change:**
   - CI/CD failed at `Build and Push Images (core-java)`. Trivy found 4 HIGH CVEs in Jackson 2.21.6
     (CVE-2026-89407 and CVE-2026-89425 in jackson-core; CVE-2026-91776 and CVE-2026-91777 in
-    jackson-databind), all fixed in 2.21.7. That job runs only on pushes to `main`, so pull requests
-    still go green. A one-line pin to 2.21.7 (`extra["jackson-bom.version"]` in
-    `core-java/build.gradle.kts`) sits UNCOMMITTED in the main checkout, on no branch, dated
-    2026-10-03 21:37. It belongs to whichever session wrote it: branch it, do not sweep it into
-    another commit.
-  - The 2026-10-04 nightly on `c55e545a` failed: 325 tests, 318 passed, 1 failed, 6 skipped. The
-    failing test is named in that run's report artifact and is not yet triaged. The nightly
-    failed on 2026-10-02 and passed on 2026-10-03. Its failure auto-filed #883, a duplicate of
-    #683 by title; both are still OPEN.
+    jackson-databind), all fixed in 2.21.7. That job (`build-and-push`) runs on pushes to `main`,
+    `phase-*` and `phase/**` and on releases, never on pull requests, so a PR goes green without
+    it. The Spring Boot branch has failed the same gate since 2026-10-01 (runs on `fc3bc4ed` and
+    `77d140dd`). CVE-2026-89407 also lists Jackson 3 (`tools.jackson.core`) as affected.
+  - The main checkout has uncommitted work from the evening of 2026-10-03, on no branch: the
+    Jackson value bumped to 2.21.7 in `core-java/build.gradle.kts`, a modified
+    `docs/analysis/README.md`, and two untracked `docs/analysis/*-POSITIONING-2026-10-03.md`
+    files. These are the only copies. They belong to whichever session wrote them: do not stash,
+    discard or sweep them into another commit.
+  - The 2026-10-04 nightly (run 37171812464, on `c55e545a`) failed: 325 tests, 318 passed,
+    1 failed, 6 skipped. The failing test is `onboarding-blocked-flow.spec.ts` "bad company number
+    -> fix inline -> re-run checks -> honest in-review" (desktop): `#onboarding-shop` was never
+    visible within 10 s. It is not yet triaged. The run's report artifact expires 2026-10-18. The
+    nightly failed on 2026-10-02 and passed on 2026-10-03.
+  - That failure filed #883 as a duplicate of #683. The escalation step's de-dup only looks at
+    the 100 newest open issues, and #881's 103 issues pushed #683 out of that window. That is
+    issue #885.
   - `docs-freshness` was red on `main` from #881 onwards, because this file was more than 3 merged
     commits behind. This update clears that.
 - **Persona user-testing passes 1-2 (#881, epic #880) are merged.** 15 personas produced 123
@@ -39,7 +47,8 @@
     - 18 `application*.yml` keys are silently ignored, including the Zipkin endpoint and prod log retention.
     - The netty and Tomcat CVE pins must move to their Boot-4 lines.
   - Owner decisions D-01..D-04: Jackson 3 now, explicit starters, keep statemachine, keep a plain
-    `Bearer` 401.
+    `Bearer` 401. For D-01, pick a Jackson 3 release that fixes CVE-2026-89407, or the branch's
+    image gate stays red after Jackson 2 is gone.
   - On that branch, read `38-CONTEXT.md` first, then `38-SPIKE.md`, both in
     `.planning/phases/38-spring-boot-4-1-migration/`. `38-SPIKE.patch` is a map of the package
     moves only: it used the classic starters, which D-02 reverses.
@@ -47,7 +56,9 @@
   branches. It skipped 37 only because `../JToye_OaaS_2026-phase37` had the Spring Boot branch
   checked out. #882 corrects the Phase 37 note on `main` and reserves Phase 38 there with a
   roadmap bullet. The same text is on the Spring Boot branch (`6f813335`). When that branch next
-  merges `main`, `.planning/STATE.md` conflicts only on its own Phase 38 entry: keep both lines.
+  merges `main`, `.planning/STATE.md` conflicts only on its own Phase 38 entry. `main`'s side of
+  that conflict is empty, so resolve it by taking the branch's side (the Phase 38 entry). Taking
+  `main`'s side deletes the entry.
 - **Issue #648 is CLOSED.** The #726 fix was proven on the production path (edge → core, real chain,
   real converter). Bracketed break arms, run on `43ed6bbf`:
 
@@ -69,9 +80,16 @@
   land before Boot 4.1), #775 and #776.
 
 **Next, in order:**
-1. Merge #882, then merge `main` into `phase-37-spring-boot-4-1` (keep both STATE lines).
-2. Land the Jackson 2.21.7 pin on its own branch and PR, so `main`'s core-java image builds again.
-3. Triage the 2026-10-04 nightly failure from its report artifact; close #883 as a duplicate of #683.
+1. Merge #882, then merge `main` into `phase-37-spring-boot-4-1` (keep the branch's Phase 38 STATE entry).
+2. Move the Jackson pin to 2.21.7 on its own branch and PR, so `main`'s core-java image builds
+   again. Changing the value is not enough: the comment block above it still says 2.21.6 in its
+   reasoning ("WHY 2.21.6 and not 2.21.7") and in its delete condition, so update both. PR CI
+   never runs the image gate, so the PR must prove the resolved version with
+   `./gradlew dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind --configuration runtimeClasspath`.
+   Then merge `main` into the Spring Boot branch again.
+3. Triage the nightly failure named above before 2026-10-18. Do NOT close #883 as a duplicate
+   while issue #885 is unfixed: the next failure would file a third copy. Close #683 into #883
+   instead, or fix the de-dup first.
 4. Plan Phases 37 and 38 (`/gsd-plan-phase 37` on `main`, `/gsd-plan-phase 38` from
    `../JToye_OaaS_2026-phase37`), plus the Phase 31.1 gap-closure plan. The order is the owner's call.
 5. Sync the OaaS side of the orgos charters in its own PR: the ORGOS block in `AGENTS.md` plus the
