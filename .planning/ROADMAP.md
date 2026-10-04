@@ -56,7 +56,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
 - [ ] **Phase 37: Real-world operations readiness** — The 87 persona-testing clusters with no other home (epic #880): kitchen ops, staff scoping, checkout integrity, abuse resistance, integrator surface, accessibility, catalogue correctness; 9 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request)
 - [ ] **Phase 38: Spring Boot 4.1 Migration** — core-java moves from Spring Boot 3.5.16 to 4.1.x, proven by test, gate and live runtime (#706; opened 2026-10-01 as Phase 37, renumbered 2026-10-04)
-- [ ] **Phase 39: Platform runtime upgrades** — Every other runtime onto a supported, latest-stable release: Alpine, RabbitMQ (k8s), the Prometheus/Alertmanager/Grafana/exporter stack, Keycloak 26, PostgreSQL 18, Redis 8 and Tailwind 4; retires the DEFERRED-27 horizon deferrals before they expire (first expiry 2026-10-26) (added 2026-10-04 by owner request)
+- [ ] **Phase 39: Platform runtime upgrades** — Every other runtime onto a supported, latest-stable release: Alpine, RabbitMQ (compose and k8s), the Prometheus/Alertmanager/Grafana/exporter stack, Keycloak 26, PostgreSQL 18, Redis 8 and Tailwind 4; retires the DEFERRED-27 and #724 horizon exemptions before they expire (first dated row 2026-10-26) (added 2026-10-04 by owner request)
 
 ## Phase Details
 
@@ -886,18 +886,23 @@ Plans:
 
 ### Phase 39: Platform runtime upgrades
 
-**Added 2026-10-04 by owner request** ("the upgrade of stack to all latest LTS versions"). Phase 38 moves only Spring Boot. Every other runtime that is past end of life or majors behind is held only by a deferral row in `infra/dependency-horizons.yaml` (`tracked_by: DEFERRED-27`). Nothing in the roadmap or the issue tracker upgrades them. The deferrals expire on fixed dates, and an expired deferral reds the required Operational Contracts gate on every branch, as it did on 2026-09-30.
+**Added 2026-10-04 by owner request** ("the upgrade of stack to all latest LTS versions"). Phase 38 moves only Spring Boot. Every other runtime that is past end of life or majors behind is held by a dated row in `infra/dependency-horizons.yaml`, of one of two kinds:
+- an **exemption**: `DEFERRED-27` for Alpine, Keycloak, Prometheus and Grafana, and `#724` for the compose RabbitMQ broker;
+- a **`manual_review`** date: the k8s RabbitMQ broker, Alertmanager and the two exporters.
+
+Nothing in the roadmap or the issue tracker upgrades these components. Both kinds expire on fixed dates, and an expired row reds the required Operational Contracts gate on every branch, as it did on 2026-09-30.
 
 Position measured 2026-10-04 against endoflife.date (live API):
 
 | Component | Pinned | Latest | Status / deferral expiry |
 |---|---|---|---|
-| RabbitMQ (k8s staging/prod) | unknown | 4.3.6 | version unresolvable from the repo; deferral **2026-10-26** |
+| RabbitMQ (k8s staging/prod) | unknown | 4.3.6 | version unresolvable from the repo by construction (ADR-0002); `manual_review` **2026-10-26** |
+| RabbitMQ (compose) | 4.3.4 | 4.3.6 | vendor EOL of the 4.3 line **2026-11-30**; exemption `#724` expires the same day |
 | Alpine (dev seed/init helper) | 3.20 | 3.24 | EOL 2026-04-01; deferral **2026-11-30** |
 | Keycloak | 24.0.5 | 26.8 | EOL 2024-06-10; deferral 2026-12-31 |
 | Prometheus | 2.48.0 | 3.15 | EOL 2023-12-28; deferral 2026-12-31 |
 | Grafana | 10.2.2 | 13.2 | EOL 2024-07-24; deferral 2026-12-31 |
-| Alertmanager / redis-exporter / postgres-exporter | 0.27.0 / 1.58.0 / 0.15.0 | not on endoflife.date; resolve at plan time | deferrals 2027-01-27 |
+| Alertmanager / redis-exporter / postgres-exporter | 0.27.0 / 1.58.0 / 0.15.0 | not on endoflife.date; resolve at plan time | `manual_review` 2027-01-27 |
 | PostgreSQL | 15 | 18.6 | supported to 2027-11-11, three majors behind |
 | Redis | 7 (7.4) | 8.10 | 7.4 supported; **owner accepted Redis 8's licence change (AGPL/RSAL/SSPL), 2026-10-04** |
 | Tailwind CSS | 3.4.1 | 4.3 | 3.4 supported; 4.x is a config rewrite |
@@ -912,7 +917,9 @@ Already current, out of scope:
 **Goal:** Every runtime the platform ships or runs on is on a supported release, and on the latest stable major where one exists. Each upgrade is proven on the running stack, not on a green build, and the `DEFERRED-27` rows are retired rather than re-dated.
 
 **Requirements**: derived at plan time. The plans ship independently, in this order of deadline and risk:
-- **39-A Quick deadlines:** Alpine 3.24, and resolving the deployed RabbitMQ k8s broker version (`docs/runbooks/rabbitmq-broker-upgrade.md`, ADR-0002) before 2026-10-26.
+- **39-A Quick deadlines:**
+  - Before 2026-10-26: re-check the k8s RabbitMQ broker `manual_review` against the release page and the runbook (`docs/runbooks/rabbitmq-broker-upgrade.md`, ADR-0002). Its version cannot be resolved from this repo, so a real re-check is the deliverable.
+  - Before 2026-11-30: Alpine 3.24, and the compose RabbitMQ broker onto the line that succeeds 4.3 as the community-supported release (#724), with the exemption removed.
 - **39-B Observability stack:** Prometheus 3, Alertmanager, Grafana 13, redis-exporter and postgres-exporter. They ship together because their config and rules are coupled; Prometheus 3 is a breaking major.
 - **39-C Keycloak 26:** with its own live auth rehearsal on the compose stack and the local-k8s overlay. The JWT issuer/JWKS split-horizon history, the Postgres-backed realm re-import (`--override true`) and the KC24 user-profile `tenant_id` trap all apply. It runs after Phase 38 merges, because both touch the resource-server/JWT path and `KeycloakAdminClient`.
 - **39-D PostgreSQL 18:** a rehearsed data upgrade (dump/restore or `pg_upgrade`) with a restore drill, plus the `pg-backup` image (`postgres:15-bookworm` base), `check-postgres-major-parity.sh` and the Testcontainers image. The RLS suite runs as NOSUPERUSER on the new major.
@@ -923,7 +930,10 @@ Already current, out of scope:
 **Depends on:** nothing hard. Only 39-C waits for Phase 38. **Blocks:** nothing structurally, but missing an expiry date reds every branch.
 
 **Success Criteria** (what must be TRUE). These are drafts; `/gsd-plan-phase 39` refines them. Each must be shown to FAIL before and PASS after:
-  1. `infra/dependency-horizons.yaml` holds no row past EOL, and no `DEFERRED-27` deferral remains. `check-dependency-horizons.sh` passes WITHOUT any deferral being re-dated.
+  1. `infra/dependency-horizons.yaml` holds no row past EOL.
+     - Every **exemption** (the four `DEFERRED-27` rows and `#724`) is REMOVED because its component was upgraded, never re-dated.
+     - Every **`manual_review`** row (the k8s broker, Alertmanager and the two exporters) is re-checked against its release source, with `last_checked` refreshed. Moving a manual-review date forward after a real check is how that mechanism is meant to work.
+     - `check-dependency-horizons.sh` passes on that basis.
   2. Each upgraded image is the one RUNNING: `scripts/check-runtime-freshness.sh` passes, and the version is read out of the running container, not out of the compose file.
   3. Keycloak 26: vendor and customer sign-in, token refresh and JWT validation by core-java and edge-go all work end-to-end on the rebuilt stack. This is proven by the nightly Playwright auth flows, not a health check.
   4. PostgreSQL 18: an upgrade of a populated dev database preserves row counts per table and every RLS policy, and a restore drill from a `pg-backup` dump on the new major passes.
