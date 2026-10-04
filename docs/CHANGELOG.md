@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Issue de-duplication searches by title, so the nightly stops filing duplicates (#885) — 2026-10-04
+### Issue de-duplication searches by title, so the nightly stops filing duplicates (#885, #892) — 2026-10-04
 
 - **Three de-dup sites now use `gh issue list --state open --search "in:title \"${TITLE}\"" --limit 1000`.**
   The sites are the e2e-nightly escalation and the base-image-freshness findings and VOID steps.
