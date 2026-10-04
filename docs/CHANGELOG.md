@@ -26,29 +26,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   your shops", "Try again" re-runs the fetch), and loading shows "Loading your shops…". A
   failed first `GET /onboarding/me` renders the same panel ("Couldn't load your onboarding")
   instead of the create form; the destructive toast is kept, and a failed background re-poll
-  still leaves the last good status on screen. `lib/api-client.ts` retries a 429 ONCE after
-  its `Retry-After` when that is 0-10 seconds, guarded by a per-request `_rateLimitRetried`
-  flag so a second 429 rejects. An explicit 0 waits 1 s: `RateLimitInterceptor` floors the
-  refill wait to whole seconds, so every sub-second wait arrives as `Retry-After: 0`, and
-  skipping it would skip the commonest 429. No header, a blank or HTTP-date value, or a
-  longer wait rejects at once. POST
-  is included because `RateLimitInterceptor` raises the 429 in `preHandle`, the first
-  registered interceptor, before `TenantStatusInterceptor` and any controller, so a rejected
-  request had no side effects. No backend change.
-- **Proof.** Four new page tests and seven new interceptor tests. With the fix committed, the
-  two source files were replaced by their `origin/main` versions. Unfixed page: 3 of the 4
-  new page tests RED (no `role="alert"`; no "Loading your shops…"); the fourth, the CONTROL
-  ("a fetch that SUCCEEDS with zero shops still says 'Create a shop first'"), stays green as
-  it should. Unfixed client: 3 of the 6 new interceptor tests RED (both retry tests and the
-  once-only test); the three no-retry tests stay green as they should. Each of those was then
-  shown able to fail by a mutation of the fix: dropping the `_rateLimitRetried` guard reds
-  the once-only test, widening the 10 s bound reds the oversized test, defaulting a missing
-  header to 1 s reds the no-header and blank/HTTP-date tests, the commit before the
-  `Retry-After: 0` change reds the new 0 test (1 of 12 in that file), and rendering the error panel
-  for every empty list reds the CONTROL. Restored with `git checkout HEAD --`, confirmed by
-  blob hash against the committed tree, and GREEN again (63/63 across the two files). Full Jest suite 1889/1889 in 172 suites, `npm run
-  lint` 0 errors (warnings unchanged on the touched files), `npm run build` and `tsc
-  --noEmit` clean; `docs/metrics.json` and the prose counts are regenerated for the eleven new tests.
+  still leaves the last good status on screen; one "Try again" there also re-runs the shops
+  fetch when it failed, so a burst that 429'd both recovers in one click. `lib/api-client.ts`
+  replays a 429 ONCE when it is `RateLimitInterceptor`'s own (problem type
+  `https://jtoye.uk/errors/rate-limited`) and its `Retry-After` is N = 0-10, after N + 1 s,
+  guarded by a per-request `_rateLimitRetried` flag so a second 429 rejects. N + 1 because
+  the interceptor floors the wait and refills intervally, so the true wait lies in [N, N + 1):
+  a replay at exactly N s lands early and meets a second 429, and every sub-second wait is
+  sent as `Retry-After: 0`. Any other 429, no header, a blank or HTTP-date value, or a longer
+  wait rejects at once. A POST is replayed because that 429 is raised in `preHandle`, the
+  first registered interceptor, before any controller, so the rejected request had no side
+  effects; the DSAR intake's 429 comes from a service via `GlobalExceptionHandler`, so it is
+  not that type and is never replayed. No backend change.
+- **Proof.** Five new page tests and eight new interceptor tests, each shown failing before it
+  was trusted: the fix committed, the source file replaced by an older version, run, then
+  restored with `git checkout HEAD --` and confirmed by blob hash.
+  - Source at `origin/main`: 3 of the 4 first page tests and 3 of the 6 first interceptor
+    tests RED. The CONTROL ("a fetch that SUCCEEDS with zero shops still says 'Create a shop
+    first'") and the no-retry tests stay green, as they should; each was then shown able to
+    fail by a mutation (rendering the panel for every empty list; dropping the once-only
+    guard; widening the 10 s bound; defaulting a missing header to 1 s).
+  - `api-client.ts` before the `Retry-After: 0` change: the 0 test RED (1 of 12).
+  - Both source files at `52bda6c0`, before the N + 1 / problem-type / one-click change:
+    api-client 3 RED and page 1 RED (of 82 across the two files). Restored: 82/82 GREEN.
+  - Final tree: Jest 1891/1891 in 172 suites, `npm run lint` 0 errors (warnings unchanged on
+    the touched files), `npm run build` and `tsc --noEmit` clean; `docs/metrics.json` and
+    the prose counts are regenerated for the thirteen new tests.
 
 ### A review can no longer name a vendor's catalogue images for deletion (#772) — 2026-09-30
 
