@@ -318,7 +318,7 @@ Sources:
 
 Screenshots and raw probe output stay local: the evidence folders hold session state.
 
-**Phase 37 is a PROPOSAL, not a ruled phase.** 87 clusters have no home in Phases 28–36. They are grouped below into sub-themes 37-A to 37-G as input to `/gsd-phase` (add) or `/gsd-review-backlog`. **Phase 31 is complete**, so its 17 clusters need a gap-closure plan (31.1) rather than new scope.
+**Phase 37 is on the roadmap (added 2026-10-04 by owner request; see ROADMAP.md § Phase 37).** 87 clusters have no home in Phases 28–36. They are grouped below into sub-themes 37-A to 37-G. The next step is `/gsd-plan-phase 37`. **Phase 31 is complete**, so its 17 clusters need a gap-closure plan (31.1) rather than new scope.
 
 These nine findings sit under P0 in more than one area. They gate a first real tenant regardless of where they land:
 - #777 and #778: DSAR erasure and access requests silently not done;
@@ -394,7 +394,7 @@ These nine findings sit under P0 in more than one area. They gate a first real t
 |---|---|---|---|
 | UXT-061 | P2 | #830 | Menu 'Add' buttons are visible but ignore taps until hydration (4.2 s on 4G, 14 s on Slow 3G) |
 
-### Phase 37 (proposed) · 37-A Kitchen & order operations (15)
+### Phase 37 · 37-A Kitchen & order operations (15)
 
 | Cluster | P | Issue | Finding |
 |---|---|---|---|
@@ -414,7 +414,7 @@ These nine findings sit under P0 in more than one area. They gate a first real t
 | UXT-099 | P3 | #866 | With the API unreachable but the socket up, the board says 'Live' for ~50 s while dropping an order |
 | UXT-101 | P3 | #875 | The orders table is clipped on tablet and the phone's first screen is an explainer, not orders |
 
-### Phase 37 (proposed) · 37-B Multi-site, staff access & finance (12)
+### Phase 37 · 37-B Multi-site, staff access & finance (12)
 
 | Cluster | P | Issue | Finding |
 |---|---|---|---|
@@ -431,7 +431,7 @@ These nine findings sit under P0 in more than one area. They gate a first real t
 | UXT-100 | P3 | #867 | After access is removed the kitchen keeps showing that shop's tickets (with PII and live buttons) and blames the connection |
 | UXT-117 | P3 | #875 | Staff list masks emails so same-domain staff are indistinguishable; products table has no Shop column |
 
-### Phase 37 (proposed) · 37-C Checkout integrity & customer trust/retention (23)
+### Phase 37 · 37-C Checkout integrity & customer trust/retention (23)
 
 | Cluster | P | Issue | Finding |
 |---|---|---|---|
@@ -459,7 +459,7 @@ These nine findings sit under P0 in more than one area. They gate a first real t
 | UXT-111 | P3 | #877 | React hydration error #418 on /shop/orders and /track, and 'Auto-refreshing' on finished orders |
 | UXT-116 | P3 | #877 | An unknown shop link returns a soft 404 (HTTP 200 'Shop not found') |
 
-### Phase 37 (proposed) · 37-D Abuse resistance (8)
+### Phase 37 · 37-D Abuse resistance (8)
 
 | Cluster | P | Issue | Finding |
 |---|---|---|---|
@@ -472,7 +472,7 @@ These nine findings sit under P0 in more than one area. They gate a first real t
 | UXT-073 | P2 | #842 | Vendors have no bulk-reject and no fraud signal for junk orders |
 | UXT-118 | P3 | #872 | Another shop's order returns 403 not 404, and public image URLs embed the tenant UUID |
 
-### Phase 37 (proposed) · 37-E Integrator surface (API, MCP, webhooks, sync) (13)
+### Phase 37 · 37-E Integrator surface (API, MCP, webhooks, sync) (13)
 
 | Cluster | P | Issue | Finding |
 |---|---|---|---|
@@ -490,7 +490,7 @@ These nine findings sit under P0 in more than one area. They gate a first real t
 | UXT-122 | P3 | #879 | Webhooks have no test event, no request/response body, no delete, and do not follow redirects (Apps Script fails) |
 | UXT-123 | P3 | #879 | API/MCP contract polish: MCP drops typed error details, OpenAPI hygiene problems, replay indistinguishable from fresh |
 
-### Phase 37 (proposed) · 37-F Accessibility (6)
+### Phase 37 · 37-F Accessibility (6)
 
 | Cluster | P | Issue | Finding |
 |---|---|---|---|
@@ -501,7 +501,7 @@ These nine findings sit under P0 in more than one area. They gate a first real t
 | UXT-084 | P2 | #853 | Basket, checkout, confirmation and tracking all share the title 'J'Toye — Discover Local Vendors' |
 | UXT-085 | P2 | #854 | On mobile the cookie banner covers content and keyboard focus and is the 32nd tab stop |
 
-### Phase 37 (proposed) · 37-G Catalogue & shop-admin correctness (8)
+### Phase 37 · 37-G Catalogue & shop-admin correctness (8)
 
 | Cluster | P | Issue | Finding |
 |---|---|---|---|
@@ -514,7 +514,7 @@ These nine findings sit under P0 in more than one area. They gate a first real t
 | UXT-066 | P2 | #835 | The 'Publish to storefront' checkbox is ignored, or throws away the whole shop edit with a raw developer error |
 | UXT-115 | P3 | #875 | SKU is required when adding a product (jargon for a stall holder) |
 
-### Phase 37 (proposed) · unsorted (2)
+### Phase 37 · unsorted (2)
 
 | Cluster | P | Issue | Finding |
 |---|---|---|---|
