@@ -1,0 +1,469 @@
+[
+  {
+    "id": "P2-MAR-01",
+    "title": "After \"Place order\" a screen reader hears only \"0 items in basket\": the confirmation is never announced",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "/shop/{slug}/checkout (confirmation renders in place)",
+    "steps": [
+      "Add 2 items to a basket, open /shop/brixton-village-grill/checkout",
+      "Fill all fields with the keyboard, tick the allergen checkbox with Space",
+      "Focus \"Place order · £25.00\" and press Enter",
+      "Record live-region output, document.activeElement and document.title"
+    ],
+    "expected": "Focus moves to the \"Order confirmed!\" heading, or a status message says \"Order confirmed, order number ORD-…\"; the title changes to the confirmation",
+    "actual": "Focus drops to <body>. The only live-region output is \"0 items in basket\" (the header basket link, aria-live=polite). The URL stays /checkout and the title stays \"J'Toye — Discover Local Vendors\". Reproduced twice: desktop delivery (ORD-…50F52C87) and iPhone 13 collection (ORD-…F82D641A).",
+    "realWorldImpact": "A blind customer cannot tell whether the order went through or the basket was simply cleared, so they phone the shop or re-order, and a duplicate cash order reaches the kitchen.",
+    "evidence": [
+      "s08.out",
+      "s13.out",
+      "08-confirmation.png",
+      "13-confirmation-collection-mobile.png",
+      "aria-08-confirmation.yaml"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-02",
+    "title": "Order-status changes on the tracking page are silent to screen readers",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "tracking",
+    "surface": "/shop/{slug}/orders/{orderNumber}",
+    "steps": [
+      "Place an order and open the \"Track your order\" link",
+      "As the vendor, POST /api/v1/orders/{id}/confirm, wait 20 s",
+      "POST /api/v1/orders/{id}/start-preparation, wait 20 s",
+      "Record live-region output"
+    ],
+    "expected": "Each change is announced through a polite status region, e.g. \"Order confirmed by the shop\"",
+    "actual": "The 15-second poll updates the DOM (the timestamp moves to the new step) but nothing is announced: 0 live-region events across both transitions. The only live region on the page is the basket count.",
+    "realWorldImpact": "A screen-reader user waiting for a collection order never learns that it is ready. They phone the shop or turn up early or late.",
+    "evidence": [
+      "s09.out",
+      "09-track-before.png",
+      "09-track-after.png",
+      "aria-09-track-before.yaml",
+      "aria-09-track-after.yaml"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-03",
+    "title": "The tracking timeline does not say which step is current or done",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "tracking",
+    "surface": "/shop/{slug}/orders/{orderNumber}",
+    "steps": [
+      "Open the tracking page for an order in PREPARING",
+      "Read the accessibility tree of the main landmark"
+    ],
+    "expected": "The current step is exposed (aria-current=\"step\" or hidden text such as \"current\" / \"completed\")",
+    "actual": "All five steps (Received, Confirmed, Preparing, Ready, Completed) are plain paragraphs with no state. The only clue is a timestamp next to finished steps. The H1 stays \"Order in Progress\". The page has 0 [aria-current]. (/track does show a \"Preparing\" status chip.)",
+    "realWorldImpact": "A blind customer hears a list of every possible status and cannot tell where their order is.",
+    "evidence": [
+      "aria-09-track-after.yaml",
+      "s09.out",
+      "aria-15-track-result.yaml"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-04",
+    "title": "Shop cards on the kitchen list have no accessible name (\"link, link, link\")",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "discovery",
+    "surface": "/shop and /shop?q=SW9 8PR",
+    "steps": [
+      "Open /shop?q=SW9%208PR",
+      "Tab past the suggested-search chips to the results",
+      "Read Chrome's computed AX tree (CDP Accessibility.getFullAXTree)"
+    ],
+    "expected": "Each card link is named after the shop, e.g. \"Brixton Village Grill, open, 0.0 miles\"",
+    "actual": "All 3 card links have an empty name in Chrome's own tree. The <a> wraps an <article>, which stops name-from-content. Tab announces only \"link\". axe-core reports 0 violations on the page, so the automated gate is blind to it. The same happens on /shop with no query.",
+    "realWorldImpact": "NVDA and VoiceOver users tabbing the results hear three identical \"link\"s and must switch to heading navigation to find a kitchen. Many will give up on the first screen.",
+    "evidence": [
+      "s02b.log",
+      "s12.out",
+      "aria-02-shop-results.yaml",
+      "axe-02-shop-results.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-05",
+    "title": "Pressing a menu \"Add\" (or the \"Remove\" that replaces it) drops keyboard focus to the page body",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "/shop/{slug}",
+    "steps": [
+      "Open /shop/brixton-village-grill",
+      "Focus \"Add Mango Lassi to basket\" and press Enter",
+      "Check document.activeElement"
+    ],
+    "expected": "Focus moves to the new stepper control (e.g. \"Increase quantity of Mango Lassi\")",
+    "actual": "The Add button is replaced by the stepper and activeElement becomes <body>. The same happens when \"Remove … from basket\" takes the quantity back to 0. Seen 4 times (Mango Lassi, Sobo Punch add and remove, Chapman, Jollof Rice on iPhone 13). Chrome's next Tab happens to recover; a screen reader's virtual cursor and VoiceOver focus do not.",
+    "realWorldImpact": "After every add, a screen-reader user loses their place in the menu and must find the dish again. Building a basket of several items becomes tiring.",
+    "evidence": [
+      "s04.out",
+      "s05.out",
+      "s13.out"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-06",
+    "title": "Keycloak sign-in and registration pages fall below the storefront's accessibility bar",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "accounts",
+    "surface": "localhost:8085/realms/jtoye-customers (login and registration)",
+    "steps": [
+      "From /shop/signin press \"Create an account\"",
+      "Press Enter on \"Register\" with every field empty",
+      "Read the AX tree, focus and aria-describedby"
+    ],
+    "expected": "Errors are associated with their fields, focus moves to the first error, required fields are exposed, the page has lang and a main landmark, and the title says \"Register\"",
+    "actual": "Focus lands on <body> after the reload. Email, Password, First and Last name are aria-invalid but have no aria-describedby, so NVDA says \"Email, edit, invalid entry\" without the reason. Required is shown only as an asterisk (required=false). axe reports html-has-lang (serious), landmark-one-main, region and tabindex>0 on 7 controls (login). The register page is titled \"Sign in to J'Toye\". An empty login says \"Invalid username or password.\"",
+    "realWorldImpact": "Account creation is the step where a blind user is most likely to stall. It is a J'Toye-branded theme, so these templates are within the project's control even though the accessibility statement lists the pages as third-party.",
+    "evidence": [
+      "s10.out",
+      "10-kc-login.png",
+      "10b-kc-login-empty.png",
+      "10c-kc-register.png",
+      "10d-kc-register-errors.png",
+      "axe-10-kc-login.json",
+      "axe-10-kc-register.json",
+      "aria-10-kc-register-errors.yaml"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-07",
+    "title": "The basket announcement doubles the number and never names the item (\"1 1 item in basket\")",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "/shop/{slug} header basket link (aria-live=polite)",
+    "steps": [
+      "Add any dish with the keyboard",
+      "Record the live-region output"
+    ],
+    "expected": "\"Beef Suya Wrap added. 1 item in basket\"",
+    "actual": "The link's accessible name and the announcement are \"1 1 item in basket\", then \"2 2 items in basket\". The visual badge digit is not aria-hidden. Nothing says which dish was added or that an add happened.",
+    "realWorldImpact": "The user cannot confirm the right dish went in. The doubled number sounds like a glitch.",
+    "evidence": [
+      "s04.out",
+      "s05.out"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-08",
+    "title": "The copy-order-number control on tracking is an unnamed \"button\", and \"Copied!\" is silent",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "tracking",
+    "surface": "/shop/{slug}/orders/{orderNumber}",
+    "steps": [
+      "Open the tracking page",
+      "Tab to the control after the order number"
+    ],
+    "expected": "\"Copy order number, button\", plus a status announcement when copied",
+    "actual": "axe button-name (critical): <button><Copy/></button> with no text or aria-label. The \"Copied!\" span is not a live region.",
+    "realWorldImpact": "Screen-reader users hear \"button\" and do not know it copies the number they need for phone enquiries.",
+    "evidence": [
+      "axe-09-track.json",
+      "aria-09-track-before.yaml",
+      "aria-17-cancelled.yaml"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-09",
+    "title": "Basket, checkout, confirmation and tracking pages are all titled \"J'Toye — Discover Local Vendors\"",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "/shop/{slug}/cart, /checkout, /orders/{n}",
+    "steps": [
+      "Navigate basket → checkout → place order → track",
+      "Read document.title at each step"
+    ],
+    "expected": "Unique titles such as \"Your basket — Brixton Village Grill\" and \"Order confirmed — …\"",
+    "actual": "All four pages use the generic site title, so the Next.js route announcer reads \"J'Toye — Discover Local Vendors\" at every step (WCAG 2.4.2).",
+    "realWorldImpact": "Page changes do not tell the user where they are. This compounds P2-MAR-01.",
+    "evidence": [
+      "s05.out",
+      "s06.out",
+      "s08.out",
+      "s09.out"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-10",
+    "title": "Empty checkout submit jumps to \"Full name\" and skips the empty address; validation takes two rounds and has no summary",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "checkout",
+    "surface": "/shop/{slug}/checkout (Delivery)",
+    "steps": [
+      "Open checkout with Delivery selected",
+      "Press Enter on \"Place order\" with every field empty",
+      "Fill name, email and phone, submit again"
+    ],
+    "expected": "One validation pass: focus goes to an error summary or the first invalid field (Address line 1), and every error is described",
+    "actual": "Round 1: the native browser bubble \"Please fill out this field.\" on Full name, because only name, email and phone carry `required`. Round 2: focus moves to Address line 1 (aria-invalid, with an aria-describedby error, which is good). But Town / city shows the address sentence \"Add a delivery address, or switch to Collection.\" Address fields expose required=false.",
+    "realWorldImpact": "Screen-reader users go through two failed submits and hear the address error in the wrong place. Already listed as a known exception in the accessibility statement; this adds the validation-order consequence.",
+    "evidence": [
+      "s07.out",
+      "s08.out",
+      "07-checkout-errors.png",
+      "08a-address-empty-submit.png"
+    ],
+    "reconfirms": [
+      "statement known exception: asterisk-only required"
+    ]
+  },
+  {
+    "id": "P2-MAR-11",
+    "title": "Allergen badge on menu cards reads as a bare number, and Tab reaches \"Add\" before the allergen details",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "allergens",
+    "surface": "/shop/{slug}",
+    "steps": [
+      "Open /shop/brixton-village-grill",
+      "Read the Beef Suya Wrap card in the AX tree",
+      "Tab through the card"
+    ],
+    "expected": "The badge reads \"Contains 2 allergens: gluten, peanuts\", or \"Add\" names that allergens apply",
+    "actual": "The card reads \"Halal Spicy £8.50 2\". The triangle icon is aria-hidden and the count has no label. Tab order on each card is \"Add …\" then \"View details for …\".",
+    "realWorldImpact": "A blind customer with an allergy can add a dish without hearing its allergens. The checkout gate (positive P2-MAR-P2) is the only backstop.",
+    "evidence": [
+      "aria-03-menu.yaml",
+      "s14.out",
+      "s03.out"
+    ],
+    "reconfirms": [
+      "P05-4"
+    ]
+  },
+  {
+    "id": "P2-MAR-12",
+    "title": "On mobile the cookie banner hides keyboard focus and is the 32nd tab stop",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "/ (iPhone 13)",
+    "steps": [
+      "Open / on an iPhone 13 profile",
+      "Tab through the page",
+      "Measure the overlap between the focused element and the fixed cookie banner"
+    ],
+    "expected": "A focused element is never hidden by the banner (WCAG 2.2 SC 2.4.11), and the banner is reachable early",
+    "actual": "The banner covers y=482–664 of a 664 px viewport. 19 of the first 30 focus stops are overlapped, many 100% (Desserts, Use my location, See all kitchens, footer links). \"Got it\" needs 32 Tabs because the banner is last in the DOM. After dismissal, focus returns to the top of the document. The banner does not trap focus.",
+    "realWorldImpact": "Sighted keyboard and switch users lose the focus indicator under the banner. Screen-reader users hear the cookie notice only at the very end.",
+    "evidence": [
+      "s12.out",
+      "12-mobile-landing.png",
+      "12b-mobile-focus-under-banner.png"
+    ],
+    "reconfirms": [
+      "J-15"
+    ]
+  },
+  {
+    "id": "P2-MAR-13",
+    "title": "/track lookup: \"Order not found\" and a successful result appear without any announcement",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "tracking",
+    "surface": "/track",
+    "steps": [
+      "Open /track, type a wrong order number and an email, press Enter",
+      "Then a correct one"
+    ],
+    "expected": "role=alert for the error and a status or focus move to the result",
+    "actual": "Focus stays in the Email or Order number field and the live-region log is empty in both cases. The text appears visually below the button.",
+    "realWorldImpact": "The user presses Enter and hears nothing, so they assume the form is broken.",
+    "evidence": [
+      "s15.out",
+      "15-track-result.png",
+      "aria-15-track-result.yaml"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-14",
+    "title": "The tracking email gate field is named only by its placeholder, and the page has no H1",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "tracking",
+    "surface": "/shop/{slug}/orders/{orderNumber} (fresh browser)",
+    "steps": [
+      "Open a tracking link in a new browser with no stored guest order",
+      "Read the AX tree"
+    ],
+    "expected": "A visible label \"Email used for this order\" and an H1",
+    "actual": "The textbox name is \"your@email.com\" (the placeholder) and the only heading is H2 \"Track your order\".",
+    "realWorldImpact": "The field reads as an example address. A user who follows the emailed tracking link on a new device lands here.",
+    "evidence": [
+      "s16.out",
+      "s17.out"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-15",
+    "title": "The accessibility statement is stale: it claims no skip link, cites WCAG 2.1, and excludes basket, confirmation and tracking",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "legal-compliance",
+    "surface": "/legal/accessibility",
+    "steps": [
+      "Read /legal/accessibility",
+      "Compare it with the live pages"
+    ],
+    "expected": "The statement matches the site, targets WCAG 2.2 AA, and covers every customer step of the order journey",
+    "actual": "It lists \"No skip to content link on the vendor and checkout pages\", but a working skip link exists on /, /shop, the menu and checkout. The scope lists checkout but not /cart, the confirmation or /shop/{slug}/orders and /track, which is where P2-MAR-01/02/03/08/13 sit. Conformance is claimed against WCAG 2.1.",
+    "realWorldImpact": "Disabled customers and regulators reading the statement get a wrong picture: problems are listed that are fixed, and the worst problems are on unlisted pages.",
+    "evidence": [
+      "s14.out"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-16",
+    "title": "Screen-reader noise: duplicate alt text, duplicate dishes, a heading jump, unitless rating, emoji",
+    "severity": "polish",
+    "status": "CONFIRMED",
+    "area": "content",
+    "surface": "/shop, /shop/{slug}, /cart",
+    "steps": [
+      "Read the menu and basket in the AX tree"
+    ],
+    "expected": "Decorative images use alt=\"\"; ratings say \"5 out of 5 stars, 1 review\"",
+    "actual": "Product images use alt equal to the dish name right next to the same H3, so it is read twice. The dialog image is \"Beef Suya Wrap - image 1\". Popular dishes repeat under their category. The basket goes H1 → H3 (axe heading-order). The rating reads \"5 (1)\", and a review reads \"5 Grace Persona14\". \"📢\" is announced before the promo.",
+    "realWorldImpact": "Slower and more confusing listening, but not blocking.",
+    "evidence": [
+      "aria-03-menu.yaml",
+      "aria-13-mama-menu.yaml",
+      "axe-05-basket.json",
+      "aria-04-detail-dialog.yaml"
+    ],
+    "reconfirms": [
+      "J-13"
+    ]
+  },
+  {
+    "id": "P2-MAR-17",
+    "title": "Low-contrast text on the tracking timeline and the \"Free\" delivery label",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "/shop/{slug}/orders/{n}, /checkout",
+    "steps": [
+      "Run axe-core (injected) on tracking and checkout"
+    ],
+    "expected": "At least 4.5:1",
+    "actual": "Tracking: slate-400 #94a3b8 on white at 2.56:1 on 10 nodes (upcoming steps, \"Order number\"). Checkout: \"Free\" emerald-600 at 3.76:1.",
+    "realWorldImpact": "Low-vision users cannot read the upcoming steps. Already a known exception in the statement.",
+    "evidence": [
+      "axe-09-track.json",
+      "axe-06-checkout.json"
+    ],
+    "reconfirms": [
+      "statement known exception: contrast"
+    ]
+  },
+  {
+    "id": "P2-MAR-18",
+    "title": "The postcode-search result count may not be spoken: its live region is inserted already filled in",
+    "severity": "polish",
+    "status": "SUSPECTED",
+    "area": "discovery",
+    "surface": "/shop?q={postcode}",
+    "steps": [
+      "Search \"SW9 8PR\" from the landing page",
+      "Record mutations of aria-live nodes"
+    ],
+    "expected": "The live region exists empty and receives the text afterwards, so it is announced",
+    "actual": "The <p aria-live=polite> \"3 kitchens within 3.1 miles of SW9 8PR …\" is added to the DOM already containing its text. Many screen readers ignore that. Not verified with real NVDA.",
+    "realWorldImpact": "The user may not hear how many kitchens matched.",
+    "evidence": [
+      "s02.log"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-P1",
+    "title": "Product-detail dialog is a textbook accessible modal",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "/shop/{slug} (View details)",
+    "steps": [
+      "Focus \"View details for Beef Suya Wrap\", press Enter",
+      "Tab and Shift+Tab ×14",
+      "Press Escape"
+    ],
+    "expected": "Named modal, focus in, trap, return",
+    "actual": "role=dialog \"Beef Suya Wrap\" with aria-modal. Focus goes to \"Close\". Tab cycles \"Add to cart · £8.50\" ↔ \"Close\" and never leaves. Allergens sit under an H3 \"Allergen Information\". Escape returns focus to the trigger.",
+    "realWorldImpact": "Keep this. It is the safest place for a blind customer to hear allergens.",
+    "evidence": [
+      "s04.out",
+      "aria-04-detail-dialog.yaml",
+      "04-detail-dialog.png"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-P2",
+    "title": "Checkout allergen gate is fully operable and announced",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "allergens",
+    "surface": "/shop/{slug}/checkout",
+    "steps": [
+      "Fill checkout but leave the allergen checkbox unticked",
+      "Press Enter on \"Place order\""
+    ],
+    "expected": "The error is announced and focus moves to the gate",
+    "actual": "A named region \"Allergens in this order\" with a real list (Gluten, Peanuts, Milk) and a checkbox that Space toggles. On failure, focus moves to the checkbox (aria-invalid, aria-describedby) and role=alert speaks \"Confirm you have read the allergen information before placing this order.\"",
+    "realWorldImpact": "Keep this. It is the backstop for P2-MAR-11.",
+    "evidence": [
+      "s07.out",
+      "07b-allergen-unticked.png"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-MAR-P3",
+    "title": "Strong page structure and control naming across the storefront",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "/, /shop, /shop/{slug}, /checkout",
+    "steps": [
+      "Tab and read the AX tree on each page"
+    ],
+    "expected": "Landmarks, headings, unique names",
+    "actual": "Working skip link; labelled navs (\"Storefront\", \"Menu categories\"); one H1 per page; H2 categories and H3 dishes; unique names (\"Increase quantity of Mango Lassi\", \"Remove Beef Suya Wrap from basket\"); focus stays on Increase; all checkout inputs labelled; mobile menu dialog traps and returns focus; My Orders link names carry the status, shop, total, date and order number (no \"View ×12\" on customer pages).",
+    "realWorldImpact": "Keep these. This is a better foundation than most takeaway apps.",
+    "evidence": [
+      "s01.log",
+      "s03.out",
+      "s05.out",
+      "s06.out",
+      "s11.out",
+      "s13.out"
+    ],
+    "reconfirms": []
+  }
+]

@@ -11,11 +11,11 @@ last_activity: 2026-09-30
 last_activity_desc: "Phase 36 merged (PR #763) and its post-merge CI + first scheduled nightly on main read green by content; STATE advanced past shipping"
 state_head: f93412d13ca76d3182a2c0eea75e0cd302e7cd77
 progress:
-  total_phases: 16
+  total_phases: 18
   completed_phases: 12
   total_plans: 137
   completed_plans: 137
-  percent: 75
+  percent: 67
 ---
 
 # Project State
@@ -678,6 +678,8 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 ## Accumulated Context
 
 ### Roadmap Evolution
+
+- **Phase 37 added (2026-10-04): Real-world operations readiness.** Added by owner request after two passes of persona user-testing (15 personas, epic #880, PR #881). It holds the 87 of 123 findings clusters that fitted no existing phase, grouped as 37-A to 37-G: kitchen ops, multi-site/staff/finance, checkout integrity, abuse resistance, integrator surface, accessibility, and catalogue correctness. It carries 9 of the 16 P0s; the others are DSAR (#777, #778), the allergen acknowledgement (#784, #785) and #787 and #789 (Phase 31 gap-closure) and #788 (Phase 33). Phase 31's 17 clusters need a 31.1 gap-closure plan. `phase.add` derived 38 because the unmerged Spring Boot branch already held Phase 37. The persona phase was set to 37 by hand, and the Spring Boot phase was renumbered to 38 by owner ruling (2026-10-04). Not yet planned: next is `/gsd-plan-phase 37`.
 
 - **Phase 38 added (2026-10-01, renumbered from 37 on 2026-10-04 because Phase 37 went to the persona-testing findings, #881): Spring Boot 4.1 Migration** (#706, unblocks #739). A throwaway spike first established that the move is feasible on 4.1.1: unit 1330/2 fail, integration 745/1 fail, Flyway proven to run, and spring-statemachine 4.0.2 working on Framework 7. Owner decisions taken the same day: Jackson 3 now, explicit starters, keep statemachine, keep plain Bearer. See `37-CONTEXT.md`. Not yet planned: next is `/gsd-plan-phase 37`.
 
