@@ -799,7 +799,7 @@ const catalogue = CL.map((c, i) => {
   const sm = c.home.match(/· (37-[A-G].*)$/);
   return {
     id: uxt, slug: c.key, title: c.title, area: c.area, type: c.typ, severity: sev, priority: c.pri,
-    priorityJustification: c.why, status,
+    priorityJustification: ADJ[c.key] ? `${c.why} Coordinator ruling: ${ADJ[c.key]}` : c.why, status,
     members: mem.map((f) => ({ id: f.id, persona: f.persona, source: f.source, severity: f.severity, status: f.status, title: f.title })),
     personas: [...new Set(mem.map((f) => f.persona))].sort(),
     repro: rp, reproFrom: c.repro ? "override (pass-1 / coordinator narrative)" : prim.id,
@@ -841,7 +841,7 @@ const singles = toFile.filter((c) => !c.p3Bundle);
 const nNewIssues = singles.length + Object.keys(bundles).length;
 const nComments = Object.keys(commentTargets).length;
 
-const TYPE_LABEL = { "bug": "bug", "gap/enhancement": "enhancement", "content/legal": "compliance", "env/tooling": "tech-debt" };
+const TYPE_LABEL = { "bug": "bug", "gap/enhancement": "enhancement", "content/legal": "compliance", "env/tooling": "enhancement" };
 const AREA_LABEL = { security: "security", "staff-scoping": "security", privacy: "compliance", "legal-compliance": "compliance", allergens: "compliance", accessibility: "accessibility" };
 const labelsFor = (cs) => {
   const s = new Set(["ux-persona-test"]);
@@ -973,7 +973,9 @@ plan.push("### Comments posted on existing issues");
 Object.entries(commentTargets).forEach(([n, cs]) => plan.push(`- #${n}: ${cs.map((c) => c.id).join(", ")}`));
 plan.push("```");
 plan.push("");
-plan.push("", "## Coordinator adjustments", "", ...catalogue.filter((c) => c.coordinatorAdjustment).map((c) => `- **${c.id}** (${c.slug}): ${c.coordinatorAdjustment}`), "", "#727 (UXT-017, \"same\" match): priority label P3 -> P0 on GitHub, because pass 2 shows a wrong-allergen safety consequence.", "");
+// The coordinator adjustments are hand-maintained in coordinator-adjustments.md and appended VERBATIM:
+// hand-editing this generated file lost them once (#881 round 2), so the script owns the copy.
+plan.push("", fs.readFileSync(path.join(__dirname, "coordinator-adjustments.md"), "utf8").trimEnd(), "");
 fs.writeFileSync(path.join(OUT, "issue-plan.md"), plan.join("\n"));
 
 // ---------------------------------------------------------------- CATALOGUE.md

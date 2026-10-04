@@ -493,7 +493,7 @@
     "type": "bug",
     "severity": "major",
     "priority": "P1",
-    "priorityJustification": "Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024).",
+    "priorityJustification": "Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024). Coordinator ruling: P0->P1: the promotion is E2E seed data; the real defect is promotions being display-only (no direct user harm).",
     "status": "CONFIRMED",
     "members": [
       {
@@ -963,7 +963,7 @@
     "type": "bug",
     "severity": "major",
     "priority": "P1",
-    "priorityJustification": "Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment.",
+    "priorityJustification": "Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment. Coordinator ruling: P0->P1: a PECR cookie-consent issue, not direct user harm.",
     "status": "CONFIRMED",
     "members": [
       {
@@ -1181,7 +1181,7 @@
     "type": "content/legal",
     "severity": "minor",
     "priority": "P1",
-    "priorityJustification": "Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published.",
+    "priorityJustification": "Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published. Coordinator ruling: P0->P1: a trading-disclosure gap, possibly fixable by config (NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE).",
     "status": "CONFIRMED",
     "members": [
       {

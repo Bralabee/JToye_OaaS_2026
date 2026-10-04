@@ -325,7 +325,7 @@ Priority rule: P0 = in production would cause legal breach, user-safety harm, pr
 
 ### UXT-008 [P1] An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order
 
-- **Why P1:** Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024).
+- **Why P1:** Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024). Coordinator ruling: P0->P1: the promotion is E2E seed data; the real defect is promotions being display-only (no direct user harm).
 - **Members:** P2-KYL-07 (Kyle(P2), minor, CONFIRMED); P2-REG-05 (Bola(P2), major, CONFIRMED)
 - **Repro:** Open /shop/mama-ades-kitchen (banner '20% off selected dishes', chip 'E2E 20% OFF') → Add Jollof Rice and go through to checkout
 - **Expected:** Discounted dishes are identified and the discount is applied, or the banner is not shown
@@ -407,7 +407,7 @@ Priority rule: P0 = in production would cause legal breach, user-safety harm, pr
 
 ### UXT-015 [P1] Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy
 
-- **Why P1:** Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment.
+- **Why P1:** Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment. Coordinator ruling: P0->P1: a PECR cookie-consent issue, not direct user harm.
 - **Members:** F-01 (Sam(P1), major, CONFIRMED); P2-REG-13 (Bola(P2), minor, CONFIRMED)
 - **Repro:** Fresh browser, open any shop, add an item, go to /checkout → Inspect network and cookies
 - **Expected:** No third-party requests or cookies on a cash-only checkout
@@ -455,7 +455,7 @@ Priority rule: P0 = in production would cause legal breach, user-safety harm, pr
 
 ### UXT-019 [P1] The platform's own registered office is not published anywhere on the site
 
-- **Why P1:** Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published.
+- **Why P1:** Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published. Coordinator ruling: P0->P1: a trading-disclosure gap, possibly fixable by config (NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE).
 - **Members:** C-11 (Claire(P1), minor, CONFIRMED)
 - **Repro:** Open /legal, /legal/privacy and /legal/accessibility
 - **Expected:** Company name, number, registered office (and ICO registration reference) shown

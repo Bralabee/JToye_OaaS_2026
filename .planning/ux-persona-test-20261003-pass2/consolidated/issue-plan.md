@@ -123,7 +123,7 @@ Comment body:
 | 35 | UXT-042 | P1 | Item quantity has no upper bound: a £19 billion order is accepted and shown on the dashboard | ux-persona-test, P1, bug | none |
 | 36 | UXT-043 | P1 | An allergy request is a generic free-text note: no alert to the vendor, no acknowledgement, never echoed to the customer | ux-persona-test, P1, enhancement, compliance | none |
 | 37 | UXT-044 | P1 | Reviews publish the reviewer's full checkout name with no notice, policy or moderation | ux-persona-test, P1, bug, compliance | none |
-| 38 | UXT-045 | P1 | The local compose stack can never exercise the card-payment path (Stripe env-var names and build-time key mismatch) | ux-persona-test, P1, tech-debt | related #461, #538, #61 |
+| 38 | UXT-045 | P1 | The local compose stack can never exercise the card-payment path (Stripe env-var names and build-time key mismatch) | ux-persona-test, P1, enhancement | related #461, #538, #61 |
 | 39 | UXT-046 | P1 | Products have no VAT-rate choice; everything is booked as Standard 20% | ux-persona-test, P1, bug | related #81 |
 | 40 | UXT-047 | P1 | 'VAT (incl. 20%)' is shown for every vendor, with no VAT-registration status or number captured | ux-persona-test, P1, compliance | none |
 | 41 | UXT-048 | P1 | Menu cards show allergens as an unnamed count, 'Add' works without seeing them, and 'none declared' is never stated | ux-persona-test, P1, bug, compliance | none |
@@ -146,7 +146,7 @@ Comment body:
 | 58 | UXT-065 | P2 | The image dialog stays on 'Processing…' although the server has the image ACTIVE within ~6 s | ux-persona-test, P2, bug | none |
 | 59 | UXT-066 | P2 | The 'Publish to storefront' checkbox is ignored, or throws away the whole shop edit with a raw developer error | ux-persona-test, P2, bug | none |
 | 60 | UXT-067 | P2 | Internal strategy pages are public, expose a repo path, and contradict the landing page (incl. a 'payouts: Full' claim) | ux-persona-test, P2, compliance | none |
-| 61 | UXT-068 | P2 | Test and demo data is visible to customers and vendors (E2E 20% OFF promo, weeks-old test orders, a real person's name and email) | ux-persona-test, P2, tech-debt | none |
+| 61 | UXT-068 | P2 | Test and demo data is visible to customers and vendors (E2E 20% OFF promo, weeks-old test orders, a real person's name and email) | ux-persona-test, P2, enhancement | none |
 | 62 | UXT-069 | P2 | There is no account page: data access and erasure are mailto-only although a backend intake exists | ux-persona-test, P2, enhancement, compliance | none |
 | 63 | UXT-070 | P2 | The DSAR confirmation link does not open on compose and shows raw JSON when it does | ux-persona-test, P2, bug, compliance | none |
 | 64 | UXT-071 | P2 | The cookie policy omits keys that hold the customer's email and id and survive sign-out | ux-persona-test, P2, compliance | none |
@@ -168,7 +168,7 @@ Comment body:
 | 80 | UXT-087 | P2 | A kitchen hand sees far more customer personal data than needed to cook | ux-persona-test, P2, bug, compliance | none |
 | 81 | UXT-088 | P2 | A vendor cannot show who prepared an order or when: no timeline, no export | ux-persona-test, P2, enhancement | none |
 | 82 | UXT-089 | P2 | 86ing an item or changing a price takes four taps and ~30 s in a long form | ux-persona-test, P2, enhancement | none |
-| 83 | UXT-090 | P2 | Nothing asserts at deploy time that customer email verification is on; dev runs with it off | ux-persona-test, P2, tech-debt | related #462 |
+| 83 | UXT-090 | P2 | Nothing asserts at deploy time that customer email verification is on; dev runs with it off | ux-persona-test, P2, enhancement | related #462 |
 | 84 | UXT-091 | P2 | The basket shows no allergens and checkout's combined set has no per-item attribution | ux-persona-test, P2, enhancement, compliance | none |
 | 85 | UXT-092 | P2 | No 'may contain' field exists, label use-by is computed at download time, and records use US date format | ux-persona-test, P2, enhancement, compliance | related #427, #82 |
 | 86 | UXT-093 | P2 | There is no allergen filter, and searching 'peanut' or 'gluten free' returns nothing | ux-persona-test, P2, enhancement | none |
@@ -336,7 +336,7 @@ Title: `Checkout never re-validates the stored basket: stale prices, removed and
 
 Title: `An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order` · Labels: ux-persona-test, P1, bug, compliance
 
-**UXT-008 · P1 · major · CONFIRMED** — Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024).
+**UXT-008 · P1 · major · CONFIRMED** — Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024). Coordinator ruling: P0->P1: the promotion is E2E seed data; the real defect is promotions being display-only (no direct user harm).
 
 **Steps**
 1. Open /shop/mama-ades-kitchen (banner '20% off selected dishes', chip 'E2E 20% OFF')
@@ -464,7 +464,7 @@ Title: `Customers are never given the seller's legal identity or any way to cont
 
 Title: `Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy` · Labels: ux-persona-test, P1, bug, compliance
 
-**UXT-015 · P1 · major · CONFIRMED** — Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment.
+**UXT-015 · P1 · major · CONFIRMED** — Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment. Coordinator ruling: P0->P1: a PECR cookie-consent issue, not direct user harm.
 
 **Steps**
 1. Fresh browser, open any shop, add an item, go to /checkout
@@ -517,7 +517,7 @@ Title: `A completed, paid order can be deleted, leaving ledger rows that point a
 
 Title: `The platform's own registered office is not published anywhere on the site` · Labels: ux-persona-test, P1, compliance
 
-**UXT-019 · P1 · minor · CONFIRMED** — Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published.
+**UXT-019 · P1 · minor · CONFIRMED** — Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published. Coordinator ruling: P0->P1: a trading-disclosure gap, possibly fixable by config (NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE).
 
 **Steps**
 1. Open /legal, /legal/privacy and /legal/accessibility
@@ -861,7 +861,7 @@ Title: `Reviews publish the reviewer's full checkout name with no notice, policy
 
 #### [UXT-045] The local compose stack can never exercise the card-payment path (Stripe env-var names and build-time key mismatch)
 
-Title: `The local compose stack can never exercise the card-payment path (Stripe env-var names and build-time key mismatch)` · Labels: ux-persona-test, P1, tech-debt
+Title: `The local compose stack can never exercise the card-payment path (Stripe env-var names and build-time key mismatch)` · Labels: ux-persona-test, P1, enhancement
 
 **UXT-045 · P1 · major · CONFIRMED** — Blocks testing of the core money journey: every local run, persona test and E2E is cash-only.
 
@@ -1249,7 +1249,7 @@ Title: `Internal strategy pages are public, expose a repo path, and contradict t
 
 #### [UXT-068] Test and demo data is visible to customers and vendors (E2E 20% OFF promo, weeks-old test orders, a real person's name and email)
 
-Title: `Test and demo data is visible to customers and vendors (E2E 20% OFF promo, weeks-old test orders, a real person's name and email)` · Labels: ux-persona-test, P2, tech-debt
+Title: `Test and demo data is visible to customers and vendors (E2E 20% OFF promo, weeks-old test orders, a real person's name and email)` · Labels: ux-persona-test, P2, enhancement
 
 **UXT-068 · P2 · minor · CONFIRMED** — Major trust damage; a real person's PII in demo data is a data-protection concern.
 
@@ -1622,7 +1622,7 @@ Title: `86ing an item or changing a price takes four taps and ~30 s in a long fo
 
 #### [UXT-090] Nothing asserts at deploy time that customer email verification is on; dev runs with it off
 
-Title: `Nothing asserts at deploy time that customer email verification is on; dev runs with it off` · Labels: ux-persona-test, P2, tech-debt
+Title: `Nothing asserts at deploy time that customer email verification is on; dev runs with it off` · Labels: ux-persona-test, P2, enhancement
 
 **UXT-090 · P2 · minor · CONFIRMED** — A misconfigured environment would expose another person's order history via My Orders.
 
@@ -2081,8 +2081,15 @@ Counts: P0 16 · P1 32 · P2 49 · P3 26. Proposed home for most: NEW Phase 37 �
 
 ## Coordinator adjustments
 
-- **UXT-008** (promo-not-applied): P0->P1: the promotion is E2E seed data; the real defect is promotions being display-only (no direct user harm).
-- **UXT-015** (stripe-on-cash-checkout): P0->P1: a PECR cookie-consent issue, not direct user harm.
-- **UXT-019** (platform-trading-disclosure): P0->P1: a trading-disclosure gap, possibly fixable by config (NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE).
+Applied 2026-10-04 before filing. This file is hand-maintained and appended verbatim to issue-plan.md by `consolidate.cjs` (so a regeneration cannot drop it); the priority moves are also recorded per cluster as `coordinatorAdjustment` in `catalogue.json`. These supersede the priorities and labels in sections B and D above.
 
-#727 (UXT-017, "same" match): priority label P3 -> P0 on GitHub, because pass 2 shows a wrong-allergen safety consequence.
+- **UXT-008 P0 → P1.** The '20% OFF' promotion the testers saw is E2E seed data; the real defect is that promotions are display-only and never applied to an order.
+- **UXT-015 P0 → P1.** A PECR cookie-consent issue (Stripe JS and fraud cookies on a cash-only checkout), not direct harm to a user.
+- **UXT-019 P0 → P1.** A trading-disclosure gap for the platform company, possibly fixable by configuration (`NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE` is declared but set in no runtime).
+- **#727 (UXT-017) P3 → P0.** Comment posted AND the priority label changed from `P3` to `P0`: pass 2 reproduced the sync orphan live and showed a wrong-allergen safety consequence (an order line for the orphan records allergenMask 0 where the real dish declares 256). It is no longer a latent data-hygiene defect.
+- **Other "same" matches (#102, #208, #452, #460, #587):** the `ux-persona-test` label is added and the comment posted; their other labels are unchanged.
+- **Type labels:** `bug` for bug, `enhancement` for gap/enhancement and env/tooling, `compliance` for content/legal. The plan once proposed `tech-debt` for env/tooling (UXT-045, UXT-068, UXT-090); those three were filed with `enhancement` (#814, #837, #859), and `consolidate.cjs`'s TYPE_LABEL now maps env/tooling to `enhancement`, so section B matches GitHub.
+- **Regression-of-closed (UXT-001 → #84, UXT-006 → #88, UXT-074 → #465):** filed as new issues titled "Regression of #N: …"; the closed issue gets a one-line pointer comment and is not reopened.
+- **Epic title:** "[UXT-EPIC] Persona user-testing 2026-10-03: real-world readiness findings (pass 1 + 2)".
+- **Resulting counts:** P0 16 · P1 32 · P2 49 · P3 26 (was 19 / 29 / 49 / 26).
+- **Filing ledger:** `filed-issues.json` (clusterIds, title, number, url) is the record of what was filed.
