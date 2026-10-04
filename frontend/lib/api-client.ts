@@ -10,7 +10,12 @@ import type { Session } from "next-auth"
  *   2. X-Tenant-Id header injected from `session.user.tenantId`, for defence
  *      in depth against broken server-side tenant derivation.
  *   3. Retry on 5xx responses and network errors (max 2 retries, 250ms then
- *      500ms backoff). 4xx is NEVER retried.
+ *      500ms backoff). 4xx is NEVER retried — except 429, below.
+ *   3a. Retry a 429 from core-java's rate limiter (problem type
+ *      `https://jtoye.uk/errors/rate-limited`) ONCE, when its `Retry-After` is
+ *      0 <= N <= 10, after N + 1 seconds (the server floors the wait). Any other
+ *      429, no header, a blank or HTTP-date value, or a longer wait rejects
+ *      immediately so the caller's own error state renders.
  *   4. 401 handler that triggers a SINGLE concurrent session refresh via
  *      getSession(); parallel 401s wait on the same promise instead of
  *      stampeding to /api/auth/session. If the refreshed session is still
@@ -48,10 +53,41 @@ apiClient.interceptors.request.use(
 interface RetryConfig extends InternalAxiosRequestConfig {
   _retryCount?: number
   _authRetried?: boolean
+  _rateLimitRetried?: boolean
 }
 
 const MAX_RETRIES = 2
 const RETRY_DELAYS_MS = [250, 500]
+// Longest Retry-After (seconds) worth holding a request open for. Past this the
+// caller is better served by failing now and rendering its own retry control.
+const MAX_RATE_LIMIT_WAIT_S = 10
+
+// The only 429 this client replays: the one RateLimitInterceptor writes from
+// `preHandle`, before any controller runs. Other 429s exist (the DSAR intake's
+// is raised from a service, via GlobalExceptionHandler) and may follow a write,
+// so they are never replayed — the safety argument is checked, not assumed.
+const RATE_LIMITED_TYPE = "https://jtoye.uk/errors/rate-limited"
+
+// The server's `Retry-After` in whole seconds, or null when it must not be
+// replayed. Not `retryAfterSeconds` from order-error: that one serves
+// user-facing copy and rightly drops 0, but RateLimitInterceptor FLOORS the
+// refill wait (`getNanosToWaitForRefill() / 1_000_000_000`), so the true wait
+// lies in [N, N + 1) and every sub-second wait arrives as `Retry-After: 0`. The
+// caller therefore waits N + 1 s; replaying at exactly N s lands early and meets
+// a second 429. A missing, blank, negative or HTTP-date value means "do not retry".
+function rateLimitWaitSeconds(error: AxiosError): number | null {
+  const headers = error.response?.headers
+  if (!headers) return null
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() !== "retry-after") continue
+    const raw = String(value).trim()
+    if (raw === "") return null
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n < 0) return null
+    return Math.ceil(n)
+  }
+  return null
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -83,6 +119,24 @@ apiClient.interceptors.response.use(
         const delay = RETRY_DELAYS_MS[config._retryCount] ?? 500
         config._retryCount += 1
         await sleep(delay)
+        return apiClient.request(config)
+      }
+    }
+
+    // --- 429: one retry after Retry-After ---------------------------------
+    // core-java's RateLimitInterceptor answers 429 from `preHandle`, before any
+    // controller runs, so a rejected request — POST included — had no side
+    // effects and replaying it is safe. The bucket is per TENANT, so a burst
+    // from one vendor's tabs (or one serial E2E run) drains it for everyone on
+    // that tenant; a short wait is usually all it takes. ONE retry only
+    // (`_rateLimitRetried`): a second 429 rejects, so this can never become a
+    // loop that amplifies the flood the limiter is defending against.
+    const problemType = (error.response?.data as { type?: unknown } | undefined)?.type
+    if (status === 429 && config && !config._rateLimitRetried && problemType === RATE_LIMITED_TYPE) {
+      const waitS = rateLimitWaitSeconds(error)
+      if (waitS !== null && waitS <= MAX_RATE_LIMIT_WAIT_S) {
+        config._rateLimitRetried = true
+        await sleep((waitS + 1) * 1000)
         return apiClient.request(config)
       }
     }

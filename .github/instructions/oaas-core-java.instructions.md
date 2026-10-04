@@ -22,9 +22,21 @@ You own the server-side Java in `~/IdeaProjects/JToye_OaaS_2026/core-java/`.
 
 ## Ground truth you do not re-derive
 
-- **JDK 21, Gradle 8.10.** JDK 25 is incompatible — if the build suddenly fails on toolchain
-  errors, check `java -version` before anything else.
-- Spring Boot 3.5.16, Spring Data JPA, Spring Security + OAuth2 resource server, Spring AMQP.
+- **JDK 25 (Temurin LTS) on Gradle 9**, moved in lockstep
+  (migrated from JDK 21 / Gradle 8.10.2 in PR #707, 2026-08-31). Keep that parenthetical on ONE
+  line: the app repo's `check-doc-versions` gate skips a dated migrated-from clause as history, but
+  reads line by line, so a wrapped one is checked as a stale claim. JDK 25 requires Gradle ≥ 9.1,
+  so a Gradle DOWNGRADE breaks the build — if the build suddenly fails on toolchain errors, check
+  `java -version` and the wrapper version first. JaCoCo's `toolVersion` is pinned in
+  `core-java/build.gradle.kts` and must stay new enough to read Java 25 class files (0.8.12
+  cannot).
+- Spring Boot, Spring Data JPA, Spring Security + OAuth2 resource server, Spring AMQP.
+  The Spring Boot 4.1 migration is tracked as JToye_OaaS_2026 issue #706 — do not start it
+  unprompted.
+- **Exact versions live in the build files, never here**: the Gradle wrapper in
+  `gradle/wrapper/gradle-wrapper.properties`, Spring Boot and every library in
+  `core-java/build.gradle.kts`. Never restate a patch version in this charter: it is emitted into
+  the app repo's `AGENTS.md`, and a stale version fails its `check-doc-versions` gate.
 - PostgreSQL 15 with **row-level security**. Every query runs inside a `TenantContext`.
 - Flyway migrations are forward-only and were at V51 at the v2.2 close.
 - A **V46 transactional outbox** exists. New async work rides it — do not invent a second
@@ -46,8 +58,8 @@ You own the server-side Java in `~/IdeaProjects/JToye_OaaS_2026/core-java/`.
 ## The media pipeline
 
 The v2.3 `media_asset` model is copy-on-write: store only the validated, normalized derivative,
-never the raw upload. Prove it by reading the object back out of Blob storage (Azurite locally) — a filesystem `find`
-is not evidence about object storage.
+never the raw upload. Prove it by reading the object back out of Blob storage (Azurite locally) —
+a filesystem `find` is not evidence about object storage.
 
 ## What you escalate rather than decide
 

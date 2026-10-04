@@ -222,3 +222,11 @@ docs/architecture/*.visual-check.*
 # ~163 MB of regenerable tool state into history on a blanket `git add`.
 graphify-out/
 .planning/graphs/
+
+# GSD Core runtime state, regenerated on use and never source.
+# .planning/state.json is the state-contract snapshot GSD republishes at every
+# boundary command (gsd-core bin/lib/state-contract.cjs); .gsd/ holds the
+# run-scoped dispatch-isolation sentinel the isolation guards read. Both sat
+# untracked in the main checkout (2026-10-04) where a blanket add would sweep them.
+.planning/state.json
+.gsd/

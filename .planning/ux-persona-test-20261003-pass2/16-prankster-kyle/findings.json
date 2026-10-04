@@ -1,0 +1,213 @@
+[
+  {
+    "id": "P2-KYL-01",
+    "title": "A bored teenager can place 10 fake cash orders in 0.3 seconds with throwaway emails and nonsense phone numbers, and every one lands on the kitchen looking real",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "orders",
+    "surface": "POST /public/shops/{slug}/orders",
+    "steps": [
+      "Script a loop of 10 POSTs to /public/shops/mama-ades-kitchen/orders",
+      "Each with a random throwaway email and a junk phone ('call me', 'no', 'x', '0', '1')",
+      "fulfilmentType COLLECTION, one real product id, no auth, no browser"
+    ],
+    "expected": "Something slows a burst of guest orders down: a per-email / per-phone / per-device cap, email verification before the kitchen sees it, a captcha, or a hold queue",
+    "actual": "All 10 returned 201 PENDING in 311 ms total. No verification, no captcha, no per-identity cap. They appear in the vendor's Orders list indistinguishable from real orders.",
+    "realWorldImpact": "A small vendor prepping to a cash-on-collection screen cooks food for orders nobody collects. One teenager with a for-loop can bury a real Friday rush under junk and burn an evening of ingredients and prep time. The only cost to the attacker is typing.",
+    "evidence": ["k2-bulk.mjs", "k2-bulk.json", "05-dashboard-orders.png"],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KYL-02",
+    "title": "The public rate limiter is defeated by sending a different X-Forwarded-For header each time",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "security",
+    "surface": "GET/POST /public/** (RateLimitInterceptor via ClientIpResolver)",
+    "steps": [
+      "GET /public/shops/mama-ades-kitchen/config with no header -> note X-RateLimit-Remaining",
+      "Repeat with header 'X-Forwarded-For: 203.0.113.7', then '...8'",
+      "Observe remaining jumps back to 719 (a fresh bucket) for each spoofed value"
+    ],
+    "expected": "The IP-keyed public limiter (issue #88) should throttle a single abusive client regardless of client-supplied headers",
+    "actual": "ClientIpResolver.resolveClientIp() returns the first X-Forwarded-For hop unconditionally, with no trusted-proxy allow-list. A hostile guest sets a new XFF per request and gets a fresh bucket every time, so the only throttle on fake orders is bypassable. (In prod this depends on the ingress overwriting XFF; the application trusts it blind.)",
+    "realWorldImpact": "Removes the single brake on KYL-01. With header rotation the 10-order burst becomes an unbounded flood of fake orders against any shop, from one machine.",
+    "evidence": ["xff-probe.txt", "ClientIpResolver.java (lines 44-54)"],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KYL-03",
+    "title": "No upper limit on item quantity: a £19 billion order (quantity 2,147,483,647) is accepted and shown on the dashboard",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "orders",
+    "surface": "POST /public/shops/{slug}/orders",
+    "steps": [
+      "POST a guest order with items:[{productId: <jollof>, quantity: 999}] -> 201, total £8,981.01",
+      "POST again with quantity: 2147483647 -> 201, total £19,305,877,986.53",
+      "Both appear as PENDING in the vendor Orders list"
+    ],
+    "expected": "A sane per-line quantity ceiling (and a basket-total sanity cap) rejecting obvious garbage",
+    "actual": "Quantity is only validated as >= 1 (negatives, 0 and empty baskets are correctly rejected 400). There is no maximum, so absurd quantities create real orders and real line totals.",
+    "realWorldImpact": "Pollutes the kitchen queue and the finance ledger with impossible numbers; a vendor glancing at 'Total' sees £8,981 or £19bn against their shop. Confuses takings, breaks any revenue chart, and wastes time working out it is a prank.",
+    "evidence": ["k3-absurd.mjs", "k3-absurd.json", "05-dashboard-orders.png"],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KYL-04",
+    "title": "No bulk-reject and no fraud signal: the vendor must cancel every fake order one at a time, with nothing to tell junk from real",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "kitchen",
+    "surface": "/dashboard/orders",
+    "steps": [
+      "View the vendor Orders page with 15 kyle-p2 fake orders present",
+      "Each row has its own Confirm / Cancel button; there is no select-all, no bulk action, no 'suspected spam' flag"
+    ],
+    "expected": "A way to triage a wave of suspicious orders: bulk-reject, a risk/new-email flag, or a hold-for-review state",
+    "actual": "Orders are confirmed/cancelled individually. A throwaway-email order with phone 'x' looks identical to a genuine one. 25 fake orders = 25 manual cancels.",
+    "realWorldImpact": "Even once the vendor realises they are being trolled, clearing the mess is slow manual work during service. The product gives them no help distinguishing or dispatching the junk.",
+    "evidence": ["05-dashboard-orders.png"],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KYL-05",
+    "title": "A collection shop accepts a delivery order to an address 300+ miles away for a flat £3.50 fee",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "checkout",
+    "surface": "POST /public/shops/{slug}/orders (fulfilmentType DELIVERY)",
+    "steps": [
+      "POST a DELIVERY order to Mama Ade's (Peckham) with addressPostcode 'EH2 2AN' (Edinburgh), 2x jollof to clear the £10 minimum",
+      "-> 201, deliveryFee £3.50, total £21.48, PENDING"
+    ],
+    "expected": "A serviceability / radius check rejecting an address the kitchen cannot deliver to",
+    "actual": "Any valid-format UK postcode is accepted with the flat delivery fee; no distance gate at order time (discovery computes distance but checkout ignores it).",
+    "realWorldImpact": "A vendor could confirm and plan to fulfil an order that is physically undeliverable, or dispatch a driver on a hopeless trip. Also a griefing vector: order 'delivery' to the far end of the country.",
+    "evidence": ["k3-absurd.json (far-delivery via followup curl)", "xff-probe.txt"],
+    "reconfirms": ["J-01"]
+  },
+  {
+    "id": "P2-KYL-06",
+    "title": "Contact details are barely validated: phone 'x', 'no', 'call me', '1' and fake names are all accepted",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "orders",
+    "surface": "POST /public/shops/{slug}/orders",
+    "steps": [
+      "Place orders with customerPhone values 'call me', 'no', 'x', '0', '1' and junk names",
+      "All accepted 201"
+    ],
+    "expected": "At least a plausible-phone / plausible-name check on an order the vendor may need to call back about",
+    "actual": "GuestOrderRequest only length-caps these fields; any non-empty string passes. (Reconfirms pass-1 F-07 for email/phone, extended to clearly fake values.)",
+    "realWorldImpact": "A no-show prank order gives the vendor no way to chase the customer: the phone is 'x'. Combined with KYL-01 this makes every fake order a dead end.",
+    "evidence": ["k2-bulk.json"],
+    "reconfirms": ["F-07"]
+  },
+  {
+    "id": "P2-KYL-07",
+    "title": "The '20% OFF' promo is advertised on the storefront but never applied to the order total",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "storefront",
+    "surface": "GET /public/shops/mama-ades-kitchen/config vs POST .../orders",
+    "steps": [
+      "Shop page shows 'E2E 20% OFF' banner and promotion chip",
+      "Place an order; the confirmation total is full price (no discount line, no promo field in the request)"
+    ],
+    "expected": "Either the advertised discount is applied, or there is no public discount claim",
+    "actual": "Promotions are display-only metadata (PublicStorefrontService maps them for config/announcements); OrderService never reads ShopPromotion when pricing. There is no promo-code field to stack or reuse — but the advertised discount is simply never honoured.",
+    "realWorldImpact": "Not an abuse vector (good: nothing to stack/replay), but a customer who orders expecting 20% off is overcharged versus the banner. A prankster can screenshot the mismatch as a 'false advertising' complaint.",
+    "evidence": ["01-shop.png", "k1-net.json"],
+    "reconfirms": ["F-09"]
+  },
+  {
+    "id": "P2-KYL-P1",
+    "title": "No stored XSS: HTML/script in name and notes, RTL-override chars and an emoji flood are stored raw but render as inert text everywhere, and emails are plain text",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "security",
+    "surface": "/dashboard/orders, /dashboard/customers, Mailhog",
+    "steps": [
+      "Order with name '<img src=x onerror=alert(1)>' and notes '<script>alert(2)</script> <RLO> + 60 chilli emoji'",
+      "View the vendor Orders and Customers pages with window.alert hooked and dialog listener attached",
+      "DOM probe: injected <img src=x> nodes = 0, injected <script> nodes = 0, no alert fired"
+    ],
+    "expected": "Payloads must never execute on a vendor screen or in email",
+    "actual": "React auto-escapes; the JSON-LD serialiser escapes '<'; the order confirmation email is plain text and does not echo the name. Payloads are stored verbatim (seen via vendor API) but are never rendered as markup.",
+    "realWorldImpact": "A troll cannot hijack a kitchen or admin session through an order note or name. This is a genuine strength and must be preserved.",
+    "evidence": ["k4-dashboard.json", "k5-render.json", "06-customers.png", "07-order-detail.png"],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KYL-P2",
+    "title": "Pricing is server-authoritative: price and total tampered into the request body are ignored",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "orders",
+    "surface": "POST /public/shops/{slug}/orders",
+    "steps": [
+      "POST an order with items[].pricePennies=1, totalAmountPennies=1, subtotalPennies=1",
+      "Server recomputes from the product catalogue: priced at £8.99, then rejected 400 as below the £10 minimum"
+    ],
+    "expected": "The client cannot set its own prices",
+    "actual": "GuestOrderItemRequest only carries productId + quantity; extra fields are ignored and the server prices and enforces the minimum from its own data.",
+    "realWorldImpact": "A fraudster cannot buy £50 of food for 1p. Strong.",
+    "evidence": ["k3-absurd.json"],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KYL-P3",
+    "title": "Order items are isolated: another shop's product, an unavailable product, and a non-existent product are all rejected 404",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "orders",
+    "surface": "POST /public/shops/{slug}/orders",
+    "steps": [
+      "Order at Mama Ade's containing Peckham Jollof Co.'s Grilled Tilapia -> 404 Product not found",
+      "Order containing an available=false product (Cold Meat Pie) -> 404",
+      "Order containing a random UUID -> 404"
+    ],
+    "expected": "You can only order this shop's currently-available products",
+    "actual": "All three rejected with 404.",
+    "realWorldImpact": "No cross-menu order poisoning; no ordering of retired/hidden items.",
+    "evidence": ["k3-absurd.json"],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KYL-P4",
+    "title": "Review abuse is blocked: you cannot review a shop you never ordered from, an order you don't own, a non-completed order, or the same order twice",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "storefront",
+    "surface": "POST /public/shops/{slug}/reviews",
+    "steps": [
+      "POST a review with a random orderId -> 404 Order not found",
+      "POST a review for an order that is only PENDING -> rejected",
+      "Code: review requires email == order.customerEmail, status COMPLETED, and no existing review for that order"
+    ],
+    "expected": "Only a customer who actually completed an order can review it, once",
+    "actual": "Enforced server-side (ReviewService): ownership, COMPLETED status, duplicate guard.",
+    "realWorldImpact": "No fake 1-star bombing with someone else's order number; no review spam.",
+    "evidence": ["review-tracking-probe.txt", "ReviewService.java"],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KYL-P5",
+    "title": "Order tracking cannot be enumerated and idempotency keys cannot be abused",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "tracking",
+    "surface": "GET /public/orders/{orderNumber}, GET /public/orders, POST .../orders",
+    "steps": [
+      "GET a real order number with a wrong email -> 404; with the right email -> 200",
+      "GET /public/orders?email=...&verify= (blank) -> 400, a recent order number is mandatory",
+      "Reuse an Idempotency-Key with a DIFFERENT body -> 422 Idempotency Key Reused"
+    ],
+    "expected": "Order details need both order number and matching email; no bare-email listing; key reuse is safe",
+    "actual": "All enforced. Same key + same body replays the original; same key + different body is a 422, not a silent duplicate or overwrite.",
+    "realWorldImpact": "A troll cannot scrape other customers' orders or smuggle a different order under a replayed key.",
+    "evidence": ["review-tracking-probe.txt", "idem-probe.txt"],
+    "reconfirms": ["F3", "J-04"]
+  }
+]
