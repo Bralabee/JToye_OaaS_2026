@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### core-java image gate green again: jackson-bom 2.21.7 for four HIGH CVEs (#PRNUM) — 2026-10-04
+### core-java image gate green again: jackson-bom 2.21.7 for four HIGH CVEs (#886) — 2026-10-04
 
 - **jackson-core / jackson-databind 2.21.6 → 2.21.7, via the same BOM property.** The Trivy
   image gate in `build-and-push` went red on `main` (run 37165437798, on `c55e545a`) with 4 HIGH
