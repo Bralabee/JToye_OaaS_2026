@@ -846,7 +846,7 @@ Plans:
 
 They produced 250 findings, deduplicated into 123 clusters. 87 of those fitted no existing phase, and they are this phase's scope. Of the rest, 17 sit with Phase 31 and need a gap-closure plan (31.1), because that phase is complete, and 19 go to Phases 29, 30, 32, 33 and 34. The full mapping is in `.planning/ISSUE-DISPOSITION.md` § "Persona user-testing 2026-10-03". The catalogue, with cross-cutting themes and membership reconciliation, is `.planning/ux-persona-test-20261003-pass2/consolidated/CATALOGUE.md`. `goods-to-preserve.md` beside it lists 40 behaviours the testers valued; every plan here must keep them (Incremental Betterment Doctrine).
 
-NOTE: `gsd_run query phase.add` derived Phase **38** although nothing claims 37 (the same off-by-one recorded for Phase 27). It was corrected to 37 by hand, because all 103 filed issues and the disposition document already name Phase 37.
+NOTE: `gsd_run query phase.add` derived Phase **38** because the unmerged branch `phase-37-spring-boot-4-1` already held a Phase 37 (Spring Boot 4.1 Migration, opened 2026-10-01). This phase was set to 37 by hand because the filed issues already named it. By owner ruling on 2026-10-04 the Spring Boot phase moved to **38** instead. The tool was right to skip 37, and the earlier note calling it an off-by-one was wrong.
 
 **Goal:** A real vendor can run a Friday service, a multi-site business and a third-party integration on J'Toye, and a real customer can order safely, without the product claiming anything its data does not back. Concretely:
 - new orders reach the kitchen and alert someone;
