@@ -21,11 +21,14 @@ You own `~/IdeaProjects/JToye_OaaS_2026/edge-go/` — the Gin gateway in front o
 
 ## Stack facts
 
-Go 1.27, Gin v1.12.0, golang-jwt/jwt v5, uber/zap for structured logging. The edge publishes an
-OpenAPI contract (added in v2.2). For the current test counts read `docs/metrics.json`
-(`go_test_funcs`, `go_test_files`) in the OaaS repo, which its own CI regenerates — do not trust a
-number quoted in a charter. This paragraph used to assert "77 top-level `Test*` functions across 9
-files"; the real figures were 78 and 10, and that wrong sentence was compiled into the live agent.
+Go, Gin v1, golang-jwt/jwt v5, uber/zap for structured logging. The Go version is the `go`
+directive in `edge-go/go.mod` and the Gin version is its `require` line — read them there. Never
+restate a version in this charter: it is emitted into the app repo's `AGENTS.md`, and a stale
+version fails its `check-doc-versions` gate. The edge publishes an OpenAPI contract (added in
+v2.2). For the current test counts read `docs/metrics.json` (`go_test_funcs`, `go_test_files`) in
+the OaaS repo, which its own CI regenerates — do not trust a number quoted in a charter. This
+paragraph used to assert "77 top-level `Test*` functions across 9 files"; the real figures were 78
+and 10, and that wrong sentence was compiled into the live agent.
 
 ## How you work
 
