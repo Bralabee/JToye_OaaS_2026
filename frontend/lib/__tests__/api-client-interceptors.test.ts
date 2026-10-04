@@ -2,7 +2,7 @@
  * Behavioural tests for the hardened api-client interceptors:
  *  - Injects Authorization + X-Tenant-Id on every request
  *  - Retries 5xx up to 2 times with backoff then rejects
- *  - Does NOT retry 4xx
+ *  - Does NOT retry 4xx — except one 429 retry after a Retry-After of 1-10 s
  *  - Debounces 401s so concurrent calls trigger ONE getSession() refresh
  */
 
@@ -197,5 +197,106 @@ describe("api-client interceptors", () => {
     // (b) the 401 refresh path. The 401 refresh path must be deduped — so the
     // total count is 3 (request interceptor) + 1 (single refresh) = 4.
     expect((getSession as jest.Mock).mock.calls.length).toBe(4)
+  })
+})
+
+/**
+ * 429 single retry (nightly E2E 2026-10-02/04). core-java's per-tenant
+ * RateLimitInterceptor answered GET /api/v1/shops with 429 `Retry-After: 3` and
+ * POST /api/v1/onboarding with 429 `Retry-After: 9`; the client gave up at once
+ * and the onboarding page told a vendor with shops that they had none.
+ *
+ * The header object is a real `AxiosHeaders`, as the XHR adapter delivers it — a
+ * plain-object fixture would not prove the lookup works on the shape the browser
+ * actually hands the interceptor.
+ */
+describe("api-client interceptors — 429 Retry-After", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { AxiosHeaders } = require("axios") as typeof import("axios")
+
+  function rateLimited(config: unknown, retryAfter?: string) {
+    const e = err(429, config)
+    e.response.headers = (
+      retryAfter === undefined ? new AxiosHeaders() : AxiosHeaders.from({ "Retry-After": retryAfter })
+    ) as unknown as Record<string, string>
+    return e
+  }
+
+  // Scripted adapter: each entry is a Retry-After value for a 429, or "ok".
+  function script(steps: Array<{ retryAfter?: string } | "ok">) {
+    let i = 0
+    adapter.mockImplementation((config: { data?: unknown }) => {
+      const step = steps[i++] ?? steps[steps.length - 1]
+      if (step === "ok") {
+        return Promise.resolve({ data: { recovered: true }, status: 200, statusText: "OK", headers: {}, config })
+      }
+      return Promise.reject(rateLimited(config, step.retryAfter))
+    })
+  }
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  it("retries a 429 once after Retry-After: 1 and resolves — not before the second has elapsed", async () => {
+    jest.useFakeTimers()
+    script([{ retryAfter: "1" }, "ok"])
+
+    const pending = apiClient.get("/api/v1/shops")
+    await jest.advanceTimersByTimeAsync(999)
+    // Still waiting: the server's Retry-After is honoured, not shortcut.
+    expect(adapter).toHaveBeenCalledTimes(1)
+
+    await jest.advanceTimersByTimeAsync(1)
+    await expect(pending).resolves.toMatchObject({ data: { recovered: true } })
+    expect(adapter).toHaveBeenCalledTimes(2)
+  })
+
+  it("replays a rate-limited POST with the same body (the 429 is raised in preHandle, before any controller)", async () => {
+    jest.useFakeTimers()
+    script([{ retryAfter: "2" }, "ok"])
+
+    const pending = apiClient.post("/api/v1/onboarding", { shopId: "shop-1", model: "MARKETPLACE" })
+    await jest.advanceTimersByTimeAsync(2000)
+    await expect(pending).resolves.toMatchObject({ data: { recovered: true } })
+    expect(adapter).toHaveBeenCalledTimes(2)
+    const bodies = adapter.mock.calls.map(([cfg]) => JSON.parse(String(cfg.data)))
+    expect(bodies[1]).toEqual(bodies[0])
+    expect(bodies[1]).toEqual({ shopId: "shop-1", model: "MARKETPLACE" })
+  })
+
+  it("does NOT retry a 429 that carries no Retry-After header", async () => {
+    script([{}, "ok"])
+    await expect(apiClient.get("/api/v1/shops")).rejects.toMatchObject({ response: { status: 429 } })
+    expect(adapter).toHaveBeenCalledTimes(1)
+  })
+
+  it("does NOT retry a 429 whose Retry-After exceeds 10 seconds", async () => {
+    script([{ retryAfter: "11" }, "ok"])
+    await expect(apiClient.get("/api/v1/shops")).rejects.toMatchObject({ response: { status: 429 } })
+    expect(adapter).toHaveBeenCalledTimes(1)
+  })
+
+  it("does NOT retry a 429 whose Retry-After is 0, blank or an HTTP-date", async () => {
+    for (const retryAfter of ["0", "", "Wed, 21 Oct 2026 07:28:00 GMT"]) {
+      adapter.mockReset()
+      script([{ retryAfter }, "ok"])
+      await expect(apiClient.get("/api/v1/shops")).rejects.toMatchObject({ response: { status: 429 } })
+      expect(adapter).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it("retries at most once: a second 429 rejects instead of looping", async () => {
+    jest.useFakeTimers()
+    script([{ retryAfter: "1" }, { retryAfter: "1" }, { retryAfter: "1" }, "ok"])
+
+    const pending = apiClient.get("/api/v1/shops")
+    const settled = pending.then(
+      () => "resolved",
+      (e: { response?: { status?: number } }) => e.response?.status
+    )
+    await jest.advanceTimersByTimeAsync(5000)
+    await expect(settled).resolves.toBe(429)
+    expect(adapter).toHaveBeenCalledTimes(2)
   })
 })

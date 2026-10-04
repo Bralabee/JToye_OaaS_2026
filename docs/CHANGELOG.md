@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A rate-limited onboarding page no longer tells a vendor they have no shops (#PRNUM) — 2026-10-04
+
+- **Why.** The nightly E2E failed on 2026-10-02 (run 36954670754) and 2026-10-04 (run
+  37171812464). Its traces show core-java's per-tenant rate limiter (bucket 120, refill
+  100/min) answering `GET /api/v1/shops` with 429 `Retry-After: 3`, and `POST
+  /api/v1/onboarding` with 429 `Retry-After: 9`, because Playwright runs every authenticated
+  spec serially as one tenant. The onboarding page's shops fetch swallowed every error, and
+  the page rendered "Create a shop first" whenever the list was empty. So a 429, a network
+  error or a 5xx told a vendor who HAS shops that they have none, with only a "Go to shops"
+  link. The same page showed "Create a shop first" while the list was still loading, and a
+  failed first `GET /onboarding/me` (anything but 404) rendered the create form, i.e. "you
+  have no application", for a vendor who has one. The api-client retried 5xx and network
+  errors but never a 429, even when the server said exactly how long to wait.
+- **Fix.** `app/dashboard/onboarding/page.tsx` tracks the shops fetch as loading / ready /
+  error. "Create a shop first" renders only after a fetch that succeeded with zero shops. A
+  failure renders the dashboard's shared `LoadErrorPanel` (`role="alert"`, "Couldn't load
+  your shops", "Try again" re-runs the fetch), and loading shows "Loading your shops…". A
+  failed first `GET /onboarding/me` renders the same panel ("Couldn't load your onboarding")
+  instead of the create form; the destructive toast is kept, and a failed background re-poll
+  still leaves the last good status on screen. `lib/api-client.ts` retries a 429 ONCE after
+  its `Retry-After` when that is 1-10 seconds (read with the existing
+  `order-error.retryAfterSeconds` parser), guarded by a per-request `_rateLimitRetried` flag
+  so a second 429 rejects. No header, 0, an HTTP-date or a longer wait rejects at once. POST
+  is included because `RateLimitInterceptor` raises the 429 in `preHandle`, the first
+  registered interceptor, before `TenantStatusInterceptor` and any controller, so a rejected
+  request had no side effects. No backend change.
+- **Proof.** Four new page tests and six new interceptor tests. With the fix committed, the
+  two source files were replaced by their `origin/main` versions. Unfixed page: 3 of the 4
+  new page tests RED (no `role="alert"`; no "Loading your shops…"); the fourth, the CONTROL
+  ("a fetch that SUCCEEDS with zero shops still says 'Create a shop first'"), stays green as
+  it should. Unfixed client: 3 of the 6 new interceptor tests RED (both retry tests and the
+  once-only test); the three no-retry tests stay green as they should. Each of those was then
+  shown able to fail by a mutation of the fix: dropping the `_rateLimitRetried` guard reds
+  the once-only test, widening the 10 s bound reds the oversized test, defaulting a missing
+  header to 1 s reds the no-header and 0/blank/HTTP-date tests, and rendering the error panel
+  for every empty list reds the CONTROL. Restored with `git checkout HEAD --`, confirmed by
+  blob hash against the committed tree, and GREEN again (63/63 across the two files). Full Jest suite 1888/1888 in 172 suites, `npm run
+  lint` 0 errors (warnings unchanged on the touched files), `npm run build` and `tsc
+  --noEmit` clean; `docs/metrics.json` and the prose counts are regenerated for the ten new tests.
+
 ### A review can no longer name a vendor's catalogue images for deletion (#772) — 2026-09-30
 
 - **Why.** Issue #771. A review's `photoUrls` came from the client and were never checked, and

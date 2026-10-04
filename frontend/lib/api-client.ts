@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from "axios"
 import { getSession } from "next-auth/react"
 import type { Session } from "next-auth"
+import { retryAfterSeconds } from "@/lib/order-error"
 
 /**
  * Hardened axios instance for the vendor dashboard.
@@ -10,7 +11,10 @@ import type { Session } from "next-auth"
  *   2. X-Tenant-Id header injected from `session.user.tenantId`, for defence
  *      in depth against broken server-side tenant derivation.
  *   3. Retry on 5xx responses and network errors (max 2 retries, 250ms then
- *      500ms backoff). 4xx is NEVER retried.
+ *      500ms backoff). 4xx is NEVER retried — except 429, below.
+ *   3a. Retry a 429 ONCE, after the server's `Retry-After` (delta-seconds), when
+ *      that wait is 0 < s <= 10. No header, an HTTP-date, 0, or a longer wait
+ *      rejects immediately so the caller's own error state renders.
  *   4. 401 handler that triggers a SINGLE concurrent session refresh via
  *      getSession(); parallel 401s wait on the same promise instead of
  *      stampeding to /api/auth/session. If the refreshed session is still
@@ -48,10 +52,14 @@ apiClient.interceptors.request.use(
 interface RetryConfig extends InternalAxiosRequestConfig {
   _retryCount?: number
   _authRetried?: boolean
+  _rateLimitRetried?: boolean
 }
 
 const MAX_RETRIES = 2
 const RETRY_DELAYS_MS = [250, 500]
+// Longest Retry-After (seconds) worth holding a request open for. Past this the
+// caller is better served by failing now and rendering its own retry control.
+const MAX_RATE_LIMIT_WAIT_S = 10
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -83,6 +91,23 @@ apiClient.interceptors.response.use(
         const delay = RETRY_DELAYS_MS[config._retryCount] ?? 500
         config._retryCount += 1
         await sleep(delay)
+        return apiClient.request(config)
+      }
+    }
+
+    // --- 429: one retry after Retry-After ---------------------------------
+    // core-java's RateLimitInterceptor answers 429 from `preHandle`, before any
+    // controller runs, so a rejected request — POST included — had no side
+    // effects and replaying it is safe. The bucket is per TENANT, so a burst
+    // from one vendor's tabs (or one serial E2E run) drains it for everyone on
+    // that tenant; a short wait is usually all it takes. ONE retry only
+    // (`_rateLimitRetried`): a second 429 rejects, so this can never become a
+    // loop that amplifies the flood the limiter is defending against.
+    if (status === 429 && config && !config._rateLimitRetried) {
+      const waitS = retryAfterSeconds(error)
+      if (waitS !== null && waitS <= MAX_RATE_LIMIT_WAIT_S) {
+        config._rateLimitRetried = true
+        await sleep(waitS * 1000)
         return apiClient.request(config)
       }
     }
