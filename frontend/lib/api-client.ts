@@ -1,7 +1,6 @@
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from "axios"
 import { getSession } from "next-auth/react"
 import type { Session } from "next-auth"
-import { retryAfterSeconds } from "@/lib/order-error"
 
 /**
  * Hardened axios instance for the vendor dashboard.
@@ -13,8 +12,9 @@ import { retryAfterSeconds } from "@/lib/order-error"
  *   3. Retry on 5xx responses and network errors (max 2 retries, 250ms then
  *      500ms backoff). 4xx is NEVER retried — except 429, below.
  *   3a. Retry a 429 ONCE, after the server's `Retry-After` (delta-seconds), when
- *      that wait is 0 < s <= 10. No header, an HTTP-date, 0, or a longer wait
- *      rejects immediately so the caller's own error state renders.
+ *      that wait is 0 <= s <= 10; 0 waits 1 s. No header, a blank or HTTP-date
+ *      value, or a longer wait rejects immediately so the caller's own error
+ *      state renders.
  *   4. 401 handler that triggers a SINGLE concurrent session refresh via
  *      getSession(); parallel 401s wait on the same promise instead of
  *      stampeding to /api/auth/session. If the refreshed session is still
@@ -61,6 +61,26 @@ const RETRY_DELAYS_MS = [250, 500]
 // caller is better served by failing now and rendering its own retry control.
 const MAX_RATE_LIMIT_WAIT_S = 10
 
+// Seconds to wait before replaying a 429, or null when it must not be replayed.
+// Not `retryAfterSeconds` from order-error: that one serves user-facing copy and
+// rightly drops 0, but core-java's RateLimitInterceptor FLOORS the refill wait
+// (`getNanosToWaitForRefill() / 1_000_000_000`), so every sub-second wait arrives
+// as `Retry-After: 0` — the commonest 429 of all. An explicit 0 therefore waits
+// 1 s; a missing, blank, negative or HTTP-date value still means "do not retry".
+function rateLimitWaitSeconds(error: AxiosError): number | null {
+  const headers = error.response?.headers
+  if (!headers) return null
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() !== "retry-after") continue
+    const raw = String(value).trim()
+    if (raw === "") return null
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n < 0) return null
+    return Math.max(1, Math.ceil(n))
+  }
+  return null
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -104,7 +124,7 @@ apiClient.interceptors.response.use(
     // (`_rateLimitRetried`): a second 429 rejects, so this can never become a
     // loop that amplifies the flood the limiter is defending against.
     if (status === 429 && config && !config._rateLimitRetried) {
-      const waitS = retryAfterSeconds(error)
+      const waitS = rateLimitWaitSeconds(error)
       if (waitS !== null && waitS <= MAX_RATE_LIMIT_WAIT_S) {
         config._rateLimitRetried = true
         await sleep(waitS * 1000)

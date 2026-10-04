@@ -2,7 +2,7 @@
  * Behavioural tests for the hardened api-client interceptors:
  *  - Injects Authorization + X-Tenant-Id on every request
  *  - Retries 5xx up to 2 times with backoff then rejects
- *  - Does NOT retry 4xx — except one 429 retry after a Retry-After of 1-10 s
+ *  - Does NOT retry 4xx — except one 429 retry after a Retry-After of 0-10 s (0 waits 1 s)
  *  - Debounces 401s so concurrent calls trigger ONE getSession() refresh
  */
 
@@ -277,8 +277,20 @@ describe("api-client interceptors — 429 Retry-After", () => {
     expect(adapter).toHaveBeenCalledTimes(1)
   })
 
-  it("does NOT retry a 429 whose Retry-After is 0, blank or an HTTP-date", async () => {
-    for (const retryAfter of ["0", "", "Wed, 21 Oct 2026 07:28:00 GMT"]) {
+  it("retries a 429 whose Retry-After is 0 after 1 second (core-java floors sub-second waits to 0)", async () => {
+    jest.useFakeTimers()
+    script([{ retryAfter: "0" }, "ok"])
+
+    const pending = apiClient.get("/api/v1/shops")
+    await jest.advanceTimersByTimeAsync(999)
+    expect(adapter).toHaveBeenCalledTimes(1)
+    await jest.advanceTimersByTimeAsync(1)
+    await expect(pending).resolves.toMatchObject({ data: { recovered: true } })
+    expect(adapter).toHaveBeenCalledTimes(2)
+  })
+
+  it("does NOT retry a 429 whose Retry-After is blank, negative or an HTTP-date", async () => {
+    for (const retryAfter of ["", "-1", "Wed, 21 Oct 2026 07:28:00 GMT"]) {
       adapter.mockReset()
       script([{ retryAfter }, "ok"])
       await expect(apiClient.get("/api/v1/shops")).rejects.toMatchObject({ response: { status: 429 } })
