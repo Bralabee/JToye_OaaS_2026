@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### pg-backup image takes the fixed pcre2, clearing CVE-2026-103111 from the image gate (#890) — 2026-10-04
+
+- **`libpcre2-8-0` 10.42-1+deb12u1 → 10.42-1+deb12u2, named on the existing `apt-get install`
+  line in `infra/backups/Dockerfile`.** `Build and Push Images (pg-backup)` went red on `main`
+  (run 37193466380) on CVE-2026-103111 (HIGH, a pcre2 out-of-bounds write) in the floating
+  `postgres:15-bookworm` base. No code change caused it: the job passed on `c55e545a` at 01:24Z
+  and failed from 09:19Z on commits that never touched `infra/backups/`, so the vulnerability DB
+  moved. Naming an installed package upgrades it to the current candidate, so only that one
+  dependency moves. A comment records the two traps: `--only-upgrade` would also apply to
+  `ca-certificates`, which the base lacks, so it would never be installed and blobctl's TLS
+  would fail; and a `=version` pin breaks once bookworm's mirrors move past it.
+- **Proof, both directions, one base digest** (`postgres@sha256:539ceaaa…`, both built with
+  `--pull`). Trivy 0.70.0 with the gate's flags (`--severity CRITICAL,HIGH --ignore-unfixed
+  --exit-code 1`): the `main` Dockerfile rc=1, its one finding being CVE-2026-103111 on
+  `libpcre2-8-0 10.42-1+deb12u1`; the branch rc=0, with 145 debian packages and the blobctl
+  binary scanned. In the branch image `dpkg-query` reads `libpcre2-8-0 10.42-1+deb12u2` and
+  `ca-certificates 20250419~deb12u1` installed, and `/etc/ssl/certs` holds 303 entries (the
+  same count as `main`). PR CI never runs the image gate, so this is the PR's own proof.
+
+### jackson-bom 2.21.7 clears four HIGH CVEs from the core-java image gate (#886) — 2026-10-04
+
+- **jackson-core / jackson-databind 2.21.6 → 2.21.7, via the same BOM property.** The Trivy
+  image gate in `build-and-push` went red on `main` (run 37165437798, on `c55e545a`) with 4 HIGH
+  CVEs in 2.21.6: CVE-2026-89407 and CVE-2026-89425 (jackson-core), CVE-2026-91776 and
+  CVE-2026-91777 (jackson-databind), all fixed in 2.18.11 / 2.21.7 / 2.22.3. No code change
+  caused it: the vulnerability DB moved, as it did for #760. The fix moves
+  `extra["jackson-bom.version"]` to 2.21.7, the smallest clearing bump on the 2.21 line, and
+  updates the comment's reasoning and its delete condition (Boot must manage 2.21.7 or above).
+- **Proof, both directions.** `dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind
+  --configuration runtimeClasspath` resolves 2.21.6 on `main` and 2.21.7 on the branch; the whole
+  family (core, databind, toml, yaml, jdk8, jsr310, parameter-names) is 2.21.7 in the boot jar,
+  and jackson-annotations stays `2.21` by the BOM's own versioning. Trivy 0.70.0 with the gate's
+  flags (`--severity CRITICAL,HIGH --ignore-unfixed --exit-code 1`), one DB, over each boot jar:
+  `main` rc=1 naming the four CVEs, branch rc=0 with jackson-core/databind 2.21.7 among 200
+  packages scanned. PR CI never runs the image gate, so this is the PR's own proof.
+- **Docs.** `.planning/codebase/STACK.md`: the Jackson bullet and two citations shifted by the
+  longer comment (`:461` → `:466`, `:243` → `:248`), re-pointed by content and checked with
+  `scripts/check-doc-citations.sh` (2 violations before, 0 after). Three more citations the gate
+  does not scan, in `.planning/codebase/TESTING.md` (`:268-387`, `:400-407`) and `CONCERNS.md`
+  (`:232-240`), moved by the same +5 and were re-pointed by content. The image gate itself runs
+  only on `main` after merge; the proof above is a local Trivy run over a local jar.
+
+### A rate-limited onboarding page no longer tells a vendor they have no shops (#888) — 2026-10-04
+
+- **Why.** The nightly E2E failed on 2026-10-02 (run 36954670754) and 2026-10-04 (run
+  37171812464). Its traces show core-java's per-tenant rate limiter (bucket 120, refill
+  100/min) answering `GET /api/v1/shops` with 429 `Retry-After: 3`, and `POST
+  /api/v1/onboarding` with 429 `Retry-After: 9`, because Playwright runs every authenticated
+  spec serially as one tenant. The onboarding page's shops fetch swallowed every error, and
+  the page rendered "Create a shop first" whenever the list was empty. So a 429, a network
+  error or a 5xx told a vendor who HAS shops that they have none, with only a "Go to shops"
+  link. The same page showed "Create a shop first" while the list was still loading, and a
+  failed first `GET /onboarding/me` (anything but 404) rendered the create form, i.e. "you
+  have no application", for a vendor who has one. The api-client retried 5xx and network
+  errors but never a 429, even when the server said exactly how long to wait.
+- **Fix.** `app/dashboard/onboarding/page.tsx` tracks the shops fetch as loading / ready /
+  error. "Create a shop first" renders only after a fetch that succeeded with zero shops. A
+  failure renders the dashboard's shared `LoadErrorPanel` (`role="alert"`, "Couldn't load
+  your shops", "Try again" re-runs the fetch), and loading shows "Loading your shops…". A
+  failed first `GET /onboarding/me` renders the same panel ("Couldn't load your onboarding")
+  instead of the create form; the destructive toast is kept, and a failed background re-poll
+  still leaves the last good status on screen; one "Try again" there also re-runs the shops
+  fetch when it failed, so a burst that 429'd both recovers in one click. `lib/api-client.ts`
+  replays a 429 ONCE when it is `RateLimitInterceptor`'s own (problem type
+  `https://jtoye.uk/errors/rate-limited`) and its `Retry-After` is N = 0-10, after N + 1 s,
+  guarded by a per-request `_rateLimitRetried` flag so a second 429 rejects. N + 1 because
+  the interceptor floors the wait and refills intervally, so the true wait lies in [N, N + 1):
+  a replay at exactly N s lands early and meets a second 429, and every sub-second wait is
+  sent as `Retry-After: 0`. Any other 429, no header, a blank or HTTP-date value, or a longer
+  wait rejects at once. A POST is replayed because that 429 is raised in `preHandle`, the
+  first registered interceptor, before any controller, so the rejected request had no side
+  effects; the DSAR intake's 429 comes from a service via `GlobalExceptionHandler`, so it is
+  not that type and is never replayed. No backend change.
+- **Proof.** Five new page tests and eight new interceptor tests, each shown failing before it
+  was trusted: the fix committed, the source file replaced by an older version, run, then
+  restored with `git checkout HEAD --` and confirmed by blob hash.
+  - Source at `origin/main`: 3 of the 4 first page tests and 3 of the 6 first interceptor
+    tests RED. The CONTROL ("a fetch that SUCCEEDS with zero shops still says 'Create a shop
+    first'") and the no-retry tests stay green, as they should; each was then shown able to
+    fail by a mutation (rendering the panel for every empty list; dropping the once-only
+    guard; widening the 10 s bound; defaulting a missing header to 1 s).
+  - `api-client.ts` before the `Retry-After: 0` change: the 0 test RED (1 of 12).
+  - Both source files at `52bda6c0`, before the N + 1 / problem-type / one-click change:
+    api-client 3 RED and page 1 RED (of 82 across the two files). Restored: 82/82 GREEN.
+  - Final tree: Jest 1891/1891 in 172 suites, `npm run lint` 0 errors (warnings unchanged on
+    the touched files), `npm run build` and `tsc --noEmit` clean; `docs/metrics.json` and
+    the prose counts are regenerated for the thirteen new tests.
+
 ### A review can no longer name a vendor's catalogue images for deletion (#772) — 2026-09-30
 
 - **Why.** Issue #771. A review's `photoUrls` came from the client and were never checked, and

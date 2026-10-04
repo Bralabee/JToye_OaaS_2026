@@ -125,14 +125,18 @@ extra["rabbit-amqp-client.version"] = "5.34.0"
 //
 // THE PROPERTY NAME IS LOAD-BEARING. It must match the key Boot's BOM declares,
 // `jackson-bom.version`. A near-miss sets a property nothing reads and silently changes
-// nothing. Measured on this tree with
+// nothing. Measured 2026-09-29, when the pin moved 2.21.4 -> 2.21.6, with
 // `dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind`:
 //   near-miss key `jackson.bom.version` = "2.21.6"  ->  2.21.4   (VULNERABLE)
 //   correct key   `jackson-bom.version` = "2.21.6"  ->  2.21.6
 // Do NOT add a direct `implementation("com.fasterxml.jackson...")` to prove it works:
 // the amqp-client block above records how a second mechanism masked a broken property.
 //
-// WHY 2.21.6 and not 2.21.7 or 2.22.x: it is the smallest clearing bump on the 2.21 line
+// MOVED TO 2.21.7 (2026-10-04): red again on `main` (run 37165437798, c55e545a), 4 HIGH
+// CVEs in 2.21.6 -- jackson-core CVE-2026-89407/-89425, jackson-databind CVE-2026-91776/
+// -91777 -- all fixed in 2.18.11 / 2.21.7 / 2.22.3. Again the DB moved, not this tree.
+//
+// WHY 2.21.7 and not 2.22.x: it is the smallest clearing bump on the 2.21 line
 // Boot 3.5.16 already manages, for the same reason as the amqp-client bump above --
 // every step is a chance for a runtime default to move.
 //
@@ -142,10 +146,11 @@ extra["rabbit-amqp-client.version"] = "5.34.0"
 // `dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind --configuration runtimeClasspath`.
 // That gate is the enforcement; this line is only the fix.
 //
-// WHEN TO DELETE IT: once Boot's own BOM manages Jackson 2 at or above 2.21.6; a pin left
+// WHEN TO DELETE IT: once Boot's own BOM manages Jackson 2 at or above 2.21.7; a pin left
 // behind a newer Boot holds Jackson BELOW Boot's version. Under Boot 4 (#706) this key names
-// the Jackson 3 BOM and Jackson 2 moves to `jackson-2-bom.version`: re-key, do not delete.
-extra["jackson-bom.version"] = "2.21.6"
+// the Jackson 3 BOM and Jackson 2 moves to `jackson-2-bom.version`: re-key, do not delete;
+// and CVE-2026-89407 also lists Jackson 3 (tools.jackson.core), so check the 3.x line too.
+extra["jackson-bom.version"] = "2.21.7"
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
