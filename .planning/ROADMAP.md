@@ -889,7 +889,7 @@ Plans:
 **Goal:** Move core-java from Spring Boot 3.5.16 to 4.1.x and prove the result green by test, gate and live runtime. Boot 3.5's OSS support ended 2026-06-30 (#706); the move also unblocks springdoc 3.1.1 (#739). Owner decisions D-01..D-04 (2026-10-01) and the spike evidence are in `38-CONTEXT.md` / `38-SPIKE.md`: Jackson 3 throughout, explicit per-module starters, spring-statemachine kept, and 401s kept as plain `Bearer`. Three defects that today's tests do not catch must be closed on the way: KeycloakAdminClient sends a garbage body under Jackson 3; 18 config keys are silently ignored, so it needs a new unknown-key gate; and the netty/Tomcat CVE pins need to move to their Boot-4 lines.
 **Requirements**: BOOT4-01, BOOT4-02, BOOT4-03, BOOT4-04, BOOT4-05, BOOT4-06, BOOT4-07, BOOT4-08, BOOT4-09, BOOT4-10, BOOT4-11, BOOT4-12, BOOT4-13, BOOT4-14 (derived at plan time 2026-10-04 from 38-RESEARCH.md; REQUIREMENTS.md §BOOT4. D-05, added 2026-10-04, is covered by BOOT4-09; no BOOT4-15)
 **Depends on:** Phase 36
-**Plans:** 18 plans (10 waves)
+**Plans:** 19 plans (11 waves). Revised 2026-10-04 after the plan check: the 38-12 test sweep was split out as 38-19, which runs before the bridge removal, and 38-03's doc and doc-gate edits moved to 38-16.
 
 Plans:
 
@@ -900,7 +900,7 @@ Plans:
 
 **Wave 2**
 
-- [ ] 38-03-PLAN.md — TRACER: Boot 4.1.1 on explicit starters (D-02), spring-security-access (D-03), Boot-4 CVE pins, 67 migrations applied + RLS green; version gates follow the plugin
+- [ ] 38-03-PLAN.md — TRACER: Boot 4.1.1 on explicit starters (D-02), spring-security-access (D-03), Boot-4 CVE pins, 67 migrations applied + RLS green; both version gates' interim red recorded (cleared by 38-16)
 
 **Wave 3**
 
@@ -918,26 +918,30 @@ Plans:
 
 **Wave 5**
 
-- [ ] 38-12-PLAN.md — Interim Jackson-2 bridge removed, test code on Jackson 3, JacksonLineContractTest end-state gate
+- [ ] 38-19-PLAN.md — Test-side Jackson-3 sweep in three committed batches (23 bean injectors, 10 local mappers), each proven green with the bridge on and off; closed DELIBERATE-JACKSON2 list
 
 **Wave 6**
+
+- [ ] 38-12-PLAN.md — TRACER (end state): interim Jackson-2 bridge removed, JacksonLineContractTest end-state gate, both suites green on the end-state classpath
+
+**Wave 7**
 
 - [ ] 38-13-PLAN.md — Classic-vs-explicit auto-configuration census with classified diff and permanent must-have assertions
 - [ ] 38-14-PLAN.md — OpenAPI snapshot regenerated after every newly required field is proven enforced on Boot 3.5; gate and consumers green
 
-**Wave 7**
+**Wave 8**
 
 - [ ] 38-15-PLAN.md — CVE floors proven by dependencyInsight and near-miss arms; local Trivy 0.70.0 image scan with the CI gate's flags
 
-**Wave 8**
-
-- [ ] 38-16-PLAN.md — Docs, citations, ADR-0006, statemachine risk record, metrics regenerated once
-
 **Wave 9**
+
+- [ ] 38-16-PLAN.md — Version gates follow the plugin (horizons row, doc-versions row, gated claims; moved from 38-03), docs, citations, ADR-0006, statemachine risk record, metrics regenerated once
+
+**Wave 10**
 
 - [ ] 38-17-PLAN.md — Runtime parity on the rebuilt stack, jar read-back, live Keycloak offboard, live 401/404, tracing/metrics/cache (checkpoint)
 
-**Wave 10**
+**Wave 11**
 
 - [ ] 38-18-PLAN.md — Push, CI/CD on Temurin incl. the image gate, nightly E2E on the branch, ship checklist (#706, #739) (checkpoint)
 
