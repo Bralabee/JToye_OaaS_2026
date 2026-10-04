@@ -27,13 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed first `GET /onboarding/me` renders the same panel ("Couldn't load your onboarding")
   instead of the create form; the destructive toast is kept, and a failed background re-poll
   still leaves the last good status on screen. `lib/api-client.ts` retries a 429 ONCE after
-  its `Retry-After` when that is 1-10 seconds (read with the existing
-  `order-error.retryAfterSeconds` parser), guarded by a per-request `_rateLimitRetried` flag
-  so a second 429 rejects. No header, 0, an HTTP-date or a longer wait rejects at once. POST
+  its `Retry-After` when that is 0-10 seconds, guarded by a per-request `_rateLimitRetried`
+  flag so a second 429 rejects. An explicit 0 waits 1 s: `RateLimitInterceptor` floors the
+  refill wait to whole seconds, so every sub-second wait arrives as `Retry-After: 0`, and
+  skipping it would skip the commonest 429. No header, a blank or HTTP-date value, or a
+  longer wait rejects at once. POST
   is included because `RateLimitInterceptor` raises the 429 in `preHandle`, the first
   registered interceptor, before `TenantStatusInterceptor` and any controller, so a rejected
   request had no side effects. No backend change.
-- **Proof.** Four new page tests and six new interceptor tests. With the fix committed, the
+- **Proof.** Four new page tests and seven new interceptor tests. With the fix committed, the
   two source files were replaced by their `origin/main` versions. Unfixed page: 3 of the 4
   new page tests RED (no `role="alert"`; no "Loading your shops…"); the fourth, the CONTROL
   ("a fetch that SUCCEEDS with zero shops still says 'Create a shop first'"), stays green as
@@ -41,11 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once-only test); the three no-retry tests stay green as they should. Each of those was then
   shown able to fail by a mutation of the fix: dropping the `_rateLimitRetried` guard reds
   the once-only test, widening the 10 s bound reds the oversized test, defaulting a missing
-  header to 1 s reds the no-header and 0/blank/HTTP-date tests, and rendering the error panel
+  header to 1 s reds the no-header and blank/HTTP-date tests, the commit before the
+  `Retry-After: 0` change reds the new 0 test (1 of 12 in that file), and rendering the error panel
   for every empty list reds the CONTROL. Restored with `git checkout HEAD --`, confirmed by
-  blob hash against the committed tree, and GREEN again (63/63 across the two files). Full Jest suite 1888/1888 in 172 suites, `npm run
+  blob hash against the committed tree, and GREEN again (63/63 across the two files). Full Jest suite 1889/1889 in 172 suites, `npm run
   lint` 0 errors (warnings unchanged on the touched files), `npm run build` and `tsc
-  --noEmit` clean; `docs/metrics.json` and the prose counts are regenerated for the ten new tests.
+  --noEmit` clean; `docs/metrics.json` and the prose counts are regenerated for the eleven new tests.
 
 ### A review can no longer name a vendor's catalogue images for deletion (#772) — 2026-09-30
 
