@@ -79,7 +79,7 @@ and an injected bogus key was flagged, so the check can fail. The keys:
 <decisions>
 ## Implementation Decisions (owner, 2026-10-01)
 
-- **D-01 Jackson 3 now.** Move the main code to Jackson 3 (`tools.jackson`) and do not set the
+- **D-01 — Jackson 3 now.** Move the main code to Jackson 3 (`tools.jackson`) and do not set the
   deprecated `spring.http.converters.preferred-json-mapper=jackson2`. That covers the 14 main
   classes that inject the Jackson-2 `ObjectMapper`, `KeycloakAdminClient`, and the Rabbit
   (`Jackson2JsonMessageConverter`) and Redis (`GenericJackson2JsonRedisSerializer`) serializers,
@@ -90,7 +90,7 @@ and an injected bogus key was flagged, so the check can fail. The keys:
   - **Hazard:** a cached value or a queued message written in the Jackson-2 shape must still be
     readable after the switch. Prove it for Redis cache entries and in-flight AMQP messages, or
     flush them as a recorded deploy step.
-- **D-02 Explicit per-module starters,** not `spring-boot-starter-classic` /
+- **D-02 — Explicit per-module starters,** not `spring-boot-starter-classic` /
   `spring-boot-starter-test-classic`. Classic pulls in Boot's gRPC autoconfig modules without gRPC
   itself, and on any filter chain with CSRF enabled that throws `NoClassDefFoundError`. Declare
   each module the app actually uses:
@@ -98,17 +98,17 @@ and an injected bogus key was flagged, so the check can fail. The keys:
     data-redis, cache, amqp, websocket, mail, webflux, and the test slices.
   - **Flyway liveness must be proven:** migrations applied > 0, and a break arm in which removing
     the starter turns the RLS tests red.
-- **D-03 Keep spring-statemachine 4.0.2,** and add `org.springframework.security:spring-security-access`
+- **D-03 — Keep spring-statemachine 4.0.2,** and add `org.springframework.security:spring-security-access`
   for its 24 latent `org.springframework.security.access.*` references.
   - Record the risk: the library has no Framework-7 release, so we run it on a framework it was not
     built for.
   - Replacing it with an `EnumMap` transition table (~60–80 LOC per machine, with the existing
     tests as the spec) is a separate, non-blocking decision.
-- **D-04 Keep a plain `WWW-Authenticate: Bearer` on 401.** Customise the Security 7 entry point
+- **D-04 — Keep a plain `WWW-Authenticate: Bearer` on 401.** Customise the Security 7 entry point
   (`ProblemDetailAuthenticationEntryPoint`) so the API never advertises a `resource_metadata` URL
   that it does not serve. RFC 9728 metadata is a possible agent-readiness item later, and
   explicitly out of scope here.
-- **D-05 Suppress `/.well-known/oauth-protected-resource`** (owner, 2026-10-04, after research).
+- **D-05 — Suppress `/.well-known/oauth-protected-resource`** (owner, 2026-10-04, after research).
   `38-RESEARCH.md` Open Question 1 found that D-04's premise was partly wrong:
   - Spring Security 7.1 always registers `OAuth2ProtectedResourceMetadataFilter` (it cannot be
     disabled) and serves that path.

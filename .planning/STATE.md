@@ -2,13 +2,13 @@
 gsd_state_version: "1.0"
 milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
-current_phase: 29
-current_phase_name: Deployable Staging, With Its Own Monitoring
-status: paused
+current_phase: 38
+current_phase_name: Spring Boot 4.1 Migration
+status: ready_to_execute
 stopped_at: "Phase 36 COMPLETE 18/18 and MERGED as PR #763 (squash commit c5d16ff6, 2026-09-29 22:14 UTC; post-merge CI/CD run 36638381316 green incl. all four image builds; the first scheduled nightly on main, 36658969040, green — 319 of 325 Playwright tests ran and passed, 6 skipped, 0 failed, restore drill PASS); required Operational Contracts red on every branch since 2026-09-30 (14 expired terminal-state deferrals) until PR #768 merges; Phase 29 stays PAUSED on owner actions (staging DNS + 3 operator secrets); next open defect is #764 (GDPR erasure: missing reviews UPDATE policy AND a cross-tenant review lookup — both, never the policy alone)"
-last_updated: "2026-09-30T15:25:22.386Z"
-last_activity: 2026-09-30
-last_activity_desc: "Phase 36 merged (PR #763) and its post-merge CI + first scheduled nightly on main read green by content; STATE advanced past shipping"
+last_updated: "2026-10-04T20:20:00.000Z"
+last_activity: 2026-10-04
+last_activity_desc: "Phase 38 planned on branch phase-37-spring-boot-4-1: 19 plans in 11 waves (BOOT4-01..14); plan-checker PASSED after one targeted revision; decision coverage 5/5 (D-01..D-05)"
 state_head: f93412d13ca76d3182a2c0eea75e0cd302e7cd77
 progress:
   total_phases: 18
@@ -28,6 +28,13 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 **Current focus:** between phases — Phase 36 (Azure Blob Storage Throughout) is complete and merged as PR #763 (`c5d16ff6`). First PR #768 (14 terminal-state deferrals expired 2026-09-30 and red the required Operational Contracts check on every branch); then issue #764 (GDPR erasure fails for any customer with a review; needs V67 AND a tenant-scoped review lookup). Phase 29 plans 29-11 onward are no longer blocked by Phase 36, but stay paused on the owner's staging DNS and the 3 remaining operator secrets (`36-PHASE29-HANDOFF.md`).
 
 ## Current Position
+
+Phase: 38 (Spring Boot 4.1 Migration) — **PLANNED 2026-10-04, READY TO EXECUTE** on branch `phase-37-spring-boot-4-1` (worktree `../JToye_OaaS_2026-phase37`).
+- 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
+- Owner decisions are D-01..D-05; D-05 (suppress `/.well-known/oauth-protected-resource` with a 404) was ruled 2026-10-04.
+- The plan-checker passed on iteration 1; the smart-zone size warning was accepted. Decision coverage is 5/5.
+- Owner checkpoints during execution: 38-05 (Jackson 3 defaults vs restore, decided after the measured diff), 38-17 (who drives the shared compose stack), 38-18 (push).
+- Next: `/gsd-execute-phase 38` from the worktree, in a fresh session. `state.planned-phase` was NOT used: it overwrote this line and miscounted `total_plans`, so STATE was hand-edited.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
