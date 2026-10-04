@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### core-java image gate green again: jackson-bom 2.21.7 for four HIGH CVEs (#PRNUM) — 2026-10-04
+
+- **jackson-core / jackson-databind 2.21.6 → 2.21.7, via the same BOM property.** The Trivy
+  image gate in `build-and-push` went red on `main` (run 37165437798, on `c55e545a`) with 4 HIGH
+  CVEs in 2.21.6: CVE-2026-89407 and CVE-2026-89425 (jackson-core), CVE-2026-91776 and
+  CVE-2026-91777 (jackson-databind), all fixed in 2.18.11 / 2.21.7 / 2.22.3. No code change
+  caused it: the vulnerability DB moved, as it did for #760. The fix moves
+  `extra["jackson-bom.version"]` to 2.21.7, the smallest clearing bump on the 2.21 line, and
+  updates the comment's reasoning and its delete condition (Boot must manage 2.21.7 or above).
+- **Proof, both directions.** `dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind
+  --configuration runtimeClasspath` resolves 2.21.6 on `main` and 2.21.7 on the branch; the whole
+  family (core, databind, toml, yaml, jdk8, jsr310, parameter-names) is 2.21.7 in the boot jar,
+  and jackson-annotations stays `2.21` by the BOM's own versioning. Trivy 0.70.0 with the gate's
+  flags (`--severity CRITICAL,HIGH --ignore-unfixed --exit-code 1`), one DB, over each boot jar:
+  `main` rc=1 naming the four CVEs, branch rc=0 with jackson-core/databind 2.21.7 among 200
+  packages scanned. PR CI never runs the image gate, so this is the PR's own proof.
+- **Docs.** `.planning/codebase/STACK.md`: the Jackson bullet and two citations shifted by the
+  longer comment (`:461` → `:466`, `:243` → `:248`), re-pointed by content and checked with
+  `scripts/check-doc-citations.sh` (2 violations before, 0 after).
+
 ### A review can no longer name a vendor's catalogue images for deletion (#772) — 2026-09-30
 
 - **Why.** Issue #771. A review's `photoUrls` came from the client and were never checked, and
