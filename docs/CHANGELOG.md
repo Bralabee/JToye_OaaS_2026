@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### pg-backup image takes the fixed pcre2, clearing CVE-2026-103111 from the image gate — 2026-10-04
+### pg-backup image takes the fixed pcre2, clearing CVE-2026-103111 from the image gate (#890) — 2026-10-04
 
 - **`libpcre2-8-0` 10.42-1+deb12u1 → 10.42-1+deb12u2, named on the existing `apt-get install`
   line in `infra/backups/Dockerfile`.** `Build and Push Images (pg-backup)` went red on `main`
