@@ -22,7 +22,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 
 ## Languages
 - Java 25 - Core API (Spring Boot 3.5.16)
-- TypeScript 5 - Frontend (Next.js 16.3.6, React 19)
+- TypeScript 5 - Frontend (Next.js 16.3.7, React 19)
 - Go 1.27 - Edge API gateway (Gin)
 - SQL (PostgreSQL) - Database migrations via Flyway
 - YAML - Configuration management
@@ -49,7 +49,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation
 - Micrometer Prometheus - Metrics export
 - Micrometer Tracing (Brave/Zipkin) - Distributed tracing
-- Next.js 16.3.6 - React framework with file-based routing
+- Next.js 16.3.7 - React framework with file-based routing
 - React 19 - UI component library
 - React Hook Form 7.89.0 - Form state management
 - Next-Auth 5.0.0-beta.32 - Authentication middleware
@@ -78,7 +78,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Azure Identity (1.18.6) - Workload Identity credential for Blob in AKS
 - Stripe React/JS 6.12.0, 9.17.0 - Payment processing UI integration
 - Axios 1.19.0 - HTTP client for API calls
-- Framer Motion 13.4.4 - Animation library
+- Framer Motion 13.4.6 - Animation library
 - Recharts 3.10.1 - Charts and data visualization
 - Redis 7 - Session and cache store
 - RabbitMQ 4.3.4 - Message queue (AMQP)
@@ -138,7 +138,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Azurite: 3.37.0
 - Go: 1.27-alpine
 - Node.js: 24+
-- Next.js: 16.3.6
+- Next.js: 16.3.7
 ## Performance Tuning
 - Connection pooling: HikariCP
 - Batch insert/update: Hibernate batch_size=20 (prod: 50)
