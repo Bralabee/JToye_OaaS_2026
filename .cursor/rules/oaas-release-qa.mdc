@@ -64,6 +64,17 @@ silently fails, every later arm runs against a dirty tree. Verify a restore **by
 unique token, compare a hash — never by `git diff --stat`, which is empty both when a file is
 restored and when it was never written. Commit before running arms.
 
+## A boundary check verified only in steady states is unproven
+
+Identity-lifecycle transitions — sign-in, sign-out, session lapse, account switch, new
+registration — are first-class test axes wherever user-scoped state persists across renders.
+Finding R-16 sailed through two green audits because every test examined a steady state: the
+second user was seeded already signed in, skipping the one render that laundered the ownership
+stamp off the stored cart. The assertion target is the STORED stamp, by content — rendered items
+can look right over a laundered store. And a verify script wired into no CI workflow is
+decoration, not coverage: R-16's guard existed and was manual-only, the same unwired-gates
+failure this project has already paid for once.
+
 ## Proving it in a browser
 
 You have the `Skill` tool. Use it — the project's own quality rules require browser proof for any
