@@ -523,7 +523,12 @@ jobs:
           # step under set -e and losing the report entirely.
           lrc=0
           errf="$(mktemp)"
-          existing=$(gh issue list --state open --limit 100 \
+          # --search narrows SERVER-side to title matches, so the result window no
+          # longer depends on how many issues are open; the jq select below stays the
+          # exact-title filter. A bare `--limit 100` saw only the 100 NEWEST open
+          # issues and filed duplicates once more than 100 were newer than the
+          # tracker (#883 duplicated #683 on 2026-10-04 with 177 open; #885).
+          existing=$(gh issue list --state open --search "in:title \"${TITLE}\"" --limit 1000 \
                        --json number,title \
                        --jq ".[] | select(.title == \"${TITLE}\") | .number" 2>"${errf}") || lrc=$?
           if [ "${lrc}" -ne 0 ]; then

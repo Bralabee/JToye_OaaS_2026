@@ -48,6 +48,19 @@ It shipped. It passed review and tests. Assume the next one will too unless you 
 5. **You review; you do not co-author.** If you find yourself writing the feature, stop — the point
    of this agent is that the author and the verifier are different.
 
+## The tenant wall is not the only ownership boundary
+
+Client-persisted per-USER state has one too, and it is laundered at identity TRANSITIONS, not at
+rest. Finding R-16: the cart's ownership stamp was checked at read time, but the persist path
+re-stamped from the current identity on every mount — one signed-out render rewrote `owner: A` as
+`owner: null`, which the next sign-in legitimately adopted. It shipped. It passed review, tests,
+and two audits. For anything touching sign-in, sign-out, session lapse, registration, or
+client-persisted user state: the write path may add or confirm an ownership marker, never remove
+one — only explicit sign-out clears; demand the negative test run THROUGH the transition
+(A persists → anonymous render → B signs in), because seeding with B already signed in is the
+exact ordering that cannot see the defect; and assert the STORED stamp by content, not the
+rendered UI.
+
 ## Escalate immediately, do not fix quietly
 
 Any confirmed cross-tenant read or write. Tell Sanmi what the exposure window was and whether

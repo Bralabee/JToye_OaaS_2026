@@ -22,10 +22,13 @@ You own `k8s/`, `infra/`, the compose files, and the monitoring stack for J'Toye
 
 ## What is actually running
 
-Sixteen containers: `core-java`, `frontend`, `edge-go`, `mcp-server`, plus `postgres:15-alpine`,
-`redis:7-alpine`, `keycloak:24.0.5`, `azurite:3.37.0`, `mailhog`, `rabbitmq:4.3.4`, `prometheus:v2.48.0`,
-`alertmanager:v0.27.0`, `grafana:10.2.2`, `ollama`, and two exporters. There is a committed
-`k8s/local` overlay and a minikube machine at `~/.minikube/machines/jtoye`.
+Sixteen containers: `core-java`, `frontend`, `edge-go`, `mcp-server`, plus `postgres` (15),
+`redis` (7), `keycloak` (24), `azurite`, `mailhog`, `rabbitmq` (4.x), `prometheus`, `alertmanager`,
+`grafana`, `ollama`, and two exporters. The image tags are whatever `docker-compose.full-stack.yml`
+and `infra/monitoring/docker-compose.monitoring.yml` pin — read them there. Never restate a tag in
+this charter: it is emitted into the app repo's `AGENTS.md`, and a stale version fails its
+`check-doc-versions` gate. There is a committed `k8s/local` overlay and a minikube machine at
+`~/.minikube/machines/jtoye`.
 
 ## The rule that exists because it was broken
 

@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import { useToast } from "@/hooks/use-toast"
+import { describeLoadError } from "@/lib/human-error"
+import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
 import {
   Card,
   CardContent,
@@ -248,9 +250,20 @@ export default function OnboardingPage() {
 
   const [onboarding, setOnboarding] = useState<OnboardingDto | null>(null)
   const [loading, setLoading] = useState(true)
+  // A failed FIRST load of GET /me (anything but 404). Without it `onboarding`
+  // stays null and the page renders the create form — telling a vendor who HAS an
+  // application that they have none. Background polls never set this: a failed
+  // re-poll keeps the last good status on screen (the toast reports it).
+  const [onboardingLoadError, setOnboardingLoadError] = useState<string | null>(null)
 
   // Create-form state
   const [shops, setShops] = useState<Shop[]>([])
+  // "loading" and "error" are NOT "no shops". Only a fetch that SUCCEEDED with
+  // zero rows may render "Create a shop first"; a 429 or network failure used to
+  // fall through to it, telling a vendor with shops that they have none — a false
+  // claim with a dead-end CTA (nightly E2E 2026-10-02/04).
+  const [shopsStatus, setShopsStatus] = useState<"loading" | "ready" | "error">("loading")
+  const [shopsLoadError, setShopsLoadError] = useState("")
   const [model, setModel] = useState<OnboardingModel>("MARKETPLACE")
   const [shopId, setShopId] = useState("")
   const [companyNumber, setCompanyNumber] = useState("")
@@ -274,6 +287,7 @@ export default function OnboardingPage() {
 
   const loadOnboarding = useCallback(
     async (initial: boolean) => {
+      if (initial) setOnboardingLoadError(null)
       try {
         const res = await apiClient.get("/api/v1/onboarding/me")
         setOnboarding(res.data)
@@ -282,6 +296,11 @@ export default function OnboardingPage() {
         if (httpStatus(err) === 404) {
           setOnboarding(null)
         } else {
+          if (initial) {
+            setOnboardingLoadError(
+              describeLoadError(err, "Failed to load your onboarding").message
+            )
+          }
           // 5xx/network already auto-retried by the api-client, then surfaced.
           toast({
             variant: "destructive",
@@ -297,6 +316,7 @@ export default function OnboardingPage() {
   )
 
   const fetchShops = useCallback(async () => {
+    setShopsStatus("loading")
     try {
       // #485 (call site :232): was a single `/api/v1/shops?page=0&size=100&...`,
       // whose first page was treated as the whole list. Past 100 shops the tail
@@ -305,10 +325,23 @@ export default function OnboardingPage() {
       // writer of `Shop.published`. The `name,asc` sort is passed through so the
       // select stays alphabetical.
       setShops(await fetchAllMyShops("name,asc"))
-    } catch {
-      // Non-critical — the select simply stays empty.
+      setShopsStatus("ready")
+    } catch (err: unknown) {
+      // The list is left as it was (never reset to []): the error panel, not the
+      // empty state, is what renders. 429 has already had its one Retry-After
+      // retry in the api-client by the time it lands here.
+      setShopsLoadError(describeLoadError(err, "Failed to load your shops").message)
+      setShopsStatus("error")
     }
   }, [])
+
+  const retryOnboarding = () => {
+    setLoading(true)
+    void loadOnboarding(true)
+    // The shops fetch usually failed in the same burst; re-run it too, so one
+    // "Try again" recovers the page instead of revealing a second error panel.
+    if (shopsStatus === "error") void fetchShops()
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
@@ -514,6 +547,29 @@ export default function OnboardingPage() {
     )
   }
 
+  // --- Render: GET /me failed on first load ----------------------------------
+
+  // Not the create form: we do not know whether an application exists, and
+  // offering to start one would be a false claim (and a 409 on submit).
+  if (onboardingLoadError) {
+    return (
+      <div
+        data-width-tier="detail"
+        className={cn("mx-auto", WIDTH_TIER_CLASS.detail, "space-y-6")}
+      >
+        <Card>
+          <CardContent>
+            <LoadErrorPanel
+              subject="your onboarding"
+              message={onboardingLoadError}
+              onRetry={retryOnboarding}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   // --- Render: create form (no onboarding yet) ------------------------------
 
   // Same tier again, and this branch is not a transient: it is the state a
@@ -533,7 +589,27 @@ export default function OnboardingPage() {
           </p>
         </m.div>
 
-        {shops.length === 0 ? (
+        {shopsStatus === "error" ? (
+          <Card>
+            <CardContent>
+              <LoadErrorPanel
+                subject="your shops"
+                message={shopsLoadError}
+                onRetry={() => void fetchShops()}
+              />
+            </CardContent>
+          </Card>
+        ) : shopsStatus === "loading" && shops.length === 0 ? (
+          <Card>
+            <CardContent
+              className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500"
+              role="status"
+            >
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Loading your shops…
+            </CardContent>
+          </Card>
+        ) : shops.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <Store className="mb-4 h-12 w-12 text-slate-300" />

@@ -1,0 +1,428 @@
+[
+ {
+  "id": "P2-CHA-01",
+  "title": "The vendor raised a price while I was on checkout; I was charged the new price and nothing told me",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/{slug}/checkout -> POST /public/shops/{slug}/orders",
+  "steps": [
+   "Add a product to the basket and open checkout (the basket shows the price at the time it was added)",
+   "As the vendor, raise that product's price (PUT /api/v1/products/{id})",
+   "Without reloading, tap 'Place order · £X'",
+   "Compare the button amount with the confirmation total"
+  ],
+  "expected": "Either the checkout refreshes prices and says 'a price changed: £9.00 -> £14.00, please confirm', or the order is refused until she confirms the new total",
+  "actual": "Run 1 (laptop): the button said 'Place order · £188.50' and the confirmation said £198.50 (+£10, two Suya at £14 instead of £9). Run 2 (phone): the button said £19.00 and the confirmation said £21.00. The cart page, the checkout lines and the button all use the price stored in localStorage when the item was added; the menu already shows the new price. The server always charges the live price (by design: 'never trust client'), but no surface says that the price changed. The confirmation email carries no total either.",
+  "realWorldImpact": "On a cash order the driver asks for more than the app promised. That means an argument at the office door, a customer who feels cheated, and possibly a refused delivery of 35 items of food. For an office lunch collected from 8 colleagues in cash, the amount she collected no longer matches.",
+  "evidence": [
+   "04a-checkout-before-vendor-changes.png",
+   "04g-checkout-second-attempt.png",
+   "06a-checkout-acked.png",
+   "06b-confirmation.png",
+   "04e-cart-after-vendor-changes.png",
+   "04d-menu-after-unavailable.png",
+   "09a-phone-checkout-acked.png",
+   "09b-phone-confirmation.png",
+   "order1-vendor-detail.json",
+   "posts-s06.json",
+   "s04-chaos-checkout.mjs",
+   "s06-allergen-race.mjs",
+   "s09-repro-price-allergen.mjs"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-02",
+  "title": "I acknowledged one allergen list; the order (and the kitchen ticket) records a different one, and I am never shown it",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "allergens",
+  "surface": "/shop/{slug}/checkout allergen panel; order_items.allergen_mask snapshot",
+  "steps": [
+   "Open checkout. The allergen panel lists the basket's declared allergens",
+   "Tick 'I have read the allergen information for this order'",
+   "As the vendor, add allergens to a product in the basket (PUT /api/v1/products/{id}, allergenMask)",
+   "Without reloading, place the order",
+   "Read GET /api/v1/orders/{id}/detail and the kitchen ticket"
+  ],
+  "expected": "The order records the set the customer actually acknowledged, or the server refuses the submit when the declared set has changed since the panel was rendered, and the customer re-acknowledges",
+  "actual": "Run 1: she acknowledged Gluten, Fish, Peanuts; the snapshot and the kitchen banner say Gluten, Eggs, Fish, Peanuts, Milk. Run 2: she acknowledged Gluten, Eggs, Milk; the snapshot says Gluten, Eggs, Milk, Sesame. The panel is fetched once on mount and never re-checked, and the submit carries no record of what was acknowledged. The system therefore holds a record that implies she accepted allergens she was never shown. No customer surface (confirmation, email, tracking) shows the snapshotted set.",
+  "realWorldImpact": "In an office order for 8 people, a colleague with a milk or sesame allergy relies on what Nkechi saw. The kitchen labels correctly, but the customer-side record says she acknowledged the allergen. This is the 'customer acknowledges A, kitchen sees B' gap that V63 was meant to close; it has moved to the window between acknowledging and submitting.",
+  "evidence": [
+   "06a-checkout-acked.png",
+   "order1-vendor-detail.json",
+   "07a-kitchen-ticket-20-lines.png",
+   "09a-phone-checkout-acked.png",
+   "order-D2F46664-detail.json",
+   "s06-allergen-race.mjs",
+   "s09-repro-price-allergen.mjs"
+  ],
+  "reconfirms": [
+   "P05-2"
+  ]
+ },
+ {
+  "id": "P2-CHA-03",
+  "title": "A deleted menu item makes checkout fail with 'Product not found: 89560dca-…', so I cannot tell which of my 20 lines is the problem",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "POST /public/shops/{slug}/orders (404 detail)",
+  "steps": [
+   "Build a basket of about 20 lines",
+   "As the vendor, delete one product in it (DELETE /api/v1/products/{id})",
+   "Place the order"
+  ],
+  "expected": "'Moi Moi is no longer on the menu. Remove it to continue', with the line highlighted or removed",
+  "actual": "A red box shows 'Product not found: 89560dca-2743-41e3-8365-4ac447abfb4b'. The cart and checkout still list 'chaos-p2 Moi Moi' with no marker. The menu no longer shows it, so the only way to find the culprit is to compare 20 lines against the menu by eye.",
+  "realWorldImpact": "She gives up or phones the shop. On a 20-line office order, this is the point where the order goes to Just Eat.",
+  "evidence": [
+   "04h-submit-moi-deleted.png",
+   "posts-s04.json",
+   "05a-cart-moi-removed.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-04",
+  "title": "Sold-out or removed items stay in my basket with no warning; I find out only when I press Place order, one item per attempt",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/{slug}/cart, /shop/{slug}/checkout",
+  "steps": [
+   "Add product X to the basket",
+   "As the vendor, set X available=false",
+   "Open the menu, then the cart, then checkout"
+  ],
+  "expected": "The basket revalidates against the live menu on open (availability, price, existence) and flags each changed line",
+  "actual": "The menu drops X without a trace (no 'sold out' state). The cart and checkout still list it at the old price with no flag. The server refuses with 'Product is not available: chaos-p2 Office Jollof Tray' (clear wording), but it stops at the FIRST bad line (code: a loop that throws), so three bad lines would mean three failed submits.",
+  "realWorldImpact": "A slow, frustrating loop at the worst moment, the final tap. It has the same root cause as P2-CHA-01 and -03: the basket is a localStorage snapshot that is never revalidated.",
+  "evidence": [
+   "04c-submit-tray-unavailable.png",
+   "04d-menu-after-unavailable.png",
+   "04e-cart-after-vendor-changes.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-05",
+  "title": "On a slow network, coming back after 5 minutes signs me out: parallel session refreshes burn the single-use refresh token",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "accounts",
+  "surface": "GET /api/customer-auth/session (Next route) + Keycloak jtoye-customers revokeRefreshToken=true, refreshTokenMaxReuse=0",
+  "steps": [
+   "Sign in as a customer",
+   "Wait more than 300 s (accessTokenLifespan), so only the refresh and id cookies remain",
+   "Throttle to Slow 3G (2000 ms RTT) with 20% packet loss",
+   "Open /shop/{slug}/checkout",
+   "Watch the /api/customer-auth/session responses"
+  ],
+  "expected": "One renewal; she stays signed in",
+  "actual": "Seen 3 out of 3 times (phone at 23:28, laptop at 23:29 and 23:36). The nav session store probes on mount and then every second for 5 s, and checkout fires its own probe. Under latency they all leave carrying the same refresh token. The first returns authenticated:true and new cookies. The next three return authenticated:false with Set-Cookie clearing all three customer cookies, and she ends up signed out ('Not you? Sign out | Sign in'). Unthrottled, the same flow renewed cleanly (s10 at 23:22). The basket survives (the owner stamp is kept). One tap on 'Sign in' restores the session silently while the Keycloak SSO cookie lives.",
+  "realWorldImpact": "Office wifi or a train on 3G: she comes back to a half-built order and finds herself signed out. Anything she places now is a guest order, and My Orders shows 'Sign in to continue'. The site seems to have lost her, which costs trust.",
+  "evidence": [
+   "s11-phone-slow-return.out",
+   "s11-laptop-slow-return.out",
+   "s11b-laptop-slow-return-with-basket.out",
+   "10-phone-return-checkout.png",
+   "10-laptop-return-checkout.png",
+   "s10-return-session.mjs"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-06",
+  "title": "My basket does not follow me from laptop to phone, and nothing says it is on another device",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/{slug}/cart",
+  "steps": [
+   "Signed in on the laptop, build a 40-item basket",
+   "Sign in to the same account on a phone",
+   "Open the same shop and the cart"
+  ],
+  "expected": "Signed-in baskets sync across devices, or at least the phone says 'You have a basket on another device'",
+  "actual": "The phone shows 'Your basket is empty'. The basket lives only in the laptop's localStorage (jtoye-cart-<slug>, owner stamp = customer id).",
+  "realWorldImpact": "She rebuilds 20 lines on the phone, or walks back to her desk. This is an expectation gap, not a defect; most delivery apps sync signed-in baskets.",
+  "evidence": [
+   "02c-cart-20-lines.png",
+   "03a-phone-shop-after-signin.png",
+   "03b-phone-cart.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-07",
+  "title": "Checkout never shows the shop's minimum order, and any shortfall I work out uses stale prices",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/{slug}/checkout",
+  "steps": [
+   "Open checkout with a basket (the screen shows £188.50)",
+   "As the vendor, raise minimumOrderPennies to 19900",
+   "Place the order"
+  ],
+  "expected": "The minimum is shown on checkout, and a change is reflected before submit",
+  "actual": "No minimum text anywhere on checkout. The submit returns 'Order is below this shop's minimum order value of £199.00.' (clear wording). The server-side subtotal was actually £198.50 because of the price raise, while the screen said £188.50, so the shortfall she would calculate is £10 wrong.",
+  "realWorldImpact": "Minor confusion; she adds something and tries again.",
+  "evidence": [
+   "05b-checkout-before-min-change.png",
+   "05c-submit-below-new-minimum.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-08",
+  "title": "A vendor cannot change the delivery fee or the free-delivery threshold at all; the shop API silently ignores it",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "vendor-onboarding",
+  "surface": "PUT /api/v1/shops/{id}; /dashboard/shops",
+  "steps": [
+   "As admin-user, PUT /api/v1/shops/{id} with deliveryFeePennies: 999",
+   "Read /api/v1/public/shops/{slug}"
+  ],
+  "expected": "The fee is editable, or the field is rejected with a 400",
+  "actual": "HTTP 200, but the public fee stays 299. ShopDto and CreateShopRequest have no fee or threshold field, and the dashboard shop form has none; the values come only from the seeder. So the scenario 'delivery fee changes mid-basket' cannot happen today.",
+  "realWorldImpact": "A vendor whose driver costs rise cannot change the fee. A newly created shop keeps the entity default of £0 delivery for good.",
+  "evidence": [
+   "s05-chaos-shop.mjs (output line 'public fee after 299')",
+   "baseline-shop-peckham.txt"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-09",
+  "title": "I cannot order ahead for a time ('lunch at 12:30'); orders are ASAP only, and a closed shop takes no pre-orders",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/{slug}/checkout; GuestOrderRequest",
+  "steps": [
+   "Open checkout and look for a time or date field",
+   "As the vendor, set the shop's hours to end before now",
+   "Try to order"
+  ],
+  "expected": "An office lunch for 8 is ordered in the morning for a set time; a closed shop accepts orders for its next opening",
+  "actual": "There is no time field (GuestOrderRequest has none). While the shop is closed, the menu shows 'Closed' and hides Add for new items, but it keeps the steppers and the 'View basket £188.50' bar. The submit is refused with 'Peckham Jollof Co. is currently closed. Opening hours today: 10:00 - 22:00. Please try again later.' The refusal itself is correct and clear.",
+  "realWorldImpact": "Office lunches are the biggest baskets and are always scheduled. Without pre-orders she orders at 12:00 and hopes, and the vendor loses planned, high-value orders.",
+  "evidence": [
+   "05d-checkout-before-hours-change.png",
+   "05e-submit-after-closing-time.png",
+   "05f-menu-shop-closed.png",
+   "05g-discovery-shop-closed.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-10",
+  "title": "The vendor has no 'pause orders now' switch, and opening hours can never be cleared once set",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "vendor-onboarding",
+  "surface": "PUT /api/v1/shops/{id}; /dashboard/shops (openingHours)",
+  "steps": [
+   "The shop's openingHours is null",
+   "Set hours, then try to return to 'no hours'"
+  ],
+  "expected": "A one-tap 'stop taking orders' control, and a way to clear hours",
+  "actual": "The update mapper ignores null, and the dashboard sends undefined for empty hours; sending {} stores an empty map, never null again. The only way to stop orders is to edit the hours for every day; a vendor has no unpublish (only the admin onboarding SUSPEND). As a side effect of this test, Peckham's openingHours is now {} instead of null (behaviourally identical: empty means always open).",
+  "realWorldImpact": "On a night the kitchen runs out of rice, the vendor cannot quickly stop the flood of orders.",
+  "evidence": [
+   "s05-chaos-shop.mjs",
+   "cleanup.out"
+  ],
+  "reconfirms": [
+   "ADE-11"
+  ]
+ },
+ {
+  "id": "P2-CHA-11",
+  "title": "The kitchen ticket for a 35-unit order is 834 px tall, says '18 items' (the customer saw '35 items'), and hides the order number",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "kitchen",
+  "surface": "/dashboard/kitchen",
+  "steps": [
+   "Place an order of 18 lines / 35 units",
+   "Confirm it as the vendor; open the Kitchen board for that shop"
+  ],
+  "expected": "A ticket a cook can read at a glance: the same item count the customer saw, lines grouped (mains / sides / drinks), and the distinguishing part of the order number visible",
+  "actual": "The ticket is 250x834 px. The header shows 'ORD-00…', which cuts off the 8-character suffix that tells orders apart. '18 items' counts lines, while the customer's basket, checkout and order (unitCount 35) said '35 items'. Lines are not grouped by category; drinks sit between mains. There is no per-person attribution (only a 500-character free-text note), so 'label each bag with the name' cannot be honoured.",
+  "realWorldImpact": "Packing 35 things for 8 named people from an unordered list means missing items and phone calls. The 'items' mismatch reads like half the order is missing.",
+  "evidence": [
+   "07a-kitchen-ticket-20-lines.png",
+   "07b-kitchen-board-peckham.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-12",
+  "title": "Double-tapping Place order on a lossy Slow 3G connection creates exactly one order",
+  "severity": "positive",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/{slug}/checkout",
+  "steps": [
+   "CDP throttle: latency 2000 ms, 400 kbps, packetLoss 20",
+   "Tap Place order 4 times about 350 ms apart"
+  ],
+  "expected": "One order",
+  "actual": "From the second tap the button was disabled and read 'Creating order...'. 1 POST, 1 order (39B2CE9E).",
+  "realWorldImpact": "Preserve.",
+  "evidence": [
+   "s08-doubletap.out",
+   "08a-doubletap-inflight.png",
+   "08b-doubletap-outcome.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-13",
+  "title": "A lost reply followed by a retry replays the same order (same Idempotency-Key), with no duplicate",
+  "severity": "positive",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "POST /public/shops/{slug}/orders",
+  "steps": [
+   "Throttle to Slow 3G with 20% loss",
+   "Let the server answer 201 but drop the response (connection reset)",
+   "Tap Place order again"
+  ],
+  "expected": "One order",
+  "actual": "2 POSTs carried the same key (8f9c6c83…). The server created one order (DA806F54), and the retry showed it as confirmed.",
+  "realWorldImpact": "Preserve.",
+  "evidence": [
+   "s08-lostresponse.out",
+   "08c-lostresponse-retry.png",
+   "orders-nkechi.txt"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-14",
+  "title": "The server refuses unsafe orders in clear, human words: unavailable item, below minimum, shop closed",
+  "severity": "positive",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "POST /public/shops/{slug}/orders",
+  "steps": [
+   "See P2-CHA-04, -07 and -09"
+  ],
+  "expected": "Server-side truth",
+  "actual": "The messages: 'Product is not available: chaos-p2 Office Jollof Tray', 'Order is below this shop's minimum order value of £199.00.' and 'Peckham Jollof Co. is currently closed. Opening hours today: 10:00 - 22:00.' Each appeared in the checkout's alert region, and the basket and form were kept.",
+  "realWorldImpact": "Preserve, and run the same checks before the final tap.",
+  "evidence": [
+   "04c-submit-tray-unavailable.png",
+   "05c-submit-below-new-minimum.png",
+   "05e-submit-after-closing-time.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-15",
+  "title": "The kitchen ticket carries an allergen banner plus per-line allergen chips from the order-time snapshot",
+  "severity": "positive",
+  "status": "CONFIRMED",
+  "area": "kitchen",
+  "surface": "/dashboard/kitchen",
+  "steps": [
+   "Open the ticket for the 35-unit order"
+  ],
+  "expected": "Allergens are unmissable",
+  "actual": "An orange 'ALLERGENS Gluten, Eggs, Fish, Peanuts, Milk' banner, and chips on the Puff-Puff, Suya, Puff Puff and Tilapia lines.",
+  "realWorldImpact": "Preserve.",
+  "evidence": [
+   "07a-kitchen-ticket-20-lines.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-16",
+  "title": "A 20-line, 40-unit basket is comfortable: no limits hit, totals and VAT consistent, and the basket survives a forced sign-out",
+  "severity": "positive",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/{slug}/cart, /shop/{slug}/checkout",
+  "steps": [
+   "Add 20 lines / 40 units"
+  ],
+  "expected": "Usable",
+  "actual": "The steppers and the 'View basket' bar worked, and the cart and checkout totals agreed (£226.00, VAT £37.66). Free delivery applied over £30. The basket (owner stamp) survived the session lapse in P2-CHA-05.",
+  "realWorldImpact": "Preserve.",
+  "evidence": [
+   "02c-cart-20-lines.png",
+   "02d-checkout-20-lines.png",
+   "s11b-laptop-slow-return-with-basket.out"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-17",
+  "title": "The order emails still carry no total or items, so after a silent price change I have nothing in writing",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "notifications",
+  "surface": "Mailhog: 'Order … — Received'",
+  "steps": [
+   "Place an order",
+   "Read the email"
+  ],
+  "expected": "The email repeats the items, the total and the allergens",
+  "actual": "Four plain lines and a tracking link; no total, items or allergens. Together with P2-CHA-01 and -02, this leaves no customer-side record of either the price or the allergen set.",
+  "realWorldImpact": "In a dispute at the door, the customer has no paper trail.",
+  "evidence": [
+   "mailhog.json"
+  ],
+  "reconfirms": [
+   "J-06"
+  ]
+ },
+ {
+  "id": "P2-CHA-18",
+  "title": "An order placed at 00:01 BST is labelled 4 Oct everywhere I looked, consistent with UK time",
+  "severity": "positive",
+  "status": "CONFIRMED",
+  "area": "orders",
+  "surface": "/shop/orders, /shop/{slug}/orders/{orderNumber}, order number",
+  "steps": [
+   "Place an order at 00:01 BST on 4 Oct (23:01 UTC on 3 Oct)",
+   "Open My Orders and tracking"
+  ],
+  "expected": "UK dates and times, not UTC",
+  "actual": "Order number ORD-00000000-20261004-1E4A123A; My Orders shows \"4 Oct, 00:01\" next to \"3 Oct, 23:21\" for the earlier orders; tracking shows \"Order sent to shop · 00:01\". The server stores createdAt in UTC (2026-10-03T23:01Z) and the labels convert correctly. Not demonstrated: the BST end on 25 Oct, and the order-number date on a deployment whose JVM TZ is not Europe/London (LocalDate.now() uses the JVM default; compose sets TZ=Europe/London).",
+  "realWorldImpact": "Preserve. The late-night order did not get yesterday's date.",
+  "evidence": [
+   "s13-midnight.out",
+   "13a-my-orders-across-midnight.png",
+   "13b-track-1E4A123A.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-CHA-19",
+  "title": "Once a product has been ordered, even in a cancelled order, the vendor can never delete it, only hide it",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "catalogue",
+  "surface": "DELETE /api/v1/products/{id}",
+  "steps": [
+   "Order product X (the order can be cancelled)",
+   "As the vendor, DELETE /api/v1/products/{id}"
+  ],
+  "expected": "Delete (archive) works; history keeps the snapshotted name (order_items.product_name already exists)",
+  "actual": "409 \"Product cannot be deleted: it is still referenced by an existing order\" for 11 of my 13 test products, all of whose orders were CANCELLED. The only option is available=false, so they stay in the vendor catalogue for good.",
+  "realWorldImpact": "A vendor's product list fills with dead seasonal items; the vendor cannot tidy the catalogue.",
+  "evidence": [
+   "cleanup.out"
+  ],
+  "reconfirms": [
+   "ADE-04"
+  ]
+ }
+]

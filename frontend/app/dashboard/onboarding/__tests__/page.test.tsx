@@ -982,3 +982,119 @@ describe("Onboarding — the Detail tier on EVERY page-level render branch (35-0
     )
   })
 })
+
+/**
+ * A failed load is not an empty result (nightly E2E 2026-10-02 / 2026-10-04).
+ *
+ * core-java's per-tenant rate limiter answered GET /api/v1/shops with 429. The
+ * shops fetch swallowed it and the page rendered "Create a shop first" — telling a
+ * vendor who HAS shops that they have none, with only a "Go to shops" dead end.
+ * `onboarding-blocked-flow.spec.ts` then waited 10 s for `#onboarding-shop` and
+ * failed. The same class existed one fetch over: a failed first GET /me rendered
+ * the create form, i.e. "you have no application", for a vendor who has one.
+ */
+describe("Onboarding — a failed load is never rendered as 'you have none'", () => {
+  const rateLimited = { response: { status: 429, headers: { "retry-after": "3" }, data: {} } }
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  // GET /me and GET /shops each answer from their own queue; the last entry repeats.
+  function routeQueued(
+    me: Array<() => Promise<unknown>>,
+    shopList: Array<() => Promise<unknown>>
+  ) {
+    let meCalls = 0
+    let shopCalls = 0
+    mockedApiClient.get.mockImplementation((url: string) => {
+      if (url.startsWith("/api/v1/onboarding/me")) {
+        return me[Math.min(meCalls++, me.length - 1)]() as Promise<never>
+      }
+      if (url.startsWith("/api/v1/shops")) {
+        return shopList[Math.min(shopCalls++, shopList.length - 1)]() as Promise<never>
+      }
+      return Promise.resolve({ data: {} }) as Promise<never>
+    })
+  }
+
+  it("a 429 on the shops list renders an alert with Try again — not 'Create a shop first' — and Try again loads the select", async () => {
+    routeQueued(
+      [() => Promise.reject(notFound)],
+      [() => Promise.reject(rateLimited), () => Promise.resolve({ data: { content: shops } })]
+    )
+
+    render(<OnboardingPage />)
+
+    const alert = await screen.findByRole("alert")
+    expect(within(alert).getByText("Couldn't load your shops")).toBeInTheDocument()
+    expect(screen.queryByText("Create a shop first")).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /go to shops/i })).not.toBeInTheDocument()
+    expect(document.getElementById("onboarding-shop")).toBeNull()
+
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Lagos Grill" })).toBeInTheDocument()
+    })
+    expect(document.getElementById("onboarding-shop")).not.toBeNull()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(screen.queryByText("Create a shop first")).not.toBeInTheDocument()
+  })
+
+  it("does not claim 'Create a shop first' while the shops list is still loading", async () => {
+    routeQueued([() => Promise.reject(notFound)], [() => new Promise(() => {})])
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => expect(screen.getByText("Take your shop live")).toBeInTheDocument())
+    expect(screen.getByText("Loading your shops…")).toBeInTheDocument()
+    expect(screen.queryByText("Create a shop first")).not.toBeInTheDocument()
+  })
+
+  it("CONTROL — a shops fetch that SUCCEEDS with zero shops still says 'Create a shop first'", async () => {
+    routeQueued([() => Promise.reject(notFound)], [() => Promise.resolve({ data: { content: [] } })])
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => expect(screen.getByText("Create a shop first")).toBeInTheDocument())
+    expect(screen.getByRole("link", { name: /go to shops/i })).toHaveAttribute("href", "/dashboard/shops")
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  })
+
+  it("a 429 on the first GET /me renders an alert — not the create form — and Try again loads the status view", async () => {
+    routeQueued(
+      [() => Promise.reject(rateLimited), () => Promise.resolve({ data: onboarding("LIVE") })],
+      [() => Promise.resolve({ data: { content: shops } })]
+    )
+
+    render(<OnboardingPage />)
+
+    const alert = await screen.findByRole("alert")
+    expect(within(alert).getByText("Couldn't load your onboarding")).toBeInTheDocument()
+    expect(screen.queryByText("Take your shop live")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /create application/i })).not.toBeInTheDocument()
+
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }))
+
+    await waitFor(() => expect(screen.getByText("Live")).toBeInTheDocument())
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  })
+
+  it("when GET /me AND the shops fetch both 429, ONE Try again recovers both — no second error panel", async () => {
+    routeQueued(
+      [() => Promise.reject(rateLimited), () => Promise.reject(notFound)],
+      [() => Promise.reject(rateLimited), () => Promise.resolve({ data: { content: shops } })]
+    )
+
+    render(<OnboardingPage />)
+
+    const alert = await screen.findByRole("alert")
+    expect(within(alert).getByText("Couldn't load your onboarding")).toBeInTheDocument()
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }))
+
+    await waitFor(() => expect(document.getElementById("onboarding-shop")).not.toBeNull())
+    expect(screen.queryByText("Couldn't load your shops")).not.toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  })
+})
