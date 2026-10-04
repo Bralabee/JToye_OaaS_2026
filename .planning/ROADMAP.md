@@ -53,6 +53,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [ ] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today
 - [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock
 - [x] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice (completed 2026-08-17)
+- [ ] **Phase 31.1: Persona gap closure (INSERTED)** — The 17 persona-testing clusters (epic #880) on completed Phase 31: DSAR fulfilment, the allergen acknowledgement and display chain, seller identity, and privacy/cookie/accessibility statement truthfulness; 6 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request)
 - [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
 - [ ] **Phase 37: Real-world operations readiness** — The 87 persona-testing clusters with no other home (epic #880): kitchen ops, staff scoping, checkout integrity, abuse resistance, integrator surface, accessibility, catalogue correctness; 9 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request)
 - [ ] **Phase 38: Spring Boot 4.1 Migration** — core-java moves from Spring Boot 3.5.16 to 4.1.x, proven by test, gate and live runtime (#706; opened 2026-10-01 as Phase 37, renumbered 2026-10-04)
@@ -703,6 +704,38 @@ Plans:
 - [x] 31-18-PLAN.md (Wave 5, deps 31-02/31-03/31-13/31-14/31-15/31-17) — `e2e/public-a11y.spec.ts` in the `frontend-e2e` job (the only browser job that blocks a PR) with a non-vacuity control before every scan, the modal **opened** and the checkout **seeded**; the break arm run and both directions recorded; statement reconciled against the final audit; `docs/metrics.json` regenerated and the prose in CLAUDE.md/AGENTS.md/README.md corrected
 
 **UI hint**: yes (consent banner, policy pages, a11y remediation across the storefront)
+
+### Phase 31.1: Persona gap closure (INSERTED)
+
+**Added 2026-10-04 by owner request.** This is the gap-closure plan for the 17 persona-testing clusters (epic **#880**) that belong to Phase 31, which is complete. The mapping is in `.planning/ISSUE-DISPOSITION.md` § "Phase 31 – Consumer-Safety and Legal Floor (17)". The catalogue is `.planning/ux-persona-test-20261003-pass2/consolidated/CATALOGUE.md`, and `goods-to-preserve.md` beside it lists 40 behaviours the testers valued; every plan here must keep them (Incremental Betterment Doctrine).
+
+**Goal:** What Phase 31 shipped holds up for a real customer:
+- a data-subject request is actually carried out;
+- the allergen set a customer acknowledges is the one recorded and shown back to them;
+- an allergen named in the ingredients is never presented as "No allergens";
+- customers can see who the seller is and how to contact them;
+- the privacy, cookie and accessibility statements match what the site does.
+
+**Requirements**: derived at plan time from the 17 clusters (P0 6, P1 4, P2 5, P3 2), grouped here as a planning aid.
+- **31.1-A Data-subject rights** (5; P0 2): #777 #778 #838 #839 #871.
+- **31.1-B Allergen evidence chain** (7; P0 3, P1 2): #784 #785 #787 #812 #817 #860 #861.
+- **31.1-C Seller and platform identity** (2; P0 1, P1 1): #789 #794.
+- **31.1-D Privacy and cookie truthfulness** (2; P1 1): #793 #840.
+- **31.1-E Accessibility statement** (1; P3): #878.
+
+**Depends on:** Phase 31 (complete). **Blocks:** Phase 32 (first tenant), through its six P0 clusters: #777 #778 #784 #785 #787 #789.
+
+**Success Criteria** (what must be TRUE). These are drafts; `/gsd-plan-phase 31.1` refines them. Each must be shown to FAIL on the pre-fix tree and PASS after:
+  1. A verified ERASURE request for a storefront customer removes or anonymises that customer's data in every tenant that holds it, and the request is marked completed only after that happens (#777).
+  2. A verified ACCESS request delivers the subject's data (#778).
+  3. The allergen set the customer acknowledges at checkout is sent to the server, stored on the order, and shown back to the customer, and any difference from the recorded set is visible rather than silent (#784, #785).
+  4. A product whose ingredients name a regulated allergen with no matching box ticked is never shown as "No allergens" (#787).
+  5. Every storefront shows the seller's legal identity and a working contact route, and the platform's registered office is published (#789, #794).
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 31.1 to break down)
 
 ### Phase 32: Production Cutover + First Tenant
 
