@@ -679,7 +679,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 ### Roadmap Evolution
 
-- **Phase 37 added (2026-10-01): Spring Boot 4.1 Migration** (#706, unblocks #739). A throwaway spike first established that the move is feasible on 4.1.1: unit 1330/2 fail, integration 745/1 fail, Flyway proven to run, and spring-statemachine 4.0.2 working on Framework 7. Owner decisions taken the same day: Jackson 3 now, explicit starters, keep statemachine, keep plain Bearer. See `37-CONTEXT.md`. Not yet planned: next is `/gsd-plan-phase 37`.
+- **Phase 38 added (2026-10-01, renumbered from 37 on 2026-10-04 because Phase 37 went to the persona-testing findings, #881): Spring Boot 4.1 Migration** (#706, unblocks #739). A throwaway spike first established that the move is feasible on 4.1.1: unit 1330/2 fail, integration 745/1 fail, Flyway proven to run, and spring-statemachine 4.0.2 working on Framework 7. Owner decisions taken the same day: Jackson 3 now, explicit starters, keep statemachine, keep plain Bearer. See `37-CONTEXT.md`. Not yet planned: next is `/gsd-plan-phase 37`.
 
 - **Phase 36 added (2026-09-28): Azure Blob Storage Throughout** — owner ruling after the 2026-09-28 state analysis: object storage moves to Azure Blob (staging/prod) with Azurite locally and in the nightly; MinIO and the never-provisioned AWS S3 target are retired. Forced by MinIO withdrawing its community images (quay.io 401 since ~2026-09-24, the cause of #683 and of the blocked local restart). Blocks Phase 29 plans 29-11 onward. Not yet planned: next is `/gsd-plan-phase 36`.
 

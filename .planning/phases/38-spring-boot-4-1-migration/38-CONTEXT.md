@@ -1,4 +1,4 @@
-# Phase 37: Spring Boot 4.1 Migration - Context
+# Phase 38: Spring Boot 4.1 Migration - Context
 
 **Gathered:** 2026-10-01
 **Status:** Ready for planning
@@ -24,7 +24,7 @@ change to an endpoint beyond what the framework move forces.
 </domain>
 
 <evidence>
-## Feasibility spike (2026-10-01) — `37-SPIKE.md`, diff in `37-SPIKE.patch`
+## Feasibility spike (2026-10-01) — `38-SPIKE.md`, diff in `38-SPIKE.patch`
 
 A throwaway worktree on `origin/main` @ `43ed6bbf` reached a compiling Boot 4.1.1 build. It ran on
 Ubuntu OpenJDK 25.0.4.1, because no Temurin JDK is installed on the host; re-measure on Temurin
