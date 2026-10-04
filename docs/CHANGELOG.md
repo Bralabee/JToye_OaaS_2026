@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### A rate-limited onboarding page no longer tells a vendor they have no shops (#PRNUM) — 2026-10-04
+### A rate-limited onboarding page no longer tells a vendor they have no shops (#888) — 2026-10-04
 
 - **Why.** The nightly E2E failed on 2026-10-02 (run 36954670754) and 2026-10-04 (run
   37171812464). Its traces show core-java's per-tenant rate limiter (bucket 120, refill
