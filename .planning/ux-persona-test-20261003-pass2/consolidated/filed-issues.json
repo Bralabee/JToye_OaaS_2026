@@ -1,0 +1,1025 @@
+[
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-001"
+    ],
+    "title": "Regression of #84: DSAR erasure is marked completed while nothing is erased for storefront customers",
+    "number": 777,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/777"
+  },
+  {
+    "kind": "regression-pointer",
+    "clusterIds": [],
+    "title": "comment on #84",
+    "number": 84,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/84#issuecomment-5974726978"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-002"
+    ],
+    "title": "A verified DSAR access request is never fulfilled (ACCESS delivery not implemented)",
+    "number": 778,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/778"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-003"
+    ],
+    "title": "Revoking a manager's last shop grant silently makes him tenant-wide Group admin",
+    "number": 779,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/779"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-004"
+    ],
+    "title": "Every staff login is a tenant-wide Group admin by default (JIT provisioning, strict-scoping off)",
+    "number": 780,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/780"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-005"
+    ],
+    "title": "A buyer of one shop can publish a 5-star review on a different shop of the same tenant",
+    "number": 781,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/781"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-006"
+    ],
+    "title": "Regression of #88: The public rate limiter trusts any X-Forwarded-For value, so rotating it defeats the limit",
+    "number": 782,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/782"
+  },
+  {
+    "kind": "regression-pointer",
+    "clusterIds": [],
+    "title": "comment on #88",
+    "number": 88,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/88#issuecomment-5974729907"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-007"
+    ],
+    "title": "Checkout never re-validates the stored basket: stale prices, removed and sold-out items surface only as a charge or a bare error",
+    "number": 783,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/783"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-009"
+    ],
+    "title": "The customer's allergen acknowledgement is never sent to or stored by the server",
+    "number": 784,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/784"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-010"
+    ],
+    "title": "The customer never sees the allergen set recorded on their order, and it can differ from what they acknowledged",
+    "number": 785,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/785"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-011"
+    ],
+    "title": "The kitchen screen ticket hides the customer's note (e.g. 'severe peanut allergy') and the fulfilment type",
+    "number": 786,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/786"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-012"
+    ],
+    "title": "A product whose ingredients name an allergen (e.g. 'butter (MILK)') with no box ticked saves and shows as 'No allergens'",
+    "number": 787,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/787"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-013"
+    ],
+    "title": "Shops go live with a failed FSA match, self-approved by the vendor, while the site claims 'UK food-hygiene verified'",
+    "number": 788,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/788"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-014"
+    ],
+    "title": "Customers are never given the seller's legal identity or any way to contact the shop",
+    "number": 789,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/789"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-016"
+    ],
+    "title": "Updating a product without quantityInStock silently turns stock tracking off",
+    "number": 790,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/790"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-018"
+    ],
+    "title": "A completed, paid order can be deleted, leaving ledger rows that point at nothing",
+    "number": 791,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/791"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-008"
+    ],
+    "title": "An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order",
+    "number": 792,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/792"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-015"
+    ],
+    "title": "Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy",
+    "number": 793,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/793"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-019"
+    ],
+    "title": "The platform's own registered office is not published anywhere on the site",
+    "number": 794,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/794"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-020"
+    ],
+    "title": "A new order makes no sound and never reaches the kitchen screen until someone confirms it on another page",
+    "number": 795,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/795"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-021"
+    ],
+    "title": "When the all-day kitchen tablet's session lapses the board silently becomes a sign-in page",
+    "number": 796,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/796"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-022"
+    ],
+    "title": "A vendor cannot pause or stop taking orders: no pause switch, no holiday closure, and free-text hours fail open and cannot be cleared",
+    "number": 797,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/797"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-023"
+    ],
+    "title": "Vendors cannot set a delivery fee, free-delivery threshold or collection-only: orders are charged £0 delivery and collection-only shops take deliveries",
+    "number": 798,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/798"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-026"
+    ],
+    "title": "CSV import ignores the selected shop and hides imported items from every storefront; a menu cannot be copied to another site",
+    "number": 799,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/799"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-027"
+    ],
+    "title": "Per-shop dashboard and finance show the whole business's takings, and site managers get 'No financial data yet' instead of their shop's numbers",
+    "number": 800,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/800"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-028"
+    ],
+    "title": "Every shop update regenerates the public URL slug, so shared links and QR codes break",
+    "number": 801,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/801"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-029"
+    ],
+    "title": "The order confirmation is rendered in place at /checkout: off-screen, unannounced, and lost on refresh",
+    "number": 802,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/802"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-031"
+    ],
+    "title": "A prospective vendor has no way in: 'Start your application' dead-ends at a login, and no sales or support contact exists",
+    "number": 803,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/803"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-032"
+    ],
+    "title": "No merchant terms, pricing page, VAT basis or card-fee figure: /legal/terms, /pricing, /contact and /about all 404",
+    "number": 804,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/804"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-035"
+    ],
+    "title": "A vendor has no way to give a developer API credentials; the only path is the owner's password plus the confidential core-api client secret",
+    "number": 805,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/805"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-036"
+    ],
+    "title": "An order taken by an AI agent through MCP stays DRAFT and the kitchen never sees it",
+    "number": 806,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/806"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-037"
+    ],
+    "title": "/sync/batch has no stock or availability field and silently skips unknown items while reporting SUCCESS",
+    "number": 807,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/807"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-039"
+    ],
+    "title": "Anonymous traffic can exhaust the edge gateway's single process-wide rate limit and block every vendor's sync; its 429 is untyped",
+    "number": 808,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/808"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-040"
+    ],
+    "title": "Asked for one shop's menu, an AI agent gets every product in the business with allergens only as an integer",
+    "number": 809,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/809"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-041"
+    ],
+    "title": "Anyone can place many fake cash orders in seconds with throwaway contact details",
+    "number": 810,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/810"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-042"
+    ],
+    "title": "Item quantity has no upper bound: a £19 billion order is accepted and shown on the dashboard",
+    "number": 811,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/811"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-043"
+    ],
+    "title": "An allergy request is a generic free-text note: no alert to the vendor, no acknowledgement, never echoed to the customer",
+    "number": 812,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/812"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-044"
+    ],
+    "title": "Reviews publish the reviewer's full checkout name with no notice, policy or moderation",
+    "number": 813,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/813"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-045"
+    ],
+    "title": "The local compose stack can never exercise the card-payment path (Stripe env-var names and build-time key mismatch)",
+    "number": 814,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/814"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-046"
+    ],
+    "title": "Products have no VAT-rate choice; everything is booked as Standard 20%",
+    "number": 815,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/815"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-047"
+    ],
+    "title": "'VAT (incl. 20%)' is shown for every vendor, with no VAT-registration status or number captured",
+    "number": 816,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/816"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-048"
+    ],
+    "title": "Menu cards show allergens as an unnamed count, 'Add' works without seeing them, and 'none declared' is never stated",
+    "number": 817,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/817"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-049"
+    ],
+    "title": "A double-tap on 'Start Preparing' jumps the order to READY and emails the customer 'Ready!' with no undo",
+    "number": 818,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/818"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-050"
+    ],
+    "title": "Kitchen mute survives sign-out and the next person's icon shows sound on while new orders are silent",
+    "number": 819,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/819"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-051"
+    ],
+    "title": "Cancelling an order is one unconfirmed tap with no reason, next to Confirm on small phone buttons",
+    "number": 820,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/820"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-052"
+    ],
+    "title": "Unanswered orders stay Pending forever and the customer is never told",
+    "number": 821,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/821"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-053"
+    ],
+    "title": "Orders and Customers have no search, so an order cannot be found by customer name at the counter",
+    "number": 822,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/822"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-054"
+    ],
+    "title": "Every kitchen ticket cuts the order number to 'ORD-…', so tickets look identical",
+    "number": 823,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/823"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-055"
+    ],
+    "title": "The kitchen board is not built for a wall tablet: wasted space, small text, newest-first ordering and very tall tickets",
+    "number": 824,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/824"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-056"
+    ],
+    "title": "No ready-by or delivery time exists anywhere: tickets, confirmation, tracking or emails",
+    "number": 825,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/825"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-057"
+    ],
+    "title": "Order confirmation and every status email omit the shop, items, total and address, and come from inconsistent senders",
+    "number": 826,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/826"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-058"
+    ],
+    "title": "Finance has no 'today', no date range, no export and no cash/card split",
+    "number": 827,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/827"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-059"
+    ],
+    "title": "A completed cash order stays 'Payment status NONE / Unpaid' while counted as revenue",
+    "number": 828,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/828"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-060"
+    ],
+    "title": "Cash-only is revealed only at the bottom of checkout, and the Place order button shows a card icon",
+    "number": 829,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/829"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-061"
+    ],
+    "title": "Menu 'Add' buttons are visible but ignore taps until hydration (4.2 s on 4G, 14 s on Slow 3G)",
+    "number": 830,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/830"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-062"
+    ],
+    "title": "Saving a shop overwrites its banner with the logo URL",
+    "number": 831,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/831"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-063"
+    ],
+    "title": "Products cannot be deleted once they have a photo or any order (even cancelled): misleading 409",
+    "number": 832,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/832"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-064"
+    ],
+    "title": "Deleting a shop orphans its products, and editing an orphan silently moves it to 'All Shops'",
+    "number": 833,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/833"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-065"
+    ],
+    "title": "The image dialog stays on 'Processing…' although the server has the image ACTIVE within ~6 s",
+    "number": 834,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/834"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-066"
+    ],
+    "title": "The 'Publish to storefront' checkbox is ignored, or throws away the whole shop edit with a raw developer error",
+    "number": 835,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/835"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-067"
+    ],
+    "title": "Internal strategy pages are public, expose a repo path, and contradict the landing page (incl. a 'payouts: Full' claim)",
+    "number": 836,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/836"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-068"
+    ],
+    "title": "Test and demo data is visible to customers and vendors (E2E 20% OFF promo, weeks-old test orders, a real person's name and email)",
+    "number": 837,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/837"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-069"
+    ],
+    "title": "There is no account page: data access and erasure are mailto-only although a backend intake exists",
+    "number": 838,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/838"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-070"
+    ],
+    "title": "The DSAR confirmation link does not open on compose and shows raw JSON when it does",
+    "number": 839,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/839"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-071"
+    ],
+    "title": "The cookie policy omits keys that hold the customer's email and id and survive sign-out",
+    "number": 840,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/840"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-072"
+    ],
+    "title": "Order contact details are barely validated, and API/MCP orders need no customer contact at all",
+    "number": 841,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/841"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-073"
+    ],
+    "title": "Vendors have no bulk-reject and no fraud signal for junk orders",
+    "number": 842,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/842"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-074"
+    ],
+    "title": "Regression of #465: On a slow network, returning after 5 minutes signs the customer out (parallel refreshes burn the single-use token)",
+    "number": 843,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/843"
+  },
+  {
+    "kind": "regression-pointer",
+    "clusterIds": [],
+    "title": "comment on #465",
+    "number": 465,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/465#issuecomment-5974762665"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-075"
+    ],
+    "title": "Customers cannot order ahead for a time, and a closed shop takes no pre-orders",
+    "number": 844,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/844"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-076"
+    ],
+    "title": "No 'order again' and no remembered address: a weekly order takes 10 taps and 85 keystrokes",
+    "number": 845,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/845"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-077"
+    ],
+    "title": "Customers have no way to leave a review; the only path is an unauthenticated API call with an email in the URL",
+    "number": 846,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/846"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-078"
+    ],
+    "title": "Password-reset links expire after 5 minutes",
+    "number": 847,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/847"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-079"
+    ],
+    "title": "Keycloak sign-in and registration fall below the storefront's accessibility bar and hide password rules until failure",
+    "number": 848,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/848"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-080"
+    ],
+    "title": "At large text sizes the basket, tracker and shop header truncate or overflow",
+    "number": 849,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/849"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-081"
+    ],
+    "title": "Tracking pages are silent and unlabelled for screen readers (status changes, current step, copy button, lookup result, field name, contrast)",
+    "number": 850,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/850"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-082"
+    ],
+    "title": "Shop cards on the kitchen list have no accessible name ('link, link, link')",
+    "number": 851,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/851"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-083"
+    ],
+    "title": "Pressing Add/Remove drops focus to the page body and the basket announcement doubles the count without naming the item",
+    "number": 852,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/852"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-084"
+    ],
+    "title": "Basket, checkout, confirmation and tracking all share the title 'J'Toye — Discover Local Vendors'",
+    "number": 853,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/853"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-085"
+    ],
+    "title": "On mobile the cookie banner covers content and keyboard focus and is the 32nd tab stop",
+    "number": 854,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/854"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-086"
+    ],
+    "title": "A delivery customer's tracking page says 'Ready for collection'",
+    "number": 855,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/855"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-087"
+    ],
+    "title": "A kitchen hand sees far more customer personal data than needed to cook",
+    "number": 856,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/856"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-088"
+    ],
+    "title": "A vendor cannot show who prepared an order or when: no timeline, no export",
+    "number": 857,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/857"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-089"
+    ],
+    "title": "86ing an item or changing a price takes four taps and ~30 s in a long form",
+    "number": 858,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/858"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-090"
+    ],
+    "title": "Nothing asserts at deploy time that customer email verification is on; dev runs with it off",
+    "number": 859,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/859"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-091"
+    ],
+    "title": "The basket shows no allergens and checkout's combined set has no per-item attribution",
+    "number": 860,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/860"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-092"
+    ],
+    "title": "No 'may contain' field exists, label use-by is computed at download time, and records use US date format",
+    "number": 861,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/861"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-093"
+    ],
+    "title": "There is no allergen filter, and searching 'peanut' or 'gluten free' returns nothing",
+    "number": 862,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/862"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-095"
+    ],
+    "title": "The MCP server cannot be added to hosted ChatGPT/Claude connectors (no OAuth discovery, 5-minute tokens)",
+    "number": 863,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/863"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-096"
+    ],
+    "title": "Order webhooks carry only ids and status, with no items, totals or customer",
+    "number": 864,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/864"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-097"
+    ],
+    "title": "Vendor API and MCP orders accept products marked unavailable",
+    "number": 865,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/865"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-099"
+    ],
+    "title": "With the API unreachable but the socket up, the board says 'Live' for ~50 s while dropping an order",
+    "number": 866,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/866"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-100"
+    ],
+    "title": "After access is removed the kitchen keeps showing that shop's tickets (with PII and live buttons) and blames the connection",
+    "number": 867,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/867"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-102"
+    ],
+    "title": "A customer cannot cancel an order",
+    "number": 868,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/868"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-106"
+    ],
+    "title": "The basket is device-local: not restored on sign-in and not shared across devices",
+    "number": 869,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/869"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-108"
+    ],
+    "title": "Menu items cannot be customised (no modifiers)",
+    "number": 870,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/870"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-113"
+    ],
+    "title": "There is no marketing-consent choice or preferences page, and /unsubscribe says 'contact the vendor'",
+    "number": 871,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/871"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-118"
+    ],
+    "title": "Another shop's order returns 403 not 404, and public image URLs embed the tenant UUID",
+    "number": 872,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/872"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-120"
+    ],
+    "title": "No email campaigns, loyalty or vouchers",
+    "number": 873,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/873"
+  },
+  {
+    "kind": "issue",
+    "clusterIds": [
+      "UXT-121"
+    ],
+    "title": "No custom storefront domain (SUSPECTED)",
+    "number": 874,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/874"
+  },
+  {
+    "kind": "bundle",
+    "clusterIds": [
+      "UXT-098",
+      "UXT-101",
+      "UXT-115",
+      "UXT-117"
+    ],
+    "title": "Persona polish (dashboard-polish): 4 small defects",
+    "number": 875,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/875"
+  },
+  {
+    "kind": "bundle",
+    "clusterIds": [
+      "UXT-103",
+      "UXT-104",
+      "UXT-105"
+    ],
+    "title": "Persona polish (checkout-polish): 3 small defects",
+    "number": 876,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/876"
+  },
+  {
+    "kind": "bundle",
+    "clusterIds": [
+      "UXT-107",
+      "UXT-109",
+      "UXT-110",
+      "UXT-111",
+      "UXT-112",
+      "UXT-116"
+    ],
+    "title": "Persona polish (storefront-polish): 6 small defects",
+    "number": 877,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/877"
+  },
+  {
+    "kind": "bundle",
+    "clusterIds": [
+      "UXT-114",
+      "UXT-119"
+    ],
+    "title": "Persona polish (public-content): 2 small defects",
+    "number": 878,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/878"
+  },
+  {
+    "kind": "bundle",
+    "clusterIds": [
+      "UXT-122",
+      "UXT-123"
+    ],
+    "title": "Persona polish (integrator-polish): 2 small defects",
+    "number": 879,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/879"
+  },
+  {
+    "kind": "epic",
+    "clusterIds": [],
+    "title": "[UXT-EPIC] Persona user-testing 2026-10-03: real-world readiness findings (pass 1 + 2)",
+    "number": 880,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/880"
+  },
+  {
+    "kind": "same-comment",
+    "clusterIds": [
+      "UXT-033",
+      "UXT-034"
+    ],
+    "title": "comment on #102",
+    "number": 102,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/102#issuecomment-5974782872"
+  },
+  {
+    "kind": "same-comment",
+    "clusterIds": [
+      "UXT-094"
+    ],
+    "title": "comment on #208",
+    "number": 208,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/208#issuecomment-5974783376"
+  },
+  {
+    "kind": "same-comment",
+    "clusterIds": [
+      "UXT-024",
+      "UXT-025"
+    ],
+    "title": "comment on #452",
+    "number": 452,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/452#issuecomment-5974783979"
+  },
+  {
+    "kind": "same-comment",
+    "clusterIds": [
+      "UXT-030"
+    ],
+    "title": "comment on #460",
+    "number": 460,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/460#issuecomment-5974784513"
+  },
+  {
+    "kind": "same-comment",
+    "clusterIds": [
+      "UXT-038"
+    ],
+    "title": "comment on #587",
+    "number": 587,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/587#issuecomment-5974785129"
+  },
+  {
+    "kind": "same-comment",
+    "clusterIds": [
+      "UXT-017"
+    ],
+    "title": "comment on #727",
+    "number": 727,
+    "url": "https://github.com/Bralabee/JToye_OaaS_2026/issues/727#issuecomment-5974785705"
+  }
+]

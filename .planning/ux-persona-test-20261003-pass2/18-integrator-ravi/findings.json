@@ -1,0 +1,455 @@
+[
+  {
+    "id": "P2-RAV-01",
+    "title": "A vendor has no way to give a developer API credentials; the only path is the owner's password plus the platform's confidential core-api client secret",
+    "severity": "blocker",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "/dashboard (nav); Keycloak jtoye-dev clients",
+    "steps": [
+      "Log in as admin-user and inspect the dashboard nav",
+      "Probe /dashboard/developers, /dashboard/api, /dashboard/settings, /dashboard/integrations, /developers, /docs",
+      "Read docs/security-scopes.md and decode tokens of integration-catalog-ro / integration-orders-rw"
+    ],
+    "expected": "A Developers/API page where the owner creates a scoped, revocable client for their own tenant",
+    "actual": "No developer surface (all 6 probes 404). The only machine clients come from a realm import, hard-wired to tenant A's UUID, and the vendor can't see or rotate them. The integrator must use the owner's admin password through a password grant, which also needs the confidential core-api client secret. The result is a full admin token (catalog:write, orders:write, customers:write) with a 300 s lifetime.",
+    "realWorldImpact": "Vendors hand their admin password to freelancers or don't integrate at all. Nothing can be revoked per developer, and least privilege can't be achieved without a platform operator, which this platform does not have.",
+    "evidence": [
+      "w01-dashboard-nav.png",
+      "webhooks-ui-log.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-02",
+    "title": "Orders placed through the vendor API or MCP accept products marked out of stock (available=false) and submit them to the kitchen",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "orders",
+    "surface": "POST /api/v1/orders; MCP create_order",
+    "steps": [
+      "Create a product, then PUT it with available=false",
+      "POST /api/v1/orders with that productId (or MCP create_order)",
+      "POST /api/v1/orders/{id}/submit"
+    ],
+    "expected": "A 409/422 typed error saying the product is unavailable (as on the storefront path)",
+    "actual": "201 DRAFT order, then submit 200 → PENDING. OrderService.createOrder checks shop membership and stock count but never 'available'; PublicStorefrontService does.",
+    "realWorldImpact": "The vendor marks an item out of stock and the WhatsApp/AI bot keeps selling it. They end up with refunds, angry customers and cancelled orders at rush hour.",
+    "evidence": [
+      "rest-unavailable-order.json",
+      "mcp-edge-cases.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-03",
+    "title": "Updating a product without quantityInStock silently turns stock tracking off (stock becomes unlimited); there is no PATCH",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "catalogue",
+    "surface": "PUT /api/v1/products/{id}",
+    "steps": [
+      "Create a product with quantityInStock=40",
+      "PUT the product with the required fields + available=false, omitting quantityInStock",
+      "GET the product"
+    ],
+    "expected": "Omitted fields keep their values (as every other optional field does), or a PATCH endpoint exists",
+    "actual": "quantityInStock 40 → null (null = unlimited/untracked) while description, category, shopId, imageUrl, featured and displayOrder are all preserved. PUT {available:false} alone → 400, because SKU, title, ingredients, allergen mask and price are required. PATCH → 405. The spec does not document the special case.",
+    "realWorldImpact": "A nightly EPOS or bot job that only flips availability wipes stock counts. When the item comes back it is unlimited and oversells. Every availability flip also has to resend the Natasha's-Law allergen fields, so a stale EPOS copy can overwrite the vendor's allergen data.",
+    "evidence": [
+      "prod-put.json",
+      "prod-get-after-put.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-04",
+    "title": "An order taken by an AI agent through MCP stays in DRAFT, and the kitchen never sees it",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "MCP create_order; GET /api/v1/orders/kitchen",
+    "steps": [
+      "MCP tools/call create_order with a valid shop/product/idempotencyKey",
+      "Observe status",
+      "Check the MCP tool list for a submit/confirm tool and the kitchen endpoint contract"
+    ],
+    "expected": "The agent's order reaches the kitchen (PENDING/CONFIRMED), or the tool clearly says a human must submit it",
+    "actual": "status DRAFT. No MCP tool can submit or confirm it. The kitchen endpoint returns only CONFIRMED/PREPARING/READY. A DRAFT emits no webhook event. The tool description does not mention DRAFT.",
+    "realWorldImpact": "ChatGPT/Claude tells the customer 'order placed', nothing is cooked, and the customer arrives to collect food that doesn't exist.",
+    "evidence": [
+      "mcp-order1.json",
+      "api-docs.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-05",
+    "title": "Products synced through /sync/batch belong to no shop, can be ordered at any shop, and a duplicate title records the wrong allergens on the order",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "allergens",
+    "surface": "POST :8089/api/v1/sync/batch; MCP list_products/create_order",
+    "steps": [
+      "Sync a product sku RAVI-EPOS-2 titled 'Jollof Rice', allergenMask 0",
+      "GET /api/v1/products → shopId null; not on any storefront",
+      "MCP list_products shows two 'Jollof Rice' items (masks 0 and 256)",
+      "MCP create_order at Mama Ade's Kitchen with the orphan id",
+      "MCP read_orders orderId → line allergenMask"
+    ],
+    "expected": "Sync requires a shop and rejects unbound products with a typed error; an order line can't carry an unbound duplicate",
+    "actual": "The orphan is created (confirms issue #727 live), is hidden from storefronts even though the spec says null = 'available on all tenant shops', is listed to agents and is accepted on a Mama Ade's order. The line records allergenMask 0, but Mama Ade's real Jollof Rice declares 256.",
+    "realWorldImpact": "The kitchen sees 'Jollof Rice x2', cooks the real dish, and the order's allergen record says none. That is a Natasha's-Law and safety exposure.",
+    "evidence": [
+      "products-after-sync.json",
+      "mcp-jollof-candidates.tsv",
+      "mcp-orphan-order-detail.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-06",
+    "title": "EPOS stock sync is impossible: /sync/batch has no stock or availability field and skips unknown items while still reporting SUCCESS",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "catalogue",
+    "surface": "POST :8089/api/v1/sync/batch",
+    "steps": [
+      "POST 3 product items + 1 item {type:'stock',sku,quantity:0}"
+    ],
+    "expected": "Stock and availability can be synced. Rejected or unknown items are reported per item (or the batch fails typed).",
+    "actual": "202 {status:SUCCESS, processed_count:3}. The 4th item was dropped without a trace. SyncItem fields are type, sku, title, ingredientsText, allergenMask, pricePennies, name and address only.",
+    "realWorldImpact": "A nightly EPOS job looks green while doing nothing for stock, and the vendor finds out from customers.",
+    "evidence": [
+      "sync-body.json",
+      "sync-resp1.json",
+      "edge-openapi.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-07",
+    "title": "The MCP server can't be added to hosted ChatGPT/Claude connectors: no OAuth discovery, and bearer tokens expire in 5 minutes",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "http://localhost:9100/mcp",
+    "steps": [
+      "POST /mcp without Authorization",
+      "GET /.well-known/oauth-protected-resource and /.well-known/oauth-authorization-server",
+      "Decode an admin-user token: exp - iat"
+    ],
+    "expected": "MCP auth discovery (protected-resource metadata + WWW-Authenticate) so an assistant can run OAuth, or long-lived scoped tokens",
+    "actual": "401 {error:missing_bearer_token} with no WWW-Authenticate header; both /.well-known paths 404; token lifetime 300 s",
+    "realWorldImpact": "Brief item 1 (ChatGPT/Claude takes orders) needs a custom token-refreshing proxy that the vendor must host.",
+    "evidence": [
+      "mcp-initialize.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-08",
+    "title": "Order webhooks contain only ids and status, with no items, totals or customer, so a Google Sheet row can't be built from them",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "webhooks",
+    "surface": "ORDER_STATE_CHANGED webhook payload",
+    "steps": [
+      "Read docs/webhooks.md test vector and OrderEventPublisher.OrderStateChangeEvent",
+      "Verify the vector with openssl"
+    ],
+    "expected": "The order summary (lines, total, fulfilment, customer name) in the event, or a documented thin-event + fetch pattern with credentials the vendor can issue",
+    "actual": "data = orderId, tenantId, orderNumber, previousStatus, newStatus, timestamp, shopId",
+    "realWorldImpact": "Every row needs a call back to the API, which needs credentials (P2-RAV-01) and spends the shared rate budget.",
+    "evidence": [
+      "vec-body.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-09",
+    "title": "A Google Apps Script web-app receiver would always fail, because webhook delivery does not follow redirects",
+    "severity": "major",
+    "status": "SUSPECTED",
+    "area": "webhooks",
+    "surface": "WebhookDeliveryClientConfig (followRedirect(false))",
+    "steps": [
+      "Register https://script.google.com/macros/s/<id>/exec as the endpoint",
+      "Trigger an order event"
+    ],
+    "expected": "Delivery succeeds, or registration warns that redirecting endpoints are unsupported",
+    "actual": "From the code: redirects are disabled for SSRF reasons, so the 302 that Apps Script always returns counts as a failure. Not observed, because no Apps Script endpoint is available.",
+    "realWorldImpact": "The most common no-code 'push to Google Sheet' receiver silently auto-pauses.",
+    "evidence": [],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-10",
+    "title": "A webhook endpoint is auto-paused after about 46 seconds of failures, retries stop after 5 attempts instead of 8, and nobody is told",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "webhooks",
+    "surface": "/dashboard/webhooks/{id}; GET /api/v1/webhooks/{id}/deliveries",
+    "steps": [
+      "Subscribe https://example.com/ravi-gsheet-hook to Orders (it returns 405)",
+      "Let two order events occur",
+      "Read the delivery log and the subscription status; search Mailhog"
+    ],
+    "expected": "Each event gets its documented 8 attempts over about 2 min, and the owner is notified when the endpoint is paused",
+    "actual": "Two events × 5 attempts = 10 consecutive failures → AUTO_PAUSED at 22:14:24 (first event 22:13:38); the remaining attempts were terminally FAILED with 'subscription not active: AUTO_PAUSED'. Mailhog: 0 messages.",
+    "realWorldImpact": "On a busy Friday a one-minute receiver blip stops all order pushes until someone happens to open the Webhooks page.",
+    "evidence": [
+      "deliveries1.json",
+      "w08-list-auto-paused.png",
+      "w09-delivery-log-failed.png"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-11",
+    "title": "Webhooks have no 'send test event' button, the log shows no request or response body, and subscriptions can't be deleted",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "webhooks",
+    "surface": "/dashboard/webhooks; DELETE /api/v1/webhooks/{id}",
+    "steps": [
+      "Create an endpoint; look for a test button",
+      "Open the delivery log",
+      "Revoke, then DELETE the subscription"
+    ],
+    "expected": "A test ping, a payload/response inspector, and delete for revoked endpoints",
+    "actual": "No test button (row actions: View, Pause, menu). The log shows type, status, HTTP code and attempts only. DELETE → 405, so REVOKED rows accumulate (another persona's revoked endpoint is also listed).",
+    "realWorldImpact": "The integrator has to wait for a real order to test and can't see what was sent, and the list fills with dead rows.",
+    "evidence": [
+      "w06-list-after-create.png",
+      "w09-delivery-log-failed.png",
+      "cleanup-log.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-12",
+    "title": "Anonymous traffic can use up the edge gateway's single rate limit and block every vendor's sync; its 429 response is untyped",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "performance",
+    "surface": "edge :8089 (all routes)",
+    "steps": [
+      "Send 70 parallel unauthenticated POSTs to :8089/api/v1/sync/batch",
+      "Inspect a 429 response"
+    ],
+    "expected": "Per-tenant limiting after auth; a typed RFC 7807 429 with Retry-After and rate headers (as Core does)",
+    "actual": "41×401, 29×429. The body is {\"error\":\"rate limit exceeded\"} with no Retry-After and no X-RateLimit headers. It is one process-wide bucket (20 rps, burst 40) applied before auth, and the edge spec does not list 429.",
+    "realWorldImpact": "Anyone flooding the edge without a token makes every vendor's nightly sync fail, and clients can't back off properly.",
+    "evidence": [
+      "edge-burst.txt",
+      "edge-429-sample.txt",
+      "edge-openapi.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-13",
+    "title": "MCP tool errors turn Core's typed problem details into prose and drop the error type and the per-field details",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "MCP create_order (errors.ts toToolError)",
+    "steps": [
+      "create_order with the same idempotencyKey and a different body"
+    ],
+    "expected": "structuredContent with status, type URI and the errors map",
+    "actual": "text 'core 422 Idempotency Key Reused: Idempotency-Key reused with a different request payload'. A Core 400 would lose its per-field 'errors' map.",
+    "realWorldImpact": "Agents have to parse English to recover, and can't tell the user which field was wrong.",
+    "evidence": [
+      "mcp-order3.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-14",
+    "title": "Asked for one shop's menu, an AI agent gets every product in the business, with allergens only as a number",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "MCP list_products",
+    "steps": [
+      "tools/call list_products {shopId:<Mama Ade's>}",
+      "tools/call list_products {size:100}"
+    ],
+    "expected": "A shopId/search filter (Core supports shopId), only orderable items, and allergen names",
+    "actual": "shopId is silently ignored. The call returns all 30 tenant products, including the unpublished shop, other personas' test items, unavailable items and shop-less orphans. Allergens come back as an integer bitmask with no decoding.",
+    "realWorldImpact": "The agent lists dishes the shop doesn't sell and can't safely answer 'does it contain nuts?'.",
+    "evidence": [
+      "mcp-list-products-100.json",
+      "mcp-tools-list.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-15",
+    "title": "The OpenAPI spec has hygiene problems that trip up client generators and Swagger 'Authorize'",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "/v3/api-docs; :8089/openapi.json",
+    "steps": [
+      "Inspect securitySchemes, response content types, 429 coverage and component schemas"
+    ],
+    "expected": "A public tokenUrl, application/json responses, documented 429s and no framework internals",
+    "actual": "tokenUrl http://keycloak:8080/… (internal host); 117/140 ops declare '*/*'; 429 documented on 1/140; ApplicationContext/BeanFactory/ServletContext/Environment schemas; 'pageable' object query param; the edge returns processed_count while Core uses processedCount; the orders:write scope is described as gating 'POST /orders' only",
+    "realWorldImpact": "Generated SDKs are noisy, Swagger can't get a token, and integrators don't handle 429s.",
+    "evidence": [
+      "api-docs.json",
+      "edge-openapi.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-16",
+    "title": "An order with no customer name, email or phone is accepted over the API and MCP",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "orders",
+    "surface": "POST /api/v1/orders; MCP create_order",
+    "steps": [
+      "create_order with shopId + items + idempotencyKey only"
+    ],
+    "expected": "Collection orders require at least a name or phone",
+    "actual": "201 DRAFT with customerName/email/phone null",
+    "realWorldImpact": "The kitchen has a collection order nobody can claim or contact.",
+    "evidence": [
+      "mcp-edge-cases.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-17",
+    "title": "A replayed idempotent request can't be told apart from a fresh one, and its body differs byte for byte",
+    "severity": "polish",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "POST /api/v1/orders with Idempotency-Key",
+    "steps": [
+      "POST twice with the same key and body; compare headers and bodies"
+    ],
+    "expected": "An Idempotent-Replayed header (or 200 on replay), a Location header, and a byte-identical body",
+    "actual": "201 both times, no replay header, no Location; createdAt '+01:00' first time, 'Z' on replay",
+    "realWorldImpact": "Clients that cache or hash responses see a 'different' order. A minor annoyance.",
+    "evidence": [
+      "order1.h",
+      "order2.h",
+      "order1.json",
+      "order2.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-18",
+    "title": "A vendor can't connect their own WhatsApp bot; WhatsApp ordering is one platform-wide setting that only an operator can configure",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "POST :8089/api/v1/webhooks/whatsapp",
+    "steps": [
+      "POST to the WhatsApp webhook",
+      "Read edge-go cmd/edge/main.go WHATSAPP_DEFAULT_TENANT_ID / WHATSAPP_DEFAULT_SHOP_ID"
+    ],
+    "expected": "Per-tenant WhatsApp connection in the dashboard",
+    "actual": "503 'webhook signing not configured' with Retry-After 300. One tenant and shop for the whole platform, set by environment variable.",
+    "realWorldImpact": "Brief item 1 (WhatsApp bot takes orders) can't be delivered for this vendor.",
+    "evidence": [
+      "edge-openapi.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-19",
+    "title": "The published API contract matches the live responses exactly",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "/v3/api-docs vs shops/products/orders endpoints",
+    "steps": [
+      "node oas-diff.mjs over 7 live responses",
+      "Break arm: rename a field and stringify a number in a copy"
+    ],
+    "expected": "Spec matches live",
+    "actual": "0 mismatches on all 7; the break arm flagged all 3 injected mismatches",
+    "realWorldImpact": "SDK generation and typed clients can be trusted.",
+    "evidence": [
+      "oas-diff.txt",
+      "oas-diff-breakarm.txt",
+      "oas-diff.mjs"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-20",
+    "title": "Retrying an order with the same key never duplicates it, and reusing the key for a different order is refused with a typed error",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "POST /api/v1/orders; MCP create_order",
+    "steps": [
+      "Create with a key, replay it, then change the body under the same key; repeat via MCP"
+    ],
+    "expected": "Replay returns the original; a different body is refused",
+    "actual": "Same order id on replay; 422 https://jtoye.uk/errors/idempotency-payload-mismatch; MCP makes the key mandatory",
+    "realWorldImpact": "A flaky bot network can't double-order.",
+    "evidence": [
+      "order1.json",
+      "order2.json",
+      "order3.json",
+      "mcp-order1.json",
+      "mcp-order2.json",
+      "mcp-order3.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-21",
+    "title": "Webhook signing secrets are handled carefully, and the delivery log, auto-pause banner and replay are clear",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "webhooks",
+    "surface": "/dashboard/webhooks",
+    "steps": [
+      "Create an endpoint (http:// refused inline)",
+      "Try Escape on the secret dialog",
+      "Rotate the secret",
+      "Open the delivery log"
+    ],
+    "expected": "Secure, clear webhook management",
+    "actual": "The secret is shown once, Escape can't dismiss it, closing needs an explicit 'I've saved it', and the secret is 43-char base64url. Rotation warns that there is no overlap. Failed rows show the HTTP code, attempt count and a Replay button. The auto-pause banner explains how to fix it. The docs' HMAC test vector reproduces with openssl, and changing 1 byte gives a different digest.",
+    "realWorldImpact": "Integrators can verify signatures correctly first time.",
+    "evidence": [
+      "w04-create-http-refused.png",
+      "w05-secret-reveal.png",
+      "w10-rotate-confirm.png",
+      "w11-rotate-secret-reveal.png",
+      "w09-delivery-log-failed.png",
+      "vec-body.json"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-RAV-22",
+    "title": "Bad or ambiguous agent input is refused clearly, with typed, field-level errors",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "api-mcp",
+    "surface": "MCP create_order; Core validation",
+    "steps": [
+      "create_order with quantity 0, product/shop names instead of UUIDs, DELIVERY with no address, and another shop's product"
+    ],
+    "expected": "Clear refusals",
+    "actual": "Zod rejects with JSON paths (items.0.quantity, addressLine1…). A cross-shop product gets 404 without revealing it exists. Core 400s carry per-field Natasha's-Law messages.",
+    "realWorldImpact": "Agents can recover from their own mistakes.",
+    "evidence": [
+      "mcp-edge-cases.txt",
+      "mcp-edge-A.txt"
+    ],
+    "reconfirms": []
+  }
+]

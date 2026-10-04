@@ -11,11 +11,11 @@ last_activity: 2026-09-30
 last_activity_desc: "Phase 36 merged (PR #763) and its post-merge CI + first scheduled nightly on main read green by content; STATE advanced past shipping"
 state_head: f93412d13ca76d3182a2c0eea75e0cd302e7cd77
 progress:
-  total_phases: 16
+  total_phases: 17
   completed_phases: 12
   total_plans: 137
   completed_plans: 137
-  percent: 75
+  percent: 71
 ---
 
 # Project State
@@ -678,6 +678,8 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 ## Accumulated Context
 
 ### Roadmap Evolution
+
+- **Phase 37 added (2026-10-04): Real-world operations readiness.** Added by owner request after two passes of persona user-testing (15 personas, epic #880, PR #881). It holds the 87 of 123 findings clusters that fitted no existing phase, grouped as 37-A to 37-G: kitchen ops, multi-site/staff/finance, checkout integrity, abuse resistance, integrator surface, accessibility, and catalogue correctness. It carries 9 of the 16 P0s; the others are DSAR (#777, #778), the allergen acknowledgement (#784, #785) and #787 and #789 (Phase 31 gap-closure) and #788 (Phase 33). Phase 31's 17 clusters need a 31.1 gap-closure plan. The NOTE about `phase.add` deriving 38 instead of 37 is the same off-by-one as Phase 27 and was corrected by hand. Not yet planned: next is `/gsd-plan-phase 37`.
 
 - **Phase 36 added (2026-09-28): Azure Blob Storage Throughout** — owner ruling after the 2026-09-28 state analysis: object storage moves to Azure Blob (staging/prod) with Azurite locally and in the nightly; MinIO and the never-provisioned AWS S3 target are retired. Forced by MinIO withdrawing its community images (quay.io 401 since ~2026-09-24, the cause of #683 and of the blocked local restart). Blocks Phase 29 plans 29-11 onward. Not yet planned: next is `/gsd-plan-phase 36`.
 

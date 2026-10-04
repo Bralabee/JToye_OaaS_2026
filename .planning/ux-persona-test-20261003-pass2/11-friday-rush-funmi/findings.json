@@ -1,0 +1,421 @@
+[
+ {
+  "id": "P2-FUN-01",
+  "title": "A new order makes no sound, notification or badge anywhere, and the kitchen screen never shows it until someone confirms it on the Orders page",
+  "severity": "blocker",
+  "status": "CONFIRMED",
+  "area": "kitchen",
+  "surface": "/dashboard/kitchen, /dashboard/orders",
+  "steps": [
+   "Log in as admin-user; open /dashboard/kitchen (Brixton Village Grill) on a tablet and tap the page once (audio gesture); open /dashboard/orders on a phone",
+   "Place a cash order at /shop/brixton-village-grill as a guest",
+   "Watch both screens for 40 s without reloading; instrument AudioContext/Oscillator, Notification, navigator.vibrate and document.title"
+  ],
+  "expected": "A new order announces itself loudly (repeating until acknowledged) on the kitchen screen and the counter phone, and appears on the kitchen board as NEW",
+  "actual": "7/7 orders: phone list showed the row in 1.1-5.1 s but with 0 beeps/notifications/vibrations and no title change; the kitchen board never showed any of them (it lists only CONFIRMED/PREPARING/READY). The only kitchen beep fires when an order is CONFIRMED (kitchen/page.tsx:496-499), i.e. in reaction to the vendor's own tap - 9 beeps during the test were other users' confirmations",
+  "realWorldImpact": "On a busy night an order nobody happens to see sits in Pending indefinitely; the customer was told 'the shop will confirm it shortly' and waits, then phones or goes to Just Eat. Worse than the WhatsApp buzz it replaces",
+  "evidence": [
+   "s2c.log",
+   "s2.log",
+   "shots/k03-tablet-after-7-orders.png",
+   "shots/v04-phone-orders-after-7.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-02",
+  "title": "The kitchen ticket hides the customer's note ('nut allergy!', 'no pepper') and does not say collection or delivery",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "allergens",
+  "surface": "/dashboard/kitchen",
+  "steps": [
+   "Place a delivery order with Order notes 'nut allergy! please be careful'",
+   "Confirm it on /dashboard/orders",
+   "Read the ticket on /dashboard/kitchen"
+  ],
+  "expected": "The ticket the cook reads shows the customer's note prominently, and COLLECTION/DELIVERY",
+  "actual": "Ticket text: 'ORD... Confirmed ALLERGENS Gluten, Eggs, Mustard Tolu Funmi-Cust 2 items 2x Lamb Kebab 1x Coleslaw 16m ago Start Preparing' - no note, no fulfilment type. The note is visible only on /dashboard/orders/{id}. (The print ticket component kitchen-ticket.tsx does render notes and fulfilment - code-read, not printed)",
+  "realWorldImpact": "The cook never sees a free-text allergy warning; a nut-allergic customer can be served cross-contaminated food. Licence/reputation and safety risk",
+  "evidence": [
+   "shots/k08-o2-card-confirmed.png",
+   "shots/k04-o1-card-confirmed.png",
+   "shots/v06-phone-o2-detail.png",
+   "s3c.log"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-03",
+  "title": "If the vendor changes a price while a customer is on checkout, the customer is charged the new price without being told",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/brixton-village-grill/checkout",
+  "steps": [
+   "Customer: add Peri Peri Chicken (£9.00) + Coleslaw, open checkout, choose Collection - Total £11.50",
+   "Vendor: Products > Edit Peri Peri Chicken > price 9.50 > Update",
+   "Customer (no reload): fill details, tap Place order"
+  ],
+  "expected": "Checkout either refreshes the total or refuses with 'prices changed, please review' before placing",
+  "actual": "Screen showed 'Total £11.50' at the tap; POST returned 201 with totalAmountPennies 1200; confirmation reads 'Total £12.00' with no notice of a change",
+  "realWorldImpact": "Customer pays more than the price displayed at commitment - a pricing complaint (CPUTR misleading price) and a row at the till over cash",
+  "evidence": [
+   "s4b.log",
+   "shots/c24-checkout-total-before-place.png",
+   "shots/c25-price-change-confirmation.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-04",
+  "title": "A delivery customer's tracking page says 'Ready for collection'",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "tracking",
+  "surface": "/shop/brixton-village-grill/orders/{orderNumber}",
+  "steps": [
+   "Place a DELIVERY order",
+   "Confirm, Start Preparing, Mark Ready on the vendor side",
+   "Open the customer's tracking page"
+  ],
+  "expected": "Ready step says 'Out for delivery' / 'On its way' for delivery orders (as the email does)",
+  "actual": "Ready step reads 'Ready for collection · 23:34' for delivery order ORD-...-8EAF908A, while the Ready email says 'There's no need to come to the shop'",
+  "realWorldImpact": "Delivery customers walk to the shop or phone to ask; the two channels contradict each other",
+  "evidence": [
+   "shots/c15-o2-ready-delivery.png",
+   "s3c.log"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-05",
+  "title": "Cancelling an order is one unconfirmed tap with no reason, and the customer is told nothing useful",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "orders",
+  "surface": "/dashboard/orders",
+  "steps": [
+   "On the phone Orders list tap Cancel on a Pending row",
+   "Observe: no confirmation dialog, no reason field",
+   "Open the customer's tracking page and Mailhog"
+  ],
+  "expected": "Confirm step (Cancel sits next to Confirm), a reason (customer asked / out of stock / closing), and the reason relayed to the customer with the shop's phone",
+  "actual": "3/3 cancels: immediate, no dialog, no reason. Customer sees 'This order was cancelled. If this was unexpected, please contact the shop.' Email: 'has been cancelled. Previous status: PENDING'. Shop has no phone on the storefront. Refusal and customer-requested cancel are indistinguishable",
+  "realWorldImpact": "A greasy thumb cancels a paying order irreversibly; a refused customer doesn't know why and can't reach the shop",
+  "evidence": [
+   "s5.log",
+   "shots/c33-track-after-cancel.png",
+   "shots/c34-track-after-cancel.png",
+   "shots/v10-o3-after-cancel.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-06",
+  "title": "There is no way to pause or stop taking orders when the kitchen is overwhelmed; the only lever (opening hours) changes the shop's public link",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "orders",
+  "surface": "/dashboard/shops",
+  "steps": [
+   "Open /dashboard/shops; look for pause/busy/accepting-orders control",
+   "Open Edit Shop for Brixton Village Grill",
+   "Read ShopService.updateShop slug handling"
+  ],
+  "expected": "A one-tap 'Pause new orders for 20/40 min' that the storefront and checkout respect, with a customer-facing message",
+  "actual": "No switch anywhere; Edit Shop has only free-text opening hours per day. Saving Edit Shop regenerates the slug (ShopService.java:269 generateSlug when request slug blank; the form never sends slug). Not saved on the shared shop to protect other testers",
+  "realWorldImpact": "Funmi cannot stop the flood without breaking every shared link/QR code; she will ignore orders instead, which is worse for customers",
+  "evidence": [
+   "shots/v15-shop-edit-top.png",
+   "shots/v16-shop-edit-hours.png",
+   "s5.log"
+  ],
+  "reconfirms": [
+   "ADE-03"
+  ]
+ },
+ {
+  "id": "P2-FUN-07",
+  "title": "Cannot find an order by customer name - no search on Orders or Customers, and the phone table is clipped",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "orders",
+  "surface": "/dashboard/orders, /dashboard/customers",
+  "steps": [
+   "Customer at the counter: 'I ordered, name is Bisi'",
+   "On the phone open /dashboard/orders - look for search",
+   "Open /dashboard/customers - look for search"
+  ],
+  "expected": "A search box (name / last 4 of order number / phone) at the top of Orders",
+  "actual": "0 search inputs on either page; only a status filter and 20-row pages. In the All shops view a 13-minute-old order was already off page 1 (126 orders, 7 pages). At 393 px the 30-char order number wraps to 4 lines and the status/action columns are cut off the right edge",
+  "realWorldImpact": "Queue at the counter grows while she scrolls; wrong order handed over",
+  "evidence": [
+   "s3.log",
+   "s5.log",
+   "shots/v05-O1-row.png",
+   "shots/v02-phone-orders-full.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-08",
+  "title": "End of night: no takings for today, and cash orders count as revenue while still marked Unpaid",
+  "severity": "major",
+  "status": "CONFIRMED",
+  "area": "finance",
+  "surface": "/dashboard/finance",
+  "steps": [
+   "Complete several cash orders",
+   "Open /dashboard/finance on the phone",
+   "Open a completed order's detail"
+  ],
+  "expected": "Today's takings (cash vs card), a date picker, and a way to mark cash received so the till reconciles",
+  "actual": "Finance shows only all-time Revenue £384.98 / 23 transactions, no date input, no cash/card split; completed cash order detail shows 'PAYMENT STATUS NONE / METHOD Unpaid'",
+  "realWorldImpact": "Cannot reconcile the till or spot a missing £20; back to a paper notebook",
+  "evidence": [
+   "shots/v17-finance.png",
+   "shots/v17-finance-full.png",
+   "shots/v06-phone-o2-detail.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-09",
+  "title": "When an item is 86'd mid-basket, checkout shows a bare error with no way to fix the basket, and the basket still sells it",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/brixton-village-grill/checkout",
+  "steps": [
+   "Customer has Sweet Potato Fries in basket on checkout",
+   "Vendor unticks Available on Sweet Potato Fries",
+   "Customer taps Place order; then opens basket"
+  ],
+  "expected": "Checkout flags the item as sold out with a one-tap remove; basket marks it unavailable",
+  "actual": "Server correctly returns 400 'Product is not available: Sweet Potato Fries'; page shows that text only; checkout did not update live; basket page lists Fries at £4.00 as normal while the menu no longer shows it",
+  "realWorldImpact": "Customer must guess how to recover; some abandon",
+  "evidence": [
+   "s4.log",
+   "shots/c20-checkout-after-86-noreload.png",
+   "shots/c21-checkout-86-place-result.png",
+   "shots/c22-basket-after-86.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-10",
+  "title": "Nobody knows when an order is due - no promise time on tickets or for customers",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "kitchen",
+  "surface": "/dashboard/kitchen",
+  "steps": [
+   "Confirm an order",
+   "Read the ticket and the customer's tracking page"
+  ],
+  "expected": "Ticket shows due time / order of cooking; customer sees an estimated ready time",
+  "actual": "Ticket shows only '20m ago' counted from placement (not confirmation); tracking and emails give no time",
+  "realWorldImpact": "Kitchen cooks in the wrong order; customers turn up too early and crowd the counter",
+  "evidence": [
+   "shots/k04-o1-card-confirmed.png",
+   "shots/c13-o1-ready.png"
+  ],
+  "reconfirms": [
+   "J-03"
+  ]
+ },
+ {
+  "id": "P2-FUN-11",
+  "title": "86ing an item or changing a price takes four taps and about 30 seconds in a long form",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "catalogue",
+  "surface": "/dashboard/products",
+  "steps": [
+   "Products > Edit (32x32 icon) > scroll to 16x16 'Available' checkbox > Update Product"
+  ],
+  "expected": "One-tap sold-out toggle on the product row",
+  "actual": "4 taps, ~30 s per change on a throttled phone (s4.log save timings); no quick toggle",
+  "realWorldImpact": "Items stay on sale after they run out during the rush",
+  "evidence": [
+   "s4.log",
+   "shots/v08-phone-edit-available.png",
+   "shots/v09-phone-edit-price.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-12",
+  "title": "Order action buttons on the phone are small and Cancel sits right next to Confirm",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "orders",
+  "surface": "/dashboard/orders",
+  "steps": [
+   "Measure row buttons on a 393 px phone"
+  ],
+  "expected": ">=44 px tall targets, destructive action separated",
+  "actual": "Confirm 97x32, Cancel 87x32, Start Prep 112x32, Mark Ready 120x32, Complete 108x32",
+  "realWorldImpact": "Mis-taps with greasy fingers - including irreversible cancels (see P2-FUN-05)",
+  "evidence": [
+   "s5.log",
+   "s3c.log"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-13",
+  "title": "On a landscape tablet the kitchen board wastes most of the screen and truncates the order number",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "kitchen",
+  "surface": "/dashboard/kitchen",
+  "steps": [
+   "Open /dashboard/kitchen at 1024x768"
+  ],
+  "expected": "Full-screen ticket rail; order number (or short code) readable",
+  "actual": "Navy sidebar takes ~25% width; title + All-shops banner take ~40% height; each ticket ~22% width; number shown as 'ORD...'",
+  "realWorldImpact": "Fewer tickets visible; can't match a ticket to a shouted order number",
+  "evidence": [
+   "shots/k04-tablet-o1-confirmed.png",
+   "shots/k03-tablet-after-7-orders.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-14",
+  "title": "Unanswered orders stay Pending forever and the customer is never told",
+  "severity": "minor",
+  "status": "CONFIRMED",
+  "area": "orders",
+  "surface": "/dashboard/orders",
+  "steps": [
+   "Open /dashboard/orders"
+  ],
+  "expected": "Pending orders time out (auto-reject with a message) after N minutes",
+  "actual": "Orders from 2026-09-22 and 2026-09-13 still 'Pending' with Confirm buttons",
+  "realWorldImpact": "Combined with P2-FUN-01, customers wait indefinitely for food that is never made",
+  "evidence": [
+   "shots/v02-phone-orders-full.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-15",
+  "title": "Status emails say nothing useful: no items, no shop address/phone, and 'Previous status: PENDING' jargon",
+  "severity": "polish",
+  "status": "CONFIRMED",
+  "area": "notifications",
+  "surface": "Mailhog",
+  "steps": [
+   "Move an order through all states; read Mailhog"
+  ],
+  "expected": "Emails list items, total, shop address/phone and the reason for a cancellation",
+  "actual": "Each email is 2-3 generic lines plus a tracking link",
+  "realWorldImpact": "Customers phone the shop to ask",
+  "evidence": [
+   "s3c.log",
+   "s5.log"
+  ],
+  "reconfirms": [
+   "J-06"
+  ]
+ },
+ {
+  "id": "P2-FUN-16",
+  "title": "Place order button shows a card icon on a cash-only order",
+  "severity": "polish",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/brixton-village-grill/checkout",
+  "steps": [
+   "Open checkout for a cash-only shop"
+  ],
+  "expected": "Cash icon / 'Place order - pay cash'",
+  "actual": "Card icon on 'Place order · £13.00'",
+  "realWorldImpact": "Small doubt that a card will be charged",
+  "evidence": [
+   "shots/c21-checkout-86-place-result.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-17",
+  "title": "Positive: the phone Orders list updates live - new orders appeared in 1-5 seconds without refreshing",
+  "severity": "positive",
+  "status": "CONFIRMED",
+  "area": "orders",
+  "surface": "/dashboard/orders",
+  "steps": [
+   "Keep /dashboard/orders open; place orders"
+  ],
+  "expected": "Live list",
+  "actual": "7/7 rows appeared in 1.1-5.1 s",
+  "realWorldImpact": "Keep this",
+  "evidence": [
+   "s2c.log"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-18",
+  "title": "Positive: bumping tickets on the kitchen screen is fast and big-buttoned, and every step reaches the customer",
+  "severity": "positive",
+  "status": "CONFIRMED",
+  "area": "kitchen",
+  "surface": "/dashboard/kitchen",
+  "steps": [
+   "Confirm then Start Preparing / Mark Ready / Complete on the tablet"
+  ],
+  "expected": "Quick bump with customer updates",
+  "actual": "Ticket arrives 2.8-4.4 s after confirm; 44 px buttons answer in ~0.4 s; completed tickets leave; tracking updates within the 15 s poll and an email is in Mailhog within ~3 s; per-line allergen badges",
+  "realWorldImpact": "Keep this",
+  "evidence": [
+   "s3c.log",
+   "shots/k05-o1-preparing.png",
+   "shots/k06-o1-ready.png"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-19",
+  "title": "Positive: an order containing a sold-out item is refused by the server",
+  "severity": "positive",
+  "status": "CONFIRMED",
+  "area": "checkout",
+  "surface": "/shop/brixton-village-grill/checkout",
+  "steps": [
+   "86 an item while it is in a basket; place the order"
+  ],
+  "expected": "No order for food the kitchen can't make",
+  "actual": "400 'Product is not available'",
+  "realWorldImpact": "Keep this (fix the recovery UX, P2-FUN-09)",
+  "evidence": [
+   "s4.log"
+  ],
+  "reconfirms": []
+ },
+ {
+  "id": "P2-FUN-20",
+  "title": "Positive: a kitchen tablet left open for 38 minutes stays live and still receives and bumps new tickets",
+  "severity": "positive",
+  "status": "CONFIRMED",
+  "area": "kitchen",
+  "surface": "/dashboard/kitchen",
+  "steps": [
+   "Fresh vendor login on a 1024x768 tablet, open the KDS for Brixton Village Grill, leave untouched 38 min",
+   "Place a guest order and confirm it from a separate phone login",
+   "Bump it Start Preparing / Mark Ready / Complete on the tablet"
+  ],
+  "expected": "KDS keeps its session and feed through a whole service",
+  "actual": "Live pill refreshed every 2 min with 0 auth errors; order ORD-00000000-20261004-D6431308 appeared 3.0 s after confirm with a beep; all three bumps returned 200",
+  "realWorldImpact": "Keep this - the screen on the pass can be left alone all evening",
+  "evidence": [
+   "s9.log",
+   "shots/k20-tablet-after-long-idle.png",
+   "shots/k22-tablet-end.png"
+  ],
+  "reconfirms": []
+ }
+]

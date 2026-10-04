@@ -1,0 +1,490 @@
+[
+  {
+    "id": "P2-KEM-01",
+    "title": "Revoking a manager's last shop grant silently turns him into a Group admin of every shop",
+    "severity": "blocker",
+    "status": "CONFIRMED",
+    "area": "staff-scoping",
+    "surface": "/dashboard/staff ; DELETE /api/v1/staff/{id}",
+    "steps": [
+      "As admin-user-b, grant yourself Group admin (All shops) on /dashboard/staff so the auto row can be removed",
+      "Revoke tenant-b-user's 'Auto-granted on first sign-in / All shops / Group admin' row; grant tenant-b-user Shop manager on ONE shop",
+      "Confirm GET /api/v1/staff/me as tenant-b-user -> groupAdmin:false, grantedShopIds:[that shop]",
+      "Revoke that one shop grant (UI Revoke button)",
+      "GET /api/v1/staff/me as tenant-b-user; GET /api/v1/orders?shopId=<other shop>; GET /api/v1/staff"
+    ],
+    "expected": "Removing the last grant leaves the person with no access to any shop",
+    "actual": "staff/me returns groupAdmin:true, grantedShopIds:null. Orders for the other shop return 200 and GET /api/v1/staff returns 200 (staff management). On his next write a new 'JIT GROUP_ADMIN' row appears. The Staff page meanwhile lists NO row for him, so the owner believes he has no access. Reproduced twice (API revoke and UI revoke). With his kitchen open, a reload switched him to the other shop's tickets.",
+    "realWorldImpact": "An owner who removes a sacked or moved manager gives that person full access to all sites, all orders and staff management. The UI tells her the opposite. Cause: strict-scoping is OFF, so an ungranted tenant user is an implicit tenant-wide Group admin.",
+    "evidence": [
+      "s13-revoke-live.txt",
+      "37-staff-after-revoke.txt",
+      "40-revoke-bayo-last-grant-ui.txt",
+      "40-revoke-bayo-last-grant-ui-after.png",
+      "41-staff-after-2nd-revoke.txt",
+      "36-kitchen-after-reload.png"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-02",
+    "title": "Giving a manager access to one shop does nothing: everyone who signs in is already Group admin of all shops, and the owner cannot remove it without a hidden workaround",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "staff-scoping",
+    "surface": "/dashboard/staff ; POST /api/v1/staff/grant",
+    "steps": [
+      "As admin-user-b open /dashboard/staff: tenant-b-user already has 'Auto-granted on first sign-in | All shops | Group admin'",
+      "Grant tenant-b-user 'Shop manager' on kemi-p2-peckham -> 201",
+      "GET /api/v1/staff/me as tenant-b-user",
+      "Try to revoke the auto-granted Group admin row"
+    ],
+    "expected": "The manager now sees only Peckham, or the UI warns that the auto-granted Group admin still overrides the shop grant",
+    "actual": "staff/me still says groupAdmin:true, grantedShopIds:null; no warning. Revoking the auto row returns 409 'Cannot revoke the last GROUP_ADMIN… grant another GROUP_ADMIN first' / 'Grant someone else group-admin access first'. The owner (realm admin) has no row of her own, so she must first grant HERSELF Group admin, which is not obvious.",
+    "realWorldImpact": "Every new manager, on the first day, sees all three sites' orders and customers and can manage staff until the owner finds the workaround. Kemi's core requirement (each manager sees only their site) fails by default.",
+    "evidence": [
+      "26-grant-bayo-peckham.txt",
+      "26-grant-bayo-peckham-after.png",
+      "27-revoke-bayo-groupadmin-attempt1.txt",
+      "27-revoke-bayo-groupadmin-attempt1-after.png",
+      "28-grant-kemi-self-groupadmin.txt",
+      "29-revoke-bayo-groupadmin.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-03",
+    "title": "The second and third shop can never go live; the onboarding page says 'Your storefront is live' while every shop is Draft",
+    "severity": "blocker",
+    "status": "CONFIRMED",
+    "area": "vendor-onboarding",
+    "surface": "/dashboard/onboarding ; POST /api/v1/onboarding ; PUT /api/v1/shops/{id}",
+    "steps": [
+      "Create kemi-p2-peckham and kemi-p2-lewisham on /dashboard/shops (both Draft)",
+      "Open /dashboard/onboarding: no shop picker, no way to start onboarding for a shop",
+      "POST /api/v1/onboarding {model:MARKETPLACE, shopId:<peckham>}",
+      "POST /api/v1/onboarding/submit and /go-live",
+      "GET /api/v1/public/shops/tenant-b-probe (the onboarded shop)"
+    ],
+    "expected": "Each site can be onboarded and published, and the onboarding page names the shop it is about",
+    "actual": "409 'An onboarding already exists for this tenant'; submit/go-live 400 'cannot apply event … in state LIVE'. The onboarding page (for Kemi and for her manager) says 'Live — Your storefront is live and visible to customers' but all 4 shops are Draft, and the onboarded shop's public URL returns 404.",
+    "realWorldImpact": "Peckham and Lewisham can only take orders that staff type in from the phone. No customer can find or order from them. Kemi pays for three sites and gets one, and the dashboard tells her she is live when she is not.",
+    "evidence": [
+      "s07-onboarding.txt",
+      "16-onboarding-kemi.png",
+      "19-onboarding-api-2nd-shop.txt",
+      "03-shops-after.png"
+    ],
+    "reconfirms": [
+      "ADE-10"
+    ]
+  },
+  {
+    "id": "P2-KEM-04",
+    "title": "Ticking 'Publish to storefront' throws away the whole shop edit and shows a raw developer error",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "vendor-onboarding",
+    "surface": "/dashboard/shops (Edit shop dialog)",
+    "steps": [
+      "Edit kemi-p2-peckham, change Sunday hours to 12:00-20:00 and the description, tick 'Publish to storefront', click Update Shop"
+    ],
+    "expected": "Either the checkbox is not offered, or it explains how to publish in plain words; other edits are saved",
+    "actual": "409. The dialog shows 'Shop.published is written only by the onboarding state machine… use POST /api/v1/onboarding/go-live (APPROVED -> LIVE)… contact support'. The hours and description were NOT saved (API read-back still shows sun 12:00-21:00). There is no support contact anywhere (pass-1 C-05).",
+    "realWorldImpact": "The owner thinks the system is broken and her opening-hours change is lost unless she spots the need to untick and save again.",
+    "evidence": [
+      "20-publish-tick-error.png",
+      "s08-publish-tick.txt",
+      "s07-onboarding.txt"
+    ],
+    "reconfirms": [
+      "ADE-11"
+    ]
+  },
+  {
+    "id": "P2-KEM-05",
+    "title": "Per-shop dashboard and finance show the whole business's takings while saying they are scoped to one shop",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "finance",
+    "surface": "/dashboard ; /dashboard/finance ; GET /api/v1/financial-transactions/summary",
+    "steps": [
+      "Complete 2 Peckham orders (£22.50 + £9.50) and 1 Lewisham order (£16.00)",
+      "Set the shop switcher to kemi-p2-lewisham and open /dashboard and /dashboard/finance",
+      "GET /api/v1/financial-transactions/summary?shopId=<peckham>&from=2026-10-01"
+    ],
+    "expected": "Lewisham shows £16.00 revenue / £2.66 VAT; Peckham shows £32.00 / £5.33",
+    "actual": "Dashboard banner: 'Viewing kemi-p2-lewisham — order activity below is scoped to this shop', but 'Revenue by VAT Category: £48.00 revenue, £7.99 VAT' (the whole tenant). /finance shows £48.00 and all 3 transactions for every switcher value. The API ignores shopId and from. Ledger rows have no shop.",
+    "realWorldImpact": "Kemi reads one site as having taken three sites' money. Per-site profit, staffing and VAT decisions are made on wrong numbers.",
+    "evidence": [
+      "24-home-kemi_p2_lewisham.png",
+      "24-finance-kemi_p2_lewisham.png",
+      "24-finance-kemi_p2_peckham.png",
+      "s09-finance-tour.txt",
+      "23-ledger-api.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-06",
+    "title": "Nothing an accountant needs can be exported: no CSV, no date range, no month-to-date, no cash-vs-card",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "finance",
+    "surface": "/dashboard/finance ; /api/v1/financial-transactions",
+    "steps": [
+      "Open /dashboard/finance as admin-user-b",
+      "Look for export/download, a date filter, a payment-method split",
+      "Inspect completed cash orders via GET /api/v1/orders"
+    ],
+    "expected": "Download a VAT summary and a transaction list for a period, by site, split by cash and card",
+    "actual": "Finance has no buttons or links except the footer; no date filter; no downloads were triggered. Completed cash orders have paymentMethod null and paymentStatus NONE, so cash and card cannot be separated. The financial-transactions API takes no parameters.",
+    "realWorldImpact": "Kemi's brother has to retype every order into a spreadsheet each quarter for VAT (MTD) and cannot reconcile the till's cash.",
+    "evidence": [
+      "24-finance-All_shops.png",
+      "s09-finance-tour.txt",
+      "22-orders-progress.txt",
+      "21-orders-create.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-07",
+    "title": "A completed, paid order can be deleted; the ledger then lists sales whose orders no longer exist",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "finance",
+    "surface": "DELETE /api/v1/orders/{id}",
+    "steps": [
+      "Complete an order (it creates a ledger row 'Order ORD-…')",
+      "DELETE /api/v1/orders/{id} as admin-user-b -> 204",
+      "GET /api/v1/orders/{id} -> 404; GET /api/v1/financial-transactions still lists the sale"
+    ],
+    "expected": "A completed order cannot be deleted; at most it is refunded or voided with an audit trail",
+    "actual": "204 on 3 COMPLETED orders. The ledger still holds £48.00 against order numbers that return 404. The code requires only SHOP_MANAGER on the order's shop, so a site manager could also do this (manager role not exercised: SUSPECTED for that part).",
+    "realWorldImpact": "Takings and the books stop matching, and a manager could take cash, complete the order and delete it. This is an audit and theft risk for a cash-only business.",
+    "evidence": [
+      "51-cleanup-2.txt",
+      "52-ledger-after-order-delete.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-08",
+    "title": "Site managers get no numbers at all, and the dashboard says 'No financial data yet' instead of 'no access'",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "finance",
+    "surface": "/dashboard ; /dashboard/finance as tenant-b-user scoped to one shop",
+    "steps": [
+      "Scope tenant-b-user to kemi-p2-peckham (see P2-KEM-02)",
+      "Open /dashboard and /dashboard/finance as tenant-b-user"
+    ],
+    "expected": "A manager sees their own site's takings",
+    "actual": "Finance: 'Admin access required'. The dashboard's revenue card says 'No financial data yet / No transactions to display' although Peckham has £32 of completed sales (summary API 403).",
+    "realWorldImpact": "Kemi wanted each manager to see their own numbers. They see none, and the dashboard tells them the site has taken nothing.",
+    "evidence": [
+      "31-bayo-desktop-finance.png",
+      "31-bayo-desktop-home.png",
+      "s11-bayo-desktop.txt",
+      "30-bayo-bola-probe.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-09",
+    "title": "No way to copy a menu to another site; CSV import ignores the selected shop and hides the items from every shop",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "catalogue",
+    "surface": "/dashboard/products ; /dashboard/products/import ; POST /api/v1/products/bulk/csv",
+    "steps": [
+      "Products: row actions are only label / edit / delete (no duplicate, no copy-to-shop, no menu export)",
+      "Set the header switcher to kemi-p2-lewisham, open Bulk Import, upload a 2-row CSV copied from the Peckham menu (shop_id blank, as the page lists no shop_id column)",
+      "View Products with switcher = kemi-p2-lewisham"
+    ],
+    "expected": "Either a 'copy menu to…' action, or the import lands in the selected shop",
+    "actual": "Import immediately creates both rows with shopId null ('All Shops'). With Lewisham selected the list says '1 product in kemi-p2-lewisham': the copies are not there. Per the storefront code (getShopProducts filters shop_id = this shop), 'All Shops' items show on NO storefront. The CSV template has a shop_id column needing a UUID that the UI never displays, and the import page does not mention it.",
+    "realWorldImpact": "Kemi retypes every dish and allergen set for each site, which is slow and error-prone for allergens. Or she imports and her menu silently vanishes.",
+    "evidence": [
+      "s04-import.txt",
+      "11-clone-peckham-to-lewisham.csv",
+      "s05-import-clone.txt",
+      "13-import-result.png",
+      "14-products-by-shop-after-import.txt",
+      "15-products-switcher-lewisham.png",
+      "09-csv-template.txt"
+    ],
+    "reconfirms": [
+      "C-10"
+    ]
+  },
+  {
+    "id": "P2-KEM-10",
+    "title": "Delivery fee cannot be set; orders are charged £0 delivery while the shop says £2.99, and 'collection only' cannot be enforced",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "orders",
+    "surface": "/dashboard/shops (Add/Edit shop) ; POST /api/v1/orders",
+    "steps": [
+      "Add a shop: fields are name, address, description, publish, tags, phone, email, Delivery Info (free text), Minimum Order, 7 hour boxes",
+      "Peckham Delivery Info = 'Delivery within 2 miles, £2.99, free over £25'; Lewisham = 'COLLECTION ONLY'",
+      "Create a DELIVERY order at each shop"
+    ],
+    "expected": "Delivery is charged at the shop's fee; a collection-only shop refuses delivery",
+    "actual": "Both delivery orders are accepted with deliveryFeePennies 0. ShopDto and CreateShopRequest have no deliveryFeePennies/freeDeliveryThreshold field, although the storefront charges from the entity (default 0).",
+    "realWorldImpact": "Every delivery from a new site loses £2.99, and a collection-only kitchen receives delivery orders it cannot fulfil.",
+    "evidence": [
+      "02-addshop-kemi-p2-peckham.png",
+      "04-shops-api.txt",
+      "21-orders-create.txt",
+      "s01-create-shops.txt"
+    ],
+    "reconfirms": [
+      "ADE-16"
+    ]
+  },
+  {
+    "id": "P2-KEM-11",
+    "title": "No holiday closure; free-text hours like 'Closed (24-26 Dec)' fail open",
+    "severity": "minor",
+    "status": "SUSPECTED",
+    "area": "orders",
+    "surface": "/dashboard/shops opening hours ; PublicStorefrontService.validateShopIsOpen",
+    "steps": [
+      "Set Lewisham Sunday hours to 'Closed (closed 24-26 Dec for Christmas)' (the only way to note a holiday)",
+      "Read validateShopIsOpen: only an exact 'closed' blocks orders; an unparseable value allows the order"
+    ],
+    "expected": "A dated closure, or at least text containing 'Closed' closes the shop",
+    "actual": "Hours are a weekly free-text grid with no dates. The saved value is not equal to 'closed' and has no HH:MM-HH:MM, so per the code the shop would accept orders all day. Not run end to end because the shop cannot be published (P2-KEM-03).",
+    "realWorldImpact": "Customers order on Christmas Day from a closed kitchen.",
+    "evidence": [
+      "04-shops-api.txt",
+      "s01-create-shops.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-12",
+    "title": "Kitchen tickets cut the order number to 'ORD-0000…' so every ticket looks the same",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "kitchen",
+    "surface": "/dashboard/kitchen",
+    "steps": [
+      "Open the kitchen with several tickets at 1440px and on iPhone 13"
+    ],
+    "expected": "The short unique part of the order number (e.g. 05B5353F) is visible",
+    "actual": "Desktop cards show 'ORD-0000…'; phone shows 'ORD-00000000-202…'. The element is 312px of text in a 197px box with no tooltip. The unique suffix is never shown on a ticket.",
+    "realWorldImpact": "On a Friday rush staff cannot match a ticket to the customer at the counter or on the phone, so the wrong bag gets handed over.",
+    "evidence": [
+      "46-kitchen-bump-after-revoke-scoped.png",
+      "42-phone-kitchen-ticket.png",
+      "s14-phone-scroll.txt"
+    ],
+    "reconfirms": [
+      "J-13"
+    ]
+  },
+  {
+    "id": "P2-KEM-13",
+    "title": "After access is removed, the kitchen keeps showing that shop's tickets and blames the connection",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "kitchen",
+    "surface": "/dashboard/kitchen",
+    "steps": [
+      "Manager has grants on Peckham and Lewisham, with the Peckham kitchen open",
+      "Owner revokes the Peckham grant",
+      "Owner creates a new Peckham order; manager clicks Start Preparing"
+    ],
+    "expected": "The board clears and says access to this shop was removed",
+    "actual": "Access stops at once (new order detail 403, bump 403, refresh 403: good). But the 8 old tickets with customer names and allergens stay on screen with active buttons. The banner says 'Orders are not refreshing' / 'Could not fetch kitchen orders', and the indicator flips back to 'Live' at +78s.",
+    "realWorldImpact": "A moved manager keeps seeing customer data and assumes the Wi-Fi is down. Nobody tells him he no longer works that site.",
+    "evidence": [
+      "s15-revoke-live-scoped.txt",
+      "46-kitchen-bump-after-revoke-scoped.png",
+      "45-kitchen-30s-after-revoke-scoped.png"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-14",
+    "title": "No invite flow: a new manager needs an account first and then auto-becomes Group admin",
+    "severity": "major",
+    "status": "CONFIRMED",
+    "area": "accounts",
+    "surface": "/dashboard/staff",
+    "steps": [
+      "Open /dashboard/staff as admin-user-b"
+    ],
+    "expected": "Invite by email with a chosen shop and role",
+    "actual": "Copy: 'Team members appear here only after they have signed in once… this page cannot send them an invite.' Vendor signup does not exist (pass-1 ADE-01), and on first sign-in the person becomes an implicit tenant-wide Group admin (P2-KEM-01/02).",
+    "realWorldImpact": "Kemi cannot hire a manager without contacting J'Toye (no contact route), and that manager starts with access to every site.",
+    "evidence": [
+      "26-grant-bayo-peckham.txt"
+    ],
+    "reconfirms": [
+      "ADE-01"
+    ]
+  },
+  {
+    "id": "P2-KEM-15",
+    "title": "Products have no VAT-rate choice; everything is saved as Standard 20%",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "catalogue",
+    "surface": "/dashboard/products (Add Product)",
+    "steps": [
+      "Open Add Product and list the fields"
+    ],
+    "expected": "Choose zero-rated vs standard (cold takeaway items, some drinks)",
+    "actual": "No VAT field; all created products are vatRate STANDARD.",
+    "realWorldImpact": "Over-declared VAT on zero-rated cold items, which the brother can only fix outside the system.",
+    "evidence": [
+      "s02-products-explore.txt",
+      "s03-add-products.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-16",
+    "title": "Scoped manager still sees Finance, Go live, Approvals, Staff, Webhooks, Image review; Webhooks shows 'No endpoints yet' instead of 'no access'",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "staff-scoping",
+    "surface": "/dashboard/* as tenant-b-user",
+    "steps": [
+      "Scope tenant-b-user to one shop; visit /dashboard/webhooks and /dashboard/onboarding"
+    ],
+    "expected": "Hide what the role cannot use, or say 'no access'",
+    "actual": "All nav items are shown. Webhooks gets a 403 but renders 'No webhook endpoints yet'. Go live tells the manager 'Your storefront is live' for a Draft shop.",
+    "realWorldImpact": "Managers poke at screens they cannot use and get false statements.",
+    "evidence": [
+      "31-bayo-desktop-webhooks.png",
+      "31-bayo-desktop-onboarding.png",
+      "s11-bayo-desktop.txt"
+    ],
+    "reconfirms": [
+      "ADE-13"
+    ]
+  },
+  {
+    "id": "P2-KEM-17",
+    "title": "On tablet the orders table is clipped; on phone the first screen of Orders is an explainer, not orders",
+    "severity": "minor",
+    "status": "CONFIRMED",
+    "area": "accessibility",
+    "surface": "/dashboard/orders at 768px and 390px",
+    "steps": [
+      "As tenant-b-user open /dashboard/orders at 768x1024 and on iPhone 13"
+    ],
+    "expected": "Orders visible and complete on first screen",
+    "actual": "768px: the sidebar takes about a third of the width and Total/Actions are cut off (inner horizontal scroll). 390px: the full first screen is the 'Order Status Flow' card. The table is 773px wide in a 308px container. No page-level horizontal scroll.",
+    "realWorldImpact": "A manager on a tablet by the pass cannot see totals or action buttons without side-scrolling.",
+    "evidence": [
+      "31-bayo-tablet-orders.png",
+      "31-bayo-phone-orders.png",
+      "s14-phone-scroll.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-18",
+    "title": "Staff list masks emails (u***@tenantb.com) and the products table has no Shop column",
+    "severity": "polish",
+    "status": "CONFIRMED",
+    "area": "staff-scoping",
+    "surface": "/dashboard/staff ; /dashboard/products",
+    "steps": [
+      "Open Staff and Products as admin-user-b"
+    ],
+    "expected": "Know which person and which site each row is",
+    "actual": "Two staff on the same email domain would be indistinguishable apart from display name. The products list has no shop column, so with 'All shops' selected there is no way to tell sites apart.",
+    "realWorldImpact": "Kemi grants or edits the wrong person or site's dish.",
+    "evidence": [
+      "26-grant-bayo-peckham-after.png",
+      "08-products-after.png"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-19",
+    "title": "Another site's order returns 403 'Shop access denied' rather than 404",
+    "severity": "polish",
+    "status": "CONFIRMED",
+    "area": "security",
+    "surface": "GET /api/v1/orders/{id} with a scoped token",
+    "steps": [
+      "As tenant-b-user scoped to Peckham, GET a Lewisham order id"
+    ],
+    "expected": "404, as cross-tenant reads do",
+    "actual": "403 'Shop Access Denied', which confirms the id exists (within the same tenant only).",
+    "realWorldImpact": "Low: tells a scoped manager which order ids exist at other sites.",
+    "evidence": [
+      "30-bayo-bola-probe.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-20",
+    "title": "Shop scoping on the API is tight: 30+ attempts on another site were refused",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "staff-scoping",
+    "surface": "/api/v1/* with tenant-b-user scoped to one shop",
+    "steps": [
+      "Scope tenant-b-user to Peckham; replay reads and writes against Lewisham ids"
+    ],
+    "expected": "All refused",
+    "actual": "Lists are filtered to Peckham. Every read and write on Lewisham (orders, kitchen, product, label, shop edit/delete, create, refund, staff self-grant) returned 403. The direct URL /dashboard/orders/<lewisham id> says 'You do not have access to this order.'",
+    "realWorldImpact": "Once the owner gets scoping set up, managers really cannot touch other sites. Keep this.",
+    "evidence": [
+      "30-bayo-bola-probe.txt",
+      "31-bayo-desktop-orders_cd10158a_9386_42a0_9fe2.png"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-21",
+    "title": "Revoking one of several grants takes effect on the very next request",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "staff-scoping",
+    "surface": "/dashboard/kitchen",
+    "steps": [
+      "See P2-KEM-13"
+    ],
+    "expected": "Immediate",
+    "actual": "New-order detail 403 at +3s, bump 403 at +30s, no new Peckham tickets delivered.",
+    "realWorldImpact": "Moving a manager between sites works for data access. Keep this.",
+    "evidence": [
+      "s15-revoke-live-scoped.txt"
+    ],
+    "reconfirms": []
+  },
+  {
+    "id": "P2-KEM-22",
+    "title": "Good guardrails: cross-shop product rejected in an order; last-admin lockout guard; kitchen explains one-shop-at-a-time; ledger VAT correct",
+    "severity": "positive",
+    "status": "CONFIRMED",
+    "area": "orders",
+    "surface": "POST /api/v1/orders ; /dashboard/staff ; /dashboard/kitchen",
+    "steps": [
+      "Order at Peckham with a Lewisham product -> 404 'Product not found'",
+      "Revoke last group admin -> clear 409 message",
+      "Kitchen banner 'a kitchen board shows one shop at a time'",
+      "Ledger VAT = 1/6 of VAT-inclusive totals (375/158/266)"
+    ],
+    "expected": "-",
+    "actual": "As listed",
+    "realWorldImpact": "Keep these.",
+    "evidence": [
+      "21-orders-create.txt",
+      "27-revoke-bayo-groupadmin-attempt1.txt",
+      "42-phone-kitchen-ticket.png",
+      "23-ledger-api.txt"
+    ],
+    "reconfirms": []
+  }
+]
