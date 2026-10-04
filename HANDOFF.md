@@ -1,8 +1,37 @@
-# Handoff: `main` green; duplicate issues fixed; main checkout resolved; Phase 38 planning next
+# Handoff: Phase 38 planned (19 plans, ready to execute); runtime current; `main` green
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) and 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-04 (late) delta: duplicate-issue filing fixed, the orgos charters re-synced, the main checkout resolved. Resume here.**
+**2026-10-04 (night) delta: Phase 38 is planned and ready to execute; the local runtime is current. Resume here.**
+**Where things stand.**
+- **Runtime rebuilt and verified.** The owner fast-forwarded the main checkout to `5936c644`. Then `scripts/sync-runtime.sh` rebuilt core-java and frontend, and its freshness gate passes for all 4 services. Inside the running `/app/app.jar`, `jackson-core` and `jackson-databind` are 2.21.7. The frontend is running #888.
+- **Phase 38 (Spring Boot 4.1) is PLANNED** on `phase-37-spring-boot-4-1` (worktree `../JToye_OaaS_2026-phase37`, pushed, head `767f5658`). It merged `main` after #893/#894, and outside `.planning/` it is byte-identical to `main`.
+  - **Artifacts:** `38-RESEARCH.md`, `38-VALIDATION.md`, `38-PATTERNS.md`, `COVERAGE.md` and 19 plans in 11 waves. Requirements BOOT4-01..14 are in that branch's `REQUIREMENTS.md` and `ROADMAP.md`.
+  - **Checks:** the plan-checker passed after one targeted revision. In that revision, 38-12's 33-file Jackson-2 test sweep moved to new plan 38-19, and the BOOT4-14 doc edits moved from 38-03 to 38-16. The verify-path and failing-direction probes report severity `none` on all 92 commands. Decision coverage is 5/5.
+  - **New owner decision D-05 (2026-10-04):** Spring Security 7.1 always serves `/.well-known/oauth-protected-resource` and falsely claims cert-bound tokens. The ruling is to suppress it with a 404 filter (Boot 3.5 parity), not to serve corrected RFC 9728 metadata. D-01..D-05 are reformatted to `**D-NN — title**` so the decision-coverage parser can read them.
+  - **Research findings that change the plan:**
+    - Jackson 3 sorts properties alphabetically, which would 422 idempotency keys reserved before the deploy; the fix is a dedicated frozen hashing mapper.
+    - Explicit starters silently drop zipkin tracing and the RestClient/WebClient builders.
+    - 5 tests' Redis excludes name a class that Boot 4 renamed.
+    - CVE floors: drop the netty pin, Tomcat 11.0.26, Jackson 2 re-keyed to `jackson-2-bom.version` 2.22.3, Jackson 3 at 3.1.7. Whether CVE-2026-91777 is fixed on 3.1.7 is UNCONFIRMED; 38-15's local Trivy run settles it.
+  - **Owner checkpoints during execution:**
+    - 38-05: keep Jackson 3 defaults or restore Jackson 2 defaults, decided after the measured wire diff (one-way).
+    - 38-17: who drives the shared compose stack for the rebuild.
+    - 38-18: pushing for CI and the nightly E2E.
+  - **Expected interim red:** between 38-03 and 38-16, `check-dependency-horizons` and `check-doc-versions` exit 2. This is recorded in 38-03 and cleared by 38-16.
+- **GSD traps hit while planning:**
+  - `state.planned-phase` overwrote the STATE "Phase:" history line and miscounted `total_plans`, so STATE was hand-edited. This is the same family as `state.record-session`.
+  - The decision-coverage gate fails closed on `**D-01 Title.**` bullets; it needs `**D-01 — Title**`.
+  - An EnterWorktree-isolated session refuses compound shell commands. Plan from a session OPENED in the worktree, not one entered mid-session.
+- **Housekeeping (this delta):** every doc gate passes on `main`: claims 47, doc-metrics 37, docs-freshness, citations 28, doc-versions 151, handoff-contract and gate-enforcement. Local branch `pr892` was deleted; it was a review fetch whose tip equalled #892's merged head. Toolchain: carl-core is PIN-BEHIND (1.0.2 pinned, 2.0.0 released). Nothing was applied, because toolchain changes are machine-session work.
+
+**Next, in order:**
+1. Execute Phase 38 from a FRESH session opened in `~/IdeaProjects/JToye_OaaS_2026-phase37`: `/gsd-execute-phase 38`. Wave 1 (38-01, 38-02) captures Jackson-2 golden fixtures and Boot-3.5 baselines BEFORE any Jackson-3 change, so do not reorder it.
+2. Then plan Phase 31.1 (the 17 persona clusters on completed Phase 31), then Phase 37 via `/gsd-discuss-phase 37`. The owner set this order.
+3. After the next scheduled nightly, check `onboarding-blocked-flow.spec.ts` by content (#888), and check that a failure refreshes #683 rather than filing a new issue (#892).
+4. Leave `../oaas-archify-diagrams` and `phase-29-research` alone.
+
+**2026-10-04 (late) delta: duplicate-issue filing fixed, the orgos charters re-synced, the main checkout resolved.** (SUPERSEDED by the 2026-10-04 night delta above.)
 **Where things stand.** Read the current head with `git log -1 origin/main`.
 - **`main` is green.** The post-merge CI/CD run for #890 (run 37199749497) passed in full.
 - **The Spring Boot branch is green.** `phase-37-spring-boot-4-1` merged `main` at `fecfd6c3`, and that is the branch's first passing run since 10-01 (run 37212702610). In it, the core-java Trivy image gate ran and passed. Outside `.planning/` the branch was byte-identical to `main`. It is behind `main` again by the PRs merged after it; merge `main` before Phase 38 execution starts.
