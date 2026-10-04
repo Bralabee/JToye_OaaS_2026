@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### core-java image gate green again: jackson-bom 2.21.7 for four HIGH CVEs (#886) — 2026-10-04
+### jackson-bom 2.21.7 clears four HIGH CVEs from the core-java image gate (#886) — 2026-10-04
 
 - **jackson-core / jackson-databind 2.21.6 → 2.21.7, via the same BOM property.** The Trivy
   image gate in `build-and-push` went red on `main` (run 37165437798, on `c55e545a`) with 4 HIGH
@@ -25,7 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   packages scanned. PR CI never runs the image gate, so this is the PR's own proof.
 - **Docs.** `.planning/codebase/STACK.md`: the Jackson bullet and two citations shifted by the
   longer comment (`:461` → `:466`, `:243` → `:248`), re-pointed by content and checked with
-  `scripts/check-doc-citations.sh` (2 violations before, 0 after).
+  `scripts/check-doc-citations.sh` (2 violations before, 0 after). Three more citations the gate
+  does not scan, in `.planning/codebase/TESTING.md` (`:268-387`, `:400-407`) and `CONCERNS.md`
+  (`:232-240`), moved by the same +5 and were re-pointed by content. The image gate itself runs
+  only on `main` after merge; the proof above is a local Trivy run over a local jar.
 
 ### A review can no longer name a vendor's catalogue images for deletion (#772) — 2026-09-30
 
