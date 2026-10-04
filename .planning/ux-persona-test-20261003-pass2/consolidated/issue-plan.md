@@ -1,6 +1,6 @@
 # Issue plan — persona user-testing 2026-10-03 (pass 1 + pass 2)
 
-Nothing here has been filed. This is the exact set to file once approved. Source of truth: `catalogue.json`.
+FILED 2026-10-04 (epic #880). This is the pre-filing plan, kept for traceability: the filing ledger is `filed-issues.json`, and the bodies on GitHub are authoritative (each gained an Acceptance line at filing). Source of truth for clusters: `catalogue.json`.
 No AI-attribution lines in any body (owner ruling 2026-08-30).
 
 ## Totals
@@ -93,17 +93,17 @@ Comment body:
 | 5 | UXT-005 | P0 | A buyer of one shop can publish a 5-star review on a different shop of the same tenant | ux-persona-test, P0, bug, compliance | none |
 | 6 | UXT-006 | P0 | The public rate limiter trusts any X-Forwarded-For value, so rotating it defeats the limit | ux-persona-test, P0, bug, security | regression-of-closed #88 |
 | 7 | UXT-007 | P0 | Checkout never re-validates the stored basket: stale prices, removed and sold-out items surface only as a charge or a bare error | ux-persona-test, P0, bug | none |
-| 8 | UXT-008 | P0 | An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order | ux-persona-test, P0, bug, compliance | none |
+| 8 | UXT-008 | P1 | An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order | ux-persona-test, P1, bug, compliance | none |
 | 9 | UXT-009 | P0 | The customer's allergen acknowledgement is never sent to or stored by the server | ux-persona-test, P0, bug, compliance | related #427 |
 | 10 | UXT-010 | P0 | The customer never sees the allergen set recorded on their order, and it can differ from what they acknowledged | ux-persona-test, P0, bug, compliance | related #427 |
 | 11 | UXT-011 | P0 | The kitchen screen ticket hides the customer's note (e.g. 'severe peanut allergy') and the fulfilment type | ux-persona-test, P0, bug | none |
 | 12 | UXT-012 | P0 | A product whose ingredients name an allergen (e.g. 'butter (MILK)') with no box ticked saves and shows as 'No allergens' | ux-persona-test, P0, bug, compliance | related #427 |
 | 13 | UXT-013 | P0 | Shops go live with a failed FSA match, self-approved by the vendor, while the site claims 'UK food-hygiene verified' | ux-persona-test, P0, compliance | related #453 |
 | 14 | UXT-014 | P0 | Customers are never given the seller's legal identity or any way to contact the shop | ux-persona-test, P0, compliance | none |
-| 15 | UXT-015 | P0 | Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy | ux-persona-test, P0, bug, compliance | none |
+| 15 | UXT-015 | P1 | Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy | ux-persona-test, P1, bug, compliance | none |
 | 16 | UXT-016 | P0 | Updating a product without quantityInStock silently turns stock tracking off | ux-persona-test, P0, bug | none |
 | 17 | UXT-018 | P0 | A completed, paid order can be deleted, leaving ledger rows that point at nothing | ux-persona-test, P0, bug | none |
-| 18 | UXT-019 | P0 | The platform's own registered office is not published anywhere on the site | ux-persona-test, P0, compliance | none |
+| 18 | UXT-019 | P1 | The platform's own registered office is not published anywhere on the site | ux-persona-test, P1, compliance | none |
 | 19 | UXT-020 | P1 | A new order makes no sound and never reaches the kitchen screen until someone confirms it on another page | ux-persona-test, P1, bug | none |
 | 20 | UXT-021 | P1 | When the all-day kitchen tablet's session lapses the board silently becomes a sign-in page | ux-persona-test, P1, bug | none |
 | 21 | UXT-022 | P1 | A vendor cannot pause or stop taking orders: no pause switch, no holiday closure, and free-text hours fail open and cannot be cleared | ux-persona-test, P1, enhancement | none |
@@ -334,9 +334,9 @@ Title: `Checkout never re-validates the stored basket: stale prices, removed and
 
 #### [UXT-008] An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order
 
-Title: `An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order` · Labels: ux-persona-test, P0, bug, compliance
+Title: `An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order` · Labels: ux-persona-test, P1, bug, compliance
 
-**UXT-008 · P0 · major · CONFIRMED** — Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024).
+**UXT-008 · P1 · major · CONFIRMED** — Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024).
 
 **Steps**
 1. Open /shop/mama-ades-kitchen (banner '20% off selected dishes', chip 'E2E 20% OFF')
@@ -462,9 +462,9 @@ Title: `Customers are never given the seller's legal identity or any way to cont
 
 #### [UXT-015] Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy
 
-Title: `Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy` · Labels: ux-persona-test, P0, bug, compliance
+Title: `Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy` · Labels: ux-persona-test, P1, bug, compliance
 
-**UXT-015 · P0 · major · CONFIRMED** — Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment.
+**UXT-015 · P1 · major · CONFIRMED** — Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment.
 
 **Steps**
 1. Fresh browser, open any shop, add an item, go to /checkout
@@ -515,9 +515,9 @@ Title: `A completed, paid order can be deleted, leaving ledger rows that point a
 
 #### [UXT-019] The platform's own registered office is not published anywhere on the site
 
-Title: `The platform's own registered office is not published anywhere on the site` · Labels: ux-persona-test, P0, compliance
+Title: `The platform's own registered office is not published anywhere on the site` · Labels: ux-persona-test, P1, compliance
 
-**UXT-019 · P0 · minor · CONFIRMED** — Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published.
+**UXT-019 · P1 · minor · CONFIRMED** — Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published.
 
 **Steps**
 1. Open /legal, /legal/privacy and /legal/accessibility
@@ -1941,7 +1941,7 @@ Body:
 ```markdown
 Two passes of persona user-testing (pass 1: 6 personas; pass 2: 9 personas) produced 250 findings (76 pass-1 rows, 173 pass-2 entries, 1 coordinator observation). Deduplicated into 123 clusters plus 40 positives kept as regression guards. Full catalogue: `.planning/ux-persona-test-20261003-pass2/consolidated/CATALOGUE.md`.
 
-Counts: P0 19 · P1 29 · P2 49 · P3 26. Proposed home for most: NEW Phase 37 – Real-world operations readiness (sub-themes 37-A..37-G); legal/allergen/privacy gaps reopen Phase 31 as gap-closure; money items go to Phase 30.
+Counts: P0 16 · P1 32 · P2 49 · P3 26. Proposed home for most: NEW Phase 37 – Real-world operations readiness (sub-themes 37-A..37-G); legal/allergen/privacy gaps reopen Phase 31 as gap-closure; money items go to Phase 30.
 
 ### P0 (fix before any real tenant)
 - [ ] UXT-001 DSAR erasure is marked completed while nothing is erased for storefront customers — #TBD
@@ -1951,19 +1951,19 @@ Counts: P0 19 · P1 29 · P2 49 · P3 26. Proposed home for most: NEW Phase 37 �
 - [ ] UXT-005 A buyer of one shop can publish a 5-star review on a different shop of the same tenant — #TBD
 - [ ] UXT-006 The public rate limiter trusts any X-Forwarded-For value, so rotating it defeats the limit — #TBD
 - [ ] UXT-007 Checkout never re-validates the stored basket: stale prices, removed and sold-out items surface only as a charge or a bare error — #TBD
-- [ ] UXT-008 An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order — #TBD
 - [ ] UXT-009 The customer's allergen acknowledgement is never sent to or stored by the server — #TBD
 - [ ] UXT-010 The customer never sees the allergen set recorded on their order, and it can differ from what they acknowledged — #TBD
 - [ ] UXT-011 The kitchen screen ticket hides the customer's note (e.g. 'severe peanut allergy') and the fulfilment type — #TBD
 - [ ] UXT-012 A product whose ingredients name an allergen (e.g. 'butter (MILK)') with no box ticked saves and shows as 'No allergens' — #TBD
 - [ ] UXT-013 Shops go live with a failed FSA match, self-approved by the vendor, while the site claims 'UK food-hygiene verified' — #TBD
 - [ ] UXT-014 Customers are never given the seller's legal identity or any way to contact the shop — #TBD
-- [ ] UXT-015 Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy — #TBD
 - [ ] UXT-016 Updating a product without quantityInStock silently turns stock tracking off — #TBD
 - [ ] UXT-017 Products created by /sync/batch belong to no shop, are orderable at any shop, and record the wrong allergens — #727 (comment)
 - [ ] UXT-018 A completed, paid order can be deleted, leaving ledger rows that point at nothing — #TBD
-- [ ] UXT-019 The platform's own registered office is not published anywhere on the site — #TBD
 ### P1
+- [ ] UXT-008 An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order — #TBD
+- [ ] UXT-015 Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy — #TBD
+- [ ] UXT-019 The platform's own registered office is not published anywhere on the site — #TBD
 - [ ] UXT-020 A new order makes no sound and never reaches the kitchen screen until someone confirms it on another page — #TBD
 - [ ] UXT-021 When the all-day kitchen tablet's session lapses the board silently becomes a sign-in page — #TBD
 - [ ] UXT-022 A vendor cannot pause or stop taking orders: no pause switch, no holiday closure, and free-text hours fail open and cannot be cleared — #TBD
@@ -2078,17 +2078,11 @@ Counts: P0 19 · P1 29 · P2 49 · P3 26. Proposed home for most: NEW Phase 37 �
 - #727: UXT-017
 ```
 
+
 ## Coordinator adjustments
 
-Applied 2026-10-04 before filing; also recorded per cluster as `coordinatorAdjustment` in `catalogue.json`. These supersede the priorities and labels in sections B and D above.
+- **UXT-008** (promo-not-applied): P0->P1: the promotion is E2E seed data; the real defect is promotions being display-only (no direct user harm).
+- **UXT-015** (stripe-on-cash-checkout): P0->P1: a PECR cookie-consent issue, not direct user harm.
+- **UXT-019** (platform-trading-disclosure): P0->P1: a trading-disclosure gap, possibly fixable by config (NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE).
 
-- **UXT-008 P0 → P1.** The '20% OFF' promotion the testers saw is E2E seed data; the real defect is that promotions are display-only and never applied to an order.
-- **UXT-015 P0 → P1.** A PECR cookie-consent issue (Stripe JS and fraud cookies on a cash-only checkout), not direct harm to a user.
-- **UXT-019 P0 → P1.** A trading-disclosure gap for the platform company, possibly fixable by configuration (`NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE` is declared but set in no runtime).
-- **#727 (UXT-017) P3 → P0.** Comment posted AND the priority label changed from `P3` to `P0`: pass 2 reproduced the sync orphan live and showed a wrong-allergen safety consequence (an order line for the orphan records allergenMask 0 where the real dish declares 256). It is no longer a latent data-hygiene defect.
-- **Other "same" matches (#102, #208, #452, #460, #587):** the `ux-persona-test` label is added and the comment posted; their other labels are unchanged.
-- **Type labels:** `bug` for bug, `enhancement` for gap/enhancement and env/tooling, `compliance` for content/legal. `tech-debt` (proposed in section B for UXT-045, UXT-068, UXT-090) is replaced by `enhancement`.
-- **Regression-of-closed (UXT-001 → #84, UXT-006 → #88, UXT-074 → #465):** filed as new issues titled "Regression of #N: …"; the closed issue gets a one-line pointer comment and is not reopened.
-- **Epic title:** "[UXT-EPIC] Persona user-testing 2026-10-03: real-world readiness findings (pass 1 + 2)".
-- **Resulting counts:** P0 16 · P1 32 · P2 49 · P3 26 (was 19 / 29 / 49 / 26).
-- **Filing ledger:** `filed-issues.json` (clusterIds, title, number, url) is the record of what was filed.
+#727 (UXT-017, "same" match): priority label P3 -> P0 on GitHub, because pass 2 shows a wrong-allergen safety consequence.

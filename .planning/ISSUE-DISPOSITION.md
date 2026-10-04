@@ -320,13 +320,22 @@ Screenshots and raw probe output stay local: the evidence folders hold session s
 
 **Phase 37 is on the roadmap (added 2026-10-04 by owner request; see ROADMAP.md § Phase 37).** 87 clusters have no home in Phases 28–36. They are grouped below into sub-themes 37-A to 37-G. The next step is `/gsd-plan-phase 37`. **Phase 31 is complete**, so its 17 clusters need a gap-closure plan (31.1) rather than new scope.
 
-These nine findings sit under P0 in more than one area. They gate a first real tenant regardless of where they land:
-- #777 and #778: DSAR erasure and access requests silently not done;
-- #779 and #780: staff default and revoke both lead to tenant-wide admin;
-- #781: cross-shop fake reviews;
-- #782: rate limit bypass through X-Forwarded-For;
-- #783: checkout charges a price the customer was not shown;
-- #784 and #785: the allergen acknowledgement is not stored, and the stored allergen set is never shown to the customer.
+All **16 P0 clusters gate a first real tenant (Phase 32)**, wherever they land:
+- **Phase 31 gap-closure (31.1):**
+  - #777 and #778: DSAR erasure and access requests are silently not done.
+  - #784 and #785: the allergen acknowledgement is not stored, and the stored allergen set is never shown to the customer.
+  - #787: an allergen named in the ingredients with no box ticked shows as "No allergens".
+  - #789: no seller identity or contact.
+- **Phase 33:** #788, a shop goes live with a failed FSA match while the site claims "UK food-hygiene verified".
+- **Phase 37:**
+  - #779 and #780: the staff default and revoking both lead to tenant-wide admin.
+  - #781: cross-shop fake reviews.
+  - #782: rate-limit bypass through X-Forwarded-For.
+  - #783: checkout charges a price the customer was not shown.
+  - #786: the kitchen ticket hides the customer's note.
+  - #790: a partial product update silently disables stock tracking.
+  - #791: a completed order can be deleted from under its ledger rows.
+  - #727: sync-created products have no shop and record the wrong allergens.
 
 ### Phase 29 – Deployable Staging, With Its Own Monitoring (1)
 

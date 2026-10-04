@@ -54,6 +54,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock
 - [x] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice (completed 2026-08-17)
 - [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
+- [ ] **Phase 37: Real-world operations readiness** — The 87 persona-testing clusters with no other home (epic #880): kitchen ops, staff scoping, checkout integrity, abuse resistance, integrator surface, accessibility, catalogue correctness; 9 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request)
 
 ## Phase Details
 
@@ -351,7 +352,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
 | 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
-| 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-30 |
+| 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-29 |
 | 37. Real-world operations readiness | v2.3 | 0/? | Not started | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -864,7 +865,7 @@ NOTE: `gsd_run query phase.add` derived Phase **38** although nothing claims 37 
 - **37-G Catalogue & shop-admin correctness** (8; P1 2): #798 #801 #831 #832 #833 #834 #835, plus part of #875.
 - **Unsorted** (2): #873 #874. Assign at plan time.
 
-**Depends on:** nothing hard. **Blocks:** Phase 32 (first tenant), but only through its P0 clusters (#779 #780 #781 #782 #783 #786 #790 #791 and #727), which gate a real tenant whatever order the rest takes. Its sibling P0s live elsewhere and gate Phase 32 the same way: #777 and #778 (DSAR), #784 and #785 (allergen acknowledgement), #787, #788 and #789 (Phase 31 gap-closure).
+**Depends on:** nothing hard. **Blocks:** Phase 32 (first tenant), but only through its P0 clusters (#779 #780 #781 #782 #783 #786 #790 #791 and #727), which gate a real tenant whatever order the rest takes. Its sibling P0s live elsewhere and gate Phase 32 the same way: #777 and #778 (DSAR), #784 and #785 (allergen acknowledgement), #787 and #789 (Phase 31 gap-closure), and #788 (Phase 33: FSA match / hygiene claim).
 
 **Success Criteria** (what must be TRUE). These are drafts; `/gsd-plan-phase 37` refines them. Each must be shown to FAIL on the pre-fix tree and PASS after, and each issue states its own acceptance test:
 

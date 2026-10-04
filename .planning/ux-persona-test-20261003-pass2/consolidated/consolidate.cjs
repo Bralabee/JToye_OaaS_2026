@@ -5,7 +5,9 @@
 const fs = require("fs");
 const path = require("path");
 
-const REPO = "/home/sanmi/IdeaProjects/JToye_OaaS_2026";
+// Repo root derived from this file (consolidated/ -> pass2/ -> .planning/ -> repo), so the script
+// reads and writes the checkout it lives in -- never a hardcoded path or another worktree.
+const REPO = path.resolve(__dirname, "..", "..", "..");
 const P1DIR = ".planning/ux-persona-test-20261003";
 const P2DIR = ".planning/ux-persona-test-20261003-pass2";
 const OUT = path.join(REPO, P2DIR, "consolidated");
@@ -182,7 +184,7 @@ C("basket-not-revalidated", "P0", "Checkout never re-validates the stored basket
   "frontend cart/checkout use the price stored in localStorage at add time (member P2-CHA-01 cites cart page, checkout lines and button); server reprices silently", false,
   primary="P2-CHA-01")
 
-C("promo-not-applied", "P0", "An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order",
+C("promo-not-applied", "P1", "An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order",
   "legal-compliance", "bug", ["P2-KYL-07", "P2-REG-05"], n37("C"), NONE,
   "Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024).",
   "core-java/.../storefront/PublicStorefrontService.java:231,246 read promotions for display only; order/OrderService.java has no promotion reference (rg rc=1)", true,
@@ -228,7 +230,7 @@ C("seller-identity-missing", "P0", "Customers are never given the seller's legal
   "Legal breach (E-Commerce Regs 2002 reg 6 / CCR 2013 trader identity, address, cancellation info) and safety: every 'ask the kitchen' message is a dead end because all shops publish phone:null, email:null.",
   null, false, primary="P2-REG-06")
 
-C("stripe-on-cash-checkout", "P0", "Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy",
+C("stripe-on-cash-checkout", "P1", "Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy",
   "privacy", "bug", ["F-01", "P2-REG-13"], H31, NONE,
   "Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment.",
   "frontend/app/shop/[slug]/checkout/page.tsx:7 imports from '@stripe/stripe-js' (default entry injects js.stripe.com on import; the KEY guard at :107-108 cannot stop it)", true,
@@ -253,7 +255,7 @@ C("completed-order-deletable", "P0", "A completed, paid order can be deleted, le
   "Silent data corruption of financial records: the ledger lists sales whose orders return 404.",
   "core-java/src/main/java/uk/jtoye/core/order/OrderService.java:599-608 (deleteOrder checks only SHOP_MANAGER; no status guard)", true)
 
-C("platform-trading-disclosure", "P0", "The platform's own registered office is not published anywhere on the site",
+C("platform-trading-disclosure", "P1", "The platform's own registered office is not published anywhere on the site",
   "legal-compliance", "content/legal", ["C-11"], H31, NONE,
   "Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published.",
   "frontend/Dockerfile:81 declares ARG NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE (31-08); it is set in no runtime (possibly config-only)", true,
@@ -771,9 +773,20 @@ function evPath(f) {
 }
 const short = (p) => (p === "coordinator" ? "Coord" : `${p.split("-").pop().replace(/^./, (x) => x.toUpperCase())}(${/^1\d-/.test(p) ? "P2" : "P1"})`);
 
+// Coordinator priority adjustments (2026-10-04), applied before filing and recorded here so a
+// re-run reproduces the filed priorities instead of reverting them.
+const ADJ = {
+  "promo-not-applied": "P0->P1: the promotion is E2E seed data; the real defect is promotions being display-only (no direct user harm).",
+  "stripe-on-cash-checkout": "P0->P1: a PECR cookie-consent issue, not direct user harm.",
+  "platform-trading-disclosure": "P0->P1: a trading-disclosure gap, possibly fixable by config (NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE).",
+};
+// UXT ids are FROZEN to the ones the issues were filed against (uxt-ids.json, slug -> id). Assigning them
+// from sort order renumbers every cluster after a priority change and silently breaks the issue mapping.
+const FROZEN = JSON.parse(fs.readFileSync(path.join(__dirname, "uxt-ids.json"), "utf8"));
 const KEY2ID = {};
 const catalogue = CL.map((c, i) => {
-  const uxt = `UXT-${String(i + 1).padStart(3, "0")}`;
+  const uxt = FROZEN[c.key];
+  if (!uxt) die(`${c.key}: no frozen UXT id in uxt-ids.json (a new cluster needs the next free id added by hand)`);
   KEY2ID[c.key] = uxt;
   const mem = c.members.map((id) => ALL[id]);
   const sev = mem.reduce((a, f) => (SEV_RANK[f.severity] > SEV_RANK[a] ? f.severity : a), "polish");
@@ -792,9 +805,12 @@ const catalogue = CL.map((c, i) => {
     repro: rp, reproFrom: c.repro ? "override (pass-1 / coordinator narrative)" : prim.id,
     realWorldImpact: imp, evidence: mem.flatMap(evPath),
     suspectedCodeLocation: c.code ? { location: c.code, verified: c.verified } : null,
+    ...(ADJ[c.key] ? { coordinatorAdjustment: ADJ[c.key] } : {}),
     existingIssue: c.match, proposedHome: c.home, subTheme: sm ? sm[1] : null, p3Bundle: c.bundle,
   };
 });
+if (new Set(catalogue.map((c) => c.id)).size !== catalogue.length) die("duplicate UXT id in uxt-ids.json");
+catalogue.sort((a, b) => a.id.localeCompare(b.id));
 fs.writeFileSync(path.join(OUT, "catalogue.json"), JSON.stringify(catalogue, null, 2) + "\n");
 const R = (k) => { if (!KEY2ID[k]) die(`unknown cluster key ${k}`); return KEY2ID[k]; };
 
@@ -861,7 +877,7 @@ function issueBody(c) {
 let plan = [];
 plan.push("# Issue plan — persona user-testing 2026-10-03 (pass 1 + pass 2)");
 plan.push("");
-plan.push("Nothing here has been filed. This is the exact set to file once approved. Source of truth: `catalogue.json`.");
+plan.push("FILED 2026-10-04 (epic #880). This is the pre-filing plan, kept for traceability: the filing ledger is `filed-issues.json`, and the bodies on GitHub are authoritative (each gained an Acceptance line at filing). Source of truth for clusters: `catalogue.json`.");
 plan.push("No AI-attribution lines in any body (owner ruling 2026-08-30).");
 plan.push("");
 plan.push("## Totals");
@@ -957,6 +973,7 @@ plan.push("### Comments posted on existing issues");
 Object.entries(commentTargets).forEach(([n, cs]) => plan.push(`- #${n}: ${cs.map((c) => c.id).join(", ")}`));
 plan.push("```");
 plan.push("");
+plan.push("", "## Coordinator adjustments", "", ...catalogue.filter((c) => c.coordinatorAdjustment).map((c) => `- **${c.id}** (${c.slug}): ${c.coordinatorAdjustment}`), "", "#727 (UXT-017, \"same\" match): priority label P3 -> P0 on GitHub, because pass 2 shows a wrong-allergen safety consequence.", "");
 fs.writeFileSync(path.join(OUT, "issue-plan.md"), plan.join("\n"));
 
 // ---------------------------------------------------------------- CATALOGUE.md
@@ -1065,7 +1082,7 @@ g.push("## Fixes that put these goods at risk");
 g.push("");
 g.push("| Cluster | Guard |");
 g.push("|---|---|");
-GUARDS.forEach(([key, txt]) => g.push(`| ${R(key)} ${catalogue.find((c) => c.key === key).title} | ${txt} |`));
+GUARDS.forEach(([key, txt]) => g.push(`| ${R(key)} ${catalogue.find((c) => c.slug === key).title} | ${txt} |`));
 g.push("");
 fs.writeFileSync(path.join(OUT, "goods-to-preserve.md"), g.join("\n"));
 

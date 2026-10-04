@@ -539,6 +539,7 @@
       "location": "core-java/.../storefront/PublicStorefrontService.java:231,246 read promotions for display only; order/OrderService.java has no promotion reference (rg rc=1)",
       "verified": true
     },
+    "coordinatorAdjustment": "P0->P1: the promotion is E2E seed data; the real defect is promotions being display-only (no direct user harm).",
     "existingIssue": {
       "classification": "none",
       "issues": [],
@@ -546,13 +547,7 @@
     },
     "proposedHome": "NEW: Phase 37 – Real-world operations readiness (persona findings) · 37-C Checkout integrity & customer trust/retention",
     "subTheme": "37-C Checkout integrity & customer trust/retention",
-    "p3Bundle": null,
-    "coordinatorAdjustment": {
-      "date": "2026-10-04",
-      "from": "P0",
-      "to": "P1",
-      "reason": "The 20% OFF promotion seen by testers is E2E seed data; the real defect is that promotions are display-only (never applied to an order). Demoted to P1."
-    }
+    "p3Bundle": null
   },
   {
     "id": "UXT-009",
@@ -1010,6 +1005,7 @@
       "location": "frontend/app/shop/[slug]/checkout/page.tsx:7 imports from '@stripe/stripe-js' (default entry injects js.stripe.com on import; the KEY guard at :107-108 cannot stop it)",
       "verified": true
     },
+    "coordinatorAdjustment": "P0->P1: a PECR cookie-consent issue, not direct user harm.",
     "existingIssue": {
       "classification": "none",
       "issues": [],
@@ -1017,13 +1013,7 @@
     },
     "proposedHome": "Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1)",
     "subTheme": null,
-    "p3Bundle": null,
-    "coordinatorAdjustment": {
-      "date": "2026-10-04",
-      "from": "P0",
-      "to": "P1",
-      "reason": "A PECR cookie-consent issue (Stripe JS and fraud cookies on a cash-only checkout), not direct harm to a user. Demoted to P1."
-    }
+    "p3Bundle": null
   },
   {
     "id": "UXT-016",
@@ -1130,12 +1120,7 @@
     },
     "proposedHome": "NEW: Phase 37 – Real-world operations readiness (persona findings) · 37-E Integrator surface (API, MCP, webhooks, sync)",
     "subTheme": "37-E Integrator surface (API, MCP, webhooks, sync)",
-    "p3Bundle": null,
-    "coordinatorAdjustment": {
-      "date": "2026-10-04",
-      "action": "Existing issue #727 relabelled P3 -> P0 and commented",
-      "reason": "Pass 2 reproduced the orphan live and showed a wrong-allergen safety consequence: an order line for the orphan records allergenMask 0 where the real dish declares 256. #727 had been filed as latent tech-debt at P3."
-    }
+    "p3Bundle": null
   },
   {
     "id": "UXT-018",
@@ -1227,6 +1212,7 @@
       "location": "frontend/Dockerfile:81 declares ARG NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE (31-08); it is set in no runtime (possibly config-only)",
       "verified": true
     },
+    "coordinatorAdjustment": "P0->P1: a trading-disclosure gap, possibly fixable by config (NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE).",
     "existingIssue": {
       "classification": "none",
       "issues": [],
@@ -1234,13 +1220,7 @@
     },
     "proposedHome": "Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1)",
     "subTheme": null,
-    "p3Bundle": null,
-    "coordinatorAdjustment": {
-      "date": "2026-10-04",
-      "from": "P0",
-      "to": "P1",
-      "reason": "A trading-disclosure gap for the platform company, possibly fixable by setting NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE in each runtime. Demoted to P1."
-    }
+    "p3Bundle": null
   },
   {
     "id": "UXT-020",

@@ -36,7 +36,7 @@ Check: 210 + 40 = 250 = 76 + 173 + 1. The build script fails (exit 1) if any inp
 
 ## Counts
 
-**By priority:** P0 19 · P1 29 · P2 49 · P3 26 (clusters).
+**By priority:** P0 16 · P1 32 · P2 49 · P3 26 (clusters).
 
 Priority rule: P0 = in production would cause legal breach, user-safety harm, privilege escalation, data-protection failure or silent data corruption (incl. price charged ≠ price shown); P1 = blocks a core vendor/customer journey; P2 = major friction/trust; P3 = minor/polish.
 
@@ -120,18 +120,18 @@ Priority rule: P0 = in production would cause legal breach, user-safety harm, pr
 | UXT-005 | P0 | major | A buyer of one shop can publish a 5-star review on a different shop of the same tenant | Bola(P2) | none | 37-D Abuse resistance |
 | UXT-006 | P0 | major | The public rate limiter trusts any X-Forwarded-For value, so rotating it defeats the limit | Kyle(P2) | regression-of-closed #88 | 37-D Abuse resistance |
 | UXT-007 | P0 | major | Checkout never re-validates the stored basket: stale prices, removed and sold-out items surface only as a charge or a bare error | Sam(P1), Funmi(P2), Nkechi(P2) | none | 37-C Checkout integrity & customer trust/retention |
-| UXT-008 | P0 | major | An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order | Kyle(P2), Bola(P2) | none | 37-C Checkout integrity & customer trust/retention |
+| UXT-008 | P1 | major | An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order | Kyle(P2), Bola(P2) | none | 37-C Checkout integrity & customer trust/retention |
 | UXT-009 | P0 | major | The customer's allergen acknowledgement is never sent to or stored by the server | Bola(P2) | related #427 | Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1) |
 | UXT-010 | P0 | major | The customer never sees the allergen set recorded on their order, and it can differ from what they acknowledged | Priya(P1), Bola(P2), Nkechi(P2) | related #427 | Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1) |
 | UXT-011 | P0 | major | The kitchen screen ticket hides the customer's note (e.g. 'severe peanut allergy') and the fulfilment type | Funmi(P2), Tunde(P2) | none | 37-A Kitchen & order operations |
 | UXT-012 | P0 | major | A product whose ingredients name an allergen (e.g. 'butter (MILK)') with no box ticked saves and shows as 'No allergens' | Ade(P1) | related #427 | Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1) |
 | UXT-013 | P0 | major | Shops go live with a failed FSA match, self-approved by the vendor, while the site claims 'UK food-hygiene verified' | Ade(P1), Claire(P1), Bola(P2) | related #453 | Phase 33 – The Consumer Product (CUST-02/CUST-04 still open) |
 | UXT-014 | P0 | major | Customers are never given the seller's legal identity or any way to contact the shop | Priya(P1), Bola(P2) | none | Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1) |
-| UXT-015 | P0 | major | Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy | Sam(P1), Bola(P2) | none | Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1) |
+| UXT-015 | P1 | major | Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy | Sam(P1), Bola(P2) | none | Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1) |
 | UXT-016 | P0 | major | Updating a product without quantityInStock silently turns stock tracking off | Ravi(P2) | none | 37-E Integrator surface (API, MCP, webhooks, sync) |
 | UXT-017 | P0 | major | Products created by /sync/batch belong to no shop, are orderable at any shop, and record the wrong allergens | Ravi(P2) | same #727 | 37-E Integrator surface (API, MCP, webhooks, sync) |
 | UXT-018 | P0 | major | A completed, paid order can be deleted, leaving ledger rows that point at nothing | Kemi(P2) | none | 37-B Multi-site, staff access & finance |
-| UXT-019 | P0 | minor | The platform's own registered office is not published anywhere on the site | Claire(P1) | none | Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1) |
+| UXT-019 | P1 | minor | The platform's own registered office is not published anywhere on the site | Claire(P1) | none | Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1) |
 | UXT-020 | P1 | blocker | A new order makes no sound and never reaches the kitchen screen until someone confirms it on another page | Funmi(P2), Tunde(P2) | none | 37-A Kitchen & order operations |
 | UXT-021 | P1 | major | When the all-day kitchen tablet's session lapses the board silently becomes a sign-in page | Tunde(P2) | none | 37-A Kitchen & order operations |
 | UXT-022 | P1 | major | A vendor cannot pause or stop taking orders: no pause switch, no holiday closure, and free-text hours fail open and cannot be cleared | Funmi(P2), Kemi(P2), Nkechi(P2) | none | 37-A Kitchen & order operations |
@@ -323,9 +323,9 @@ Priority rule: P0 = in production would cause legal breach, user-safety harm, pr
 - **Existing issue:** none
 - **Home:** NEW: Phase 37 – Real-world operations readiness (persona findings) · 37-C Checkout integrity & customer trust/retention
 
-### UXT-008 [P0] An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order
+### UXT-008 [P1] An advertised '20% OFF' promotion is displayed on the storefront but never applied to the order
 
-- **Why P0:** Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024).
+- **Why P1:** Price charged differs from the price advertised (misleading pricing under CPR 2008 / DMCC 2024).
 - **Members:** P2-KYL-07 (Kyle(P2), minor, CONFIRMED); P2-REG-05 (Bola(P2), major, CONFIRMED)
 - **Repro:** Open /shop/mama-ades-kitchen (banner '20% off selected dishes', chip 'E2E 20% OFF') → Add Jollof Rice and go through to checkout
 - **Expected:** Discounted dishes are identified and the discount is applied, or the banner is not shown
@@ -405,9 +405,9 @@ Priority rule: P0 = in production would cause legal breach, user-safety harm, pr
 - **Existing issue:** none
 - **Home:** Phase 31 – Consumer-Safety and Legal Floor (complete: reopen as gap-closure 31.1)
 
-### UXT-015 [P0] Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy
+### UXT-015 [P1] Stripe JS and fraud cookies load on a cash-only checkout, contradicting the cookie policy
 
-- **Why P0:** Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment.
+- **Why P1:** Legal breach (PECR): non-essential third-party cookies (__stripe_mid, 1 year) are set on a page that takes no payment.
 - **Members:** F-01 (Sam(P1), major, CONFIRMED); P2-REG-13 (Bola(P2), minor, CONFIRMED)
 - **Repro:** Fresh browser, open any shop, add an item, go to /checkout → Inspect network and cookies
 - **Expected:** No third-party requests or cookies on a cash-only checkout
@@ -453,9 +453,9 @@ Priority rule: P0 = in production would cause legal breach, user-safety harm, pr
 - **Existing issue:** none
 - **Home:** NEW: Phase 37 – Real-world operations readiness (persona findings) · 37-B Multi-site, staff access & finance
 
-### UXT-019 [P0] The platform's own registered office is not published anywhere on the site
+### UXT-019 [P1] The platform's own registered office is not published anywhere on the site
 
-- **Why P0:** Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published.
+- **Why P1:** Legal breach: the Companies (Trading Disclosures) Regulations require the registered office on the website; /legal/accessibility even says it is not published.
 - **Members:** C-11 (Claire(P1), minor, CONFIRMED)
 - **Repro:** Open /legal, /legal/privacy and /legal/accessibility
 - **Expected:** Company name, number, registered office (and ICO registration reference) shown
