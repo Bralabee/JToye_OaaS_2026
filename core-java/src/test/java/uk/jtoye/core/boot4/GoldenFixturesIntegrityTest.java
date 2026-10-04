@@ -136,6 +136,97 @@ class GoldenFixturesIntegrityTest {
         assertThat(problems).as("idempotency request hashes").isEmpty();
     }
 
+    /**
+     * The exact fixture set per family. Exact names, not just counts, so a missing OR a misnamed
+     * capture fails rather than silently shrinking (or renaming) the oracle: idempotency 7 request
+     * files + the hash table, responses 9, outbox 6, amqp 6 bodies + 6 header tables, cache 3.
+     */
+    static final List<String> EVENT_NAMES = List.of(
+            "OrderStateChangeEvent", "OrderStateChangeEvent-offset", "PaymentEvent", "RefundEvent",
+            "OnboardingStateChangeEvent", "MediaProcessingEvent");
+    static final List<String> REQUEST_ENDPOINT_IDS = List.of(
+            "orders.create", "customers.create", "media.upload", "media.reprocess", "webhooks.replay",
+            "storefront.guest-order", "storefront.guest-order.legacy");
+    static final List<String> RESPONSE_NAMES = List.of(
+            "OrderDto", "CustomerDto", "MediaAcceptDto", "WebhookDeliveryView", "ProductDto", "ShopDto",
+            "DsarIntakeAck", "WebhookEventEnvelope", "ProblemDetail-401");
+    static final List<String> CACHE_NAMES = List.of(
+            "products-ProductDto", "shops-ShopDto", "shopMembership-Membership");
+
+    static Map<String, List<String>> expectedFamilies() {
+        Map<String, List<String>> families = new TreeMap<>();
+        List<String> idempotency = new ArrayList<>();
+        REQUEST_ENDPOINT_IDS.forEach(id -> idempotency.add(id + ".request.json"));
+        idempotency.add("request-hashes.tsv");
+        families.put("idempotency", idempotency);
+        families.put("responses", RESPONSE_NAMES.stream().map(n -> n + ".json").toList());
+        families.put("outbox", EVENT_NAMES.stream().map(n -> n + ".json").toList());
+        List<String> amqp = new ArrayList<>();
+        EVENT_NAMES.forEach(n -> {
+            amqp.add(n + ".body");
+            amqp.add(n + ".headers.tsv");
+        });
+        families.put("amqp", amqp);
+        families.put("cache", CACHE_NAMES.stream().map(n -> n + ".bin").toList());
+        return families;
+    }
+
+    @Test
+    @DisplayName("every family holds exactly its expected fixtures (idempotency 7+1, responses 9, outbox 6, amqp 6+6, cache 3)")
+    void everyFamilyHoldsExactlyItsExpectedFixtures() throws IOException {
+        List<String> expected = new ArrayList<>();
+        expectedFamilies().forEach((dir, names) -> names.forEach(n -> expected.add(dir + "/" + n)));
+        List<String> actual = fixtures().stream()
+                .map(p -> ROOT.relativize(p).toString().replace('\\', '/'))
+                .toList();
+        assertThat(actual).as("the fixture set under %s", ROOT).containsExactlyInAnyOrderElementsOf(expected);
+        assertThat(expected).as("38 fixtures in total").hasSize(38);
+    }
+
+    @Test
+    @DisplayName("request-hashes.tsv holds exactly one row per idempotency endpoint id")
+    void requestHashesHaveOneRowPerEndpoint() throws IOException {
+        List<String> ids = Files.readAllLines(ROOT.resolve(REQUEST_HASHES), StandardCharsets.UTF_8).stream()
+                .filter(l -> !l.isEmpty())
+                .map(l -> l.split("\t", -1)[0])
+                .toList();
+        assertThat(ids).containsExactlyInAnyOrderElementsOf(REQUEST_ENDPOINT_IDS);
+    }
+
+    /** Every factory the fixtures were captured from (the 38-01 artifact contract). */
+    static final List<String> FACTORIES = List.of(
+            "createOrderRequest", "createCustomerRequest", "mediaUploadRequest", "redriveRequest",
+            "replayRequest", "guestCheckoutIdentity", "guestOrderRequest", "orderDto", "customerDto",
+            "mediaAcceptDto", "webhookDeliveryView", "productDto", "shopDto", "membership",
+            "orderStateChangeEvent", "orderStateChangeEventOffset", "paymentEvent", "refundEvent",
+            "onboardingStateChangeEvent", "mediaProcessingEvent", "webhookEventEnvelope", "dsarIntakeAck",
+            "problemDetail401");
+
+    @Test
+    @DisplayName("GoldenSamples exposes every factory, and each yields an equal, fresh object on every call")
+    void goldenSamplesFactoriesAreDeterministic() throws Exception {
+        List<String> declared = new ArrayList<>();
+        for (java.lang.reflect.Method m : GoldenSamples.class.getDeclaredMethods()) {
+            int mod = m.getModifiers();
+            if (java.lang.reflect.Modifier.isPublic(mod) && java.lang.reflect.Modifier.isStatic(mod)
+                    && m.getParameterCount() == 0) {
+                declared.add(m.getName());
+            }
+        }
+        assertThat(declared).as("public no-arg factories on GoldenSamples").containsExactlyInAnyOrderElementsOf(FACTORIES);
+
+        for (String name : FACTORIES) {
+            java.lang.reflect.Method factory = GoldenSamples.class.getMethod(name);
+            Object first = factory.invoke(null);
+            Object second = factory.invoke(null);
+            assertThat(first).as("%s() returned null", name).isNotNull();
+            assertThat(second).as("%s() must build a fresh object per call", name).isNotSameAs(first);
+            assertThat(second).as("%s() must be deterministic", name)
+                    .usingRecursiveComparison()
+                    .isEqualTo(first);
+        }
+    }
+
     private static List<Path> manifests() throws IOException {
         if (!Files.isDirectory(ROOT)) {
             return List.of();
