@@ -108,6 +108,20 @@ and an injected bogus key was flagged, so the check can fail. The keys:
   (`ProblemDetailAuthenticationEntryPoint`) so the API never advertises a `resource_metadata` URL
   that it does not serve. RFC 9728 metadata is a possible agent-readiness item later, and
   explicitly out of scope here.
+- **D-05 Suppress `/.well-known/oauth-protected-resource`** (owner, 2026-10-04, after research).
+  `38-RESEARCH.md` Open Question 1 found that D-04's premise was partly wrong:
+  - Spring Security 7.1 always registers `OAuth2ProtectedResourceMetadataFilter` (it cannot be
+    disabled) and serves that path.
+  - Its default body claims `tls_client_certificate_bound_access_tokens: true`, which is false for
+    this API.
+
+  Ruling: suppress the path with a small filter ordered before the framework's, returning 404 for
+  that path, which matches Boot 3.5 behaviour today. Do NOT serve corrected metadata. RFC 9728
+  stays out of scope, as in D-04.
+  - Prove it on the rebuilt runtime: `curl -i` on the path returns 404 and the 401 header carries
+    no `resource_metadata`.
+  - Fail-direction arm: remove the suppressing filter, and the path returns 200 with the false
+    claim.
 
 ## Claude's Discretion
 - Tomcat 11.0.25 vs 11.0.26 (take the newer one if it resolves cleanly).
