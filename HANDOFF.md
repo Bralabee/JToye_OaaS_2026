@@ -1,8 +1,116 @@
-# Handoff: Phase 31 shipped, the CI detectors got audited, Phase 29 still blocked on the owner
+# Handoff: persona testing became Phase 37, Spring Boot 4.1 is Phase 38, `main` red on Jackson CVEs
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged) and 2026-09-30 evening (#764 and #771 fixed and merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed) and 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-09-30 (evening) delta — GDPR erasure fixed twice over (#764, #771); `main` green; the stack runs `eb2e98fd`. Resume here.**
+**2026-10-04 delta — persona testing became Phase 37; Spring Boot 4.1 is now Phase 38; `main` is red on new Jackson CVEs. Resume here.**
+**Where things stand.** `main` = `c55e545a` (#881).
+- **`main` is red in two places, neither caused by a code change:**
+  - CI/CD failed at `Build and Push Images (core-java)`. Trivy found 4 HIGH CVEs in Jackson 2.21.6
+    (CVE-2026-89407 and CVE-2026-89425 in jackson-core; CVE-2026-91776 and CVE-2026-91777 in
+    jackson-databind), all fixed in 2.21.7. That job (`build-and-push`) runs on pushes to `main`,
+    `phase-*` and `phase/**` and on releases, never on pull requests, so a PR goes green without
+    it. The Spring Boot branch has failed the same gate since 2026-10-01 (runs on `fc3bc4ed` and
+    `77d140dd`). CVE-2026-89407 also lists Jackson 3 (`tools.jackson.core`) as affected.
+  - The main checkout has uncommitted work from the evening of 2026-10-03, on no branch: the
+    Jackson value bumped to 2.21.7 in `core-java/build.gradle.kts`, a modified
+    `docs/analysis/README.md`, and two untracked `docs/analysis/*-POSITIONING-2026-10-03.md`
+    files. These are the only copies. They belong to whichever session wrote them: do not stash,
+    discard or sweep them into another commit.
+  - The 2026-10-04 nightly (run 37171812464, on `c55e545a`) failed: 325 tests, 318 passed,
+    1 failed, 6 skipped. The failing test is `onboarding-blocked-flow.spec.ts` "bad company number
+    -> fix inline -> re-run checks -> honest in-review" (desktop): `#onboarding-shop` was never
+    visible within 10 s. It is not yet triaged. The run's report artifact expires 2026-10-18. The
+    nightly failed on 2026-10-02 and passed on 2026-10-03.
+  - That failure filed #883 as a duplicate of #683. The escalation step's de-dup only looks at
+    the 100 newest open issues, and #881's 103 issues pushed #683 out of that window. That is
+    issue #885.
+  - `docs-freshness` was red on `main` from #881 onwards, because this file was more than 3 merged
+    commits behind. This update clears that.
+- **Persona user-testing passes 1-2 (#881, epic #880) are merged.** 15 personas produced 123
+  clusters (P0 16, P1 32, P2 49, P3 26), filed as 103 issues plus the epic, labelled
+  `ux-persona-test`.
+  - **Phase 37 = Real-world operations readiness:** the 87 clusters with no other home. It is not
+    planned yet.
+  - Phase 31's 17 clusters need a 31.1 gap-closure plan. 19 more go to Phases 29, 30, 32, 33 and 34.
+    The mapping is in `.planning/ISSUE-DISPOSITION.md`.
+  - Raw evidence (screenshots, scripts, session-state files) lives OUTSIDE the repo, in
+    `~/IdeaProjects/JToye_OaaS_2026-evidence/`. Never commit the session-state files.
+- **Phase 38 = Spring Boot 4.1 migration (#706).** It was opened 2026-10-01 as Phase 37 on branch
+  `phase-37-spring-boot-4-1` and renumbered to 38 on that branch by owner ruling 2026-10-04
+  (`37afb5a5`). The branch keeps its name. It is pushed, has no PR, and is checked out at
+  `../JToye_OaaS_2026-phase37`. **Its plans are not written yet.**
+  - The spike on 4.1.1, run on OpenJDK 25 because the host has no Temurin, was feasible:
+    unit 1330/2 fail, integration 745/1 fail. Flyway is proven to run. spring-statemachine 4.0.2
+    works on Framework 7.
+  - The spike found three defects that no test catches today:
+    - `KeycloakAdminClient` sends a garbage body under Jackson 3.
+    - 18 `application*.yml` keys are silently ignored, including the Zipkin endpoint and prod log retention.
+    - The netty and Tomcat CVE pins must move to their Boot-4 lines.
+  - Owner decisions D-01..D-04: Jackson 3 now, explicit starters, keep statemachine, keep a plain
+    `Bearer` 401. For D-01, pick a Jackson 3 release that fixes CVE-2026-89407, or the branch's
+    image gate stays red after Jackson 2 is gone.
+  - On that branch, read `38-CONTEXT.md` first, then `38-SPIKE.md`, both in
+    `.planning/phases/38-spring-boot-4-1-migration/`. `38-SPIKE.patch` is a map of the package
+    moves only: it used the classic starters, which D-02 reverses.
+- **The phase-number collision.** `gsd_run query phase.add` scans sibling git worktrees, not
+  branches. It skipped 37 only because `../JToye_OaaS_2026-phase37` had the Spring Boot branch
+  checked out. #882 corrects the Phase 37 note on `main` and reserves Phase 38 there with a
+  roadmap bullet. The same text is on the Spring Boot branch (`6f813335`). When that branch next
+  merges `main`, `.planning/STATE.md` conflicts only on its own Phase 38 entry. `main`'s side of
+  that conflict is empty, so resolve it by taking the branch's side (the Phase 38 entry). Taking
+  `main`'s side deletes the entry.
+- **Issue #648 is CLOSED.** The #726 fix was proven on the production path (edge → core, real chain,
+  real converter). Bracketed break arms, run on `43ed6bbf`:
+
+  | Run | Tests | Failures |
+  |---|---|---|
+  | clean | 16 | 0 |
+  | `@PreAuthorize` removed | 16 | 2 |
+  | `require()` ×2 removed | 16 | 3 |
+  | `requireGroupAdmin()` removed | 16 | 1 |
+  | clean again | 16 | 0 |
+
+  The evidence is in the issue's closing comment.
+- **orgos charters.** The jtoye-orgos pull request that makes the seven OaaS charters version-free
+  merged 2026-10-01. They now point to `package.json`, `go.mod` and the build files instead of
+  restating versions, because otherwise every dependabot bump either reds `check-doc-versions`
+  (it checks the ORGOS block too) or gets reverted by the next sync. The OaaS side is not synced
+  yet: the ORGOS block in `AGENTS.md` still names Next 16.3.6.
+- Open pull requests besides this one and #882: dependabot #739 (springdoc 3.1.1, which cannot
+  land before Boot 4.1), #775 and #776.
+
+**Next, in order:**
+1. Merge #882, then merge `main` into `phase-37-spring-boot-4-1` (keep the branch's Phase 38 STATE entry).
+2. Move the Jackson pin to 2.21.7 on its own branch and PR, so `main`'s core-java image builds
+   again. Changing the value is not enough: the comment block above it still says 2.21.6 in its
+   reasoning ("WHY 2.21.6 and not 2.21.7") and in its delete condition, so update both. PR CI
+   never runs the image gate, so the PR must prove the resolved version with
+   `./gradlew dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind --configuration runtimeClasspath`.
+   Then merge `main` into the Spring Boot branch again.
+3. Triage the nightly failure named above before 2026-10-18. Do NOT close #883 as a duplicate
+   while issue #885 is unfixed: the next failure would file a third copy. Close #683 into #883
+   instead, or fix the de-dup first.
+4. Plan Phases 37 and 38 (`/gsd-plan-phase 37` on `main`, `/gsd-plan-phase 38` from
+   `../JToye_OaaS_2026-phase37`), plus the Phase 31.1 gap-closure plan. The order is the owner's call.
+5. Sync the OaaS side of the orgos charters in its own PR: the ORGOS block in `AGENTS.md` plus the
+   generated `.github/chatmodes`, `.github/instructions` and `.cursor/rules` files. All of them
+   predate the R-16 charter sections, so the re-sync also adds those. Rewriting `~/.claude/agents`
+   is machine-session work, so leave it to a machine session.
+6. After Phase 38 merges, rebase or recreate #739. springdoc 3.1.1 is then part of the migration.
+
+**Housekeeping (2026-10-01, still true 2026-10-04):**
+- Left in place:
+  - `feature/jackson-2.21.6-cve-2026-68497`: #760 merged, but the branch is still checked out at
+    `../JToye_OaaS_2026-jackson`.
+  - `feature/archify-architecture-diagrams`: #734 merged, but the branch is checked out at
+    `../oaas-archify-diagrams`.
+  - `phase-29-research`: never clean it up.
+- After their PRs merge, remove the worktrees `../JToye_OaaS_2026-p37note` (#882) and
+  `../JToye_OaaS_2026-handoff1001` (this update).
+- Toolchain drift was reported on 2026-10-01 only, nothing applied: ripgrep, docker-ce and
+  antigravity-hub are DRIFT, and carl-core is PIN-BEHIND.
+
+**2026-09-30 (evening) delta — GDPR erasure fixed twice over (#764, #771); `main` green; the stack runs `eb2e98fd`.** (SUPERSEDED by the 2026-10-04 delta above.)
 **Where things stand.** `main` = `eb2e98fd`. Items 1-3 of the morning delta below have merged:
 #768 (terminal-state deferrals, which cleared the required Operational Contracts red), #766 (the
 review-gate vendored copy refreshed), #767 (Phase 36 state) and #770 (issue #764: V67 `reviews`
