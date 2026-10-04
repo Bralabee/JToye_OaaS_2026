@@ -77,6 +77,30 @@ Task IDs are assigned by the planner. Until then, each row is keyed by requireme
 
 ---
 
+## Plan Mapping (planner, 2026-10-04)
+
+| Requirement | Plan / task carrying the automated check | Fail-direction arm lives in |
+|-------------|------------------------------------------|-----------------------------|
+| BOOT4-01 | 38-03 T1 (dependencyInsight), 38-03 T2 (check-dependency-horizons), 38-18 T2 (CI on Temurin) | 38-03 T2 arm (a) |
+| BOOT4-02 | 38-04 T2 (Boot4ModuleLivenessIntegrationTest), 38-12 T1 (JacksonLineContractTest classpath), 38-13 T1-T2 (census) | 38-04 T2 arms A-C, 38-12 T1 arm A, 38-13 T2 zipkin arm |
+| BOOT4-03 | 38-03 T1 (applied67), 38-04 T2 | 38-04 T2 arm A |
+| BOOT4-04 | 38-12 T1 (JacksonLineContractTest main scan), 38-05 T3 (Jackson3WireContractTest) | 38-12 T1 arms B-C, 38-05 T3 arm |
+| BOOT4-05 | 38-07 T1 (KeycloakAdminClientTest by content), 38-17 T3 (live) | 38-07 T1 Jackson-2-node arm |
+| BOOT4-06 | 38-08 T1-T3 (AmqpJackson2CompatibilityTest, OutboxPayloadCompatibilityTest, AmqpTypeIdDispatchIntegrationTest) | 38-08 T3 arms A-C |
+| BOOT4-07 | 38-09 T1-T2 (CacheSerializerTypeAllowlistTest, CacheFormatIsolationIntegrationTest), 38-17 T3 (runtime) | 38-09 T1 dropped-prefix arm, T2 prefix-removed arm |
+| BOOT4-08 | 38-10 T1-T2 (IdempotencyFingerprintGoldenTest, IdempotencyLegacyHashReplayIntegrationTest), 38-02 T2 (JsonbColumnsReadBackIntegrationTest) | 38-10 T2 plain-mapper arm, 38-02 T2 corrupted-span arm |
+| BOOT4-09 | 38-06 T1-T2, 38-17 T2 (live curl) | 38-06 T1 pass-through arm, T2 registration-removed arm |
+| BOOT4-10 | 38-04 T3 | 38-04 T3 arms A, B and the spring-security-access exclusion |
+| BOOT4-11 | 38-11 T1-T3 (ConfigKeyContractTest, RenamedConfigKeysBindingTest, scripts/check-boot-config-keys.sh) | 38-11 T3 arms A-F |
+| BOOT4-12 | 38-15 T1-T2, 38-18 T2 (CI image gate) | 38-15 T2 arms A-D |
+| BOOT4-13 | 38-02 T1 (inventory), 38-14 T1-T2 | 38-14 T1 doctored-pair arm, T2 old-snapshot gate arm |
+| BOOT4-14 | 38-16 T1-T3 (doc gates), 38-17 T2-T3 (runtime parity), 38-18 T2 (nightly) | 38-16 arms A-B, 38-17 T2 stopped-service VOID arm |
+
+Wave 0 gaps, as planned: census harness -> 38-13 (with 38-04's liveness probes earlier); ConfigKeyContractTest + gate + CI -> 38-11;
+RabbitMessageCompatibilityTest -> 38-08 AmqpJackson2CompatibilityTest; idempotency golden hashes captured on Boot 3.5 -> 38-01, proven
+-> 38-10; static Jackson-import check -> 38-12 JacksonLineContractTest; stale-XML deletion -> every arm task (cleanTest /
+cleanIntegrationTest or an explicit rm of the results directory before the arm run).
+
 ## Manual-Only Verifications
 
 | Behavior | Requirement | Why Manual | Test Instructions |
