@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Issue de-duplication searches by title, so the nightly stops filing duplicates (#885) — 2026-10-04
+
+- **Three de-dup sites now use `gh issue list --state open --search "in:title \"${TITLE}\"" --limit 1000`.**
+  The sites are the e2e-nightly escalation and the base-image-freshness findings and VOID steps.
+  Each used `--limit 100`, which returns only the 100 NEWEST open issues. Once #881 filed 103
+  persona issues, 177 were open and the nightly tracker #683 fell outside the window: the
+  2026-10-04 nightly filed #883 as a duplicate, with no WARN, because the list call succeeded. The
+  exact-title jq `select` stays as the filter, because the search alone matches substrings.
+- **Proof, both directions, from the rendered workflow scripts.** Each step's `run` block was
+  extracted from the YAML and its de-dup part executed against the live repo, with #683's title.
+  `origin/main` gives `existing=[]` at all three sites; the branch gives `existing=[683]` at all
+  three. Control: a substring title gives `[]` on the branch, while the search without the exact
+  filter gives `[683]`.
+
 ### pg-backup image takes the fixed pcre2, clearing CVE-2026-103111 from the image gate (#890) — 2026-10-04
 
 - **`libpcre2-8-0` 10.42-1+deb12u1 → 10.42-1+deb12u2, named on the existing `apt-get install`
