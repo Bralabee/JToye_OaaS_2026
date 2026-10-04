@@ -1,8 +1,31 @@
-# Handoff: Jackson red closed, nightly 429 flake fixed, review gate re-vendored; `main` red on a pg-backup base-image CVE
+# Handoff: pg-backup red cleared (#890); next is merging `main` into the Spring Boot branch
 
-**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red). Replaces the 2026-08-18 block.** This is the only live block in this file.
+**Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-04 (afternoon) delta: the Jackson red is closed, the nightly flake is fixed at its cause, the review gate is re-vendored, and `main` is red again on a NEW base-image CVE. Resume here.**
+**2026-10-04 (evening) delta: the pg-backup red is cleared (#890). Resume here.**
+**Where things stand.** `main` = `14e8a5c2` (#890) plus the PR that merged this delta. Read the current head with `git log -1 origin/main`.
+- **#890 cleared step 1 of the afternoon list below.** `infra/backups/Dockerfile` now names `libpcre2-8-0` on the existing `apt-get install -y --no-install-recommends ca-certificates` line, so the image takes `10.42-1+deb12u2`. A comment records why there is no `--only-upgrade` and no `=version` pin.
+- **Proof before merge.** Both Dockerfiles were built with `--pull` on one base (`postgres@sha256:539ceaaa…`).
+  - Trivy 0.70.0 with the gate's flags: the `main` Dockerfile gave rc=1, its only finding CVE-2026-103111; the branch gave rc=0 over 145 debian packages plus blobctl.
+  - In the branch image: pcre2 is `deb12u2`, `ca-certificates` is installed, and `/etc/ssl/certs` holds 303 entries, the same as `main`.
+  - `check-postgres-major-parity.sh` and `check-dependency-horizons.sh` both gave rc=0.
+- **Proof after merge.** `Build and Push Images (pg-backup)` passed on `14e8a5c2` (run 37199749497, 12:37Z). Its Trivy image-gate step ran and passed, and the CronJob tag was published from the gated image. When this was written, the core-java and frontend image legs of that run were still in progress; read the run's final conclusion rather than assuming it.
+- **Review.** Round 1 found 0 admissible findings and recorded 1: the quick-task record cites a branch commit, which does not survive a squash-merge, as the earlier rows already do. The series ended at round 1. Quick-task record: `.planning/quick/261004-hhy-fix-pg-backup-pcre2-cve-2026-103111/`.
+- **Housekeeping.**
+  - The `../JToye_OaaS_2026-pcre2` worktree and its branch were removed, local and remote; the tip equalled #890's head.
+  - The worktrees `../JToye_OaaS_2026-jackson2217`, `-reviewgate` and `-jackson` from afternoon step 7 no longer exist on disk.
+  - **Trap:** a `git push origin --delete` from the main checkout is refused by pre-push P-2, because that checkout is behind `main`, even though a delete lands nothing. The branch was deleted with `gh api -X DELETE repos/Bralabee/JToye_OaaS_2026/git/refs/heads/<branch>` instead of `--no-verify`.
+- **Unchanged:** the main checkout (`../JToye_OaaS_2026`, on `c55e545a`) still holds the other session's uncommitted work. Leave it to that session.
+
+**Next, in order** (the afternoon list below, renumbered, with step 1 done and step 7 mostly done):
+1. Merge `main` into `phase-37-spring-boot-4-1`. It was 5 commits behind at 12:45Z (#887, #888, #886, #889, #890), and one more once this delta merges; count it with `git rev-list --count origin/phase-37-spring-boot-4-1..origin/main`. The Phase 38 STATE entry rule, the Jackson re-key, and D-01's Jackson 3 choice clearing CVE-2026-89407 all still hold.
+2. After the next scheduled nightly, check `onboarding-blocked-flow.spec.ts` (desktop) by content (afternoon step 3).
+3. Fix the de-dup (#885) before the next nightly failure (afternoon step 4).
+4. Plan Phases 37, 38 and 31.1, in an order the owner picks.
+5. Sync the OaaS side of the orgos charters.
+6. Housekeeping: leave `../oaas-archify-diagrams` and the `phase-29-research` branch alone. Never clean up `phase-29-research`.
+
+**2026-10-04 (afternoon) delta: the Jackson red is closed, the nightly flake is fixed at its cause, the review gate is re-vendored, and `main` is red again on a NEW base-image CVE.** (SUPERSEDED by the 2026-10-04 evening delta above.)
 **Where things stand.** `main` is #886 (`bc3341d4`) plus the PR that merged this delta. Read the current head with `git log -1 origin/main`, not from this line.
 - **`main` is red on `Build and Push Images (pg-backup)`** (run 37193466380). No code change caused it.
   - Trivy found CVE-2026-103111 (HIGH, a pcre2 out-of-bounds write) in `libpcre2-8-0 10.42-1+deb12u1`. It is fixed in `10.42-1+deb12u2`.
