@@ -351,6 +351,8 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 33. The Consumer Product | v2.3 | 10/10 | Complete   | 2026-08-09 |
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
 | 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
+| 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-30 |
+| 37. Real-world operations readiness | v2.3 | 0/? | Not started | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
 before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
@@ -833,6 +835,51 @@ Plans:
 **Wave 8**
 
 - [x] 36-18-PLAN.md — Owner-approved push + nightly `workflow_dispatch` proof (Playwright executed > 0) + final parity readings (checkpoint)
+
+### Phase 37: Real-world operations readiness
+
+**Added 2026-10-04 by owner request**, after two passes of persona user-testing on the live local stack (epic **#880**; PR #881). The 15 personas covered:
+- vendors: a new vendor, a Friday-rush vendor, a multi-site owner, a kitchen hand;
+- customers: hungry, allergy parent, privacy-minded, older regular on large text, screen-reader user;
+- others: a rival tenant, a sceptical evaluator, a prankster, a Trading Standards/EHO officer, an API/MCP integrator, mid-journey chaos.
+
+They produced 250 findings, deduplicated into 123 clusters. 87 of those fitted no existing phase, and they are this phase's scope. Of the rest, 17 sit with Phase 31 and need a gap-closure plan (31.1), because that phase is complete, and 19 go to Phases 29, 30, 32, 33 and 34. The full mapping is in `.planning/ISSUE-DISPOSITION.md` § "Persona user-testing 2026-10-03". The catalogue, with cross-cutting themes and membership reconciliation, is `.planning/ux-persona-test-20261003-pass2/consolidated/CATALOGUE.md`. `goods-to-preserve.md` beside it lists 40 behaviours the testers valued; every plan here must keep them (Incremental Betterment Doctrine).
+
+NOTE: `gsd_run query phase.add` derived Phase **38** although nothing claims 37 (the same off-by-one recorded for Phase 27). It was corrected to 37 by hand, because all 103 filed issues and the disposition document already name Phase 37.
+
+**Goal:** A real vendor can run a Friday service, a multi-site business and a third-party integration on J'Toye, and a real customer can order safely, without the product claiming anything its data does not back. Concretely:
+- new orders reach the kitchen and alert someone;
+- staff see only what they were granted;
+- the price and allergens a customer confirms are the ones recorded;
+- abuse of a no-upfront-payment checkout is bounded;
+- the API, MCP, webhook and sync paths enforce the same rules as the storefront.
+
+**Requirements**: derived at plan time from the 87 clusters, in seven sub-themes. P0/P1 counts are from the catalogue.
+- **37-A Kitchen & order operations** (15; P0 1, P1 3): #786 #795 #796 #797 #818 #819 #820 #821 #822 #823 #824 #857 #858 #866, plus part of bundle #875.
+- **37-B Multi-site, staff access & finance** (12; P0 3, P1 4): #779 #780 #791 #799 #800 #815 #816 #827 #856 #867, plus part of #875.
+- **37-C Checkout integrity & customer trust/retention** (23; P0 1, P1 3): #783 #792 #802 #813 #825 #826 #843 #844 #845 #846 #847 #855 #862 #868 #869 #870, plus bundles #876 and #877.
+- **37-D Abuse resistance** (8; P0 2, P1 3): #781 #782 #808 #810 #811 #841 #842 #872.
+- **37-E Integrator surface: API, MCP, webhooks, sync** (13; P0 2, P1 5): #790 #727 #805 #806 #807 #809 #863 #864 #865, plus bundle #879. It also covers comments on #587 and #208.
+- **37-F Accessibility** (6): #849 #850 #851 #852 #853 #854.
+- **37-G Catalogue & shop-admin correctness** (8; P1 2): #798 #801 #831 #832 #833 #834 #835, plus part of #875.
+- **Unsorted** (2): #873 #874. Assign at plan time.
+
+**Depends on:** nothing hard. **Blocks:** Phase 32 (first tenant), but only through its P0 clusters (#779 #780 #781 #782 #783 #786 #790 #791 and #727), which gate a real tenant whatever order the rest takes. Its sibling P0s live elsewhere and gate Phase 32 the same way: #777 and #778 (DSAR), #784 and #785 (allergen acknowledgement), #787, #788 and #789 (Phase 31 gap-closure).
+
+**Success Criteria** (what must be TRUE). These are drafts; `/gsd-plan-phase 37` refines them. Each must be shown to FAIL on the pre-fix tree and PASS after, and each issue states its own acceptance test:
+
+  1. **Kitchen (37-A).** A customer's new order is announced audibly and visibly within seconds, and reaches the kitchen display with its full order number, the customer's note and the fulfilment type. A double-tap cannot skip a status. A lapsed session, a muted handover or an unreachable API is never shown as "Live".
+  2. **Staff access (37-B).** A staff login holds only what was granted: granting no role yields no access, and revoking the last grant removes access rather than escalating it, proven through the API with the staff member's own token. Per-shop finance figures are the shop's own and can be exported. A completed order cannot be deleted from under its ledger rows.
+  3. **Checkout (37-C).** The price, availability and allergen set a customer confirms are re-validated by the server at submit. Any change is shown and must be re-confirmed. What was charged and acknowledged is what is recorded and what the customer can see afterwards.
+  4. **Abuse (37-D).** Rate limits key on a trusted client identity, so a spoofed `X-Forwarded-For` header does not mint a fresh bucket. Order quantity and volume per identity are bounded. A vendor can bulk-reject junk orders. A review is accepted only from a buyer of that shop.
+  5. **Integrators (37-E).** API, MCP, sync and CSV paths refuse what the storefront refuses (unavailable products, shop-less items, missing contact details). A partial update cannot silently turn stock tracking off. An MCP-placed order reaches the kitchen. A vendor can issue a scoped, revocable credential without sharing the owner's password.
+  6. **Accessibility (37-F).** Order confirmation and tracking status changes are announced to screen readers. Shop cards have accessible names. Keycloak sign-in and registration pass the same WCAG 2.2 AA bar as the storefront. Each is guarded by a test that sees what axe missed.
+  7. **No regression of the goods.** The 40 entries in `goods-to-preserve.md` are re-verified at phase end. They include idempotent retries, the allergen gate, offline banner honesty, server-authoritative pricing and the webhook secret UX.
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 37 to break down)
 
 ---
 
