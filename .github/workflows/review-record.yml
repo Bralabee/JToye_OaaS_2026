@@ -13,10 +13,25 @@
 # `Review-Record: WAIVED sha=<head12>`, posted by the wrapper): CI stays required —
 # the deliberate alternative to an --admin bypass, which would skip CI too.
 #
-# Chicken-and-egg, expected: comment/review-triggered runs execute THIS file from
-# the DEFAULT branch, so those events only flip the status once this workflow has
-# merged. The PR that introduces it therefore shows a failing (not-yet-required)
-# status on itself; that is the bootstrap, not a defect.
+# WHICH COPY OF THIS FILE RUNS (#269 item 3, #291 review finding 2). This file holds
+# statuses: write, so no event may run a PR's own copy of it. Every trigger below
+# runs the DEFAULT branch's file: pull_request_target (push/open), issue_comment,
+# and workflow_run (reviews). A submitted review is the exception GitHub forces:
+# pull_request_review has no _target variant and would run the PR's copy, so it is
+# NOT a trigger here. review-record-relay.yml takes it with permissions: {} and
+# runs nothing, and its completion fires the workflow_run trigger below — a
+# workflow_run run always executes the default branch's file. Cost: a review now
+# bills two job-minutes (relay + verdict) where it billed one. workflow_dispatch
+# runs the ref it is dispatched on — the default branch unless someone with write
+# access passes --ref.
+# Out of reach of ANY file: a same-repo PR can ADD a workflow of its own that asks
+# for statuses: write on a pull_request event and posts this context. This design
+# stops this workflow being that vector; it cannot stop a new one.
+#
+# Chicken-and-egg, expected: every run executes THIS file from the DEFAULT branch,
+# so the status only posts once this workflow (and the relay, for reviews) has
+# merged. The PR that introduces it therefore shows no status, or a failing
+# (not-yet-required) one, on itself. That is the bootstrap, not a defect.
 #
 # COST (2026-09-20). This repo is private, so every run bills the owner's Actions
 # allowance, and GitHub rounds EACH JOB up to a whole minute: a ~10-second verdict
@@ -28,7 +43,8 @@
 # 42 issue_comment. Two trims, neither of which can lose a re-evaluation:
 #   - pull_request_review_comment is GONE. An inline comment posted through the
 #     API (what `/code-review --comment` does) is always wrapped in a single-
-#     comment review, so pull_request_review already fires for it — the 438/437
+#     comment review, so pull_request_review already fires for it (taken by the
+#     relay since #291, reaching this file via workflow_run) — the 438/437
 #     pair above is the same events counted twice. MEASURED on PR #216 (review
 #     finding 2), not inferred: `POST /pulls/216/comments` → run 35497048304
 #     (pull_request_review); `POST /pulls/216/comments/{id}/replies` → run
@@ -51,10 +67,21 @@
 # predicate the `if:` negates, and never touch a verdict run.
 name: review-record
 on:
-  pull_request:
+  # pull_request_target, not pull_request (#269 item 3): a pull_request run executes the PR's
+  # OWN copy of this file with statuses: write, so a PR that edits the job to post
+  # state=success grades itself (observed: jtoye-orgos PR 34, run 36439940780, which ran
+  # the PR's new YAML while main had none). pull_request_target runs the BASE branch's
+  # file; the job only reads PR metadata through the API and checks out master, never
+  # PR code, so the wider token is never exposed to it.
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
+  # A submitted review, via review-record-relay.yml (#291 review, finding 2): NOT
+  # pull_request_review here, which would run the PR's own copy of this file with
+  # statuses: write. workflow_run runs the default branch's file; the relay
+  # contributes only the event, and the verdict below re-reads everything.
+  workflow_run:
+    workflows: [review-record-relay]
+    types: [completed]
   issue_comment:
     types: [created]
   # Manual re-drive (#156 review, finding 8): the waiver dedupe deliberately
@@ -75,7 +102,7 @@ concurrency:
   # The `-chatter` suffix is the exact negation of the job `if:` below: keep the
   # two predicates identical, or a chatter run can cancel a verdict run.
   group: >-
-    review-record-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}${{
+    review-record-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr || github.event.workflow_run.head_sha }}${{
       (github.event_name == 'issue_comment'
        && !(github.event.issue.pull_request
             && contains(github.event.comment.body, 'Review-Record:')
@@ -107,7 +134,8 @@ jobs:
       - name: resolve head, run the brain, post the status
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRNUM: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+          PRNUM: ${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           # GitHub's default step shell is `bash -e`: without the explicit +e, a
           # FAILURE verdict (rc 1 — the expected answer for an unreviewed PR)
@@ -117,6 +145,14 @@ jobs:
           # rc values here are data, not errors — every exit is explicit.
           set +e
           set -uo pipefail
+          # workflow_run lists the PR only for same-repo heads; a fork PR's review
+          # arrives with an empty list, so look the PR up by the relayed head sha.
+          if [ -z "$PRNUM" ] && [ -n "$RUN_HEAD_SHA" ]; then
+            PRNUM=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RUN_HEAD_SHA/pulls" -q '[.[] | select(.state == "open")][0].number // empty'); rc=$?
+            if [ "$rc" -ne 0 ] || [ -z "$PRNUM" ]; then
+              echo "no open PR for relayed head $RUN_HEAD_SHA — nothing to evaluate, no status posted"; exit 2
+            fi
+          fi
           HEAD=$(gh pr view "$PRNUM" -R "$GITHUB_REPOSITORY" --json headRefOid -q .headRefOid); rc=$?
           if [ "$rc" -ne 0 ] || [ -z "$HEAD" ]; then
             echo "cannot resolve PR #$PRNUM head — failing WITHOUT a status (fail closed)"; exit 2
