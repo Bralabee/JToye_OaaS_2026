@@ -338,6 +338,9 @@ export default function OnboardingPage() {
   const retryOnboarding = () => {
     setLoading(true)
     void loadOnboarding(true)
+    // The shops fetch usually failed in the same burst; re-run it too, so one
+    // "Try again" recovers the page instead of revealing a second error panel.
+    if (shopsStatus === "error") void fetchShops()
   }
 
   useEffect(() => {

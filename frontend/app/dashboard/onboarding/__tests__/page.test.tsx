@@ -1080,4 +1080,21 @@ describe("Onboarding — a failed load is never rendered as 'you have none'", ()
     await waitFor(() => expect(screen.getByText("Live")).toBeInTheDocument())
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })
+
+  it("when GET /me AND the shops fetch both 429, ONE Try again recovers both — no second error panel", async () => {
+    routeQueued(
+      [() => Promise.reject(rateLimited), () => Promise.reject(notFound)],
+      [() => Promise.reject(rateLimited), () => Promise.resolve({ data: { content: shops } })]
+    )
+
+    render(<OnboardingPage />)
+
+    const alert = await screen.findByRole("alert")
+    expect(within(alert).getByText("Couldn't load your onboarding")).toBeInTheDocument()
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }))
+
+    await waitFor(() => expect(document.getElementById("onboarding-shop")).not.toBeNull())
+    expect(screen.queryByText("Couldn't load your shops")).not.toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  })
 })

@@ -2,7 +2,7 @@
  * Behavioural tests for the hardened api-client interceptors:
  *  - Injects Authorization + X-Tenant-Id on every request
  *  - Retries 5xx up to 2 times with backoff then rejects
- *  - Does NOT retry 4xx — except one 429 retry after a Retry-After of 0-10 s (0 waits 1 s)
+ *  - Does NOT retry 4xx — except one rate-limiter 429 with Retry-After N of 0-10, after N + 1 s
  *  - Debounces 401s so concurrent calls trigger ONE getSession() refresh
  */
 
@@ -214,8 +214,9 @@ describe("api-client interceptors — 429 Retry-After", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { AxiosHeaders } = require("axios") as typeof import("axios")
 
-  function rateLimited(config: unknown, retryAfter?: string) {
+  function rateLimited(config: unknown, retryAfter?: string, type = "https://jtoye.uk/errors/rate-limited") {
     const e = err(429, config)
+    e.response.data = { type }
     e.response.headers = (
       retryAfter === undefined ? new AxiosHeaders() : AxiosHeaders.from({ "Retry-After": retryAfter })
     ) as unknown as Record<string, string>
@@ -223,14 +224,14 @@ describe("api-client interceptors — 429 Retry-After", () => {
   }
 
   // Scripted adapter: each entry is a Retry-After value for a 429, or "ok".
-  function script(steps: Array<{ retryAfter?: string } | "ok">) {
+  function script(steps: Array<{ retryAfter?: string; type?: string } | "ok">) {
     let i = 0
     adapter.mockImplementation((config: { data?: unknown }) => {
       const step = steps[i++] ?? steps[steps.length - 1]
       if (step === "ok") {
         return Promise.resolve({ data: { recovered: true }, status: 200, statusText: "OK", headers: {}, config })
       }
-      return Promise.reject(rateLimited(config, step.retryAfter))
+      return Promise.reject(rateLimited(config, step.retryAfter, step.type))
     })
   }
 
@@ -238,13 +239,13 @@ describe("api-client interceptors — 429 Retry-After", () => {
     jest.useRealTimers()
   })
 
-  it("retries a 429 once after Retry-After: 1 and resolves — not before the second has elapsed", async () => {
+  it("retries a 429 once after Retry-After: 1 + 1 s and resolves — the server floors, so N s is early", async () => {
     jest.useFakeTimers()
     script([{ retryAfter: "1" }, "ok"])
 
     const pending = apiClient.get("/api/v1/shops")
-    await jest.advanceTimersByTimeAsync(999)
-    // Still waiting: the server's Retry-After is honoured, not shortcut.
+    await jest.advanceTimersByTimeAsync(1999)
+    // Still waiting: the true wait lies in [1, 2) s, so a replay at 1 s would meet a second 429.
     expect(adapter).toHaveBeenCalledTimes(1)
 
     await jest.advanceTimersByTimeAsync(1)
@@ -257,12 +258,20 @@ describe("api-client interceptors — 429 Retry-After", () => {
     script([{ retryAfter: "2" }, "ok"])
 
     const pending = apiClient.post("/api/v1/onboarding", { shopId: "shop-1", model: "MARKETPLACE" })
-    await jest.advanceTimersByTimeAsync(2000)
+    await jest.advanceTimersByTimeAsync(2999)
+    expect(adapter).toHaveBeenCalledTimes(1)
+    await jest.advanceTimersByTimeAsync(1)
     await expect(pending).resolves.toMatchObject({ data: { recovered: true } })
     expect(adapter).toHaveBeenCalledTimes(2)
     const bodies = adapter.mock.calls.map(([cfg]) => JSON.parse(String(cfg.data)))
     expect(bodies[1]).toEqual(bodies[0])
     expect(bodies[1]).toEqual({ shopId: "shop-1", model: "MARKETPLACE" })
+  })
+
+  it("does NOT replay a 429 that is not the rate limiter's (e.g. a service-raised 429 after a write)", async () => {
+    script([{ retryAfter: "1", type: "https://jtoye.uk/errors/dsar-rate-limited" }, "ok"])
+    await expect(apiClient.post("/api/v1/x", { a: 1 })).rejects.toMatchObject({ response: { status: 429 } })
+    expect(adapter).toHaveBeenCalledTimes(1)
   })
 
   it("does NOT retry a 429 that carries no Retry-After header", async () => {
