@@ -55,6 +55,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [x] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice (completed 2026-08-17)
 - [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
 - [ ] **Phase 37: Real-world operations readiness** — The 87 persona-testing clusters with no other home (epic #880): kitchen ops, staff scoping, checkout integrity, abuse resistance, integrator surface, accessibility, catalogue correctness; 9 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request)
+- [ ] **Phase 38: Spring Boot 4.1 Migration** — core-java moves from Spring Boot 3.5.16 to 4.1.x, proven by test, gate and live runtime (#706; opened 2026-10-01 as Phase 37, renumbered 2026-10-04)
 
 ## Phase Details
 
@@ -846,7 +847,7 @@ Plans:
 
 They produced 250 findings, deduplicated into 123 clusters. 87 of those fitted no existing phase, and they are this phase's scope. Of the rest, 17 sit with Phase 31 and need a gap-closure plan (31.1), because that phase is complete, and 19 go to Phases 29, 30, 32, 33 and 34. The full mapping is in `.planning/ISSUE-DISPOSITION.md` § "Persona user-testing 2026-10-03". The catalogue, with cross-cutting themes and membership reconciliation, is `.planning/ux-persona-test-20261003-pass2/consolidated/CATALOGUE.md`. `goods-to-preserve.md` beside it lists 40 behaviours the testers valued; every plan here must keep them (Incremental Betterment Doctrine).
 
-NOTE: `gsd_run query phase.add` derived Phase **38** although nothing claims 37 (the same off-by-one recorded for Phase 27). It was corrected to 37 by hand, because all 103 filed issues and the disposition document already name Phase 37.
+NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git worktree had the unmerged branch `phase-37-spring-boot-4-1` checked out, and that branch already held a Phase 37 (Spring Boot 4.1 Migration, opened 2026-10-01). The tool scans sibling worktrees, not branches, so a number held only on an unmerged branch is invisible from a checkout without such a worktree. This phase was set to 37 by hand, because epic #880, 75 further issue bodies and the disposition document already name Phase 37. By owner ruling on 2026-10-04 the Spring Boot phase moved to **38** instead, and its roadmap bullet is on `main` so that `phase.add` skips 38 from every checkout.
 
 **Goal:** A real vendor can run a Friday service, a multi-site business and a third-party integration on J'Toye, and a real customer can order safely, without the product claiming anything its data does not back. Concretely:
 - new orders reach the kitchen and alert someone;
