@@ -151,6 +151,63 @@ class IdempotencyFingerprintGoldenTest {
                 .hasMessageContaining("updatedAt");
     }
 
+    // ------------------------------------------------------------------ constructor-only types (review WR-02)
+
+    /**
+     * A DTO of the shape no current adopter has: no setters, no default constructor, no
+     * {@code @JsonCreator} or {@code @JsonProperty}, only an all-args constructor whose parameter
+     * names come from {@code -parameters} (the Spring Boot Gradle plugin sets it on every compile).
+     * Its constructor order ({@code alpha, zeta}) differs from its field order ({@code zeta, alpha}),
+     * so which order the mapper writes shows whether it detected the constructor as a creator.
+     */
+    public static final class ConstructorOnlyDto {
+        private final String zeta;
+        private final int alpha;
+
+        public ConstructorOnlyDto(int alpha, String zeta) {
+            this.alpha = alpha;
+            this.zeta = zeta;
+        }
+
+        public String getZeta() {
+            return zeta;
+        }
+
+        public int getAlpha() {
+            return alpha;
+        }
+    }
+
+    /**
+     * The bytes Boot 3.5's mapper writes for {@link ConstructorOnlyDto}. NOT a 38-01 capture: no
+     * constructor-only type existed when the golden set was taken, so there is no Boot-3.5 fixture for
+     * one. Anchored instead to (a) Boot 3.5.16's {@code spring-boot-starter-json}, which ships
+     * {@code jackson-module-parameter-names}, registered by {@code Jackson2ObjectMapperBuilder}; and
+     * (b) a Jackson 2.21.7 mapper with that module and Boot 3.5's other settings, measured out of tree
+     * on this DTO: {@code {"alpha":1,"zeta":"z"}}, and {@code {"zeta":"z","alpha":1}} plus an
+     * {@code InvalidDefinitionException} on read without the module (Phase 38 REVIEW-FIX, WR-02).
+     */
+    static final String BOOT35_CONSTRUCTOR_ONLY_BYTES = "{\"alpha\":1,\"zeta\":\"z\"}";
+
+    @Test
+    @DisplayName("WR-02: a constructor-only DTO round-trips (Boot 3.5 detected parameter names)")
+    void constructorOnlyTypeRoundTrips() {
+        String written = IdempotencyJson.write(new ConstructorOnlyDto(1, "z"));
+
+        ConstructorOnlyDto back = IdempotencyJson.read(written, ConstructorOnlyDto.class);
+
+        assertThat(back.getAlpha()).isEqualTo(1);
+        assertThat(back.getZeta()).isEqualTo("z");
+    }
+
+    @Test
+    @DisplayName("WR-02: creator properties are written first, in constructor order, as Boot 3.5 wrote them")
+    void constructorOnlyTypeWritesTheBoot35Bytes() {
+        assertThat(IdempotencyJson.write(new ConstructorOnlyDto(1, "z")))
+                .as("constructor order (alpha, zeta), not field order (zeta, alpha)")
+                .isEqualTo(BOOT35_CONSTRUCTOR_ONLY_BYTES);
+    }
+
     private static final Comparator<OffsetDateTime> BY_INSTANT = Comparator.comparing(OffsetDateTime::toInstant);
 
     /** {@code request-hashes.tsv}: {@code endpoint-id TAB sha256}, in file order. */

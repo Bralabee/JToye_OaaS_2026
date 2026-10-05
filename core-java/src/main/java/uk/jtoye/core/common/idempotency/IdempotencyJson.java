@@ -24,11 +24,21 @@ import tools.jackson.databind.json.JsonMapper;
  * <h2>What it reproduces</h2>
  *
  * The bytes of Boot 3.5's auto-configured Jackson-2 {@code ObjectMapper}: Jackson 3's own
- * Jackson-2-defaults builder, plus the settings Boot 3.5's {@code JacksonAutoConfiguration} applied
- * on top of raw Jackson 2 (dates and durations as ISO strings, not timestamps; unknown properties
- * ignored; no default view inclusion). {@code IdempotencyFingerprintGoldenTest} proves it against
- * fixtures a Boot 3.5.16 pod wrote (jackson2-golden, 38-01 capture commit {@code e12177e1}): every
- * adopter's request hash, and every stored response type byte for byte in both directions.
+ * Jackson-2-defaults builder, plus the settings Boot 3.5 applied on top of raw Jackson 2:
+ * <ul>
+ *   <li>constructor parameter names detected ({@code MapperFeature.DETECT_PARAMETER_NAMES}), which is
+ *       what Boot 3.5's registered {@code ParameterNamesModule} did. It decides whether a
+ *       constructor-only DTO can be read at all, and puts its creator properties first, in
+ *       constructor order;</li>
+ *   <li>dates and durations as ISO strings, not timestamps;</li>
+ *   <li>unknown properties ignored;</li>
+ *   <li>no default view inclusion.</li>
+ * </ul>
+ * {@code IdempotencyFingerprintGoldenTest} proves it against fixtures a Boot 3.5.16 pod wrote
+ * (jackson2-golden, 38-01 capture commit {@code e12177e1}): every adopter's request hash, and every
+ * stored response type byte for byte in both directions. It also pins a constructor-only DTO, a shape
+ * no 38-01 fixture covers, against bytes measured from a Jackson-2 mapper with
+ * {@code ParameterNamesModule}.
  *
  * <h2>The rule for any future change</h2>
  *
@@ -36,10 +46,22 @@ import tools.jackson.databind.json.JsonMapper;
  * format needs a deliberate dual-hash window, in which a second accepted hash is checked beside the
  * old one until every reservation written in the old format has expired, and only then the old
  * hash is dropped. Any edit here must keep {@code IdempotencyFingerprintGoldenTest} green.
+ *
+ * <p><b>The one in-place edit, and why it was allowed.</b> {@code DETECT_PARAMETER_NAMES} was added
+ * in Phase 38 review (WR-02), BEFORE this mapper shipped: no Boot-4 pod had stored a hash or body
+ * with it, and the golden test stayed green with all 7 stored hashes and all 4 stored bodies
+ * unchanged, so the edit moved no byte any stored row depends on. It made the mapper MORE faithful
+ * to the Boot-3.5 format it claims, not different from it. From the first Boot-4 release onward the
+ * rule above applies without exception.
  */
 final class IdempotencyJson {
 
     private static final JsonMapper MAPPER = JsonMapper.builderWithJackson2Defaults()
+            // Boot 3.5 registered ParameterNamesModule (spring-boot-starter-json ships it;
+            // Jackson2ObjectMapperBuilder registers it), so constructor parameter names were detected.
+            // builderWithJackson2Defaults() turns this off; without it a constructor-only DTO cannot
+            // be read and writes its properties in field order instead of creator order (WR-02).
+            .enable(MapperFeature.DETECT_PARAMETER_NAMES)
             // Boot 3.5 JacksonAutoConfiguration: java.time values as ISO strings, not timestamps.
             .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
             .disable(DateTimeFeature.WRITE_DURATIONS_AS_TIMESTAMPS)
