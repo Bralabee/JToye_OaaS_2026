@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-03-PLAN.md
-last_updated: "2026-10-05T00:48:22.582Z"
+stopped_at: Completed 38-04-PLAN.md
+last_updated: "2026-10-05T01:30:47.000Z"
 last_activity: 2026-10-05
-state_head: 943049b5a2cdba42f5533b53c8fefe4344341ddb
+state_head: 62651ca3de2a6c693d666bb86636490836947a6f
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 155
-  completed_plans: 139
+  completed_plans: 141
   percent: 67
 ---
 
@@ -50,7 +50,19 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - The 401 challenge is asserted exactly: `Bearer`, or `Bearer error="invalid_token"…` with no `resource_metadata`.
 - Measured for 38-06: D-05's "404 matches Boot 3.5" is half-true. Anonymous callers get **401** today and only authenticated callers get 404, so the locked 404 changes the anonymous answer. The `*_boot35Baseline` methods must be updated there.
 - Carried red: `docs-freshness.sh` (309 Java test files and 4195 invocations, against 306 and 4183 recorded), red since 38-01. The phase docs plan (BOOT4-14) regenerates it once.
-- Next: 38-03 (Wave 2). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
+- 38-03 DONE 2026-10-05: core-java on Boot 4.1.1 with explicit starters; 67 migrations applied, RlsContractTest 7/7; both version gates' interim red owned by 38-16.
+- 38-04 DONE 2026-10-05: the full suites on Boot 4.1.1 give unit 1337/2 and integration 750/5. Every red is owned:
+  - ProblemDetailAuthenticationEntryPointTest and UnauthenticatedProblemDetailIntegrationTest (4 methods) go to 38-06;
+  - KeycloakAdminClientTest goes to 38-07;
+  - OpenApiSnapshotTest goes to 38-14;
+  - JsonbColumnsReadBackIntegrationTest is green.
+- `Boot4ModuleLivenessIntegrationTest` and `StatemachineSecurityAccessTest` are permanent. Each is shown failing in `evidence/38-04-suite-and-liveness.txt`:
+  - without the Flyway module, 0 of 67 migrations apply;
+  - without the Brave module, a no-op Tracer is caught;
+  - without restclient, the context fails;
+  - without spring-security-access, its 9 classes fail to load.
+- `completed_plans` was 139 after 38-02; 38-03's STATE commit did not advance it. It now reads 141 (38-01..38-04).
+- Next: 38-05 (Wave 3, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -702,6 +714,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 38 P03 | 14 min | 2 tasks | 108 files |
+| Phase 38 P04 | 39 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -838,6 +851,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-03: The Boot-3 pin jackson-bom.version=2.21.7 re-points the Jackson 3 BOM under Boot 4 to a nonexistent artifact, so every managed version vanishes; re-keyed to jackson-2-bom.version 2.22.3 plus jackson-bom.version 3.1.7 (T-38-08 observed live)
 - [Phase 38]: 38-03: spring-boot-starter-webclient declared alongside webflux under D-02's declare-what-you-use rule
 - [Phase 38]: 38-03: check-dependency-horizons.sh needs python3+PyYAML, which this host provides only inside a conda env; run under an existing env, no gate variable set
+- [Phase 38]: 38-04: no Boot-4 fallout needed fixing (1330+7 unit, 745+5 integration; reds are only the named expected ones); no main or build change
+- [Phase 38]: 38-04: the Tracer liveness probe asserts the Brave class name, because without the Brave module a no-op Tracer$1 bean still exists and a presence-only check passes
+- [Phase 38]: 38-04: a missing spring-boot-restclient fails context startup (RestTemplateBuilder via SecurityConfig), so it is loud today; the probe guards the day that injection goes away
+- [Phase 38]: 38-04: statemachine-core 4.0.2 references 16 distinct security.access classes (37 jdeps lines; 9 from spring-security-access); the spike's "24" was not reproducible
 
 ### Pending Todos
 
@@ -907,8 +924,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T00:48:22.248Z
-Stopped at: Completed 38-03-PLAN.md
+Last session: 2026-10-05T01:30:47.000Z
+Stopped at: Completed 38-04-PLAN.md. Next is 38-05 (wave 3, sequential) on branch `phase-37-spring-boot-4-1`.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
