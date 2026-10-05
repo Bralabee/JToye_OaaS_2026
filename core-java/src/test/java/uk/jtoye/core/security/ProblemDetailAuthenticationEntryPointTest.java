@@ -1,18 +1,19 @@
 package uk.jtoye.core.security;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.json.ProblemDetailJacksonMixin;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.server.resource.BearerTokenError;
 import org.springframework.security.oauth2.server.resource.BearerTokenErrorCodes;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.stream.Stream;
 
@@ -28,9 +29,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code HTTP 401} with {@code bytes=0} — the only status in the whole error-model sweep
  * that carried no {@code application/problem+json} document.
  *
- * <p>A REAL {@link ObjectMapper} built the way Spring Boot builds its auto-configured one,
- * not a mock: a mock returns null and every body assertion below would be asserting on the
- * string "null" while looking green (the issue #413 lesson, same class of surface).
+ * <p>A REAL Jackson-3 {@link JsonMapper} with the {@code ProblemDetailJacksonMixin} Boot 4
+ * registers on its auto-configured one, not a mock: a mock returns null and every body
+ * assertion below would be asserting on the string "null" while looking green (the issue #413
+ * lesson, same class of surface). That the entry point writes with Boot's REAL bean, byte for
+ * byte, is proven through the chain by {@code UnauthenticatedProblemDetailIntegrationTest}.
  *
  * <p>Phase 38 D-04: Spring Security 7's {@code BearerTokenAuthenticationEntryPoint} always
  * appends {@code resource_metadata="…/.well-known/oauth-protected-resource"}, advertising
@@ -40,9 +43,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ProblemDetailAuthenticationEntryPointTest {
 
-    private final ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
+    private final JsonMapper jsonMapper = JsonMapper.builder()
+            .addMixIn(ProblemDetail.class, ProblemDetailJacksonMixin.class)
+            .build();
     private final ProblemDetailAuthenticationEntryPoint entryPoint =
-            new ProblemDetailAuthenticationEntryPoint(objectMapper);
+            new ProblemDetailAuthenticationEntryPoint(jsonMapper);
 
     @Test
     void missingBearerReturnsProblemDocumentAndKeepsTheChallenge() throws Exception {
@@ -63,11 +68,11 @@ class ProblemDetailAuthenticationEntryPointTest {
         assertEquals(1, response.getHeaders("WWW-Authenticate").size(),
                 "exactly one challenge, not a stripped one beside the original");
 
-        JsonNode body = objectMapper.readTree(response.getContentAsString());
-        assertEquals("https://jtoye.uk/errors/unauthorized", body.path("type").asText());
-        assertEquals("Unauthorized", body.path("title").asText());
+        JsonNode body = jsonMapper.readTree(response.getContentAsString());
+        assertEquals("https://jtoye.uk/errors/unauthorized", body.path("type").asString());
+        assertEquals("Unauthorized", body.path("title").asString());
         assertEquals(401, body.path("status").asInt());
-        assertEquals("Authentication failed", body.path("detail").asText());
+        assertEquals("Authentication failed", body.path("detail").asString());
     }
 
     /**
@@ -91,14 +96,14 @@ class ProblemDetailAuthenticationEntryPointTest {
         assertEquals("Bearer error=\"invalid_token\", error_description=\"The token expired\"",
                 response.getHeader("WWW-Authenticate"));
 
-        JsonNode body = objectMapper.readTree(response.getContentAsString());
-        assertEquals("https://jtoye.uk/errors/unauthorized", body.path("type").asText());
+        JsonNode body = jsonMapper.readTree(response.getContentAsString());
+        assertEquals("https://jtoye.uk/errors/unauthorized", body.path("type").asString());
         assertEquals(401, body.path("status").asInt());
 
         // The body stays generic: WHY the token failed belongs in the challenge, which a
         // client is expected to read, not in a document an unauthenticated caller can mine.
-        assertTrue(body.path("detail").asText().equals("Authentication failed"),
-                "the body must not restate the token failure reason: " + body.path("detail").asText());
+        assertTrue(body.path("detail").asString().equals("Authentication failed"),
+                "the body must not restate the token failure reason: " + body.path("detail").asString());
     }
 
     /** Input header value -> expected value after {@code stripResourceMetadata}. */
