@@ -6,11 +6,13 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.data.redis.cache.RedisCacheWriter;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.security.TenantContext;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 /**
@@ -150,5 +152,40 @@ public class TenantCacheEvictor {
         String key = String.format("tenant:%s:%s:%s", tenantId, methodName, entityId);
         cache.evict(key);
         log.debug("Evicted cache entry {}::{}", cacheName, key);
+        evictLegacyBoot35Key(cache, key);
+    }
+
+    /**
+     * TRANSITIONAL (Phase 38 review WR-01): also delete the key a Boot-3.5 pod caches this entity
+     * under, so a write handled by a Boot-4 pod reaches the Boot-3.5 generation too — during the
+     * rolling deploy and after a rollback. Without it the two generations' evictions never meet and a
+     * revoked {@code shopMembership} grant stays cached on the other generation for its TTL. See
+     * {@link CacheConfig#CACHE_KEY_FORMAT_VERSION} for the direction this cannot cover (a write on a
+     * Boot-3.5 pod) and the operator step that does; remove under the condition on
+     * {@link CacheConfig#legacyBoot35CacheKey}.
+     *
+     * <p>Only a Redis-backed cache has a legacy generation: the check is on the native cache, so a
+     * {@code ConcurrentMapCache} (or any other provider) is skipped and a decorator around a Redis cache
+     * is still reached. The delete is BEST-EFFORT: the primary eviction above has already been issued, so a
+     * failure here is WARN-logged with the region and key and never fails the caller's write.
+     */
+    private void evictLegacyBoot35Key(Cache cache, String key) {
+        String legacyKey = CacheConfig.legacyBoot35CacheKey(cache.getName(), key);
+        try {
+            if (!(cache.getNativeCache() instanceof RedisCacheWriter writer)) {
+                return;
+            }
+            // Boot 3.5 serialized keys with StringRedisSerializer, i.e. UTF-8. evictIfPresent, NOT
+            // evict: Spring Data Redis 4's DefaultRedisCacheWriter.evict is fire-and-forget when
+            // asynchronous writes are on (its default), so the DEL could land after this method
+            // returned and its failure would never reach the catch below. evictIfPresent issues a
+            // synchronous DEL, as Boot 3.5's evict did. Measured: with evict, the real-Redis arm in
+            // CacheFormatIsolationIntegrationTest still found the legacy key in 3 runs of 8.
+            writer.evictIfPresent(cache.getName(), legacyKey.getBytes(StandardCharsets.UTF_8));
+            log.debug("Evicted legacy Boot-3.5 cache entry {}", legacyKey);
+        } catch (RuntimeException e) {
+            log.warn("Legacy Boot-3.5 cache eviction failed (region={}, key={}); the entry expires by its "
+                    + "TTL instead: {}", cache.getName(), legacyKey, e.toString());
+        }
     }
 }

@@ -43,7 +43,9 @@ injected the Jackson-2 `ObjectMapper`, `KeycloakAdminClient`, the Rabbit convert
 serializer. Jackson 2 keeps a BOM floor pin only for its transitive users (springdoc's swagger-core, the
 Azure SDK, Stripe and others). The Keycloak body is asserted by content. The hazard D-01 named is a
 cached value or queued message written in the Jackson-2 shape; it had to be proven readable, or flushed
-as a recorded deploy step. The outcome is in "Deploy notes": nothing needs flushing or draining.
+as a recorded deploy step. The outcome is in "Deploy notes": nothing needs flushing or draining for format
+reasons. One post-rollout cache cleanup is still recorded there, for eviction staleness across the two
+key generations (review WR-01), not for format.
 
 Outcome:
 - The interim Jackson-2 bridge line is removed (38-12).
@@ -172,13 +174,37 @@ gate: 0 clean, 1 bad key, 2 VOID (`ev:38-11-config-keys.txt`).
 
 ## Deploy notes (operators: read before rolling out the first Boot-4 image)
 
-- **No Redis flush.** Every cache key now starts with a `v4:` format version (`v4:{region}::tenant:…`),
-  so a Boot-4 pod never reads a 3.5-era entry. Old entries expire by their TTLs (products 10 min, shops
-  15 min, shopMembership 5 min), which bounds them at 15 minutes. A real-Redis test serves the database
-  value beside a planted Boot-3.5 entry and keeps `jtoye.cache.errors` at 0. Without the prefix, all
-  three Boot-3.5 values fail with `MismatchedInputException` and the error counter moves from 0 to 1
-  (`ev:38-09-cache.txt`). The SEC-4 polymorphic-type allowlist was re-derived from the bytes Jackson 3
-  writes and **narrowed** to `uk.jtoye.`, `java.util.` and `java.math.` (`ev:38-09-cache.txt`).
+- **No Redis flush for format.** Every cache key now starts with a `v4:` format version
+  (`v4:{region}::tenant:…`), so a Boot-4 pod never reads a 3.5-era entry. Old entries expire by their
+  TTLs (products 10 min, shops 15 min, shopMembership 5 min), which bounds them at 15 minutes. A
+  real-Redis test serves the database value beside a planted Boot-3.5 entry and keeps
+  `jtoye.cache.errors` at 0. Without the prefix, all three Boot-3.5 values fail with
+  `MismatchedInputException` and the error counter moves from 0 to 1 (`ev:38-09-cache.txt`). The SEC-4
+  polymorphic-type allowlist was re-derived from the bytes Jackson 3 writes and **narrowed** to
+  `uk.jtoye.`, `java.util.` and `java.math.` (`ev:38-09-cache.txt`).
+- **Evictions during the rolling deploy (review WR-01).** Separate keys also mean separate evictions:
+  an eviction only reaches the evicting pod's own key generation. Two measures, and the residual:
+  - *Boot-4 writes reach both generations (code, transitional).* `TenantCacheEvictor` also deletes the
+    Boot-3.5 key (`{region}::tenant:…`) synchronously on every eviction, best-effort (a failure is
+    WARN-logged with region and key and never fails the write). A revoke, edit or delete handled by a
+    Boot-4 pod therefore no longer leaves Boot-3.5 pods serving the old entry.
+    `CacheFormatIsolationIntegrationTest` proves it on a real Redis, and that another tenant's entries
+    for the same id survive. Remove `CacheConfig.legacyBoot35CacheKey` and its caller in the first
+    release after the rollout is complete: no Boot-3.5 pod can exist and no rollback to a 3.5 image is
+    still on the table, and the longest TTL (15 min) has passed since the last 3.5 pod stopped.
+  - *Boot-3.5 writes cannot reach `v4:` keys (residual, bounded by TTL).* A write handled by a
+    Boot-3.5 pod during the overlap evicts only the un-prefixed key, so a Boot-4 pod can keep serving
+    its `v4:` entry for that entity until the region TTL. **Bound: a shop-grant revoke made on a 3.5 pod
+    during the rollout can take up to 5 minutes to apply on Boot-4 pods; a product edit up to 10
+    minutes; a shop edit up to 15 minutes.**
+  - *Post-rollout step (operator, once every pod runs Boot 4).* Delete the `v4:*` keys, which removes
+    any `v4:` entry that went stale during the overlap. Use SCAN + UNLINK, never `KEYS` or
+    `FLUSHALL` (the instance may hold other data, and `KEYS` blocks the server). For example:
+    `redis-cli --scan --pattern 'v4:*' | xargs -r -n 500 redis-cli UNLINK` (add the instance's
+    host, port and auth flags to both commands). Every deleted entry is a cache miss that reloads from
+    the database, so the only cost is one round of misses. Doing nothing instead leaves the bound
+    above in force until the last overlap entry expires (at most 15 minutes after the last 3.5 pod
+    stopped).
 - **No queue drain.** In-flight AMQP messages and PENDING outbox rows written by Boot 3.5 are readable
   by Boot 4, and Boot-4 output is readable by Boot-3.5 pods. This is proven for all six payloads, both
   persisted forms and both directions: 24 cases, each direction with a negative control. A raw Boot-3.5
@@ -209,8 +235,18 @@ gate: 0 clean, 1 bad key, 2 VOID (`ev:38-11-config-keys.txt`).
 ## Rollback notes (returning to a Boot-3.5 image)
 
 - **Cache.** 3.5 pods read and write their own un-prefixed keys and never see the `v4:` entries. Any
-  3.5-era entry still inside its TTL is in the format 3.5 wrote, so it is read normally. No flush is
-  needed in either direction.
+  3.5-era entry still inside its TTL is in the format 3.5 wrote, so it is read normally, and no flush is
+  needed for format. Staleness is a separate matter (review WR-01):
+  - *Un-prefixed entries the 3.5 pods read after the rollback.* Boot-4 writes made before the rollback
+    already deleted the matching un-prefixed key (the transitional dual eviction above), so none of
+    them is left stale by a Boot-4 write.
+  - *`v4:` entries left behind by the rollback.* 3.5 pods never evict `v4:` keys, so the entries
+    Boot-4 pods wrote stay in Redis until their TTL. A re-roll-forward to Boot 4 within that TTL can read
+    one that a write on a 3.5 pod has since made stale (same bound as above: 5 / 10 / 15 minutes for
+    shopMembership / products / shops). Run the post-rollout `v4:*` deletion from "Deploy notes" once
+    the re-roll-forward completes; it closes this case too. Deleting `v4:*` right after the rollback
+    works as well, and costs nothing because no 3.5 pod reads those keys.
+  - Keep the dual eviction in place for as long as a rollback to a 3.5 image is possible.
 - **Broker and outbox.** Jackson-3 messages and outbox rows written by Boot 4 are readable by a
   Jackson-2 reader built as Boot 3.5 built its beans. 38-08's reverse cases prove this for all six
   payloads (`ev:38-08-amqp-outbox.txt`).

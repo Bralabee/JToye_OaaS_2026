@@ -7,14 +7,26 @@ import org.junit.jupiter.api.Test;
 import org.springframework.cache.Cache;
 import org.springframework.cache.concurrent.ConcurrentMapCache;
 import org.springframework.cache.support.SimpleCacheManager;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.cache.RedisCacheConfiguration;
+import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.data.redis.cache.RedisCacheWriter;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uk.jtoye.core.security.TenantContext;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.AdditionalMatchers.aryEq;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -198,5 +210,82 @@ class TenantCacheEvictorTest {
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Transitional dual eviction (Phase 38 review WR-01): a Redis-backed cache
+    // also loses the Boot-3.5 key ({region}::…) for the same entity, so an
+    // eviction made on a Boot-4 pod reaches the other generation. The real-Redis
+    // proof is CacheFormatIsolationIntegrationTest; these pin the edges.
+    // ------------------------------------------------------------------
+
+    /** A real RedisCache over a mocked writer, prefixed exactly as CacheConfig prefixes it. */
+    private static TenantCacheEvictor redisBackedEvictor(RedisCacheWriter writer) {
+        RedisCacheManager manager = RedisCacheManager.builder(writer)
+                .cacheDefaults(RedisCacheConfiguration.defaultCacheConfig()
+                        .computePrefixWith(name -> CacheConfig.CACHE_KEY_FORMAT_VERSION + ":" + name + "::"))
+                .build();
+        return new TenantCacheEvictor(manager);
+    }
+
+    private static byte[] utf8(String s) {
+        return s.getBytes(StandardCharsets.UTF_8);
+    }
+
+    @Test
+    @DisplayName("evictEntity - Redis cache: deletes the v4 key AND the legacy Boot-3.5 key, same tenant only")
+    void testEvictEntity_RedisCacheAlsoEvictsLegacyBoot35Key() {
+        RedisCacheWriter writer = mock(RedisCacheWriter.class);
+        TenantCacheEvictor redisEvictor = redisBackedEvictor(writer);
+        UUID tenant = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        String suffix = "tenant:" + tenant + ":getShopById:" + shopId;
+
+        TenantContext.set(tenant);
+        redisEvictor.evictEntity("shops", "getShopById", shopId);
+
+        verify(writer).evict(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
+        // The legacy delete is the SYNCHRONOUS evictIfPresent: Spring Data Redis 4's evict may be
+        // fire-and-forget, which would let the Boot-3.5 key outlive the caller's write.
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
+        verifyNoMoreInteractions(writer);
+    }
+
+    @Test
+    @DisplayName("evictEntity - A failing legacy delete is logged, not propagated, and the v4 eviction stands")
+    void testEvictEntity_LegacyDeleteFailureDoesNotPropagate() {
+        RedisCacheWriter writer = mock(RedisCacheWriter.class);
+        UUID tenant = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        String suffix = "tenant:" + tenant + ":getShopById:" + shopId;
+        doThrow(new RedisConnectionFailureException("simulated: legacy delete refused"))
+                .when(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
+        TenantCacheEvictor redisEvictor = redisBackedEvictor(writer);
+
+        TenantContext.set(tenant);
+        assertDoesNotThrow(() -> redisEvictor.evictEntity("shops", "getShopById", shopId),
+                "the legacy delete is best-effort: it must never fail the caller's write");
+
+        verify(writer).evict(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
+    }
+
+    @Test
+    @DisplayName("evictEntity - A non-Redis cache evicts normally and takes no legacy path")
+    void testEvictEntity_NonRedisCacheUnaffectedByLegacyEviction() {
+        UUID tenant = UUID.randomUUID();
+        UUID shopId = UUID.randomUUID();
+        String key = "tenant:" + tenant + ":getShopById:" + shopId;
+        shopsCache.put(key, "value");
+        // An entry whose KEY is the legacy-form string: on a non-Redis cache there is no other
+        // generation, so nothing may touch it.
+        shopsCache.put("shops::" + key, "legacy-shaped-key-value");
+
+        TenantContext.set(tenant);
+        assertDoesNotThrow(() -> evictor.evictEntity("shops", "getShopById", shopId));
+
+        assertNull(shopsCache.get(key), "the entry is evicted exactly as before");
+        assertNotNull(shopsCache.get("shops::" + key),
+                "a ConcurrentMapCache has no Boot-3.5 generation: the legacy path must not run");
     }
 }

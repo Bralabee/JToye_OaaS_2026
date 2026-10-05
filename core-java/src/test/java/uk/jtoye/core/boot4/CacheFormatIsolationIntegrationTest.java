@@ -24,6 +24,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import uk.jtoye.core.config.DatabaseConfigurationValidator;
+import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.shop.dto.ShopDto;
@@ -54,7 +55,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Asserted: the first call serves the DATABASE name with the error counter unchanged; Redis then
  * holds the {@code v4:shops::…} key with the tenant segment intact (T-38-25); the shop is renamed
  * behind the cache's back and the second call still returns the first name, so it was served from
- * the v4 key; the old entry is untouched; the counter stays 0 throughout.
+ * the v4 key; the old entry is untouched; the counter stays 0 throughout. A second arm (review
+ * WR-01) proves the converse direction for EVICTION: an eviction on a Boot-4 pod removes the Boot-3.5
+ * entry as well as the v4 one, for the evicting tenant only.
  *
  * <p>Wiring follows {@code RedisFaultInjectionIntegrationTest}: the {@code dev} profile so
  * {@code CacheConfig} ({@code @Profile("!test")}) loads, real Postgres and Redis containers, and the
@@ -90,6 +93,7 @@ class CacheFormatIsolationIntegrationTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private RedisConnectionFactory redisConnectionFactory;
     @Autowired private MeterRegistry meterRegistry;
+    @Autowired private TenantCacheEvictor tenantCacheEvictor;
 
     /** See RedisFaultInjectionIntegrationTest: the Testcontainers role is a superuser. */
     @MockitoBean private DatabaseConfigurationValidator databaseConfigurationValidator;
@@ -194,6 +198,70 @@ class CacheFormatIsolationIntegrationTest {
         assertThat(cacheErrors() - errorsBefore).as("jtoye.cache.errors stays 0 across both calls").isZero();
         try (RedisConnection c = redisConnectionFactory.getConnection()) {
             System.out.println("38-09 SCAN after second call: " + scanKeys(c));
+        }
+    }
+
+    /**
+     * Phase 38 review WR-01: an eviction on a Boot-4 pod must reach the Boot-3.5 generation too.
+     * Without it, a write handled by a Boot-4 pod during the rolling deploy (or before a rollback) left
+     * the {@code shops::…} entry that Boot-3.5 pods read in place until its TTL — for
+     * {@code shopMembership}, a revoked grant still honoured.
+     *
+     * <p>Asserted on a real Redis, through the one funnel every eviction in main code uses
+     * ({@link TenantCacheEvictor}): the v4 entry AND the planted Boot-3.5 entry for this tenant's shop
+     * are gone, while ANOTHER tenant's entries for the same shop id — legacy and v4 — survive, so the
+     * dual eviction does not widen the tenant scope. {@code BOOT35_KEY} here is the literal key the
+     * 38-01 golden value lives under, an anchor independent of
+     * {@code CacheConfig.legacyBoot35CacheKey}.
+     */
+    @Test
+    void anEvictionOnABoot4PodAlsoRemovesTheBoot35EntryForThatTenantOnly() throws Exception {
+        UUID otherTenant = UUID.fromString("0ddba11d-0000-4000-8000-000000000038");
+        String otherSuffix = "tenant:" + otherTenant + ":getShopById:" + SHOP;
+        String otherBoot35Key = "shops::" + otherSuffix;
+        String otherBoot4Key = "v4:shops::" + otherSuffix;
+
+        // A v4 entry for TENANT via the real @Cacheable path, plus the other tenant's two entries.
+        assertThat(readShop()).isPresent();
+        try (RedisConnection c = redisConnectionFactory.getConnection()) {
+            c.stringCommands().set(otherBoot35Key.getBytes(StandardCharsets.UTF_8), boot35Value);
+            c.stringCommands().set(otherBoot4Key.getBytes(StandardCharsets.UTF_8),
+                    "other-tenant-v4".getBytes(StandardCharsets.UTF_8));
+            List<String> before = scanKeys(c);
+            System.out.println("WR-01 SCAN before eviction: " + before);
+            assertThat(before).as("instrument: all four entries exist before the eviction")
+                    .containsExactlyInAnyOrder(BOOT4_KEY, BOOT35_KEY, otherBoot4Key, otherBoot35Key);
+        }
+
+        TenantContext.set(TENANT);
+        try {
+            tenantCacheEvictor.evictEntity("shops", "getShopById", SHOP);
+        } finally {
+            TenantContext.clear();
+        }
+
+        try (RedisConnection c = redisConnectionFactory.getConnection()) {
+            // The legacy delete is synchronous, so it is checked IMMEDIATELY, with no wait.
+            List<String> immediately = scanKeys(c);
+            System.out.println("WR-01 SCAN immediately after eviction: " + immediately);
+            assertThat(immediately).as("the Boot-3.5 entry for this tenant's shop is gone as soon as "
+                    + "evictEntity returns").doesNotContain(BOOT35_KEY);
+
+            // The v4 delete goes through RedisCache.evict, which Spring Data Redis 4 may issue
+            // asynchronously (its default writer), so wait for it — bounded, never open-ended.
+            List<String> after = immediately;
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+            while (after.contains(BOOT4_KEY) && System.nanoTime() < deadline) {
+                Thread.sleep(20);
+                after = scanKeys(c);
+            }
+            System.out.println("WR-01 SCAN after eviction: " + after);
+            assertThat(after).as("this tenant's v4 AND Boot-3.5 entries are gone; the other tenant's "
+                    + "entries for the same shop id are untouched")
+                    .containsExactlyInAnyOrder(otherBoot4Key, otherBoot35Key);
+            assertThat(sha256(c.stringCommands().get(otherBoot35Key.getBytes(StandardCharsets.UTF_8))))
+                    .as("the other tenant's Boot-3.5 entry is byte-identical to what was planted")
+                    .isEqualTo(sha256(boot35Value));
         }
     }
 }

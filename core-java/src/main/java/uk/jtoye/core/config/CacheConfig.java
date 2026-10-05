@@ -9,6 +9,7 @@ import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.data.redis.cache.CacheKeyPrefix;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -74,10 +75,27 @@ public class CacheConfig implements CachingConfigurer {
      * equally fail on what a Boot-4 pod wrote. With the version in the key the two formats never meet:
      * a Boot-4 pod neither reads nor overwrites an old entry.
      *
-     * <p><b>No flush at deploy.</b> Old entries are simply never read again and expire by their
-     * region TTL (shopMembership 5 min, products 10 min, shops 15 min; the 10-minute default for any
-     * other region), so no operator step is required. {@code CacheFormatIsolationIntegrationTest}
-     * proves it on a real Redis.
+     * <p><b>No flush for FORMAT reasons.</b> Old entries are never read by a Boot-4 pod and expire by
+     * their region TTL (shopMembership 5 min, products 10 min, shops 15 min; the 10-minute default for
+     * any other region). {@code CacheFormatIsolationIntegrationTest} proves it on a real Redis.
+     *
+     * <p><b>But evictions do not cross generations by themselves (Phase 38 review WR-01).</b> Because
+     * the two generations use different keys, an eviction made by one never reached the other's entry:
+     * during a rolling deploy (or after a rollback) a revoke or edit handled by one generation left the
+     * other generation serving its cached value until the TTL, including a {@code shopMembership}
+     * grant. Two measures close it, and neither is complete on its own:
+     * <ul>
+     *   <li><b>Dual eviction (code, transitional).</b> {@link TenantCacheEvictor} also deletes the
+     *       Boot-3.5 key ({@link #legacyBoot35CacheKey}) whenever it evicts. That covers a write handled
+     *       by a Boot-4 pod: Boot-3.5 pods still running during the roll-forward, and Boot-3.5 pods after
+     *       a rollback, no longer read an entry a Boot-4 write should have removed.</li>
+     *   <li><b>Post-rollout cleanup (operator).</b> A Boot-3.5 pod cannot be taught to evict a
+     *       {@code v4:} key, so a write it handles during the overlap leaves the Boot-4 entry for that
+     *       entity stale until its TTL. Once every pod runs Boot 4, delete the {@code v4:*} keys (SCAN +
+     *       UNLINK, never KEYS or FLUSHALL); the same step after a re-roll-forward removes {@code v4:}
+     *       entries written before a rollback that the 3.5 pods never evicted. ADR-0006 "Deploy notes"
+     *       and "Rollback notes" carry the procedure and the bound.</li>
+     * </ul>
      *
      * <p><b>Standing procedure.</b> Any future change to the cache value FORMAT (serializer, typing
      * scheme, or a DTO change that old bytes cannot be read into) bumps this constant in the same
@@ -85,6 +103,25 @@ public class CacheConfig implements CachingConfigurer {
      * inherits it.
      */
     static final String CACHE_KEY_FORMAT_VERSION = "v4";
+
+    /**
+     * TRANSITIONAL (Phase 38 review WR-01): the Redis key a Boot-3.5 pod used for {@code key} in region
+     * {@code cacheName}, so {@link TenantCacheEvictor} can delete it alongside the {@code v4:} key.
+     *
+     * <p>Boot 3.5's cache manager was built from {@code RedisCacheConfiguration.defaultCacheConfig()}
+     * with no {@code computePrefixWith}, i.e. Spring Data Redis's {@link CacheKeyPrefix#simple()}
+     * ({@code {cacheName}::}), and string keys. This calls that same library function rather than
+     * hand-writing a second key format; {@code CacheFormatIsolationIntegrationTest} pins the result
+     * against the key the 38-01 golden Boot-3.5 entry lives under.
+     *
+     * <p><b>Removal condition.</b> Delete this method and its one caller in the first release after the
+     * Boot-4 rollout is complete: no Boot-3.5 pod can exist any more (no rollback to a 3.5 image is
+     * still on the table) and the longest region TTL (15 minutes) has elapsed since the last 3.5 pod
+     * stopped. Until then it is load-bearing.
+     */
+    static String legacyBoot35CacheKey(String cacheName, String key) {
+        return CacheKeyPrefix.simple().compute(cacheName) + key;
+    }
 
     /**
      * Configure Redis Cache Manager with per-cache TTL settings.
