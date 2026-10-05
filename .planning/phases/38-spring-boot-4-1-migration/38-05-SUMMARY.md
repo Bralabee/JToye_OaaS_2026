@@ -143,7 +143,7 @@ status: complete
 ## Findings for later plans (measured, not assumed)
 
 - **38-07: Boot's mapper rejects trailing content.** `ImageAnalysisService`'s must-have is to tolerate trailing text after the model's JSON. That tolerance therefore cannot come from Boot's `JsonMapper`. It needs its own reader configuration, and it must be proven by test whatever the default is.
-- **38-11: there is no `spring.jackson.*` key to put under the key gate.** If any `spring.jackson` key appears later, `Jackson3WireContractTest` turns red, as arms B-D show.
+- **38-11: there is no `spring.jackson.*` key to put under the key gate.** If any `spring.jackson` key appears later, `Jackson3WireContractTest` turns red, as arms B-D show. <!-- gitleaks:allow (a test class name, not a secret; 38-18) -->
 - **38-12 and 38-19:** a migrated test that now sees alphabetical key order on OrderDto, ProductDto, ShopDto or ProblemDetail is explained by this decision. A changed VALUE is not explained by it.
 - **38-12:** `Jackson3WireContractTest` does not depend on the Jackson-2 bean, so it survives the bridge removal unchanged.
 

@@ -40,3 +40,9 @@ a67f50d906bd133a33d715125a7c1248a5b8ee44:.planning/phases/26-local-k8s-overlay-v
 # run time from a 4-character piece, so no secret-shaped literal remains; this
 # fingerprint covers the original commit only.
 f9bfbaf84b7a67b6b5ddb2f5a281be760d8a5328:core-java/src/test/java/uk/jtoye/core/storage/StorageConfigShapeTest.java:generic-api-key:32
+
+# Phase 38 (plan 38-05, commit 370cc0fc). A prose line in 38-05-SUMMARY.md names a
+# wire-contract test class right after the word "key", and generic-api-key captures
+# that class name as the secret. Not a credential. The live line now carries an
+# inline gitleaks:allow; this fingerprint covers the original commit.
+370cc0fc58b9d39efa8e3e805aa7e65b686371b9:.planning/phases/38-spring-boot-4-1-migration/38-05-SUMMARY.md:generic-api-key:146
