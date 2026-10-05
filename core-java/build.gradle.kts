@@ -18,7 +18,15 @@ java {
 // (which is sometimes created/owned by root in this environment).
 layout.buildDirectory.set(file("build-local"))
 
-// NETTY: NO PIN UNDER BOOT 4 (38-03, #706). Boot 4.1.1 manages netty 4.2.17.Final (the
+// NETTY: NO PIN UNDER BOOT 4 — measured 2026-10-05 (38-15, #706). With no pin, every netty artifact
+// resolves to Boot's managed 4.2.17.Final (`netty.version`, spring-boot-dependencies-4.1.1.pom
+// l.159): io.netty:netty-codec-http is 4.2.17.Final (selected by rule), and azure-core-http-netty
+// 1.16.7's request for 4.1.137.Final is moved to 4.2.17.Final by the BOM. The rebuilt image's
+// app.jar carries netty-*-4.2.17.Final, and the Trivy image gate run locally with CI's flags
+// (Trivy 0.70.0, DB 2026-10-05 13:07 UTC) found 0 fixable HIGH/CRITICAL in it. Do NOT reintroduce
+// a netty version pin. If a future DB flags 4.2.17, raise the floor on the 4.2 line (4.2.18.Final
+// exists on Central). A 4.1.x pin would put a 4.1 netty under a 4.2-line reactor-netty.
+// History, 38-03: Boot 4.1.1 manages netty 4.2.17.Final (the
 // `netty.version` key of spring-boot-dependencies-4.1.1.pom), which GitHub's advisories list as
 // patched for CVE-2026-75595/-75596 (4.2.17) and CVE-2026-59901/-55831/-55833/-56745 (4.2.16):
 // every CVE the Boot-3 pin of 4.1.137.Final existed to clear (#318, #752). The pin was DELETED,
@@ -29,7 +37,29 @@ layout.buildDirectory.set(file("build-local"))
 // The deleted pin's full rationale (the Trivy image gate, SslClientHelloHandler reachability,
 // why 4.1.138.Final was not taken) is in this file's history before 38-03.
 
-// Override the Tomcat version managed by Spring Boot 4.1.1. Boot 4.1.1 manages 11.0.24
+// TOMCAT FLOOR, BOOT 4.1.1 — measured 2026-10-05 (38-15, #706). The key is `tomcat.version`,
+// declared at l.215 of spring-boot-dependencies-4.1.1.pom and managed there at 11.0.24. This line
+// holds org.apache.tomcat.embed:tomcat-embed-core at 11.0.26.
+//   Trivy names three CRITICAL on 11.0.24, all fixed in 11.0.25: CVE-2026-65182 (security
+//   constraint bypass), CVE-2026-65905 (DIGEST authenticator replay) and CVE-2026-68525 (FORM
+//   authentication bypass).
+//   Tomcat's own security page (the advisory) also lists CVE-2026-76183 (WebSocket security
+//   constraint bypass) and CVE-2026-86350 (request-header mix-up regression) as fixed in 11.0.26
+//   only. Trivy's 2026-10-05 DB has no entry for either at ANY severity, and 11.0.25 scans clean.
+//   So the gate needs >= 11.0.25; the advisory is the reason for 11.0.26. Do not lower this to
+//   11.0.25 just because the gate allows it: /ws/** is on this app's serving path.
+//   Arms, 2026-10-05, Trivy 0.70.0, DB 2026-10-05 13:07 UTC, the CI image-gate flags:
+//     near-miss key `tomcat-version` = "11.0.26"  ->  11.0.24 (selected by rule); jar scan rc=1, the 3 CRITICAL
+//     `tomcat.version` = "11.0.24", image rebuilt and scanned  ->  rc=1, CVE-2026-65182/-65905/-68525
+//     `tomcat.version` = "11.0.25"  ->  11.0.25; jar scan rc=0
+//     `tomcat.version` = "11.0.26" (this line)  ->  11.0.26 (selected by rule); image scan rc=0
+// ENFORCEMENT (unchanged rule): the image gate runs in `build-and-push`, which runs on push and
+// release ONLY, never on a pull request, so a revert of this line merges green and turns `main` red
+// afterwards. A PR that touches this line must therefore prove resolution itself, with
+// `dependencyInsight --dependency org.apache.tomcat.embed:tomcat-embed-core --configuration runtimeClasspath`.
+// Evidence: .planning/phases/38-spring-boot-4-1-migration/evidence/38-15-cve-floors.txt.
+//
+// History, 38-03: Override the Tomcat version managed by Spring Boot 4.1.1. Boot 4.1.1 manages 11.0.24
 // (`tomcat.version` in spring-boot-dependencies-4.1.1.pom), which is BELOW our floor: Tomcat's
 // security page lists the same 12 CVEs fixed in 10.1.59 (our Boot-3 pin) and in 11.0.25, so the
 // managed version would re-open them. 11.0.26 (2026-09-15) is taken over 11.0.25 because it also
@@ -40,7 +70,20 @@ layout.buildDirectory.set(file("build-local"))
 // authentication bypass CVEs in 10.1.57 and earlier, kept on the 10.1.x line then.
 extra["tomcat.version"] = "11.0.26"
 
-// Override com.rabbitmq:amqp-client transitive dependency from
+// AMQP-CLIENT FLOOR, BOOT 4.1.1 — measured 2026-10-05 (38-15, #706). The key is
+// `rabbit-amqp-client.version`, declared at l.181 of spring-boot-dependencies-4.1.1.pom and managed
+// there at 5.30.0. The BOM also overrides spring-rabbit 4.1.1's own request for 5.31.0. This line
+// holds com.rabbitmq:amqp-client at 5.34.0.
+//   Trivy names four HIGH on 5.30.0: CVE-2026-63337 (fixed 5.33.0), CVE-2026-69219 and
+//   CVE-2026-69220 (fixed 5.33.1), and CVE-2026-75516 (fixed 5.34.0).
+//   Arm, 2026-10-05, Trivy 0.70.0, DB 2026-10-05 13:07 UTC, the CI gate flags:
+//     this line removed  ->  5.30.0 (selected by rule; spring-rabbit's 5.31.0 -> 5.30.0); jar scan rc=1 naming those four
+//     this line          ->  5.34.0 (selected by rule; 5.31.0 -> 5.34.0); image scan rc=0
+// The ENFORCEMENT rule below (a PR that touches this line proves resolution itself, because the
+// image gate runs post-merge) is unchanged. The dated history follows.
+// Evidence: .planning/phases/38-spring-boot-4-1-migration/evidence/38-15-cve-floors.txt.
+//
+// History: Override com.rabbitmq:amqp-client transitive dependency from
 // spring-boot-starter-amqp to patch 6 HIGH/MEDIUM severity CVEs discovered by
 // appmod-validate-cves-for-java. Spring Boot 3.5.16 brings in 5.25.0 via
 // spring-rabbit's transitive dependency, but 5.25.0 has:
@@ -87,7 +130,34 @@ extra["tomcat.version"] = "11.0.26"
 // both this floor and spring-rabbit 4.1.1's own 5.31.0. So the pin stays, value unchanged.
 extra["rabbit-amqp-client.version"] = "5.34.0"
 
-// Override the Jackson family managed by Spring Boot 3.5.16's BOM. Jackson is not
+// JACKSON FLOORS, BOOT 4.1.1 — measured 2026-10-05 (38-15, #706). spring-boot-dependencies-4.1.1.pom
+// declares TWO keys, and each one moves a whole BOM:
+//   `jackson-2-bom.version` (l.82): Jackson 2, com.fasterxml.jackson; managed 2.21.5, held at 2.22.3.
+//   `jackson-bom.version`   (l.83): Jackson 3, tools.jackson; managed 3.1.5, held at 3.1.7.
+// Under Boot 3 the second key moved Jackson 2. Every "jackson-bom.version" in the history below
+// refers to that Boot-3 meaning.
+//   Jackson 2. Trivy names five HIGH on 2.21.5: jackson-core CVE-2026-89407 and CVE-2026-89425,
+//   and jackson-databind CVE-2026-68497 (fixed 2.18.10 / 2.21.6 / 2.22.2), CVE-2026-91776 and
+//   CVE-2026-91777. All except CVE-2026-68497 are fixed in 2.18.11 / 2.21.7 / 2.22.3. 2.22.3 is
+//   also what stops the BOM downgrading swagger-core-jakarta 2.2.55 (springdoc 3.1.1), which
+//   requests databind 2.22.1.
+//   Jackson 3. Trivy names five HIGH on 3.1.5: tools.jackson.core:jackson-core CVE-2026-89407
+//   (fixed 3.1.7 / 3.2.2) and CVE-2026-89425 (3.1.7 / 3.2.3), and tools.jackson.core:jackson-databind
+//   CVE-2026-68497 (3.1.6 / 3.2.2), CVE-2026-91776 and CVE-2026-91777 (3.1.7 / 3.2.3).
+//   CVE-2026-91777 IS on the 3.x line, and 3.1.7 clears it. That was unconfirmed when 38-03 set this
+//   floor.
+//   Arms, 2026-10-05, Trivy 0.70.0, DB 2026-10-05 13:07 UTC, the CI gate flags:
+//     near-miss `jackson2-bom.version` = "2.22.3"  ->  databind 2.21.5 (by constraint; swagger's
+//       2.22.1 -> 2.21.5); jar scan rc=1, the 5 Jackson-2 HIGH
+//     near-miss `jackson3-bom.version` = "3.1.7"   ->  tools.jackson databind 3.1.5; jar scan rc=1,
+//       the 5 Jackson-3 HIGH
+//     both correct keys (these lines)  ->  2.22.3 and 3.1.7 (by constraint); image scan rc=0
+// ENFORCEMENT (unchanged rule): the image gate runs post-merge only. A PR that touches either line
+// proves resolution itself with `dependencyInsight --configuration runtimeClasspath` for BOTH
+// com.fasterxml.jackson.core:jackson-databind and tools.jackson.core:jackson-databind.
+// Evidence: .planning/phases/38-spring-boot-4-1-migration/evidence/38-15-cve-floors.txt.
+//
+// History (Boot 3.5.16, then 38-03): Override the Jackson family managed by Spring Boot 3.5.16's BOM. Jackson is not
 // declared below -- it arrives through the web/json starters (and flyway, swagger-core),
 // and every artifact is pinned by io.spring.dependency-management ("selected by rule"
 // in dependencyInsight). Boot manages it through ONE property, `jackson-bom.version`,
@@ -151,11 +221,13 @@ extra["rabbit-amqp-client.version"] = "5.34.0"
 // requests databind 2.22.1. A 2.21.x pin would hold it below what its own consumer asks for.
 extra["jackson-2-bom.version"] = "2.22.3"
 //
-// Jackson 3 floor: Boot 4.1.1 manages 3.1.5. 3.1.7 is the smallest release clearing
+// Jackson 3 floor (Boot 4 `jackson-bom.version`; measured 2026-10-05 at the top of this block).
+// History, 38-03: Boot 4.1.1 manages 3.1.5. 3.1.7 is the smallest release clearing
 // CVE-2026-89407/-89425 (tools.jackson.core:jackson-core, fixed 3.1.7 / 3.2.2) and
 // CVE-2026-91776 (tools.jackson.core:jackson-databind, fixed 3.1.7 / 3.2.3). The near-miss
-// key hazard above applies to both keys; 38-15 runs the near-miss-key arms, dependencyInsight
-// before/after for each, and the local Trivy scan.
+// key hazard above applies to both keys. 38-15 ran the near-miss-key arms, dependencyInsight
+// before and after for each, and the local Trivy scan; the results are recorded at the top of
+// this block.
 extra["jackson-bom.version"] = "3.1.7"
 
 dependencies {
