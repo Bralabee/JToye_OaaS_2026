@@ -1,11 +1,21 @@
 package uk.jtoye.core.config;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.data.redis.cache.RedisCache;
+import org.springframework.data.redis.cache.RedisCacheConfiguration;
+import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.SerializationException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.exc.InvalidTypeIdException;
+import tools.jackson.databind.exc.MismatchedInputException;
 import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.boot4.GoldenSamples;
 import uk.jtoye.core.finance.VatRate;
@@ -31,6 +41,7 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 /**
  * QA-council 20260902-134741 SEC-4 (adjudication A6), carried to Jackson 3 in Phase 38 (38-09) —
@@ -372,6 +383,84 @@ class CacheSerializerTypeAllowlistTest {
                 .isInstanceOf(SerializationException.class)
                 .hasRootCauseInstanceOf(InvalidTypeIdException.class)
                 .rootCause().hasMessageContaining("java.time.OffsetDateTime");
+    }
+
+    // ---- versioned cache keys (Phase 38 Task 2) ----------------------------------------------
+
+    private static RedisCacheManager productionCacheManager() {
+        ObjectProvider<MeterRegistry> noRegistry = new DefaultListableBeanFactory().getBeanProvider(MeterRegistry.class);
+        RedisCacheManager manager = (RedisCacheManager) new CacheConfig(noRegistry)
+                .cacheManager(mock(RedisConnectionFactory.class));
+        manager.afterPropertiesSet();    // loads the configured regions, as the container does
+        return manager;
+    }
+
+    /**
+     * Jackson-2-era entries live under {@code {region}::…}. Every Boot-4 region reads and writes under
+     * {@code v4:{region}::…} instead, so an old entry is never read: it expires by its TTL. The prefix
+     * sits on the DEFAULT configuration, so a region added later inherits it without anyone
+     * remembering to. The TTLs are pinned too: they are what bounds how long an old entry survives.
+     */
+    @Test
+    void everyRegionReadsAndWritesUnderTheVersionedKeyPrefixAndANewRegionInheritsIt() {
+        RedisCacheManager manager = productionCacheManager();
+        Map<String, java.time.Duration> ttls = Map.of(
+                "products", java.time.Duration.ofMinutes(10),
+                "shops", java.time.Duration.ofMinutes(15),
+                "shopMembership", java.time.Duration.ofMinutes(5));
+
+        for (Map.Entry<String, java.time.Duration> region : ttls.entrySet()) {
+            RedisCacheConfiguration config = ((RedisCache) manager.getCache(region.getKey())).getCacheConfiguration();
+            assertThat(config.getKeyPrefixFor(region.getKey())).as("key prefix of %s", region.getKey())
+                    .isEqualTo("v4:" + region.getKey() + "::");
+            assertThat(config.getTtlFunction().getTimeToLive("k", "v")).as("TTL of %s", region.getKey())
+                    .isEqualTo(region.getValue());
+        }
+        RedisCache later = (RedisCache) manager.getCache("aRegionAddedLater");
+        assertThat(later.getCacheConfiguration().getKeyPrefixFor("aRegionAddedLater"))
+                .as("a region nobody configured inherits the prefix from the defaults")
+                .isEqualTo("v4:aRegionAddedLater::");
+    }
+
+    /** The cache family of the 38-01 MANIFEST: exactly the files this class feeds below. */
+    private static Set<String> manifestCacheFixtures() throws Exception {
+        try (var in = CacheSerializerTypeAllowlistTest.class.getClassLoader()
+                .getResourceAsStream("jackson2-golden/MANIFEST.tsv")) {
+            assertThat(in).as("the 38-01 MANIFEST is on the test classpath").isNotNull();
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8).lines()
+                    .map(line -> line.split("\t")[0])
+                    .filter(path -> path.startsWith("cache/"))
+                    .collect(Collectors.toCollection(TreeSet::new));
+        }
+    }
+
+    @Test
+    void theCacheFixturesBelowAreExactlyTheManifestCacheFamily() throws Exception {
+        assertThat(manifestCacheFixtures()).containsExactly(
+                "cache/products-ProductDto.bin", "cache/shopMembership-Membership.bin", "cache/shops-ShopDto.bin");
+    }
+
+    /**
+     * Why the prefix is needed, measured rather than assumed: every value the Boot-3.5 serializer
+     * cached is UNREADABLE by the Jackson-3 one. Its {@code ["java.util.UUID", "…"]} and
+     * {@code ["…ShopRole", "…"]} wrappers sit where a bare value is now expected. Read under the old
+     * key, each would be a GET error that {@link RedisCacheErrorHandler} swallows and counts on every
+     * request until the entry expired.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"products-ProductDto", "shops-ShopDto", "shopMembership-Membership"})
+    void aJackson2EraCacheValueIsUnreadableByTheJackson3Serializer(String fixture) throws Exception {
+        byte[] jackson2Bytes;
+        try (var in = CacheSerializerTypeAllowlistTest.class.getClassLoader()
+                .getResourceAsStream("jackson2-golden/cache/" + fixture + ".bin")) {
+            assertThat(in).as("fixture %s present", fixture).isNotNull();
+            jackson2Bytes = in.readAllBytes();
+        }
+
+        assertThatThrownBy(() -> serializer.deserialize(jackson2Bytes))
+                .isInstanceOf(SerializationException.class)
+                .hasRootCauseInstanceOf(MismatchedInputException.class)
+                .rootCause().hasMessageContaining("from Array value");
     }
 
     /**

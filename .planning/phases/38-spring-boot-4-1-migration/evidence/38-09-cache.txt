@@ -148,3 +148,56 @@ TASK 1 - Jackson-3 cache serializer with an allowlist re-derived from its own by
 7. Tracer feedback gate (interactive run; workflow.human_verify_mode absent -> end-of-phase; the
    tracer's <verify> is automated-only): the CLOSE run above IS the tracer verify re-run on the
    committed tree, and it is green. Tracer verified end-to-end -> expanding to Task 2.
+
+---------------------------------------------------------------------------------------------
+TASK 2 - Versioned cache keys: Boot-3.5 entries are never read, proven on a real Redis
+---------------------------------------------------------------------------------------------
+
+8. Read-first findings
+   - Key shape (TenantAwareCacheKeyGenerator): tenant:{tid}:{method}:{params}; RedisCacheManager's
+     default prefix makes the stored key {region}::tenant:{tid}:getShopById:{id}.
+   - Evictions (TenantCacheEvictor) go through CacheManager/Cache.evict, so the prefix applies to
+     them with no change. rg -uu over core-java/src/main for "::" literals, .keys(, scan(,
+     computePrefixWith, CacheKeyPrefix: no hand-built cache key anywhere in main (rc=1 for main;
+     only k8s/scripts and docs/html matched, unrelated).
+   - RedisCacheErrorHandler: a failed GET is WARN-logged, swallowed and counted in
+     jtoye.cache.errors{operation=get,cache=<region>}.
+
+9. RED (test(38-09))
+   a. Unit, CacheSerializerTypeAllowlistTest (now 16 cases):
+      everyRegionReadsAndWritesUnderTheVersionedKeyPrefixAndANewRegionInheritsIt builds the
+      production RedisCacheManager from CacheConfig.cacheManager(mock factory) + afterPropertiesSet().
+      Command: ./gradlew :core-java:cleanTest :core-java:test --tests '...CacheSerializerTypeAllowlistTest'
+      rc=1, "16 tests completed, 1 failed"; xml tests="16" failures="1" errors="0":
+        [key prefix of shopMembership] expected: "v4:shopMembership::" but was: "shopMembership::"
+      Characterisation cases, green on both trees (the serializer is already Jackson 3):
+        theCacheFixturesBelowAreExactlyTheManifestCacheFamily (the MANIFEST cache family = the 3 files)
+        aJackson2EraCacheValueIsUnreadableByTheJackson3Serializer [1] products-ProductDto
+                                                                  [2] shops-ShopDto
+                                                                  [3] shopMembership-Membership
+      PER-FIXTURE OUTCOME (feeding the Boot-3.5 bytes to the new serializer): all three FAIL with
+      SerializationException, root tools.jackson.databind.exc.MismatchedInputException
+        products-ProductDto:        Cannot deserialize value of type `java.util.UUID` from Array value (ProductDto["id"])
+        shops-ShopDto:              Cannot deserialize value of type `java.util.UUID` from Array value (ShopDto["id"])
+        shopMembership-Membership:  Cannot deserialize value of type `...ShopRole` from Array value
+                                    (Membership["perShopRole"]->LinkedHashMap[...])
+      So the prefix is NOT belt-and-braces: without it every Boot-3.5 entry is a counted GET error
+      on every request until its TTL ends.
+   b. Integration, CacheFormatIsolationIntegrationTest (@Tag testcontainers, dev profile, Postgres via
+      IntegrationTestSupport.registerPostgresTestProperties, redis:7-alpine container).
+      First attempt: seed INSERT failed on shops.delivery_fee_pennies NOT NULL (V26 dropped its
+      default) - a fixture error, INVALID as RED, fixed (column added to the INSERT), re-run:
+      Command: ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest
+                 --tests 'uk.jtoye.core.boot4.CacheFormatIsolationIntegrationTest' --no-daemon
+      rc=1; xml tests="1" failures="1" errors="0":
+        [no cache GET error: the Boot-3.5 entry was never read (jtoye.cache.errors unchanged)]
+        expected: 0.0 but was: 1.0
+      The application's own log line in the same xml shows the old key WAS read:
+        Cache GET failed for cache 'shops' key 'tenant:38010000-...a001:getShopById:38010000-...a002'
+        - degrading to source-of-truth (treated as a cache miss): Could not read JSON: Cannot
+        deserialize value of type `java.util.UUID` fro[m Array value]
+      (This RED is also the fail direction of the counter: the instrument can move.)
+   gsd check tdd-red-evidence:
+     everyRegionReadsAndWritesUnderTheVersionedKeyPrefixAndANewRegionInheritsIt()  RED_EVIDENCE_OK target_test_failed
+     aBoot35CacheEntryIsNeverReadAndTheBoot4EntryServesTheReadAfterWrite()          RED_EVIDENCE_OK target_test_failed
+     control, a passing case as target (theCacheFixturesBelowAreExactlyTheManifestCacheFamily()) INVALID_RED no_target_test_failure
