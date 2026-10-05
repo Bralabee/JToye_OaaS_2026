@@ -239,3 +239,31 @@ TASK 2 - Versioned cache keys: Boot-3.5 entries are never read, proven on a real
           code use     git grep -cE 'computePrefixWith\(.*CACHE_KEY_FORMAT_VERSION'         -> 1
         (fail direction of the stronger form: the prefix-removed arm, section 12)
     Task 1 greps re-run on this tree: all five forbidden tokens rc=1.
+
+12. Prefix-removed arm (bracketed on the committed GREEN tree 7f177388)
+    CacheConfig.java HEAD blob sha256 390bdc4dd1a45eda9d19ab7d0aa74b75ee3ab64a318cea1fc489d61459f0d455
+    = tree before the arm; backup copied to scratch.
+    ARM P: the .computePrefixWith(cacheName -> CACHE_KEY_FORMAT_VERSION + ":" + cacheName + "::") line deleted
+      stronger AC form under the arm: git grep -cE 'computePrefixWith\(.*CACHE_KEY_FORMAT_VERSION' -> none, rc=1
+      unit:        rc=1; allowlist xml tests="16" failures="1" errors="0":
+                   [key prefix of products] expected: "v4:products::" but was: "products::"
+      integration: rc=1; CacheFormatIsolationIntegrationTest tests="1" failures="1" errors="0":
+                   [no cache GET error: the Boot-3.5 entry was never read (jtoye.cache.errors unchanged)]
+                   expected: 0.0 but was: 1.0
+                   RedisFaultInjectionIntegrationTest tests="1" failures="0" (the analog does not depend on keys)
+    restore: cp from the backup; sha256 390bdc4d...0d455 match=yes; git diff --quiet HEAD rc=0
+    CLOSE (both verify commands on the restored tree):
+      unit rc=0, compileJava executed: CacheSerializerTypeAllowlistTest 16/0/0, MembershipSerializerRoundTripTest 3/0/0
+      integration rc=0: CacheFormatIsolationIntegrationTest 1/0/0, RedisFaultInjectionIntegrationTest 1/0/0
+
+13. Regression checks on the final tree
+    Full unit suite (./gradlew :core-java:cleanTest :core-java:test): rc=0, BUILD SUCCESSFUL in 1m 30s,
+      176 xml files, tests=1453 failures=0 errors=0 skipped=1 (38-08 ended at 1444; +9 cases here).
+    Live-cache Testcontainers classes (the only other tests that drive a cache, none with a key literal):
+      OrderSseGrantRecheckIntegrationTest 2/0/0, BulkImportTenantCacheScopeIntegrationTest 5/0/0,
+      ShopAccessCacheBypassIntegrationTest 5/0/0; rc=0.
+    Stub scan over the four changed code files: one hit, "mapToDouble" matching /todo/i - not a stub.
+    Prohibitions: no compose service started, stopped or rebuilt (Testcontainers only); no package
+      installed; no Jackson-2 databind import in CacheConfig (git grep rc=1); no unsafe or permissive
+      typing and no base-type matcher (git grep rc=1); no prefix without an observed id (pinned by
+      everyAllowlistPrefixCoversAnObservedTypeIdAndEveryIdIsCovered).
