@@ -4,17 +4,16 @@ milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
-status: ready_to_execute
-stopped_at: "Phase 36 COMPLETE 18/18 and MERGED as PR #763 (squash commit c5d16ff6, 2026-09-29 22:14 UTC; post-merge CI/CD run 36638381316 green incl. all four image builds; the first scheduled nightly on main, 36658969040, green — 319 of 325 Playwright tests ran and passed, 6 skipped, 0 failed, restore drill PASS); required Operational Contracts red on every branch since 2026-09-30 (14 expired terminal-state deferrals) until PR #768 merges; Phase 29 stays PAUSED on owner actions (staging DNS + 3 operator secrets); next open defect is #764 (GDPR erasure: missing reviews UPDATE policy AND a cross-tenant review lookup — both, never the policy alone)"
-last_updated: "2026-10-04T20:20:00.000Z"
-last_activity: 2026-10-04
-last_activity_desc: "Phase 38 planned on branch phase-37-spring-boot-4-1: 19 plans in 11 waves (BOOT4-01..14); plan-checker PASSED after one targeted revision; decision coverage 5/5 (D-01..D-05)"
-state_head: f93412d13ca76d3182a2c0eea75e0cd302e7cd77
+status: executing
+stopped_at: "Completed 38-01-PLAN.md (Jackson 2 golden capture: 38 fixtures from the Boot 3.5.16 production serializers, CAPTURE_SHA e12177e1, generator retired); next 38-02 (Wave 1)"
+last_updated: "2026-10-05T00:08:00.000Z"
+last_activity: 2026-10-05
+state_head: 767f5658ea85979a0f97be40259bd1e149fc0c7e
 progress:
   total_phases: 18
   completed_phases: 12
-  total_plans: 137
-  completed_plans: 137
+  total_plans: 155
+  completed_plans: 138
   percent: 67
 ---
 
@@ -25,16 +24,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** between phases — Phase 36 (Azure Blob Storage Throughout) is complete and merged as PR #763 (`c5d16ff6`). First PR #768 (14 terminal-state deferrals expired 2026-09-30 and red the required Operational Contracts check on every branch); then issue #764 (GDPR erasure fails for any customer with a review; needs V67 AND a tenant-scoped review lookup). Phase 29 plans 29-11 onward are no longer blocked by Phase 36, but stay paused on the owner's staging DNS and the 3 remaining operator secrets (`36-PHASE29-HANDOFF.md`).
+**Current focus:** Phase 38 — Spring Boot 4.1 Migration
 
 ## Current Position
 
-Phase: 38 (Spring Boot 4.1 Migration) — **PLANNED 2026-10-04, READY TO EXECUTE** on branch `phase-37-spring-boot-4-1` (worktree `../JToye_OaaS_2026-phase37`).
+Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
 - 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
 - Owner decisions are D-01..D-05; D-05 (suppress `/.well-known/oauth-protected-resource` with a 404) was ruled 2026-10-04.
 - The plan-checker passed on iteration 1; the smart-zone size warning was accepted. Decision coverage is 5/5.
 - Owner checkpoints during execution: 38-05 (Jackson 3 defaults vs restore, decided after the measured diff), 38-17 (who drives the shared compose stack), 38-18 (push).
-- Next: `/gsd-execute-phase 38` from the worktree, in a fresh session. `state.planned-phase` was NOT used: it overwrote this line and miscounted `total_plans`, so STATE was hand-edited.
+- 38-01 DONE 2026-10-05: the Boot 3.5.16 production serializers wrote 38 Jackson-2 golden fixtures to `core-java/src/test/resources/jackson2-golden/`:
+  - 7 idempotency fingerprints with their stored hashes;
+  - 9 response and wire bodies;
+  - 6 outbox rows;
+  - 6 AMQP bodies with their headers;
+  - 3 Redis cache values.
+- The capture commit is `e12177e1`. The generator was deleted at `93b913ce` and survives only at that commit.
+- `GoldenFixturesIntegrityTest` imports nothing from Jackson and is permanent. Every fail direction is recorded in `evidence/38-01-golden-capture.txt`.
+- Measured for 38-08: AMQP bodies carry dates as epoch decimals and lose the offset.
+- BOOT4-06/07/08 stay open: they are shared with later plans.
+- Next: 38-02 (Wave 1, Boot 3.5 baselines). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -570,7 +579,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Ready to execute
+Status: Executing Phase 38
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -581,9 +590,9 @@ Status: Ready to execute
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-09-30 - Completed quick task 260930-l63: Fix #771, erasure deletes only a review's own order-path photos not referenced by the catalogue; foreign photo URLs refused at creation (400). Previously: 2026-09-30 - Completed quick task 260930-bvp: Fix #764 GDPR erasure for customers with reviews (V67). Previously: 2026-09-30 — Phase 36 merged as PR #763 (`c5d16ff6`); post-merge CI/CD and the first scheduled nightly on `main` read green by content. Previously: 2026-09-29 — Phase 36 re-verified and marked complete. Previously: 2026-09-29 - Completed quick task 260929-i9c: jackson-bom 2.21.6 pin clears CVE-2026-68497 from the core-java image.
+Last activity: 2026-10-05
 
-Progress: [████████░░] 75%
+Progress: [███████░░░] 67%
 
 ## Milestone v2.3 Phase Map
 
@@ -811,6 +820,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: 33-06: check-openapi-snapshot-fresh.sh asserts SUBSUMPTION (committed is a sub-tree of live) because compose runs the dev profile while the snapshot is generated under test; an equality gate would be permanently red on a correct tree
 - [Phase ?]: 33-06: a runtime gate is WIRED into e2e-nightly.yml rather than declared exempt — check-gate-enforcement short-circuits on refs > 0 before reading the exemption table, so an entry would be both unnecessary and untrue
 - [Phase ?]: 33-06: ShopWithDistance carries id + slug + distanceKm, not the DTO's fields — shops.opening_hours is jsonb and a second shop-mapping path would drift, silently costing the located results their opening hours
+- [Phase 38]: 38-01: the jackson2-golden fixtures are an ORACLE captured at e12177e1 (Boot 3.5.16, jackson-databind 2.21.7). Later plans compare against them and never re-capture them on a Boot-4 tree.
+- [Phase 38]: 38-01: the membership golden sample carries ONE grant. A Map.copyOf with two or more entries iterates in a per-JVM random order, so its cache bytes are not reproducible.
+- [Phase 38]: 38-01: fixture families are asserted by exact file name rather than count, so a misnamed capture fails too.
 
 ### Pending Todos
 
@@ -880,9 +892,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-09-30
-Stopped at: Phase 36 merged (PR #763) and its post-merge runs read green; next is issue #764 (V67). Phase 29 PAUSED on owner actions.
-Resume file: HANDOFF.md (2026-09-30 delta) + .planning/phases/36-azure-blob-storage-throughout/36-PHASE29-HANDOFF.md
+Last session: 2026-10-05
+Stopped at: Completed 38-01-PLAN.md (Jackson 2 golden capture). Next is 38-02 on branch `phase-37-spring-boot-4-1`.
+Resume file: None (Phase 38 execution continues via `/gsd-execute-phase 38`)
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
