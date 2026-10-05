@@ -1,7 +1,5 @@
 package uk.jtoye.core.webhook;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import org.hibernate.Session;
 import org.slf4j.Logger;
@@ -17,6 +15,7 @@ import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.payment.PaymentEvent;
 import uk.jtoye.core.payment.RefundEvent;
 import uk.jtoye.core.security.TenantContext;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -57,20 +56,20 @@ public class WebhookFanoutListener {
     private final WebhookSubscriptionRepository subscriptionRepository;
     private final WebhookDeliveryRepository deliveryRepository;
     private final WebhookProperties properties;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
 
     public WebhookFanoutListener(WebhookSubscriptionRepository subscriptionRepository,
                                  WebhookDeliveryRepository deliveryRepository,
                                  WebhookProperties properties,
-                                 ObjectMapper objectMapper,
+                                 JsonMapper jsonMapper,
                                  EntityManager entityManager,
                                  PlatformTransactionManager transactionManager) {
         this.subscriptionRepository = subscriptionRepository;
         this.deliveryRepository = deliveryRepository;
         this.properties = properties;
-        this.objectMapper = objectMapper;
+        this.jsonMapper = jsonMapper;
         this.entityManager = entityManager;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -148,15 +147,8 @@ public class WebhookFanoutListener {
         // One envelope id per event, serialized ONCE — these exact bytes are what
         // the worker signs and POSTs (Pitfall 6). Shared across subscriptions.
         UUID eventId = UUID.randomUUID();
-        String payload;
-        try {
-            payload = objectMapper.writeValueAsString(new WebhookEventEnvelope(
-                    eventId, type, tenantId, occurredAt, properties.getEnvelope().getVersion(), data));
-        } catch (JsonProcessingException e) {
-            log.error("event=webhook_fanout_serialize_failed tenant={} type={}: {}",
-                    tenantId, type, e.getMessage());
-            return;
-        }
+        String payload = jsonMapper.writeValueAsString(new WebhookEventEnvelope(
+                eventId, type, tenantId, occurredAt, properties.getEnvelope().getVersion(), data));
 
         for (WebhookSubscription sub : matching) {
             WebhookDelivery delivery = new WebhookDelivery();

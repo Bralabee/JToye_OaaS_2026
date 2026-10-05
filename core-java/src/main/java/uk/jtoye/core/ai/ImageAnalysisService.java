@@ -1,7 +1,5 @@
 package uk.jtoye.core.ai;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
@@ -10,6 +8,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Duration;
 import java.util.*;
@@ -29,7 +29,7 @@ public class ImageAnalysisService {
     private static final Logger log = LoggerFactory.getLogger(ImageAnalysisService.class);
 
     private final WebClient aiClient;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
     private final boolean enabled;
     private final String provider;
     private final String model;
@@ -90,9 +90,9 @@ public class ImageAnalysisService {
             @Value("${ai.anthropic.api-key:}") String anthropicApiKey,
             @Value("${ai.anthropic.model:claude-sonnet-4-20250514}") String anthropicModel,
             @Value("${ai.enabled:true}") boolean enabled,
-            ObjectMapper objectMapper) {
+            JsonMapper jsonMapper) {
 
-        this.objectMapper = objectMapper;
+        this.jsonMapper = jsonMapper;
         this.provider = provider;
 
         if ("anthropic".equals(provider)) {
@@ -181,8 +181,8 @@ public class ImageAnalysisService {
 
         // Ollama returns { "response": "...", "done": true, ... }
         try {
-            JsonNode root = objectMapper.readTree(response);
-            return root.path("response").asText("");
+            JsonNode root = jsonMapper.readTree(response);
+            return root.path("response").asString("");
         } catch (Exception e) {
             log.error("Failed to parse Ollama response: {}", e.getMessage());
             return "";
@@ -219,10 +219,10 @@ public class ImageAnalysisService {
 
         // Anthropic returns { "content": [{ "text": "..." }] }
         try {
-            JsonNode root = objectMapper.readTree(response);
+            JsonNode root = jsonMapper.readTree(response);
             JsonNode content = root.path("content");
             if (content.isArray() && !content.isEmpty()) {
-                return content.get(0).path("text").asText("");
+                return content.get(0).path("text").asString("");
             }
         } catch (Exception e) {
             log.error("Failed to parse Anthropic response: {}", e.getMessage());
@@ -250,7 +250,7 @@ public class ImageAnalysisService {
         }
 
         try {
-            ImageAnalysisResult result = objectMapper.readValue(text, ImageAnalysisResult.class);
+            ImageAnalysisResult result = jsonMapper.readValue(text, ImageAnalysisResult.class);
             log.info("AI identified: '{}' (confidence: {}, cuisine: {}, provider: {})",
                     result.getIdentifiedName(), result.getConfidence(), result.getCuisineOrigin(), provider);
             return Optional.of(result);

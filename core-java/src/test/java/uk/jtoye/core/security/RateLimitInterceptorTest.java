@@ -11,16 +11,14 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import uk.jtoye.core.testsupport.BootJsonMapper;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -30,6 +28,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -46,20 +45,21 @@ class RateLimitInterceptorTest {
     private ProxyManager<String> proxyManager;
 
     // issue #86 [P1-4]: RateLimitInterceptor now takes ObjectProvider<MeterRegistry>
-    // via constructor (fail-open alarm counter). Provide a mock so @InjectMocks can
-    // construct it; getIfAvailable() returns null by default → counter absent, which
-    // is the intended null-safe behaviour for these pre-existing happy-path tests.
+    // via constructor (fail-open alarm counter). The mock's getIfAvailable() returns null by
+    // default → counter absent, which is the intended null-safe behaviour for these
+    // pre-existing happy-path tests.
     @Mock
     private ObjectProvider<MeterRegistry> meterRegistryProvider;
 
-    // issue #413: a REAL mapper, not a mock. The interceptor now serialises a
-    // ProblemDetail through it, and a mock would return null — every body assertion
-    // below would then be asserting on the string "null" while looking green.
-    // Jackson2ObjectMapperBuilder is what Spring Boot's auto-configured mapper is built
-    // with, and it is what registers ProblemDetailJacksonMixin — the mixin that flattens
-    // the extra properties to top level instead of nesting them under "properties".
-    @Spy
-    private ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
+    // issue #413: a REAL mapper, not a mock. The interceptor serialises a ProblemDetail
+    // through it, and a mock would return null — every body assertion below would then be
+    // asserting on the string "null" while looking green.
+    // 38-07: on Boot 4 this is Boot's own Jackson-3 JsonMapper (JacksonAutoConfiguration),
+    // which is what registers the ProblemDetail mixin — the mixin that flattens the extra
+    // properties to top level instead of nesting them under "properties". It is NOT a
+    // hand-built mapper with the mixin added, because then the test would prove the mixin
+    // works rather than that Boot's bean carries it.
+    private final JsonMapper jsonMapper = BootJsonMapper.get();
 
     @Mock
     private HttpServletRequest request;
@@ -73,7 +73,6 @@ class RateLimitInterceptorTest {
     // Redis bucket key argument (rl:public:{ip} vs rate_limit::{tenant}).
     private RemoteBucketBuilder builder;
 
-    @InjectMocks
     private RateLimitInterceptor interceptor;
 
     private UUID testTenantId;
@@ -82,6 +81,7 @@ class RateLimitInterceptorTest {
     @SuppressWarnings("unchecked")
     void setUp() throws Exception {
         testTenantId = UUID.randomUUID();
+        interceptor = new RateLimitInterceptor(meterRegistryProvider, jsonMapper);
 
         // Standard mock
         bucket = mock(Bucket.class, withSettings().extraInterfaces(Class.forName("io.github.bucket4j.distributed.BucketProxy")));
@@ -161,11 +161,11 @@ class RateLimitInterceptorTest {
         // Assert the CONTRACT, not a substring. `contains("Too Many Requests")` passed
         // against the old hand-rolled {"error":...} body too, so it could not tell the two
         // shapes apart — parse it and assert the RFC 7807 fields by name.
-        JsonNode body = objectMapper.readTree(stringWriter.toString());
-        assertEquals("https://jtoye.uk/errors/rate-limited", body.path("type").asText());
-        assertEquals("Too Many Requests", body.path("title").asText());
+        JsonNode body = jsonMapper.readTree(stringWriter.toString());
+        assertEquals("https://jtoye.uk/errors/rate-limited", body.path("type").asString());
+        assertEquals("Too Many Requests", body.path("title").asString());
         assertEquals(429, body.path("status").asInt());
-        assertEquals("Rate limit exceeded. Please try again in 30 seconds.", body.path("detail").asText());
+        assertEquals("Rate limit exceeded. Please try again in 30 seconds.", body.path("detail").asString());
 
         // The wait as a TYPED number, not mined out of prose (#409/#410).
         assertTrue(body.path("retryAfterSeconds").isNumber(), "retryAfterSeconds must be a number, not a string");
@@ -202,8 +202,47 @@ class RateLimitInterceptorTest {
 
         interceptor.preHandle(request, response, new Object());
 
-        JsonNode body = objectMapper.readTree(stringWriter.toString());
-        assertEquals(testTenantId.toString(), body.path("tenantId").asText());
+        JsonNode body = jsonMapper.readTree(stringWriter.toString());
+        assertEquals(testTenantId.toString(), body.path("tenantId").asString());
+
+        // 38-07: the WHOLE top level, as GlobalExceptionHandler's documents have it. Every
+        // extension member the interceptor sets (retryAfterSeconds, tenantId) is a top-level
+        // member, and nothing else appears — no "properties" wrapper, no null "instance".
+        assertThat(body.propertyNames())
+                .as("429 top-level members: %s", stringWriter)
+                .containsExactlyInAnyOrder("type", "title", "status", "detail", "retryAfterSeconds", "tenantId");
+
+        TenantContext.clear();
+    }
+
+    /**
+     * 38-07 negative control: the flattening assertions above can fail. The same interceptor
+     * with a plain Jackson-3 mapper (no Boot auto-configuration, so no ProblemDetail mixin)
+     * writes the extension members nested under {@code "properties"}. If this ever stops
+     * nesting, the "flattened" assertions no longer distinguish Boot's bean from a wrong one.
+     */
+    @Test
+    void negativeControl_aMapperWithoutBootsProblemDetailMixin_nestsTheExtensions() throws Exception {
+        RateLimitInterceptor plain = new RateLimitInterceptor(meterRegistryProvider, JsonMapper.builder().build());
+        ReflectionTestUtils.setField(plain, "rateLimitingEnabled", true);
+        ReflectionTestUtils.setField(plain, "defaultLimit", 100);
+        ReflectionTestUtils.setField(plain, "burstCapacity", 20);
+        ReflectionTestUtils.setField(plain, "proxyManager", proxyManager);
+        TenantContext.set(testTenantId);
+        when(request.getRequestURI()).thenReturn("/api/orders");
+        ConsumptionProbe probe = mock(ConsumptionProbe.class);
+        when(probe.isConsumed()).thenReturn(false);
+        when(probe.getNanosToWaitForRefill()).thenReturn(7_000_000_000L);
+        when(bucket.tryConsumeAndReturnRemaining(1)).thenReturn(probe);
+        StringWriter stringWriter = new StringWriter();
+        when(response.getWriter()).thenReturn(new PrintWriter(stringWriter));
+
+        plain.preHandle(request, response, new Object());
+
+        JsonNode body = jsonMapper.readTree(stringWriter.toString());
+        assertTrue(body.path("retryAfterSeconds").isMissingNode(), "not flattened without the mixin: " + stringWriter);
+        assertEquals(7, body.path("properties").path("retryAfterSeconds").asLong(),
+                "nested under properties without the mixin: " + stringWriter);
 
         TenantContext.clear();
     }
@@ -441,9 +480,9 @@ class RateLimitInterceptorTest {
         verify(builder).build(argThat((String key) -> key.startsWith("rl:public:")), any(Supplier.class));
 
         // issue #413: same RFC 7807 contract as the tenant path, asserted by field name.
-        JsonNode body = objectMapper.readTree(stringWriter.toString());
-        assertEquals("https://jtoye.uk/errors/rate-limited", body.path("type").asText());
-        assertEquals("Too Many Requests", body.path("title").asText());
+        JsonNode body = jsonMapper.readTree(stringWriter.toString());
+        assertEquals("https://jtoye.uk/errors/rate-limited", body.path("type").asString());
+        assertEquals("Too Many Requests", body.path("title").asString());
         assertEquals(429, body.path("status").asInt());
         assertEquals(15, body.path("retryAfterSeconds").asLong());
 
@@ -453,6 +492,10 @@ class RateLimitInterceptorTest {
         assertTrue(body.path("tenantId").isMissingNode(), "public 429 must not carry a tenantId member");
         assertFalse(stringWriter.toString().contains("tenantId"),
                 "public 429 body must not mention tenantId anywhere");
+        // 38-07: the whole top level on the public path — the extension is flat, nothing nested.
+        assertThat(body.propertyNames())
+                .as("public 429 top-level members: %s", stringWriter)
+                .containsExactlyInAnyOrder("type", "title", "status", "detail", "retryAfterSeconds");
     }
 
     @Test

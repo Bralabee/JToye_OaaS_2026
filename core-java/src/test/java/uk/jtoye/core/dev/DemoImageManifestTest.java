@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Guards the bundled demo-catalog imagery (quick task 260713-kds) against drift.
@@ -91,6 +92,53 @@ class DemoImageManifestTest {
                 .containsEntry("mama-ades-kitchen", 7L)
                 .containsEntry("peckham-jollof-co", 7L)
                 .containsEntry("brixton-village-grill", 7L);
+    }
+
+    /**
+     * 38-07: the Jackson-3 load returns what the Jackson-2 load returned. The literals are the
+     * first and last entries as Boot 3.5's Jackson 2 bound them on the plan base
+     * (evidence/38-07-jackson-request-response.txt, Task 2), compared as whole records, so a
+     * dropped {@code @JsonProperty} rename ({@code license_url}, {@code source_url}) or a
+     * reordering shows here.
+     */
+    @Test
+    @DisplayName("Jackson-3 load: first and last entries equal the Jackson-2 load, field for field")
+    void firstAndLastEntriesEqualTheJackson2Load() {
+        List<ManifestEntry> entries = DemoImageManifest.load();
+        assertThat(entries).hasSize(EXPECTED_ENTRIES);
+        assertThat(entries.get(0)).isEqualTo(new ManifestEntry("Beef Suya Wrap", "Brixton Village Grill",
+                "beef-suya-wrap.jpg", "Ooreoluwa4578420", "CC0",
+                "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+                "https://commons.wikimedia.org/wiki/File:Nigerian_Beef-Suya.jpg"));
+        assertThat(entries.get(EXPECTED_ENTRIES - 1)).isEqualTo(new ManifestEntry("Suya Platter",
+                "Peckham Jollof Co", "suya-platter.jpg", "Bukky658", "CC BY-SA 4.0",
+                "https://creativecommons.org/licenses/by-sa/4.0",
+                "https://commons.wikimedia.org/wiki/File:Suya_with_pepper_sauce.jpg"));
+    }
+
+    /**
+     * 38-07: a manifest that does not parse still fails as the loader's own
+     * {@link IllegalStateException} naming the resource. On Jackson 2 the parse error was a
+     * checked {@code JsonProcessingException} (an {@code IOException}) and the
+     * {@code catch (IOException)} wrapped it; on Jackson 3 it is the unchecked
+     * {@code JacksonException}, which that catch no longer sees.
+     */
+    @Test
+    @DisplayName("a manifest that does not parse fails as IllegalStateException naming the resource")
+    void unparseableManifest_failsAsTheLoadersOwnException() {
+        String resource = "dev-manifest-38-07/truncated-manifest.json";
+        assertThatThrownBy(() -> DemoImageManifest.load(resource))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Failed to read demo image manifest: " + resource)
+                .hasCauseInstanceOf(tools.jackson.core.JacksonException.class);
+    }
+
+    @Test
+    @DisplayName("a missing manifest still fails as IllegalStateException (unchanged)")
+    void missingManifest_failsAsTheLoadersOwnException() {
+        assertThatThrownBy(() -> DemoImageManifest.load("dev-manifest-38-07/absent.json"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Demo image manifest not found on classpath: dev-manifest-38-07/absent.json");
     }
 
     @Test

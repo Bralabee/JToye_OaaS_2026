@@ -2,8 +2,8 @@ package uk.jtoye.core.dev;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -63,8 +63,12 @@ public final class DemoImageManifest {
 
     /** Parse {@code dev/demo-images/manifest.json} from the classpath. */
     public static List<ManifestEntry> load() {
-        ObjectMapper mapper = new ObjectMapper();
-        String resource = BASE_PATH + "manifest.json";
+        return load(BASE_PATH + "manifest.json");
+    }
+
+    /** Parse a manifest-shaped classpath resource; the seam the malformed-manifest test uses. */
+    static List<ManifestEntry> load(String resource) {
+        JsonMapper mapper = JsonMapper.builder().build();
         try (InputStream in = classLoader().getResourceAsStream(resource)) {
             if (in == null) {
                 throw new IllegalStateException("Demo image manifest not found on classpath: " + resource);
