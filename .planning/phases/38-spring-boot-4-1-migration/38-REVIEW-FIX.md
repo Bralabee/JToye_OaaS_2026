@@ -29,7 +29,7 @@ so they can be reproduced from it.
 
 ## Fixed Issues
 
-### WR-01: The versioned cache prefix splits evictions across Boot versions during a rolling deploy and a rollback
+### WR-01: The versioned cache prefix splits evictions across Boot versions during a rolling deploy and a rollback (stale authorization for up to 5 min)
 
 **Files modified:** `core-java/src/main/java/uk/jtoye/core/config/CacheConfig.java`,
 `core-java/src/main/java/uk/jtoye/core/config/TenantCacheEvictor.java`,
@@ -118,7 +118,7 @@ operator half is a procedure, not code)
     `check-no-object-store-residue` were all rc=0 (pass direction only; these were run as a
     regression check, not as evidence for the fix).
 
-### WR-02: `IdempotencyJson` does not reproduce Boot 3.5's parameter-name detection
+### WR-02: `IdempotencyJson` does not reproduce Boot 3.5's parameter-name detection, so it is not the "frozen Boot-3.5 format" it claims to be
 
 **Files modified:** `core-java/src/main/java/uk/jtoye/core/common/idempotency/IdempotencyJson.java`,
 `core-java/src/test/java/uk/jtoye/core/common/idempotency/IdempotencyFingerprintGoldenTest.java`,
