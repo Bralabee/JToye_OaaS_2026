@@ -463,3 +463,53 @@ First green run on the decided sources (run start 2026-10-05T08:25Z):
 rc=0   BUILD SUCCESSFUL; ':core-java:cleanTest' and ':core-java:test' both executed
 TEST-uk.jtoye.core.boot4.Jackson3WireContractTest.xml  tests="12" skipped="0" failures="0" errors="0"  newer than run start: 1
 ```
+
+## 11. Fail direction of the decided contract: bracketed arms (Task 3)
+
+Order: the decided sources were committed first (`6026d4c2`), so every restore target is a
+committed state; opening clean run (section 10, 12/12 green); four arms; closing clean run. Each
+restore is `cp` from a scratch backup, verified BY CONTENT: `git hash-object` of the file equals
+`git rev-parse HEAD:<file>`. The fixtures under `jackson2-golden/` were never touched (arm A edits
+a COPY under `build-local/`). Script: `arms-3805.sh` in the session scratchpad; each run is
+`./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.Jackson3WireContractTest' --no-daemon`,
+read from a JUnit XML newer than the arm's marker.
+
+| Arm | Break | rc | Tests | Failing tests (assertion) |
+|---|---|---|---|---|
+| A | `GOLDEN_ROOT` repointed at a COPY of the fixtures with `OrderDto.totalAmountPennies` 1799 -> 1800 (the original stayed 1799) | 1 | 12, 1 failed | `everyFixtureIsTreeEqual…`: `"responses/OrderDto.json false false /totalAmountPennies expected=1800 actual=1799"` (OrderDto is an accepted ordering difference, so only the tree check can catch it, and it does, by pointer) |
+| B | `spring.jackson.mapper.sort-properties-alphabetically: false` appended to `application.yml` | 1 | 12, 2 failed | `recordsKeepTheirBytesAndClassBasedTypesAreAlphabetical`: `OrderDto.json top-level keys [id, tenantId, shopId, …] are not the fixture's keys sorted`; `everyFixtureIsTreeEqual…`: accepted set expected the 4, `but was: []` |
+| C | `spring.jackson.deserialization.fail-on-trailing-tokens: false` appended | 1 | 12, 2 failed | `trailingTokenAfterARequestBodyIsUnreadableRequest`: expected `errors/unreadable-request` but was `errors/validation`; `trailingTokensAreRejected`: `Expecting code to raise a throwable` |
+| D | `spring.jackson.use-jackson2-defaults: true` appended (option B wholesale) | 1 | 12, 6 failed | the order pair (as B), the trailing pair (as C), `nullOrAbsentIntoAPrimitiveIsRejected` (no throwable), `enumsUseToString` (`"alpha-label"` not accepted) |
+
+Restores after every arm: `RESTORED-BY-CONTENT yml=1673d3e0609feb596a58ea33a73b2c84e2905e77 test=26ed88d3141be5df0020a250b6a3403dfc629989`
+(the HEAD blobs). `git status --short` after the arms: only the orchestrator's untracked
+`.planning/milestone.lock`.
+
+The arms show what the test guards and what it does not: the 6 tests that no arm turned red are
+the ones whose decided outcome is the SAME under both default sets (unknown property ignored, dates
+to a UTC instant, single value not a list, float truncated), the REST-converter identity, and the
+diff harness's own self-test. Their fail direction is the arm-independent kind: `treeDiffCanFail`
+carries its own positive controls, and each acceptance test has a control read that must succeed.
+
+TDD RED evidence (`gsd_run check tdd-red-evidence` over each arm's JUnit XML, target
+`Jackson3WireContractTest`): A, B, C, D all `RED_EVIDENCE_OK / target_test_failed`. Fail direction
+of that classifier: the closing green XML as a record -> `INVALID_RED / unexpected_green`.
+
+### Closing clean run
+
+```
+run start 2026-10-05T08:29:11Z, after both files were verified equal to their HEAD blobs and 'arm-golden' was absent from the test source (count 0)
+./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.Jackson3WireContractTest' --no-daemon
+rc=0   BUILD SUCCESSFUL; ':core-java:cleanTest' and ':core-java:test' both executed
+TEST-uk.jtoye.core.boot4.Jackson3WireContractTest.xml  tests="12" skipped="0" failures="0" errors="0"  newer than run start: 1
+core-java/build-local/boot4/jackson-wire-diff.tsv newer than run start: 1; content identical to section 2's table (15 rows, 11 raw-equal, 15 tree-equal)
+```
+
+### Task 3 acceptance criteria, both directions
+
+| Criterion | Real tree | Fail direction |
+|---|---|---|
+| probe not tracked: `git ls-files -- …/Jackson3AcceptanceProbeTest.java` | `rc=0 n=0` | the same path at the pre-delete HEAD (`git ls-tree -r --name-only HEAD`, before `6026d4c2`) -> `rc=0 n=1` |
+| no jackson key: `git grep -n -e 'jackson:' -e 'spring\.jackson' -- core-java/src/main/resources; echo rc=$?` | only `rc=1` | the same pattern over a scratch YAML holding `spring:\n  jackson:` -> matched `2:  jackson:`, `rc=0`; and arms B-D put a key in the real file and the TEST went red |
+| no converter switch: `git grep -n 'preferred-json-mapper' -- core-java/src; echo rc=$?` | only `rc=1` | positive control: the same `git grep` finds the phrase in `38-CONTEXT.md` (count 1, rc=0) |
+| arm output and closing green run in this file | sections 11 and the closing run above | - |
