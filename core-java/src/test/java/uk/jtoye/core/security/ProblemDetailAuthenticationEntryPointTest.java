@@ -3,6 +3,9 @@ package uk.jtoye.core.security;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -11,8 +14,10 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.server.resource.BearerTokenError;
 import org.springframework.security.oauth2.server.resource.BearerTokenErrorCodes;
 
+import java.util.stream.Stream;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -26,6 +31,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>A REAL {@link ObjectMapper} built the way Spring Boot builds its auto-configured one,
  * not a mock: a mock returns null and every body assertion below would be asserting on the
  * string "null" while looking green (the issue #413 lesson, same class of surface).
+ *
+ * <p>Phase 38 D-04: Spring Security 7's {@code BearerTokenAuthenticationEntryPoint} always
+ * appends {@code resource_metadata="…/.well-known/oauth-protected-resource"}, advertising
+ * metadata this API does not serve. Every challenge below is asserted BY EXACT VALUE, and
+ * {@link ProblemDetailAuthenticationEntryPoint#stripResourceMetadata(String)} is pinned by a
+ * table that includes quoted commas and the parameter in every position.
  */
 class ProblemDetailAuthenticationEntryPointTest {
 
@@ -46,8 +57,11 @@ class ProblemDetailAuthenticationEntryPointTest {
                 "401 must carry the same media type as every other error, got: " + response.getContentType());
 
         // The RFC 7235 §4.1 challenge is the part a conforming client acts on. Filling in
-        // the body must not cost it — asserted, not assumed.
+        // the body must not cost it — asserted, not assumed. D-04: exactly "Bearer", so a
+        // resource_metadata parameter (Security 7) cannot pass.
         assertEquals("Bearer", response.getHeader("WWW-Authenticate"));
+        assertEquals(1, response.getHeaders("WWW-Authenticate").size(),
+                "exactly one challenge, not a stripped one beside the original");
 
         JsonNode body = objectMapper.readTree(response.getContentAsString());
         assertEquals("https://jtoye.uk/errors/unauthorized", body.path("type").asText());
@@ -60,7 +74,8 @@ class ProblemDetailAuthenticationEntryPointTest {
      * An invalid/expired token takes the other path into this entry point: the resource
      * server raises an {@link OAuth2AuthenticationException} whose {@code BearerTokenError}
      * carries the RFC 6750 detail. The challenge must still carry {@code error=} — the
-     * body is additive, never a replacement for it.
+     * body is additive, never a replacement for it. D-04: the whole challenge is asserted
+     * exactly, so the framework's error semantics are kept and nothing else is added.
      */
     @Test
     void invalidTokenKeepsTheRfc6750ChallengeParameters() throws Exception {
@@ -73,10 +88,8 @@ class ProblemDetailAuthenticationEntryPointTest {
                         "The token expired", null)));
 
         assertEquals(401, response.getStatus());
-        String challenge = response.getHeader("WWW-Authenticate");
-        assertNotNull(challenge, "WWW-Authenticate must survive");
-        assertTrue(challenge.contains("error=\"invalid_token\""),
-                "the RFC 6750 error code must survive the body being added, got: " + challenge);
+        assertEquals("Bearer error=\"invalid_token\", error_description=\"The token expired\"",
+                response.getHeader("WWW-Authenticate"));
 
         JsonNode body = objectMapper.readTree(response.getContentAsString());
         assertEquals("https://jtoye.uk/errors/unauthorized", body.path("type").asText());
@@ -86,5 +99,87 @@ class ProblemDetailAuthenticationEntryPointTest {
         // client is expected to read, not in a document an unauthenticated caller can mine.
         assertTrue(body.path("detail").asText().equals("Authentication failed"),
                 "the body must not restate the token failure reason: " + body.path("detail").asText());
+    }
+
+    /** Input header value -> expected value after {@code stripResourceMetadata}. */
+    static Stream<Arguments> challenges() {
+        return Stream.of(
+                // the Security 7 missing-token challenge
+                Arguments.of("Bearer resource_metadata=\"http://h/.well-known/oauth-protected-resource\"",
+                        "Bearer"),
+                // the Security 7 invalid-token challenge: parameter last
+                Arguments.of("Bearer error=\"invalid_token\", error_description=\"x\", resource_metadata=\"u\"",
+                        "Bearer error=\"invalid_token\", error_description=\"x\""),
+                // parameter first
+                Arguments.of("Bearer resource_metadata=\"u\", error=\"invalid_token\"",
+                        "Bearer error=\"invalid_token\""),
+                // parameter in the middle
+                Arguments.of("Bearer error=\"invalid_token\", resource_metadata=\"u\", error_description=\"x\"",
+                        "Bearer error=\"invalid_token\", error_description=\"x\""),
+                // a quoted value containing commas, '=' and the parameter's own name is ONE value
+                Arguments.of("Bearer error=\"invalid_token\", error_description=\"expired, renew; resource_metadata=\\\"d\\\"\", resource_metadata=\"u\"",
+                        "Bearer error=\"invalid_token\", error_description=\"expired, renew; resource_metadata=\\\"d\\\"\""),
+                // realm (setRealmName) is kept, and stays first
+                Arguments.of("Bearer realm=\"api\", resource_metadata=\"u\"",
+                        "Bearer realm=\"api\""),
+                // auth-param names are case-insensitive (RFC 7235 §2.1)
+                Arguments.of("Bearer Resource_Metadata=\"u\"", "Bearer"),
+                // token (unquoted) values
+                Arguments.of("Bearer error=invalid_token, resource_metadata=u",
+                        "Bearer error=invalid_token"),
+                // separators written without spaces are normalised to the framework's ", "
+                Arguments.of("Bearer error=\"invalid_token\",resource_metadata=\"u\",scope=\"read\"",
+                        "Bearer error=\"invalid_token\", scope=\"read\""));
+    }
+
+    @ParameterizedTest(name = "[{index}] {0}")
+    @MethodSource("challenges")
+    void stripResourceMetadataDropsOnlyThatParameter(String input, String expected) {
+        assertEquals(expected, ProblemDetailAuthenticationEntryPoint.stripResourceMetadata(input));
+    }
+
+    /** Values that carry no resource_metadata, or that cannot be parsed safely, are returned unchanged. */
+    static Stream<String> unchanged() {
+        return Stream.of(
+                "Bearer",
+                "Bearer error=\"invalid_token\", error_description=\"x\"",
+                "Bearer error=\"insufficient_scope\", error_description=\"The request requires higher privileges than provided by the access token.\", error_uri=\"https://tools.ietf.org/html/rfc6750#section-3.1\"",
+                "Basic realm=\"x\"",
+                // malformed (a stray character after a quoted value, then an unterminated
+                // quote): not rewritten rather than guessed at
+                "Bearer error=\"invalid_token, resource_metadata=\"u");
+    }
+
+    @ParameterizedTest(name = "[{index}] {0}")
+    @MethodSource("unchanged")
+    void stripResourceMetadataLeavesOtherValuesUnchanged(String input) {
+        assertEquals(input, ProblemDetailAuthenticationEntryPoint.stripResourceMetadata(input));
+    }
+
+    @Test
+    void stripResourceMetadataOfNullIsNull() {
+        assertNull(ProblemDetailAuthenticationEntryPoint.stripResourceMetadata(null));
+    }
+
+    /**
+     * The wrapper rewrites the challenge whichever setter writes it and however the name is
+     * cased; any other header passes through untouched.
+     */
+    @Test
+    void wrapperRewritesTheChallengeOnBothSettersAndOnlyTheChallenge() {
+        MockHttpServletResponse viaAdd = new MockHttpServletResponse();
+        new ProblemDetailAuthenticationEntryPoint.ChallengeRewritingResponse(viaAdd)
+                .addHeader("WWW-Authenticate", "Bearer resource_metadata=\"u\"");
+        assertEquals("Bearer", viaAdd.getHeader("WWW-Authenticate"));
+
+        MockHttpServletResponse viaSet = new MockHttpServletResponse();
+        new ProblemDetailAuthenticationEntryPoint.ChallengeRewritingResponse(viaSet)
+                .setHeader("www-authenticate", "Bearer error=\"invalid_token\", resource_metadata=\"u\"");
+        assertEquals("Bearer error=\"invalid_token\"", viaSet.getHeader("WWW-Authenticate"));
+
+        MockHttpServletResponse other = new MockHttpServletResponse();
+        new ProblemDetailAuthenticationEntryPoint.ChallengeRewritingResponse(other)
+                .setHeader("X-Note", "resource_metadata=\"u\"");
+        assertEquals("resource_metadata=\"u\"", other.getHeader("X-Note"));
     }
 }

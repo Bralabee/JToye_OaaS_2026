@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -12,10 +14,14 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
+import java.net.URI;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
@@ -65,6 +71,9 @@ class UnauthenticatedProblemDetailIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private JsonMapper jsonMapper;
+
     private static final UUID WELL_KNOWN_TENANT = UUID.fromString("00000000-0000-0000-0000-00000000b005");
 
     /**
@@ -94,6 +103,40 @@ class UnauthenticatedProblemDetailIntegrationTest {
                         not(containsString("resource_metadata")))))
                 .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/unauthorized"))
                 .andExpect(jsonPath("$.status").value(401));
+    }
+
+    /**
+     * Phase 38 (BOOT4-04, D-04): the 401 body is written by Boot's Jackson-3 {@link JsonMapper},
+     * byte for byte. The document is the API-10 one; its key order is Jackson 3's alphabetical
+     * order (owner decision "jackson3-defaults", 38-05, locked by {@code Jackson3WireContractTest}).
+     * A body still written by the Jackson-2 bridge mapper keeps declaration order and fails here.
+     */
+    @Test
+    void unauthorizedBodyIsBootsJackson3Document() throws Exception {
+        ProblemDetail expected = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Authentication failed");
+        expected.setTitle("Unauthorized");
+        expected.setType(URI.create("https://jtoye.uk/errors/unauthorized"));
+        String expectedBody = jsonMapper.writeValueAsString(expected);
+
+        mockMvc.perform(get("/api/v1/products"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().string(expectedBody));
+    }
+
+    /**
+     * API-10 preserved on Jackson 3: the mapper the 401 is written with flattens a
+     * {@link ProblemDetail} extension member to the TOP level, exactly as
+     * {@code GlobalExceptionHandler}'s 4xx bodies carry {@code errors}, {@code field} or
+     * {@code code} (Boot registers {@code ProblemDetailJacksonMixin} on it). A mapper without
+     * the mixin nests them under {@code properties} and fails here.
+     */
+    @Test
+    void bootsJsonMapperFlattensProblemDetailExtensionMembers() throws Exception {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+        problem.setProperty("errors", java.util.Map.of("customerEmail", "Email is required"));
+        JsonNode tree = jsonMapper.readTree(jsonMapper.writeValueAsString(problem));
+        assertThat(tree.has("properties")).as("extension members nested under 'properties': %s", tree).isFalse();
+        assertThat(tree.path("errors").path("customerEmail").asString()).isEqualTo("Email is required");
     }
 
     /**

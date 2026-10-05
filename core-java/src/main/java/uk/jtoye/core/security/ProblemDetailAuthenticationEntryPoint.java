@@ -3,6 +3,7 @@ package uk.jtoye.core.security;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponseWrapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -83,5 +84,17 @@ public class ProblemDetailAuthenticationEntryPoint implements AuthenticationEntr
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.getWriter().write(objectMapper.writeValueAsString(problem));
+    }
+
+    /** Phase 38 D-04 (RED stub, 38-06 Task 1): returns its input; GREEN drops resource_metadata. */
+    static String stripResourceMetadata(String headerValue) {
+        return headerValue;
+    }
+
+    /** Phase 38 D-04 (RED stub, 38-06 Task 1): passes every header through unchanged. */
+    static final class ChallengeRewritingResponse extends HttpServletResponseWrapper {
+        ChallengeRewritingResponse(HttpServletResponse response) {
+            super(response);
+        }
     }
 }
