@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-15-PLAN.md
-last_updated: "2026-10-05T16:01:00.000Z"
+stopped_at: Completed 38-16-PLAN.md
+last_updated: "2026-10-05T16:24:00.000Z"
 last_activity: 2026-10-05
-state_head: 63df115f64260ae47857b2a9a825008b152f0ace
+state_head: 797c3717c8c84da8ab4d6381a9776e23657f3fcd
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 155
-  completed_plans: 153
+  completed_plans: 154
   percent: 67
 ---
 
@@ -158,7 +158,22 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - The build-file change is comment-only: one dated Boot-4 paragraph per pin, with the history kept. The three scan images are removed; the compose image is untouched.
   - BOOT4-12 is NOT yet marked complete: `requirements.ready-ids` is 0/1, because 38-18 (the CI image gate on push) also declares it.
   - Carried: 38-16 may cite this evidence for BOOT4-12 and ADR-0006 (Tomcat on the advisory, not the gate). 38-18's PR body: the local gate was rc=0 on DB 2026-10-05; the post-merge gate may see a newer DB. Cosmetic, out of scope: the core-java Dockerfile LABEL still says "Spring Boot 3 backend".
-- Next: 38-16 (wave 9, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
+- 38-16 DONE 2026-10-05: the version gates follow the Boot 4.1.1 plugin, the docs describe the Boot-4 tree, ADR-0006 records the migration, and the metrics are regenerated (`evidence/38-16-docs.txt`).
+  - Horizons `spring-boot` row: 4.1.1, cycle 4.1, EOL 2027-07-31, #706 exemption deleted. check-doc-versions reads `resilience4j-spring-boot4`. Both gates went from 38-03's rc 2 to rc 0.
+  - Arms: a stale SpringDoc claim rc=1; a citation one line off rc=1; a half-bumped `core-java/build.gradle.kts:2` rc=2 (H-5 spring-boot); a stale Spring Boot claim rc=1; an unresolvable coordinate rc=2. An added H-2 `eol_date` arm (rc=1) proved the endoflife.date fetch read spring-boot/4.1 online. Every restore was verified by sha256.
+  - CLAUDE.md / AGENTS.md (outside ORGOS; block sha256 unchanged) / STACK.md now give versions read from the resolved classpath: Spring Boot 4.1.1, Framework 7.0.9, SpringDoc 3.1.1, JUnit Jupiter 6, Tomcat 11.0.26, netty 4.2.17 with no pin, Jackson 3 (Jackson 2 transitive-only), the explicit starters, Hibernate 7, Flyway 12, Security 7.1, AMQP 4.1, Spring Data 2026.0, Lettuce 7. The core-java image label now says "Spring Boot 4 backend".
+  - check-doc-citations: the 6 failures were all phase-caused (the pre-phase base 767f5658 is rc=0) and are re-pointed by content; 46/46 verified. Both deferred doc items are closed: the AI_CONTEXT cache-key format and the two mcp-server snapshot comments.
+  - ADR-0006 covers D-01..D-05, with D-05 as refined; the "jackson3-defaults" verdict; the contract changes (key order, trailing 400, `/.well-known` 401/404 plus the residual, ISO broker dates, OpenAPI, restored config keys); Deploy notes (no flush, no drain, idempotency replay, image gate pre-run); Rollback notes; and the statemachine risk with EnumMap as a separate decision. One Flyway 11/12 rollback item is recorded UNVERIFIED. CONCERNS.md has a statemachine entry, and its Boot 3.5 horizons row is closed.
+  - docs-freshness is green again (red since 38-01): Java 2005 -> 2108 methods, 306 -> 325 files, total 4183 -> 4286, cross-checked by git-grep at 767f5658 and HEAD. check-doc-metrics 37/37.
+  - Static sweep: 42 gates, 32 rc=0. All 10 non-zero gates give the same rc on the plan base:
+    - 6 environment VOIDs;
+    - check-alert-metrics: no order placed since the core-java restart;
+    - check-openapi-snapshot-fresh: red on the pre-rebuild container by 38-14's design (rc=0 at pre-phase), 38-17's;
+    - check-branch-behind-base: 4 behind origin/main, 38-18's;
+    - check-handoff-contract: the H-3 red already on the not-owned-by-phase-38 list.
+  - Requirements: BOOT4-10 is marked complete. BOOT4-01 and BOOT4-14 are blocked on 38-17 and 38-18.
+  - Carried for 38-17: expect 401/404 on `/.well-known`; re-run openapi-snapshot-fresh and alert-metrics on the rebuilt stack (NoOrdersCreated needs one order after the restart). For 38-18: the PR body names ADR-0006's contract-change list; merge from base first.
+- Next: 38-17 (wave 10, sequential, autonomous: false). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -823,6 +838,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P13 | 14 min | 2 tasks | 4 files |
 | Phase 38 P14 | 40 min | 2 tasks | 3 files |
 | Phase 38 P15 | 13 min | 2 tasks | 2 files |
+| Phase 38 P16 | 20 min | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -1001,6 +1017,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-15: no CVE bump needed: branch and main images both pass the Trivy 0.70.0 gate locally on DB 2026-10-05 13:07 UTC
 - [Phase 38]: 38-15: Tomcat stays 11.0.26 on the Tomcat advisory (CVE-2026-76183/-86350), not on the gate, which 11.0.25 already passes; the pin comment says so
 - [Phase 38]: 38-15: CVE-2026-91777 is on the Jackson-3 line and fixed in 3.1.7 (RESEARCH A3 closed); both Jackson keys proven load-bearing by near-miss arms
+- [Phase 38]: 38-16: /.well-known is documented per the owner's 38-06 ruling (401 without credentials, 404 with them, invalid-token 404 residual), superseding the plan text "is 404"
+- [Phase 38]: 38-16: dated verified records (docs/architecture/ARCHITECTURE.md, PRD.md, SYSTEM_DESIGN_V2 §1, CHANGELOG, HANDOFF, docs/analysis etc.) stay history; .planning/PROJECT.md is ungated and was already stale
+- [Phase 38]: 38-16: check-openapi-snapshot-fresh is red on the pre-rebuild container by 38-14's design (rc=0 at pre-phase 767f5658), not pre-phase; 38-17 clears it on the rebuilt stack
 
 ### Pending Todos
 
@@ -1070,8 +1089,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T16:01:00.000Z
-Stopped at: Completed 38-15-PLAN.md. Next is 38-16 (wave 9, sequential) on branch `phase-37-spring-boot-4-1`.
+Last session: 2026-10-05T16:24:00.000Z
+Stopped at: Completed 38-16-PLAN.md. Next is 38-17 (wave 10, sequential; owner checkpoint on who drives the shared compose stack) on branch `phase-37-spring-boot-4-1`.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
