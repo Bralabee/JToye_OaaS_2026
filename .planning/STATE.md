@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-19-PLAN.md
-last_updated: "2026-10-05T13:57:00.000Z"
+stopped_at: Completed 38-12-PLAN.md
+last_updated: "2026-10-05T14:48:00.000Z"
 last_activity: 2026-10-05
-state_head: 88fb87e46ca6da3cdf508ddac106e377641e5852
+state_head: 4d5e63d8f93d4ef918d2b67e1ba9a2f049ebec62
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 155
-  completed_plans: 149
+  completed_plans: 150
   percent: 67
 ---
 
@@ -119,7 +119,14 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - Five Spring-adapter Jackson-2 users moved to the Jackson-3 adapters. The plan's grep could not see them and the bridge removal would not have caught them: OrderEventFanoutTopology, the two Rabbit factory tests, and GlobalExceptionHandlerRequestShape and OptimisticLock (now on `BootJsonMapper`; a bare-mapper arm is red on `$.property`/`$.code`).
   - The closed DELIBERATE-JACKSON2-LIST has 3 files: AmqpJackson2CompatibilityTest, OutboxPayloadCompatibilityTest and OpenApiSnapshotTest. Verify 6 gives base == head for all 39 changed test files. Unit suite 1485/0/1 skipped (= the wave-4 gate). BOOT4-02/04 stay open (38-12 and later).
   - Carried, for 38-12: JacksonLineContractTest's test scan must ALSO match package-qualified Spring `Jackson2*`/`MappingJackson2*`/`GenericJackson2*` adapters, because the narrow `com.fasterxml.jackson.{databind,core,datatype}` grep misses AmqpJackson2CompatibilityTest. The allowlist constant is the three list paths verbatim (evidence/38-19-test-jackson3-sweep.txt).
-- Next: 38-12 (sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
+- 38-12 DONE 2026-10-05: the INTERIM-JACKSON2-BRIDGE line is gone, and the Jackson line's end state is guarded by a permanent test.
+  - RED came first, on the classpath alone: `JacksonLineContractTest` 5/1 failing on `spring-boot-jackson2-4.1.1.jar` (RED_EVIDENCE_OK). The main, config and test scans were already green, so there was no residual of 38-06..38-10 or 38-19. GREEN after the line was deleted: 5/5, `compileJava` clean, runtimeClasspath `forbidden=0` (1 at the plan base).
+  - The test reads `-Djtoye.productionRuntimeClasspath`, main code, every `application*` config file (relaxed keys, all four `preferred-json-mapper` keys, any `jackson2` segment) and the test tree. Its pattern is any `com.fasterxml.jackson` package except annotation, OR a package-qualified Spring `Jackson2*`/`MappingJackson2*`/`GenericJackson2*` adapter. The test side must equal the closed 3-file `DELIBERATE_JACKSON2_LIST`, each file with its reason.
+  - `Boot4ModuleLivenessIntegrationTest` gained a 6th test: Boot's Jackson-3 `JsonMapper` exists, no Jackson-2 `ObjectMapper` bean exists, and the only Jackson-2-typed beans are Spring Data's inert `GeoModule`/`PageModule`, held as a closed set. Spring Data registers them because Jackson 2 stays on the classpath transitively; their Jackson-3 counterparts are live (measured).
+  - Arms A (bridge; the context check red on `jackson2ObjectMapper`), B (main import), C (converter switch), D (adapter import in a test, which the plan's narrow grep cannot see), D2 (FQCN adapter) and E (reason line removed) each went red naming the offender. Restores were sha256-equal and the closing run green.
+  - End-state suites: unit 1490/0/1 skipped, integration 769/1 (OpenApiSnapshotTest, 38-14)/1 skipped, from fresh XML, `missing_jackson_bean=0`. The deltas are this plan's +5 unit and +1 integration tests. The served OpenAPI spec is byte-identical with the bridge on and off. BOOT4-04 is complete; BOOT4-02 stays open (38-13).
+  - Carried: 38-16 metrics: +1 Java test file (5 tests) and +1 method in Boot4ModuleLivenessIntegrationTest. 38-17: the rebuilt jar must carry no `BOOT-INF/lib/spring-boot-jackson2-*.jar`. 38-14: if OpenApiSnapshotTest's normalizer leaves Jackson 2, its path must come off `DELIBERATE_JACKSON2_LIST` (the contract test turns red until it does).
+- Next: 38-13 and 38-14 (wave 7, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -780,6 +787,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P10 | 21 min | 2 tasks | 7 files |
 | Phase 38 P11 | 53 min | 3 tasks | 16 files |
 | Phase 38 P19 | 45 min | 3 tasks | 40 files |
+| Phase 38 P12 | 47 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -946,6 +954,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-19: both golden-file tests migrated (comparison green, golden untouched); neither is on the DELIBERATE-JACKSON2 list
 - [Phase 38]: 38-19: Spring-adapter Jackson-2 users in tests are migrated, not allowlisted; the closed DELIBERATE-JACKSON2-LIST is 3 files
 - [Phase 38]: 38-19: 38-12's contract-test scan must include package-qualified Spring Jackson-2 adapters, or a regression through them passes unseen
+- [Phase 38]: 38-12: JacksonLineContractTest scans main and test code with one pattern (any com.fasterxml.jackson package but annotation, or a package-qualified Spring Jackson-2 adapter); test-side users must equal the closed DELIBERATE_JACKSON2_LIST
+- [Phase 38]: 38-12: Spring Data's Jackson-2 GeoModule/PageModule beans stay registered (Jackson 2 is transitively on the classpath) and are inert; held as a closed set in the context check, not suppressed
+- [Phase 38]: 38-12: no residual; the bridge removal needed no main-code change
 
 ### Pending Todos
 
@@ -1015,8 +1026,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T13:57:00.000Z
-Stopped at: Completed 38-19-PLAN.md. Next is 38-12 (sequential) on branch `phase-37-spring-boot-4-1`.
+Last session: 2026-10-05T14:48:00.000Z
+Stopped at: Completed 38-12-PLAN.md. Next is 38-13 (wave 7, sequential) on branch `phase-37-spring-boot-4-1`.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
