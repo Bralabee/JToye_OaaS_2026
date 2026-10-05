@@ -1,0 +1,218 @@
+# 38-18 — the phase branch on origin: CI/CD read job by job (Temurin, OpenAPI gate, ops contracts,
+# Trivy image gate) and the nightly E2E read from its report artifact. Ship checklist at the end.
+# Every value below was read from the run itself (gh run view --json, the job logs via the API, the
+# downloaded artifacts), never from a badge.
+
+## 0. Owner decision (Task 1, checkpoint:decision, gate blocking)
+decision=push-and-dispatch
+owner_exact_words="push-and-dispatch (Recommended)"   (AskUserQuestion, 2026-10-05, via the orchestrator)
+state_at_resolution=branch 131 ahead of origin/phase-37-spring-boot-4-1, 0 behind; no PR for the branch;
+  38-17's merge of origin/main (25566e2c) brought no core-java files
+
+## 1. Pre-push parity
+behind_rc=0
+behind=PASS: HEAD contains every commit on origin/main (03022f21); it is 139 commit(s) ahead and 0 behind.
+behind_fail_arm=--head origin/main~3: rc 1 (3 behind)
+behind_void_arm=--base origin/does-not-exist: rc 2 (PARSE ERROR, VOID)
+working_tree=clean apart from the untracked .planning/milestone.lock (never committed)
+
+## 2. Push — first attempt REFUSED by the pre-push hook (P-3 gitleaks), fixed, second attempt landed
+push_1=REFUSED rc 1 at 2026-10-05T17:26Z: "FAIL P-3 gitleaks found a secret in the commits being pushed" (3 leaks)
+gitleaks_findings (gitleaks 8.30.1, range 767f5658..67a1b1ea, all generic-api-key; values read locally, not secrets):
+  e12177e1 core-java/src/test/resources/jackson2-golden/idempotency/storefront.guest-order.request.json:1         secret=golden-guest-key-0001
+  e12177e1 core-java/src/test/resources/jackson2-golden/idempotency/storefront.guest-order.legacy.request.json:1  secret=golden-guest-key-0001
+  370cc0fc .planning/phases/38-spring-boot-4-1-migration/38-05-SUMMARY.md:146                                 secret=Jackson3WireContractTest
+classification=false positives: a fixture order idempotency key captured by the Boot 3.5.16 serializers in 38-01,
+  and a test class name in prose. The fixtures are byte-guarded by GoldenFixturesIntegrityTest, so they cannot change.
+  CI's gitleaks.yml runs on PR/push to main only; after a squash merge main's push scan reads the single squash commit,
+  where a commit fingerprint would not apply.
+fix_commit=acee00c5 fix(38-18): allow the golden-fixture idempotency key and a prose false positive in gitleaks
+  - .gitleaks.toml: content allowlist anchored at both ends, ^golden-guest-key-0001$ (rule-agnostic, shape-exact)
+  - .gitleaksignore: fingerprint 370cc0fc...:38-05-SUMMARY.md:generic-api-key:146 (the historical commit)
+  - 38-05-SUMMARY.md:146: inline <!-- gitleaks:allow ... --> on the live line (covers the squash commit)
+fix_proof (both directions):
+  push range before fix: rc 1, 3 findings; after fix: rc 0 "no leaks found"
+  simulated squash commit (one commit holding the live content of the three files + config, scanned --log-opts -1):
+    real                         rc 0, 0 findings
+    key changed to ...-0002      rc 1, 1 finding (storefront.guest-order.request.json)
+    inline allow removed         rc 1, 1 finding (38-05-SUMMARY.md)
+  own-check bug caught by the real arm: my first .gitleaksignore comment QUOTED the prose and was itself flagged
+  (real arm rc 1, file .gitleaksignore); reworded, real arm rc 0.
+  limit: CI's gitleaks.yml pins 8.27.2; this allowlist was measured on 8.30.1 only (the toml header records content
+  allowlists behaving identically on both for its other entries). The PR's gitleaks job is the first 8.27.2 reading.
+push_2=2026-10-05T17:29:26Z  767f5658..acee00c5 phase-37-spring-boot-4-1 -> phase-37-spring-boot-4-1 (fast-forward;
+  no --force, no --no-verify); pre-push P-2 ok, P-3 ok "no secrets in the commits being pushed", P-4 ok; 132 commits
+ls_remote=acee00c527c3d2c647a984eb51a04e28b516f9fc refs/heads/phase-37-spring-boot-4-1 == HEAD acee00c527c3d2c647a984eb51a04e28b516f9fc
+pr_opened=none (gh pr list --head phase-37-spring-boot-4-1 --state all -> 0)
+
+## 3. Run-id resolver and watcher (instrument fail arms first)
+resolver=gh run list --workflow W --branch B --event E; select headSha == pushed HEAD and createdAt >= reference; exactly one
+resolver_arm_bogus_branch=rc 2 UNRESOLVED matches=0
+resolver_arm_wrong_sha=rc 2 UNRESOLVED matches=0
+watcher=gh run view status/conclusion every 30 s with a deadline; prints END_STATE; rc 0 success / 1 non-success / 4 unreachable / 5 deadline
+watcher_arm_failed_run_36511482252=rc 1 END_STATE=completed-failure
+watcher_arm_success_run_35946039057=rc 0 END_STATE=completed-success
+watcher_arm_bogus_id_1=rc 4 END_STATE=unreachable
+watcher_arm_deadline_1s=rc 5 END_STATE=deadline last_status=in_progress
+
+## 4. Push-triggered CI/CD
+ci_run_id=37348823924
+ci_url=https://github.com/Bralabee/JToye_OaaS_2026/actions/runs/37348823924
+ci_event=push  branch=phase-37-spring-boot-4-1  headSha=acee00c527c3d2c647a984eb51a04e28b516f9fc (== HEAD; the only match)
+ci_created_at=2026-10-05T17:29:36Z (push at 17:29:26Z)  ci_updated_at=2026-10-05T18:22:06Z (about 52.5 min)
+ci_watch=END_STATE=completed-success (rc 0), inside the 7000 s deadline
+ci_conclusion=success     (plan verify: gh run view 37348823924 --json conclusion --jq .conclusion -> success)
+jobs (gh run view --json jobs; every job concluded):
+  Run Tests                                   success
+  Integration Tests (Testcontainers RLS)      success
+  OpenAPI Breaking-Change Gate                success
+  Operational Contracts                       success
+  Lint                                        success
+  Security Scan                               success
+  MCP Server Tests                            success
+  Frontend E2E (public surfaces)              success
+  K8s Kustomize Secret Guard                  success
+  Build and Push Images (core-java)           success
+  Build and Push Images (frontend)            success
+  Build and Push Images (edge-go)             success
+  Build and Push Images (pg-backup)           success
+  Branch Not Behind Base                      skipped   (if: github.event_name == 'pull_request'; the local gate is §1)
+  Deploy to Staging                           skipped   (if: github.ref == 'refs/heads/main' && vars.DEPLOY_STAGING_ENABLED)
+  Deploy to Production                        skipped   (if: main or release, && vars.DEPLOY_ENABLED)
+
+### 4.1 Temurin JDK (RESEARCH Open Question 3: the measurement the spike could not take)
+run_tests_setup_java=Resolved Java 25.0.4+1 from tool-cache; Distribution: temurin;
+  JAVA_HOME=/opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/25.0.4-1/x64
+integration_setup_java=Resolved Java 25.0.4+1 from tool-cache; Distribution: temurin
+openapi_gate_java=JAVA_HOME /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/25.0.4-1/x64
+
+### 4.2 Unit suite on Temurin (Run Tests, step "Run Java tests" = ./gradlew :core-java:test --no-daemon)
+gradle=> Task :core-java:test executed; BUILD SUCCESSFUL in 2m 19s; 5 actionable tasks: 5 executed (no UP-TO-DATE/FROM-CACHE)
+unit_totals (artifact test-results, core-java/build-local/reports/tests/test/index.html, generated 17:32:43 UTC; uploaded
+  in step 21, BEFORE step 22's config-key gate reruns a 9-test class):
+  tests=1490 failures=0 skipped=1 duration=1m6.23s   (== the local wave-6 gate, 1490/0/1)
+config_key_gate=step 22 success: "PASS: 218 key(s) in 7 yml file(s) and 36 autoconfigure exclude(s)/literal(s) are all
+  known to Boot 4." (junit tests=9 failures=0 errors=0)
+
+### 4.3 Integration suite on Temurin (step "Run Testcontainers integration suite"; "Skip notice" step = skipped, so it ran)
+gradle=> Task :core-java:integrationTest; BUILD SUCCESSFUL in 36m 8s; 5 actionable tasks: 5 executed
+integration_totals (artifact integration-test-results, tests/integrationTest/index.html):
+  tests=771 failures=0 skipped=6 duration=34m46.71s
+skipped_explained=6 = 1 + 5:
+  1 = FinancialSummaryGoldenFileTest.captureGoldenOnce, @Disabled one-shot bootstrap (the local "1 skipped")
+  5 = Financial/Order/OnboardingNotificationListenerIntegrationTest methods behind
+      Assumptions.assumeTrue(mailhog.isReachable(), ...) — CI runs no MailHog. The three files are identical to origin/main
+      (git diff --stat origin/main on that directory is empty; assume_mailhog=1 in each on origin/main), so the skips
+      predate the phase.
+coverage_floor=PASS: aggregate Java coverage (test + integrationTest) is at or above every floor
+html_reader_arms: empty page -> rc 2, all counters NOT_FOUND; doctored copy (failures 0 -> 3 via perl -0) -> reads failures=3.
+  (A first doctoring attempt with line-based sed did not change the file; that arm was discarded and redone with perl.)
+
+### 4.4 OpenAPI Breaking-Change Gate (10/10 steps success, Temurin 25.0.4)
+openapi_gate=oasdiff 1.23.0 (checksum OK); "OK: OpenAPI spec matches the reviewed snapshot (docs/api/openapi-snapshot.json)."
+
+### 4.5 Operational Contracts (25/25 steps success)
+ops_lines=PASS: all 46 verified citation(s) across 8 doc(s) resolve...; PASS: none of the 67 migration(s) create a PostgreSQL
+  extension; PASS: no retired object-store residue in 2754 tracked file(s); PASS: image supply-chain contract intact;
+  PASS: every gate either runs in CI or has a declared reason it cannot; (66 PASS/ok lines in the job log)
+
+### 4.6 Build and Push Images (core-java) — the post-merge-only Trivy image gate, run by the phase-* push
+steps=Build and push Docker image success; Scan Docker image with Trivy (SARIF report) success; Upload image scan results
+  success; "Trivy image gate — fail on fixable CRITICAL/HIGH" success
+trivy_gate_config=image-ref ghcr.io/bralabee/jtoye-core-java:phase-37-spring-boot-4-1; severity CRITICAL,HIGH;
+  ignore-unfixed true; exit-code 1; trivy v0.70.0; scanned 2026-10-05T18:21:47Z
+trivy_gate_report=Report Summary:
+  ghcr.io/bralabee/jtoye-core-java:phase-37-spring-boot-4-1 (alpine 3.24.2)  alpine  Vulnerabilities 0
+  app/app.jar                                                                 jar     Vulnerabilities 0
+jackson2_in_core_java_job_log=2 lines, both inside commit-message text of the push event payload (38-17 / 38-15 docs
+  commits), not image content
+note=this is the first Trivy reading of the Boot-4 image on CI's DB (2026-10-05 ~18:21Z). The local gate (38-15) ran on
+  the 2026-10-05 13:07 UTC DB, rc 0 for both branch and origin/main.
+
+## 5. The nightly on the branch's runtime (workflow_dispatch of e2e-nightly.yml)
+dispatch_time=2026-10-05T17:29:36Z   (gh workflow run e2e-nightly.yml --ref phase-37-spring-boot-4-1, rc 0)
+nightly_run_id=37348829067
+nightly_url=https://github.com/Bralabee/JToye_OaaS_2026/actions/runs/37348829067
+nightly_created_at=2026-10-05T17:29:38Z (2 s after dispatch); event=workflow_dispatch; headSha=acee00c5... == HEAD; the only match
+nightly_updated_at=2026-10-05T17:52:23Z (about 22.75 min; the watch deadline was 5400 s)
+nightly_watch=END_STATE=completed-success (rc 0)
+nightly_conclusion=success; job "Full Playwright suite against a real stack" = success
+steps:
+  07 Build and start the stack (no ollama)                                        success   (log: "core-java Built",
+     "Container jtoye_oaas_2026-core-java-1 Healthy"; 0 lines matching unauthorized|manifest unknown|pull access denied)
+  08 Wait for core-java and the frontend                                          success   (core-java UP after 0s; frontend 200 after 5s)
+  09 Gate — every stored image URL resolves on the object store                   success   (PASS: 21 reference(s) ... answer 200)
+  10 Gate — stored Content-Types ... inside the image allowlist                   success   (PASS: 0 of 21 ...)
+  11 Gate — the committed OpenAPI contract vs the RUNNING service                 success   (PASS — 0 differences across 109
+     declared path(s); RESULT: PASS — the running service emits everything the committed contract claims.)
+  12 Gate — Keycloak accepts the vendor post-logout redirect URI                  success
+  13 Seed E2E fixtures                                                            success
+  16 Run the full Playwright suite                                                success
+  17 Assert the report is real, then read the verdict from it                     success   (total=325 passed=319 failed=0 skipped=6)
+  18 Enforce the declared skip budget                                             success   (PASS: all 6 skip(s) are declared and within the budget of 6.)
+  19 Gate — cart identity boundary (#459 / R-16)                                  success
+  20 Gate — a backup restored from Blob carries tenant rows                       success   (PASS: arm A restored 0, arm B restored 23 = live 23 (> 0).)
+  21 Upload Playwright report and traces                                          success
+  22 Dump stack logs on failure                                                   skipped
+  23 Escalate a failed nightly                                                    skipped
+the_stack_is_boot_4=the core-java image build in step 07 resolves org.springframework.boot:* to 4.1.1. 20 lines name
+  spring-boot*:3.5.15, every one as "3.5.15 -> 4.1.1" (a transitive request resolved up); 0 unresolved 3.x lines.
+  Pattern arm: a synthetic "spring-boot-autoconfigure:3.5.15 (*)" line IS matched, a "3.5.15 -> 4.1.1" line is not.
+
+### 5.1 Playwright, read from the downloaded artifact e2e-nightly-report/e2e-artifacts/report.json (443319 bytes)
+plan_verify=jq '[.. | objects | select(has("status") and has("expectedStatus"))] | length' -> 325
+playwright_executed=325
+playwright_passed=319
+playwright_failed=0   (timedOut 0, interrupted 0)
+playwright_skipped=6
+playwright_stats={"startTime":"2026-10-05T17:37:01.161Z","duration":789672.379,"expected":319,"skipped":6,"unexpected":0,"flaky":0}
+playwright_spec_files=28
+report_arms:
+  {"suites":[]} -> count 0, so executed > 0 fails
+  zero-byte file -> jq prints NOTHING with rc 0 (the plan's "jq cannot read the file" direction does not fail on its
+    own); [ -s report.json ] is false (rc 1), and that is what catches the arm, as the workflow's own step 17 does
+  doctored copy (every passed -> failed) -> failed=319
+
+## 6. Final parity (2026-10-05T18:23:19Z)
+behind=PASS: HEAD contains every commit on origin/main (03022f21); it is 140 commit(s) ahead and 0 behind. (rc 0)
+remote=origin/phase-37-spring-boot-4-1 == acee00c5 == HEAD; origin/main 03022f21
+pr=none
+
+## 7. Ship checklist (for /gsd-ship; NOT executed here)
+Order: push first (done), then open the PR, then review, then merge. Nothing below has been done yet.
+[ ] PR title: a feat/fix subject (it triggers check-changelog-cites-pr.sh P-1).
+[ ] PR body states "Closes #706" (issue #706, OPEN: "Migrate Spring Boot 3.5.16 → 4.1.x (OSS support for 3.5 ended 2026-06-30)").
+[ ] PR body states that it SUPERSEDES dependabot PR #739 (OPEN: springdoc-openapi-starter-webmvc-ui 2.8.6 → 3.1.1); the
+    branch already carries springdoc 3.1.1 (38-14).
+[ ] PR body names the contract changes (ADR-0006, docs/architecture/decisions/ADR-0006-spring-boot-4-migration.md):
+    (1) class-based response DTOs serialize in ALPHABETICAL key order (owner decision 38-05, "jackson3-defaults (Recommended)");
+    (2) trailing content after a JSON request body -> 400 errors/unreadable-request;
+    (3) /.well-known/oauth-protected-resource: anonymous -> 401 plain Bearer + 401 problem document; credentials present
+        -> 404 errors/not-found (owner decision 38-06, "anon-401-parity (Recommended)"); residual: a well-formed but
+        invalid/expired bearer gets 404 there, where Boot 3.5 gave 401 invalid_token;
+    and the broker note: Boot-4 AMQP messages carry ISO dates where Boot 3.5 wrote epoch decimals (Boot-3.5 readers accept both).
+[ ] PR body: cache keys are now v4:{region}:: (CACHE_KEY_FORMAT_VERSION), so NO deploy-time cache flush is needed; the SEC-4
+    cache-type allowlist is NARROWED to uk.jtoye./java.util./java.math. (38-09).
+[ ] PR body: the restored settings Boot 4 had silently dropped (38-11): the Zipkin endpoint
+    (management.tracing.export.zipkin), prod/staging log retention (logging.logback.rollingpolicy), and the error-detail
+    settings (spring.web.error); scripts/check-boot-config-keys.sh is now a CI gate (§4.2 PASS).
+[ ] PR body points reviewers to the CLASSIFIED OpenAPI table in
+    .planning/phases/38-spring-boot-4-1-migration/evidence/38-14-openapi.md, not raw oasdiff output.
+[ ] PR body: the local Trivy image gate ran on the 2026-10-05 Trivy DB (13:07 UTC; evidence/38-15-cve-floors.txt), and CI's
+    gate on this push read 0 fixable CRITICAL/HIGH for the Boot-4 core-java image (§4.6); BOOT4-12 is complete.
+[ ] PR body cites the runtime proofs: evidence/38-17-runtime.txt (freshness, jar read-back, Keycloak offboard, /.well-known,
+    tracing, metrics, v4 cache) and this file (Temurin suites, Trivy gate, nightly 325/319/0/6).
+[ ] Watch the PR's gitleaks job: it runs gitleaks 8.27.2, and the 38-18 allowlist (acee00c5) was measured on 8.30.1 only.
+[ ] docs/CHANGELOG.md: add an entry whose HEADING cites the PR number (check-changelog-cites-pr.sh P-1; C-1 on main).
+[ ] Merge by SQUASH: rebase-merge strips the PR number from the subject and voids the changelog gate.
+[ ] Review series per D3: round 1 = /code-review <PR> --comment (the built-in skill, which forks; not
+    code-review:code-review); post a Review-Resolution comment after every round (resolution-template.md); later rounds
+    = /review-verify <PR> (previous findings + fix commits only); the series ends on the first round that admits zero,
+    whose resolution carries the Review-Record: line; then merge. No waivers except merges from the base.
+[ ] After merge: close #739 with a one-line pointer to the merged PR.
+[ ] After merge: main's push-triggered gitleaks scans the single squash commit; the content allowlist and the inline
+    gitleaks:allow (acee00c5) are what cover it — confirm that run is green.
+[ ] After merge: the main checkout's runtime-freshness gate reports DRIFT until main is rebuilt (38-17 note).
+[ ] No AI-attribution line anywhere: no Co-Authored-By, no session links, no "Generated with" footer in commits, the PR
+    body, comments or the changelog. Read the PR body back after posting.
+[ ] Carried red not owned by phase 38: check-handoff-contract.sh H-3 (HANDOFF.md more than 3 merged commits behind origin/main).
