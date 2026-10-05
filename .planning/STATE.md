@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-13-PLAN.md
-last_updated: "2026-10-05T15:03:00.000Z"
+stopped_at: Completed 38-14-PLAN.md
+last_updated: "2026-10-05T15:47:00.000Z"
 last_activity: 2026-10-05
-state_head: 392a2c9042ff760a104e2d034105fe91f90014cc
+state_head: 5f34def5571d7dcedf7314485bcba392efe2d3c5
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 155
-  completed_plans: 151
+  completed_plans: 152
   percent: 67
 ---
 
@@ -132,7 +132,19 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - The classic swap ADDS the classic pair, as the spike did. The literal "replace" was measured not to compile: classic carries modules, not tomcat/lettuce/rabbit/mail/validator/websocket.
   - Zipkin arm: Brave, Zipkin and Zipkin-with-Brave disappear, NoopTracerAutoConfiguration appears, and the must-have test names all three. Restores were sha256-verified; the closing census was 2/0 and liveness 6/0.
   - Carried: 38-16 metrics: +1 Java test file (2 integration tests). ADR-0006 may cite explicit 130 vs classic 133 with 3 intended classic-only entries. BOOT4-02 is complete.
-- Next: 38-14 (wave 7, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
+- 38-14 DONE 2026-10-05: the OpenAPI snapshot is regenerated on springdoc 3.1.1 by `updateOpenApiSnapshot` (`f5d537df`, sha256 `60c52aa1…`) and accepted with per-field evidence (`evidence/38-14-openapi.md`).
+  - OpenApiSnapshotTest was red on the old snapshot and is green on the new one, from fresh XML. The test file is unchanged and stays on `DELIBERATE_JACKSON2_LIST`; the allowlist is untouched.
+  - 18 newly required fields across 11 request DTOs all join to the 38-02 Boot-3.5 inventory (awk rc=0). Doctored pairs are UNMATCHED with rc=1. The relation is exact: all 43 inventory pairs are required in the new snapshot, and the 18 new ones are the `@NotBlank`/`@NotEmpty` pairs springdoc 2.8.6 did not document.
+  - The remaining 192 leaves are classified:
+    - introspection schemas behind the `GET /` redirect, which serves no body;
+    - the HttpStatus enum, which is a Spring Framework 7 change (javap: it equals spring-web 6.2.19 and 7.0.9 respectively), not springdoc's;
+    - `format: email` on 5 `@Email` fields;
+    - `exclusiveMinimum: 0` from an existing `@Positive` on `CreateRefundRequest.amountPennies`, the entry the spike did not list, with enforcement measured by a throwaway probe;
+    - `MyAccessDto.grantedShopIds` nullable (explicit `@Schema(nullable = true)`, Java type unchanged).
+  - `openapi-gate.sh` with checksum-verified oasdiff 1.23.0 is rc 0 on the new snapshot and rc 1 on the old one (58 changes, every one mapped to a class). Edge contract gate rc 0 (a doctored-required arm went red), edge-go rc 0, mcp-server ci/build/test rc 0 with 61 tests.
+  - Full integration suite: 771/0/1 skipped. The phase ledger has no red left. BOOT4-13 is complete.
+  - Carried: 38-16 owns the stale mcp-server comments (deferred-items.md) and may cite the contract summary in ADR-0006; no test counts changed. 38-17 must run `check-openapi-snapshot-fresh.sh` against the rebuilt runtime. 38-18's PR body should point reviewers to the classified table in the 38-14 evidence, not the raw oasdiff list.
+- Next: 38-15 (wave 8, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -795,6 +807,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P19 | 45 min | 3 tasks | 40 files |
 | Phase 38 P12 | 47 min | 2 tasks | 4 files |
 | Phase 38 P13 | 14 min | 2 tasks | 4 files |
+| Phase 38 P14 | 40 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -967,6 +980,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-13: the classic comparison ADDS spring-boot-starter-classic/-test-classic to the explicit build (the spike's route); a literal replacement drops every technology library and cannot compile
 - [Phase 38]: 38-13: all 3 classic-only auto-configurations are intended (Gson, an empty Spring Integration metrics class, Jackson 2); no starter added
 - [Phase 38]: 38-13: the census context undoes the test profile's Redis exclusion and @Profile("!test") caching, and asserts no auto-configuration is excluded
+- [Phase 38]: 38-14: springdoc 3.1.1's contract is accepted through the documented route (the regenerated snapshot in the same PR, no gate exception or config change); every item is proven to document behaviour the server already had, so it was not an owner decision
+- [Phase 38]: 38-14: the HttpStatus enum change in the snapshot is Spring Framework 7's (javap against spring-web 6.2.19 and 7.0.9), not springdoc's
+- [Phase 38]: 38-14: OpenApiSnapshotTest and JacksonLineContractTest's allowlist are untouched; the Jackson-2 normalizer reads springdoc 3.1.1 output
 
 ### Pending Todos
 
@@ -1036,8 +1052,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T15:03:00.000Z
-Stopped at: Completed 38-13-PLAN.md. Next is 38-14 (wave 7, sequential) on branch `phase-37-spring-boot-4-1`.
+Last session: 2026-10-05T15:47:00.000Z
+Stopped at: Completed 38-14-PLAN.md. Next is 38-15 (wave 8, sequential) on branch `phase-37-spring-boot-4-1`.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
