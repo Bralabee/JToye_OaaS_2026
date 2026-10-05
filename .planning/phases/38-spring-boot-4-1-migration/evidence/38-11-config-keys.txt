@@ -184,3 +184,116 @@ Regression check for the excludes that now TAKE EFFECT (beyond the plan's verify
   test-profile context. What is proven is that each exclude now names a class Boot lists in an
   AutoConfiguration.imports file (the precondition for Boot to apply it) and that every suite that
   runs with the exclusion applied is green.
+
+3. Task 1 tracer feedback gate (interactive, human_verify_mode end-of-phase, automated-only verify)
+---------------------------------------------------------------------------------------------------
+Re-ran the tracer verify on the committed GREEN tree (4b3811de): rc=0, :core-java:test executed,
+, non_ok=0.
+Tracer verified end-to-end; expanded to Task 2.
+
+4. Task 2 RED: RenamedConfigKeysBindingTest against the PRE-RENAME yml
+-----------------------------------------------------------------------
+Pre-rename copies: git show 6187936e:core-java/src/main/resources/{application,application-staging,application-prod}.yml
+into a scratch directory, sha256:
+  01896360520e7205ada4773a93caf6e8e646abc2df539135bbac070638fc267b  application.yml
+  074603a70ba42bebe14a5b7b9dfb017fb9a887743ccf327866bb46e8adcad45d  application-staging.yml
+  85949d6f6eb3a78b83e139a59e4552ed06ab69ffce6e216ddac3389a467463a5  application-prod.yml
+Command: JTOYE_BINDING_YML_DIR=<scratch>/prerename ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.RenamedConfigKeysBindingTest' --no-daemon
+rc=1; XML: tests="8" skipped="0" failures="7" errors="0" timestamp="2026-10-05T12:59:35.864Z"
+gsd check tdd-red-evidence: RED_EVIDENCE_OK / target_test_failed
+What came back (soft assertions, so every value is reported, not only the first):
+  FAIL  staging: message and binding errors ALWAYS, stacktrace ON_PARAM, exception false
+        [spring.web.error.include-message must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [spring.web.error.include-binding-errors must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [spring.web.error.include-stacktrace must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [spring.web.error.include-exception must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [include-message]
+        expected: ALWAYS
+        but was: NEVER
+        [include-binding-errors]
+        expected: ALWAYS
+        but was: NEVER
+        [include-stacktrace]
+        expected: ON_PARAM
+        but was: NEVER
+  FAIL  Zipkin endpoint: ZIPKIN_ENDPOINT drives it when set, in every profile
+        [profile null]
+        expected: "http://zipkin.test:9411/api/v2/spans"
+        but was: "http://localhost:9411/api/v2/spans"
+        [profile staging]
+        expected: "http://zipkin.test:9411/api/v2/spans"
+        but was: "http://localhost:9411/api/v2/spans"
+        [profile prod]
+        expected: "http://zipkin.test:9411/api/v2/spans"
+        but was: "http://localhost:9411/api/v2/spans"
+  FAIL  staging log retention: 15 days, 500MB total, 10MB files
+        [logging.logback.rollingpolicy.max-history must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [logging.logback.rollingpolicy.total-size-cap must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [logging.logback.rollingpolicy.max-file-size must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [max-history]
+        Expecting actual not to be null
+        [total-size-cap]
+        expected: 524288000B
+        but was: null
+        [max-file-size]
+        expected: 10485760B
+        but was: null
+  PASS  staging: the Prometheus registry stays enabled through base's management.prometheus.metrics.export.enabled
+  FAIL  prod log retention: 30 days, 1GB total, 10MB files
+        [logging.logback.rollingpolicy.max-history must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [logging.logback.rollingpolicy.total-size-cap must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [logging.logback.rollingpolicy.max-file-size must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [max-history]
+        Expecting actual not to be null
+        [total-size-cap]
+        expected: 1073741824B
+        but was: null
+        [max-file-size]
+        expected: 10485760B
+        but was: null
+  FAIL  base: error message and binding errors ALWAYS
+        [spring.web.error.include-message must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [spring.web.error.include-binding-errors must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [include-message]
+        expected: ALWAYS
+        but was: NEVER
+        [include-binding-errors]
+        expected: ALWAYS
+        but was: NEVER
+  FAIL  Zipkin endpoint: the placeholder default when ZIPKIN_ENDPOINT is unset, in every profile
+        [management.tracing.export.zipkin.endpoint must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [management.tracing.export.zipkin.endpoint must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [management.tracing.export.zipkin.endpoint must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+  FAIL  prod: message, binding errors and stacktrace NEVER, exception false, and every key bound
+        [spring.web.error.include-message must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [spring.web.error.include-binding-errors must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [spring.web.error.include-stacktrace must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [spring.web.error.include-exception must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+Read as Boot defaults: error detail NEVER/NEVER/NEVER (and exception false), the Zipkin endpoint stays
+http://localhost:9411/api/v2/spans even with ZIPKIN_ENDPOINT set, and the three rollingpolicy keys are
+unbound (null here; at runtime Boot's own defaults apply: 7 days history, no total cap, 10MB files).
+The one green case is correct: staging's Prometheus export comes from BASE's
+management.prometheus.metrics.export.enabled in both trees, which is why deleting staging's dead
+Boot-2 key changes nothing.
+Three values equal Boot's defaults (prod NEVER/false, the Zipkin default endpoint, the 10MB file
+size); those cases go red ONLY on the "must be bound" assertion. Without it they would pass on an
+ignored key, which is why every case asserts BindResult.isBound() first.
