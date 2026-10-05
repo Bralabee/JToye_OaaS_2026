@@ -1,0 +1,68 @@
+38-11 evidence: Boot 4 config keys, autoconfigure excludes and the check-boot-config-keys gate
+==============================================================================================
+Plan base (ledger): 6187936e83e7f0aac3bda8189d14f16a97db21ae
+Branch: phase-37-spring-boot-4-1. JDK and Gradle as the rest of phase 38 (Gradle 9.7.1, --no-daemon).
+Every test result below is read from core-java/build-local/test-results/test/*.xml after deleting
+that XML first and running :core-java:cleanTest, so no result is an UP-TO-DATE carry-over.
+
+1. Task 1 RED: ConfigKeyContractTest on the plan-base tree (no rename yet)
+--------------------------------------------------------------------------
+Command: ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.ConfigKeyContractTest' --no-daemon
+rc=1  (BUILD FAILED, 'There were failing tests')
+XML: tests="9" skipped="0" failures="3" errors="0" timestamp="2026-10-05T12:18:54.885Z"
+Failing (3): every spring/management/server/logging key ...; every spring.autoconfigure.exclude value ...;
+             every AutoConfiguration string literal in the test sources ...
+Green (6): the four instrument controls, the literal-pattern control, scanIsNotVacuous.
+gsd check tdd-red-evidence: RED_EVIDENCE_OK / target_test_failed (ConfigKeyContractTest, exit 1, 3 failing)
+
+Report counts (core-java/build-local/boot4/config-key-report.tsv): 7 yml files, 219 keys checked,
+3 yml exclude values, 13 AutoConfiguration literals in src/test/java.
+Verdicts: DEPRECATED=18 OK=204 EXCLUDE-MISSING=13 
+
+Every non-OK row of the RED report (file, key, verdict, detail):
+  core-java/src/main/resources/application-prod.yml	server.error.include-message	DEPRECATED	level=error replacement=spring.web.error.include-message
+  core-java/src/main/resources/application-prod.yml	server.error.include-binding-errors	DEPRECATED	level=error replacement=spring.web.error.include-binding-errors
+  core-java/src/main/resources/application-prod.yml	server.error.include-stacktrace	DEPRECATED	level=error replacement=spring.web.error.include-stacktrace
+  core-java/src/main/resources/application-prod.yml	server.error.include-exception	DEPRECATED	level=error replacement=spring.web.error.include-exception
+  core-java/src/main/resources/application-prod.yml	logging.file.max-size	DEPRECATED	level=error replacement=logging.logback.rollingpolicy.max-file-size
+  core-java/src/main/resources/application-prod.yml	logging.file.max-history	DEPRECATED	level=error replacement=logging.logback.rollingpolicy.max-history
+  core-java/src/main/resources/application-prod.yml	logging.file.total-size-cap	DEPRECATED	level=error replacement=logging.logback.rollingpolicy.total-size-cap
+  core-java/src/main/resources/application-staging.yml	server.error.include-message	DEPRECATED	level=error replacement=spring.web.error.include-message
+  core-java/src/main/resources/application-staging.yml	server.error.include-binding-errors	DEPRECATED	level=error replacement=spring.web.error.include-binding-errors
+  core-java/src/main/resources/application-staging.yml	server.error.include-stacktrace	DEPRECATED	level=error replacement=spring.web.error.include-stacktrace
+  core-java/src/main/resources/application-staging.yml	server.error.include-exception	DEPRECATED	level=error replacement=spring.web.error.include-exception
+  core-java/src/main/resources/application-staging.yml	logging.file.max-size	DEPRECATED	level=error replacement=logging.logback.rollingpolicy.max-file-size
+  core-java/src/main/resources/application-staging.yml	logging.file.max-history	DEPRECATED	level=error replacement=logging.logback.rollingpolicy.max-history
+  core-java/src/main/resources/application-staging.yml	logging.file.total-size-cap	DEPRECATED	level=error replacement=logging.logback.rollingpolicy.total-size-cap
+  core-java/src/main/resources/application-staging.yml	management.metrics.export.prometheus.enabled	DEPRECATED	level=error replacement=management.prometheus.metrics.export.enabled
+  core-java/src/main/resources/application.yml	server.error.include-message	DEPRECATED	level=error replacement=spring.web.error.include-message
+  core-java/src/main/resources/application.yml	server.error.include-binding-errors	DEPRECATED	level=error replacement=spring.web.error.include-binding-errors
+  core-java/src/main/resources/application.yml	management.zipkin.tracing.endpoint	DEPRECATED	level=error replacement=management.tracing.export.zipkin.endpoint
+  core-java/src/main/resources/application-test.yml	org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the production classpath (spring.autoconfigure.exclude[0])
+  core-java/src/test/resources/application-test.yml	org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath (spring.autoconfigure.exclude[0])
+  core-java/src/test/resources/application-test.yml	org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath (spring.autoconfigure.exclude[1])
+  core-java/src/test/java/uk/jtoye/core/security/OpenApiDevProfileGatingTest.java:63	org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath
+  core-java/src/test/java/uk/jtoye/core/security/OpenApiDevProfileGatingTest.java:64	org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath
+  core-java/src/test/java/uk/jtoye/core/security/OpenApiProdProfileGatingTest.java:78	org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath
+  core-java/src/test/java/uk/jtoye/core/security/OpenApiProdProfileGatingTest.java:79	org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath
+  core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersDevProfileTest.java:75	org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath
+  core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersDevProfileTest.java:76	org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath
+  core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersProdProfileTest.java:98	org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath
+  core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersProdProfileTest.java:99	org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath
+  core-java/src/test/java/uk/jtoye/core/security/StagingActuatorPortIsolationTest.java:65	org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath
+  core-java/src/test/java/uk/jtoye/core/security/StagingActuatorPortIsolationTest.java:66	org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration	EXCLUDE-MISSING	NOT listed in any AutoConfiguration.imports on the test classpath
+
+Count reconciliation:
+- Keys: 18 = base 3 (2 server.error + 1 zipkin) + staging 8 (4 server.error + 3 logging.file + 1 prometheus)
+  + prod 7 (4 server.error + 3 logging.file). This matches 38-RESEARCH "the 18" exactly. Every one is in
+  the Boot 4.1.1 metadata at deprecation level=error with the replacement named above, so an
+  unknown-key check alone would have passed all 18; the deprecated arm is what catches them.
+- Excludes: 13 = 1 Rabbit (src/main/resources/application-test.yml) + 2 Redis
+  (src/test/resources/application-test.yml) + 10 literals (2 in each of the five security tests).
+- Key total differs from the spike's 211 by design: the spike loaded "application-test.yml" from the
+  TEST classpath, where src/test/resources shadows src/main/resources (RabbitListenerContainerFactoryTest
+  records the shadowing), so it never read src/main/resources/application-test.yml (8 keys) and read the
+  test-resources copy (15 keys) in its place. 211 - 15 + 8 + 15 = 219.
+- The three OK literal rows are this test's own controls (FlywayAutoConfiguration and
+  DataRedisAutoConfiguration names); the Boot-3 control name is assembled from pieces so no literal in
+  the test spells a stale name.
