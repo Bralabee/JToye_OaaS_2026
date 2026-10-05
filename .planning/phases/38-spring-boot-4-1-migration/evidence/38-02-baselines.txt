@@ -68,3 +68,21 @@ $ awk -F'\t' '$2=="GuestOrderRequest" && $3=="customerEmail"{n++} END{print n+0}
 1                            (fail dir: property customerEmailX -> 0)
 $ awk -F'\t' '$2=="CreateCustomerRequest"{n++} END{print n+0}' ...
 2                            (fail dir: CreateCustomerRequestX -> 0)
+
+######################################################################################
+## Task 2: JsonbColumnsReadBackIntegrationTest (Jackson-2-era jsonb read-back)
+######################################################################################
+
+=== RED (read-back written first, no fixture exists)
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.boot4.JsonbColumnsReadBackIntegrationTest' --no-daemon
+rc=1
+JsonbColumnsReadBackIntegrationTest > vendor_onboarding_gate.evidence: Jackson-2-era stored text reads back to the same nested Map<String,Object> FAILED
+JsonbColumnsReadBackIntegrationTest > shops.opening_hours: Jackson-2-era stored text reads back to the same Map<String,String> FAILED
+JsonbColumnsReadBackIntegrationTest > products.allergen_spans: Jackson-2-era stored text reads back to the same List<AllergenSpan> FAILED
+3 tests completed, 3 failed
+BUILD FAILED in 37s
+XML: tests="3" skipped="0" failures="3" errors="0"
+message="org.opentest4j.AssertionFailedError: [jsonb golden fixture src/test/resources/jackson2-golden/jsonb/shops.opening_hours.json is missing (working dir /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37/core-java): the Jackson-2-era stored text was never captured]
+Expecting value to be true but was false
+(the same message for products.allergen_spans.json and vendor_onboarding_gate.evidence.json)
+gsd check tdd-red-evidence: RED_EVIDENCE_OK (target_test_failed, 3 failing)
