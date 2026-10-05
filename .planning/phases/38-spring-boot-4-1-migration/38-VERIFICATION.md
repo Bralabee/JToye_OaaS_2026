@@ -1,50 +1,12 @@
 ---
 phase: 38-spring-boot-4-1-migration
-verified: 2026-10-05T19:48:00Z
+verified: 2026-10-05T22:52:00Z
 status: passed
 score: 14/14 must-haves verified
 covered_files:
   - .github/workflows/ci-cd.yaml
   - .gitleaks.toml
   - .gitleaksignore
-  - .planning/phases/38-spring-boot-4-1-migration/38-01-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-01-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-02-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-02-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-03-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-03-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-04-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-04-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-05-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-05-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-06-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-06-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-07-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-07-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-08-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-08-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-09-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-09-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-10-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-10-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-11-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-11-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-12-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-12-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-13-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-13-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-14-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-14-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-15-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-15-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-16-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-16-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-17-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-17-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-18-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-18-SUMMARY.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-19-PLAN.md
-  - .planning/phases/38-spring-boot-4-1-migration/38-19-SUMMARY.md
   - AGENTS.md
   - CLAUDE.md
   - HANDOFF.md
@@ -59,6 +21,7 @@ covered_files:
   - core-java/src/main/java/uk/jtoye/core/config/CacheConfig.java
   - core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java
   - core-java/src/main/java/uk/jtoye/core/config/RateLimitConfig.java
+  - core-java/src/main/java/uk/jtoye/core/config/TenantCacheEvictor.java
   - core-java/src/main/java/uk/jtoye/core/dev/DemoImageManifest.java
   - core-java/src/main/java/uk/jtoye/core/gdpr/DsarIntakeService.java
   - core-java/src/main/java/uk/jtoye/core/media/MediaAssetService.java
@@ -81,6 +44,9 @@ covered_files:
   - core-java/src/main/resources/application-staging.yml
   - core-java/src/main/resources/application-test.yml
   - core-java/src/main/resources/application.yml
+  - core-java/src/test/java/uk/jtoye/core/boot4/CacheFormatIsolationIntegrationTest.java
+  - core-java/src/test/java/uk/jtoye/core/common/idempotency/IdempotencyFingerprintGoldenTest.java
+  - core-java/src/test/java/uk/jtoye/core/config/TenantCacheEvictorTest.java
   - docs/AI_CONTEXT.md
   - docs/api/openapi-snapshot.json
   - docs/architecture/ESSENTIAL_ARCHITECTURE.md
@@ -94,191 +60,192 @@ covered_files:
   - mcp-server/src/tools/create-order.ts
   - scripts/check-boot-config-keys.sh
   - scripts/check-doc-versions.sh
-covered_digest: "v2:sha256:ce936380db7f0a1bf25588d18c3a1883f486b093b67e97dfdf5bd2048a081a5e"
+covered_digest: "v2:sha256:b88aa7a6d5d3e73209353d1017bd851de1bb553878310220f5c717e5257a22ba"
 behavior_unverified: 0
 overrides_applied: 0
+re_verification:
+  previous_status: passed
+  previous_score: 14/14
+  gaps_closed: []
+  gaps_remaining: []
+  regressions: []
 ---
 
 # Phase 38: Spring Boot 4.1 Migration Verification Report
 
 **Phase Goal:** Move core-java from Spring Boot 3.5.16 to 4.1.x and prove the result green by test, gate and live runtime; close three defects today's tests do not catch (KeycloakAdminClient garbage body under Jackson 3; 18 silently ignored config keys needing an unknown-key gate; netty/Tomcat CVE pins moved to their Boot-4 lines); honour D-01..D-05.
-**Verified:** 2026-10-05T19:48:00Z
+**Verified:** 2026-10-05T22:52:00Z
 **Status:** passed
-**Re-verification:** No, initial verification
+**Re-verification:** Yes. The previous report (2026-10-05T19:48Z, tree `acee00c5`) went stale when the code-review fixes `c327360d` (WR-01) and `01a67384` (WR-02) changed covered source. This pass re-checked every must-have against HEAD `b6e87153` and gave fresh scrutiny to what those two commits touched.
 
-Method: SUMMARY claims were not used as evidence. Every row below was re-observed this session from the
-worktree source, the running container, GitHub run metadata, or a fresh local Gradle run (`--rerun`, XML read
-back). The 2 open review warnings (WR-01, WR-02) were judged against the must-haves and do not break one;
-they are carried as non-gating warnings below.
+Method: SUMMARY and REVIEW-FIX claims were not used as evidence. Code was read at HEAD, the two fix diffs were read line by line, the Spring Data Redis 4.1.1 bytecode was disassembled, a Jackson 3.1.7 probe was compiled and run, the non-Gradle gates were re-run, and test-result XML was read back. No Gradle was run, because the orchestrator's `test integrationTest --rerun-tasks` was in progress in this worktree; the unit XMLs it has already rewritten (22:46Z) are used below.
+
+## What changed since the last report
+
+`git diff acee00c5..HEAD -- core-java/src/main` touches exactly three files, all inside the two fix commits:
+
+| File | Change | Truths it can touch |
+| ---- | ------ | ------------------- |
+| `config/CacheConfig.java` | adds `import CacheKeyPrefix`, a javadoc block, and `static String legacyBoot35CacheKey(cacheName, key)` = `CacheKeyPrefix.simple().compute(cacheName) + key`. `jsonRedisSerializer()`, the validator, `CACHE_KEY_FORMAT_VERSION = "v4"` and `computePrefixWith` are byte-unchanged (read in the diff and at `:133-142`). | 7 |
+| `config/TenantCacheEvictor.java` | `evictEntity(UUID,...)` now also calls `evictLegacyBoot35Key(cache, key)` after the unchanged `cache.evict(key)` | 7 |
+| `common/idempotency/IdempotencyJson.java` | one added builder line `.enable(MapperFeature.DETECT_PARAMETER_NAMES)` (import present, `:5`) plus javadoc | 8 |
+
+Everything else changed since `acee00c5` is under `.planning/` or docs (ADR-0006, README/CLAUDE/AGENTS metric counts, `docs/metrics.json`). No yml, build file, fixture, snapshot or workflow moved.
 
 ## Goal Achievement
 
 ### Observable Truths
 
-ROADMAP.md carries no separate success-criteria list for Phase 38, so the roadmap contract is the goal text plus
-BOOT4-01..14 (REQUIREMENTS.md lines 210-223), which the plans restate. All 14 are verified below.
+ROADMAP.md carries no separate success-criteria list for Phase 38, so the contract is the goal text plus BOOT4-01..14 (REQUIREMENTS.md), restated by the plans.
 
-| #  | Truth (requirement) | Status | Evidence (observed this session) |
-| -- | ------------------- | ------ | -------------------------------- |
-| 1  | BOOT4-01: Boot 4.1.1 in both build files; horizons gate; CI on Temurin 25 | VERIFIED | `build.gradle.kts:2` and `core-java/build.gradle.kts:2` both `"4.1.1"`. `check-dependency-horizons.sh` rc=0 with row `spring-boot` sites `build.gradle.kts:2` + `core-java/build.gradle.kts:2`, eol_cycle 4.1, 2027-07-31, no exemption. Running jar holds `spring-boot-4.1.1.jar`. CI run 37348823924 (success) on `acee00c5`; `git diff --name-only acee00c5..HEAD` = 7 files, 0 outside `.planning/`. |
-| 2  | BOOT4-02: explicit per-module starters; no classic, no Jackson-2 autoconfig module, no gRPC module on the production classpath; census; permanent liveness tests | VERIFIED | `core-java/build.gradle.kts:240-370` declares webmvc, data-jpa, flyway, aspectj, security, oauth2-resource-server, validation, actuator, restclient, data-redis, cache, amqp, websocket, mail, webflux, webclient, zipkin and per-module test starters; no non-comment `classic`. Jar listing (239 libs): no `*classic*` starter (only `logback-classic`), no `spring-boot-jackson2`, no `*grpc*`. `Boot4ModuleLivenessIntegrationTest` 6/0 and `AutoConfigurationCensusIntegrationTest` 2/0 re-run green. |
-| 3  | BOOT4-03: Flyway liveness | VERIFIED | `spring-boot-starter-flyway` declared (l.244); `spring-boot-flyway-4.1.1.jar` in the running jar; `RlsContractTest` 7/0 and `Boot4ModuleLivenessIntegrationTest` re-run green on real Postgres. The "0 migrations when the module is removed, RlsContractTest red" arm is recorded in `evidence/38-04-suite-and-liveness.txt` and the liveness test is permanent; not re-broken this session (see Behavioral Spot-Checks). |
-| 4  | BOOT4-04: Jackson 3 only in main; deprecated converter switch never set; Boot defaults locked by a wire contract | VERIFIED | `rg -uu "com\.fasterxml\.jackson\.(databind\|core\|datatype\|dataformat\|module)" core-java/src/main` returned nothing (rc=1; control: same pattern finds the test-side imports). No `preferred-json-mapper` outside the contract test's own control fixture. `JacksonLineContractTest` 5/0 (includes the closed test-side DELIBERATE-JACKSON2 list) and `Jackson3WireContractTest` 12/0 re-run green. `IdempotencyJson` uses `builderWithJackson2Defaults()` deliberately (frozen format, BOOT4-08). |
-| 5  | BOOT4-05: KeycloakAdminClient disable body by content; unit test fails on the pre-fix shape; live offboard with control user | VERIFIED | `KeycloakAdminClient.setUserEnabled` takes/emits `tools.jackson` `ObjectNode`. `KeycloakAdminClientTest` 5/0. Independent fail arm (throwaway test, deleted, `git status` clean): `assertDisableBodyByContent` REJECTS the spike's garbage body (`{"array":false,...,"nodeType":"OBJECT"}`) and REJECTS an unflipped `enabled:true` body, ACCEPTS the correct body (3/3). Live: `evidence/38-17-runtime.txt` §6.6-6.10, offboard HTTP 200, Keycloak read-back `enabled=false` with id, username, `attributes.tenant_id` intact, control user still `enabled=true`, `keycloak_deprovisioned_at` set, and three jq arms (pre-offboard, garbage keys, changed tenant_id) each false. |
-| 6  | BOOT4-06: AMQP `JacksonJsonMessageConverter`, same trusted packages; Boot-3.5 broker messages and PENDING outbox rows readable; Jackson-3 output readable by Jackson 2 | VERIFIED | `RabbitMQConfig.java:433` `new JacksonJsonMessageConverter(TRUSTED_PAYLOAD_PACKAGES)`. Re-run green: `AmqpJackson2CompatibilityTest` 18/0, `OutboxPayloadCompatibilityTest` 21/0, `AmqpTypeIdDispatchIntegrationTest` 1/0, `MediaEventOutboxRepositoryTest` 2/0, `PaymentEventOutbox*` integration 8/0. Fixtures are the Boot-3.5-captured goldens (`GoldenFixturesIntegrityTest` 5/0). |
-| 7  | BOOT4-07: `GenericJacksonJsonRedisSerializer` with `BasicPolymorphicTypeValidator` allowlist; `v4:` key prefix; real-Redis proof; `jtoye.cache.errors` 0 | VERIFIED | `CacheConfig.java:97` `computePrefixWith(... "v4:" + ...)`, `:189-214` validator + serializer. `CacheSerializerTypeAllowlistTest` 16/0 and `CacheFormatIsolationIntegrationTest` 1/0 re-run green. Live (`38-17` §6.11, §7): keys `v4:products::tenant:...`, `v4:shops::...`; `jtoye_cache_errors_total` 0 on the final container; a deliberately corrupted `v4:` entry moved it to 1 (can fail) and the request degraded to the DB, not a 500. |
-| 8  | BOOT4-08: idempotency key reserved under Jackson 2 replays after deploy (no 422), under NOSUPERUSER; response bodies, DSAR ack, jsonb read back unchanged | VERIFIED | `IdempotencyJson` is a dedicated frozen mapper; `IdempotencyService:270,274` route through it. Re-run green: `IdempotencyFingerprintGoldenTest` 13/0 (7 request hashes + 4 stored response types against Boot-3.5-written fixtures), `IdempotencyLegacyHashReplayIntegrationTest` 2/0 (rls_test_role, i.e. NOSUPERUSER), `Customer/OrderIdempotencyIntegrationTest` 5/0, `DsarAckCompatibilityTest` 2/0, `JsonbColumnsReadBackIntegrationTest` 3/0. The 6 production call sites of `IdempotencyService.execute*` map onto those 7 fingerprints. WR-02 is a latent gap for a FUTURE adopter only (see Warnings). |
-| 9  | BOOT4-09 (+D-04, D-05): 401 plain `Bearer`, no `resource_metadata`; `/.well-known/oauth-protected-resource` answered by a suppression filter ahead of the framework's | VERIFIED | `ProtectedResourceMetadataSuppressionFilter` wired in `SecurityConfig.java:275-283` (anchored after the framework filter's predecessor, since `addFilterBefore` on that class is refused; comment records it). `ProtectedResourceMetadataSuppressionFilterTest` 18/0, `ProblemDetailAuthenticationEntryPointTest` 18/0, `UnauthenticatedProblemDetailIntegrationTest` 14/0 re-run green. Live on the rebuilt runtime (`38-17` §5): anonymous `/.well-known/...` -> 401 `WWW-Authenticate: Bearer` + problem document; credentialed -> 404 not-found problem document; garbage bearer on `/api/v1/shops` -> `Bearer error="invalid_token"...` with no `resource_metadata`; doctored-input arms FAIL (4 doctored FAIL lines). Owner "anon-401-parity" refinement (2026-10-05) is honoured; the recorded residual (well-formed invalid bearer on the metadata path gets 404) is the accepted one, not a gap. |
-| 10 | BOOT4-10: spring-statemachine 4.0.2 kept with `spring-security-access`; tests green; Framework-7 risk recorded | VERIFIED | `core-java/build.gradle.kts:255,259`; `spring-statemachine-core-4.0.2.jar` and `spring-security-access-7.1.1.jar` in the running jar. `StatemachineSecurityAccessTest` 2/0, `OrderStateMachineServiceTest` 11/0, `OrderStateMachineGuardVetoTest` 4/0, `VendorOnboardingStateMachineServiceTest` 13/0 re-run green. Risk recorded: `.planning/codebase/CONCERNS.md:195` and ADR-0006. |
-| 11 | BOOT4-11: 18 keys renamed and bound; Boot-3 excludes renamed; CI gate fails on unknown/deprecated key and invalid exclude, VOIDs on empty input, wired into CI | VERIFIED | Source: `spring.web.error.*` (application.yml:499), `management.tracing.export.zipkin.endpoint` (:563), `logging.logback.rollingpolicy.*` in prod and staging, dead staging prometheus key deleted. `RenamedConfigKeysBindingTest` 8/0 re-run green. Gate run fresh: `check-boot-config-keys.sh` rc=0, `tests=9 failures=0`, "218 key(s) in 7 yml file(s) and 36 autoconfigure exclude(s)". Fail arm: pointing `JTOYE_CONFIG_KEY_DIRS` at a scratch yml with a Boot-3 zipkin key, a `server.error.*` key and a bogus `spring.not-a-real-key` -> rc=1, 3 rows named (DEPRECATED, DEPRECATED, UNKNOWN); then a closing clean run rc=0. Wired: `.github/workflows/ci-cd.yaml:269-270`; `check-gate-enforcement.sh` rc=0 (46 gates). VOID (rc=2) arms are documented in the script and in `evidence/38-11-config-keys.txt`; not re-run. |
-| 12 | BOOT4-12: CVE floors on Boot-4 lines | VERIFIED | `core-java/build.gradle.kts`: no non-comment netty line; `extra["tomcat.version"]="11.0.26"` (:71), `rabbit-amqp-client.version` 5.34.0 (:131), `jackson-2-bom.version` 2.22.3 (:222), `jackson-bom.version` 3.1.7 (:231). Running jar read-back: `netty-*-4.2.17.Final` throughout (no 4.1.x), `tomcat-embed-core-11.0.26`, `amqp-client-5.34.0`, `jackson-core/databind-3.1.7` and `-2.22.3`. CI "Trivy image gate" step success on the branch image (`evidence/38-18` §4.6); local 0.70.0 scan and near-miss arms are in `evidence/38-15-cve-floors.txt`. |
-| 13 | BOOT4-13: OpenAPI snapshot regenerated only after every newly required field proven enforced on Boot 3.5; gate and consumers green | VERIFIED | Commit `f5d537df` "regenerate ... with updateOpenApiSnapshot". `evidence/38-02-request-body-constraints-boot35.tsv` (55 rows, measured on 3.5.16). `RequestBodyConstraintEnforcementTest` 2/0 and `OpenApiSnapshotTest` (check mode) 1/0 re-run green against the committed snapshot. CI jobs "OpenAPI Breaking-Change Gate" and "MCP Server Tests" success on `acee00c5`. |
-| 14 | BOOT4-14: docs, gates, runtime parity, images rebuilt, jar read-back, freshness/branch gates, tracing + Prometheus live, nightly E2E on the branch runtime | VERIFIED | Gates run this session: `check-doc-versions` rc=0 (153 claims), `check-doc-citations` rc=0 (29 verified, 0 violations), `check-doc-metrics` rc=0 (37), `docs-freshness` OK (4286 invocations, matches CLAUDE.md), `check-branch-behind-base` rc=0 (0 behind `origin/main` 03022f21, fetched fresh), `check-dependency-horizons` rc=0. Runtime: container `jtoye_oaas_2026-core-java-1` (created 2026-10-05T17:11:27Z, after the newest core-java commit at 16:11:29Z) holds Boot 4.1.1; `application.yml` inside `/app/app.jar` md5 `673618e0...` equals source. Live tracing (32-hex traceId in order-request log lines), Prometheus scrape and alert-metric gate PASS in `38-17` §7. Nightly run 37348829067 (workflow_dispatch, `acee00c5`, success): 325 executed / 319 passed / 0 failed / 6 skipped, read from the report artifact. |
+| #  | Truth (requirement) | Status | Evidence |
+| -- | ------------------- | ------ | -------- |
+| 1  | BOOT4-01: Boot 4.1.1; horizons gate; CI on Temurin 25 | VERIFIED | `build.gradle.kts:2` and `core-java/build.gradle.kts:2` both `"4.1.1"` (re-read at HEAD). No build file changed since `acee00c5`. CI run 37348823924 on `acee00c5` was success; see item O-2 for the CI run the final head still needs. |
+| 2  | BOOT4-02: explicit per-module starters; liveness and census tests | VERIFIED (carried) | `core-java/build.gradle.kts` unchanged since the last pass, which read the starter block and the 239-lib jar listing (no classic, no jackson2, no grpc). Fix commits touch no dependency line. |
+| 3  | BOOT4-03: Flyway liveness | VERIFIED (carried) | Unchanged inputs; permanent liveness test and `RlsContractTest` re-run green in the last pass. |
+| 4  | BOOT4-04: Jackson 3 only in main; wire contract | VERIFIED | `git grep` for `com.fasterxml.jackson.(databind\|core\|datatype\|dataformat\|module)` in `core-java/src/main` returned rc=1 (no match) at HEAD, so the WR-02 edit introduced no Jackson-2 import (it uses `tools.jackson.databind.MapperFeature`). `IdempotencyJson` still builds on `builderWithJackson2Defaults()` deliberately. |
+| 5  | BOOT4-05: Keycloak disable body by content; live offboard | VERIFIED (carried) | `KeycloakAdminClient` is not in the fix diff. The last pass's independent fail arm and the live offboard evidence (`evidence/38-17-runtime.txt` 6.6-6.10) stand. |
+| 6  | BOOT4-06: AMQP converter, in-flight state both directions | VERIFIED (carried) | `RabbitMQConfig.java:433` `new JacksonJsonMessageConverter(TRUSTED_PAYLOAD_PACKAGES)` re-read at HEAD; file not in the fix diff. |
+| 7  | BOOT4-07: Redis serializer allowlist, `v4:` prefix, real-Redis proof, `jtoye.cache.errors` 0 | VERIFIED | The serializer, `BasicPolymorphicTypeValidator` allowlist (`CacheConfig.java:226,250-251`) and prefix (`:134`) are unchanged by the fix. The new dual eviction deletes the Boot-3.5 key and never reads it, so the read path and the error counter are untouched. See "Fix-commit scrutiny, WR-01" below: the new behaviour is behaviorally tested, with a can-fail instrument. |
+| 8  | BOOT4-08: idempotency key reserved under Jackson 2 replays after deploy (no 422), NOSUPERUSER | VERIFIED | `IdempotencyJson` stays the sole reader/writer (`IdempotencyService:270,274`, the only two `IdempotencyJson.` call sites in main). Fresh XML written by the orchestrator's run at 22:46:34Z: `IdempotencyFingerprintGoldenTest` tests=15 failures=0 errors=0, including all 7 `request hash` rows and all 4 `stored response` rows against the Boot-3.5-written fixtures. See "Fix-commit scrutiny, WR-02" below. |
+| 9  | BOOT4-09 (+D-04, D-05): plain-Bearer 401; `/.well-known/oauth-protected-resource` answered by the suppression filter | VERIFIED (carried) | `SecurityConfig.java:283` still wires `ProtectedResourceMetadataSuppressionFilter` via `addFilterAfter`; no security file is in the fix diff. Live evidence in `38-17` section 5 stands. |
+| 10 | BOOT4-10: spring-statemachine 4.0.2 kept | VERIFIED (carried) | No dependency or statemachine file in the fix diff. |
+| 11 | BOOT4-11: 18 keys renamed; CI unknown-key gate | VERIFIED (carried) | No yml and no `scripts/check-boot-config-keys.sh` change since `acee00c5` (`git diff --stat`). The gate itself runs a Gradle test, so it was not re-run here; `check-gate-enforcement.sh` rc=0 (46 gates) re-run. |
+| 12 | BOOT4-12: CVE floors on Boot-4 lines | VERIFIED | `core-java/build.gradle.kts:71` `tomcat.version` 11.0.26, `:131` `rabbit-amqp-client.version` 5.34.0, `:222` `jackson-2-bom.version` 2.22.3, `:231` `jackson-bom.version` 3.1.7; no non-comment netty line. File unchanged since the last pass. |
+| 13 | BOOT4-13: OpenAPI snapshot | VERIFIED (carried) | No snapshot, controller or DTO change in the fix diff (`ErasureResponse`-style zero-diff holds: only the 3 main files above moved). |
+| 14 | BOOT4-14: docs, gates, runtime parity, nightly | VERIFIED, with open closing items O-1..O-3 | Gates re-run at HEAD this session: `docs-freshness` OK (4292), `check-doc-metrics` PASS 37/37, `check-doc-versions` PASS 153 claims, `check-doc-citations` PASS 29 verified / 0 violations (caveat below), `check-gate-enforcement` PASS 46 gates, `check-branch-behind-base` PASS (0 behind `origin/main` 03022f21, fetched fresh). Runtime parity for the current HEAD is item O-1. |
 
-**Score:** 14/14 truths verified (0 present, behavior-unverified; 0 overrides).
+**Score:** 14/14 truths verified (0 present, behavior-unverified; 0 overrides). "Carried" means the inputs for that truth are provably unchanged since the last pass (diff-checked above) and the last pass's observation stands; every truth the fix commits could reach (7, 8, 14) was re-observed.
 
-Decisions honoured: D-01 (Jackson 3, row 4), D-02 (explicit starters, row 2), D-03 (statemachine kept, row 10), D-04
-and D-05 (rows 9), including the owner's 2026-10-05 anon-401-parity refinement.
+Decisions honoured: D-01 (Jackson 3, truth 4), D-02 (truth 2), D-03 (truth 10), D-04 and D-05 including the owner's 2026-10-05 anon-401-parity refinement (truth 9).
 
-### Deferred Items
+### Fix-commit scrutiny
 
-None. No gap was deferred to a later phase.
+**WR-01, `c327360d` (dual eviction in `TenantCacheEvictor`).** Checked against the code, not the report.
 
-### Required Artifacts
+- *Single funnel.* `git grep` for `@CacheEvict|.evict(|getCache(` in main finds exactly one active `cache.evict` (`TenantCacheEvictor.java:153`) and one `getCache` (`:147`). The `@CacheEvict(allEntries=...)` hits are comments. So every eviction in main (`ShopAccessService:539` for `shopMembership`, `ProductService`, `ShopService`, `SyncService`) goes through the method that now also deletes the legacy key. The claim "every eviction in main code goes through evictEntity" holds.
+- *Key shape.* Boot 3.5 key = `CacheKeyPrefix.simple()` (`{region}::`) + the `tenant:{tenantId}:{method}:{id}` suffix; the v4 key is `v4:{region}::` + the same suffix (`CacheConfig.java:134`, `TenantCacheEvictor.java:152`). The legacy key keeps the tenant segment, so the delete cannot widen tenant scope. The integration test anchors this to a literal `BOOT35_KEY` independent of `legacyBoot35CacheKey`, and asserts the other tenant's legacy entry survives byte-identical (SHA-256).
+- *Can fail.* The integration arm first asserts all four keys exist before the eviction (`containsExactlyInAnyOrder(BOOT4_KEY, BOOT35_KEY, otherBoot4Key, otherBoot35Key)`), then asserts the legacy key is absent immediately and the other tenant's two remain. The unit test verifies `writer.evictIfPresent(eq("shops"), aryEq("shops::"+suffix))` and `verifyNoMoreInteractions`, so removing the call, changing the key or widening the scope turns it red. The break arms were recorded by the fixer (REVIEW-FIX: arm A `rc=1 failures="1"` integration, `failures="2"` unit; arm B rethrow `failures="1"`); I did not re-run them (no Gradle).
+- *Best-effort.* The try/catch is on `RuntimeException`, WARN-logs region and key, and cannot fail the caller's write; the unit test `A failing legacy delete is logged, not propagated` passed (WARN line visible in the fresh XML `system-out`).
+- *Fresh results.* `TenantCacheEvictorTest` tests=11 failures=0 (orchestrator run, 22:46:37Z). `CacheFormatIsolationIntegrationTest` tests=2 failures=0 (fixer's real-Redis run, 21:04:40Z, the XML currently on disk; the orchestrator's integration run will rewrite it).
+- *Synchronous legacy delete.* Verified in 4.1.1 bytecode: `DefaultRedisCacheWriter.evict(String,byte[])` branches on `writeAsynchronously()` and, when true, hands the DEL to the async writer and returns; `writeAsynchronously()` is `supportsAsyncRetrieve() && asynchronousWrites`, and the 3-arg constructor passes `asynchronousWrites = true` (`iconst_1`). The fixer's choice of `evictIfPresent` for the legacy key is therefore correct, and its explanation is accurate.
+- *Residual (other direction).* A write on a Boot-3.5 pod still cannot reach `v4:` keys. This is now recorded with bounds (shop-grant revoke 5 min, product 10, shop 15) and the SCAN+UNLINK post-rollout step in ADR-0006 "Deploy notes" and "Rollback notes" (read in the diff). That discharges review fix (b) from the previous W-1 and the code half is fix (a); the owner's original request for a ruling is met by having both.
+
+**WR-02, `01a67384` (`DETECT_PARAMETER_NAMES`).**
+
+- *The premise is real and I reproduced both directions.* A throwaway probe (scratchpad, not in the repo) compiled with `-parameters` against `tools.jackson` 3.1.7 and the same `builderWithJackson2Defaults()`: without the feature, `write={"zeta":"z","alpha":1}` and read throws `InvalidDefinitionException`; with `.enable(MapperFeature.DETECT_PARAMETER_NAMES)`, `write={"alpha":1,"zeta":"z"}` and the read round-trips. So the one-line edit is the thing that changes behaviour, and the two new golden cases can go red.
+- *No current adopter moves.* The only stored response types are `CustomerDto`, `MediaAcceptDto` (two controllers), `OrderDto`, `WebhookDeliveryView` (from the four `IdempotencyOutcome<...>` call sites; the storefront call uses `executeWithoutStoringResponse`), and the 7 request fingerprints cover those call sites. All 7 hashes and 4 bodies are green against the unchanged Boot-3.5 fixtures (fresh XML 15/0), and the fixer's `git diff --quiet` shows no fixture was touched.
+- *Honesty of the anchor.* The expected bytes for the new constructor-only DTO are a reconstruction (Jackson 2.21.7 plus `ParameterNamesModule`, out of tree), not a Boot-3.5 pod capture. The test javadoc says so. I did not re-measure Jackson 2 here; the Jackson-3 side is reproduced above. This is acceptable because no current adopter has such a type; it matters only to a future adopter.
+- *The "frozen" rule.* The javadoc records that this one in-place edit was made before the mapper shipped, and that the never-edit rule applies from the first Boot-4 release.
+
+### New observation (not a must-have; owner decision, not a gap)
+
+**W-3. Spring Data Redis 4 makes the PRIMARY `cache.evict` fire-and-forget.** Confirmed in the 4.1.1 bytecode above: `TenantCacheEvictor.java:153` `cache.evict(key)` on a `RedisCache` built from `RedisCacheManager.builder(connectionFactory)` (`CacheConfig.java:162`, no `immediateWrites()`) issues the DEL asynchronously, and an async failure never reaches `RedisCacheErrorHandler`. Boot 3.5's evict was synchronous. Consequence: after a `shopMembership` revoke commits there is a short window (typically sub-millisecond to a few ms) before the DEL lands, whereas `ShopAccessService.evictMembership`'s javadoc assumes none. The integration test itself polls up to 5 s for the v4 key to disappear (`CacheFormatIsolationIntegrationTest` eviction arm), which encodes the asynchrony rather than closing it.
+
+Why it is not a gap: BOOT4-07 asks for the serializer, prefix, isolation and a zero error counter, all proven; no must-have or requirement asserts synchronous eviction, and the window is small and TTL-backstopped. It is a real behaviour change from Boot 3.5 on an authorization cache, so it should not be left unruled. Both the review fixer and the security audit (`38-SECURITY.md` item 1) record it with the same two options: `cache.evictIfPresent(key)` in `TenantCacheEvictor` (the legacy path already does this) or `RedisCacheWriter.create(cf, c -> c.immediateWrites())`, each needing its own test. **Owner decision requested before the first production rollout.**
+
+### Items the orchestrator closes (not gaps)
+
+- **O-1. Runtime parity for HEAD.** The running container `jtoye_oaas_2026-core-java-1` (up 6 h, healthy) is built from an image tagged 2026-10-05 17:03:46 UTC. Commit `01a67384` is 21:00:56 UTC and `c327360d` 20:54:23 UTC, so the local compose runtime predates WR-01 and WR-02 and `check-runtime-freshness.sh` reports DRIFT for core-java. The orchestrator is rebuilding after the regression suite. I checked whether the live-runtime must-haves depend on the fixed paths: they do not. The live evidence (truths 5, 7, 9, 14: Keycloak offboard, `v4:` keys with `jtoye_cache_errors_total` 0 and the corrupted-entry arm, 401/404, tracing, Prometheus, nightly) exercises the serializer, prefix, Keycloak client and security chain, none of which changed; the dual eviction cannot be exercised on a compose stack with no Boot-3.5 pod; and the WR-02 mapper change moves no byte for any current adopter. So the pre-fix runtime is valid evidence for those truths. After the rebuild, re-run `scripts/check-runtime-freshness.sh` (needs the compose env file this shell lacks) and read `application.yml` and the `IdempotencyJson` class out of the running jar, to close the parity half of BOOT4-14 for the final head. A cheap live spot-check that adds value once rebuilt: a shop edit still serves fresh data and `jtoye_cache_errors_total` stays 0.
+- **O-2. CI on the final head.** `origin/phase-37-spring-boot-4-1..HEAD` is 13 commits, including both code fixes; CI run 37348823924 and nightly 37348829067 are on `acee00c5`, which does not contain them. Push and let the required jobs run green on the final head. The nightly need not be re-run for these two changes (they touch cache eviction and one mapper setting), but the standard CI jobs should.
+- **O-3. Full regression result.** The orchestrator's `test integrationTest --rerun-tasks` result is reported separately. Until it lands, the evidence for the two fix areas is: unit tests fresh at 22:46Z (golden 15/0, evictor 11/0), and the real-Redis integration at 21:04Z from the fixer's run.
+
+## Required Artifacts
 
 | Artifact | Expected | Status | Details |
 | -------- | -------- | ------ | ------- |
-| `core-java/build.gradle.kts` | Boot 4.1.1, starters, CVE keys | VERIFIED | read in full for the dependency/extra blocks |
-| `core-java/.../IdempotencyJson.java` | frozen fingerprint mapper | VERIFIED | wired at `IdempotencyService:270,274`; golden-tested |
-| `core-java/.../CacheConfig.java` | v4 prefix, allowlist, Jackson-3 serializer | VERIFIED | wired as the CacheManager default config |
+| `core-java/.../TenantCacheEvictor.java` | single eviction funnel + transitional legacy delete | VERIFIED | read in full at HEAD; one caller path for every eviction |
+| `core-java/.../CacheConfig.java` | `v4` prefix, allowlist, `legacyBoot35CacheKey` | VERIFIED | helper has exactly one caller (`TenantCacheEvictor:173`) |
+| `core-java/.../IdempotencyJson.java` | frozen fingerprint mapper incl. parameter names | VERIFIED | wired at `IdempotencyService:270,274`; golden-tested |
 | `core-java/.../RabbitMQConfig.java` | `JacksonJsonMessageConverter` | VERIFIED | `:433` |
-| `core-java/.../ProtectedResourceMetadataSuppressionFilter.java` | D-05 filter | VERIFIED | registered in `SecurityConfig:283`; live-proven |
-| `core-java/.../KeycloakAdminClient.java` | Jackson-3 body | VERIFIED | live-proven |
-| `scripts/check-boot-config-keys.sh` | unknown-key gate | VERIFIED | run, fail-armed, wired in CI |
-| `docs/api/openapi-snapshot.json` | regenerated snapshot | VERIFIED | check mode green |
-| `docs/architecture/decisions/ADR-0006-spring-boot-4-migration.md` | migration record | VERIFIED | exists, cited by CONCERNS.md and the horizons gate |
-| `infra/dependency-horizons.yaml` spring-boot row | 4.1, no exemption | VERIFIED | gate rc=0 |
+| `core-java/.../ProtectedResourceMetadataSuppressionFilter.java` | D-05 filter | VERIFIED | `SecurityConfig:283` |
+| `core-java/.../KeycloakAdminClient.java` | Jackson-3 body | VERIFIED | not in fix diff |
+| `scripts/check-boot-config-keys.sh` | unknown-key gate | VERIFIED | unchanged; wired in CI (`check-gate-enforcement` PASS) |
+| `docs/api/openapi-snapshot.json` | regenerated snapshot | VERIFIED | unchanged |
+| `ADR-0006-spring-boot-4-migration.md` | migration record + deploy/rollback notes | VERIFIED | WR-01 deploy and rollback entries present and consistent with the code (the ADR says the legacy delete is synchronous, which matches `evictIfPresent`) |
 
-### Key Link Verification
+## Key Link Verification
 
 | From | To | Via | Status | Details |
 | ---- | -- | --- | ------ | ------- |
-| `SecurityConfig` | suppression filter | `addFilterAfter(new ProtectedResourceMetadataSuppressionFilter(...))` | WIRED | `:283`; live 404/401 behaviour confirms it is ahead of the framework filter |
-| `CacheConfig.cacheManager` | `jsonRedisSerializer()` + `v4:` prefix | `serializeValuesWith` / `computePrefixWith` | WIRED | live Redis keys carry `v4:` |
-| `IdempotencyService` | `IdempotencyJson` | `serialize`/`deserialize` | WIRED | no injected mapper remains |
-| `RabbitMQConfig` | trusted-package list | converter constructor | WIRED | |
-| `ci-cd.yaml` | `check-boot-config-keys.sh` | JDK-job step | WIRED | `:269-270`; `check-gate-enforcement.sh` rc=0 |
-| `KeycloakDeprovisionService` | `KeycloakAdminClient.setUserEnabled` | offboard path | WIRED | live offboard disabled the user |
+| `ShopAccessService.evictMembership` | `TenantCacheEvictor.evictEntity` | `cacheEvictor.evictEntity("shopMembership","resolveMembership",userId)` `:539` | WIRED | reaches both key generations |
+| `TenantCacheEvictor.evictEntity` | `CacheConfig.legacyBoot35CacheKey` | `evictLegacyBoot35Key` `:155,173` | WIRED | real-Redis test proves the key is removed |
+| `CacheConfig.cacheManager` | `v4:` prefix + `jsonRedisSerializer()` | `computePrefixWith` `:134`, `serializeValuesWith` `:139` | WIRED | unchanged |
+| `IdempotencyService` | `IdempotencyJson` | `:270,274` | WIRED | no injected mapper remains |
+| `SecurityConfig` | suppression filter | `addFilterAfter` `:283` | WIRED | unchanged |
+| `ci-cd.yaml` | `check-boot-config-keys.sh` | JDK-job step | WIRED | `check-gate-enforcement` PASS |
 
-### Data-Flow Trace (Level 4)
+## Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 | -------- | ------------- | ------ | ------------------ | ------ |
-| Cache regions | cached ProductDto/ShopDto | Redis via serializer, DB on miss | Yes: live `v4:` keys read back, corrupted entry degrades to DB | FLOWING |
-| Keycloak disable PUT | request body | searched user rep + `enabled` flip | Yes: Keycloak read-back shows `enabled=false` | FLOWING |
-| Config keys | zipkin endpoint, error detail, rollout policy | `application*.yml` -> Boot binding | Yes: `RenamedConfigKeysBindingTest` asserts bound values per profile | FLOWING |
-| Idempotency replay | stored `response_body` | `idempotency_keys` row written by Boot-3.5 fixtures | Yes: legacy-hash replay test under `rls_test_role` | FLOWING |
+| Legacy cache delete | legacy key bytes | `CacheKeyPrefix.simple()` + `tenant:..` suffix, UTF-8 | Yes: SCAN output in the integration test shows the key removed and the other tenant's survives | FLOWING |
+| Idempotency fingerprint | request hash | `IdempotencyJson.write` of the real adopter request records | Yes: 7 hashes equal the Boot-3.5 fixtures | FLOWING |
+| Cache regions | cached DTOs | Redis via the unchanged serializer | Yes (last pass, live `v4:` keys) | FLOWING |
 
-### Behavioral Spot-Checks
-
-All runs from `/home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37` with `--rerun`; XML read back (tests/failures/errors).
+## Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
-| Unit group (12 classes: Jackson line + wire contract, Keycloak, 401/404 filter and entry point, idempotency golden, golden integrity, cache allowlist, outbox, AMQP, renamed keys, statemachine security) | `./gradlew :core-java:test --tests ... --rerun` | 141 tests, 0 failures, 0 errors | PASS |
-| Config-key gate on the real tree | `bash scripts/check-boot-config-keys.sh` | rc=0, tests=9 failures=0 | PASS |
-| Config-key gate on a bad yml (fail arm) | `JTOYE_CONFIG_KEY_DIRS=<scratch> bash scripts/check-boot-config-keys.sh` | rc=1, 3 keys named; then clean re-run rc=0 | PASS (can fail) |
-| Keycloak by-content assertion accepts/rejects | throwaway test calling `assertDisableBodyByContent` (deleted; `git status` clean) | garbage rejected, unflipped rejected, correct accepted | PASS (can fail) |
-| Integration group on real Testcontainers (liveness, census, cache isolation, RLS contract, jsonb read-back, 401 problem document, AMQP dispatch, legacy-hash replay under NOSUPERUSER, outbox, order/customer idempotency, OpenAPI snapshot) | `./gradlew :core-java:integrationTest --tests ... --rerun` | all classes 0 failures, 0 errors | PASS |
-| Statemachine services | `./gradlew :core-java:test --tests '*StateMachine*' --rerun` | 28 tests (13+4+11), 0 failures | PASS |
-| Request-body enforcement oracle | `:core-java:test --tests '*RequestBodyConstraintEnforcementTest'` | 2/0 | PASS |
-| Running jar contents | `docker exec jtoye_oaas_2026-core-java-1 unzip -l /app/app.jar` | boot 4.1.1, jackson 3.1.7 + 2.22.3, netty 4.2.17, tomcat 11.0.26, amqp-client 5.34.0, no classic/jackson2/grpc starters | PASS |
-| Running `application.yml` vs source | md5 of jar entry vs `core-java/src/main/resources/application.yml` | identical (`673618e0d6c805bb9505df06db8bc9a4`) | PASS |
-| CI + nightly metadata | `gh run view 37348823924`, `gh run view 37348829067` | both success, `headSha=acee00c5`; all required CI jobs success (3 deploy-type jobs skipped by design) | PASS |
-| Doc/version/metrics/citation/gate-enforcement/horizons/branch-behind gates | `scripts/check-*.sh` (horizons with `/usr/bin` first on PATH) | all rc=0 | PASS |
-| `check-runtime-freshness.sh` | `bash scripts/check-runtime-freshness.sh` | rc=2 PARSE ERROR: `docker compose config` needs the env file this shell lacks | SKIP: the recorded run is `38-17` §6.13 (rc=0, 4 services FRESH); the parity it asserts was re-established directly by the jar and `application.yml` read-back above |
+| Idempotency golden incl. constructor-only DTO | read `TEST-...IdempotencyFingerprintGoldenTest.xml` (orchestrator run 22:46:34Z) | tests=15 failures=0 errors=0 | PASS |
+| Evictor unit incl. dual delete, failure isolation, non-Redis | read `TEST-...TenantCacheEvictorTest.xml` (22:46:37Z) | tests=11 failures=0 errors=0 | PASS |
+| Real-Redis dual eviction + cache isolation | read `TEST-...CacheFormatIsolationIntegrationTest.xml` (fixer run 21:04:40Z) | tests=2 failures=0 errors=0 | PASS (to be re-confirmed by the orchestrator's integration run) |
+| `DETECT_PARAMETER_NAMES` is load-bearing on Jackson 3.1.7 | scratchpad probe, same builder, with and without the feature | without: wrong order + `InvalidDefinitionException`; with: creator order + round-trip | PASS (can fail) |
+| Primary evict is async in 4.1.1 | `javap -c` of `DefaultRedisCacheWriter.evict` | `writeAsynchronously()` branch to `AsyncCacheWriter.remove`; default `asynchronousWrites=true` | CONFIRMED (W-3) |
+| docs / metrics / versions / citations / gate-enforcement / branch-behind-base | `scripts/*.sh` | docs-freshness OK (4292); metrics 37/37; versions 153 drift=0; citations 29 verified 0 violations; gates 46 PASS; 0 behind origin/main | PASS |
+| No Jackson-2 imports in main | `git grep` for `com.fasterxml.jackson.(databind\|core\|...)` in `core-java/src/main` | rc=1, no match | PASS |
+| No debt markers in the three fix files | `git grep -E "TBD\|FIXME\|XXX"` on them | none | PASS |
+| `check-boot-config-keys.sh`, Gradle suites, Trivy, Playwright | not run | n/a | SKIPPED (Gradle collision; inputs unchanged; covered by CI on `acee00c5` and O-2/O-3) |
 
-Not re-run (cost, covered by CI run 37348823924 and the committed evidence): the full unit (1490/0/1) and integration (771/0/6)
-suites; the break arms that remove the Flyway starter or the suppression filter; Trivy; the Playwright nightly.
-CI evidence for the first two is the same code (`git diff acee00c5..HEAD` touches only `.planning/`).
+Caveat on the citations gate: it printed `PASS` but also a `VOID` for `docs/ops/terminal-states.yaml` because the machine python shim blocked a base-env `python3` call (an environment fact, not a repo defect; that doc carries 0 citations). The other eight docs verified.
 
-### Probe Execution
+## Probe Execution
 
-Step 7c: SKIPPED. No `scripts/*/tests/probe-*.sh` is declared by the phase plans (`rg` over the PLAN/SUMMARY files finds none).
+Step 7c: SKIPPED. No `scripts/*/tests/probe-*.sh` is declared by the phase plans.
 
-### Requirements Coverage
+## Requirements Coverage
 
-| Requirement | Source Plans | Description | Status | Evidence |
-| ----------- | ------------ | ----------- | ------ | -------- |
-| BOOT4-01 | 38-03, 38-16, 38-18 | Boot 4.1.1, horizons gate, Temurin CI | SATISFIED | Truth 1 |
-| BOOT4-02 | 38-03, 38-04, 38-12, 38-13, 38-19 | explicit starters, census, liveness | SATISFIED | Truth 2 |
-| BOOT4-03 | 38-03, 38-04 | Flyway liveness | SATISFIED | Truth 3 |
-| BOOT4-04 | 38-05..10, 38-12, 38-19 | Jackson 3 only in main | SATISFIED | Truth 4 |
-| BOOT4-05 | 38-07, 38-17 | Keycloak body + live offboard | SATISFIED | Truth 5 |
-| BOOT4-06 | 38-01, 38-08 | AMQP converter + in-flight state | SATISFIED | Truth 6 |
-| BOOT4-07 | 38-01, 38-09, 38-17 | Redis serializer + v4 prefix | SATISFIED | Truth 7 |
-| BOOT4-08 | 38-01, 38-02, 38-10 | persisted-JSON continuity | SATISFIED | Truth 8 |
-| BOOT4-09 | 38-02, 38-06, 38-17 | Bearer 401 + D-05 filter | SATISFIED | Truth 9 |
-| BOOT4-10 | 38-03, 38-04, 38-16 | statemachine kept | SATISFIED | Truth 10 |
-| BOOT4-11 | 38-11 | 18 keys + gate | SATISFIED | Truth 11 |
-| BOOT4-12 | 38-03, 38-15, 38-18 | CVE floors | SATISFIED | Truth 12 |
-| BOOT4-13 | 38-02, 38-14 | OpenAPI snapshot | SATISFIED | Truth 13 |
-| BOOT4-14 | 38-16, 38-17, 38-18 | docs, parity, nightly | SATISFIED | Truth 14 |
+| Requirement | Source Plans | Status | Evidence |
+| ----------- | ------------ | ------ | -------- |
+| BOOT4-01 | 38-03, 38-16, 38-18 | SATISFIED | Truth 1 |
+| BOOT4-02 | 38-03, 38-04, 38-12, 38-13, 38-19 | SATISFIED | Truth 2 |
+| BOOT4-03 | 38-03, 38-04 | SATISFIED | Truth 3 |
+| BOOT4-04 | 38-05..10, 38-12, 38-19 | SATISFIED | Truth 4 |
+| BOOT4-05 | 38-07, 38-17 | SATISFIED | Truth 5 |
+| BOOT4-06 | 38-01, 38-08 | SATISFIED | Truth 6 |
+| BOOT4-07 | 38-01, 38-09, 38-17 | SATISFIED | Truth 7 (plus WR-01 dual eviction) |
+| BOOT4-08 | 38-01, 38-02, 38-10 | SATISFIED | Truth 8 (plus WR-02) |
+| BOOT4-09 | 38-02, 38-06, 38-17 | SATISFIED | Truth 9 |
+| BOOT4-10 | 38-03, 38-04, 38-16 | SATISFIED | Truth 10 |
+| BOOT4-11 | 38-11 | SATISFIED | Truth 11 |
+| BOOT4-12 | 38-03, 38-15, 38-18 | SATISFIED | Truth 12 |
+| BOOT4-13 | 38-02, 38-14 | SATISFIED | Truth 13 |
+| BOOT4-14 | 38-16, 38-17, 38-18 | SATISFIED (closing items O-1..O-3) | Truth 14 |
 
-Cross-reference: every ID BOOT4-01..14 appears in at least one PLAN's `requirements:` frontmatter (counts 1-8 plans each;
-BOOT4-11 only in 38-11) and in REQUIREMENTS.md lines 210-223 (all `[x]`). REQUIREMENTS.md maps no other ID to Phase 38.
-**Orphaned requirements: none.**
+Every ID BOOT4-01..14 appears in at least one PLAN's `requirements:` frontmatter and in REQUIREMENTS.md; no other ID maps to Phase 38. **Orphaned requirements: none.**
 
-### Anti-Patterns Found
+## Anti-Patterns Found
 
-Scanned the 45 production/build/config/script files changed by the phase (diff `origin/main...HEAD`, excluding tests, docs, planning):
-no added line carries `TBD`, `FIXME` or `XXX` (positive control: the same pattern matches a seeded `// FIXME`); no `TODO`/`HACK`/`PLACEHOLDER` added in `core-java/src/main`.
+No `TBD`, `FIXME` or `XXX` in the three modified main files (grep above). The previous pass's scan of the 45 phase production files stands for everything the fix commits did not touch.
 
 | File | Line | Pattern | Severity | Impact |
 | ---- | ---- | ------- | -------- | ------ |
-| `.planning/REQUIREMENTS.md` | 321-334 | Traceability Status column still reads "Planned 2026-10-04" for all 14 BOOT4 rows while the checkboxes above are `[x]` | Info | bookkeeping drift only; update at phase close |
-| `.planning/ROADMAP.md` | 58 | Phase 38 index line still `[ ]` (detail section shows 19/19 plans executed) | Info | flips at phase completion |
+| `core-java/.../TenantCacheEvictor.java` | 153 | `cache.evict` is fire-and-forget under Spring Data Redis 4 (W-3) | Warning | short post-commit stale window on an auth cache; owner decision requested |
+| `.planning/REQUIREMENTS.md` | 321-334 | Traceability Status column still reads "Planned" for the 14 BOOT4 rows | Info | bookkeeping |
+| `.planning/ROADMAP.md` | 58 | Phase 38 index line still `[ ]` | Info | flips at phase completion |
 | `HANDOFF.md` | live block | still says Phase 38 is "planned, ready to execute" (review IN-04) | Info | stale handoff text |
-| `.planning/STATE.md` | ~52 | "Carried red: docs-freshness.sh" is stale; `docs-freshness.sh` passes now (4286) | Info | stale note |
 
-### Warnings (non-gating; no must-have is broken)
+Review dispositions: WR-01 and WR-02 `fixed` (`38-REVIEW-DISPOSITION.md`); IN-01..IN-04 `open`, informational, no must-have affected.
 
-**W-1. WR-01 (review, open): the `v4:` cache prefix splits evictions across Boot generations during a rolling deploy or a rollback.**
-Observed in code: `CacheConfig.java:97` prefixes only Boot-4 pods; `TenantCacheEvictor` evicts through `Cache.evict`, so each
-pod evicts only its own generation's key; `k8s/base/core-java-deployment.yaml` is `RollingUpdate`, replicas 3, maxSurge 1. A
-shop-grant revoke handled by one generation therefore does not evict the other generation's `shopMembership` entry, which
-stays stale until its 5-minute TTL (products 10 min, shops 15 min). ADR-0006 says "No flush is needed" and does not state this
-bounded window. This does NOT break BOOT4-07 (its truth is that Jackson-2-era entries are never read and the counter stays 0,
-both proven), and the exposure is transient and TTL-bounded, so it is not a gap. It is, however, a stale-authorization window on
-an auth cache for the first production rollout and rollback of this release. Decision requested from the owner before the
-first prod/staging rollout: record the window in the ADR deploy notes (review fix b), or add the transitional dual-key evict
-(fix a). Disposition in `38-REVIEW-DISPOSITION.md` is `open`.
+## Human Verification Required
 
-**W-2. WR-02 (review, open): `IdempotencyJson` does not enable `DETECT_PARAMETER_NAMES`.**
-`builderWithJackson2Defaults()` disables it, whereas Boot 3.5's auto-configured mapper registered `ParameterNamesModule`. Checked
-against the must-have ("reproducing the Jackson-2 bytes for every adopter"): the 6 production call sites of
-`IdempotencyService.execute*` and the 7 fingerprints / 4 stored response types are covered byte-for-byte by
-`IdempotencyFingerprintGoldenTest` (13/0, fixtures written by a real Boot-3.5 pod), and `IdempotencyLegacyHashReplayIntegrationTest`
-(2/0) replays a Boot-3.5 reservation. So no CURRENT adopter diverges and BOOT4-08 holds. The class's own rule forbids editing the
-mapper after ship, so closing it before this lands is cheaper than after; recommended, not required for this phase.
+None for the must-haves. Two owner items, neither a verification of a truth: the W-3 ruling above, and the operator post-rollout `v4:*` deletion, which is a deploy procedure recorded in ADR-0006 and cannot be exercised before a real rolling deploy.
 
-Info findings IN-01..IN-04 (CI gate step sets unneeded DB env vars; hand-pinned `spring-retry`; 404 `instance` uses the raw URI;
-stale HANDOFF.md) change no must-have.
+## Gaps Summary
 
-### Human Verification Required
-
-None. Every truth has either a test that I re-ran green or live-runtime evidence whose method was checked against the committed
-files and the running container; the one owner-accepted residual (404 for a well-formed invalid bearer on the metadata path) is a
-recorded decision, not an open item.
-
-### Gaps Summary
-
-No gaps. Phase goal achieved: core-java builds, tests and runs on Spring Boot 4.1.1; the three named defects are closed (Keycloak
-body proven by content, by a break arm and live; 18 keys renamed with a CI gate proven failing; netty/Tomcat/amqp/Jackson floors on
-Boot-4 lines, confirmed inside the running jar); D-01..D-05 are honoured. The phase may proceed. Before the first production
-rollout, the owner should rule on W-1.
+No gaps. The two fix commits did what the review asked: WR-01 closes the Boot-4-write-reaches-Boot-3.5-pods direction in code, tested on a real Redis with a tenant-scope control, and records the other direction's TTL bound and cleanup step; WR-02 makes `IdempotencyJson` reproduce Boot 3.5's parameter-name detection, with a fail direction reproduced independently on Jackson 3.1.7 and every stored fingerprint byte-identical. Nothing the fix commits changed alters a Phase 38 must-have. The phase goal stands achieved: core-java builds, tests and runs on Spring Boot 4.1.1; the Keycloak body, the 18 keys and the CVE floors are closed; D-01..D-05 are honoured. The orchestrator should close O-1 (rebuild and re-run the freshness gate), O-2 (push and CI on the final head) and O-3 (full regression), and the owner should rule on W-3 before the first production rollout.
 
 ---
 
-_Verified: 2026-10-05T19:48:00Z_
+_Verified: 2026-10-05T22:52:00Z_
 _Verifier: Claude (gsd-verifier)_
