@@ -173,3 +173,168 @@ TEST-…OpenApiSnapshotTest.xml: tests="1" skipped="0" failures="0" errors="0" t
 
 The XML was deleted before the run, so the file read here is fresh. The same command was red in step 1, and the
 only change between the two runs is the regenerated snapshot.
+
+**Tracer feedback gate.** Mode was interactive, `human_verify_mode` was end-of-phase, and the verify block is
+automated only. The verify was re-run at the Task 1 commit `f5d537df`:
+
+```
+OpenApiSnapshotTest  rc=0   tests="1" failures="0" errors="0" timestamp="2026-10-05T15:08:32.658Z"
+inventory join       rc=0   (no UNMATCHED lines)
+```
+
+## Task 2: explain the remaining diff, run the breaking-change gate both ways, keep the consumers green
+
+### 7. The remaining diff, classified
+
+Method: in both files, delete every top-level `components.schemas.*.required` array (Task 1 already proved those).
+Then compare every leaf (scalar, empty object or empty array) by its full path.
+
+```
+jq -r --slurpfile o $SCRATCH/old.json -f $SCRATCH/leafdiff.jq docs/api/openapi-snapshot.json > $SCRATCH/leafdiff.tsv   -> rc=0
+wc -l < leafdiff.tsv                                                                                                  -> 192
+```
+
+**What remains.** 192 differing leaves remain, in 13 schemas. The other 6 of the 19 changed schemas changed only
+in `required`: CreateAnnouncementRequest, CreateOrderRequest, CreatePromotionRequest, CreateShopRequest,
+CreateWebhookSubscriptionRequest and RejectOnboardingRequest. 13 + 6 = 19. No path and no other top-level key
+changed (step 1).
+
+Each entry, with its reason. The leaf counts sum to 192: 118 + 65 + 5 + 1 + 3.
+
+| Class | Schema(s) | Leaves | What changed | Reason it is documentation, not server behaviour |
+|---|---|---|---|---|
+| A. Introspection schemas expanded | ApplicationContext (44), ServletContext (70), RedirectView (2), BeanFactory (1), AutowireCapableBeanFactory (1) | 118 | Placeholders of the form `{"type":"object"}` became `{}` (any) for JDK types the resolver cannot model: `ModuleLayer`, `Enumeration` (`attributeNames`, `initParameterNames`), `additionalProperties`, and the bean factories. JDK reflection types (`ClassLoader`, `Module`, `Package`) are expanded with their bean properties (`definedPackages`, `specificationTitle`, `sealed`, …). | The top-level property names are unchanged (ApplicationContext 11 = 11, ServletContext 21 = 21, RedirectView 23 = 23). The schemas are reachable only from `GET /`, which is `CoreApplication.redirectToSwagger()` returning `new RedirectView("/swagger-ui.html")`. Its real answer is a redirect to Swagger UI, and no JSON body is ever served, so springdoc documenting the `RedirectView` return type as a 200 body is pre-existing noise (spike §3, threat T-38-36, accepted). The expanded text is generic JDK structure: `jtoye` is absent from these schemas in both files, while the positive control finds it elsewhere in the snapshot. |
+| B. HttpStatus enum | HttpStatus | 65 (index-aligned) | As a set: removed `103 CHECKPOINT`, `302 MOVED_TEMPORARILY`, `305 USE_PROXY`, `413 REQUEST_ENTITY_TOO_LARGE`, `414 REQUEST_URI_TOO_LONG`, `419 INSUFFICIENT_SPACE_ON_RESOURCE`, `420 METHOD_FAILURE`, `421 DESTINATION_LOCKED`. Added `413 CONTENT_TOO_LARGE`, `421 MISDIRECTED_REQUEST`, `422 UNPROCESSABLE_CONTENT`. 69 constants became 64. | springdoc lists the constants of `org.springframework.http.HttpStatus`, and **the change comes from Spring Framework 7, not springdoc**. Measured with `javap`: the old enum equals spring-web 6.2.19's 69 constants exactly, and the new enum equals spring-web 7.0.9's 64 exactly. 7.0 dropped 8 deprecated constants and added 3 RFC 9110 names. The only reference to HttpStatus is `RedirectView.properties.statusCode` (class A). No operation returns or accepts it, so no wire value changes. |
+| C. `format: email` | CreateCustomerRequest.email, UpdateCustomerRequest.email, CreateTenantRequest.contactEmail, DsarIntakeRequest.email, GuestOrderRequest.customerEmail | 5 | `format: "email"` added | Each field carries `@Email`: CustomerController.java:156/163 (`@jakarta.validation.constraints.Email`), CreateTenantRequest.java:24, DsarIntakeRequest (`@Email(message = "A well-formed email address is required")`) and GuestOrderRequest.java:17. All five DTOs are in the 38-02 inventory, and the inventory test fails on any constrained body without `@Valid`/`@Validated`, so every one is validated on the HTTP path and a malformed address was already rejected with 400. `git diff 2e601289 HEAD` on the four source files (the 38-02 Boot-3.5 tree) is empty. springdoc 3.1.1 now writes `@Email` into the schema. CreateTenantRequest.contactEmail stays optional (not required). |
+| D. `exclusiveMinimum: 0` (**not in the spike's list**) | CreateRefundRequest.amountPennies | 1 | `exclusiveMinimum: 0` added | The component is `@Positive Long amountPennies` (CreateRefundRequest.java:21), and the body is `@Valid @RequestBody` (RefundController.java:79). `git diff 2e601289 HEAD` on both files is empty, so the constraint is unchanged since Boot 3.5. springdoc 3.1.1 now writes `@Positive` as the OAS 3.1 numeric `exclusiveMinimum: 0`; 2.8.6 wrote nothing. **Enforcement was measured, not assumed**, with a throwaway `@WebMvcTest` probe modelled on RefundControllerIntegrationTest. It was deleted after the run, never committed, and `git status` is clean afterwards (see below). The field stays optional: null still means a full refund. |
+| E. Newly nullable response field | MyAccessDto.grantedShopIds | 3 | `type: "array"` became `type: ["array","null"]` | The Java type is unchanged (`Set<UUID> grantedShopIds`), and `git diff 2e601289 HEAD` on MyAccessDto.java is empty. The component already carried an explicit `@Schema(..., nullable = true)`, which springdoc 2.8.6 dropped in OAS 3.1 mode and 3.1.1 now renders as the 3.1 type array. The server already returns null for a GROUP_ADMIN: `StaffManagementIntegrationTest.myAccessReportsDayOneImplicitGroupAdmin` asserts `grantedShopIds()` isNull at the DTO. Neither the 3.5 tree nor HEAD configures `default-property-inclusion`/`serialization-inclusion`, and the DTO has no `@JsonInclude`, so Jackson's default (ALWAYS) writes `"grantedShopIds": null` on both lines. The document now says what the server already sent. |
+
+The spike's "one field becomes nullable" is class E. Class D is the one entry the spike did not list; it has its own
+reason and a measured enforcement proof, so it is not a STOP. There is no other unlisted entry.
+
+**Class D probe** (`RefundAmountPositiveProbe38x14Test`, `@WebMvcTest(RefundController.class)` with the
+GlobalExceptionHandler and a mocked RefundService):
+
+```
+./gradlew :core-java:test --tests 'uk.jtoye.core.payment.RefundAmountPositiveProbe38x14Test' --rerun --no-daemon  -> rc=1 (the arm)
+XML: tests="4" skipped="0" failures="1" errors="0" timestamp="2026-10-05T15:11:59.619Z"
+zeroAmountRejectedBeforeService()             PASS  400 type .../errors/validation, $.errors.amountPennies present, service never called
+negativeAmountRejectedBeforeService()         PASS  same, amountPennies = -1
+positiveAmountReachesService()                PASS  control: amountPennies = 1 passes validation and reaches RefundService
+armExpectedRedPositiveAmountClaimedInvalid()  FAIL  "Status expected:<400> but was:<500>"   (fail direction: the 400
+                                                    assertion applied to a valid amount goes red, so the probe can fail)
+rm …/RefundAmountPositiveProbe38x14Test.java  -> rm_rc=0; file absent; git status --short: only the orchestrator's milestone.lock
+```
+
+The plan forbids changing DTO validation annotations, so `@Positive` was not removed as an arm. The probe's own
+fail direction is the deliberately wrong expectation above.
+
+### 8. oasdiff, pinned exactly as CI pins it
+
+```
+curl -sSfL -o oasdiff.tar.gz https://github.com/oasdiff/oasdiff/releases/download/v1.23.0/oasdiff_1.23.0_linux_amd64.tar.gz -> curl_rc=0
+echo "972b10535c3db4366b9dc3ebc11ca021279af3095267c3cffdca854a3a3c4f89  oasdiff.tar.gz" | sha256sum -c -
+  -> oasdiff.tar.gz: OK                                    sha_rc=0
+fail direction (all-zero hash): oasdiff.tar.gz: FAILED     bad_sha_rc=1
+tar -xzf oasdiff.tar.gz oasdiff; ./oasdiff --version       -> oasdiff version 1.23.0
+```
+
+### 9. The breaking-change gate in both directions (clean, then arm, then clean)
+
+```
+./gradlew :core-java:generateOpenApiSpec --no-daemon       -> gen_rc=0  (artifact deleted first; XML 2026-10-05T15:12:40.239Z)
+sha256 openapi-current.json == sha256 docs/api/openapi-snapshot.json == 60c52aa16c74e502…d4c96a
+OASDIFF=$SCRATCH/oasdiff bash scripts/openapi-gate.sh
+  -> OK: OpenAPI spec matches the reviewed snapshot (docs/api/openapi-snapshot.json).
+  -> rc=0
+```
+
+For the arm, the old snapshot was copied over the committed file (sha `a4f74d97…`). Gate output:
+
+```
+OpenAPI drift: /v3/api-docs no longer matches docs/api/openapi-snapshot.json.
+58 changes: 54 error, 4 warning, 0 info
+ERROR: BREAKING OpenAPI change relative to the reviewed snapshot (report above).
+arm_rc=1
+```
+
+oasdiff's 58 entries, by rule, each mapped to its class:
+
+| Count | oasdiff rule | Class |
+|---|---|---|
+| 26 | error `request-property-became-required` | Task 1. These are the 18 pairs counted once per operation: guest orders on 2 paths x 5, plus POST+PUT for announcement, promotion and shop. 2+2+2+1+2+2+1+2+1+10+1 = 26. |
+| 6 | error `request-property-type-changed` (`format` changed from `none` to `email`) | C. These are 5 fields; GuestOrderRequest.customerEmail counts once per path. |
+| 1 | error `response-property-became-nullable` (GET /api/v1/staff/me `grantedShopIds`) | E |
+| 21 | error `response-property-type-changed` (GET /, `object` to `any`) | A |
+| 3 | warning `response-property-enum-value-added` (GET /, `statusCode`: 413 CONTENT_TOO_LARGE, 421 MISDIRECTED_REQUEST, 422 UNPROCESSABLE_CONTENT) | B |
+| 1 | warning `request-property-exclusive-min-set` (POST /api/v1/orders/{orderId}/refund `amountPennies`) | D |
+
+Every oasdiff entry falls in a class above, and none is a change to what the server accepts or returns.
+
+**Restore and closing run.** The file was restored from `$SCRATCH/new-backup.json`:
+```
+RESTORE OK sha=60c52aa16c74e502bc5c174d477b44f257b466dc8717709894d8bfd1e9d4c96a
+git status --short: only the orchestrator's milestone.lock (the snapshot equals its committed blob)
+closing gate run: OK: OpenAPI spec matches the reviewed snapshot …  rc=0
+```
+
+docs/api/README.md says "regenerating the snapshot is how you mark the break as reviewed". There is no separate
+exception list (38-RESEARCH §OpenAPI). So the acceptance is the regenerated snapshot committed in this PR, together
+with this per-entry account. No gate configuration was touched.
+
+### 10. Snapshot consumers
+
+| Consumer | Command | Result |
+|---|---|---|
+| edge to core contract gate | `bash scripts/check-edge-core-contract.sh` | rc=0. `--- PASS: TestEdgeCoreContract` and its 3 subtests; "OK: every declared edge→core call matches core's reviewed OpenAPI snapshot." |
+| edge-go core package | `go -C edge-go test ./internal/core/...` | rc=0. `ok github.com/jtoye/edge/internal/core 2.518s`, executed, not "(cached)". |
+| mcp-server | `npm --prefix mcp-server ci` (node_modules was absent) / `run build` / `test` | ci_rc=0, build_rc=0 (tsc), test_rc=0: "Test Files 8 passed (8), Tests 61 passed (61)". This equals the project's recorded MCP count of 61. |
+
+**The edge gate exercised a newly required field.** Edge's `Client.CreateOrder` sends `CreateOrderRequest`, whose
+`required` is now `["items","shopId"]`. `items` is new, and the request-side check requires every core-required
+property to exist in the Go struct, so the pass covers it.
+
+**Edge gate fail arm** (clean, then arm, then clean; the snapshot is restored by sha256 and nothing is committed):
+```
+jq '.components.schemas.CreateOrderRequest.required += ["armOnlyField"]' → copied over docs/api/openapi-snapshot.json
+bash scripts/check-edge-core-contract.sh  -> arm_rc=1
+  contract_test.go:46: Client.CreateOrder request: core marks property "armOnlyField" REQUIRED, but CreateOrderRequest has no field tagged json:"armOnlyField"
+  --- FAIL: TestEdgeCoreContract
+  VIOLATION: the edge's calls to core-java no longer match core's reviewed OpenAPI snapshot.
+RESTORE OK sha=60c52aa16c74e502…d4c96a; git status clean apart from milestone.lock
+closing run: OK … closing_rc=0
+```
+
+**mcp-server reads the snapshot only in comments.** `create-customer.ts:33-36` and `create-order.ts:36-39` say that
+the snapshot's `required` array "under-reports" `name`/`email` and `items`, because springdoc did not propagate
+`@NotBlank`/`@NotEmpty`. After this regeneration the snapshot does list them, so those comments are stale. The code
+is still right: it keeps the fields required, which matches the server. mcp-server is outside phase 38's scope
+(CONTEXT) and outside this plan's files, so the comment fix is recorded in `deferred-items.md` for the 38-16 docs
+pass. The green build and suite above therefore prove only that nothing in mcp-server broke. No mcp-server code
+reads the snapshot.
+
+**Other snapshot readers** (`rg -uu -l openapi-snapshot`, excluding `.planning`, `node_modules` and build output,
+rc=0, 24 files; positive control: `check-edge-core-contract.sh` matches):
+
+- **`scripts/check-openapi-snapshot-fresh.sh`** (nightly, `e2e-nightly.yml:313`) compares the snapshot with a
+  RUNNING service. This plan may not start, stop or rebuild compose services, and the running stack is not yet on
+  Boot 4, so it is not run here. **Carried to 38-17:** run it against the rebuilt runtime.
+- **`qa/surface-ledger.json`** cites 109 snapshot paths. That is still 109.
+- **The remaining readers** cite the snapshot only in prose or comments, or are the gate scripts and the test
+  already run above.
+
+### 11. Full integration suite on the regenerated snapshot (beyond the plan's targeted verify)
+
+OpenApiSnapshotTest was the last expected red in the phase ledger. The wave-6 gate measured integration at
+769 tests with 1 failure (this test), and 38-13 added 2 tests. To show that the ledger is now clear and that
+nothing else went red:
+
+```
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --continue --no-daemon   -> rc=0, BUILD SUCCESSFUL in 28m 27s
+156 XML files, timestamps 2026-10-05T15:14:49Z .. 15:42:40Z (fresh: cleanIntegrationTest ran first)
+tests=771 failures=0 errors=0 skipped=1   (769 + 38-13's 2 = 771)
+OpenApiSnapshotTest: tests="1" failures="0" errors="0" timestamp="2026-10-05T15:20:59.066Z"
+```
+
+`OpenApiSnapshotTest.java` is unchanged, so `JacksonLineContractTest`'s `DELIBERATE_JACKSON2_LIST` keeps its three
+paths, and its allowlist is not edited.
