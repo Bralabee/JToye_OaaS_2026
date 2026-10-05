@@ -7,6 +7,44 @@ covered_files:
   - .github/workflows/ci-cd.yaml
   - .gitleaks.toml
   - .gitleaksignore
+  - .planning/phases/38-spring-boot-4-1-migration/38-01-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-01-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-02-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-02-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-03-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-03-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-04-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-04-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-05-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-05-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-06-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-06-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-07-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-07-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-08-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-08-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-09-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-09-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-10-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-10-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-11-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-11-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-12-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-12-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-13-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-13-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-14-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-14-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-15-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-15-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-16-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-16-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-17-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-17-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-18-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-18-SUMMARY.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-19-PLAN.md
+  - .planning/phases/38-spring-boot-4-1-migration/38-19-SUMMARY.md
   - AGENTS.md
   - CLAUDE.md
   - HANDOFF.md
@@ -60,7 +98,7 @@ covered_files:
   - mcp-server/src/tools/create-order.ts
   - scripts/check-boot-config-keys.sh
   - scripts/check-doc-versions.sh
-covered_digest: "v2:sha256:b88aa7a6d5d3e73209353d1017bd851de1bb553878310220f5c717e5257a22ba"
+covered_digest: "v2:sha256:d0afff58de52fda90701a3348c2099654406b35125202635a45ab5d4ab350527"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
