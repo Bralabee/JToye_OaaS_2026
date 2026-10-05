@@ -188,7 +188,7 @@ Regression check for the excludes that now TAKE EFFECT (beyond the plan's verify
 3. Task 1 tracer feedback gate (interactive, human_verify_mode end-of-phase, automated-only verify)
 ---------------------------------------------------------------------------------------------------
 Re-ran the tracer verify on the committed GREEN tree (4b3811de): rc=0, :core-java:test executed,
-, non_ok=0.
+tests="9" skipped="0" failures="0" errors="0" timestamp="2026-10-05T12:58:32.010Z", non_ok=0.
 Tracer verified end-to-end; expanded to Task 2.
 
 4. Task 2 RED: RenamedConfigKeysBindingTest against the PRE-RENAME yml
@@ -297,3 +297,32 @@ Boot-2 key changes nothing.
 Three values equal Boot's defaults (prod NEVER/false, the Zipkin default endpoint, the 10MB file
 size); those cases go red ONLY on the "must be bound" assertion. Without it they would pass on an
 ignored key, which is why every case asserts BindResult.isBound() first.
+
+5. Task 2 GREEN: both classes on the committed yml (no JTOYE_* variable set; env | grep -c '^JTOYE_' = 0)
+---------------------------------------------------------------------------------------------------------
+Command: ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.RenamedConfigKeysBindingTest' --tests 'uk.jtoye.core.boot4.ConfigKeyContractTest' --no-daemon
+rc=0, :core-java:test executed (no UP-TO-DATE line for it in the log)
+  RenamedConfigKeysBindingTest tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-05T13:00:32.435Z"
+  ConfigKeyContractTest        tests="9" skipped="0" failures="0" errors="0" timestamp="2026-10-05T13:00:31.071Z"
+  report non_ok=0
+RenamedConfigKeysBindingTest reports 8 tests (acceptance: at least 5).
+
+6. Task 2 arm (bracketed): prod's max-history back under its Boot-3 name
+------------------------------------------------------------------------
+Clean before: application-prod.yml == HEAD, sha256 e1d2eeefea396fea66fdcae826e5f892bdf109d15ad985b8cd3e437555944105
+Break: "max-history: 30" moved from logging.logback.rollingpolicy to logging.file (= logging.file.max-history)
+Same command: rc=1
+  RenamedConfigKeysBindingTest tests="8" failures="1" (only prodLogRetention)
+  ConfigKeyContractTest        tests="9" failures="1" (only the key contract), report row:
+    core-java/src/main/resources/application-prod.yml  logging.file.max-history  DEPRECATED  level=error replacement=logging.logback.rollingpolicy.max-history
+  FAIL  prod log retention: 30 days, 1GB total, 10MB files
+        [logging.logback.rollingpolicy.max-history must be bound; an unbound key means Boot uses its default]
+        Expecting value to be true but was false
+        [max-history]
+        Expecting actual not to be null
+Restore: cp from the scratch copy of the committed file; sha256 after restore
+  e1d2eeefea396fea66fdcae826e5f892bdf109d15ad985b8cd3e437555944105 == git show HEAD:core-java/src/main/resources/application-prod.yml | sha256sum
+Closing run (same command): rc=0
+  RenamedConfigKeysBindingTest tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-05T13:01:20.411Z"
+  ConfigKeyContractTest        tests="9" skipped="0" failures="0" errors="0" timestamp="2026-10-05T13:01:19.512Z"
+  report non_ok=0
