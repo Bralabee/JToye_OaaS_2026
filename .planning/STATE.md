@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-14-PLAN.md
-last_updated: "2026-10-05T15:47:00.000Z"
+stopped_at: Completed 38-15-PLAN.md
+last_updated: "2026-10-05T16:01:00.000Z"
 last_activity: 2026-10-05
-state_head: 5f34def5571d7dcedf7314485bcba392efe2d3c5
+state_head: 63df115f64260ae47857b2a9a825008b152f0ace
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 155
-  completed_plans: 152
+  completed_plans: 153
   percent: 67
 ---
 
@@ -144,7 +144,21 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - `openapi-gate.sh` with checksum-verified oasdiff 1.23.0 is rc 0 on the new snapshot and rc 1 on the old one (58 changes, every one mapped to a class). Edge contract gate rc 0 (a doctored-required arm went red), edge-go rc 0, mcp-server ci/build/test rc 0 with 61 tests.
   - Full integration suite: 771/0/1 skipped. The phase ledger has no red left. BOOT4-13 is complete.
   - Carried: 38-16 owns the stale mcp-server comments (deferred-items.md) and may cite the contract summary in ADR-0006; no test counts changed. 38-17 must run `check-openapi-snapshot-fresh.sh` against the rebuilt runtime. 38-18's PR body should point reviewers to the classified table in the 38-14 evidence, not the raw oasdiff list.
-- Next: 38-15 (wave 8, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
+- 38-15 DONE 2026-10-05: the CVE floors are proven on the Boot-4 lines, and the image gate was run locally before any push (`evidence/38-15-cve-floors.txt`).
+  - Trivy 0.70.0 with the CI image-gate flags ran on one cache (DB UpdatedAt 2026-10-05 13:07 UTC). The Boot-4 branch image is rc=0, and origin/main's image (03022f21, as last fetched, not re-fetched) is rc=0. No bump was needed.
+  - app.jar holds spring-boot-4.1.1 and no 3.5 or jackson2-bridge jar. Trivy's inventory read 246 nested jar packages; a clean row is not an empty read.
+  - dependencyInsight was identical before, after the arms and after the edit: tomcat 11.0.26, amqp-client 5.34.0, databind 2.22.3 and 3.1.7, netty-codec-http 4.2.17.Final with no pin.
+  - Arms, each restored by sha256:
+    - near-miss `jackson3-bom.version`: 3.1.5, 5 HIGH;
+    - near-miss `tomcat-version`: 11.0.24, 3 CRITICAL;
+    - amqp pin removed: 5.30.0, 4 HIGH;
+    - near-miss `jackson2-bom.version`: 2.21.5, 5 HIGH (added; the plan's arms did not cover the Jackson-2 floor);
+    - a tomcat 11.0.24 image: the gate exits 1, naming CVE-2026-65182, -65905 and -68525.
+  - Tomcat 11.0.25 passes the gate. 11.0.26 is held for the advisory-only CVE-2026-76183 and -86350, which Trivy does not carry. CVE-2026-91777 is confirmed on Jackson 3 and cleared by 3.1.7 (closes RESEARCH A3).
+  - The build-file change is comment-only: one dated Boot-4 paragraph per pin, with the history kept. The three scan images are removed; the compose image is untouched.
+  - BOOT4-12 is NOT yet marked complete: `requirements.ready-ids` is 0/1, because 38-18 (the CI image gate on push) also declares it.
+  - Carried: 38-16 may cite this evidence for BOOT4-12 and ADR-0006 (Tomcat on the advisory, not the gate). 38-18's PR body: the local gate was rc=0 on DB 2026-10-05; the post-merge gate may see a newer DB. Cosmetic, out of scope: the core-java Dockerfile LABEL still says "Spring Boot 3 backend".
+- Next: 38-16 (wave 9, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -808,6 +822,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P12 | 47 min | 2 tasks | 4 files |
 | Phase 38 P13 | 14 min | 2 tasks | 4 files |
 | Phase 38 P14 | 40 min | 2 tasks | 3 files |
+| Phase 38 P15 | 13 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -983,6 +998,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-14: springdoc 3.1.1's contract is accepted through the documented route (the regenerated snapshot in the same PR, no gate exception or config change); every item is proven to document behaviour the server already had, so it was not an owner decision
 - [Phase 38]: 38-14: the HttpStatus enum change in the snapshot is Spring Framework 7's (javap against spring-web 6.2.19 and 7.0.9), not springdoc's
 - [Phase 38]: 38-14: OpenApiSnapshotTest and JacksonLineContractTest's allowlist are untouched; the Jackson-2 normalizer reads springdoc 3.1.1 output
+- [Phase 38]: 38-15: no CVE bump needed: branch and main images both pass the Trivy 0.70.0 gate locally on DB 2026-10-05 13:07 UTC
+- [Phase 38]: 38-15: Tomcat stays 11.0.26 on the Tomcat advisory (CVE-2026-76183/-86350), not on the gate, which 11.0.25 already passes; the pin comment says so
+- [Phase 38]: 38-15: CVE-2026-91777 is on the Jackson-3 line and fixed in 3.1.7 (RESEARCH A3 closed); both Jackson keys proven load-bearing by near-miss arms
 
 ### Pending Todos
 
@@ -1052,8 +1070,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T15:47:00.000Z
-Stopped at: Completed 38-14-PLAN.md. Next is 38-15 (wave 8, sequential) on branch `phase-37-spring-boot-4-1`.
+Last session: 2026-10-05T16:01:00.000Z
+Stopped at: Completed 38-15-PLAN.md. Next is 38-16 (wave 9, sequential) on branch `phase-37-spring-boot-4-1`.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
