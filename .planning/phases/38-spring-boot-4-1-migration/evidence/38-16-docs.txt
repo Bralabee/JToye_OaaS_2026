@@ -298,3 +298,124 @@ described an exemption this plan deleted).
     prints "1 file changed, 13 insertions(+), 6 deletions(-)", so the command can see a change.
     Recorded as UNVERIFIED in the ADR: whether Flyway 11 accepts a history table that Flyway 12 has
     validated (not measured; no rollback was rehearsed in this plan).
+
+
+8. TASK 3: METRICS REGENERATED ONCE, AND THE STATIC-GATE SWEEP
+--------------------------------------------------------------
+8.1 docs-freshness.sh (check mode) @ 01e46ac6, before --write: rc=1
+    | ERROR: documentation metrics are stale (docs/metrics.json != source reality).
+    committed: java_test_methods 2005, java_test_files 306, total_logical_invocations 4183
+    computed : java_test_methods 2108, java_test_files 325, total_logical_invocations 4286
+    Every other key equal (controllers 25, schema 67, go 98/13, jest 1891/172, playwright 128/28,
+    mcp 61/8). Red since 38-01, as STATE recorded.
+8.2 Independent cross-check of the Java delta (git trees, not the working tree):
+      git grep -o '@Test\b' <rev> -- 'core-java/src/test/*.java' | wc -l  /  git grep -l … | wc -l
+      767f5658 (pre-phase)  2005 / 306     4656a7f7 (plan base)  2108 / 325     HEAD  2108 / 325
+    So the count can tell the two trees apart, and it agrees with the script. The 22 test files the
+    phase added: 19 carry @Test (78 methods: Jackson3WireContractTest 12, ConfigKeyContractTest 9,
+    RenamedConfigKeysBindingTest 8, Boot4ModuleLivenessIntegrationTest 6, AmqpJackson2CompatibilityTest
+    6, JacksonLineContractTest 5, GoldenFixturesIntegrityTest 5, WebhookFanoutListenerEnvelopeTest 4,
+    ProtectedResourceMetadataSuppressionFilterTest 3, OutboxPayloadCompatibilityTest 3,
+    JsonbColumnsReadBackIntegrationTest 3, 2 each for DsarAckCompatibilityTest,
+    IdempotencyLegacyHashReplayIntegrationTest, IdempotencyFingerprintGoldenTest,
+    StatemachineSecurityAccessTest, RequestBodyConstraintEnforcementTest,
+    AutoConfigurationCensusIntegrationTest, 1 each for CacheFormatIsolationIntegrationTest and
+    AmqpTypeIdDispatchIntegrationTest); 3 are helpers with none (BootJsonMapper, InFlightFixtures,
+    GoldenSamples). Existing files gained the other 25. The orchestrator's carried deltas are all
+    inside these: 38-11 +17 in 2 files, 38-12 +5 in 1 file and +1 in Boot4ModuleLiveness, 38-13 +2
+    in 1 file. 0 test files deleted.
+8.3 docs-freshness.sh --write (run once): rc=0, "Wrote …/docs/metrics.json". git diff: exactly the
+    three keys above. jq -r '.java_test_methods, .total_logical_invocations' -> 2108 / 4286 (the plan
+    acceptance: different from 2005 / 4183 and equal to the --write output).
+8.4 check-doc-metrics.sh after --write, before any prose edit: rc=1, 10 FAIL lines
+    (README total x2 / methods / files; CLAUDE.md total / methods / files; AGENTS.md the same three).
+    Edited: README.md:7 (badge), :291, :296; CLAUDE.md:15; AGENTS.md:15 (outside ORGOS; block sha256
+    still 61a53382…ed9f). Re-run: rc=0, "PASS: all 37 prose metric claim(s) across 3 doc(s)".
+    No other tracked file outside .planning quotes 4183 (git grep: 0 lines); .planning/PROJECT.md
+    quotes none of the three numbers.
+8.5 Arms (committed first at dc4cc9ea; restores sha256-verified against HEAD blobs):
+    clean before   check-doc-metrics rc=0 (37) · docs-freshness rc=0 (4286)
+    arm M  README "**Total: 4286 …**" -> 4183 (the old figure)        check-doc-metrics rc=1
+           | FAIL: README.md [total_logical_invocations]: doc says 4183, docs/metrics.json says 4286
+           restore README.md: sha256 OK (99f42d949063f395a0d797e92c62cfa20441410ce2cadd2861eb30c023eb2a8e)
+    arm N  (added) docs/metrics.json java_test_methods 2108 -> 2005   docs-freshness rc=1
+           | ERROR: documentation metrics are stale (docs/metrics.json != source reality).
+           restore docs/metrics.json: sha256 OK (2415e4741cf4fdeb80a1ab896af2c362c5c07686cbced0d080906e095d2f7442)
+    clean after    check-doc-metrics rc=0 · docs-freshness rc=0 · git diff --quiet rc=0
+8.6 Static-gate sweep @ dc4cc9ea (2026-10-05 16:20-16:21 UTC, engineering-doctrine env).
+    "Static" = every scripts/check-*.sh NOT declared runtime-dependent in
+    scripts/gates/gate-enforcement.conf (check-gate-enforcement: 46 gates, 5 declared), plus
+    docs-freshness.sh: 42 runs. Runtime-declared, not run (38-17's): check-runtime-freshness,
+    check-container-config-drift, check-infra-exposure, check-alert-mute, check-live-shop-coordinates.
+    Note: some "static" gates read live services READ-ONLY (alert-liveness/-metrics query Prometheus,
+    openapi-snapshot-fresh queries :9090, keycloak-logout-uri queries Keycloak, handoff H-2 reads the
+    forge). No service was started, stopped, rebuilt or written to; git diff --quiet rc=0 after.
+
+    gate                                   rc   at plan base 4656a7f7   reason / owner
+    check-alert-liveness.sh                0
+    check-alert-metrics.sh                 1    1 (and 1 at pre-phase 767f5658)   RUNTIME DATA: rule NoOrdersCreated's
+                                                selector (http_server_requests_seconds_count for order POST 201) has
+                                                ZERO series because no order was placed since core-java last
+                                                restarted; the gate's own CAUSE line says so. Its fix
+                                                (scripts/seed-order-metric.sh) places a real order in the running
+                                                stack: runtime work, 38-17's, not done here. Not tree-dependent.
+    check-alert-rules.sh                   0
+    check-backup-restore-drill.sh          2    2    ENV VOID: image ghcr.io/bralabee/jtoye-pg-backup:15-blob not
+                                                present locally (needs a docker build; not this plan's).
+    check-boot-config-keys.sh              0    (218 keys, 36 excludes)
+    check-branch-behind-base.sh            1    1    HEAD 4 behind origin/main (local ref as last fetched; no
+                                                fetch done). Pre-existing for the branch; the merge from base is
+                                                38-18's pre-PR step (Proof Standard 3).
+    check-changelog-cites-pr.sh            0    (SKIP: no PR context)
+    check-changelog-contract.sh            0
+    check-claims.sh                        0
+    check-dependency-horizons.sh           0
+    check-doc-citations.sh                 0
+    check-doc-metrics.sh                   0
+    check-doc-versions.sh                  0
+    check-e2e-baseurl-contract.sh          0
+    check-e2e-skip-budget.sh               2    2    ENV VOID: no Playwright JSON report (E2E is runtime work).
+    check-e2e-typecheck.sh                 2    2    ENV VOID: frontend/node_modules absent in this checkout.
+    check-edge-core-contract.sh            0
+    check-env-example-contract.sh          0
+    check-gate-enforcement.sh              0
+    check-geo-attribution.sh               0
+    check-go-coverage.sh                   2    2    ENV VOID: edge-go/coverage.out absent (no go test run here).
+    check-handoff-contract.sh              1    1    H-3: HANDOFF.md 4 merged commits behind origin/main
+                                                (budget 3). The pre-existing red the orchestrator lists as not
+                                                owned by phase 38. H-1/H-2/H-4/H-5 pass.
+    check-image-supply-chain.sh            0
+    check-jacoco-coverage.sh               2    2    ENV VOID: no aggregate JaCoCo CSV in build-local (no coverage
+                                                run in this plan; in the fresh base worktree the message is the
+                                                missing 'test' exec data instead — same class).
+    check-keycloak-logout-uri.sh           0
+    check-layout-width-contract.sh         0
+    check-media-content-types.sh           0
+    check-media-urls-resolve.sh            0
+    check-no-create-extension.sh           0
+    check-no-measured-placeholders.sh      0
+    check-no-object-store-residue.sh       0
+    check-openapi-snapshot-fresh.sh        1    1 (but 0 at pre-phase 767f5658, "PASS — 0 differences")
+                                                RUNTIME PARITY: the running core-java container ("Up 23 hours",
+                                                built before the Boot-4 tree) serves the springdoc-2.8 spec, while
+                                                the snapshot was regenerated on springdoc 3.1.1 in 38-14. So this
+                                                red does NOT predate the phase: it was introduced by 38-14 on
+                                                purpose and clears only on the rebuilt stack, which the contract
+                                                assigns to 38-17. This plan changed no Java, no snapshot.
+    check-pentest-triage.sh                0
+    check-playwright-mobile-contract.sh    0
+    check-postgres-major-parity.sh         0
+    check-project-version.sh               0
+    check-retention-enforcement.sh         0
+    check-ssr-coverage-contract.sh         0
+    check-terminal-states.sh               0
+    check-test-block-counter.sh            0
+    check-test-count-oracle.sh             2    2    ENV VOID: jest and playwright families need frontend/node_modules;
+                                                the vitest family PASSES (runner 61/8 = manifest 61/8, after this
+                                                plan's mcp-server comment edits).
+    docs-freshness.sh                      0    (4286)
+
+    Totals: 42 run, 32 rc=0, 10 non-zero. Every non-zero gives the same rc on the plan base, so none
+    is caused by 38-16. Of the 10: 6 are environment VOIDs (artifacts or images absent from this
+    checkout), 2 are runtime state for 38-17 (alert-metrics, openapi-snapshot-fresh), 2 are
+    branch/HANDOFF staleness against origin/main (38-18 and the pre-existing H-3).
