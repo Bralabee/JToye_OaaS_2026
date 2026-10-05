@@ -326,3 +326,191 @@ Closing run (same command): rc=0
   RenamedConfigKeysBindingTest tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-05T13:01:20.411Z"
   ConfigKeyContractTest        tests="9" skipped="0" failures="0" errors="0" timestamp="2026-10-05T13:01:19.512Z"
   report non_ok=0
+
+7. Task 3: scripts/check-boot-config-keys.sh, the ci-cd.yaml step, HANDOFF 46 -> 47 (committed 981a7c00
+   BEFORE the arms; every arm restored by cp from a scratch copy and checked by sha256)
+----------------------------------------------------------------------------------------------------
+Snapshot sha256 taken before the arms (sha256sum -c after the arms: all four OK):
+  fd725d4fa1f5d016f94304738e95e15442bcbda6d690078ddc79ee6bebea576b  core-java/src/main/resources/application.yml
+  7ed6ce6da0050f8285ae4e25d199d80c6a79b5075ad5fca2e734160b4fbc6c11  core-java/src/main/resources/application-staging.yml
+  c336091b6acced5c4f7b6ee673a2df1662fdec830c129e2682b87fc3ab1a7237  .github/workflows/ci-cd.yaml
+  313f9ed19cbcb974dd3613e33bbecf80eacfc6e6f418a7c167338562adea76e2  HANDOFF.md
+
+Clean BEFORE the arms:
+  bash scripts/check-boot-config-keys.sh; echo rc=$?
+    Boot config-key and autoconfigure-exclude gate (38-11)
+      results : core-java/build-local/test-results/test
+      report  : core-java/build-local/boot4/config-key-report.tsv
+      gradle  : rc=0
+      junit   : tests=9 failures=0 errors=0
+    PASS: 218 key(s) in 7 yml file(s) and 16 autoconfigure exclude(s)/literal(s) are all known to Boot 4.
+    rc=0
+  bash scripts/check-gate-enforcement.sh; echo rc=$?
+    check-gate-enforcement  (2026-10-05T13:02:26Z)
+      gates     : 46
+      workflows : 8
+      exempt    : 5 declared
+    PASS: every gate either runs in CI or has a declared reason it cannot.
+    rc=0
+  bash scripts/check-handoff-contract.sh; echo rc=$?
+    check-handoff-contract  (2026-10-05T13:02:26Z)
+    FAIL: H-3 HANDOFF.md is 4 merged commit(s) behind origin/main (budget 3) — last touched by 981a7c00. Re-read it before trusting it.
+      doc       : HANDOFF.md
+      config    : scripts/gates/handoff-contract.conf
+      H-1 gates : 1 claim(s), repo has 47 gate script(s)
+      H-2 state : 33 claim(s), 33 matched the forge
+      H-3 stale : 4 commit(s) behind origin/main (budget 3)
+      H-4 self  : both extractors fire and decline
+      H-5 cites : 5 path(s) checked, 5 resolve, 1 skipped (unrecognised extension)
+    FAILED: HANDOFF.md states something that is no longer true (see above).
+    rc=1
+  The handoff rc=1 is H-3 only (HANDOFF.md's last commit is behind origin/main beyond the 3-commit
+  budget). It is NOT this plan's: at the plan base the same gate reported "5 merged commit(s) behind
+  origin/main ... last touched by 53f7500c" (run on this tree before the Task 3 commit). Recorded, not
+  absorbed. H-1, the gate count this plan changes, passes: 1 claim, 47 gate scripts.
+
+Arm A: "spring.bogus.key: x" appended to core-java/src/main/resources/application.yml (expect 1)
+    Boot config-key and autoconfigure-exclude gate (38-11)
+      results : core-java/build-local/test-results/test
+      report  : core-java/build-local/boot4/config-key-report.tsv
+      gradle  : rc=1
+      junit   : tests=9 failures=1 errors=0
+      core-java/src/main/resources/application.yml: spring.bogus.key -> UNKNOWN (not in the Boot 4 configuration metadata and no Map/List ancestor)
+    FAIL: 1 configuration key(s) or autoconfigure exclude(s) that Boot 4 silently ignores. Rename each to its replacement (or the Boot-4 auto-configuration class); do not delete a key that still carries a value.
+    rc=1
+  restored: sha256 fd725d4f... == snapshot
+
+Arm B: "server.error.include-message: always" appended to application-staging.yml (expect 1, replacement named)
+    Boot config-key and autoconfigure-exclude gate (38-11)
+      results : core-java/build-local/test-results/test
+      report  : core-java/build-local/boot4/config-key-report.tsv
+      gradle  : rc=1
+      junit   : tests=9 failures=1 errors=0
+      core-java/src/main/resources/application-staging.yml: server.error.include-message -> DEPRECATED (level=error replacement=spring.web.error.include-message)
+    FAIL: 1 configuration key(s) or autoconfigure exclude(s) that Boot 4 silently ignores. Rename each to its replacement (or the Boot-4 auto-configuration class); do not delete a key that still carries a value.
+    rc=1
+  restored: sha256 7ed6ce6d... == snapshot
+
+Arm C: JTOYE_CONFIG_KEY_DIRS pointed at an empty directory (expect 2)
+    JTOYE_CONFIG_KEY_DIRS=<scratch>/tmp.EyAQFmvP5S (ls: 0 entries)
+    Boot config-key and autoconfigure-exclude gate (38-11)
+      results : core-java/build-local/test-results/test
+      report  : core-java/build-local/boot4/config-key-report.tsv
+      gradle  : rc=1
+      junit   : tests=9 failures=2 errors=0
+    VOID: the instrument saw nothing to judge:
+      zero application*.yml files in [<scratch>/tmp.EyAQFmvP5S]
+      zero spring/management/server/logging keys checked
+    rc=2
+
+Arm D: RESULTS_DIR at an empty directory, CHECK_BOOT_CONFIG_KEYS_SKIP_GRADLE=1 (expect 2)
+    RESULTS_DIR=<scratch>/tmp.WaHBVlA25l (ls: 0 entries) CHECK_BOOT_CONFIG_KEYS_SKIP_GRADLE=1
+    Boot config-key and autoconfigure-exclude gate (38-11)
+      results : <scratch>/tmp.WaHBVlA25l
+      report  : <scratch>/tmp.X6Z4EZZRVh/none.tsv
+      gradle  : SKIPPED (CHECK_BOOT_CONFIG_KEYS_SKIP_GRADLE=1, testing only)
+    VOID: no JUnit XML for uk.jtoye.core.boot4.ConfigKeyContractTest at <scratch>/tmp.WaHBVlA25l/TEST-uk.jtoye.core.boot4.ConfigKeyContractTest.xml (gradle rc=not run) — nothing ran, so nothing is proven
+    rc=2
+
+Arm E: the new ci-cd.yaml step deleted (18 lines: its comment and the step), check-gate-enforcement (expect 1, named)
+    check-gate-enforcement  (2026-10-05T13:03:41Z)
+      gates     : 46
+      workflows : 8
+      exempt    : 5 declared
+    FAIL: 1 gate(s) are referenced by no workflow and carry no exemption:
+            check-boot-config-keys.sh
+          A gate that cannot fire on a pull request does not prevent anything.
+          Either add it to a workflow, or declare it in scripts/gates/gate-enforcement.conf with the reason
+          it cannot run on a hosted runner.
+    rc=1
+  restored: sha256 c336091b... == snapshot
+
+Arm F: HANDOFF.md left at "EXPECT 46 x rc=0", check-handoff-contract (expect 1 on H-1)
+    check-handoff-contract  (2026-10-05T13:03:47Z)
+    FAIL: H-1 HANDOFF.md's resume block says 'EXPECT 46 x rc=0' but the repo has 47 gate script(s)
+    FAIL: H-3 HANDOFF.md is 4 merged commit(s) behind origin/main (budget 3) — last touched by 981a7c00. Re-read it before trusting it.
+      doc       : HANDOFF.md
+      config    : scripts/gates/handoff-contract.conf
+      H-1 gates : 1 claim(s), repo has 47 gate script(s)
+      H-2 state : 33 claim(s), 33 matched the forge
+      H-3 stale : 4 commit(s) behind origin/main (budget 3)
+      H-4 self  : both extractors fire and decline
+      H-5 cites : 5 path(s) checked, 5 resolve, 1 skipped (unrecognised extension)
+    FAILED: HANDOFF.md states something that is no longer true (see above).
+    rc=1
+  restored: sha256 313f9ed1... == snapshot
+  Note: rc=1 alone does not discriminate here, because H-3 already fails on the clean tree. What
+  discriminates is the H-1 line, present in arm F and absent from both clean runs.
+
+Extra VOID arms on synthetic input (skip switch), beyond the plan's six:
+  G  XML with tests="0":
+    Boot config-key and autoconfigure-exclude gate (38-11)
+      results : <scratch>/tmp.5MM8bBQuBI
+      report  : <scratch>/tmp.5MM8bBQuBI/r.tsv
+      gradle  : SKIPPED (CHECK_BOOT_CONFIG_KEYS_SKIP_GRADLE=1, testing only)
+      junit   : tests=0 failures=0 errors=0
+    VOID: tests="0" — the class ran nothing
+    rc=2
+  H  XML failures=1 but a report with only OK rows (a control test failed, not a key):
+    Boot config-key and autoconfigure-exclude gate (38-11)
+      results : <scratch>/tmp.otCxIggGfN
+      report  : <scratch>/tmp.otCxIggGfN/r.tsv
+      gradle  : SKIPPED (CHECK_BOOT_CONFIG_KEYS_SKIP_GRADLE=1, testing only)
+      junit   : tests=9 failures=1 errors=0
+    VOID: uk.jtoye.core.boot4.ConfigKeyContractTest failed (1 failure(s), 0 error(s)) but its report names no bad key or exclude — a control test failed; read <scratch>/tmp.otCxIggGfN/TEST-uk.jtoye.core.boot4.ConfigKeyContractTest.xml
+    rc=2
+  I  XML green but a report holding an UNKNOWN row (test and report disagree):
+    Boot config-key and autoconfigure-exclude gate (38-11)
+      results : <scratch>/tmp.vRvOsaKUbR
+      report  : <scratch>/tmp.vRvOsaKUbR/r.tsv
+      gradle  : SKIPPED (CHECK_BOOT_CONFIG_KEYS_SKIP_GRADLE=1, testing only)
+      junit   : tests=9 failures=0 errors=0
+    VOID: the test passed but its report holds non-OK rows — the test and the report disagree:
+    x.yml	spring.b	UNKNOWN	-
+    rc=2
+
+Clean AFTER the arms:
+  bash scripts/check-boot-config-keys.sh; echo rc=$?
+    Boot config-key and autoconfigure-exclude gate (38-11)
+      results : core-java/build-local/test-results/test
+      report  : core-java/build-local/boot4/config-key-report.tsv
+      gradle  : rc=0
+      junit   : tests=9 failures=0 errors=0
+    PASS: 218 key(s) in 7 yml file(s) and 16 autoconfigure exclude(s)/literal(s) are all known to Boot 4.
+    rc=0
+  bash scripts/check-gate-enforcement.sh; echo rc=$?
+    check-gate-enforcement  (2026-10-05T13:04:31Z)
+      gates     : 46
+      workflows : 8
+      exempt    : 5 declared
+    PASS: every gate either runs in CI or has a declared reason it cannot.
+    rc=0
+  bash scripts/check-handoff-contract.sh; echo rc=$?  (H-3 only, as before; H-1 passes)
+    check-handoff-contract  (2026-10-05T13:04:31Z)
+    FAIL: H-3 HANDOFF.md is 4 merged commit(s) behind origin/main (budget 3) — last touched by 981a7c00. Re-read it before trusting it.
+      doc       : HANDOFF.md
+      config    : scripts/gates/handoff-contract.conf
+      H-1 gates : 1 claim(s), repo has 47 gate script(s)
+      H-2 state : 33 claim(s), 33 matched the forge
+      H-3 stale : 4 commit(s) behind origin/main (budget 3)
+      H-4 self  : both extractors fire and decline
+      H-5 cites : 5 path(s) checked, 5 resolve, 1 skipped (unrecognised extension)
+    FAILED: HANDOFF.md states something that is no longer true (see above).
+    rc=1
+
+Summary of exit codes: A=1 B=1 C=2 D=2 E=1 F=1 (plan expects 1,1,2,2,1,1); G=2 H=2 I=2; clean before and
+after: check-boot-config-keys 0, check-gate-enforcement 0.
+
+Acceptance criteria:
+  git ls-files -s scripts/check-boot-config-keys.sh > $SCRATCH/mode.txt; echo rc=$? -> rc=0; awk '{print $1}' -> 100755
+    (fail direction: the same pipeline on scripts/gates/gate-enforcement.conf prints 100644)
+  git grep -n 'check-boot-config-keys.sh' -- .github/workflows/ci-cd.yaml -> 2 lines (0 in arm E)
+  git grep -n 'check-boot-config-keys' -- scripts/gates/gate-enforcement.conf; echo rc=$? -> rc=1
+  git grep -n 'EXPECT 47 x rc=0' -- HANDOFF.md -> 1 line (0 in arm F)
+
+CI placement (deviation from "right after Run Java tests"): the script runs cleanTest + --rerun, which
+replaces the job's unit test results and the JaCoCo test.exec. "Upload the unit suite's JaCoCo execution
+data" (consumed by the integration job's aggregate coverage gate) and "Upload test results" both run after
+"Run Java tests", so a step between them would have uploaded a one-class coverage file and a one-class
+report. The step is the LAST step of the same test job instead. Parsed with PyYAML (engineering-doctrine
+conda env): the test job has 20 steps and the last one is the 38-11 step.
