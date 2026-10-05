@@ -137,3 +137,108 @@ $ awk -F'\t' 'NF==3{n++} END{print n+0}' core-java/src/test/resources/jackson2-g
 3                      (fail dir: same awk over /dev/null -> 0)
 sha256sum -c over the MANIFEST rows: 3 x OK, rc=0
 fail dir: the same rows with the first hex digit replaced -> 3 x FAILED, "3 computed checksums did NOT match", rc=1
+
+######################################################################################
+## Task 3: UnauthenticatedProblemDetailIntegrationTest (exact 401 challenge, /.well-known baseline)
+######################################################################################
+
+=== Counts (before -> after; plan's awk, then the strict form)
+awk '/header\(\)\.exists\("WWW-Authenticate"\)/'  2 -> 0
+awk '/oauth-protected-resource/'                   0 -> 4   (criterion: 2 or more)
+awk '/@Test/'                                      4 -> 6   (old + 2; note this pattern also matches the
+                                                            @Testcontainers class annotation)
+awk '/^[[:space:]]*@Test[[:space:]]*$/'            3 -> 5   (the real @Test methods: old + 2)
+No other assertion in the class changed: content type, $.type, $.title, $.status and the
+permittedRouteStillAnswersAnonymously control are as before.
+
+=== Measured on Boot 3.5.16 (MockMvc andDo(print()), copied from the JUnit XML system-out)
+--- GET /.well-known/oauth-protected-resource, UNAUTHENTICATED (no Authorization header)
+MockHttpServletRequest:
+      HTTP Method = GET
+      Request URI = /.well-known/oauth-protected-resource
+       Parameters = {}
+          Headers = []
+             Body = null
+    Session Attrs = {SPRING_SECURITY_SAVED_REQUEST=DefaultSavedRequest [http://localhost/.well-known/oauth-protected-resource?continue]}
+Handler:
+             Type = null
+Resolved Exception:
+             Type = null
+MockHttpServletResponse:
+           Status = 401
+    Error message = null
+          Headers = [Vary:"Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers", WWW-Authenticate:"Bearer", Content-Type:"application/problem+json;charset=UTF-8", X-Content-Type-Options:"nosniff", X-XSS-Protection:"0", Cache-Control:"no-cache, no-store, max-age=0, must-revalidate", Pragma:"no-cache", Expires:"0", X-Frame-Options:"DENY", Referrer-Policy:"strict-origin-when-cross-origin"]
+     Content type = application/problem+json;charset=UTF-8
+             Body = {"type":"https://jtoye.uk/errors/unauthorized","title":"Unauthorized","status":401,"detail":"Authentication failed"}
+    Forwarded URL = null
+   Redirected URL = null
+          Cookies = []
+
+--- GET /.well-known/oauth-protected-resource, AUTHENTICATED (spring-security-test jwt(), tenant_id = an ACTIVE tenant row)
+MockHttpServletRequest:
+      HTTP Method = GET
+      Request URI = /.well-known/oauth-protected-resource
+       Parameters = {}
+          Headers = []
+             Body = null
+    Session Attrs = {}
+Handler:
+             Type = org.springframework.web.servlet.resource.ResourceHttpRequestHandler
+Resolved Exception:
+             Type = org.springframework.web.servlet.resource.NoResourceFoundException
+MockHttpServletResponse:
+           Status = 404
+    Error message = null
+          Headers = [Vary:"Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers", Content-Type:"application/problem+json", X-Content-Type-Options:"nosniff", X-XSS-Protection:"0", Cache-Control:"no-cache, no-store, max-age=0, must-revalidate", Pragma:"no-cache", Expires:"0", X-Frame-Options:"DENY", Referrer-Policy:"strict-origin-when-cross-origin"]
+     Content type = application/problem+json
+             Body = {"type":"https://jtoye.uk/errors/not-found","title":"Not Found","status":404,"detail":"Resource not found","instance":"/.well-known/oauth-protected-resource"}
+    Forwarded URL = null
+   Redirected URL = null
+          Cookies = []
+
+=== D-05 premise, as measured
+D-05 (owner, 2026-10-04) says a 404 on this path "matches Boot 3.5 behaviour today". Measured, that
+is HALF-TRUE: Boot 3.5.16 answers 404 errors/not-found only to an AUTHENTICATED caller. An
+UNAUTHENTICATED caller gets 401 errors/unauthorized with WWW-Authenticate: Bearer, because the path
+is unmapped and falls to anyRequest().authenticated(). 38-06 still implements the locked 404 for EVERY
+caller (D-05 is a ruling, not a parity claim), so for an anonymous caller the answer CHANGES from 401
+to 404. This baseline is the record of that change; the two _boot35Baseline methods are expected to
+go red on Boot 4 until 38-06 updates them deliberately.
+
+=== Exact 401 challenge values on Boot 3.5.16
+missing token  -> WWW-Authenticate: Bearer                    (asserted exactly)
+garbage token  -> WWW-Authenticate: Bearer error="invalid_token", error_description="An error occurred while attempting to decode the Jwt: Malformed token", error_uri="https://tools.ietf.org/html/rfc6750#section-3.1"
+                  (asserted: starts with Bearer error="invalid_token" and contains no resource_metadata)
+
+=== Pass direction (measure run, before commit d2459302)
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.security.UnauthenticatedProblemDetailIntegrationTest' --no-daemon
+rc=0, > Task :core-java:cleanIntegrationTest (executed), BUILD SUCCESSFUL in 27s
+XML: tests="5" skipped="0" failures="0" errors="0"
+
+=== Fail-direction arms (bracketed: committed at d2459302 -> arms -> restore -> clean again)
+before sha256 8b8f6b241137fc406d43809cd37d71d240a116f812d084a9c7c6c4269dea551a
+arms, one per method:
+  missing token     expected "Bearer"                              -> "Bearer realm"   (the plan's arm)
+  garbage token     not(containsString("resource_metadata"))       -> not(containsString("invalid_token"))
+  well-known anon   isUnauthorized()                               -> isNotFound()     (what D-05 will make it)
+  well-known auth   isNotFound()                                   -> isOk()
+rc=1
+UnauthenticatedProblemDetailIntegrationTest > wellKnownProtectedResourceAuthenticated_boot35Baseline() FAILED
+UnauthenticatedProblemDetailIntegrationTest > garbageBearerReturnsRfc7807ProblemDocument() FAILED
+UnauthenticatedProblemDetailIntegrationTest > wellKnownProtectedResourceUnauthenticated_boot35Baseline() FAILED
+UnauthenticatedProblemDetailIntegrationTest > missingBearerReturnsRfc7807ProblemDocument() FAILED
+5 tests completed, 4 failed
+BUILD FAILED in 27s
+XML: tests="5" failures="4" errors="0"
+message="java.lang.AssertionError: Response header 'WWW-Authenticate' expected:<Bearer realm> but was:<Bearer>
+message="java.lang.AssertionError: Response header 'WWW-Authenticate'
+Expected: (a string starting with "Bearer error=\"invalid_token\"" and not a string containing "invalid_token")
+     but: not a string containing "invalid_token" was "Bearer error=\"invalid_token\", error_description=\"An error occurred while attempting to decode the Jwt: Malformed token\", error_uri=\"https://tools.ietf.org/html/rfc6750#section-3.1\""
+message="java.lang.AssertionError: Status expected:<404> but was:<401>      (well-known, unauthenticated)
+message="java.lang.AssertionError: Status expected:<200> but was:<404>      (well-known, authenticated)
+(permittedRouteStillAnswersAnonymously, unarmed, passed)
+restore: git checkout -- UnauthenticatedProblemDetailIntegrationTest.java -> 8b8f6b24...551a = HEAD blob
+
+=== Clean again
+rc=0, > Task :core-java:cleanIntegrationTest (executed), BUILD SUCCESSFUL in 27s
+XML: tests="5" skipped="0" failures="0" errors="0"; git status clean (only the orchestrator's milestone.lock untracked)
