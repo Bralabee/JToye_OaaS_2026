@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-11-PLAN.md
-last_updated: "2026-10-05T13:10:00.000Z"
+stopped_at: Completed 38-19-PLAN.md
+last_updated: "2026-10-05T13:57:00.000Z"
 last_activity: 2026-10-05
-state_head: 2ca4855a6626278aad63f00b8e7b4addc1d46434
+state_head: 88fb87e46ca6da3cdf508ddac106e377641e5852
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 155
-  completed_plans: 148
+  completed_plans: 149
   percent: 67
 ---
 
@@ -111,6 +111,14 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - `ConfigKeyContractTest` reads metadata from the production classpath only. It fails on an unknown key, a deprecated key at any level, or an exclude missing from `AutoConfiguration.imports`, and it VOIDs on zero input. `RenamedConfigKeysBindingTest` binds each renamed key per profile and asserts it is bound first.
   - `scripts/check-boot-config-keys.sh` (0/1/2) is the LAST step of the ci-cd.yaml test job: its cleanTest/--rerun would otherwise replace the uploaded unit results and JaCoCo data. Arms A-F gave 1,1,2,2,1,1. HANDOFF EXPECT is 47. BOOT4-11 complete.
   - Carried: 38-16 metrics must count 17 new Java tests in 2 new files. 38-17 should read `spring.web.error` and `management.tracing.export.zipkin` out of the rebuilt jar. The 38-18 PR body should name the restored Zipkin endpoint, log retention and error detail. `check-handoff-contract` H-3 (HANDOFF behind origin/main) was already red at the plan base.
+- 38-19 DONE 2026-10-05: removing the bridge in 38-12 breaks no test context. This was measured batch by batch with the INTERIM-JACKSON2-BRIDGE line removed, and each restore was verified by sha256 against the HEAD blob.
+  - Tracer: with the bridge line removed, the unmigrated `ShopControllerIntegrationTest` was RED 6/6 on its own `objectMapper` field, and the context itself started (no main bean needs the bridge). Migrated, it was GREEN.
+  - All 24 bean injectors now inject Boot's Jackson-3 `JsonMapper`: the plan's 23 plus the 38-07 residual `TenantLifecycleAdminIntegrationTest`. Batch A is 11 classes / 92 tests; batch B is 13 / 62. Both are green with the bridge on and off.
+  - `GuestCheckoutIdempotencyIntegrationTest`'s planted legacy hash went red under Boot's alphabetical mapper. It now uses IdempotencyJson's frozen Boot-3.5 recipe (golden-pinned for that body); assertions are kept and production is untouched.
+  - Batch C: nine local mappers are on `JsonMapper.builder()`. Both golden-file tests are migrated, with the comparison green and the golden untouched; a perturbation arm turned each red. OpenApiSnapshotTest gets only a DELIBERATE-JACKSON2 line.
+  - Five Spring-adapter Jackson-2 users moved to the Jackson-3 adapters. The plan's grep could not see them and the bridge removal would not have caught them: OrderEventFanoutTopology, the two Rabbit factory tests, and GlobalExceptionHandlerRequestShape and OptimisticLock (now on `BootJsonMapper`; a bare-mapper arm is red on `$.property`/`$.code`).
+  - The closed DELIBERATE-JACKSON2-LIST has 3 files: AmqpJackson2CompatibilityTest, OutboxPayloadCompatibilityTest and OpenApiSnapshotTest. Verify 6 gives base == head for all 39 changed test files. Unit suite 1485/0/1 skipped (= the wave-4 gate). BOOT4-02/04 stay open (38-12 and later).
+  - Carried, for 38-12: JacksonLineContractTest's test scan must ALSO match package-qualified Spring `Jackson2*`/`MappingJackson2*`/`GenericJackson2*` adapters, because the narrow `com.fasterxml.jackson.{databind,core,datatype}` grep misses AmqpJackson2CompatibilityTest. The allowlist constant is the three list paths verbatim (evidence/38-19-test-jackson3-sweep.txt).
 - Next: 38-12 (sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
@@ -771,6 +779,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P09 | 21 min | 2 tasks | 5 files |
 | Phase 38 P10 | 21 min | 2 tasks | 7 files |
 | Phase 38 P11 | 53 min | 3 tasks | 16 files |
+| Phase 38 P19 | 45 min | 3 tasks | 40 files |
 
 ## Accumulated Context
 
@@ -933,6 +942,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-11: staging's management.metrics.export.prometheus.enabled was deleted, not renamed (Boot-2 name, dead since 3.0; base's key applies)
 - [Phase 38]: 38-11: check-boot-config-keys is the last step of the ci-cd.yaml test job, after both uploads, because its cleanTest/--rerun replaces the unit results and JaCoCo test.exec
 - [Phase 38]: 38-11: config-binding proofs assert BindResult.isBound() before the value; several Boot-3.5 values equal Boot's defaults
+- [Phase 38]: 38-19: a test that plants data a Boot-3.5 pod wrote (the guest legacy request_hash) uses the frozen Boot-3.5 recipe (IdempotencyJson's), never Boot's app-wide Jackson-3 mapper
+- [Phase 38]: 38-19: both golden-file tests migrated (comparison green, golden untouched); neither is on the DELIBERATE-JACKSON2 list
+- [Phase 38]: 38-19: Spring-adapter Jackson-2 users in tests are migrated, not allowlisted; the closed DELIBERATE-JACKSON2-LIST is 3 files
+- [Phase 38]: 38-19: 38-12's contract-test scan must include package-qualified Spring Jackson-2 adapters, or a regression through them passes unseen
 
 ### Pending Todos
 
@@ -1002,8 +1015,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T13:10:00.000Z
-Stopped at: Completed 38-11-PLAN.md. Next is 38-12 (sequential) on branch `phase-37-spring-boot-4-1`.
+Last session: 2026-10-05T13:57:00.000Z
+Stopped at: Completed 38-19-PLAN.md. Next is 38-12 (sequential) on branch `phase-37-spring-boot-4-1`.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
