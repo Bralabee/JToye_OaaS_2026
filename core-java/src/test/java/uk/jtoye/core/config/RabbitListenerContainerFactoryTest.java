@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
-import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.boot.amqp.autoconfigure.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -62,7 +62,7 @@ class RabbitListenerContainerFactoryTest {
         return new ApplicationContextRunner()
                 .withUserConfiguration(RabbitMQConfig.class)
                 .withBean(ConnectionFactory.class, () -> mock(ConnectionFactory.class))
-                .withBean(MessageConverter.class, Jackson2JsonMessageConverter::new)
+                .withBean(MessageConverter.class, JacksonJsonMessageConverter::new)
                 .withPropertyValues(properties);
     }
 
@@ -209,7 +209,7 @@ class RabbitListenerContainerFactoryTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(RabbitMQConfig.class)
                 .withBean(ConnectionFactory.class, () -> mock(ConnectionFactory.class))
-                .withBean(MessageConverter.class, Jackson2JsonMessageConverter::new)
+                .withBean(MessageConverter.class, JacksonJsonMessageConverter::new)
                 .withBean(SimpleRabbitListenerContainerFactoryConfigurer.class, () -> configurer)
                 .run(ctx -> {
                     assertThat(ctx).hasNotFailed();

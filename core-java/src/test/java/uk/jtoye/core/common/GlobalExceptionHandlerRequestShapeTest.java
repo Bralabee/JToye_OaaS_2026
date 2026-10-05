@@ -5,14 +5,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.core.PropertyPath;
 import org.springframework.data.core.TypeInformation;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import uk.jtoye.core.testsupport.BootJsonMapper;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -42,13 +42,13 @@ class GlobalExceptionHandlerRequestShapeTest {
 
     @BeforeEach
     void setUp() {
-        // API-7: a BARE `new ObjectMapper()` does not register ProblemDetailJacksonMixin, so a
-        // ProblemDetail's extra members serialise NESTED under "properties" — a shape production
-        // never emits. Jackson2ObjectMapperBuilder is what Spring Boot builds its auto-configured
-        // mapper with, so asserting `$.property` here asserts what a real client receives
-        // (same reasoning as RateLimitInterceptorTest, issue #413).
-        MappingJackson2HttpMessageConverter jackson =
-                new MappingJackson2HttpMessageConverter(Jackson2ObjectMapperBuilder.json().build());
+        // API-7: a BARE mapper does not register the ProblemDetail mixin, so a ProblemDetail's
+        // extra members serialise NESTED under "properties" — a shape production never emits.
+        // BootJsonMapper is Boot's own auto-configured Jackson-3 JsonMapper (the bean production
+        // writes problem documents with, mixin included), so asserting `$.property` here asserts
+        // what a real client receives (same reasoning as RateLimitInterceptorTest, issue #413).
+        JacksonJsonHttpMessageConverter jackson =
+                new JacksonJsonHttpMessageConverter(BootJsonMapper.get());
         mockMvc = MockMvcBuilders.standaloneSetup(new ThrowingController())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setMessageConverters(jackson)

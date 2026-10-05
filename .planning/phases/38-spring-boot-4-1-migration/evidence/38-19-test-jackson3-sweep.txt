@@ -291,3 +291,83 @@ ProductLabelGoldenFileTest: migrated, comparison green untouched (renderModelMat
 Both read the golden into a record (FinancialSummaryDto, LabelRenderModel) and compare objects, so Jackson 3's key order cannot
 reach the comparison. Both @Disabled one-shot capture methods stay @Disabled. Neither stays on Jackson 2.
 Note: the OpenApiSnapshotTest Javadoc line was added after gate 2 (comment only); the bridge-off probe below recompiles the committed tree.
+Committed: ea458cc9 test(38-19): batch C: local mappers on JsonMapper.builder(); OpenApiSnapshotTest marked DELIBERATE-JACKSON2
+
+### Batch C gate 4: bridge OFF probe, on committed ea458cc9 (2026-10-05T13:43:39Z -> 13:45:55Z)
+
+The plan's verify 4 (integration classes) verbatim, plus the five unit classes inside the same bracket (stronger than the plan:
+the plan exempts them because they start no context; they were run anyway).
+bridge_lines_in_worktree=0
+integration: > Task :core-java:cleanIntegrationTest  > Task :core-java:compileJava  > Task :core-java:compileTestJava  > Task :core-java:integrationTest
+             BUILD SUCCESSFUL in 1m 55s
+unit:        > Task :core-java:cleanTest  > Task :core-java:compileTestJava UP-TO-DATE (compiled bridge-free just before)  > Task :core-java:test
+             BUILD SUCCESSFUL in 20s
+bridge_off_rc=0 bridge_off_unit_rc=0
+head_show_rc=0
+d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  core-java/build.gradle.kts           (restored)
+d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  scratch/build.head (HEAD blob)       EQUAL
+git status after restore: only "?? .planning/milestone.lock"
+XML read (bridge OFF):
+uk.jtoye.core.finance.FinancialSummaryGoldenFileTest tests=2 failures=0 errors=0 skipped=1
+uk.jtoye.core.webhook.WebhookDeliveryLogIntegrationTest tests=11 failures=0 errors=0 skipped=0
+uk.jtoye.core.notification.listener.FinancialNotificationListenerIntegrationTest tests=2 failures=0 errors=0 skipped=0
+uk.jtoye.core.notification.listener.OnboardingNotificationListenerIntegrationTest tests=1 failures=0 errors=0 skipped=0
+uk.jtoye.core.notification.listener.OrderNotificationListenerIntegrationTest tests=2 failures=0 errors=0 skipped=0
+uk.jtoye.core.config.TenantHeaderAbsentDocumentTest$FilterAbsent tests=2 skipped=0 failures=0 errors=0 
+uk.jtoye.core.config.TenantHeaderAbsentDocumentTest$FilterPresent tests=1 skipped=0 failures=0 errors=0 
+uk.jtoye.core.shop.ShopServiceGeocodeTest$OutOfRangeCoordinates tests=7 skipped=0 failures=0 errors=0 
+uk.jtoye.core.shop.ShopServiceGeocodeTest$UnpairedCoordinates tests=4 skipped=0 failures=0 errors=0 
+uk.jtoye.core.shop.ShopServiceGeocodeTest$WritePathGeocoding tests=15 skipped=0 failures=0 errors=0 
+uk.jtoye.core.common.InsufficientStockExceptionHandlerTest tests=1 skipped=0 failures=0 errors=0 
+uk.jtoye.core.common.InvalidReviewPhotoExceptionHandlerTest tests=1 skipped=0 failures=0 errors=0 
+uk.jtoye.core.product.ProductLabelGoldenFileTest tests=2 skipped=1 failures=0 errors=0 
+uk.jtoye.core.notification.consent.PublicUnsubscribeRequestShapeTest tests=7 skipped=0 failures=0 errors=0 
+
+### Golden-comparison fail direction (bracketed; never committed): clean -> arm -> clean
+
+clean-before: git status --porcelain on both goldens -> 0 changed
+arm: ppds-label-compliant.golden.json "Use by: 8 Jul 2026" -> "Use by: 9 Jul 2026";
+     financial-summary-1k.golden.json "transactionCount" : 1000 -> 1001   (arm applied: 1 1)
+ProductLabelGoldenFileTest (unit) rc=1: tests=2 skipped=1 failures=1  "java.lang.AssertionError: Expecting actual: LabelRenderModel[productName=Yam Pottage 500g, ..."
+FinancialSummaryGoldenFileTest (integration) rc=1: tests=2 skipped=1 failures=1  "java.lang.AssertionError: Expecting actual: FinancialSummaryDto[... transactionCount=1000, ..."
+restore: git checkout HEAD -- both goldens; sha256 restored vs `git show HEAD:<path>`:
+  9ce1ee85644b827d6fb604f835492130f2e09a7accb378e44999af5013eaa00b == 9ce1ee85644b827d6fb604f835492130f2e09a7accb378e44999af5013eaa00b  ppds-label-compliant.golden.json
+  18c02a3615a82a321d452a756d900200eefb21920607f6c3436a8aa95dd7140c == 18c02a3615a82a321d452a756d900200eefb21920607f6c3436a8aa95dd7140c  financial-summary-1k.golden.json
+clean-after: 0 changed; closing run: ProductLabelGoldenFileTest rc=0 tests=2 skipped=1 failures=0, FinancialSummaryGoldenFileTest rc=0 tests=2 skipped=1 failures=0
+=> the migrated Jackson-3 reads compare real values: one changed golden value turns each test red.
+
+## Reconciliation: Jackson-2 users the plan's grep cannot see (Spring's Jackson-2 adapter classes)
+
+The plan's inventory grep (com.fasterxml.jackson.{databind,core,datatype}) does not match a file that reaches Jackson 2 only
+through Spring's deprecated adapter classes. At PLAN_BASE six such test files existed:
+  boot4/AmqpJackson2CompatibilityTest        Jackson2JsonMessageConverter   38-08, already DELIBERATE-JACKSON2 (kept)
+  order/OrderEventFanoutTopologyIntegrationTest  Jackson2JsonMessageConverter  38-08 residual (38-08-SUMMARY hands it to 38-19)
+  config/RabbitListenerContainerFactoryTest  Jackson2JsonMessageConverter::new (a MessageConverter bean filler)   no owning plan
+  config/RabbitMQListenerFactoryBehaviourTest Jackson2JsonMessageConverter::new (a MessageConverter bean filler)  no owning plan
+  common/GlobalExceptionHandlerRequestShapeTest  MappingJackson2HttpMessageConverter(Jackson2ObjectMapperBuilder.json().build())  no owning plan
+  common/OptimisticLockExceptionHandlerTest      MappingJackson2HttpMessageConverter(Jackson2ObjectMapperBuilder.json().build())  no owning plan
+None depends on the bridge (Spring's adapters and jackson-databind 2 stay on the test classpath through springdoc's swagger-core),
+so none would have failed in 38-12, which is exactly why they would have survived it unnoticed. DEVIATION: the five that are not
+deliberate are migrated here under Task 3's rules, assertions untouched:
+  - the two Rabbit factory tests: the filler bean becomes JacksonJsonMessageConverter::new (the class production's
+    RabbitMQConfig.jsonMessageConverter() returns since 38-08);
+  - OrderEventFanoutTopologyIntegrationTest: its consume converter becomes new JacksonJsonMessageConverter("uk.jtoye.core.order")
+    (same single trusted package); the Boot-3.5 reverse direction stays AmqpJackson2CompatibilityTest's;
+  - the two exception-handler tests: their own comments chose the Jackson-2 builder because it was "what Spring Boot builds its
+    auto-configured mapper with". On Boot 4 that is false; production writes problem documents with Boot's Jackson-3 JsonMapper,
+    which BootJsonMapper (38-07) builds with the ProblemDetail mixin. They now use new JacksonJsonHttpMessageConverter(BootJsonMapper.get()),
+    and the comments say so.
+
+### Residuals: bridge ON (2026-10-05T13:49:24Z -> 13:49:59Z)
+
+unit: ./gradlew :core-java:cleanTest :core-java:test --tests <GlobalExceptionHandlerRequestShape, OptimisticLockExceptionHandler,
+      RabbitListenerContainerFactory, RabbitMQListenerFactoryBehaviour> --no-daemon
+      rc=0  > Task :core-java:cleanTest  > Task :core-java:compileTestJava  > Task :core-java:test  BUILD SUCCESSFUL in 13s
+integration: ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.order.OrderEventFanoutTopologyIntegrationTest' --no-daemon
+      rc=0  > Task :core-java:cleanIntegrationTest  > Task :core-java:integrationTest  BUILD SUCCESSFUL in 21s
+XML read (bridge ON):
+uk.jtoye.core.common.GlobalExceptionHandlerRequestShapeTest tests=5 skipped=0 failures=0 errors=0 
+uk.jtoye.core.common.OptimisticLockExceptionHandlerTest tests=4 skipped=0 failures=0 errors=0 
+uk.jtoye.core.config.RabbitListenerContainerFactoryTest tests=7 skipped=0 failures=0 errors=0 
+uk.jtoye.core.config.RabbitMQListenerFactoryBehaviourTest tests=3 skipped=0 failures=0 errors=0 
+uk.jtoye.core.order.OrderEventFanoutTopologyIntegrationTest tests=1 skipped=0 failures=0 errors=0 
