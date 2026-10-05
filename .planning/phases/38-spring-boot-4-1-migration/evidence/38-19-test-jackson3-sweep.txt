@@ -371,3 +371,150 @@ uk.jtoye.core.common.OptimisticLockExceptionHandlerTest tests=4 skipped=0 failur
 uk.jtoye.core.config.RabbitListenerContainerFactoryTest tests=7 skipped=0 failures=0 errors=0 
 uk.jtoye.core.config.RabbitMQListenerFactoryBehaviourTest tests=3 skipped=0 failures=0 errors=0 
 uk.jtoye.core.order.OrderEventFanoutTopologyIntegrationTest tests=1 skipped=0 failures=0 errors=0 
+Committed: 975511a5 test(38-19): residual Jackson-2 adapter users in tests move to Jackson 3
+
+### Arm: the exception-handler tests' mapper choice is load-bearing (bracketed, on committed 975511a5; clean -> arm -> clean)
+
+clean-before: 0 changed. Arm: BootJsonMapper.get() -> tools.jackson.databind.json.JsonMapper.builder().build() in both files (arm applied: 1 1)
+./gradlew :core-java:cleanTest :core-java:test --tests <GlobalExceptionHandlerRequestShapeTest, OptimisticLockExceptionHandlerTest>  arm_rc=1
+  "9 tests completed, 2 failed"
+  GlobalExceptionHandlerRequestShapeTest > malformedSortPropertyReturns400() FAILED   java.lang.AssertionError: No value at JSON path "$.property"
+  OptimisticLockExceptionHandlerTest > objectOptimisticLockingFailureReturnsTyped409() FAILED   java.lang.AssertionError: No value at JSON path "$.code"
+restore: git checkout HEAD -- both; sha256 restored == HEAD blob:
+  12c26525ecf024ae6226316e7e35aa4d20dab7ce70265530e7065b1d82aa6bd6  GlobalExceptionHandlerRequestShapeTest.java (both)
+  258fef9857a45ff5e55baca4367b75cbfac344680a3ac68548aa40053a273dd8  OptimisticLockExceptionHandlerTest.java (both)
+clean-after: 0 changed; closing run = the bridge-off probe below (both green).
+=> a bare Jackson-3 mapper nests the extension members under "properties"; Boot's mapper (mixin registered by Boot) is what the
+   assertions need, as it was the Boot-3.5 builder before. Spring 7's JacksonJsonHttpMessageConverter(JsonMapper) adds no mixin itself.
+
+### Residuals: bridge OFF probe, on committed 975511a5 (2026-10-05T13:50:51Z -> 13:51:33Z)
+
+bridge_lines_in_worktree=0
+unit:        > Task :core-java:cleanTest  > Task :core-java:compileJava  > Task :core-java:compileTestJava  > Task :core-java:test  BUILD SUCCESSFUL in 21s
+integration: > Task :core-java:cleanIntegrationTest  > Task :core-java:compileTestJava UP-TO-DATE  > Task :core-java:integrationTest  BUILD SUCCESSFUL in 20s
+bridge_off_unit_rc=0 bridge_off_int_rc=0
+head_show_rc=0
+d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  core-java/build.gradle.kts           (restored)
+d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  scratch/build.head (HEAD blob)       EQUAL
+git status after restore: only "?? .planning/milestone.lock"
+XML read (bridge OFF):
+uk.jtoye.core.common.GlobalExceptionHandlerRequestShapeTest tests=5 skipped=0 failures=0 errors=0 
+uk.jtoye.core.common.OptimisticLockExceptionHandlerTest tests=4 skipped=0 failures=0 errors=0 
+uk.jtoye.core.config.RabbitListenerContainerFactoryTest tests=7 skipped=0 failures=0 errors=0 
+uk.jtoye.core.config.RabbitMQListenerFactoryBehaviourTest tests=3 skipped=0 failures=0 errors=0 
+uk.jtoye.core.order.OrderEventFanoutTopologyIntegrationTest tests=1 skipped=0 failures=0 errors=0 
+
+## Closing reconciliation over core-java/src/test/java (verify 5)
+
+--- verify 5, the plan's command verbatim (HEAD 975511a5)
+rc=0
+core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java deliberate=1
+core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java deliberate=1
+
+--- verify 5 widened (final form): narrow patterns PLUS -E 'org\.springframework\.[a-z.]+\.(Jackson2[A-Za-z]*|MappingJackson2[A-Za-z]*|GenericJackson2[A-Za-z]*)' (a Spring Jackson-2 adapter named by its package: an import or an FQCN use)
+rc=0
+core-java/src/test/java/uk/jtoye/core/boot4/AmqpJackson2CompatibilityTest.java deliberate=1
+core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java deliberate=1
+core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java deliberate=1
+
+--- fail direction: the same widened scan at PLAN_BASE c2c64e78 (deliberate counted on the PLAN_BASE blob)
+rc=0 files=41 with_deliberate=0: 39
+core-java/src/test/java/uk/jtoye/core/boot4/AmqpJackson2CompatibilityTest.java deliberate=1
+core-java/src/test/java/uk/jtoye/core/common/GlobalExceptionHandlerRequestShapeTest.java deliberate=0
+core-java/src/test/java/uk/jtoye/core/common/OptimisticLockExceptionHandlerTest.java deliberate=0
+core-java/src/test/java/uk/jtoye/core/config/RabbitListenerContainerFactoryTest.java deliberate=0
+core-java/src/test/java/uk/jtoye/core/config/RabbitMQListenerFactoryBehaviourTest.java deliberate=0
+core-java/src/test/java/uk/jtoye/core/order/OrderEventFanoutTopologyIntegrationTest.java deliberate=0
+
+--- positive control for the adapter pattern alone at HEAD (AmqpJackson2CompatibilityTest must print):
+core-java/src/test/java/uk/jtoye/core/boot4/AmqpJackson2CompatibilityTest.java
+core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java
+rc=0
+
+Note on the first widened attempt (bare class names, -e Jackson2JsonMessageConverter etc.): it also printed
+config/RabbitMQConfigMessageConverterTest.java deliberate=0. Both hits there are Javadoc history ("was {@code new
+Jackson2JsonMessageConverter()}", "{@code Jackson2JsonMessageConverter} is scheduled for removal"); the file imports only
+org.springframework.amqp.support.converter.JacksonJsonMessageConverter. A bare-name text scan cannot tell a mention from a use,
+so the adapter half was narrowed to the package-qualified name an import or an FQCN use must carry (the final form above).
+
+PLAN DEFECT (verify 5 as written is internally inconsistent): its narrow grep cannot print AmqpJackson2CompatibilityTest, which
+reaches Jackson 2 only through Spring's org.springframework.amqp.support.converter.Jackson2JsonMessageConverter (no
+com.fasterxml.jackson import), yet the acceptance criterion requires the list to include "38-08's two classes" AND the printed
+set to equal the list. Resolution: the list is compared with the WIDENED scan, whose printed set equals the list exactly (3 = 3,
+checked below); the narrow scan prints the list minus AmqpJackson2CompatibilityTest (2 lines, each deliberate=1).
+FOR 38-12: JacksonLineContractTest's test scan must use the widened pattern (com.fasterxml.jackson.{databind,core,datatype} OR
+org.springframework.<pkg>.(Jackson2*|MappingJackson2*|GenericJackson2*)); with the narrow one, a test that goes back to Jackson 2
+through a Spring adapter would pass the contract test unseen, which is how the five residuals above survived until now.
+
+## DELIBERATE-JACKSON2-LIST (closed; one line per file; 38-12's allowlist constant)
+
+DELIBERATE-JACKSON2-LIST core-java/src/test/java/uk/jtoye/core/boot4/AmqpJackson2CompatibilityTest.java | emulates Boot-3.5 pods during a rolling deploy: a Boot-3.5 Jackson2JsonMessageConverter reads every message the Boot-4 converter writes (38-08)
+DELIBERATE-JACKSON2-LIST core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java | emulates Boot-3.5 pods during a rolling deploy: a mapper built like Boot 3.5's reads the outbox rows Boot 4 writes (38-08)
+DELIBERATE-JACKSON2-LIST core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java | byte-stable normalizer of springdoc's swagger-core (Jackson-2) output; its writer decides the committed snapshot's bytes, and 38-14 regenerates that snapshot
+
+Neither golden-file test is on the list (both migrated with their comparison green and the golden untouched).
+
+list == widened scan at HEAD: EQUAL (list=3, scan=3); reasons:       3 ok 
+fail direction of that comparison: list vs the PLAN_BASE widened scan -> DIFFERENT (41 paths)
+
+## No-weakening (verify 6), no-resource change, and the 32-file absence criterion
+
+--- verify 6 (PLAN_BASE=c2c64e78448b2ee7b9f2b1c7d44a6d59f190c19b .. HEAD 975511a5): per changed test file, base and head test/@Disabled counts
+core-java/src/test/java/uk/jtoye/core/common/GlobalExceptionHandlerRequestShapeTest.java show_rc=0 base=5/0 head=5/0
+core-java/src/test/java/uk/jtoye/core/common/InsufficientStockExceptionHandlerTest.java show_rc=0 base=1/0 head=1/0
+core-java/src/test/java/uk/jtoye/core/common/InvalidReviewPhotoExceptionHandlerTest.java show_rc=0 base=1/0 head=1/0
+core-java/src/test/java/uk/jtoye/core/common/OptimisticLockExceptionHandlerTest.java show_rc=0 base=4/0 head=4/0
+core-java/src/test/java/uk/jtoye/core/config/RabbitListenerContainerFactoryTest.java show_rc=0 base=7/0 head=7/0
+core-java/src/test/java/uk/jtoye/core/config/RabbitMQListenerFactoryBehaviourTest.java show_rc=0 base=3/0 head=3/0
+core-java/src/test/java/uk/jtoye/core/config/TenantHeaderAbsentDocumentTest.java show_rc=0 base=4/0 head=4/0
+core-java/src/test/java/uk/jtoye/core/finance/FinancialSummaryGoldenFileTest.java show_rc=0 base=3/6 head=3/6
+core-java/src/test/java/uk/jtoye/core/gdpr/DsarFanoutIntegrationTest.java show_rc=0 base=12/0 head=12/0
+core-java/src/test/java/uk/jtoye/core/gdpr/DsarIntakeIntegrationTest.java show_rc=0 base=14/0 head=14/0
+core-java/src/test/java/uk/jtoye/core/gdpr/DsarSubjectAndGlobalRateLimitIntegrationTest.java show_rc=0 base=4/0 head=4/0
+core-java/src/test/java/uk/jtoye/core/gdpr/DsarVerificationIntegrationTest.java show_rc=0 base=9/0 head=9/0
+core-java/src/test/java/uk/jtoye/core/integration/CustomerControllerIntegrationTest.java show_rc=0 base=8/0 head=8/0
+core-java/src/test/java/uk/jtoye/core/integration/FinancialTransactionControllerIntegrationTest.java show_rc=0 base=7/0 head=7/0
+core-java/src/test/java/uk/jtoye/core/integration/LocationHeaderContractTest.java show_rc=0 base=8/0 head=8/0
+core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java show_rc=0 base=2/0 head=2/0
+core-java/src/test/java/uk/jtoye/core/integration/ShopControllerIntegrationTest.java show_rc=0 base=7/0 head=7/0
+core-java/src/test/java/uk/jtoye/core/notification/consent/PublicUnsubscribeRequestShapeTest.java show_rc=0 base=7/0 head=7/0
+core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingAdminQueueIntegrationTest.java show_rc=0 base=12/0 head=12/0
+core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCompanyNumberValidationIntegrationTest.java show_rc=0 base=4/0 head=4/0
+core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCreateCrossTenantIntegrationTest.java show_rc=0 base=4/0 head=4/0
+core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingResubmitIntegrationTest.java show_rc=0 base=4/0 head=4/0
+core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingReviewQueueIntegrationTest.java show_rc=0 base=11/0 head=11/0
+core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingStallOutboxIntegrationTest.java show_rc=0 base=2/0 head=2/0
+core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingSubmitIntegrationTest.java show_rc=0 base=3/0 head=3/0
+core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingSubmitterResolverIntegrationTest.java show_rc=0 base=5/0 head=5/0
+core-java/src/test/java/uk/jtoye/core/onboarding/VendorOnboardingEndToEndIntegrationTest.java show_rc=0 base=3/0 head=3/0
+core-java/src/test/java/uk/jtoye/core/order/OrderEventFanoutTopologyIntegrationTest.java show_rc=0 base=2/0 head=2/0
+core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxFlusherCrossTenantIntegrationTest.java show_rc=0 base=3/0 head=3/0
+core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxReliabilityIntegrationTest.java show_rc=0 base=7/0 head=7/0
+core-java/src/test/java/uk/jtoye/core/product/ProductLabelGoldenFileTest.java show_rc=0 base=2/6 head=2/6
+core-java/src/test/java/uk/jtoye/core/shop/ShopServiceGeocodeTest.java show_rc=0 base=26/0 head=26/0
+core-java/src/test/java/uk/jtoye/core/storefront/GuestCheckoutIdempotencyIntegrationTest.java show_rc=0 base=14/0 head=14/0
+core-java/src/test/java/uk/jtoye/core/storefront/PublicApiVersionAliasIntegrationTest.java show_rc=0 base=5/0 head=5/0
+core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontPostcodeSearchIntegrationTest.java show_rc=0 base=16/0 head=16/0
+core-java/src/test/java/uk/jtoye/core/tenant/TenantLifecycleAdminIntegrationTest.java show_rc=0 base=11/0 head=11/0
+core-java/src/test/java/uk/jtoye/core/testsupport/MailhogAssertions.java show_rc=0 base=0/0 head=0/0
+core-java/src/test/java/uk/jtoye/core/webhook/WebhookDeliveryLogIntegrationTest.java show_rc=0 base=12/0 head=12/0
+core-java/src/test/java/uk/jtoye/core/webhook/WebhookSubscriptionControllerIntegrationTest.java show_rc=0 base=6/0 head=6/0
+files=39 mismatches_or_missing_base=0
+
+--- verify 6 fail direction: the same awk on a scratch copy of ShopControllerIntegrationTest with one @Test line deleted
+base=7/0 broken_head=6/0  -> differs, so the check can fail
+
+--- no-resource/no-main/no-snapshot change: git diff --name-only PLAN_BASE..HEAD -- core-java/src/test/resources docs/api core-java/src/main
+<no output>
+rc=0
+    fail direction (same command over 38-07's range c5aac555..d8844e34, which added a test resource and edited main):
+    lines=7 rc=0 (first: core-java/src/main/java/uk/jtoye/core/ai/ImageAnalysisService.java)
+    also: build file unchanged PLAN_BASE..HEAD -> 0 paths; INTERIM-JACKSON2-BRIDGE count at HEAD: core-java/build.gradle.kts:1
+
+--- Task 3 AC2: the plan's files_modified .java paths minus the listed one (OpenApiSnapshotTest): count=32
+cmd: git grep -l -e com.fasterxml.jackson.databind -e com.fasterxml.jackson.core -e com.fasterxml.jackson.datatype -- <those paths>; echo rc=$?
+<no output>
+rc=1
+fail direction at PLAN_BASE: lines=32 rc=0
+
+(verify 6 counts are text counts: '@Test' also matches e.g. a Javadoc mention, so a count can exceed the JUnit total; the check is base == head per file, which a deleted or added test or @Disabled breaks, as the arm shows.)
