@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-17-PLAN.md
-last_updated: "2026-10-05T17:22:00.000Z"
+stopped_at: Completed 38-18-PLAN.md
+last_updated: "2026-10-05T18:30:00.000Z"
 last_activity: 2026-10-05
-state_head: 34054ee113a7073a1a1c5dcc6e2db064aad03f83
+state_head: 4c318b2ea99426688154afb3c74737dac88f4dd3
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 156
-  completed_plans: 155
+  completed_plans: 156
   percent: 67
 ---
 
@@ -185,7 +185,15 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - Requirements: BOOT4-05/07/09 are marked complete. BOOT4-14 is blocked on 38-18.
   - `total_plans` was 155, one short of 137 + 19 since 38-19 was added. It is corrected to 156 BY HAND; completed is 155.
   - Throwaway tenant `eda9d895-c55c-4f71-8eb0-35591fad1acb` stays OFFBOARDED by design.
-- Next: 38-18 (wave 11, push, owner checkpoint). Re-run check-branch-behind-base before the push. STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
+- 38-18 DONE 2026-10-05: every CI-only proof of the phase ran on the pushed branch and was read to its outcome (`evidence/38-18-ci-and-nightly.txt`).
+  - Owner (Task 1, exact words): "push-and-dispatch (Recommended)". One push landed, a fast-forward 767f5658..acee00c5, after 0 behind origin/main was confirmed. There was no force and no --no-verify, and no PR was opened.
+  - The first push was REFUSED by pre-push P-3 gitleaks on 3 false positives: `golden-guest-key-0001` in the byte-guarded 38-01 fixtures, and a class name in 38-05-SUMMARY prose. acee00c5 adds an exact content allowlist, a fingerprint and an inline allow. The squash simulation is real rc 0, changed key rc 1, inline removed rc 1. It was measured on 8.30.1 only; CI pins 8.27.2.
+  - CI/CD 37348823924: success, every job read. On Temurin 25.0.4+1, unit is 1490/0/1 and integration 771/0/6 (1 @Disabled + 5 MailHog assumptions, unchanged from main). OpenAPI gate OK; ops contracts 25/25; check-boot-config-keys PASS. The core-java Trivy gate (v0.70.0) reads 0 in the OS and 0 in app.jar.
+  - Nightly 37348829067 (dispatch, headSha == HEAD): the Boot-4 stack built and was healthy. report.json reads 325 executed, 319 passed, 0 failed, 6 skipped, and the skip budget is PASS 6/6. The OpenAPI-vs-running, URL, Content-Type, cart-identity and restore-drill gates all PASS.
+  - Requirements: BOOT4-01, BOOT4-12 and BOOT4-14 are marked complete (ready-ids 3/3). All 14 BOOT4 requirements are now checked.
+  - The ship checklist is in evidence §7: Closes #706, supersedes #739, a changelog heading with the PR number, a squash merge, the D3 review series, the contract notes, a watch on the PR's gitleaks 8.27.2 job, and no attribution.
+  - The close-out docs commits after acee00c5 are local; the ship step pushes them.
+- Next: phase 38 verification, then /gsd-ship per evidence/38-18 §7. STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -852,6 +860,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P15 | 13 min | 2 tasks | 2 files |
 | Phase 38 P16 | 20 min | 3 tasks | 21 files |
 | Phase 38 P17 | 21 min | 3 tasks | 5 files |
+| Phase 38 P18 | 58 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1037,6 +1046,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-17: owner chose takeover-from-worktree and Stay on Boot-4; the compose stack runs the branch and main is not rebuilt
 - [Phase 38]: 38-17: origin/main merged at 25566e2c (plan: merge when behind); rebuild scoped to the 4 built services with --no-deps --force-recreate so non-built services keep main-checkout binds
 - [Phase 38]: 38-17: /.well-known verified per the 38-06 ruling (anonymous 401, credentialed 404); throwaway Keycloak users via partialImport because KC24 strips the unmanaged tenant_id on admin-API create
+- [Phase 38]: 38-18: owner chose push-and-dispatch; one fast-forward push (acee00c5), no PR; CI/CD and the nightly read to their jobs and report
+- [Phase 38]: 38-18: pre-push gitleaks false positives fixed at the cause with a content allowlist anchored to exactly golden-guest-key-0001 (fixtures are byte-guarded; covers the squash commit), plus a fingerprint and an inline allow for one prose line
+- [Phase 38]: 38-18: CI integration's 6 skips are 1 @Disabled + 5 MailHog assumptions unchanged from origin/main, so they are explained rather than absorbed
 
 ### Pending Todos
 

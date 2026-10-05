@@ -356,7 +356,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
 | 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-29 |
 | 37. Real-world operations readiness | v2.3 | 0/? | Not started | — |
-| 38. Spring Boot 4.1 Migration | v2.3 | 18/19 | In Progress | — |
+| 38. Spring Boot 4.1 Migration | v2.3 | 19/19 | In Progress | — |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
 before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
@@ -890,7 +890,7 @@ Plans:
 **Goal:** Move core-java from Spring Boot 3.5.16 to 4.1.x and prove the result green by test, gate and live runtime. Boot 3.5's OSS support ended 2026-06-30 (#706); the move also unblocks springdoc 3.1.1 (#739). Owner decisions D-01..D-04 (2026-10-01) and the spike evidence are in `38-CONTEXT.md` / `38-SPIKE.md`: Jackson 3 throughout, explicit per-module starters, spring-statemachine kept, and 401s kept as plain `Bearer`. Three defects that today's tests do not catch must be closed on the way: KeycloakAdminClient sends a garbage body under Jackson 3; 18 config keys are silently ignored, so it needs a new unknown-key gate; and the netty/Tomcat CVE pins need to move to their Boot-4 lines.
 **Requirements**: BOOT4-01, BOOT4-02, BOOT4-03, BOOT4-04, BOOT4-05, BOOT4-06, BOOT4-07, BOOT4-08, BOOT4-09, BOOT4-10, BOOT4-11, BOOT4-12, BOOT4-13, BOOT4-14 (derived at plan time 2026-10-04 from 38-RESEARCH.md; REQUIREMENTS.md §BOOT4. D-05, added 2026-10-04, is covered by BOOT4-09; no BOOT4-15)
 **Depends on:** Phase 36
-**Plans:** 18/19 plans executed (11 waves). Revised 2026-10-04 after the plan check: the 38-12 test sweep was split out as 38-19, which runs before the bridge removal, and 38-03's doc and doc-gate edits moved to 38-16.
+**Plans:** 19/19 plans executed (11 waves). Revised 2026-10-04 after the plan check: the 38-12 test sweep was split out as 38-19, which runs before the bridge removal, and 38-03's doc and doc-gate edits moved to 38-16.
 
 Plans:
 
@@ -944,7 +944,7 @@ Plans:
 
 **Wave 11**
 
-- [ ] 38-18-PLAN.md — Push, CI/CD on Temurin incl. the image gate, nightly E2E on the branch, ship checklist (#706, #739) (checkpoint)
+- [x] 38-18-PLAN.md — Push, CI/CD on Temurin incl. the image gate, nightly E2E on the branch, ship checklist (#706, #739) (checkpoint)
 
 ### Phase 39: Platform runtime upgrades
 
