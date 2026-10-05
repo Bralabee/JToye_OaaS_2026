@@ -25,6 +25,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import uk.jtoye.core.onboarding.OnboardingStateChangeEvent;
 import uk.jtoye.core.order.OrderStateChangeEvent;
+import uk.jtoye.core.payment.PaymentEvent;
 import uk.jtoye.core.payment.RefundEvent;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
@@ -129,6 +130,12 @@ class AmqpTypeIdDispatchIntegrationTest {
             Received.others.add(event);
         }
 
+        @RabbitHandler
+        public void onPayment(PaymentEvent event) {
+            Received.payment.add(event);
+            Received.paymentLatch.countDown();
+        }
+
         @RabbitHandler(isDefault = true)
         public void onOther(Object event) {
             Received.fallback.add(event);
@@ -173,7 +180,7 @@ class AmqpTypeIdDispatchIntegrationTest {
                         + ". A refused or mis-resolved __TypeId__ lands there or is dead-lettered.");
         assertEquals(1, Received.payment.size(), "exactly one delivery to the PaymentEvent handler");
         InFlightFixtures.assertSameEvent(GoldenSamples.paymentEvent(),
-                assertInstanceOf(uk.jtoye.core.payment.PaymentEvent.class, Received.payment.get(0)));
+                assertInstanceOf(PaymentEvent.class, Received.payment.get(0)));
 
         // Let a wrong second delivery surface before asserting the catch-all stayed empty.
         Thread.sleep(1_000);
