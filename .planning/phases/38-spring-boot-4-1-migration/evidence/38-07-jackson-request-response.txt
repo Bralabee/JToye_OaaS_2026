@@ -1,0 +1,98 @@
+38-07 evidence: request/response-side Jackson users on Jackson 3
+================================================================
+Plan base (ledger): c5aac555f72b09dda74963ffbb802dbc9b69419f
+Host: Ubuntu OpenJDK 25.0.4.1, Gradle 9.7.1 (wrapper), Boot 4.1.1, tools.jackson 3.1.7.
+Every Gradle run below used cleanTest / cleanIntegrationTest, and the log shows that task
+executing. Results were read from core-java/build-local/test-results (never build/).
+No compose service was started, stopped or rebuilt.
+
+Jackson 3.1.7 defaults, measured with jshell against the cached jars (they drive the RED
+predictions below):
+  FAIL_ON_TRAILING_TOKENS=true  FAIL_ON_UNKNOWN_PROPERTIES=false  FAIL_ON_NULL_FOR_PRIMITIVES=true
+  NullNode.asString()="" (Jackson 2 asText() gave "null")  MissingNode.asString()=""
+  readTree("{\"a\":1} tail {x}") -> tools.jackson.core.exc.StreamReadException
+  JacksonException superclass: java.lang.RuntimeException (unchecked)
+
+
+=== TASK 1 (tracer): the Keycloak disable PUT carries a correct body, asserted by content ===
+
+Test: KeycloakAdminClientTest#setUserEnabled_putsTheSearchedRepBack_withOnlyEnabledFlipped_byContent
+  - the user rep comes from the client's own search (GET .../users?q=tenant_id:<uuid>), as in
+    KeycloakDeprovisionService;
+  - the PUT is matched on URI /admin/realms/jtoye-dev/users/<id>, method PUT, Bearer header and
+    Content-Type application/json, and its body is captured verbatim (MockClientHttpRequest);
+  - assertDisableBodyByContent parses the body with a Jackson-3 mapper and requires, in order:
+    no key in {nodeType, array, bigDecimal, containerNode, missingNode, valueNode}; enabled is the
+    boolean false; id, username and attributes.tenant_id (a JSON array) equal the searched rep;
+    the whole body equals the searched rep with only enabled flipped.
+
+--- RED (commit 078029ee, test only; main unchanged)
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.tenant.keycloak.*' --no-daemon
+rc=1, > Task :core-java:cleanTest executed; 9 tests completed, 1 failed
+XML KeycloakAdminClientTest tests="5" failures="1" errors="0"
+  failing: setUserEnabled_putsTheSearchedRepBack_withOnlyEnabledFlipped_byContent
+  message: [PUT body must not be a JsonNode serialized as a bean: <body below>]
+           Expecting [...] not to contain [nodeType, bigDecimal, missingNode, valueNode, array,
+           containerNode] but found [nodeType, bigDecimal, missingNode, valueNode, array, containerNode]
+RED garbage body (what the interim tree PUTs to Keycloak; no enabled, no id, no username):
+  {"array":false,"bigDecimal":false,"bigInteger":false,"binary":false,"boolean":false,"containerNode":true,"double":false,"empty":false,"float":false,"floatingPointNumber":false,"int":false,"integralNumber":false,"long":false,"missingNode":false,"nodeType":"OBJECT","null":false,"number":false,"object":true,"pojo":false,"short":false,"textual":false,"valueNode":false}
+gsd check tdd-red-evidence (target KeycloakAdminClientTest): RED_EVIDENCE_OK (target_test_failed)
+
+--- GREEN (commit d4e24605)
+KeycloakAdminClient injects tools.jackson.databind.json.JsonMapper; JsonNode/ObjectNode are
+tools.jackson; asText() -> asString(); the page loop iterates page.values(); KeycloakDeprovisionService
+takes the tools.jackson ObjectNode; KeycloakDeprovisionServiceTest builds Jackson-3 nodes;
+TenantOffboardKeycloakHookIntegrationTest mocks List<tools.jackson ObjectNode> and reads the 201
+body with Boot's JsonMapper. TenantLifecycleAdminIntegrationTest builds no user representation and
+is unchanged (it is run below).
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.tenant.keycloak.*' --no-daemon
+rc=0, cleanTest + compileJava executed
+  KeycloakAdminClientTest tests="5" failures="0" errors="0"
+  KeycloakDeprovisionServiceTest tests="4" failures="0" errors="0"
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.tenant.TenantOffboardKeycloakHookIntegrationTest' --tests 'uk.jtoye.core.tenant.TenantLifecycleAdminIntegrationTest' --no-daemon
+rc=0, cleanIntegrationTest executed
+  TenantLifecycleAdminIntegrationTest tests="10" failures="0" errors="0"
+  TenantOffboardKeycloakHookIntegrationTest tests="2" failures="0" errors="0"
+
+Catch review (KeycloakAdminClient):
+  obtainAdminToken / searchUsersByTenant: readTree now throws the unchecked JacksonException. Both
+    methods already end in catch (Exception e), which still wraps it in KeycloakAdminException with
+    the unchanged messages ("... could not be parsed ..."). No catch changed behaviour.
+  setUserEnabled / logoutUser: no Jackson call of their own; unchanged.
+  Behaviour note (strictly safer): a token response {"access_token":null} gave asText()="null" on
+    Jackson 2 (a non-blank fake token was returned); asString() gives "" and the client now throws
+    "Keycloak token response had no access_token".
+
+--- Jackson-2-node arm (bracketed; committed first at d4e24605)
+before: KeycloakAdminClientTest.java sha256 b541c706854e94b753432ffea8f92cf814c4dec7a3defd5580393f94eeb0531f
+        (git hash-object 2e0250fa = HEAD blob)
+arm: a temporary test method sends a com.fasterxml ObjectNode (the pre-fix shape: deepCopy of the
+     searched rep, enabled=false) through a RestClient built from a MockRestServiceServer-bound
+     RestClient.builder() (the same Jackson-3 converter set the client uses), captures the body and
+     runs the SAME assertDisableBodyByContent; the real test temporarily printed its body.
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.tenant.keycloak.KeycloakAdminClientTest' --no-daemon
+rc=1; XML tests="6" failures="1"; the only failing case: ARM_jackson2ObjectNode_throughTheJackson3RestClient
+  message: ... not to contain [...] but found [bigDecimal, missingNode, valueNode, array, containerNode, nodeType]
+gsd check tdd-red-evidence on the arm XML: RED_EVIDENCE_OK (target_test_failed)
+ARM body (Jackson-2 node through the Jackson-3 RestClient):
+  {"array":false,"bigDecimal":false,"bigInteger":false,"binary":false,"boolean":false,"containerNode":true,"double":false,"empty":false,"float":false,"floatingPointNumber":false,"int":false,"integralNumber":false,"long":false,"missingNode":false,"nodeType":"OBJECT","null":false,"number":false,"object":true,"pojo":false,"short":false,"textual":false,"valueNode":false}
+GREEN body (same run, the real client):
+  {"id":"472ee7a0-88c0-4d0e-b476-2279326047c5","username":"vendor-owner","enabled":false,"firstName":"Ada","emailVerified":false,"createdTimestamp":1791100000000,"attributes":{"tenant_id":["9d08b194-96f0-406a-8cb8-d9e6bc7ccd05"]}}
+restore: git checkout -- KeycloakAdminClientTest.java
+after:  sha256 b541c706854e94b753432ffea8f92cf814c4dec7a3defd5580393f94eeb0531f (= before),
+        hash-object 2e0250fa = HEAD blob; grep -c 'ARM_|GREEN_PUT_BODY' = 0
+Closing clean run (also the tracer gate's re-run of the full <verify>):
+  unit rc=0, cleanTest executed: KeycloakAdminClientTest 5/0/0, KeycloakDeprovisionServiceTest 4/0/0
+  IT   rc=0, cleanIntegrationTest executed: TenantLifecycleAdminIntegrationTest 10/0/0,
+       TenantOffboardKeycloakHookIntegrationTest 2/0/0
+Tracer gate (interactive, human_verify_mode=end-of-phase, automated-only verify): verified end to
+end, expanding to Task 2.
+
+--- Task 1 acceptance criteria, both directions
+AC1 awk '/nodeType/{n++}' KeycloakAdminClientTest.java: real tree 4; pre-plan blob (c5aac555) 0.
+    (The count also includes comment lines; the arm above is what shows the assertion itself fires.)
+AC2 git grep -n 'com.fasterxml.jackson.databind' -- .../tenant/keycloak (main): real tree prints only
+    rc=1; at c5aac555 it prints 4 import lines, rc=0.
+AC3 RED 078029ee precedes GREEN d4e24605: merge-base --is-ancestor 078029ee d4e24605 rc=0; reversed rc=1.
+AC4 this file holds the RED garbage body, the arm body and the closing green body (enabled:false).
+RED-classifier fail direction: the green XML recorded with exitCode 0 -> INVALID_RED (unexpected_green).
