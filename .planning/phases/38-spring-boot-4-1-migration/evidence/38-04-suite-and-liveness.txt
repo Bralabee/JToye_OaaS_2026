@@ -71,3 +71,82 @@ by another wave-3 plan; (c) = Boot-4 fallout this plan owns. Every failing class
     /.well-known/oauth-protected-resource with 200 (D-05's premise, measured on this tree). 38-06 suppresses
     it and updates both baseline methods deliberately (38-02 SUMMARY: anonymous was 401 on 3.5, not 404).
   - The two challenge methods go red on the RFC 9728 resource_metadata parameter: D-04, owner 38-06.
+
+  Tracer feedback gate (interactive, end-of-phase, automated-only verify): the Task 1 verify was re-run
+  after commit d276c553:
+    ./gradlew :core-java:cleanTest :core-java:test --continue --no-daemon ; rc=1
+    "1338 tests completed, 2 failed, 1 skipped"; awk: tests=1338 failures=2; failing classes =
+    ProblemDetailAuthenticationEntryPointTest, KeycloakAdminClientTest (both in the ledger).
+    1338 = the 1337 above + 1 test from the untracked Task-3 derivation scaffold (StatemachineSecurityAccessTest,
+    which printed the production classpath for jdeps; see section 3). Verified; expanded to Tasks 2 and 3.
+
+-------------------------------------------------------------------------------------------------
+2. Task 2: Boot4ModuleLivenessIntegrationTest and its arms
+-------------------------------------------------------------------------------------------------
+
+Test committed at ffa1babc BEFORE any arm ran (5 tests: Flyway applied set == V*.sql set; Brave Tracer +
+Zipkin BytesMessageSender; PrometheusMeterRegistry; RestClient.Builder + RestTemplateBuilder +
+WebClient.Builder; both StateMachineFactory beans).
+
+Green, real tree:
+  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest \
+     --tests 'uk.jtoye.core.boot4.Boot4ModuleLivenessIntegrationTest' --tests 'uk.jtoye.core.security.RlsContractTest' --no-daemon
+  rc=0, ":core-java:integrationTest" executed (not UP-TO-DATE)
+  TEST-uk.jtoye.core.boot4.Boot4ModuleLivenessIntegrationTest.xml  tests=5 failures=0 errors=0
+  TEST-uk.jtoye.core.security.RlsContractTest.xml                  tests=7 failures=0 errors=0
+
+Arm protocol (scratch script arm.sh, identical for every arm):
+  git show HEAD:core-java/build.gradle.kts > $SCRATCH/committed.kts ; rc=0
+  refuse to start if core-java/build.gradle.kts is dirty
+  append ONE temporary configurations.named("testRuntimeClasspath") { exclude(...) } block
+  rm -rf core-java/build-local/test-results/integrationTest      (stale XML cannot be read)
+  run, copy the XML aside, then: git checkout -- core-java/build.gradle.kts
+  sha256sum core-java/build.gradle.kts $SCRATCH/committed.kts -> must print two equal sums
+  committed blob sha256 = d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d
+
+Arm A: exclude org.springframework.boot:spring-boot-flyway  (liveness + RlsContractTest)
+  rc=1  "12 tests completed, 5 failed"
+  Boot4ModuleLivenessIntegrationTest  5 tests, 1 failure:
+    flywayAppliedEveryVersionedMigration: [Flyway applied 0 of the 67 V*.sql migrations on the classpath.
+      0 means the Flyway auto-configuration never ran: spring-boot-flyway (spring-boot-starter-flyway) is
+      missing, and with it every RLS policy]  expected: 67  but was: 0
+  RlsContractTest  7 tests, 4 failures (the spike measured 4/7), non-vacuity controls firing:
+    dsarRequestHasNoTenantDimension: [NON-VACUITY CONTROL: the catalog walk found NO columns on public.dsar_request ...]
+    everyRlsEnabledTableHasAtLeastOnePolicy: [NON-VACUITY DENOMINATOR: this sweep observed only 0 non-exempt table(s) ...]
+    img01_mediaTablesAreForced: EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+    auditW0_05_targetTablesAreForced: EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+  "Successfully applied" lines in both XML: 0
+  restore: rc=0; sha256 d9cb6f42...833d == d9cb6f42...833d -> RESTORE VERIFIED; TEMPORARY marker count 0
+  closing clean run: rc=0; liveness 5/0, RlsContractTest 7/0; "Successfully applied 67 migrations" 1 per class
+
+Arm B: exclude spring-boot-zipkin AND spring-boot-micrometer-tracing-brave  (liveness)
+  rc=1  "5 tests completed, 1 failed"
+    braveTracerAndZipkinSenderExist: [the Tracer must be the Brave bridge, not a no-op:
+      spring-boot-micrometer-tracing-brave]  Expecting actual: "io.micrometer.tracing.Tracer$1" to contain: "Brave"
+  FINDING: with the Brave module gone, a Tracer bean STILL EXISTS. It is Micrometer's no-op Tracer.NOOP
+  (io.micrometer.tracing.Tracer$1). A probe that only checked "a Tracer bean is present" would have passed
+  this arm. The class-name assertion is the load-bearing one.
+  restore: rc=0; sha256 equal -> RESTORE VERIFIED; marker count 0
+
+Arm B2 (added; not in the plan): exclude spring-boot-zipkin only  (liveness)
+  Why: in arm B the Brave assertion fails first, so the sender assertion was never reached. B2 shows
+  that the sender assertion can fail on its own.
+  rc=1  "5 tests completed, 1 failed"
+    braveTracerAndZipkinSenderExist: [no zipkin2.reporter.BytesMessageSender bean: spring-boot-zipkin is
+      missing, so no span is ever exported]  Expecting actual not to be null
+  (The Brave Tracer still passed here; only export is gone, which is exactly the silent case.)
+  restore: rc=0; sha256 equal -> RESTORE VERIFIED; marker count 0
+
+Arm C: exclude spring-boot-restclient  (liveness)
+  rc=1  "5 tests completed, 5 failed"
+  RECORDED OUTCOME: the CONTEXT failed, not the builder probe. Root cause in every failure:
+    java.lang.NoClassDefFoundError: org/springframework/boot/restclient/RestTemplateBuilder
+    <- IllegalStateException: Failed to introspect Class [uk.jtoye.core.security.SecurityConfig]
+  The first method reports "Failed to load ApplicationContext"; the other 4 report "ApplicationContext
+  failure threshold (1) exceeded". So a missing restclient module is LOUD today, because main code
+  (SecurityConfig, CustomerJwtVerifier, KeycloakAdminClient) injects the builders. The probe stays as
+  the guard for the day that injection goes away.
+  restore: rc=0; sha256 equal -> RESTORE VERIFIED; marker count 0
+
+Closing clean run after arms B, B2 and C (git status: build.gradle.kts unmodified):
+  rc=0; Boot4ModuleLivenessIntegrationTest 5/0 failures; RlsContractTest 7/0; 67 migrations applied in each.
