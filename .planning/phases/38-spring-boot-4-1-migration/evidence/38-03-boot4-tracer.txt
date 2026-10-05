@@ -302,3 +302,94 @@ FAIL DIRECTION (Flyway module arm, run in the uncommitted tree, restored by sha2
     core-java/src/test/java/uk/jtoye/core/webhook/WebhookDeliveryWorkerIntegrationTest.java
     core-java/src/test/java/uk/jtoye/core/webhook/WebhookSubscriptionControllerIntegrationTest.java
 
+Interim red (expected; owner 38-16)
+===================================
+Both version gates are red from this plan's first Boot-4 commit (f2a3717f) until 38-16 Task 1.
+38-16 Task 1 clears both: it updates the spring-boot horizons row, repoints the Resilience4j row of
+check-doc-versions.sh and the doc claims, and proves both gates green with arms.
+check-doc-versions stops at the FIRST row whose actual is unresolvable, so the stale Spring Boot and
+SpringDoc claims behind the Resilience4j row are not listed yet; they surface once 38-16 repoints it.
+
+Run on HEAD f2a3717f (the plan's last code commit; the commits after it change only .planning/,
+which neither gate reads). Each gate run once, stdout+stderr together, rc captured on the same line:
+  out=$(bash scripts/<gate> 2>&1); rc=$?
+
+Environment note (not an override of the gate): check-dependency-horizons.sh shells out to
+'python3 -c ... import yaml'. On this host the machine's python shim refuses a bare python3
+outside a conda env, and the first run VOIDed on that alone:
+    rc=2; 'VOID: cannot parse infra/dependency-horizons.yaml (see message above)' after
+    'BLOCKED by pyshim (~/.local/shims/python3, ...)'
+That run says nothing about the spring-boot row, so it was re-run with an existing conda env that
+provides PyYAML 6.0.3 (conda activate engineering-doctrine). No gate variable (MANIFEST,
+HORIZON_WARN_DAYS, DOCS) was set and no input was edited. check-doc-versions.sh uses no python.
+
+--- scripts/check-dependency-horizons.sh @ f2a3717f: rc=2 ---
+h5_spring_boot=2 h2_fetch_void=0
+  | H-3 EXEMPT alpine: alpine-linux/3.20 PAST EOL 2026-04-01 (catalogue, 187 days) until 2026-11-30 [DEFERRED-27]
+  | H-3 EXEMPT keycloak: keycloak/24.0 PAST EOL 2024-06-10 (catalogue, 847 days) until 2026-12-31 [DEFERRED-27]
+  | H-3 EXEMPT rabbitmq: rabbitmq/4.3 approaching 2026-11-30 (vendor (eol_source override), 56 days) until 2026-11-30 [#724]
+  | H-3 EXEMPT prometheus: prometheus/2.48 PAST EOL 2023-12-28 (catalogue, 1012 days) until 2026-12-31 [DEFERRED-27]
+  | H-3 EXEMPT grafana: grafana/10.2 PAST EOL 2024-07-24 (catalogue, 803 days) until 2026-12-31 [DEFERRED-27]
+  | H-3 golang: go/1.27 has no declared horizon (eol: false) — nothing to breach today
+  | H-3 go-toolchain: go/1.27 has no declared horizon (eol: false) — nothing to breach today
+  | H-3 go-ci-setup: go/1.27 has no declared horizon (eol: false) — nothing to breach today
+  | H-3 gradle: gradle/9 has no declared horizon (eol: false) — nothing to breach today
+  | H-3 EXEMPT spring-boot: spring-boot/3.5 PAST EOL 2026-06-30 (catalogue, 97 days) until 2027-02-28 [#706]
+  |   NOTE go-ci-setup: pin not at .github/workflows/ci-cd.yaml:907; found at line(s) 53,920,1304 (run --refresh)
+  |   NOTE go-ci-setup: pin not at .github/workflows/ci-cd.yaml:1269; found at line(s) 53,920,1304 (run --refresh)
+  | UNKNOWN azurite: Phase 36 (36-02): the Azure Blob emulator that replaced the retired self-hosted object sto owner=maintainer review-expires=2026-12-27
+  | UNKNOWN ollama: endoflife.date 404 (measured 2026-07-27), floating `:latest`. Pinned at TWO sites — the mo owner=maintainer review-expires=2027-01-27
+  | UNKNOWN mailhog: endoflife.date 404 (measured 2026-07-27). MailHog is archived upstream and receives no rel owner=maintainer review-expires=2027-01-27
+  | UNKNOWN alertmanager: endoflife.date has no `alertmanager` product (404 on `alertmanager` and on `prometheus-ale owner=maintainer review-expires=2027-01-27
+  | UNKNOWN redis-exporter: Third-party exporter, endoflife.date 404 (measured 2026-07-27). See docs/ops/terminal-stat owner=maintainer review-expires=2027-01-27
+  | UNKNOWN postgres-exporter: Third-party exporter, endoflife.date 404 (measured 2026-07-27). Its credential fault (regi owner=maintainer review-expires=2027-01-27
+  | UNKNOWN rabbitmq-k8s: The staging/production broker is not deployed from this repo. MEASURED 2026-07-26: `grep - owner=UNASSIGNED review-expires=2026-10-26
+  | dependency-horizons summary
+  |   manifest    rows=28  discovered-pins=22
+  |   H-1 coverage   missing-row=0
+  |   H-5 sites      pin-not-at-site=2          (NOTE class, advisory — run --refresh)
+  |                  site-unresolvable=2          (VOID class)
+  |   H-2/H-3        violations=0  active-exemptions=6
+  |   H-6 UNKNOWN    rows=7  (printed above; each passes only while its review is unexpired)
+  |   warn window    HORIZON_WARN_DAYS=90
+  | VOID (H-5 drift):
+  |   H-5 spring-boot: declared pin 'id("org.springframework.boot") version "3.5.16"' NOT FOUND on any non-comment line of build.gradle.kts (declared site build.gradle.kts:2)
+  |   H-5 spring-boot: declared pin 'id("org.springframework.boot") version "3.5.16"' NOT FOUND on any non-comment line of core-java/build.gradle.kts (declared site core-java/build.gradle.kts:2)
+  | VOIDED: the manifest describes a tree that does not exist, or a horizon could not be resolved. Exit 2 takes precedence over the 0 contract violation(s) also reported.
+
+--- scripts/check-doc-versions.sh @ f2a3717f: rc=2 ---
+  | VOID: could not resolve the real version for 'Resilience4j' from the build files
+
+Reading of the two runs against the plan's expectations:
+  - horizons: rc=2, two 'H-5 spring-boot' VOID lines, one per site (build.gradle.kts:2,
+    core-java/build.gradle.kts:2); h2_fetch_void=0, so the run was online and conclusive.
+    Its only other non-pass output is advisory or passing, and NONE of it is new:
+      * 'NOTE go-ci-setup: pin not at .github/workflows/ci-cd.yaml:907/:1269' -- NOTE class
+        (advisory, no exit effect), identical at PLAN_BASE (below);
+      * seven 'UNKNOWN' rows -- H-6, each passing while its dated review is unexpired, identical
+        at PLAN_BASE.
+    H-2/H-3 violations=0, H-1 missing-row=0. No VOID other than the two spring-boot sites.
+  - doc-versions: rc=2, exactly one VOID, naming Resilience4j (the Boot-3 coordinate
+    io.github.resilience4j:resilience4j-spring-boot3, which this plan removed).
+  No unanticipated row or VOID reason, so nothing here needs an owner beyond 38-16.
+
+FAIL DIRECTION (the gates do see this plan's change): the same two gates at PLAN_BASE
+(ddeb0ea6d233d551b40d65552cabca56c9149867), in a temporary detached worktree (git worktree add --detach; removed after):
+  check-dependency-horizons.sh @ PLAN_BASE: rc=0, h5_spring_boot=0 h2_fetch_void=0
+    | 10:H-3 EXEMPT spring-boot: spring-boot/3.5 PAST EOL 2026-06-30 (catalogue, 97 days) until 2027-02-28 [#706]
+    | 11:  NOTE go-ci-setup: pin not at .github/workflows/ci-cd.yaml:907; found at line(s) 53,920,1304 (run --refresh)
+    | 12:  NOTE go-ci-setup: pin not at .github/workflows/ci-cd.yaml:1269; found at line(s) 53,920,1304 (run --refresh)
+    | 23:  H-5 sites      pin-not-at-site=2          (NOTE class, advisory — run --refresh)
+    | 24:                 site-unresolvable=0          (VOID class)
+  check-doc-versions.sh @ PLAN_BASE: rc=0
+    | 
+    | PASS: all 151 version claim(s) across 7 doc(s) match the build files.
+
+Inputs untouched (acceptance; 38-16 owns them):
+  git diff --name-only PLAN_BASE..HEAD -- infra/dependency-horizons.yaml scripts/check-doc-versions.sh
+    CLAUDE.md AGENTS.md .planning/codebase/STACK.md README.md docs/setup/SETUP.md
+    docs/guides/QUICK_START.md docs/architecture/ESSENTIAL_ARCHITECTURE.md
+    -> output lines=0 rc=0 (HEAD f2a3717f)
+  positive control (the same command form CAN print a changed file):
+    git diff --name-only PLAN_BASE..HEAD -- core-java/build.gradle.kts -> core-java/build.gradle.kts
+  Re-checked after the Task 2 commit in the SUMMARY self-check.
