@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-09-PLAN.md
-last_updated: "2026-10-05T11:47:00.000Z"
+stopped_at: Completed 38-10-PLAN.md
+last_updated: "2026-10-05T12:12:00.000Z"
 last_activity: 2026-10-05
-state_head: c4d35e9396bf92a6b43fdb6b000fdb39c7dbe103
+state_head: 928b3b57ac39924f4d93934b6bd9c8c94a336ded
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 155
-  completed_plans: 146
+  completed_plans: 147
   percent: 67
 ---
 
@@ -98,7 +98,14 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - `CacheFormatIsolationIntegrationTest` plants the golden Boot-3.5 ShopDto bytes under the old key on a real Redis. It asserts that the DB name is served, the v4 read-after-write hits, the old entry is untouched and `jtoye.cache.errors` stays 0. With the prefix removed the counter goes from 0 to 1.
   - Unit suite: 1453 tests, 0 failures, 1 skipped. BOOT4-07 and BOOT4-04 stay open (shared with 38-17, and with 38-10, 38-12 and 38-19).
   - Carried: 38-17 must check `jtoye.cache.errors == 0` with `v4:` keys on the rebuilt runtime. ADR-0006 (38-16) and the PR body (38-18) must say that the cache needs no flush step and that the allowlist narrowed. A stale key format sits in `docs/AI_CONTEXT.md:256` (38-16 docs pass; see deferred-items.md).
-- Next: 38-10 (sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
+- 38-10 DONE 2026-10-05: idempotency continuity across the deploy is proven, and the persisted format no longer follows the app-wide mapper.
+  - `IdempotencyJson` (package-private) owns `request_hash` and `response_body`. Its mapper is `JsonMapper.builderWithJackson2Defaults()` minus dates/durations as timestamps, FAIL_ON_UNKNOWN_PROPERTIES and DEFAULT_VIEW_INCLUSION (Boot 3.5's settings), and nothing else. `IdempotencyService` injects no mapper.
+  - `IdempotencyFingerprintGoldenTest` (13): all 7 golden hashes and all 4 stored response types match byte for byte, both ways. `IdempotencyLegacyHashReplayIntegrationTest`: a Boot-3.5 orders.create row replays its 201 under `rls_test_role` with the work never run; the tenant-B control sees 0 rows under the role and gets a fresh reservation.
+  - Arm P (plain Jackson-3 mapper): 4 golden rows red and the replay red with the 422. Measured: plain Jackson 3 sorts CLASS properties but keeps RECORDS in order, so only orders.create, both guest-order fingerprints and the OrderDto body would have broken.
+  - `DsarIntakeService` injects Boot's Jackson-3 `JsonMapper`; the golden Boot-3.5 ack replays unchanged. `JsonbColumnsReadBackIntegrationTest` green 3/3, so no `HibernateJsonFormatConfig`.
+  - Unit suite: 1468 tests, 0 failures, 1 skipped. BOOT4-08 complete; BOOT4-04 stays open (38-12, 38-19).
+  - Carried: ADR-0006 (38-16) and the PR body (38-18) can say idempotency needs no deploy step and the persisted format is frozen (future change = dual-hash window). For 38-12: the three files carry no `com.fasterxml.jackson` import; the new tests import only `tools.jackson`.
+- Next: 38-11 (sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -756,6 +763,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P07 | 27 min | 2 tasks | 17 files |
 | Phase 38 P08 | 30 min | 3 tasks | 20 files |
 | Phase 38 P09 | 21 min | 2 tasks | 5 files |
+| Phase 38 P10 | 21 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -911,6 +919,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-09: the cache allowlist follows the ids the Jackson-3 serializer actually writes (NON_FINAL typing): uk.jtoye., java.util., java.math.; java.lang. and java.time. dropped and now refused; a test ties prefixes to observed ids in both directions
 - [Phase 38]: 38-09: Boot-3.5 cache entries are made unreachable by a v4: key prefix (CACHE_KEY_FORMAT_VERSION) on the default cache configuration, not by a deploy flush; bump the constant on any future cache-format change
 - [Phase 38]: 38-09: no customize() on the cache serializer: Jackson 3 writes ISO-8601 dates natively
+- [Phase 38]: 38-10: the idempotency store's JSON format is frozen in IdempotencyJson (builderWithJackson2Defaults + Boot 3.5's four mapper settings, nothing more); never edit it in place, a format change needs a dual-hash window
+- [Phase 38]: 38-10: continuity comes from the hash matching; the legacyRequestBody seam is untouched
+- [Phase 38]: 38-10: HibernateJsonFormatConfig not created; the jsonb read-back is green on Boot 4 / Hibernate 7
 
 ### Pending Todos
 
@@ -980,8 +991,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T11:47:00.000Z
-Stopped at: Completed 38-09-PLAN.md. Next is 38-10 (sequential) on branch `phase-37-spring-boot-4-1`.
+Last session: 2026-10-05T12:12:00.000Z
+Stopped at: Completed 38-10-PLAN.md. Next is 38-11 (sequential) on branch `phase-37-spring-boot-4-1`.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
