@@ -62,8 +62,8 @@ import java.net.URI;
  * <p><b>Scope and placement.</b> It matches exactly what the framework filter serves, with the same
  * matcher ({@code GET} + {@code /.well-known/oauth-protected-resource/**} through
  * {@link PathPatternRequestMatcher#withDefaults()}); every other request passes through untouched.
- * It is NOT a {@code @Component}: as a bean it would also be auto-registered as a plain servlet
- * filter outside the security chain. {@code SecurityConfig} registers it on the chain after
+ * It is deliberately not a Spring bean (no stereotype annotation): as a bean it would also be
+ * auto-registered as a plain servlet filter outside the security chain. {@code SecurityConfig} registers it on the chain after
  * {@code CorsFilter}, so its responses carry the security headers and the CORS {@code Vary} of every
  * other response, and therefore ahead of the framework's metadata filter, so the false claim is
  * unreachable for every caller.
