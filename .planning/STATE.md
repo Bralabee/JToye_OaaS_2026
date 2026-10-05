@@ -5,10 +5,10 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: "Completed 38-02-PLAN.md (Boot 3.5 baselines: 55-row request-body constraint oracle, jsonb read-back captured at f548d6c8, exact 401 challenge, /.well-known baseline 401 anon / 404 authed); Wave 1 done, next 38-03 (Wave 2)"
-last_updated: "2026-10-05T00:32:00.000Z"
+stopped_at: Completed 38-03-PLAN.md
+last_updated: "2026-10-05T00:48:22.582Z"
 last_activity: 2026-10-05
-state_head: 767f5658ea85979a0f97be40259bd1e149fc0c7e
+state_head: 943049b5a2cdba42f5533b53c8fefe4344341ddb
 progress:
   total_phases: 18
   completed_phases: 12
@@ -697,6 +697,11 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 26 P08 | ~2h05m | 3 tasks | 6 files |
 | Phase 26 P09 | ~1h35m | 3 tasks | 7 files |
 | Phase 33 P06 | 2h | 3 tasks | 12 files |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 38 P03 | 14 min | 2 tasks | 108 files |
 
 ## Accumulated Context
 
@@ -830,6 +835,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-01: the jackson2-golden fixtures are an ORACLE captured at e12177e1 (Boot 3.5.16, jackson-databind 2.21.7). Later plans compare against them and never re-capture them on a Boot-4 tree.
 - [Phase 38]: 38-01: the membership golden sample carries ONE grant. A Map.copyOf with two or more entries iterates in a per-JVM random order, so its cache bytes are not reproducible.
 - [Phase 38]: 38-01: fixture families are asserted by exact file name rather than count, so a misnamed capture fails too.
+- [Phase 38]: 38-03: The Boot-3 pin jackson-bom.version=2.21.7 re-points the Jackson 3 BOM under Boot 4 to a nonexistent artifact, so every managed version vanishes; re-keyed to jackson-2-bom.version 2.22.3 plus jackson-bom.version 3.1.7 (T-38-08 observed live)
+- [Phase 38]: 38-03: spring-boot-starter-webclient declared alongside webflux under D-02's declare-what-you-use rule
+- [Phase 38]: 38-03: check-dependency-horizons.sh needs python3+PyYAML, which this host provides only inside a conda env; run under an existing env, no gate variable set
 
 ### Pending Todos
 
@@ -899,9 +907,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05
-Stopped at: Completed 38-01-PLAN.md (Jackson 2 golden capture). Next is 38-02 on branch `phase-37-spring-boot-4-1`.
-Resume file: None (Phase 38 execution continues via `/gsd-execute-phase 38`)
+Last session: 2026-10-05T00:48:22.248Z
+Stopped at: Completed 38-03-PLAN.md
+Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 
