@@ -5,9 +5,9 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: planning
-stopped_at: Phase 38 complete, ready to plan Phase 29
-last_updated: "2026-10-05T19:51:44.638Z"
-last_activity: 2026-10-05
+stopped_at: "Phase 38 shipped as PR #898 (re-verified 14/14 after review fixes WR-01/WR-02; SECURITY threats_open 0 at ASVS L2; regression unit 1495/0 + integration 772/0; runtime rebuilt, freshness 4/4); next: D3 review series on #898, then merge — Phase 31.1 waits on that merge (D-21)"
+last_updated: "2026-10-06T00:30:00.000Z"
+last_activity: 2026-10-06
 state_head: 51baa44cf3829342eb9acdcabf50c28198ba1f14
 progress:
   total_phases: 19
