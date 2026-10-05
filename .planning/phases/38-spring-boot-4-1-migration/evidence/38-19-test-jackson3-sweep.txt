@@ -1,0 +1,50 @@
+# 38-19 evidence: the test-side Jackson-3 sweep, ahead of 38-12's bridge removal
+
+PLAN_BASE=c2c64e78448b2ee7b9f2b1c7d44a6d59f190c19b   (HEAD at plan start, 2026-10-05T13:11:45Z; working tree clean
+                                                     apart from the orchestrator's untracked .planning/milestone.lock)
+Branch: phase-37-spring-boot-4-1
+JDK: OpenJDK 25.0.4.1 (Ubuntu build; no Temurin on this host)
+Results dir: core-java/build-local/test-results/{test,integrationTest}/ (never core-java/build/)
+Bridge line (core-java/build.gradle.kts:283, the only line carrying the marker):
+  implementation("org.springframework.boot:spring-boot-jackson2") // INTERIM-JACKSON2-BRIDGE removed by 38-12; ...
+Probe shape (every bridge-off run): cp build.gradle.kts -> scratch; awk '!/INTERIM-JACKSON2-BRIDGE/' > build.gradle.kts;
+  run; git checkout HEAD -- core-java/build.gradle.kts; sha256 of the restored file vs `git show HEAD:core-java/build.gradle.kts`.
+
+## Inventory at PLAN_BASE
+
+git grep -l -e 'com.fasterxml.jackson.databind' -e 'com.fasterxml.jackson.core' -e 'com.fasterxml.jackson.datatype' -- core-java/src/test/java
+rc=0, 35 files = the plan's 33
+  + core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java   (38-08, DELIBERATE-JACKSON2 already)
+  + core-java/src/test/java/uk/jtoye/core/tenant/TenantLifecycleAdminIntegrationTest.java (38-07 residual: autowires the bridge bean)
+Not matched by that grep but using Jackson 2 through Spring's deprecated adapter classes (Jackson2JsonMessageConverter,
+MappingJackson2HttpMessageConverter, Jackson2ObjectMapperBuilder): AmqpJackson2CompatibilityTest (38-08, DELIBERATE-JACKSON2),
+OrderEventFanoutTopologyIntegrationTest (38-08 residual), GlobalExceptionHandlerRequestShapeTest, OptimisticLockExceptionHandlerTest,
+RabbitListenerContainerFactoryTest, RabbitMQListenerFactoryBehaviourTest. Handled in Task 3's reconciliation.
+
+## Batch A
+
+### Tracer fail arm: UNMIGRATED ShopControllerIntegrationTest, bridge line removed (2026-10-05T13:13:22Z)
+
+bridge_lines_in_worktree=0
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.integration.ShopControllerIntegrationTest' --no-daemon
+  > Task :core-java:cleanIntegrationTest / > Task :core-java:integrationTest FAILED   "6 tests completed, 6 failed"   BUILD FAILED in 1m 8s
+bridge_off_rc=1
+head_show_rc=0
+d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  core-java/build.gradle.kts           (restored)
+d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  scratch/build.head (HEAD blob)       EQUAL
+XML (written 14:14:30 local, after the clean):
+  <testsuite name="uk.jtoye.core.integration.ShopControllerIntegrationTest" tests="6" skipped="0" failures="6" errors="0" ...>
+Cause, verbatim:
+  UnsatisfiedDependencyException: Error creating bean with name 'uk.jtoye.core.integration.ShopControllerIntegrationTest':
+  Unsatisfied dependency expressed through field 'objectMapper': No qualifying bean of type
+  'com.fasterxml.jackson.databind.ObjectMapper' available: expected at least 1 bean which qualifies as autowire candidate.
+=> RED, and the failure names the test class's own mapper field. The application context itself started (the failure is
+   the test instance's injection, which runs after the context refresh), so no MAIN bean needs the bridge: no residual
+   for 38-06..38-10, and the premise of 38-12 holds (only the bridge supplies the Jackson-2 bean).
+
+### Tracer migrated: the field becomes tools.jackson.databind.json.JsonMapper (name unchanged, Jackson-2 import deleted)
+
+Bridge ON (2026-10-05T13:15Z):
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.integration.ShopControllerIntegrationTest' --no-daemon
+  rc=0  > Task :core-java:cleanIntegrationTest  > Task :core-java:compileTestJava  > Task :core-java:integrationTest  BUILD SUCCESSFUL in 1m
+  XML (14:15:51 local): tests="6" skipped="0" failures="0" errors="0"
