@@ -5,7 +5,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
-import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.amqp.autoconfigure.SimpleRabbitListenerContainerFactoryConfigurer;
@@ -393,7 +393,7 @@ public class RabbitMQConfig {
      * Packages whose types may be resolved from an inbound {@code __TypeId__} header.
      *
      * <p><b>These are matched by exact equality, NOT by prefix.</b> Spring AMQP's
-     * {@code DefaultJackson2JavaTypeMapper.isTrustedPackage} compares the payload's package name
+     * {@code DefaultJacksonJavaTypeMapper.isTrustedPackage} compares the payload's package name
      * with {@code String.equals} against each entry, so {@code "uk.jtoye.core"} would NOT trust
      * {@code uk.jtoye.core.order.OrderStateChangeEvent}, and {@code "uk.jtoye.core.*"} matches
      * nothing at all. Every package contributing a {@code @RabbitHandler} payload type must be
@@ -410,7 +410,7 @@ public class RabbitMQConfig {
     /**
      * The trusted-package allowlist is load-bearing, not decorative.
      *
-     * <p>{@code DefaultJackson2JavaTypeMapper} defaults to {@code [java.util, java.lang]}, so
+     * <p>{@code DefaultJacksonJavaTypeMapper} defaults to {@code [java.util, java.lang]}, so
      * resolving a {@code __TypeId__} header to an application class is rejected. That is invisible
      * for a single-method {@code @RabbitListener} with a typed parameter — Spring infers the target
      * type from the method signature and never consults the mapper — but fatal for a class-level
@@ -420,10 +420,17 @@ public class RabbitMQConfig {
      *
      * <p>Scoped deliberately: trust-all ({@code "*"}) clears the allowlist entirely and would
      * restore a deserialization-gadget surface on a broker carrying tenant data.
+     *
+     * <p><b>Jackson 3 (38-08, D-01).</b> Spring AMQP 4's {@code JacksonJsonMessageConverter}, with
+     * its own default mapper (unknown properties ignored, modules found on the classpath). It
+     * reads what the Boot-3.5 {@code Jackson2JsonMessageConverter} left on the broker, including
+     * its epoch-decimal dates, and a Jackson-2 converter reads what it writes, so messages in
+     * flight across a rolling deploy survive in both directions
+     * ({@code AmqpJackson2CompatibilityTest}).
      */
     @Bean
     public MessageConverter jsonMessageConverter() {
-        return new Jackson2JsonMessageConverter(TRUSTED_PAYLOAD_PACKAGES);
+        return new JacksonJsonMessageConverter(TRUSTED_PAYLOAD_PACKAGES);
     }
 
     /** Micrometer name for retry exhaustion; exported as {@code jtoye_amqp_retries_exhausted_total}. */

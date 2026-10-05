@@ -156,7 +156,7 @@ class RabbitMQConfigMessageConverterTest {
     void allowlistIsNotTrustAll() {
         for (String pkg : RabbitMQConfig.TRUSTED_PAYLOAD_PACKAGES) {
             assertFalse("*".equals(pkg),
-                    "'*' clears DefaultJackson2JavaTypeMapper's allowlist and trusts every class on the classpath");
+                    "'*' clears DefaultJacksonJavaTypeMapper's allowlist and trusts every class on the classpath");
             assertTrue(pkg.startsWith(ROOT_PACKAGE + "."),
                     "trusted package must be inside " + ROOT_PACKAGE + ", was: " + pkg);
         }

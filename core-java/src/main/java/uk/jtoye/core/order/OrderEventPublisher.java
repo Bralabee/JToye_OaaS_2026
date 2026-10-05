@@ -3,6 +3,7 @@ package uk.jtoye.core.order;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.payment.PaymentEventOutbox;
@@ -87,7 +88,31 @@ public class OrderEventPublisher {
 
         String routingKey = ORDER_STATE_ROUTING_PREFIX + newStatus.name().toLowerCase();
 
-        String payloadJson = objectMapper.writeValueAsString(event);
+        String payloadJson;
+        try {
+            payloadJson = objectMapper.writeValueAsString(event);
+        } catch (JacksonException e) {
+            // Fixed-shape record — serialization failure is a programmer
+            // error. DO NOT propagate: throwing would roll back the order
+            // state change itself. Persist a poisoned FAILED placeholder so
+            // the failure is durable and visible to operators instead of a
+            // swallowed log line (the flusher's dead-letter path skips it).
+            // Jackson 3's JacksonException is unchecked, so the compiler no
+            // longer demands this catch; OrderEventPublisherTest keeps it (38-08).
+            log.error("Failed to serialize OrderStateChangeEvent for order {}: {} — persisting FAILED placeholder",
+                    orderNumber, e.getMessage(), e);
+            String placeholder = String.format(
+                    "{\"error\":\"serialization_failed\",\"orderId\":\"%s\",\"orderNumber\":\"%s\"}",
+                    orderId, orderNumber);
+            PaymentEventOutbox failedRow = new PaymentEventOutbox(
+                    tenantId, EVENT_TYPE, routingKey, placeholder,
+                    RabbitMQConfig.ORDER_EVENTS_EXCHANGE);
+            failedRow.setStatus(PaymentEventOutbox.Status.FAILED);
+            failedRow.setPoison(true);
+            failedRow.setLastError("OrderStateChangeEvent serialization failed: " + e.getMessage());
+            outboxRepository.save(failedRow);
+            return;
+        }
 
         PaymentEventOutbox row = new PaymentEventOutbox(
                 tenantId, EVENT_TYPE, routingKey, payloadJson,
