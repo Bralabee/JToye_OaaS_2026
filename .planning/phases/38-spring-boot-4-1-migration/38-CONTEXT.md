@@ -122,6 +122,16 @@ and an injected bogus key was flagged, so the check can fail. The keys:
     no `resource_metadata`.
   - Fail-direction arm: remove the suppressing filter, and the path returns 200 with the false
     claim.
+  - **Refined 2026-10-05 (owner, at the 38-06 decision checkpoint; exact words
+    "anon-401-parity (Recommended)").** Measured on Boot 3.5.16 (38-02), the path gave 401 to a
+    caller with no credentials and 404 only to an authenticated one, so "404 ... matches Boot 3.5"
+    held for authenticated callers only. Decided: no credentials → the standard 401 (plain
+    `Bearer`, the 401 problem document, through `ProblemDetailAuthenticationEntryPoint`);
+    credentials present → the 404 not-found document. The rest of D-05 stands: no corrected
+    metadata, the false claim unreachable for every caller, the fail-direction arm. Recorded
+    residual: the filter answers before authentication, so a well-formed but invalid or expired
+    bearer gets 404 where 3.5 gave `401 invalid_token`. The runtime proof therefore expects 401
+    without a token and 404 with one, never 200 (38-06 evidence, `evidence/38-06-security.txt`).
 
 ## Claude's Discretion
 - Tomcat 11.0.25 vs 11.0.26 (take the newer one if it resolves cleanly).
