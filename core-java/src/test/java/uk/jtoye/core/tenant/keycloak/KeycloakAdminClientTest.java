@@ -1,8 +1,5 @@
 package uk.jtoye.core.tenant.keycloak;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -11,6 +8,8 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.List;
 import java.util.Set;
@@ -41,7 +40,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
  */
 class KeycloakAdminClientTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final JsonMapper MAPPER = JsonMapper.builder().build();
     private static final String BASE = "http://kc.test:8080";
 
     /** Parses captured bodies; independent of the mapper the client is built with. */
@@ -205,8 +204,7 @@ class KeycloakAdminClientTest {
                 .isEqualTo(searched.path("attributes").path("tenant_id"));
 
         // Keycloak requires the whole representation: nothing but enabled may change.
-        tools.jackson.databind.node.ObjectNode expected =
-                ((tools.jackson.databind.node.ObjectNode) searched).deepCopy();
+        ObjectNode expected = ((ObjectNode) searched).deepCopy();
         expected.put("enabled", false);
         assertThat(put).as("PUT body == searched rep with only enabled flipped").isEqualTo(expected);
     }
