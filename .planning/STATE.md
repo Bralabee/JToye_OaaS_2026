@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-06-PLAN.md
-last_updated: "2026-10-05T10:20:00.000Z"
+stopped_at: Completed 38-07-PLAN.md
+last_updated: "2026-10-05T10:45:00.000Z"
 last_activity: 2026-10-05
-state_head: 36dd304327edcb83ea33307a07f53bb083894c6c
+state_head: 37c74212e4ad988af8358d62c6a522a1fb609703
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 155
-  completed_plans: 143
+  completed_plans: 144
   percent: 67
 ---
 
@@ -76,7 +76,15 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - CONTEXT D-05 and BOOT4-09 now state both answers.
   - Unit suite: 1385 tests; the only red is KeycloakAdminClientTest (38-07).
   - Carried, must change: 38-17's live probe expects 404 for an anonymous curl, but the answer is now 401 (404 only with a bearer). 38-16's ADR-0006 and 38-18's PR body must name the residual.
-- Next: 38-07 (Wave 3, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
+- 38-07 DONE 2026-10-05: the spike's Keycloak defect is closed and guarded by content.
+  - KeycloakAdminClient and KeycloakDeprovisionService are on `tools.jackson`. The disable PUT now carries the searched user representation with only `enabled:false`. `KeycloakAdminClientTest` asserts the whole parsed body and checks the JsonNode-as-bean keys first. A Jackson-2 node sent through the same Jackson-3 RestClient turns it red on `nodeType`.
+  - RateLimitInterceptor, ImageAnalysisService and WebhookFanoutListener inject Boot's Jackson-3 `JsonMapper`; DemoImageManifest builds a local one. None of the six main files imports Jackson-2 databind/core.
+  - ImageAnalysisService reads the model text with its own `ObjectReader` (trailing tokens and unknown properties tolerated). The tests run with Boot's mapper and with a strict one, and their expectations are the measured Jackson-2 baseline.
+  - The 429 stays flat: Boot's JacksonAutoConfiguration carries the ProblemDetail mixin. The new `WebhookFanoutListenerEnvelopeTest` finds the delivered envelope tree- and byte-equal (bar the id) to the 38-01 fixture.
+  - The two catches that the import-only migration would silently lose are kept as `JacksonException` catches, and RED proved each one is needed: the webhook serialize skip and the manifest's `IllegalStateException`.
+  - Unit suite: 1403 tests, 0 failures. The 38-04 ledger's 38-07 red is closed.
+  - Carried: 38-17 owes the live offboard read-back. 38-19's sweep must cover `TenantLifecycleAdminIntegrationTest`, which still autowires the Jackson-2 ObjectMapper. `uk.jtoye.core.testsupport.BootJsonMapper` is available to later plans.
+- Next: 38-08 (sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -731,6 +739,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P04 | 39 min | 3 tasks | 3 files |
 | Phase 38 P05 | 27 min | 3 tasks | 3 files |
 | Phase 38 P06 | 43 min | 2 tasks | 9 files |
+| Phase 38 P07 | 27 min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -877,6 +886,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-06: the owner chose anon-401-parity for D-05 ("anon-401-parity (Recommended)", 2026-10-05): /.well-known/oauth-protected-resource[/**] answers the standard plain-Bearer 401 without credentials and the 404 not-found document with them; no corrected metadata, and the false claim is unreachable
 - [Phase 38]: 38-06: recorded residual: the suppression answers before authentication, so a well-formed invalid or expired bearer gets 404 on that path (3.5 gave 401 invalid_token); ADR-0006 and the PR body must name it, and 38-17's live probe must expect 401 for an anonymous caller
 - [Phase 38]: 38-06: the suppression filter is anchored after CorsFilter, because addFilterBefore(OAuth2ProtectedResourceMetadataFilter) is refused at build ("does not have a registered order"); it rebuilds the framework's own matcher (GET + /**)
+- [Phase 38]: 38-07: the Keycloak disable PUT is asserted as the whole searched representation with only enabled flipped, and the JsonNode-as-bean keys are checked first; the Jackson-2-node arm reproduces the spike's garbage body
+- [Phase 38]: 38-07: ImageAnalysisService's leniency is its own ObjectReader (FAIL_ON_TRAILING_TOKENS and FAIL_ON_UNKNOWN_PROPERTIES off), proven against Boot's mapper and a strict one; Boot's JsonMapper keeps the 38-05 defaults
+- [Phase 38]: 38-07: catches the compiler no longer demands (checked -> unchecked JacksonException) are kept on purpose and pinned by tests (WebhookFanoutListener serialize skip, DemoImageManifest IllegalStateException)
 
 ### Pending Todos
 
@@ -946,8 +958,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T10:20:00.000Z
-Stopped at: Completed 38-06-PLAN.md. Next is 38-07 (wave 3, sequential) on branch `phase-37-spring-boot-4-1`.
+Last session: 2026-10-05T10:45:00.000Z
+Stopped at: Completed 38-07-PLAN.md. Next is 38-08 (sequential) on branch `phase-37-spring-boot-4-1`.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
