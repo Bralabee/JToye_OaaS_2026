@@ -150,3 +150,143 @@ Arm C: exclude spring-boot-restclient  (liveness)
 
 Closing clean run after arms B, B2 and C (git status: build.gradle.kts unmodified):
   rc=0; Boot4ModuleLivenessIntegrationTest 5/0 failures; RlsContractTest 7/0; 67 migrations applied in each.
+
+-------------------------------------------------------------------------------------------------
+3. Task 3: spring-statemachine 4.0.2 on Framework 7 (D-03)
+-------------------------------------------------------------------------------------------------
+
+3a. The security.access reference list, derived by jdeps
+
+  Production classpath: StatemachineSecurityAccessTest (untracked derivation scaffold) printed
+  System.getProperty("jtoye.productionRuntimeClasspath") once during the tracer re-verify run; the value
+  was read out of its TEST-*.xml system-out (265 entries, including spring-statemachine-core-4.0.2.jar and
+  spring-security-access-7.1.1.jar). The print was removed before the test was committed (340ea66f;
+  `grep -c 'System.out' StatemachineSecurityAccessTest.java` = 0).
+
+  Command:
+    jdeps --multi-release 25 -verbose:class -cp "$PRODUCTION_RUNTIME_CLASSPATH" \
+          ~/.gradle/caches/.../spring-statemachine-core-4.0.2.jar ; rc=0 (3642 lines)
+    ... | grep 'org.springframework.security.access'     -> 37 lines, 0 "not found"
+
+  Raw output (the 37 lines):
+  org.springframework.statemachine.config.AbstractStateMachineFactory -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.config.builders.StateMachineConfigurationBuilder -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.config.configurers.DefaultSecurityConfigurer -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.config.configurers.SecurityConfigurer -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.config.model.ConfigurationData -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.DefaultEventSecurityExpressionHandler -> org.springframework.security.access.PermissionEvaluator spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultEventSecurityExpressionHandler -> org.springframework.security.access.expression.AbstractSecurityExpressionHandler spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultEventSecurityExpressionHandler -> org.springframework.security.access.expression.SecurityExpressionOperations spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultEventSecurityExpressionHandler -> org.springframework.security.access.hierarchicalroles.RoleHierarchy spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultTransitionSecurityExpressionHandler -> org.springframework.security.access.PermissionEvaluator spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultTransitionSecurityExpressionHandler -> org.springframework.security.access.expression.AbstractSecurityExpressionHandler spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultTransitionSecurityExpressionHandler -> org.springframework.security.access.expression.SecurityExpressionOperations spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultTransitionSecurityExpressionHandler -> org.springframework.security.access.hierarchicalroles.RoleHierarchy spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.EventExpressionConfigAttribute -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.EventExpressionVoter -> org.springframework.security.access.AccessDecisionVoter spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.EventExpressionVoter -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.EventExpressionVoter -> org.springframework.security.access.expression.ExpressionUtils spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.EventExpressionVoter -> org.springframework.security.access.expression.SecurityExpressionHandler spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.EventSecurityExpressionRoot -> org.springframework.security.access.expression.SecurityExpressionRoot spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.EventVoter -> org.springframework.security.access.AccessDecisionVoter spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.EventVoter -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.SecurityConfig spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.vote.AbstractAccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.vote.AffirmativeBased spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.vote.ConsensusBased spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.vote.RoleVoter spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.vote.UnanimousBased spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.TransitionExpressionConfigAttribute -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.TransitionExpressionVoter -> org.springframework.security.access.AccessDecisionVoter spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.TransitionExpressionVoter -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.TransitionExpressionVoter -> org.springframework.security.access.expression.ExpressionUtils spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.TransitionExpressionVoter -> org.springframework.security.access.expression.SecurityExpressionHandler spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.TransitionSecurityExpressionRoot -> org.springframework.security.access.expression.SecurityExpressionRoot spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.TransitionVoter -> org.springframework.security.access.AccessDecisionVoter spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.TransitionVoter -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+
+  Counts:
+    reference lines                                  37  (23 resolve to spring-security-access-7.1.1.jar, 14 to spring-security-core-7.1.1.jar)
+    distinct referenced classes (awk '{print $3}' | sort -u)   16  (9 in spring-security-access, 7 in spring-security-core)
+    constants in StatemachineSecurityAccessTest.REFERENCED     16  (grep of quoted org.springframework.security.access.* lines)
+    -> the constant count equals the DISTINCT-class count. The plan's "their count equals the number of
+       constants" is read as distinct classes; a constant per reference LINE would duplicate names (37 != 16).
+  Spike comparison: 38-SPIKE.md s4 said "24 classes". This run finds 16 distinct classes in 37 reference
+  lines (23 of them to the access jar). The spike's own command was not recorded, so its 24 cannot be
+  reproduced; this plan's command and full output are above.
+  Without -cp the same jdeps reports all 37 as "not found", so the 0 "not found" with the production
+  classpath is a real resolution, not an empty scan.
+
+3b. StatemachineSecurityAccessTest
+
+  Green:  ./gradlew :core-java:cleanTest :core-java:test --tests '*StateMachine*' \
+             --tests 'uk.jtoye.core.boot4.StatemachineSecurityAccessTest' --no-daemon ; rc=0
+          StatemachineSecurityAccessTest 2/0, VendorOnboardingStateMachineServiceTest 13/0,
+          OrderStateMachineGuardVetoTest 4/0, OrderStateMachineServiceTest 11/0  -> summed 30 (>= 29), 0 fail
+
+  Arm "access" (bracketed with arm.sh after commit 340ea66f):
+    configurations.named("runtimeClasspath") { exclude(group = "org.springframework.security", module = "spring-security-access") }
+    rc=1 "2 tests completed, 1 failed"
+    positive control (StateMachine loads from the production loader): PASSED under the arm
+    everyReferencedSecurityAccessClassLoads: [spring-statemachine-core 4.0.2 references these
+      org.springframework.security.access classes, which are absent from the production runtime classpath;
+      Security 7 ships them in org.springframework.security:spring-security-access (D-03)]
+      Expecting empty but was: {AccessDecisionManager, AccessDecisionVoter, ConfigAttribute, SecurityConfig,
+      vote.AbstractAccessDecisionManager, vote.AffirmativeBased, vote.ConsensusBased, vote.RoleVoter,
+      vote.UnanimousBased} = ClassNotFoundException each   (exactly the 9 the access jar provides)
+    restore: rc=0; sha256 d9cb6f42...833d == committed blob -> RESTORE VERIFIED; marker count 0
+
+  Arm "noprop" (added; not in the plan): tasks.test { jvmArgumentProviders.clear() }
+    Why: to show the fail-closed branch is real, not just written.
+    rc=1; StatemachineSecurityAccessTest.initializationError: [-Djtoye.productionRuntimeClasspath is set by
+      core-java/build.gradle.kts tasks.test; run this class through Gradle] Expecting not blank but was: null
+    restore: rc=0; sha256 equal -> RESTORE VERIFIED; marker count 0
+
+3c. Transitions: the spike's two break arms (scratch srcarm.sh; same bracket on the main source file:
+    committed blob via git show, one literal replacement with anchor count 1, run '*StateMachine*',
+    git checkout, sha256 equal, anchor count back to 1)
+
+  Arm SM-A: OrderStateMachineConfig  .target(OrderStatus.COMPLETED) -> .target(OrderStatus.CANCELLED)
+            (the READY + COMPLETE transition)
+    rc=1 "28 tests completed, 1 failed" (compileJava re-ran)
+    OrderStateMachineServiceTest."Should allow valid state transitions through happy path":
+      expected: <COMPLETED> but was: <CANCELLED>
+    restore: sha256 726a8c74...b75d == committed -> RESTORE VERIFIED
+
+  Arm SM-B: VendorOnboardingStateMachineConfig approveGuard
+            return !mandatory.isEmpty() && mandatory.stream().allMatch(this::passedOrWaived);  ->  return true;
+    rc=1 "28 tests completed, 1 failed"
+    VendorOnboardingStateMachineServiceTest."APPROVE guard rejects when a mandatory gate is still PENDING":
+      Expected uk.jtoye.core.exception.InvalidStateTransitionException to be thrown, but nothing was thrown.
+    restore: sha256 8d9c5748...84b9 == committed -> RESTORE VERIFIED
+
+  Closing clean run (git status: only the orchestrator's .planning/milestone.lock untracked):
+    ./gradlew :core-java:cleanTest :core-java:test --tests '*StateMachine*' --tests 'uk.jtoye.core.boot4.StatemachineSecurityAccessTest'
+    rc=0, compileJava re-ran on the restored sources; 28/28 state-machine + 2/2 = 30, 0 failures
+
+  Transition-driving integration classes:
+    ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests '*OrderControllerIntegrationTest' \
+       --tests '*MoneyPathExecutionIntegrationTest' --tests '*RefundWebhookHandlingIntegrationTest' \
+       --tests '*VendorOnboardingEndToEndIntegrationTest' --no-daemon ; rc=0 (2m 8s)
+    OrderControllerIntegrationTest 7/0, MoneyPathExecutionIntegrationTest 4/0,
+    RefundWebhookHandlingIntegrationTest 7/0, VendorOnboardingEndToEndIntegrationTest 2/0
+    Transition actions logged by the library (from the XML system-out):
+      Order confirmed x4, Order preparation started x3, Order marked as ready x3, Order completed x3,
+      Order submitted for processing x1; Onboarding submitted; entering VERIFYING x2,
+      Onboarding approved x1 (the GUARDED APPROVE), Onboarding going live x1 (the guarded GO_LIVE)
+
+  Linkage-error scan (NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|AbstractMethodError):
+    closing unit run:   gradle log 0, XML 0
+    integration run:    gradle log 0, XML 0
+    fail direction:     the same scan over the "access" arm XML = 2 (ClassNotFoundException in the
+                        failure message and stack), so the scan can fire.
+
+3d. D-03 risk record
+  spring-statemachine has no Framework-7 release: 4.0.2 (built for Spring 6 / Security 6) runs here on
+  Spring Framework 7.0.9 and Security 7.1.1, a framework line it was not built for. It is proven by tests
+  that can fail (28 machine tests, 4 transition-driving integration classes, two break arms, a linkage
+  scan at 0, and the security.access test above). Replacing it with an EnumMap transition table
+  (~60-80 LOC per machine, with the existing tests as the spec) stays a SEPARATE, NON-BLOCKING decision
+  under D-03. 38-16 writes this into ADR-0006 and CONCERNS.md; this plan does not.
