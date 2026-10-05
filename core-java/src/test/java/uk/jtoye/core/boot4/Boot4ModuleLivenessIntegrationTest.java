@@ -1,5 +1,6 @@
 package uk.jtoye.core.boot4;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import io.micrometer.tracing.Tracer;
 import org.flywaydb.core.Flyway;
@@ -24,10 +25,13 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import zipkin2.reporter.BytesMessageSender;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -165,6 +169,44 @@ class Boot4ModuleLivenessIntegrationTest {
         assertThat(factories)
                 .as("spring-statemachine 4.0.2 must register both named factories")
                 .containsKeys("orderStateMachineFactory", "onboardingStateMachineFactory");
+    }
+
+    @Test
+    @DisplayName("Boot's Jackson-3 JsonMapper exists and no Jackson-2 mapper bean does (module spring-boot-jackson; D-01, 38-12)")
+    void jackson3MapperExistsAndNoJackson2MapperBean() {
+        // The Jackson-2 databind package is derived from the annotation package (which Jackson 3 still
+        // reads), so this file names no Jackson-2 databind type and stays off the DELIBERATE-JACKSON2 list.
+        String jackson2Databind = JsonProperty.class.getPackageName().replace(".annotation", ".databind");
+        String jackson3Databind = ObjectMapper.class.getPackageName();
+
+        assertThat(context.getBeanProvider(JsonMapper.class).getIfAvailable())
+                .as("no tools.jackson JsonMapper bean: spring-boot-jackson (via the web starter) is missing")
+                .isNotNull();
+        assertThat(beansWhoseTypeIsIn(jackson3Databind))
+                .as("positive control: the bean walk must find Boot's Jackson-3 mapper in %s, or its empty "
+                        + "answer for Jackson 2 below proves nothing", jackson3Databind)
+                .isNotEmpty();
+        assertThat(beansWhoseTypeIsIn(jackson2Databind))
+                .as("a Jackson-2 mapper bean (%s) is back beside Boot's Jackson-3 JsonMapper: the application has "
+                        + "two JSON behaviours again. 38-12 removed the INTERIM-JACKSON2-BRIDGE line "
+                        + "(spring-boot-jackson2); JacksonLineContractTest names the module that brought it", jackson2Databind)
+                .isEmpty();
+    }
+
+    /** Bean names whose type, or a superclass of it, lives in {@code pkg} or below; types read without initialising beans. */
+    private List<String> beansWhoseTypeIsIn(String pkg) {
+        List<String> hits = new ArrayList<>();
+        for (String name : context.getBeanDefinitionNames()) {
+            Class<?> type = context.getType(name, false);
+            for (Class<?> c = type; c != null; c = c.getSuperclass()) {
+                String p = c.getPackageName();
+                if (p.equals(pkg) || p.startsWith(pkg + ".")) {
+                    hits.add(name + " : " + type.getName());
+                    break;
+                }
+            }
+        }
+        return hits;
     }
 
     /**
