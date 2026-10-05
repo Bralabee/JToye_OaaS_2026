@@ -73,3 +73,37 @@ AC2 git grep -n -e 'com.fasterxml.jackson.databind' -e 'com.fasterxml.jackson.co
     fail direction (same grep at the plan base 295e37df): rc=0, IdempotencyService.java:3 and :4
 AC3 RED test(38-10) precedes GREEN feat(38-10); RED outputs above.
 AC4 control case passes on RED and GREEN (it does not depend on the format; it proves RLS).
+
+======================================================================================================
+TASK 2: every adopter's golden hash, response bodies both ways, DSAR ack, jsonb continuity
+======================================================================================================
+
+--- RED (commit test(38-10), Task 2), run on the Task 1 tree (3b1a5af0)
+IdempotencyFingerprintGoldenTest extended: 7 parameterised hash rows (sha256 AND byte identity per
+row), 4 parameterised stored-response rows (read fixture -> equal to the sample, OffsetDateTime by
+instant; write sample -> byte-identical to the fixture), a coverage test (tsv rows == the 7 samples)
+and a comparator control (a 1 ns shift must fail). 13 tests.
+DsarAckCompatibilityTest added: drives lodge -> replay -> deserialize against a JDBC stub that
+answers like Postgres (reserve inserts 0 rows; the read returns the Boot-3.5 row with the golden
+DsarIntakeAck.json body), and checks the body a fresh lodge stores is the Boot-3.5 bytes. The
+service is built on Boot's Jackson-3 mapper (testsupport.BootJsonMapper) through a reflective
+constructor lookup, so the Jackson-2-bean service fails as an assertion, not a compile error.
+
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.common.idempotency.IdempotencyFingerprintGoldenTest' \
+    --tests 'uk.jtoye.core.gdpr.DsarAckCompatibilityTest' --tests 'uk.jtoye.core.media.MediaUploadIdempotencyTest' --no-daemon
+rc=1, cleanTest executed, BUILD FAILED.
+  IdempotencyFingerprintGoldenTest  tests=13 failures=0 errors=0   (green on the Task 1 tree: the
+      frozen mapper already reproduces all 7 hashes and all 4 response types; no IdempotencyJson
+      adjustment is required. Its fail direction is the plain-mapper arm below.)
+  DsarAckCompatibilityTest          tests=2  failures=2
+      both: java.lang.AssertionError: DsarIntakeService does not take Boot's Jackson-3 JsonMapper
+            (tools.jackson.databind.json.JsonMapper); it is still on the Jackson-2 bean
+  MediaUploadIdempotencyTest: NO XML. It is @Tag("testcontainers"), and tasks.test excludes that
+      tag (core-java/build.gradle.kts l.316-323), so the plan's unit command cannot run it. It is
+      run in the integrationTest command instead (deviation recorded in the SUMMARY).
+
+gsd check tdd-red-evidence:
+  DSAR replay  ............................................. RED_EVIDENCE_OK (target_test_failed)
+  DSAR fresh-store ......................................... RED_EVIDENCE_OK (target_test_failed)
+  IdempotencyFingerprintGoldenTest as target ............... INVALID_RED (nonzero_exit_without_test_failure)
+      (recorded, not hidden: the golden extension is not a RED target on this tree; see above)
