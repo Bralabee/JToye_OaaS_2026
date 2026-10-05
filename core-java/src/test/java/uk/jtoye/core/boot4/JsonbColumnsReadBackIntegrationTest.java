@@ -183,6 +183,37 @@ class JsonbColumnsReadBackIntegrationTest {
                 .isEqualTo(expectedGateEvidence());
     }
 
+    // ---- capture (one-shot, Boot 3.5 tree only; deleted after the capture commit) ----
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "JTOYE_GOLDEN_CAPTURE", matches = "true")
+    @DisplayName("CAPTURE: persist the three values through Hibernate's JSON mapper and record the stored text")
+    void captureJackson2EraStoredText() throws IOException {
+        UUID shopId = createShop("jsonb-capture-shop", expectedOpeningHours());
+        UUID productId = createProduct("JSONB-CAP-1", expectedAllergenSpans());
+        UUID gateId = createGate(expectedGateEvidence());
+
+        Map<String, String> stored = new java.util.TreeMap<>();
+        stored.put(OPENING_HOURS, jdbcTemplate.queryForObject(
+                "SELECT opening_hours::text FROM shops WHERE id = ?", String.class, shopId));
+        stored.put(ALLERGEN_SPANS, jdbcTemplate.queryForObject(
+                "SELECT allergen_spans::text FROM products WHERE id = ?", String.class, productId));
+        stored.put(GATE_EVIDENCE, jdbcTemplate.queryForObject(
+                "SELECT evidence::text FROM vendor_onboarding_gate WHERE id = ?", String.class, gateId));
+
+        Files.createDirectories(JSONB_DIR);
+        StringBuilder manifest = new StringBuilder();
+        for (Map.Entry<String, String> e : stored.entrySet()) {
+            assertThat(e.getValue()).as("stored text of %s", e.getKey()).isNotBlank();
+            byte[] bytes = e.getValue().getBytes(StandardCharsets.UTF_8);
+            Files.write(JSONB_DIR.resolve(e.getKey()), bytes);
+            manifest.append(e.getKey()).append('\t')
+                    .append(GoldenFixturesIntegrityTest.sha256Hex(bytes)).append('\t')
+                    .append(bytes.length).append('\n');
+        }
+        Files.writeString(JSONB_DIR.resolve("MANIFEST.tsv"), manifest.toString(), StandardCharsets.UTF_8);
+    }
+
     // ---- helpers ----
 
     static String fixture(String name) throws IOException {

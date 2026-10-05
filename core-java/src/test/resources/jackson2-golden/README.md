@@ -47,6 +47,7 @@ imports nothing from Jackson. Two consecutive capture runs produced byte-identic
 | `outbox/` | 6 outbox payload rows (`objectMapper.writeValueAsString(event)`, as the publishers write them) | 38-08 |
 | `amqp/` | 6 message bodies (`*.body`) and 6 property tables (`*.headers.tsv`: `contentType`, `contentEncoding`, then every header, i.e. `__TypeId__`) | 38-08 |
 | `cache/` | 3 Redis values: `products-ProductDto`, `shops-ShopDto`, `shopMembership-Membership` | 38-09 |
+| `jsonb/` | Added by **38-02**, with its own `MANIFEST.tsv` (paths relative to `jsonb/`): the stored text (`SELECT col::text`) of `shops.opening_hours`, `products.allergen_spans` and `vendor_onboarding_gate.evidence`, written by Hibernate's JSON mapper on Boot 3.5.16. Key order is Postgres jsonb's normalised order, not Jackson's. The capture commit is named in `JsonbColumnsReadBackIntegrationTest`'s Javadoc | `JsonbColumnsReadBackIntegrationTest` (permanent read-back, BOOT4-08) |
 
 Idempotency endpoint ids are the strings each adopter passes to `IdempotencyService`, except
 `storefront.guest-order` and `storefront.guest-order.legacy`. Those two are the `requestBody`

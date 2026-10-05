@@ -139,7 +139,8 @@ class GoldenFixturesIntegrityTest {
     /**
      * The exact fixture set per family. Exact names, not just counts, so a missing OR a misnamed
      * capture fails rather than silently shrinking (or renaming) the oracle: idempotency 7 request
-     * files + the hash table, responses 9, outbox 6, amqp 6 bodies + 6 header tables, cache 3.
+     * files + the hash table, responses 9, outbox 6, amqp 6 bodies + 6 header tables, cache 3, and
+     * (38-02) jsonb 3.
      */
     static final List<String> EVENT_NAMES = List.of(
             "OrderStateChangeEvent", "OrderStateChangeEvent-offset", "PaymentEvent", "RefundEvent",
@@ -150,6 +151,8 @@ class GoldenFixturesIntegrityTest {
     static final List<String> RESPONSE_NAMES = List.of(
             "OrderDto", "CustomerDto", "MediaAcceptDto", "WebhookDeliveryView", "ProductDto", "ShopDto",
             "DsarIntakeAck", "WebhookEventEnvelope", "ProblemDetail-401");
+    static final List<String> JSONB_NAMES = List.of(
+            "shops.opening_hours.json", "products.allergen_spans.json", "vendor_onboarding_gate.evidence.json");
     static final List<String> CACHE_NAMES = List.of(
             "products-ProductDto", "shops-ShopDto", "shopMembership-Membership");
 
@@ -168,11 +171,14 @@ class GoldenFixturesIntegrityTest {
         });
         families.put("amqp", amqp);
         families.put("cache", CACHE_NAMES.stream().map(n -> n + ".bin").toList());
+        // 38-02: the Jackson-2-era stored text of the three Hibernate JSON (jsonb) columns, listed by
+        // their own jsonb/MANIFEST.tsv (paths relative to that directory, as every manifest is read).
+        families.put("jsonb", JSONB_NAMES);
         return families;
     }
 
     @Test
-    @DisplayName("every family holds exactly its expected fixtures (idempotency 7+1, responses 9, outbox 6, amqp 6+6, cache 3)")
+    @DisplayName("every family holds exactly its expected fixtures (idempotency 7+1, responses 9, outbox 6, amqp 6+6, cache 3, jsonb 3)")
     void everyFamilyHoldsExactlyItsExpectedFixtures() throws IOException {
         List<String> expected = new ArrayList<>();
         expectedFamilies().forEach((dir, names) -> names.forEach(n -> expected.add(dir + "/" + n)));
@@ -180,7 +186,7 @@ class GoldenFixturesIntegrityTest {
                 .map(p -> ROOT.relativize(p).toString().replace('\\', '/'))
                 .toList();
         assertThat(actual).as("the fixture set under %s", ROOT).containsExactlyInAnyOrderElementsOf(expected);
-        assertThat(expected).as("38 fixtures in total").hasSize(38);
+        assertThat(expected).as("41 fixtures in total (38 from 38-01, 3 jsonb from 38-02)").hasSize(41);
     }
 
     @Test
