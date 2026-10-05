@@ -318,20 +318,20 @@ Per the three specs' "Explicitly deferred" sections and HANDOFF "Parked":
 | BLOB-08 | Phase 36 | 36-03 | Complete 2026-09-28 (36-03: CSP img-src + remotePatterns on the Azurite origin, test-enforced; runtime proof is 36-12/36-13) |
 | BLOB-09 | Phase 36 | 36-02, 36-10, 36-12, 36-14, 36-15, 36-16, 36-17 | In progress — 36-02, 36-10 (retired client-image horizons row removed with its last site; k8s/local scripts, env block, secrets template and k8s docs clear of the retired store outside verbatim Phase 26 records in k8s/LOCAL.md), 36-12 (content-type gate re-targeted to Azurite's public container via az with the credential in the environment only, nightly-wired, text/html arm exits 1, its gate-enforcement exemption removed), 36-14 (core-java clear of the retired store outside applied V42), 36-15 (27 live docs on Azure Blob/Azurite, check-doc-versions pins Azurite), 36-16 (`scripts/check-no-object-store-residue.sh`, repo-wide, fail-armed, wired into ops-contracts CI, 52-entry reasoned line-level allowlist, 0 violations) and 36-17 (`docs/metrics.json` regenerated 4042 → 4130 and the prose counts reconciled; docs-freshness, check-doc-metrics and check-test-count-oracle green). Complete 2026-09-29 |
 | BLOB-10 | Phase 36 | 36-05, 36-17 | Complete 2026-09-29 on the phase branch; it reaches `main` with the Phase 36 merge — 36-05 (`docs/runbooks/azure-blob-provisioning.md`: accounts, `AllowBlobPublicAccess`, container access levels, WORM + soft delete, identities + federated credentials, container-scoped RBAC, `az aks update --enable-workload-identity`) and 36-17 (`.planning/phases/36-azure-blob-storage-throughout/36-PHASE29-HANDOFF.md`: D-11/D-12 superseded, operator secrets 7 → 3 derived from `staging-secrets.sh` on `phase-29-research`, and a 35-file merge-conflict map with a rule per file). Executing the provisioning and its read-backs is Phase 29's work, tracked under BLOB-02/BLOB-06 and WINDOWS.md #1/#3 |
-| BOOT4-01 | Phase 38 | 38-03, 38-16, 38-18 | Planned 2026-10-04 |
-| BOOT4-02 | Phase 38 | 38-03, 38-04, 38-12, 38-13, 38-19 | Planned 2026-10-04 |
-| BOOT4-03 | Phase 38 | 38-03, 38-04 | Planned 2026-10-04 |
-| BOOT4-04 | Phase 38 | 38-05, 38-06, 38-07, 38-08, 38-09, 38-10, 38-12, 38-19 | Planned 2026-10-04 |
-| BOOT4-05 | Phase 38 | 38-07, 38-17 | Planned 2026-10-04 |
-| BOOT4-06 | Phase 38 | 38-01, 38-08 | Planned 2026-10-04 |
-| BOOT4-07 | Phase 38 | 38-01, 38-09, 38-17 | Planned 2026-10-04 |
-| BOOT4-08 | Phase 38 | 38-01, 38-02, 38-10 | Planned 2026-10-04 |
-| BOOT4-09 | Phase 38 | 38-02, 38-06, 38-17 | Planned 2026-10-04 (covers D-05; no BOOT4-15) |
-| BOOT4-10 | Phase 38 | 38-03, 38-04, 38-16 | Planned 2026-10-04 |
-| BOOT4-11 | Phase 38 | 38-11 | Planned 2026-10-04 |
-| BOOT4-12 | Phase 38 | 38-03, 38-15, 38-18 | Planned 2026-10-04 |
-| BOOT4-13 | Phase 38 | 38-02, 38-14 | Planned 2026-10-04 |
-| BOOT4-14 | Phase 38 | 38-16, 38-17, 38-18 | Planned 2026-10-04 |
+| BOOT4-01 | Phase 38 | 38-03, 38-16, 38-18 | Complete 2026-10-05 |
+| BOOT4-02 | Phase 38 | 38-03, 38-04, 38-12, 38-13, 38-19 | Complete 2026-10-05 |
+| BOOT4-03 | Phase 38 | 38-03, 38-04 | Complete 2026-10-05 |
+| BOOT4-04 | Phase 38 | 38-05, 38-06, 38-07, 38-08, 38-09, 38-10, 38-12, 38-19 | Complete 2026-10-05 |
+| BOOT4-05 | Phase 38 | 38-07, 38-17 | Complete 2026-10-05 |
+| BOOT4-06 | Phase 38 | 38-01, 38-08 | Complete 2026-10-05 |
+| BOOT4-07 | Phase 38 | 38-01, 38-09, 38-17 | Complete 2026-10-05 |
+| BOOT4-08 | Phase 38 | 38-01, 38-02, 38-10 | Complete 2026-10-05 |
+| BOOT4-09 | Phase 38 | 38-02, 38-06, 38-17 | Complete 2026-10-05 (covers D-05; no BOOT4-15) |
+| BOOT4-10 | Phase 38 | 38-03, 38-04, 38-16 | Complete 2026-10-05 |
+| BOOT4-11 | Phase 38 | 38-11 | Complete 2026-10-05 |
+| BOOT4-12 | Phase 38 | 38-03, 38-15, 38-18 | Complete 2026-10-05 |
+| BOOT4-13 | Phase 38 | 38-02, 38-14 | Complete 2026-10-05 |
+| BOOT4-14 | Phase 38 | 38-16, 38-17, 38-18 | Complete 2026-10-05 |
 
 **Coverage:** **53 requirements across 15 categories** — the original 24 (ONBD×5, COMMS×7, VSA×4, IMG×4, MOBL×1, AI-02, INFRA×2), all Complete; the 2026-08-01 widening OPS×5 (Phase 27, Complete) and SEC×4 / DPLY×5 / PAY×3 / LGL×3 / GTM×2 (Phases 28–32, Not started); and the 2026-08-07 triage widening PAY-04 (Phase 30) + CUST×4 (Phase 33) + TRUTH×2 (Phase 34), all Not started. Each maps to exactly one phase; AI-01 absorbed into Phase 22 (COMMS-04/05/06), not double-counted — which is why the traceability table has **54** rows against 53 requirements, and that one-row gap is deliberate rather than drift. No orphans, no duplicates. (Plan columns are the roadmap's suggested breakdown — refined during `/gsd-plan-phase`; the 22 new requirements have no plans yet by design, because `/gsd-plan-phase` has not run for Phases 28–32.) **Addendum 2026-09-28:** BLOB-01..BLOB-10 (Phase 36) were added at plan time with 10 traceability rows; the totals in this paragraph predate them and were not re-derived here (UIX-07..09 from Phase 35 also postdate it). **Addendum 2026-10-04:** BOOT4-01..BOOT4-14 (Phase 38) were added at plan time with 14 traceability rows; same caveat on the totals.
 
