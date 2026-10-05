@@ -108,11 +108,13 @@ class ProtectedResourceMetadataSuppressionFilterTest {
 
     /**
      * A malformed bearer header is refused the way {@code BearerTokenAuthenticationFilter} refuses
-     * it on every other route: the resolver's RFC 6750 {@code invalid_request} goes to the same
-     * entry point, so the status (400) and the challenge are the framework's.
+     * it on every other route: the resolver's own RFC 6750 error goes to the same entry point, so
+     * the status and the challenge are the framework's. In Security 7.1.1 that error is
+     * {@code invalid_token} "Bearer token is malformed" (401), measured; the integration test
+     * compares it with the real chain's answer on a protected route.
      */
     @Test
-    void malformedBearerIsRefusedWithTheFrameworksInvalidRequest() throws Exception {
+    void malformedBearerIsRefusedWithTheResolversOwnError() throws Exception {
         MockHttpServletRequest request = get(PATH);
         request.addHeader("Authorization", "Bearer not a token");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -121,8 +123,9 @@ class ProtectedResourceMetadataSuppressionFilterTest {
         filter.doFilter(request, response, chain);
 
         assertNull(chain.getRequest());
-        assertEquals(400, response.getStatus());
-        assertTrue(response.getHeader("WWW-Authenticate").startsWith("Bearer error=\"invalid_request\""),
+        assertEquals(401, response.getStatus());
+        assertTrue(response.getHeader("WWW-Authenticate")
+                        .startsWith("Bearer error=\"invalid_token\", error_description=\"Bearer token is malformed\""),
                 response.getHeader("WWW-Authenticate"));
         assertFalse(response.getHeader("WWW-Authenticate").contains("resource_metadata"));
         assertEquals("https://jtoye.uk/errors/unauthorized",

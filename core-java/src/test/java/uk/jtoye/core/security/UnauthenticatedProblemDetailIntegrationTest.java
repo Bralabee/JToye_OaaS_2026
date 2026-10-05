@@ -268,6 +268,25 @@ class UnauthenticatedProblemDetailIntegrationTest {
         assertThat(actual).isEqualTo(expected);
     }
 
+    /**
+     * A malformed bearer header is refused on the suppressed path exactly as on a protected route
+     * (status, every header, body): the resolver's own error reaches the same entry point.
+     */
+    @Test
+    void wellKnownProtectedResource_malformedBearer_isTheSameRefusalAsAnyProtectedRoute() throws Exception {
+        String malformed = "Bearer not a token";
+        MockHttpServletResponse reference = mockMvc.perform(get("/api/v1/products").header("Authorization", malformed))
+                .andReturn().getResponse();
+        MockHttpServletResponse wellKnown = mockMvc.perform(get(WELL_KNOWN).header("Authorization", malformed))
+                .andReturn().getResponse();
+
+        assertThat(reference.getStatus()).as("control: the reference route refuses").isEqualTo(401);
+        assertThat(reference.getHeader("WWW-Authenticate")).as("control").startsWith("Bearer error=\"invalid_token\"");
+        assertThat(wellKnown.getStatus()).isEqualTo(reference.getStatus());
+        assertThat(headersOf(wellKnown)).isEqualTo(headersOf(reference));
+        assertThat(wellKnown.getContentAsString()).isEqualTo(reference.getContentAsString());
+    }
+
     /** Any path under the prefix is suppressed the same way (the framework serves {@code /**}). */
     @Test
     void wellKnownProtectedResource_suffixPath_isSuppressedForBothCallerKinds() throws Exception {

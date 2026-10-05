@@ -21,6 +21,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.web.client.RestOperations;
+import org.springframework.web.filter.CorsFilter;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -111,6 +113,7 @@ public class SecurityConfig {
                                                    JwtTenantFilter jwtTenantFilter,
                                                    ObjectProvider<TenantFilter> tenantFilterProvider,
                                                    ProblemDetailAuthenticationEntryPoint authenticationEntryPoint,
+                                                   JsonMapper jsonMapper,
                                                    Environment env) throws Exception {
         // Runtime prod check shared by the actuator-scrape matcher and the HSTS
         // block below (12-RESEARCH.md §4.2 Pattern A: single bean + env check).
@@ -264,6 +267,21 @@ public class SecurityConfig {
         // Ensure that after JWT authentication, we map tenant from token into TenantContext
         // IMPORTANT: Must run AFTER BearerTokenAuthenticationFilter (which validates JWT)
         http.addFilterAfter(jwtTenantFilter, BearerTokenAuthenticationFilter.class);
+
+        // Phase 38 D-05: suppress Spring Security 7.1's /.well-known/oauth-protected-resource
+        // (its default body falsely claims tls_client_certificate_bound_access_tokens). See the
+        // filter's Javadoc for what it answers instead (owner decision "anon-401-parity").
+        //
+        // Anchor: addFilterBefore(filter, OAuth2ProtectedResourceMetadataFilter.class) is refused
+        // ("does not have a registered order", measured in 38-06) because that filter is only
+        // given an order when the resource-server configurer runs inside http.build(). After
+        // CorsFilter is the anchor instead: it is after HeaderWriterFilter (security headers) and
+        // CorsFilter (the Vary every other response carries), and before LogoutFilter and so
+        // before the framework's metadata filter, which sits ahead of
+        // AbstractPreAuthenticatedProcessingFilter. UnauthenticatedProblemDetailIntegrationTest
+        // asserts that order on the built chain.
+        http.addFilterAfter(new ProtectedResourceMetadataSuppressionFilter(jsonMapper, authenticationEntryPoint),
+                CorsFilter.class);
         return http.build();
     }
 }
