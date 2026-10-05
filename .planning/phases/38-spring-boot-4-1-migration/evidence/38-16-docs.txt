@@ -225,3 +225,76 @@ Prose verify (no gate reads these claims, so this grep is their check):
 Tracer feedback gate (interactive run, human_verify_mode end-of-phase, automated-only verify):
 the four <verify> commands were re-run after the arms (section 5, clean after) and pass, so the
 plan continues to Task 2 without a checkpoint.
+
+
+7. TASK 2: ADR-0006 AND THE STATEMACHINE CONCERN
+------------------------------------------------
+Files: docs/architecture/decisions/ADR-0006-spring-boot-4-migration.md (new, ADR-0005's format:
+Status/Refs, Context, Decisions, Consequences with a risk subsection, Revisit triggers; plus the two
+operator sections the plan requires, a "Contract changes" section, and the RFC 9728 scope line).
+.planning/codebase/CONCERNS.md: a new Fragile Areas entry "spring-statemachine 4.0.2 on Spring
+Framework 7" pointing at ADR-0006, and the horizons-table Spring Boot 3.5.16 row marked CLOSED (it
+described an exemption this plan deleted).
+
+7.1 Verify (plan awk over the ADR): d01=4 d02=1 d03=2 d04=3 d05=5 deploy=2 rollback=1, rc=0.
+    Fail directions: /dev/null -> all seven counts 0; a copy with the "Rollback notes" heading
+    removed -> rollback=0; a missing file -> awk "cannot open", rc=2.
+7.2 AC1 awk '/ADR-0006/' over CONCERNS.md -> 2 (plan base -> 0).
+7.3 AC2 "every number cites its evidence file", checked by reading with a mechanical aid: awk lists
+    every paragraph/bullet/table row that contains a digit and no "ev:" reference (45 on the first
+    draft). Each was judged:
+      - headings, dates, D-0x / BOOT4-xx / issue / plan ids, HTTP status codes named as contract
+        values, gate exit-code contracts, versions read from the build file or Boot's BOM (the
+        ADR's header says where those were read: section 3 above) -> not measured figures;
+      - the D-05 table's status codes -> cited in the sentences directly above (ev:38-02-baselines)
+        and below (ev:38-06-security) the table;
+      - the spike's four defects (incl. "18 keys") -> cited to 38-SPIKE.md in the sentence that
+        introduces the list;
+      - four figures were given a direct citation after the scan: "#676 failed five CI jobs" (the
+        deleted exemption, git show 4656a7f7:infra/dependency-horizons.yaml), the config gate's
+        exit codes (ev:38-11), "28 of 28 / 4" (ev:38-04 §3), and "60-80 lines" (marked as the
+        owner's estimate in 38-CONTEXT.md D-03, not a measurement).
+    Every other figure (15/11/4, 12 tests, 130/133, 67 and 0 of 67, 4/7, 16/37/23/14/9, 24 cases,
+    six payloads, 7 fingerprints / 4 bodies, TTLs 10/15/5, 0 -> 1 errors, 18 fields / 11 DTOs,
+    18 keys, rc=0 on DB 2026-10-05 13:07 UTC, the Tomcat/amqp/Jackson floors) sits in a sentence or
+    bullet carrying its ev: file. Two figures were corrected against source while writing:
+      - Boot4ModuleLivenessIntegrationTest's probes, read from the test (6 @Test methods: Flyway,
+        Brave/Zipkin, Prometheus, HTTP client builders, both state-machine factories, Jackson 3);
+        the security-access check is StatemachineSecurityAccessTest, not the liveness test;
+      - the TTLs, read from CacheConfig.java:111/114/123 (products 10, shops 15, shopMembership 5).
+    The AMQP "ISO-8601 now, epoch decimal before" note was first cited to ev:38-01-golden-capture.txt,
+    which does not contain the epoch example (grep -c 1791117296 -> 0). Re-cited by content: the epoch
+    form is the 38-01 fixture jackson2-golden/amqp/OrderStateChangeEvent.body ("timestamp":
+    1791117296.123456789, grep -c -> 1); the ISO write form is ev:38-07 l.167 ("writes in declaration
+    order with ISO dates") and ev:38-09 l.66 ("Dates: ISO-8601 text, the offset kept on write");
+    reverse readability is ev:38-08.
+7.4 AC3 no instruction contradicts a locked decision (re-read against 38-CONTEXT.md):
+      D-01  Jackson 3 in main code, no preferred-json-mapper switch, Jackson-2 floor for transitive
+            users only, Keycloak body by content; the hazard is answered by proof (no flush/drain),
+            which D-01 allows ("prove it ... or flush them as a recorded deploy step").
+      D-02  explicit starters, no classic; the ADR's list adds restclient, webclient and zipkin,
+            which 38-03 declared to keep RestClient, WebClient and tracing alive under Boot 4's
+            module split (an extension measured by the census, not a reversal).
+      D-03  statemachine kept, spring-security-access added; EnumMap replacement recorded as
+            separate and non-blocking, not taken.
+      D-04  plain Bearer, resource_metadata stripped.
+      D-05  as refined by the owner on 2026-10-05: 401 anonymous, 404 with credentials, the
+            invalid-token 404 residual; no corrected metadata; RFC 9728 out of scope.
+            DEVIATION FROM PLAN TEXT (owner decision): the plan's action says "/.well-known/
+            oauth-protected-resource is 404". That text predates the 38-06 ruling
+            "anon-401-parity (Recommended)"; the ADR's deploy note says 401 without credentials and
+            404 with them, and warns that an anonymous smoke check expecting 404 is wrong.
+      38-05 "jackson3-defaults (Recommended)": no spring.jackson key; the ADR names alphabetical key
+            order and the trailing-content 400 as contract changes.
+    Carried obligations named in the ADR: (1) alphabetical key order on class-based responses;
+    (2) trailing-content 400; (3) /.well-known 401 anonymous / 404 with token, and the invalid-token
+    404 residual; Boot-4 broker messages carry ISO dates (Boot-3.5 readers accept both); cache keys
+    v4:{region}:: with no deploy flush and the SEC-4 allowlist narrowed to uk.jtoye./java.util./
+    java.math.; the HttpStatus enum change is Spring Framework 7's, not springdoc's; the 18 newly
+    required fields match the Boot-3.5 constraint inventory; the restored Zipkin endpoint, log
+    retention and error-detail settings; the CVE floors cite ev:38-15-cve-floors.txt.
+7.5 Rollback, database: phase 38 added no migration. git diff --stat 767f5658..HEAD --
+    core-java/src/main/resources/db/ prints nothing (rc=0); the same command on application.yml
+    prints "1 file changed, 13 insertions(+), 6 deletions(-)", so the command can see a change.
+    Recorded as UNVERIFIED in the ADR: whether Flyway 11 accepts a history table that Flyway 12 has
+    validated (not measured; no rollback was rehearsed in this plan).

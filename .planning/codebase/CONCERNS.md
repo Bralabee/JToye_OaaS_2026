@@ -87,7 +87,7 @@ All governed by `infra/dependency-horizons.yaml` + `scripts/check-dependency-hor
 | Keycloak 24.0.5 | 2024-06-10 | 2026-12-31 (upgrade needs its own live-auth-rehearsal plan — this repo has a recorded JWT-issuer/JWKS split-horizon outage history) | DEFERRED-27 |
 | Prometheus 2.48.0 | 2023-12-28 | 2026-12-31 | DEFERRED-27 |
 | Grafana 10.2.2 | 2024-07-24 | 2026-12-31 | DEFERRED-27 |
-| Spring Boot 3.5.16 (OSS support ended) | 2026-06-30 | **2027-02-28** (Boot 4.1 is a scoped migration, not a bump — dependabot's naive PR #676 failed 5 CI jobs) | **#706** |
+| ~~Spring Boot 3.5.16 (OSS support ended)~~ **CLOSED 2026-10-05 (Phase 38):** core-java is on Spring Boot 4.1.1 (horizon 2027-07-31, cycle 4.1, no exemption) — see ADR-0006 | ~~2026-06-30~~ | exemption deleted | ~~#706~~ |
 
 Several third-party images (ollama, mailhog, alertmanager, redis-exporter, postgres-exporter) have no `endoflife.date` entry at all (404) and are tracked via dated `manual_review` (`expires: 2027-01-27`) rather than a horizon — by design, not a gap. The Azurite emulator (Phase 36) is the same kind: no `endoflife.date` product, its own `manual_review` in `infra/dependency-horizons.yaml` (`expires: 2026-12-27`).
 
@@ -191,6 +191,12 @@ Several third-party images (ollama, mailhog, alertmanager, redis-exporter, postg
 
 ### `frontend/hooks/use-toast.ts`
 - Why fragile: `TOAST_LIMIT = 1` (see Known Bugs above) plus two further upstream `use-toast` staleness bugs noted in `STATE.md`/`HANDOFF.md` as residual, unfixed as of 2026-08-31. Any change to toast behaviour should be paired with the #700 fix rather than layered on top of it.
+
+### spring-statemachine 4.0.2 on Spring Framework 7 (added 2026-10-05, Phase 38, D-03)
+- Files: `core-java/build.gradle.kts` (`spring-statemachine-starter:4.0.2` and the `spring-security-access` line beside it); the order and vendor-onboarding machines (`OrderStateMachineConfig`, `VendorOnboardingStateMachineService`).
+- Why fragile: the library has **no Spring Framework 7 release**. It runs on Framework 7.0.9 under Boot 4.1.1, and needs `spring-security-access` added for its 16 `org.springframework.security.access` classes (found by jdeps; 9 of them are in that jar). Measured in 38-04: 28/28 state-machine tests and the 4 transition-driving integration classes pass, and the linkage-error scan finds 0. Only the paths the tests and the running app exercise are covered; a Framework 7.x patch could break a path nobody exercises. Evidence: `.planning/phases/38-spring-boot-4-1-migration/evidence/38-04-suite-and-liveness.txt`.
+- Guards: `StatemachineSecurityAccessTest` (all 16 classes load from the production classpath alone) and `Boot4ModuleLivenessIntegrationTest.bothStateMachineFactoriesExist`.
+- The exit, NOT taken: replace each machine with an `EnumMap` transition table (~60-80 LOC per machine, existing tests as the spec). That is a separate, non-blocking decision. Take it if a Framework 7.x / Boot 4.x patch breaks the library, a CVE lands in it with no fix, or Boot stops shipping `spring-security-access`. The decision record is `docs/architecture/decisions/ADR-0006-spring-boot-4-migration.md` (D-03 and "Risk: spring-statemachine 4.0.2").
 
 ### Keycloak realm configuration (`infra/keycloak/`)
 - Why fragile: Three parallel artifacts (`realm-export.json` generated, `realm-export.template.json` committed, `realm-export-customers.template.json` committed) rendered via two separate `envsubst` invocations in `docker-compose.full-stack.yml`, each with its own allow-list of substitutable variable names. A name added to the JSON but missing from the corresponding allow-list survives as a **literal** `${VAR_NAME}` string in the rendered realm — this exact trap is documented in-file (`infra/keycloak/realm-export-customers.template.json:101`) because it was hit in production once (measured 2026-08-08).
