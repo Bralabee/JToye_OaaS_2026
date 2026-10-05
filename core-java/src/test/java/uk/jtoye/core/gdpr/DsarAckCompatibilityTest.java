@@ -3,14 +3,11 @@ package uk.jtoye.core.gdpr;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
-import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.boot4.GoldenSamples;
 import uk.jtoye.core.gdpr.dto.DsarIntakeRequest;
 import uk.jtoye.core.testsupport.BootJsonMapper;
 
 import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * BOOT4-08 (Phase 38, plan 38-10): the DSAR acknowledgement a Boot-3.5 pod stored in
  * {@code dsar_request.response_body} still replays after the deploy, through
- * {@link DsarIntakeService} on Boot's Jackson-3 {@link JsonMapper}.
+ * {@link DsarIntakeService} on Boot's Jackson-3 {@code JsonMapper}.
  *
  * <p>{@code dsar_request} keeps its own idempotency (V62): a keyed retry whose insert conflicts
  * answers from the stored row, by deserializing {@code response_body}. The fixture
@@ -73,24 +70,9 @@ class DsarAckCompatibilityTest {
                 .isEqualTo(Files.readString(FIXTURE, StandardCharsets.UTF_8));
     }
 
-    /**
-     * The service on Boot's Jackson-3 mapper. Looked up reflectively so that, while the service
-     * still takes the Jackson-2 bean, this test fails as an assertion rather than a compile error.
-     */
+    /** The service on Boot's Jackson-3 mapper, the bean the application injects. */
     private static DsarIntakeService service(JdbcTemplate jdbc) {
-        Constructor<DsarIntakeService> constructor;
-        try {
-            constructor = DsarIntakeService.class.getConstructor(
-                    JdbcTemplate.class, JsonMapper.class, DsarVerificationMailer.class);
-        } catch (NoSuchMethodException e) {
-            throw new AssertionError("DsarIntakeService does not take Boot's Jackson-3 JsonMapper "
-                    + "(tools.jackson.databind.json.JsonMapper); it is still on the Jackson-2 bean", e);
-        }
-        try {
-            return constructor.newInstance(jdbc, BootJsonMapper.get(), new NoMail());
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
-            throw new IllegalStateException(e);
-        }
+        return new DsarIntakeService(jdbc, BootJsonMapper.get(), new NoMail());
     }
 
     /** A JdbcTemplate that answers the two statements the intake issues, and records them. */
