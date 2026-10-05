@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -69,8 +69,8 @@ class OnboardingStallOutboxIntegrationTest {
     // Mocked only so the FHRS / Companies House gate beans construct cleanly and
     // no real network call is ever possible; the seeded terminal gate rows mean
     // neither client is invoked by the recompute.
-    @MockBean private FhrsClient fhrsClient;
-    @MockBean private CompaniesHouseClient companiesHouseClient;
+    @MockitoBean private FhrsClient fhrsClient;
+    @MockitoBean private CompaniesHouseClient companiesHouseClient;
 
     private UUID tenantId;
     private UUID shopId;

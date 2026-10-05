@@ -16,7 +16,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.amqp.AmqpConnectException;
 import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.core.QueueInformation;
-import org.springframework.amqp.rabbit.listener.MessageListenerContainer;
+import org.springframework.amqp.core.MessageListenerContainer;
 import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.beans.factory.ObjectProvider;

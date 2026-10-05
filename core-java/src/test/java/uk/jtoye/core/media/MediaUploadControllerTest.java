@@ -7,9 +7,9 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
@@ -49,7 +49,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li><b>Missing Idempotency-Key -> 400.</b></li>
  * </ul>
  *
- * <p>{@link StorageService} is a {@code @SpyBean} so the quarantine PUT is asserted without a
+ * <p>{@link StorageService} is a {@code @MockitoSpyBean} so the quarantine PUT is asserted without a
  * live object store (the real {@code detectContentType} still runs on the raw bytes). NOT
  * {@code @Transactional}: the accept commits so the post-request row assertions observe it
  * (Testcontainers superuser bypasses RLS, mirroring the sibling media integration tests).
@@ -75,7 +75,7 @@ class MediaUploadControllerTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
     @Autowired @Qualifier("requestMappingHandlerMapping") private RequestMappingHandlerMapping handlerMapping;
-    @SpyBean private StorageService storageService;
+    @MockitoSpyBean private StorageService storageService;
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000240");
     private UUID productId;

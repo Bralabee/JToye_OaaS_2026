@@ -6,9 +6,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -98,7 +98,7 @@ class DsarVerificationIntegrationTest {
     @Autowired private PlatformTransactionManager txManager;
 
     /** Spied to capture the READABLE token, which is never persisted and so has no other source. */
-    @SpyBean private DsarVerificationMailer mailer;
+    @MockitoSpyBean private DsarVerificationMailer mailer;
 
     @BeforeEach
     void clean() {

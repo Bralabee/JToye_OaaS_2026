@@ -2,8 +2,8 @@ package uk.jtoye.core.common;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.mapping.PropertyPath;
-import org.springframework.data.util.TypeInformation;
+import org.springframework.data.core.PropertyPath;
+import org.springframework.data.core.TypeInformation;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li><b>L2</b> — a missing required {@code @RequestHeader} (e.g. the absent
  *       {@code Stripe-Signature} on the payments webhook) must map to 400, not 500.</li>
  *   <li><b>API-7</b> (QA council 20260902-134741) — a malformed {@code ?sort=} value makes
- *       Spring Data raise {@link org.springframework.data.mapping.PropertyReferenceException};
+ *       Spring Data raise {@link org.springframework.data.core.PropertyReferenceException};
  *       client-supplied input must map to 400, not the catch-all 500.</li>
  * </ul>
  *
@@ -78,7 +78,7 @@ class GlobalExceptionHandlerRequestShapeTest {
     /**
      * API-7 (QA council 20260902-134741). {@code GET /api/v1/products?sort=;DROP} returned
      * <b>500 errors/internal</b> live: no handler matched
-     * {@link org.springframework.data.mapping.PropertyReferenceException}, so client input
+     * {@link org.springframework.data.core.PropertyReferenceException}, so client input
      * reached {@code handleGenericException}. A 5xx from a well-formed request the client
      * simply got wrong pollutes the error budget and tells the caller nothing actionable.
      *
@@ -133,7 +133,7 @@ class GlobalExceptionHandlerRequestShapeTest {
     static class ThrowingController {
         @GetMapping("/unmapped-resource")
         public String throwNoResource() throws NoResourceFoundException {
-            throw new NoResourceFoundException(HttpMethod.GET, "/unmapped-resource");
+            throw new NoResourceFoundException(HttpMethod.GET, "/unmapped-resource", "unmapped-resource");
         }
 
         @GetMapping("/needs-header")

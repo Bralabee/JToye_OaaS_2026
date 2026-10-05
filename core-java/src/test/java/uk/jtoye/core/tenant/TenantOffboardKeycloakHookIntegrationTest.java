@@ -7,9 +7,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -91,7 +91,7 @@ class TenantOffboardKeycloakHookIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
 
     /** Mock the low-level seam; the real KeycloakDeprovisionService orchestrates it. */
-    @MockBean private KeycloakAdminClient keycloakAdminClient;
+    @MockitoBean private KeycloakAdminClient keycloakAdminClient;
 
     private static final UUID ADMIN_TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
 

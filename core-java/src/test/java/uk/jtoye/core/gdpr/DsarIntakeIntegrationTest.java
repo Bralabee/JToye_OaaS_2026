@@ -5,9 +5,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -99,7 +99,7 @@ class DsarIntakeIntegrationTest {
      * puts the prior value back in a {@code finally}, so after the call the thread looks identical
      * whether or not it declared system authority mid-flight.
      */
-    @SpyBean private DsarIntakeService dsarIntakeService;
+    @MockitoSpyBean private DsarIntakeService dsarIntakeService;
 
     @BeforeEach
     void clean() {

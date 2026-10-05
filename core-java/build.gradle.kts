@@ -1,5 +1,5 @@
 plugins {
-    id("org.springframework.boot") version "3.5.16"
+    id("org.springframework.boot") version "4.1.1"
     id("io.spring.dependency-management") version "1.1.7"
     java
     // Plan 34-09 (TRUTH-02, #110). CORE Gradle plugin: no version coordinate, no
@@ -18,45 +18,27 @@ java {
 // (which is sometimes created/owned by root in this environment).
 layout.buildDirectory.set(file("build-local"))
 
-// Override the netty version managed by Spring Boot 3.5.16's BOM. Netty is not
-// declared below — it arrives transitively via reactor-netty (starter-webflux)
-// and com.azure:azure-core-http-netty 1.16.7 (the Azure Blob SDK's HTTP client,
-// Phase 36), which itself declares 4.1.137.Final, the same version as this pin.
-// Every netty artifact is pinned by
-// io.spring.dependency-management ("selected by rule" in dependencyInsight).
-// Boot's documented override is this property, which re-points the imported
-// netty-bom so the whole netty family moves together; forcing the flagged
-// artifacts alone would leave them out of step with their siblings.
-//
-// WHY THE PIN EXISTS AT ALL (#318, 2026-07-27): the Trivy image gate. It fails
-// the build on fixable CRITICAL/HIGH in the produced image, and it named
-// 4.1.136.Final for CVE-2026-59901 (netty-codec) and CVE-2026-55831 /
-// CVE-2026-55833 / CVE-2026-56745 (netty-codec-http). Do NOT drop below
-// 4.1.136.Final: those four come straight back.
-//
-// RAISED TO 4.1.137.Final (#752) for CVE-2026-75595 and CVE-2026-75596, both in
-// io.netty:netty-handler's SslClientHelloHandler. Read the reachability before
-// treating this line as a load-bearing auth control: SslClientHelloHandler is
-// netty's SERVER-side SNI handler, and this service does not serve over netty --
-// it serves over Tomcat (spring-boot-starter-web below), and reactor-netty and
-// azure-core-http-netty are CLIENTS. `git grep SniHandler|SslClientHello|clientAuth
-// -- core-java/src` is empty; the only netty API implemented against here is
-// io.netty.resolver (SsrfGuardAddressResolverGroup). So the SNI/mTLS bypass is
-// NOT reachable in this topology. The bump is taken because the vulnerable jar
-// still ships in the image and the image gate scans what ships, not what runs --
-// and so the exposure stays closed if a future change does put netty on the
-// serving path.
-//
-// Staying on 4.1.x keeps us on the line Boot 3.5.16 already manages. 4.2.x would
-// be an unrequested jump. 4.1.138.Final was also deliberately not taken: it turns
-// on HTTP/2 header-value validation by default, which is a behaviour change with
-// its own blast radius and its own decision.
-extra["netty.version"] = "4.1.137.Final"
+// NETTY: NO PIN UNDER BOOT 4 (38-03, #706). Boot 4.1.1 manages netty 4.2.17.Final (the
+// `netty.version` key of spring-boot-dependencies-4.1.1.pom), which GitHub's advisories list as
+// patched for CVE-2026-75595/-75596 (4.2.17) and CVE-2026-59901/-55831/-55833/-56745 (4.2.16):
+// every CVE the Boot-3 pin of 4.1.137.Final existed to clear (#318, #752). The pin was DELETED,
+// not raised: Boot 4's reactor-netty (2025.0.x) is built on the 4.2 line, so forcing a 4.1.x
+// netty under it would be a cross-line mismatch, not a floor. azure-core-http-netty 1.16.7 still
+// declares 4.1.137 and is moved to 4.2.17 by the BOM (38-RESEARCH Pitfall 8; the spike's Azurite
+// integration classes passed on that mix). 38-15 re-proves resolution and runs the Trivy scan.
+// The deleted pin's full rationale (the Trivy image gate, SslClientHelloHandler reachability,
+// why 4.1.138.Final was not taken) is in this file's history before 38-03.
 
-// Override Tomcat version managed by Spring Boot 3.5.16 (10.1.55) to remediate
-// critical authorization/authentication bypass CVEs in 10.1.57 and earlier.
-// Keep within the same 10.1.x line to minimize behavioral risk.
-extra["tomcat.version"] = "10.1.59"
+// Override the Tomcat version managed by Spring Boot 4.1.1. Boot 4.1.1 manages 11.0.24
+// (`tomcat.version` in spring-boot-dependencies-4.1.1.pom), which is BELOW our floor: Tomcat's
+// security page lists the same 12 CVEs fixed in 10.1.59 (our Boot-3 pin) and in 11.0.25, so the
+// managed version would re-open them. 11.0.26 (2026-09-15) is taken over 11.0.25 because it also
+// fixes "Bypass of security constraints for WebSocket endpoints" (CVE-2026-76183) and the
+// request-header mix-up regression (CVE-2026-86350), both on this app's serving path (/ws/**).
+// Spike measurement: removing the pin resolves `11.0.24 (selected by rule)`. 38-15 re-proves it.
+// History (Boot 3.5.16): pinned 10.1.59 over the managed 10.1.55 for the authorization/
+// authentication bypass CVEs in 10.1.57 and earlier, kept on the 10.1.x line then.
+extra["tomcat.version"] = "11.0.26"
 
 // Override com.rabbitmq:amqp-client transitive dependency from
 // spring-boot-starter-amqp to patch 6 HIGH/MEDIUM severity CVEs discovered by
@@ -99,6 +81,10 @@ extra["tomcat.version"] = "10.1.59"
 // 5.33.1 after the last green main run; 5.34.0 is the version Trivy names as fixed.
 // Taken as the smallest clearing bump, not the newest (5.36.0), for the same reason as
 // above: every minor step is a chance for a runtime default to move.
+//
+// BOOT 4.1.1 (38-03, #706): the key is UNCHANGED. `rabbit-amqp-client.version` is still the
+// property spring-boot-dependencies-4.1.1.pom declares (l.181), managed there at 5.30.0, below
+// both this floor and spring-rabbit 4.1.1's own 5.31.0. So the pin stays, value unchanged.
 extra["rabbit-amqp-client.version"] = "5.34.0"
 
 // Override the Jackson family managed by Spring Boot 3.5.16's BOM. Jackson is not
@@ -150,18 +136,55 @@ extra["rabbit-amqp-client.version"] = "5.34.0"
 // behind a newer Boot holds Jackson BELOW Boot's version. Under Boot 4 (#706) this key names
 // the Jackson 3 BOM and Jackson 2 moves to `jackson-2-bom.version`: re-key, do not delete;
 // and CVE-2026-89407 also lists Jackson 3 (tools.jackson.core), so check the 3.x line too.
-extra["jackson-bom.version"] = "2.21.7"
+//
+// RE-KEYED UNDER BOOT 4.1.1 (38-03, #706). spring-boot-dependencies-4.1.1.pom declares TWO
+// Jackson keys (l.82-83): `jackson-2-bom.version` (Jackson 2, com.fasterxml, managed 2.21.5) and
+// `jackson-bom.version`, which NOW MOVES JACKSON 3 (tools.jackson, managed 3.1.5). Leaving the
+// Boot-3 line in place was measured on the first Boot-4 build (38-03 evidence, RED compile): it
+// pointed tools.jackson:jackson-bom at 2.21.7, which does not exist, so the BOM import failed and
+// EVERY Boot-managed version vanished from compileClasspath ("Could not find ...-starter-web:.").
+//
+// Jackson 2 stays on the classpath for transitive users only (springdoc's swagger-core, the
+// Azure SDK, Stripe); main code moves to Jackson 3 (D-01). Its floor moves 2.21.7 -> 2.22.3:
+// 2.22.3 clears the same four HIGH CVEs (CVE-2026-89407/-89425/-91776/-91777, fixed in
+// 2.18.11 / 2.21.7 / 2.22.3) AND stops downgrading swagger-core 2.2.55 (springdoc 3.1.1), which
+// requests databind 2.22.1. A 2.21.x pin would hold it below what its own consumer asks for.
+extra["jackson-2-bom.version"] = "2.22.3"
+//
+// Jackson 3 floor: Boot 4.1.1 manages 3.1.5. 3.1.7 is the smallest release clearing
+// CVE-2026-89407/-89425 (tools.jackson.core:jackson-core, fixed 3.1.7 / 3.2.2) and
+// CVE-2026-91776 (tools.jackson.core:jackson-databind, fixed 3.1.7 / 3.2.3). The near-miss
+// key hazard above applies to both keys; 38-15 runs the near-miss-key arms, dependencyInsight
+// before/after for each, and the local Trivy scan.
+extra["jackson-bom.version"] = "3.1.7"
 
 dependencies {
-    implementation("org.springframework.boot:spring-boot-starter-web")
+    // Boot 4 (38-03, D-02): EXPLICIT per-module starters, one per technology the app uses. Boot 4
+    // split auto-configuration into per-technology modules, and the third-party library alone no
+    // longer triggers it: a forgotten module is SILENT (the spike measured 0 Flyway migrations
+    // without spring-boot-flyway). The aggregate "classic" starter pair is deliberately not used:
+    // it drags in Boot's gRPC auto-configuration without gRPC itself, which throws
+    // NoClassDefFoundError on any filter chain that keeps CSRF on.
+    implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
-    implementation("org.springframework.boot:spring-boot-starter-aop")
+    // Carries the Flyway auto-configuration module; without it 0 migrations run and the RLS
+    // schema never exists. flyway-core / flyway-database-postgresql stay explicit below.
+    implementation("org.springframework.boot:spring-boot-starter-flyway")
+    implementation("org.springframework.boot:spring-boot-starter-aspectj")
     implementation("org.springframework.boot:spring-boot-starter-security")
-    implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+    implementation("org.springframework.boot:spring-boot-starter-security-oauth2-resource-server")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
-    implementation("org.springframework.retry:spring-retry")
+    // RestClient.Builder (KeycloakAdminClient) and RestTemplateBuilder (SecurityConfig,
+    // CustomerJwtVerifier) are auto-configured by spring-boot-restclient in Boot 4.
+    implementation("org.springframework.boot:spring-boot-starter-restclient")
+    // spring-retry is no longer managed by the Boot 4.1.1 BOM, so it carries an explicit version.
+    implementation("org.springframework.retry:spring-retry:2.0.13")
     implementation("org.springframework.statemachine:spring-statemachine-starter:4.0.2")
+    // D-03: spring-statemachine 4.0.2 references 24 org.springframework.security.access.* classes
+    // that Security 7 moved into this separate artifact. No version: the Spring Security 7.1.1 BOM
+    // (imported by Boot 4.1.1) manages it.
+    implementation("org.springframework.security:spring-security-access")
 
     // Redis caching dependencies
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
@@ -217,14 +240,22 @@ dependencies {
 
     // Spring WebFlux for non-blocking HTTP client (Claude API calls)
     implementation("org.springframework.boot:spring-boot-starter-webflux")
+    // Boot 4: the WebClient.Builder bean (injected by FhrsClient and WebhookDeliveryClientConfig)
+    // is auto-configured by spring-boot-webclient, which -webflux does NOT carry. Added ALONGSIDE
+    // webflux (which D-02 lists literally) under D-02's rule "declare each module the app actually
+    // uses"; a missing builder fails context startup loudly.
+    implementation("org.springframework.boot:spring-boot-starter-webclient")
 
     // Observability: Micrometer for metrics and distributed tracing
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("io.micrometer:micrometer-tracing-bridge-brave")  // Brave (Zipkin) backend
     implementation("io.zipkin.reporter2:zipkin-reporter-brave")
+    // Boot 4: tracing and Zipkin export auto-configuration live in spring-boot-micrometer-tracing-
+    // brave and spring-boot-zipkin; the libraries above alone leave tracing silently off.
+    implementation("org.springframework.boot:spring-boot-starter-zipkin")
 
-    // Resilience4j circuit breaker
-    implementation("io.github.resilience4j:resilience4j-spring-boot3:2.4.0")
+    // Resilience4j circuit breaker (the Boot 4 artifact; 2.4.0 is its only release)
+    implementation("io.github.resilience4j:resilience4j-spring-boot4:2.4.0")
 
     // Stripe payment processing
     implementation("com.stripe:stripe-java:33.4.2")
@@ -246,7 +277,10 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.postgresql:postgresql:42.7.13")
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6")
+    // springdoc 3.x is the Boot-4 line (2.8.x is Boot-3 only); 3.1.1 supersedes dependabot #739.
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1")
+
+    implementation("org.springframework.boot:spring-boot-jackson2") // INTERIM-JACKSON2-BRIDGE removed by 38-12; keeps the Jackson-2 ObjectMapper bean for injectors 38-06..38-10 and 38-19 migrate
 
     // Lombok for boilerplate reduction
     compileOnly("org.projectlombok:lombok")
@@ -258,8 +292,17 @@ dependencies {
     // Lombok-MapStruct binding to ensure Lombok runs BEFORE MapStruct
     annotationProcessor("org.projectlombok:lombok-mapstruct-binding:0.2.0")
 
+    // Boot 4 test slices are per module (38-03, D-02): each test starter carries its technology's
+    // test auto-configuration (MockMvc, TestRestTemplate, DataJpaTest, ...).
     testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("org.springframework.security:spring-security-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-security-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
+    // Boot's configuration metadata model: 38-11's unknown-key gate reads it.
+    testImplementation("org.springframework.boot:spring-boot-configuration-metadata")
+    // AutoConfigureTracing / AutoConfigureMetrics, used by 38-04's liveness test.
+    testImplementation("org.springframework.boot:spring-boot-micrometer-tracing-test")
+    testImplementation("org.springframework.boot:spring-boot-micrometer-metrics-test")
     testImplementation("org.testcontainers:testcontainers:1.21.4")
     testImplementation("org.testcontainers:postgresql:1.21.4")
     // #92: real-broker fan-out proof for the per-instance SSE queues

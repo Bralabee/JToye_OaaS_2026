@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Runs as the Testcontainers superuser (RLS bypassed) — this proves the CoW MECHANICS;
  * the tenant wall is proven under NOSUPERUSER in {@code MediaAssetRlsPolicyIntegrationTest}
  * and {@code MediaProcessingWorkerIntegrationTest#workerPinsTenantGuc}. {@link StorageService}
- * is a {@code @SpyBean} so the derivative write / raw read / physical delete are controlled
+ * is a {@code @MockitoSpyBean} so the derivative write / raw read / physical delete are controlled
  * without a live object store.
  */
 @SpringBootTest
@@ -74,7 +74,7 @@ class CowSafetyIntegrationTest {
     @Autowired private ProductMediaRepository productMediaRepository;
     @Autowired private JdbcTemplate jdbc;
     @PersistenceContext private EntityManager em;
-    @SpyBean private StorageService storageService;
+    @MockitoSpyBean private StorageService storageService;
 
     private UUID tenant;
 

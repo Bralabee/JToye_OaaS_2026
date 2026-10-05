@@ -6,9 +6,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -58,7 +58,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *       another user's address.</li>
  * </ul>
  *
- * <p>The external gate clients are {@code @MockBean}ed exactly as in
+ * <p>The external gate clients are {@code @MockitoBean}ed exactly as in
  * {@code OnboardingSubmitIntegrationTest}, so nothing leaves the JVM. Not
  * {@code @Transactional}: the after-commit recompute runs on another thread.
  */
@@ -91,8 +91,8 @@ class OnboardingSubmitterResolverIntegrationTest {
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private OnboardingSubmitterResolver resolver;
 
-    @MockBean private FhrsClient fhrsClient;
-    @MockBean private CompaniesHouseClient companiesHouseClient;
+    @MockitoBean private FhrsClient fhrsClient;
+    @MockitoBean private CompaniesHouseClient companiesHouseClient;
 
     private UUID tenantA;
     private UUID tenantB;

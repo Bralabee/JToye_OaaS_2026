@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -85,9 +85,9 @@ class OrderStateChangeListenerIdempotencyIntegrationTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private PlatformTransactionManager transactionManager;
 
-    @MockBean private EmailNotificationService emailService;
-    @MockBean private BusinessMetricsService metrics;
-    @MockBean private SimpMessagingTemplate simpMessagingTemplate;
+    @MockitoBean private EmailNotificationService emailService;
+    @MockitoBean private BusinessMetricsService metrics;
+    @MockitoBean private SimpMessagingTemplate simpMessagingTemplate;
 
     private TransactionTemplate txTemplate;
     private UUID shopId;

@@ -4,7 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.ActiveProfiles;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 
@@ -26,7 +26,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>Unlike the Order guards (which inject nothing), the onboarding
  * APPROVE/GO_LIVE/REINSTATE guard beans constructor-inject
- * {@link VendorOnboardingGateRepository}, so we {@link MockBean} it and drive the
+ * {@link VendorOnboardingGateRepository}, so we {@link MockitoBean} it and drive the
  * guard outcome by stubbing {@code findByOnboardingId(...)} per test — otherwise
  * the guard beans in the loaded context would have an unsatisfied dependency (N3).
  */
@@ -37,7 +37,7 @@ class VendorOnboardingStateMachineServiceTest {
     @Autowired
     private VendorOnboardingStateMachineService stateMachineService;
 
-    @MockBean
+    @MockitoBean
     private VendorOnboardingGateRepository gateRepository;
 
     private VendorOnboardingGate gate(GateType type, GateStatus status, boolean mandatory) {

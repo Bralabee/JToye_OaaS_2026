@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -51,7 +51,7 @@ import static org.mockito.ArgumentMatchers.anyString;
  *   <li><b>vision is advisory-gated</b> — with the flag OFF (default), the asset is ACTIVE and
  *       the vision provider is never even consulted.</li>
  * </ul>
- * The vision provider is a {@code @MockBean}; the {@code jtoye.media.vision.enabled} flag is
+ * The vision provider is a {@code @MockitoBean}; the {@code jtoye.media.vision.enabled} flag is
  * toggled per-test on the live {@link MediaProperties} bean.
  */
 @SpringBootTest
@@ -78,8 +78,8 @@ class GateStrictnessTest {
     @Autowired private MediaProperties mediaProperties;
     @Autowired private JdbcTemplate jdbc;
     @PersistenceContext private EntityManager em;
-    @SpyBean private StorageService storageService;
-    @MockBean private ImageAnalysisService imageAnalysisService;
+    @MockitoSpyBean private StorageService storageService;
+    @MockitoBean private ImageAnalysisService imageAnalysisService;
 
     private UUID tenant;
 

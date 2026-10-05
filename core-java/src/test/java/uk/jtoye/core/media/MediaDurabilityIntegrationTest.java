@@ -50,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Tag("testcontainers")
 // #418: this class drives MediaPendingReaper.reapOrphans() and
 // MediaQuarantineRetentionSweep.sweep() by hand and then asserts times(1)/never()
-// on a @SpyBean StorageService. Both are @Scheduled, and a @Scheduled method runs
+// on a @MockitoSpyBean StorageService. Both are @Scheduled, and a @Scheduled method runs
 // once at context refresh whatever its interval — so a startup sweep could delete
 // (or decline to delete) an object behind the assertion's back. Trigger removed.
 @Import(NoScheduledTriggersTestConfig.class)
@@ -77,7 +77,7 @@ class MediaDurabilityIntegrationTest {
     @Autowired private MediaProperties mediaProperties;
     @Autowired private MediaProcessingWorker worker;
     @Autowired private MediaAssetService mediaAssetService;
-    @org.springframework.boot.test.mock.mockito.SpyBean private uk.jtoye.core.storage.StorageService storageService;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean private uk.jtoye.core.storage.StorageService storageService;
 
     private UUID tenant;
 

@@ -9,7 +9,7 @@ import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -119,7 +119,7 @@ class PaymentEventOutboxReliabilityIntegrationTest {
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private ApplicationContext applicationContext;
 
-    @MockBean private RabbitTemplate rabbitTemplate;
+    @MockitoBean private RabbitTemplate rabbitTemplate;
 
     @BeforeEach
     void seed() {
@@ -168,7 +168,7 @@ class PaymentEventOutboxReliabilityIntegrationTest {
      * {@link #configureProperties} suppress the repeat but not the
      * {@code initialDelay=0} startup run, so a
      * second, invisible flusher pass ran on the {@code scheduling-N} thread
-     * over the same rows and the same {@code @MockBean RabbitTemplate}.
+     * over the same rows and the same {@code @MockitoBean RabbitTemplate}.
      *
      * <p>Measured on the amplified interleaving (2026-08-03, 300 samples),
      * that second writer produced all three of:

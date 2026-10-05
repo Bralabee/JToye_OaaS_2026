@@ -7,7 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
@@ -83,7 +83,7 @@ class ShopImageCrossTenantIntegrationTest {
     @PersistenceContext
     private EntityManager entityManager;
 
-    @MockBean private StorageService storageService;
+    @MockitoBean private StorageService storageService;
 
     private static final UUID TENANT_A = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
     private static final UUID TENANT_B = UUID.fromString("00000000-0000-0000-0000-0000000000bb");

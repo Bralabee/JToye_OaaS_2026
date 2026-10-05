@@ -6,9 +6,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -44,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * now materialise on submit (18-03 {@code FhrsGate} → FOOD_HYGIENE_RATING, 18-04
  * {@code CompaniesHouseGate} → BUSINESS_VERIFIED, 18-05 {@code AllergenCompletenessGate}
  * → ALLERGEN_DATA_COMPLETE). To keep this test off the network and deterministic
- * the two external HTTP clients are {@code @MockBean}ed so the FHRS + Companies
+ * the two external HTTP clients are {@code @MockitoBean}ed so the FHRS + Companies
  * House gates degrade to MANUAL_REVIEW; with at least one mandatory gate not
  * PASSED/WAIVED the async recompute leaves the onboarding in VERIFYING — the
  * behaviour these two scenarios assert.
@@ -87,8 +87,8 @@ class OnboardingSubmitIntegrationTest {
     // the network: FHRS returns no match (MANUAL_REVIEW), Companies House fails
     // closed (MANUAL_REVIEW). Either alone keeps a mandatory gate un-passed so the
     // recompute leaves the onboarding in VERIFYING.
-    @MockBean private FhrsClient fhrsClient;
-    @MockBean private CompaniesHouseClient companiesHouseClient;
+    @MockitoBean private FhrsClient fhrsClient;
+    @MockitoBean private CompaniesHouseClient companiesHouseClient;
 
     private UUID tenantId;
     private UUID shopId;

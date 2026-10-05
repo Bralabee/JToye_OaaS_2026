@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -135,7 +135,7 @@ class MediaSweepTenantScopeIntegrationTest {
 
     @Autowired private MediaQuarantineRetentionSweep sweep;
     @Autowired private javax.sql.DataSource dataSource;
-    @SpyBean private StorageService storageService;
+    @MockitoSpyBean private StorageService storageService;
 
     /** Superuser template — the app datasource is RLS-bound and cannot seed another tenant's row. */
     private JdbcTemplate su;
