@@ -1,6 +1,6 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -100,7 +100,7 @@ class PaymentEventOutboxFlusherCrossTenantIntegrationTest {
 
     @Autowired private PaymentEventOutboxFlusher flusher;
     @Autowired private JdbcTemplate jdbcTemplate;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private PlatformTransactionManager transactionManager;
 
     @MockitoBean private RabbitTemplate rabbitTemplate;

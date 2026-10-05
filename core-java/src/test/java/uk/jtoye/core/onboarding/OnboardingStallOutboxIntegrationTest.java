@@ -1,7 +1,7 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -61,7 +61,7 @@ class OnboardingStallOutboxIntegrationTest {
     }
 
     @Autowired private JdbcTemplate jdbc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private GateChainRunner gateChainRunner;
     @Autowired private VendorOnboardingRepository onboardingRepository;
     @Autowired private VendorOnboardingGateRepository gateRepository;
@@ -128,11 +128,11 @@ class OnboardingStallOutboxIntegrationTest {
                         + "WHERE exchange = 'onboarding.events' AND tenant_id = ? ORDER BY created_at DESC LIMIT 1",
                 String.class, tenantId);
         JsonNode json = objectMapper.readTree(payload);
-        assertThat(json.get("tenantId").asText()).isEqualTo(tenantId.toString());
-        assertThat(json.get("shopId").asText()).isEqualTo(shopId.toString());
-        assertThat(json.get("onboardingId").asText()).isEqualTo(onboardingId.toString());
-        assertThat(json.get("status").asText()).isEqualTo("VERIFYING");
-        assertThat(json.get("reason").asText()).isEqualTo("One or more checks need a manual review");
+        assertThat(json.get("tenantId").asString()).isEqualTo(tenantId.toString());
+        assertThat(json.get("shopId").asString()).isEqualTo(shopId.toString());
+        assertThat(json.get("onboardingId").asString()).isEqualTo(onboardingId.toString());
+        assertThat(json.get("status").asString()).isEqualTo("VERIFYING");
+        assertThat(json.get("reason").asString()).isEqualTo("One or more checks need a manual review");
 
         // No leakage: an unrelated tenant has no such row.
         UUID otherTenant = UUID.randomUUID();

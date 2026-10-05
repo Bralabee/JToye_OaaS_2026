@@ -1,7 +1,7 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -80,7 +80,7 @@ class OnboardingSubmitIntegrationTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
 
     // Mock the external HTTP clients so the FHRS + Companies House gates never hit
@@ -161,7 +161,7 @@ class OnboardingSubmitIntegrationTest {
         // that submitted_at was stamped + persisted and the onboarding has left DRAFT.
         JsonNode me = getMe();
         assertThat(me.get("submittedAt").isNull()).isFalse();
-        assertThat(me.get("status").asText()).isNotEqualTo("DRAFT");
+        assertThat(me.get("status").asString()).isNotEqualTo("DRAFT");
     }
 
     @Test

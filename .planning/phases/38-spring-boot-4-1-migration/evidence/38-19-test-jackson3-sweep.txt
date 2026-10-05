@@ -148,3 +148,42 @@ AC3 positive control (HEAD): git grep -l -F tools.jackson.databind.json.JsonMapp
 lines=11 rc=0
 AC3 fail direction at PLAN_BASE: lines=0 rc=1
 AC4: core-java/build.gradle.kts:1  (fail direction: the probe worktree read bridge_lines_in_worktree=0)
+
+## Batch B
+
+Files (the same field move; JsonNode -> tools.jackson.databind.JsonNode; asText() -> asString(); no asserted value changed):
+  onboarding/OnboardingAdminQueueIntegrationTest, onboarding/OnboardingCompanyNumberValidationIntegrationTest,
+  onboarding/OnboardingCreateCrossTenantIntegrationTest, onboarding/OnboardingResubmitIntegrationTest,
+  onboarding/OnboardingReviewQueueIntegrationTest, onboarding/OnboardingStallOutboxIntegrationTest,
+  onboarding/OnboardingSubmitIntegrationTest, onboarding/OnboardingSubmitterResolverIntegrationTest,
+  onboarding/VendorOnboardingEndToEndIntegrationTest, payment/PaymentEventOutboxFlusherCrossTenantIntegrationTest,
+  payment/PaymentEventOutboxReliabilityIntegrationTest, webhook/WebhookSubscriptionControllerIntegrationTest
+  + tenant/TenantLifecycleAdminIntegrationTest: DEVIATION. Not in the plan's list; a 38-07 residual (38-07-SUMMARY "Not changed,
+    recorded": it still autowired the bridge's ObjectMapper). Same bean-injector shape, so it is migrated here and carried
+    through batch B's bridge-on AND bridge-off runs as a 13th class, instead of waiting for Task 3's reconciliation.
+Outbox payloads written with the injected mapper (PaymentEventOutboxReliabilityIntegrationTest l.146,
+PaymentEventOutboxFlusherCrossTenantIntegrationTest l.150): PaymentEvent and OrderStateChangeEvent are RECORDS, which 38-05
+measured byte-identical in property order under Jackson 3; the dates are ISO strings either way. These rows are now the
+Jackson-3 bytes the Boot-4 publishers write since 38-08 (intended). The Jackson-2-shaped in-flight row stays with 38-08's
+OutboxPayloadCompatibilityTest and is not re-created here. OnboardingStallOutboxIntegrationTest only READS the payload
+(readTree on the flusher's own row).
+
+### Batch B gate 1+2: bridge ON (2026-10-05T13:30:21Z -> 13:33:59Z)
+
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests <the 12 batch-B classes> --tests 'uk.jtoye.core.tenant.TenantLifecycleAdminIntegrationTest' --no-daemon
+rc=0  > Task :core-java:cleanIntegrationTest  > Task :core-java:compileTestJava  > Task :core-java:integrationTest  BUILD SUCCESSFUL in 3m 37s
+XML read (bridge ON), files written 14:33:59 local, after the clean:
+uk.jtoye.core.onboarding.OnboardingAdminQueueIntegrationTest tests=11 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingCompanyNumberValidationIntegrationTest tests=3 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingCreateCrossTenantIntegrationTest tests=3 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingResubmitIntegrationTest tests=3 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingReviewQueueIntegrationTest tests=10 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingStallOutboxIntegrationTest tests=1 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingSubmitIntegrationTest tests=2 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingSubmitterResolverIntegrationTest tests=4 failures=0 errors=0
+uk.jtoye.core.onboarding.VendorOnboardingEndToEndIntegrationTest tests=2 failures=0 errors=0
+uk.jtoye.core.payment.PaymentEventOutboxFlusherCrossTenantIntegrationTest tests=2 failures=0 errors=0
+uk.jtoye.core.payment.PaymentEventOutboxReliabilityIntegrationTest tests=6 failures=0 errors=0
+uk.jtoye.core.webhook.WebhookSubscriptionControllerIntegrationTest tests=5 failures=0 errors=0
+(extra, 38-07 residual)
+uk.jtoye.core.tenant.TenantLifecycleAdminIntegrationTest tests=10 failures=0 errors=0

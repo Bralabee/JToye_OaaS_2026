@@ -1,7 +1,7 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -90,7 +90,7 @@ class VendorOnboardingEndToEndIntegrationTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
 
     @MockitoBean private FhrsClient fhrsClient;
@@ -189,7 +189,7 @@ class VendorOnboardingEndToEndIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("DRAFT"))
                 .andReturn().getResponse().getContentAsString();
-        UUID onboardingId = UUID.fromString(objectMapper.readTree(created).get("id").asText());
+        UUID onboardingId = UUID.fromString(objectMapper.readTree(created).get("id").asString());
 
         mockMvc.perform(post("/api/v1/onboarding/submit")
                         .header("X-Tenant-Id", tenantId.toString()))
@@ -212,13 +212,13 @@ class VendorOnboardingEndToEndIntegrationTest {
         JsonNode last = null;
         while (System.currentTimeMillis() < deadline) {
             last = getMe();
-            if (expected.name().equals(last.get("status").asText())) {
+            if (expected.name().equals(last.get("status").asString())) {
                 return last;
             }
             Thread.sleep(100);
         }
         fail("Timed out awaiting status " + expected + "; last status="
-                + (last == null ? "n/a" : last.get("status").asText()));
+                + (last == null ? "n/a" : last.get("status").asString()));
         return null;
     }
 
@@ -237,7 +237,7 @@ class VendorOnboardingEndToEndIntegrationTest {
      */
     private void assertAllThreeGatesPassed(JsonNode me) {
         Map<String, String> byType = new HashMap<>();
-        me.get("gates").forEach(g -> byType.put(g.get("gateType").asText(), g.get("status").asText()));
+        me.get("gates").forEach(g -> byType.put(g.get("gateType").asString(), g.get("status").asString()));
         assertThat(byType).containsOnlyKeys(
                 GateType.BUSINESS_VERIFIED.name(),
                 GateType.FOOD_HYGIENE_RATING.name(),

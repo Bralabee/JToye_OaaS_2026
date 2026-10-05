@@ -1,6 +1,6 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -86,7 +86,7 @@ class OnboardingSubmitterResolverIntegrationTest {
     private static boolean downgraded = false;
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private OnboardingSubmitterResolver resolver;
@@ -156,7 +156,7 @@ class OnboardingSubmitterResolverIntegrationTest {
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        UUID onboardingId = UUID.fromString(objectMapper.readTree(created).get("id").asText());
+        UUID onboardingId = UUID.fromString(objectMapper.readTree(created).get("id").asString());
 
         mockMvc.perform(post("/api/v1/onboarding/submit").with(vendorJwt(tenantA, subject, email)))
                 .andExpect(status().isOk());

@@ -1,7 +1,7 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -66,7 +66,7 @@ class OnboardingReviewQueueIntegrationTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private VendorOnboardingRepository onboardingRepository;
     @Autowired private VendorOnboardingGateRepository gateRepository;
@@ -168,8 +168,8 @@ class OnboardingReviewQueueIntegrationTest {
 
         JsonNode row = findById(objectMapper.readTree(body), onboardingId);
         assertThat(row).as("VERIFYING + MANUAL_REVIEW onboarding is in the review queue").isNotNull();
-        assertThat(row.get("status").asText()).isEqualTo("VERIFYING");
-        assertThat(row.get("shopName").asText()).startsWith("Mama's Kitchen");
+        assertThat(row.get("status").asString()).isEqualTo("VERIFYING");
+        assertThat(row.get("shopName").asString()).startsWith("Mama's Kitchen");
         assertThat(row.get("gates").size()).isEqualTo(2);
     }
 
@@ -227,7 +227,7 @@ class OnboardingReviewQueueIntegrationTest {
         assertThat(row)
                 .as("ACTION_REQUIRED + a MANUAL_REVIEW gate must be visible to the reviewer (INT-1)")
                 .isNotNull();
-        assertThat(row.get("status").asText()).isEqualTo("ACTION_REQUIRED");
+        assertThat(row.get("status").asString()).isEqualTo("ACTION_REQUIRED");
         assertThat(row.get("gates").size()).isEqualTo(3);
     }
 
@@ -279,7 +279,7 @@ class OnboardingReviewQueueIntegrationTest {
     /** find OUR row by id in a JSON array (the bootstrap superuser datasource bypasses RLS). */
     private JsonNode findById(JsonNode list, UUID id) {
         for (JsonNode row : list) {
-            if (id.toString().equals(row.get("id").asText())) {
+            if (id.toString().equals(row.get("id").asString())) {
                 return row;
             }
         }
