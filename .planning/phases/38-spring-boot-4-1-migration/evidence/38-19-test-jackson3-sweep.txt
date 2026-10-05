@@ -112,3 +112,39 @@ uk.jtoye.core.gdpr.DsarFanoutIntegrationTest tests=11 failures=0 errors=0
 uk.jtoye.core.gdpr.DsarIntakeIntegrationTest tests=13 failures=0 errors=0
 uk.jtoye.core.gdpr.DsarSubjectAndGlobalRateLimitIntegrationTest tests=2 failures=0 errors=0
 uk.jtoye.core.gdpr.DsarVerificationIntegrationTest tests=8 failures=0 errors=0
+Committed: a607c541 test(38-19): batch A: storefront, controller and DSAR tests inject Boot's Jackson-3 JsonMapper
+
+### Batch A gate 3+4: bridge OFF probe over the same eleven, on committed a607c541 (2026-10-05T13:26:08Z -> 13:29:25Z)
+
+bridge_lines_in_worktree=0
+> Task :core-java:cleanIntegrationTest  > Task :core-java:compileJava  > Task :core-java:compileTestJava  > Task :core-java:integrationTest
+BUILD SUCCESSFUL in 3m 16s
+bridge_off_rc=0
+head_show_rc=0
+d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  core-java/build.gradle.kts           (restored)
+d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  scratch/build.head (HEAD blob)       EQUAL
+git status after restore: only "?? .planning/milestone.lock"
+XML read (bridge OFF):
+uk.jtoye.core.integration.ShopControllerIntegrationTest tests=6 failures=0 errors=0
+uk.jtoye.core.integration.CustomerControllerIntegrationTest tests=7 failures=0 errors=0
+uk.jtoye.core.integration.FinancialTransactionControllerIntegrationTest tests=6 failures=0 errors=0
+uk.jtoye.core.integration.LocationHeaderContractTest tests=7 failures=0 errors=0
+uk.jtoye.core.storefront.GuestCheckoutIdempotencyIntegrationTest tests=13 failures=0 errors=0
+uk.jtoye.core.storefront.PublicApiVersionAliasIntegrationTest tests=4 failures=0 errors=0
+uk.jtoye.core.storefront.PublicStorefrontPostcodeSearchIntegrationTest tests=15 failures=0 errors=0
+uk.jtoye.core.gdpr.DsarFanoutIntegrationTest tests=11 failures=0 errors=0
+uk.jtoye.core.gdpr.DsarIntakeIntegrationTest tests=13 failures=0 errors=0
+uk.jtoye.core.gdpr.DsarSubjectAndGlobalRateLimitIntegrationTest tests=2 failures=0 errors=0
+uk.jtoye.core.gdpr.DsarVerificationIntegrationTest tests=8 failures=0 errors=0
+
+### Task 1 acceptance criteria (both directions)
+
+AC2 (HEAD): git grep -l -e com.fasterxml.jackson.databind -e com.fasterxml.jackson.core -e com.fasterxml.jackson.datatype -- <11 files>
+<no output>
+rc=1
+AC2 fail direction (same grep at PLAN_BASE c2c64e78):
+lines=11 rc=0
+AC3 positive control (HEAD): git grep -l -F tools.jackson.databind.json.JsonMapper -- <11 files>
+lines=11 rc=0
+AC3 fail direction at PLAN_BASE: lines=0 rc=1
+AC4: core-java/build.gradle.kts:1  (fail direction: the probe worktree read bridge_lines_in_worktree=0)
