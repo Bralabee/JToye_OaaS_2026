@@ -2,6 +2,7 @@ package uk.jtoye.core.dev;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -15,8 +16,9 @@ import java.util.Map;
  * Loader + shop-name resolution for the bundled dev demo-catalog imagery
  * (quick task 260713-kds). The 21 license-verified dish photos and their
  * attribution metadata live on the classpath under {@link #BASE_PATH}; this
- * class parses {@code manifest.json} with Jackson (already on the classpath via
- * {@code spring-boot-starter-web} — no new dependency) and exposes the byte
+ * class parses {@code manifest.json} with Jackson 3 (Boot 4's JSON line, already on
+ * the classpath — no new dependency; a local mapper, not the Boot bean, because this
+ * is a static loader) and exposes the byte
  * loading + shop→slug normalization both {@link DemoDataSeeder} and the unit
  * test rely on.
  *
@@ -75,7 +77,11 @@ public final class DemoImageManifest {
             }
             return mapper.readValue(in, new TypeReference<List<ManifestEntry>>() {
             });
-        } catch (IOException e) {
+        } catch (IOException | JacksonException e) {
+            // 38-07: on Jackson 2 a parse error was a JsonProcessingException, an IOException, so
+            // this catch wrapped it. On Jackson 3 it is the unchecked JacksonException and must be
+            // named, or a malformed manifest escapes as a raw Jackson exception instead of this
+            // loader's own IllegalStateException.
             throw new IllegalStateException("Failed to read demo image manifest: " + resource, e);
         }
     }

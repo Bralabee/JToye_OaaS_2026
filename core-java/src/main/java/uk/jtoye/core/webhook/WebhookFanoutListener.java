@@ -15,6 +15,7 @@ import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.payment.PaymentEvent;
 import uk.jtoye.core.payment.RefundEvent;
 import uk.jtoye.core.security.TenantContext;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.OffsetDateTime;
@@ -147,8 +148,19 @@ public class WebhookFanoutListener {
         // One envelope id per event, serialized ONCE — these exact bytes are what
         // the worker signs and POSTs (Pitfall 6). Shared across subscriptions.
         UUID eventId = UUID.randomUUID();
-        String payload = jsonMapper.writeValueAsString(new WebhookEventEnvelope(
-                eventId, type, tenantId, occurredAt, properties.getEnvelope().getVersion(), data));
+        String payload;
+        try {
+            payload = jsonMapper.writeValueAsString(new WebhookEventEnvelope(
+                    eventId, type, tenantId, occurredAt, properties.getEnvelope().getVersion(), data));
+        } catch (JacksonException e) {
+            // 38-07: Jackson 3's exception is unchecked, so nothing forces this catch any more.
+            // It is kept deliberately: a payload that cannot be serialized skips this event's
+            // fan-out with an ERROR, exactly as the Jackson-2 JsonProcessingException catch did,
+            // instead of escaping the @RabbitListener (WebhookFanoutListenerEnvelopeTest pins it).
+            log.error("event=webhook_fanout_serialize_failed tenant={} type={}: {}",
+                    tenantId, type, e.getMessage());
+            return;
+        }
 
         for (WebhookSubscription sub : matching) {
             WebhookDelivery delivery = new WebhookDelivery();
