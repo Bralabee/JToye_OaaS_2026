@@ -1,0 +1,70 @@
+38-02 Boot 3.5 baselines: evidence (all output below is real, captured by the executor)
+Branch phase-37-spring-boot-4-1, worktree JToye_OaaS_2026-phase37, tree = Boot 3.5.16.
+Plan base HEAD 2e601289e1fdc25c4da01b6168cfc4d8fb6d70f9. Host JDK: Ubuntu OpenJDK 25.0.4.1 (same caveat as 38-01).
+
+######################################################################################
+## Task 1: RequestBodyConstraintEnforcementTest (structural request-body inventory)
+######################################################################################
+
+=== Vacuity arm (fail direction): PACKAGE_ROOT = "uk.jtoye.nonexistent"
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.RequestBodyConstraintEnforcementTest' --no-daemon
+rc=1
+RequestBodyConstraintEnforcementTest > every required request-body property is behind @Valid and rejects null FAILED
+    java.lang.AssertionError at RequestBodyConstraintEnforcementTest.java:123
+2 tests completed, 1 failed
+BUILD FAILED in 24s
+XML: tests="2" skipped="0" failures="1" errors="0"
+message="java.lang.AssertionError: [request-body constraint inventory under uk.jtoye.nonexistent is empty: the walk found no @RequestBody with a NotNull/NotBlank/NotEmpty property, so it proves nothing]
+Expecting actual not to be empty
+(The second method, the HTTP proof, passed in the same run; only the vacuity assertion failed.)
+
+=== Pass direction: PACKAGE_ROOT = "uk.jtoye.core" (restored from scratch backup, sha256 2ad4cde0...6fea = backup)
+rc=0
+> Task :core-java:cleanTest
+BUILD SUCCESSFUL in 25s
+XML: tests="2" skipped="0" failures="0" errors="0"
+build-local/boot4/request-body-constraints.tsv: 55 rows, 20 distinct DTOs (nested OrderItemRequest and
+GuestOrderItemRequest reached through the cascade, so recursion is exercised).
+
+=== Extra arm A (fail direction of the @Valid assertion): validated forced to false
+rc=1, tests="2" failures="1"
+message="java.lang.AssertionError: [@RequestBody parameters with required constraints but no @Valid/@Validated (their constraints are never run)]
+Expecting empty but was: ["AnnouncementController#create -> POST /api/v1/announcements	CreateAnnouncementRequest	shopId	NotNull",
+    "AnnouncementController#create -> POST /api/v1/announcements	CreateAnnouncementRequest	title	NotBlank",
+    "AnnouncementController#update -> PUT /api/v1/announcements/{id}	CreateAnnouncementRequest	shopId	NotNull", ...
+
+=== Extra arm B (fail direction of the validateValue(null) assertion): Size counted as "required"
+rc=1, tests="2" failures="1"
+message="java.lang.AssertionError: [rows whose property accepts null under the default validation group]
+Expecting empty but was: ["PUT /api/v1/shops/{id}	CreateShopRequest	description	Size",
+    "POST /api/v1/shops	CreateShopRequest	description	Size",
+    "PUT /api/v1/products/{id}	CreateProductRequest	description	Size",
+    "POST /api/v1/public/shops/{slug}/orders,/public/shops/{slug}/orders	GuestOrderRequest	notes	Size", ...
+
+=== HTTP proof, pass direction: POST /public/shops/any-slug/orders, valid except customerEmail omitted
+Recorded verbatim by the test (build-local/boot4/guest-order-missing-email-400.txt):
+status=400
+content-type=application/problem+json
+body={"type":"https://jtoye.uk/errors/validation","title":"Validation Error","status":400,"detail":"Validation failed","instance":"/public/shops/any-slug/orders","errors":{"customerEmail":"Email is required"}}
+
+=== HTTP proof, fail direction (arm C): the same body WITH customerEmail
+rc=1, tests="2" failures="1"
+message="java.lang.AssertionError: Status expected:<400> but was:<500>
+status=500
+content-type=application/problem+json
+body={"type":"https://jtoye.uk/errors/internal","title":"Internal Server Error","status":500,"detail":"An unexpected error occurred","instance":"/public/shops/any-slug/orders"}
+Reading: with the field present the request PASSES Bean Validation and reaches the service, so the 400
+above is caused by the absent field and nothing earlier in the chain (no filter or interceptor answers
+first). The 500 is what the H2 test context does past validation for a non-existent shop; its cause was
+not investigated and it is not part of any claim here.
+
+=== Clean again: restored from scratch backup (sha256 2ad4cde010649fdc7711338b5d3f765716e6843c47889b178348f6b6e2cc6fea
+= backup), re-run rc=0, tests="2" failures="0" errors="0", 400 body identical to the pass direction above.
+
+=== Evidence TSV criteria (pass, then fail direction)
+$ awk -F'\t' '!/^#/ && NF==4{n++} END{print "rows="n+0}' evidence/38-02-request-body-constraints-boot35.tsv
+rows=55                      (fail dir: same awk over /dev/null -> rows=0; over /nonexistent -> "cannot open", rc=2)
+$ awk -F'\t' '$2=="GuestOrderRequest" && $3=="customerEmail"{n++} END{print n+0}' ...
+1                            (fail dir: property customerEmailX -> 0)
+$ awk -F'\t' '$2=="CreateCustomerRequest"{n++} END{print n+0}' ...
+2                            (fail dir: CreateCustomerRequestX -> 0)
