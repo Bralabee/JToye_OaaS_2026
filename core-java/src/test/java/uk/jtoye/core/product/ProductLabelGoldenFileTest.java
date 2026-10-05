@@ -1,7 +1,7 @@
 package uk.jtoye.core.product;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.SerializationFeature;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import uk.jtoye.core.shop.Shop;
@@ -88,8 +88,8 @@ class ProductLabelGoldenFileTest {
         return shop;
     }
 
-    private static ObjectMapper objectMapper() {
-        return new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    private static JsonMapper objectMapper() {
+        return JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build();
     }
 
     private Path locateGolden() {

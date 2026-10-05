@@ -227,3 +227,67 @@ AC2 positive control (HEAD): lines=12 rc=0
 AC2 fail direction at PLAN_BASE: lines=0 rc=1
 AC3: core-java/build.gradle.kts:1  (fail direction: probe worktree bridge_lines_in_worktree=0)
 Residual TenantLifecycleAdminIntegrationTest: HEAD rc=1; at PLAN_BASE: 1 line(s)
+
+## Batch C
+
+Local mappers -> JsonMapper.builder()[.enable(...)].build(), the same features on the builder (only INDENT_OUTPUT existed):
+  common/InsufficientStockExceptionHandlerTest, common/InvalidReviewPhotoExceptionHandlerTest:
+    new MappingJackson2HttpMessageConverter(new ObjectMapper()) -> new JacksonJsonHttpMessageConverter(JsonMapper.builder().build())
+    (the Jackson-2 Spring converter cannot take a Jackson-3 mapper; Spring 7.0.9 javap: JacksonJsonHttpMessageConverter(JsonMapper))
+  shop/ShopServiceGeocodeTest: three request bodies to a standalone MockMvc (the plan called them "mock response bodies"; they are
+    request bodies bound by the controller, where key order is immaterial)
+  product/ProductLabelGoldenFileTest, finance/FinancialSummaryGoldenFileTest: objectMapper() -> JsonMapper with INDENT_OUTPUT
+  config/TenantHeaderAbsentDocumentTest, notification/consent/PublicUnsubscribeRequestShapeTest, webhook/WebhookDeliveryLogIntegrationTest,
+  testsupport/MailhogAssertions (+ JsonNode, asText() -> asString())
+OpenApiSnapshotTest: NOT migrated, no trial run (plan). One line added to its class Javadoc:
+  " * <p>DELIBERATE-JACKSON2: byte-stable normalizer of springdoc's swagger-core (Jackson-2) output; its writer decides the committed
+     snapshot's bytes, and 38-14 regenerates that snapshot"
+
+### Batch C gate 1: unit run (2026-10-05T13:39:23Z -> 13:39:47Z)
+
+./gradlew :core-java:cleanTest :core-java:test --tests <InsufficientStock, InvalidReviewPhoto, ShopServiceGeocode, ProductLabelGoldenFile>
+          --tests 'uk.jtoye.core.notification.consent.PublicUnsubscribeRequestShapeTest' --no-daemon
+rc=0  > Task :core-java:cleanTest  > Task :core-java:compileTestJava  > Task :core-java:test  BUILD SUCCESSFUL in 23s
+DEVIATION (plan defect 1): PublicUnsubscribeRequestShapeTest carries NO testcontainers tag (its Javadoc: "No @Tag("testcontainers"),
+  so this runs in the fast test task"; the only regex hit is that comment). The plan put it in the integrationTest runs, where its
+  filter matches nothing and the plan's reader would print MISSING. It is run and read here, in the unit task.
+DEVIATION (plan defect 2): ShopServiceGeocodeTest and TenantHeaderAbsentDocumentTest are @Nested-only classes; JUnit writes
+  TEST-<fqcn>$<Nested>.xml, so the plan's TEST-<fqcn>.xml reader prints MISSING for them. Their nested files are read instead.
+XML read (unit; files written 14:39:47 local, after cleanTest):
+uk.jtoye.core.common.InsufficientStockExceptionHandlerTest tests=1 failures=0 errors=0 skipped=0
+uk.jtoye.core.common.InvalidReviewPhotoExceptionHandlerTest tests=1 failures=0 errors=0 skipped=0
+uk.jtoye.core.product.ProductLabelGoldenFileTest tests=2 failures=0 errors=0 skipped=1
+uk.jtoye.core.notification.consent.PublicUnsubscribeRequestShapeTest tests=7 failures=0 errors=0 skipped=0
+uk.jtoye.core.shop.ShopServiceGeocodeTest$OutOfRangeCoordinates tests=7 skipped=0 failures=0 errors=0 
+uk.jtoye.core.shop.ShopServiceGeocodeTest$UnpairedCoordinates tests=4 skipped=0 failures=0 errors=0 
+uk.jtoye.core.shop.ShopServiceGeocodeTest$WritePathGeocoding tests=15 skipped=0 failures=0 errors=0 
+  (ProductLabelGoldenFileTest skipped=1 is its @Disabled one-shot captureGoldenOnce, unchanged; FinancialSummaryGoldenFileTest likewise)
+
+### Batch C gate 2: integration run, the plan's command verbatim (2026-10-05T13:39:59Z -> 13:42:05Z)
+
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests <TenantHeaderAbsentDocument, FinancialSummaryGoldenFile,
+          PublicUnsubscribeRequestShape, WebhookDeliveryLogIntegration, Financial/Onboarding/OrderNotificationListenerIntegrationTest> --no-daemon
+rc=0  > Task :core-java:cleanIntegrationTest  > Task :core-java:compileTestJava UP-TO-DATE (compiled by gate 1, same sources)
+      > Task :core-java:integrationTest  BUILD SUCCESSFUL in 2m 5s
+XML read (integration; files written 14:42:05 local, after cleanIntegrationTest):
+uk.jtoye.core.finance.FinancialSummaryGoldenFileTest tests=2 failures=0 errors=0 skipped=1
+uk.jtoye.core.webhook.WebhookDeliveryLogIntegrationTest tests=11 failures=0 errors=0 skipped=0
+uk.jtoye.core.notification.listener.FinancialNotificationListenerIntegrationTest tests=2 failures=0 errors=0 skipped=0
+uk.jtoye.core.notification.listener.OnboardingNotificationListenerIntegrationTest tests=1 failures=0 errors=0 skipped=0
+uk.jtoye.core.notification.listener.OrderNotificationListenerIntegrationTest tests=2 failures=0 errors=0 skipped=0
+uk.jtoye.core.config.TenantHeaderAbsentDocumentTest$FilterAbsent tests=2 skipped=0 failures=0 errors=0 
+uk.jtoye.core.config.TenantHeaderAbsentDocumentTest$FilterPresent tests=1 skipped=0 failures=0 errors=0 
+uk.jtoye.core.notification.consent.PublicUnsubscribeRequestShapeTest -> not an integration class (read in gate 1: tests=7 failures=0 errors=0)
+MailhogAssertions' consumers really ran its Jackson-3 readTree path: they assumeTrue(mailhog.isReachable()); a read-only
+  GET http://localhost:8025/api/v2/messages?limit=1 -> 200, and their XML holds 5 testcases with 0 <skipped> elements and no
+  assumption text. (No compose service was started, stopped or rebuilt; Mailhog was already up.)
+
+### Golden decisions
+
+FinancialSummaryGoldenFileTest: migrated, comparison green untouched (getSummaryOutputMatchesCommittedGolden passed; the golden
+  core-java/src/test/resources/fixtures/financial-summary-1k.golden.json unchanged).
+ProductLabelGoldenFileTest: migrated, comparison green untouched (renderModelMatchesCommittedGolden passed; the golden
+  core-java/src/test/resources/fixtures/ppds-label-compliant.golden.json unchanged).
+Both read the golden into a record (FinancialSummaryDto, LabelRenderModel) and compare objects, so Jackson 3's key order cannot
+reach the comparison. Both @Disabled one-shot capture methods stay @Disabled. Neither stays on Jackson 2.
+Note: the OpenApiSnapshotTest Javadoc line was added after gate 2 (comment only); the bridge-off probe below recompiles the committed tree.

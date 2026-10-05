@@ -69,6 +69,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *       change the API surface, and commit the snapshot diff in the same PR
  *       so the change is visible to reviewers.</dd>
  * </dl>
+ *
+ * <p>DELIBERATE-JACKSON2: byte-stable normalizer of springdoc's swagger-core (Jackson-2) output; its writer decides the committed snapshot's bytes, and 38-14 regenerates that snapshot
  */
 @SpringBootTest
 @AutoConfigureMockMvc

@@ -1,7 +1,7 @@
 package uk.jtoye.core.config;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -222,7 +222,7 @@ class TenantHeaderAbsentDocumentTest {
         void servedDocumentIsNotEmpty() throws Exception {
             String served = servedDocument(mockMvc);
 
-            JsonNode paths = new ObjectMapper().readTree(served).path("paths");
+            JsonNode paths = JsonMapper.builder().build().readTree(served).path("paths");
             System.out.println("[TenantHeaderAbsentDocumentTest] observed served paths count = "
                     + paths.size());
 
