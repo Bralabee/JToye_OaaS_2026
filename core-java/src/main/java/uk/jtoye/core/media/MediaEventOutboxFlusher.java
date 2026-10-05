@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.security.TenantContext;
@@ -224,6 +225,20 @@ public class MediaEventOutboxFlusher {
             row.setLastError(null);
             repository.save(row);
             log.info("Flushed media outbox event (id={}, asset={})", row.getId(), row.getAssetId());
+        } catch (JacksonException e) {
+            // Jackson 3's JacksonException is unchecked: this catch MUST stay ahead of
+            // catch (Exception), or a corrupt row is retried as a transient failure
+            // forever (38-08; OutboxPayloadCompatibilityTest pins it). Only readValue can
+            // raise it: the AMQP converter wraps its own failures in MessageConversionException.
+            // Payload corruption — not recoverable by retry. Mark FAILED + poison so
+            // the resurrection pass never re-leases it.
+            row.setStatus(MediaEventOutbox.Status.FAILED);
+            row.setPoison(true);
+            row.setLastError("payload deserialization failed: " + e.getMessage());
+            row.setAttempts(row.getAttempts() + 1);
+            repository.save(row);
+            log.error("Media outbox row {} is unrecoverable (poisoned)", row.getId(), e);
+            if (deadLetterCounter != null) deadLetterCounter.increment();
         } catch (Exception e) {
             int attempts = row.getAttempts() + 1;
             row.setAttempts(attempts);

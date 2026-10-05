@@ -3,6 +3,7 @@ package uk.jtoye.core.onboarding;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.payment.PaymentEventOutbox;
@@ -68,7 +69,31 @@ public class OnboardingEventPublisher {
                 onboardingId, tenantId, shopId, status, reason, OffsetDateTime.now()
         );
 
-        String payloadJson = objectMapper.writeValueAsString(event);
+        String payloadJson;
+        try {
+            payloadJson = objectMapper.writeValueAsString(event);
+        } catch (JacksonException e) {
+            // Jackson 3's JacksonException is unchecked, so the compiler no longer
+            // demands this catch; a unit test keeps it (38-08).
+            // Fixed-shape record — serialization failure is a programmer error.
+            // DO NOT propagate: throwing would roll back the recompute (and with
+            // it the committed gate evaluations). Persist a poisoned FAILED
+            // placeholder so the failure is durable and visible to operators
+            // instead of a swallowed log line (the flusher skips poison rows).
+            log.error("Failed to serialize OnboardingStateChangeEvent for onboarding {}: {} — persisting FAILED placeholder",
+                    onboardingId, e.getMessage(), e);
+            String placeholder = String.format(
+                    "{\"error\":\"serialization_failed\",\"onboardingId\":\"%s\",\"tenantId\":\"%s\"}",
+                    onboardingId, tenantId);
+            PaymentEventOutbox failedRow = new PaymentEventOutbox(
+                    tenantId, EVENT_TYPE, MANUAL_REVIEW_ROUTING_KEY, placeholder,
+                    RabbitMQConfig.ONBOARDING_EVENTS_EXCHANGE);
+            failedRow.setStatus(PaymentEventOutbox.Status.FAILED);
+            failedRow.setPoison(true);
+            failedRow.setLastError("OnboardingStateChangeEvent serialization failed: " + e.getMessage());
+            outboxRepository.save(failedRow);
+            return;
+        }
 
         PaymentEventOutbox row = new PaymentEventOutbox(
                 tenantId, EVENT_TYPE, MANUAL_REVIEW_ROUTING_KEY, payloadJson,

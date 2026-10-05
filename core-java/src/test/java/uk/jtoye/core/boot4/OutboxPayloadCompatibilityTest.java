@@ -189,7 +189,7 @@ class OutboxPayloadCompatibilityTest {
 
     // ----------------------------------------------------------------- Boot 4 -> Boot 3.5
 
-    @ParameterizedTest(name = "{0} written by the Boot-4 publishers' mapper -> a Boot-3.5 ObjectMapper -> the golden event")
+    @ParameterizedTest(name = "{0} written by the mapper the Boot-4 publishers inject -> a Boot-3.5 ObjectMapper -> the golden event")
     @MethodSource("names")
     void boot4Row_isReadByABoot35Mapper(String name) throws Exception {
         Object sample = InFlightFixtures.sample(name);

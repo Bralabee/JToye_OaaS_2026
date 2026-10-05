@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.OffsetDateTime;
@@ -63,7 +64,18 @@ public class PaymentEventPublisher {
     @Transactional
     protected void persist(PaymentEvent event) {
         String routingKey = "payment." + event.type().name().toLowerCase();
-        String payloadJson = objectMapper.writeValueAsString(event);
+        String payloadJson;
+        try {
+            payloadJson = objectMapper.writeValueAsString(event);
+        } catch (JacksonException e) {
+            // Jackson 3's JacksonException is unchecked, so the compiler no longer
+            // demands this catch; a unit test keeps it (38-08).
+            // Serialization failure is a programmer error (record is fixed shape);
+            // loudly surface it rather than silently drop the event.
+            log.error("Failed to serialize PaymentEvent for order {}: {}",
+                    event.orderNumber(), e.getMessage(), e);
+            throw new IllegalStateException("PaymentEvent serialization failed", e);
+        }
 
         PaymentEventOutbox row = new PaymentEventOutbox(
                 event.tenantId(),
