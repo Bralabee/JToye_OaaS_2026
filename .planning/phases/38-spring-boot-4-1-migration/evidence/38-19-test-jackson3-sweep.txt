@@ -518,3 +518,9 @@ rc=1
 fail direction at PLAN_BASE: lines=32 rc=0
 
 (verify 6 counts are text counts: '@Test' also matches e.g. a Javadoc mention, so a count can exceed the JUnit total; the check is base == head per file, which a deleted or added test or @Disabled breaks, as the arm shows.)
+
+## Regression read beyond the plan: full unit suite on HEAD 2e0239e0, bridge ON (2026-10-05T13:53:27Z -> 13:55:03Z)
+
+./gradlew :core-java:cleanTest :core-java:test --no-daemon   rc=0  > Task :core-java:cleanTest  > Task :core-java:test  BUILD SUCCESSFUL in 1m 35s
+Sum over 180 fresh XML files (all written 14:55:03 local): tests=1485 failures=0 errors=0 skipped=1
+= the orchestrator's wave-4 gate figure (unit 1485/0 failures/1 skipped): no unit test added, lost or newly red.
