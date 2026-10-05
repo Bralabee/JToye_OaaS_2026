@@ -1,0 +1,73 @@
+38-04 evidence: full suites on Boot 4.1.1, module liveness probes, state machine on Framework 7
+=================================================================================================
+
+PLAN_BASE  = c7d1a473461918eb792eb0d7f1f833eba351c9e0 (HEAD before this plan's first commit)
+Branch     = phase-37-spring-boot-4-1
+JDK        = OpenJDK 25.0.4.1 (Ubuntu build; no Temurin on this host, as in the spike)
+Results    = core-java/build-local/test-results/{test,integrationTest} (NOT core-java/build/)
+
+-------------------------------------------------------------------------------------------------
+1. Task 1 (tracer): both suites in full on Boot 4.1.1
+-------------------------------------------------------------------------------------------------
+
+Command (rc captured on the same line, output in a scratch log):
+  ./gradlew :core-java:cleanTest :core-java:cleanIntegrationTest :core-java:test \
+            :core-java:integrationTest --continue --no-daemon ; rc=$?
+Run start marker: 2026-10-05T00:50:14Z
+rc=1  (BUILD FAILED in 22m 39s; both tasks executed, the reds below are the cause)
+UP-TO-DATE check: `grep UP-TO-DATE log | grep -E ':(test|integrationTest) '` printed nothing.
+  (compileJava / compileTestJava were UP-TO-DATE, which is correct: cleanTest and cleanIntegrationTest
+   delete the results, not the classes, so both test tasks re-executed. Gradle's own summary lines:
+   "1337 tests completed, 2 failed, 1 skipped" and "750 tests completed, 5 failed, 1 skipped".)
+
+Freshness (only XML newer than the run start counts):
+  unit             170 TEST-*.xml, 170 newer than the run-start marker
+  integrationTest  151 TEST-*.xml, 151 newer than the run-start marker
+  fail direction:  the same find against a marker touched AFTER the run -> unit=0 it=0
+                   (the filter can return 0, so 170/151 is a real freshness reading)
+
+Counts (awk over the <testsuite> attributes of every TEST-*.xml):
+
+  suite            tests  failures  errors  skipped   baseline (spike 38-SPIKE.md s2)   + added by 38-01/38-02
+  unit `test`      1337      2        0       1       1330 / 0 / 1 skip                 +7 (GoldenFixturesIntegrityTest 5,
+                                                                                            RequestBodyConstraintEnforcementTest 2)
+  integrationTest   750      5        0       1        745 / 0 / 6 skip (CI)            +5 (JsonbColumnsReadBackIntegrationTest 3,
+                                                                                            two *_boot35Baseline methods in
+                                                                                            UnauthenticatedProblemDetailIntegrationTest)
+
+  1330 + 7 = 1337 and 745 + 5 = 750: no test was lost on the Boot-4 tree.
+  Skips: unit 1 = ProductLabelGoldenFileTest.captureGoldenOnce() (a capture switch, skipped by design);
+         integration 1 = FinancialSummaryGoldenFileTest.captureGoldenOnce() (same).
+         CI's 5 extra integration skips are Mailhog assumptions; Mailhog was reachable here, so those
+         5 ran and passed (the spike recorded the same environment difference).
+
+Flyway, read out of the integration XML system-out:
+  144 contexts log "Successfully applied 67 migrations"; 1 each logs 52, 56 and 66
+  (FreshChainMigrationIntegrationTest's targeted-version chains). 67 = the number of V*.sql files.
+
+Expected-red ledger. Category (a) = a named expected red in this plan's must_haves; (b) = a file owned
+by another wave-3 plan; (c) = Boot-4 fallout this plan owns. Every failing class in BOTH XML dirs:
+
+  dir   class                                                   cat  owner  failing method / first failure message
+  unit  security.ProblemDetailAuthenticationEntryPointTest      (a)  38-06  missingBearerReturnsProblemDocumentAndKeepsTheChallenge():
+                                                                              expected: <Bearer> but was: <Bearer resource_metadata="http://localhost/.well-known/oauth-protected-resource">
+  unit  tenant.keycloak.KeycloakAdminClientTest                 (a)  38-07  setUserEnabled_putsFullRep_withEnabledFalse_andBearer():
+                                                                              No value at JSON path "$.enabled"
+  IT    integration.OpenApiSnapshotTest                         (a)  38-14  apiDocsMatchCommittedSnapshot():
+                                                                              The OpenAPI spec served by /v3/api-docs no longer matches the reviewed snapshot at docs/api/openapi-snapshot.json ...
+  IT    security.UnauthenticatedProblemDetailIntegrationTest    (a)  38-06  4 methods:
+                                                                              missingBearerReturnsRfc7807ProblemDocument(): WWW-Authenticate expected:<Bearer> but was:<Bearer resource_metadata="http://localhost/.well-known/oauth-protected-resource">
+                                                                              garbageBearerReturnsRfc7807ProblemDocument(): expected a string starting with "Bearer error=\"invalid_token\"" and not containing "resource_metadata"
+                                                                              wellKnownProtectedResourceUnauthenticated_boot35Baseline(): Status expected:<401> but was:<200>
+                                                                              wellKnownProtectedResourceAuthenticated_boot35Baseline(): Status expected:<404> but was:<200>
+
+  JsonbColumnsReadBackIntegrationTest (named "-> 38-10 if red"): GREEN, 3/3. Not in the ledger.
+  Category (b): empty.  Category (c): empty. No fix was needed in this plan.
+
+  The red-method total equals the expected-red methods: unit 2 (= failures 2), integration 5 (= failures 5).
+
+  Notes on the (a) reds, for their owners:
+  - The two *_boot35Baseline methods go red because Spring Security 7.1 serves
+    /.well-known/oauth-protected-resource with 200 (D-05's premise, measured on this tree). 38-06 suppresses
+    it and updates both baseline methods deliberately (38-02 SUMMARY: anonymous was 401 on 3.5, not 404).
+  - The two challenge methods go red on the RFC 9728 resource_metadata parameter: D-04, owner 38-06.
