@@ -1,0 +1,48 @@
+38-13 AUTO-CONFIGURATION CENSUS (BOOT4-02, D-02): explicit starters vs a throwaway classic swap
+====================================================================================================
+Branch phase-37-spring-boot-4-1. Plan base 26c5c5ff (38-12 complete). Gradle 9.7.1, Boot 4.1.1.
+Every test count below is read from fresh build-local XML (newer than a marker touched before the run).
+
+----------------------------------------------------------------------------------------------------
+1. TASK 1 (tracer): the census harness on the explicit build
+----------------------------------------------------------------------------------------------------
+Test: core-java/src/test/java/uk/jtoye/core/boot4/AutoConfigurationCensusIntegrationTest.java
+Activated set = every ConditionEvaluationReport source that is a full match, plus the unconditional
+classes, normalised to the declaring class (Outer$Inner / Outer#method -> Outer), kept only if listed
+in some META-INF/spring/...AutoConfiguration.imports (ImportCandidates). Context: test profile,
+Testcontainers Postgres, @AutoConfigureTracing + @AutoConfigureMetrics, the test profile's Data Redis
+exclusion cleared (spring.autoconfigure.exclude=""), spring.cache.type=redis and an @EnableCaching
+stand-in for CacheConfig (@Profile("!test")). Without those two, spring-boot-data-redis and
+spring-boot-cache would be invisible to the census in BOTH arms.
+
+Must-have constants: 21 (17 capabilities named by the plan + dispatcher servlet, Data JPA repositories,
+Zipkin-with-Brave span export, RestTemplate builder). Names read from the 4.1.1 module jars'
+AutoConfiguration.imports.
+
+1a. Fail direction FIRST (working tree, before the commit): one invented must-have added
+    org.springframework.boot.census.autoconfigure.InventedNoSuchAutoConfiguration
+    ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests '...AutoConfigurationCensusIntegrationTest' --no-daemon
+    -> rc=1; XML tests=2 failures=1 errors=0
+    java.lang.AssertionError: [must-have auto-configurations that did NOT activate. ...]
+    Expecting empty but was: ["INVENTED (fail-direction probe; must be removed) ->
+      org.springframework.boot.census.autoconfigure.InventedNoSuchAutoConfiguration"]
+    i.e. it named exactly the invented class and nothing else: all 21 real constants activated.
+    gsd check tdd-red-evidence (record = that XML, target = the must-have test's display name):
+      RED_EVIDENCE_OK (target_test_failed)
+      fail direction, same XML with the PASSING exclusions test as target: INVALID_RED (no_target_test_failure)
+
+1b. Real list, committed as 38d4d688 test(38-13), then the plan's verify on the committed tree with
+    JTOYE_CENSUS_OUT=<evidence>/38-13-census-explicit.txt:
+    -> rc=0, BUILD SUCCESSFUL, :core-java:integrationTest EXECUTED (not UP-TO-DATE); XML newer than the
+       marker; tests=2 failures=0 errors=0
+    [census] activated auto-configurations: 130, exclusions: []
+    awk 'NF{n++} END{print "entries="n+0}' 38-13-census-explicit.txt -> entries=130 before the 4-line
+       header was prepended (134 with it). Fail direction: /dev/null -> entries=0; a missing file ->
+       "awk: cannot open ..." rc=2.
+    The set equals the one the RED run wrote (diff empty): the invented constant changed nothing else.
+    Tracer gate (interactive, human_verify_mode=end-of-phase, automated-only verify): the run in 1b IS
+    the post-commit re-run; green, so expansion to Task 2 proceeds.
+
+1c. No main or build change in this plan so far:
+    git diff --name-only 26c5c5ff..HEAD -- core-java/src/main core-java/build.gradle.kts -> prints nothing
+    fail direction over 38-12's own range c7d1a473..26c5c5ff -> 26 names.
