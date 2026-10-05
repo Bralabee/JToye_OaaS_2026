@@ -1,0 +1,39 @@
+38-10 evidence: idempotency fingerprint continuity across the Boot-4 deploy (BOOT4-08), DSAR ack and jsonb
+=======================================================================================================
+
+Plan base (ledger): 295e37df81856de34759ecb4ba3414530d8405f0 on phase-37-spring-boot-4-1.
+Oracle: core-java/src/test/resources/jackson2-golden/ (38-01, CAPTURE_SHA e12177e1); never re-captured.
+Test XML: core-java/build-local/test-results/{test,integrationTest}/ (build-local, not build/).
+
+======================================================================================================
+TASK 1 (tracer): a Boot-3.5 orders.create reservation replays through Boot 4 under NOSUPERUSER
+======================================================================================================
+
+--- RED (commit test(38-10), Task 1)
+Production change in the RED commit (as the plan's RED step prescribes): IdempotencyJson added as a
+STUB on plain Jackson-3 defaults (JsonMapper.builder().build()); IdempotencyService.serialize /
+deserialize route through it; the injected Jackson-2 ObjectMapper is gone from the constructor
+(IdempotencyService(JdbcTemplate, EntityManager)).
+
+$ ./gradlew :core-java:cleanTest :core-java:test \
+    --tests 'uk.jtoye.core.common.idempotency.IdempotencyFingerprintGoldenTest' --no-daemon
+rc=1, cleanTest executed, BUILD FAILED. XML: tests=1 failures=1 errors=0.
+  orders.create: IdempotencyJson writes the Boot-3.5 bytes, so the stored hash matches  FAILED
+    [sha256 of IdempotencyJson's orders.create fingerprint vs the hash a Boot-3.5 pod stored]
+    expected: "7c58d68554bfba6bc3aa38dbd7d990aee4813d1f4051b35b0c43a22176a3ed9e"
+     but was: "10da4462b1e89a64a586fd45d2faff02cb9505ebbc277501e1dd85bd3922159c"
+
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest \
+    --tests 'uk.jtoye.core.common.idempotency.IdempotencyLegacyHashReplayIntegrationTest' --no-daemon
+rc=1, cleanIntegrationTest executed, BUILD FAILED. XML: tests=2 failures=1.
+  a Boot-3.5 orders.create reservation replays its original 201 under rls_test_role; the work never runs  FAILED
+    uk.jtoye.core.exception.IdempotencyPayloadMismatchException: Idempotency-Key reused with a different request payload
+    (= the client-visible 422 "same key, different body" this plan exists to prevent)
+  control: tenant B under rls_test_role cannot see tenant A's row; the same key is a fresh reservation  PASSED
+    (the control does not depend on the fingerprint format; it proves the role is RLS-constrained:
+     the unscoped count is 1 as superuser and 0 under rls_test_role with tenant B's GUC)
+
+gsd check tdd-red-evidence (record = the RED XML, targetTest = the display name):
+  unit   orders.create fingerprint ................................ RED_EVIDENCE_OK (target_test_failed)
+  it     Boot-3.5 reservation replays ............................. RED_EVIDENCE_OK (target_test_failed)
+  fail direction: the same IT record naming the (passing) control test -> INVALID_RED (no_target_test_failure)

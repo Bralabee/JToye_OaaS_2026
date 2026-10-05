@@ -1,7 +1,5 @@
 package uk.jtoye.core.common.idempotency;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import org.hibernate.Session;
 import org.slf4j.Logger;
@@ -86,14 +84,11 @@ public class IdempotencyService {
     private static final int MAX_KEY_LENGTH = 64;
 
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
     private final EntityManager entityManager;
 
     public IdempotencyService(JdbcTemplate jdbcTemplate,
-                              ObjectMapper objectMapper,
                               EntityManager entityManager) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
         this.entityManager = entityManager;
     }
 
@@ -264,20 +259,12 @@ public class IdempotencyService {
         });
     }
 
-    private String serialize(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize idempotent payload", e);
-        }
+    private static String serialize(Object value) {
+        return IdempotencyJson.write(value);
     }
 
-    private <T> T deserialize(String json, Class<T> type) {
-        try {
-            return objectMapper.readValue(json, type);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to deserialize stored idempotent response", e);
-        }
+    private static <T> T deserialize(String json, Class<T> type) {
+        return IdempotencyJson.read(json, type);
     }
 
     /** SHA-256 hex (64 chars) of the given string. Byte-identical bodies match. */
