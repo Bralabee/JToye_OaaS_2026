@@ -1,8 +1,5 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +15,8 @@ import uk.jtoye.core.onboarding.OnboardingState;
 import uk.jtoye.core.onboarding.OnboardingStateChangeEvent;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.order.OrderStatus;
+import uk.jtoye.core.testsupport.BootJsonMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -63,14 +62,13 @@ class PaymentEventOutboxFlusherTest {
     @Mock private jakarta.persistence.Query tenantQuery;
     @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
-    private ObjectMapper objectMapper;
+    private JsonMapper objectMapper;
     private PaymentEventOutboxFlusher flusher;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper()
-                .registerModule(new JavaTimeModule())
-                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        // 38-08: Boot's Jackson-3 JsonMapper, the bean the flusher is injected with.
+        objectMapper = BootJsonMapper.get();
         when(meterRegistryProvider.getIfAvailable()).thenReturn(null);
 
         // Mock tenant lookup — return a single test tenant so flushPending

@@ -6,6 +6,7 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.annotation.RabbitHandler;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
@@ -22,6 +23,7 @@ import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -121,6 +123,17 @@ class RabbitMQConfigMessageConverterTest {
     }
 
     // ------------------------------------------------------------------ tests
+
+    /**
+     * 38-08 (D-01, BOOT4-06): the bean is Spring AMQP 4's Jackson-3 converter. The deprecated
+     * {@code Jackson2JsonMessageConverter} is scheduled for removal, and a Jackson-2 converter left
+     * here would keep the messaging path on the old line after every other writer moved.
+     */
+    @Test
+    @DisplayName("38-08: the converter is the Jackson-3 JacksonJsonMessageConverter")
+    void converterIsTheJackson3Converter() {
+        assertInstanceOf(JacksonJsonMessageConverter.class, new RabbitMQConfig().jsonMessageConverter());
+    }
 
     @Test
     @DisplayName("converter resolves an application event from __TypeId__ (the fix)")

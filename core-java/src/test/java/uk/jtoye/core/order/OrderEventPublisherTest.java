@@ -1,9 +1,5 @@
 package uk.jtoye.core.order;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +10,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.payment.PaymentEventOutbox;
 import uk.jtoye.core.payment.PaymentEventOutboxRepository;
+import uk.jtoye.core.testsupport.BootJsonMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.UUID;
 
@@ -41,7 +40,7 @@ class OrderEventPublisherTest {
 
     @Mock private PaymentEventOutboxRepository outboxRepository;
 
-    private ObjectMapper objectMapper;
+    private JsonMapper objectMapper;
     private OrderEventPublisher publisher;
 
     private final UUID orderId = UUID.randomUUID();
@@ -49,9 +48,8 @@ class OrderEventPublisherTest {
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper()
-                .registerModule(new JavaTimeModule())
-                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        // 38-08: Boot's Jackson-3 JsonMapper, the bean the publisher is injected with.
+        objectMapper = BootJsonMapper.get();
         publisher = new OrderEventPublisher(outboxRepository, objectMapper);
     }
 
@@ -98,12 +96,14 @@ class OrderEventPublisherTest {
     @Test
     @DisplayName("serialization failure persists a poisoned FAILED placeholder and does not throw")
     void publishStateChange_serializationFailure_persistsPoisonPlaceholder() throws Exception {
-        // A broken ObjectMapper stands in for an impossible-in-practice
+        // A broken JsonMapper stands in for an impossible-in-practice
         // serialization failure; the publisher must not let it roll back the
         // caller's order transition, but must leave a durable trace.
-        ObjectMapper broken = mock(ObjectMapper.class);
+        // Jackson 3's JacksonException is unchecked, so nothing forces the publisher to catch it:
+        // this test is what keeps the poisoned-placeholder fallback (38-08).
+        JsonMapper broken = mock(JsonMapper.class);
         when(broken.writeValueAsString(any()))
-                .thenThrow(new JsonProcessingException("boom") {});
+                .thenThrow(new JacksonException("boom") {});
         OrderEventPublisher failing = new OrderEventPublisher(outboxRepository, broken);
 
         assertDoesNotThrow(() -> failing.publishStateChange(orderId, tenantId, "ORD-44",

@@ -1,7 +1,5 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
@@ -14,6 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.onboarding.OnboardingStateChangeEvent;
 import uk.jtoye.core.order.OrderEventPublisher;
@@ -63,7 +62,7 @@ public class PaymentEventOutboxFlusher {
 
     private final PaymentEventOutboxRepository repository;
     private final RabbitTemplate rabbitTemplate;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
     private final Counter deadLetterCounter;
@@ -73,7 +72,7 @@ public class PaymentEventOutboxFlusher {
 
     public PaymentEventOutboxFlusher(PaymentEventOutboxRepository repository,
                                      RabbitTemplate rabbitTemplate,
-                                     ObjectMapper objectMapper,
+                                     JsonMapper objectMapper,
                                      EntityManager entityManager,
                                      PlatformTransactionManager transactionManager,
                                      ObjectProvider<MeterRegistry> meterRegistryProvider,
@@ -309,16 +308,6 @@ public class PaymentEventOutboxFlusher {
             repository.save(row);
             log.info("Flushed outbox event {} (id={}, exchange={})",
                     row.getEventType(), row.getId(), exchange);
-        } catch (JsonProcessingException e) {
-            // Payload corruption — not recoverable by retry. Mark FAILED and
-            // poison it so the resurrection pass never re-leases it.
-            row.setStatus(PaymentEventOutbox.Status.FAILED);
-            row.setPoison(true);
-            row.setLastError("payload deserialization failed: " + e.getMessage());
-            row.setAttempts(row.getAttempts() + 1);
-            repository.save(row);
-            log.error("Outbox row {} is unrecoverable (poisoned)", row.getId(), e);
-            if (deadLetterCounter != null) deadLetterCounter.increment();
         } catch (Exception e) {
             int attempts = row.getAttempts() + 1;
             row.setAttempts(attempts);
