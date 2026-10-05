@@ -5,11 +5,11 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "The versioned cache prefix splits evictions across Boot versions during a rolling deploy and a rollback (stale authorization for up to 5 min)"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "`IdempotencyJson` does not reproduce Boot 3.5's parameter-name detection, so it is not the \"frozen Boot-3.5 format\" it claims to be"
   - id: IN-01
     severity: info
@@ -27,17 +27,17 @@ findings:
     severity: info
     disposition: open
     title: "HANDOFF.md's live block still says Phase 38 is \"planned, ready to execute\""
-open: 6
+open: 4
 total: 6
-recorded: 2026-10-05T19:30:35.981Z
+recorded: 2026-10-05T21:04:23.783Z
 ---
 
 # Phase 38: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
+| WR-01 | warning | fixed | 38-REVIEW-FIX.md |
+| WR-02 | warning | fixed | 38-REVIEW-FIX.md |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
