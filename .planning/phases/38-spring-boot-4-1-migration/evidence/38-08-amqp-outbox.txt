@@ -1,0 +1,103 @@
+38-08 evidence: the messaging path on Jackson 3, and Boot-3.5 state in flight survives the deploy
+=====================================================================================================
+Plan base (PLAN_BASE, the commit before the plan's first commit): f97a8161b160d3557c403911de0731ee81a2acba
+Branch: phase-37-spring-boot-4-1. Host JDK: OpenJDK 25.0.4.1 (not Temurin; same caveat as 38-SPIKE).
+Spring AMQP 4.1.1, jackson-core 3.1.7 (Jackson 3 line), Boot 4.1.1.
+Every Gradle run below was a forced run (cleanTest / cleanIntegrationTest "executed"), and every
+count comes from the JUnit XML under core-java/build-local/, not core-java/build/.
+
+=====================================================================================================
+TASK 1 (tracer): one order event survives both persisted forms into the Boot-4 converter
+=====================================================================================================
+
+--- Pre-read finding: can convertAndSend leak a raw JacksonException into the flusher? (no)
+javap -c on spring-amqp-4.1.1.jar AbstractJacksonMessageConverter:
+  createMessage(Object, MessageProperties, Type): exception table catches java/io/IOException and
+  tools/jackson/core/JacksonException over writeValueAsBytes/writeValueAsString, then
+  new MessageConversionException(String, Throwable).
+  fromMessage(Message, Object): convertContent wrapped the same way (IOException, JacksonException
+  -> MessageConversionException).
+So in PaymentEventOutboxFlusher.publishRow only objectMapper.readValue can raise a JacksonException.
+A catch (JacksonException) ahead of catch (Exception) poisons exactly what the Jackson-2
+catch (JsonProcessingException) poisoned; a broker failure still takes the backoff branch.
+
+--- RED (commit 62abed7b, test(38-08))
+Contents: the converter instance assertion; AmqpJackson2CompatibilityTest and
+OutboxPayloadCompatibilityTest (OrderStateChangeEvent and -offset only); the three unit tests
+moved to Boot's Jackson-3 JsonMapper (BootJsonMapper.get()); and the COMPILER-MINIMAL swap of
+OrderEventPublisher and PaymentEventOutboxFlusher to JsonMapper. JacksonException is unchecked, so
+both JsonProcessingException catches stop compiling and are dropped on this tree (38-07 precedent:
+the RED tree is what an import-only migration produces).
+
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.config.RabbitMQConfigMessageConverterTest' \
+    --tests 'uk.jtoye.core.boot4.AmqpJackson2CompatibilityTest' --tests 'uk.jtoye.core.boot4.OutboxPayloadCompatibilityTest' \
+    --tests 'uk.jtoye.core.order.OrderEventPublisherTest' --tests 'uk.jtoye.core.payment.PaymentEventOutboxFlusherTest' \
+    --tests 'uk.jtoye.core.payment.OutboxTenantListingFailureTest' --no-daemon
+rc=1; "34 tests completed, 3 failed"
+XML: AmqpJackson2CompatibilityTest     tests=4  failures=0 errors=0
+     OutboxPayloadCompatibilityTest    tests=2  failures=0 errors=0
+     RabbitMQConfigMessageConverterTest tests=7 failures=1 errors=0
+     OrderEventPublisherTest           tests=3  failures=1 errors=0
+     OutboxTenantListingFailureTest    tests=3  failures=0 errors=0
+     PaymentEventOutboxFlusherTest     tests=15 failures=1 errors=0
+Failures (each on its target assertion):
+  converterIsTheJackson3Converter:
+    Unexpected type, expected: <...JacksonJsonMessageConverter> but was: <...Jackson2JsonMessageConverter>
+  publishStateChange_serializationFailure_persistsPoisonPlaceholder:
+    Unexpected exception thrown: uk.jtoye.core.order.OrderEventPublisherTest$1: boom
+    (a JacksonException escapes the publisher and would roll back the caller's order transition)
+  flushPending_corruptPayload_poisonsRow:
+    expected: <FAILED> but was: <PENDING>
+    (a corrupt Boot-3.5 row is retried as a transient failure forever instead of being poisoned)
+Expected-green on RED: the amqp cases pass because the interim converter is the very
+Jackson2JsonMessageConverter that wrote the fixtures; the outbox cases pass because the compiler-
+minimal flusher already reads with Boot's Jackson-3 mapper. Neither is the RED target.
+
+gsd check tdd-red-evidence (record = the RED XML, targetTest = the display name):
+  converterIsTheJackson3Converter ............................ RED_EVIDENCE_OK (target_test_failed)
+  flushPending_corruptPayload_poisonsRow ...................... RED_EVIDENCE_OK (target_test_failed)
+  publishStateChange_serializationFailure_persistsPoisonPlaceholder RED_EVIDENCE_OK (target_test_failed)
+  fail direction: the same XML with a PASSING test named as target ("converter resolves an
+  application event from __TypeId__ (the fix)") -> INVALID_RED (no_target_test_failure)
+  (first attempt used method names; the classifier matches the XML's display names and returned
+   INVALID_RED no_target_test_failure for all three, which is how the record format was learned)
+
+--- GREEN (commit e693b554, feat(38-08))
+RabbitMQConfig.jsonMessageConverter() -> new JacksonJsonMessageConverter(TRUSTED_PAYLOAD_PACKAGES);
+TRUSTED_PAYLOAD_PACKAGES byte-identical (order, payment, onboarding); two Javadoc references now
+name DefaultJacksonJavaTypeMapper. OrderEventPublisher: catch (JacksonException) keeps the poisoned
+placeholder. PaymentEventOutboxFlusher: catch (JacksonException) ahead of catch (Exception) keeps
+the poison branch.
+
+Same command: rc=0, BUILD SUCCESSFUL, cleanTest executed.
+XML: AmqpJackson2CompatibilityTest 4/0/0, OutboxPayloadCompatibilityTest 2/0/0,
+     RabbitMQConfigMessageConverterTest 7/0/0, OrderEventPublisherTest 3/0/0,
+     OutboxTenantListingFailureTest 3/0/0, PaymentEventOutboxFlusherTest 15/0/0  (34/34)
+
+--- RESEARCH assumption A2: does the Jackson-3 converter read the numeric-timestamp form?
+YES, with the DEFAULT converter mapper (new JacksonJsonMessageConverter(String...), which builds
+JsonMapper.builder().findAndAddModules(...) with FAIL_ON_UNKNOWN_PROPERTIES and
+DEFAULT_VIEW_INCLUSION disabled). amqp/OrderStateChangeEvent.body carries
+"timestamp":1791117296.123456789 and converts to GoldenSamples.orderStateChangeEvent() with the
+instant equal to the nanosecond; amqp/OrderStateChangeEvent-offset.body (written at +01:00, offset
+dropped) converts to an instant equal to GoldenSamples.orderStateChangeEventOffset().
+The (JsonMapper, String...) fallback constructor was therefore NOT needed, and no drain step is.
+The comparison can fail: the permanent negative controls sameEvent_rejectsAOneNanosecondShift and
+sameEvent_rejectsALostComponent pass only because assertSameEvent throws on a 1 ns shift and on a
+lost shopId.
+
+--- Acceptance criteria, both directions
+AC1 git grep -n 'new JacksonJsonMessageConverter(TRUSTED_PAYLOAD_PACKAGES)' -- .../RabbitMQConfig.java
+    HEAD: 1 line (RabbitMQConfig.java:433), rc=0
+    fail direction, the same grep at the RED commit (HEAD~1): 0 lines, rc=1
+AC2 the three trust tests are passed testcases in TEST-uk.jtoye.core.config.RabbitMQConfigMessageConverterTest.xml
+    (the XML records @DisplayName, so by display name):
+      rejectsClassOutsideAllowlist          = "converter still REJECTS a class outside the allowlist (the allowlist is not '*')"
+      allowlistIsNotTrustAll                = "allowlist is scoped, never trust-all — '*' clears the allowlist entirely"
+      everyMultiHandlerPayloadTypeIsTrusted = "D-03 guard: every multi-handler payload package is on the allowlist"
+    all three present; failure/error/skipped elements in the file: 0
+    fail direction: Task 3 arm A (below) turns everyMultiHandlerPayloadTypeIsTrusted red
+AC3 RED before GREEN: git merge-base --is-ancestor 62abed7b e693b554 rc=0; reversed rc=1
+AC4 A2 recorded above.
+
+<!-- task 2 and task 3 sections follow -->
