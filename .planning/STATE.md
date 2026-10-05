@@ -6,10 +6,9 @@ current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
 status: planning
 stopped_at: Phase 38 complete, ready to plan Phase 29
-last_updated: "2026-10-05T19:49:38.935Z"
+last_updated: "2026-10-05T19:51:44.638Z"
 last_activity: 2026-10-05
-last_activity_desc: Phase 38 complete, transitioned to Phase 29
-state_head: a2846922ee59f163d1da6eaa3c071dabd10d9c3b
+state_head: 51baa44cf3829342eb9acdcabf50c28198ba1f14
 progress:
   total_phases: 19
   completed_phases: 13
@@ -22,10 +21,10 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-14)
+See: .planning/PROJECT.md (updated 2026-10-05)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 38 — Spring Boot 4.1 Migration
+**Current focus:** Phase 38 (Spring Boot 4.1) is complete and verified, but not yet shipped: `/gsd-secure-phase 38`, then `/gsd-ship 38`. After that, the owner-set planning order is 31.1, then 37 (GSD's numeric next is Phase 29).
 
 ## Current Position
 
@@ -743,7 +742,7 @@ Status: Ready to plan
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-05 — Phase 38 complete, transitioned to Phase 29
+Last activity: 2026-10-05
 
 Progress: [███████░░░] 72%
 
@@ -894,6 +893,10 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
+
+- [Phase 38 D-01]: Jackson 3 throughout core-java; Jackson 2 survives only as a BOM floor (2.22.3) for transitive users. Idempotency hashing uses the frozen `IdempotencyJson` mapper, which must not be edited without a dual-hash window.
+- [Phase 38 D-02]: Explicit per-module Boot 4 starters, never `spring-boot-starter-classic`; module liveness tests fail by name if a module disappears.
+- [Phase 38 D-05]: `/.well-known/oauth-protected-resource` is suppressed (401 without credentials, 404 with them); RFC 9728 metadata stays out of scope.
 
 - [v2.3 Scope]: Vendor Ops + AI interleaved, thinnest/highest-pain first — onboarding (zero-migration) leads, then vendor-scoped access, image architecture, AI track, infra. Locked by user 2026-07-14; do not re-litigate.
 - [v2.3 Roadmap]: MOBL-01 folded into Phase 22 — the responsive nav pairs with the shop-context switcher (same dashboard-nav surface).
@@ -1062,6 +1065,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ### Blockers/Concerns
 
+- **[Phase 38] Two open code-review warnings (`38-REVIEW.md`, disposition `open`):** WR-01, during a rolling deploy or rollback a cache eviction removes only the evicting pod's key generation (`v4:` vs Boot-3.5 keys), so `shopMembership` can stay stale up to 5 min and products/shops 10-15 min on the other generation's pods. ADR-0006 says "no flush needed" without naming that window; decide before the first staging/prod rollout. WR-02, `IdempotencyJson` does not enable `DETECT_PARAMETER_NAMES` (Boot 3.5 did); latent for current adopters, and cheapest to fix before ship.
 - **✅ RESOLVED by 23-16 (2026-07-21): full `:core-java:integrationTest` is now GREEN (331 tests, 0 failed).** The 13 failures across 7 legacy classes were migrated to the production UUID-subject JWT auth shape (test-only; zero main-source change → 23-08's fail-closed boundary preserved, not relaxed). Decision taken: migrate the legacy tests (not relax the gate). Historical context retained below. **🛑 (was) 23-15 PHASE-GATE BLOCKED (2026-07-21): full `:core-java:integrationTest` was RED — 13 failures the phase record never disclosed.** 7 legacy test classes failed `expected 200/201/400 but was 403`: `ShopControllerIntegrationTest` (3), `LocationHeaderContractTest` (4), `ScopedCatalogAccessIntegrationTest` (2), `SecurityHeadersIntegrationTest` (1), `ProductSearchFtsIntegrationTest` (1), `OnboardingGoLiveIntegrationTest` (1), `TenantLifecycleAdminIntegrationTest` (1). **Root cause:** 23-08's CR-03 fail-closed change now DENIES authenticated non-JWT principals — `ShopAccessService.requireVendorUserId()` throws a typed 403 when `auth.getPrincipal()` is not a `Jwt`, and `isInternalCaller()` bypasses only `auth == null`. The 19 pre-existing `@WithMockUser` integration tests (non-JWT `UsernamePasswordAuthenticationToken`) were never migrated to the UUID-subject `.jwt()` pattern the new access suites use. **Deterministic** — `ShopControllerIntegrationTest` fails 3/6 in isolation, identical to the full run (not parallelism). The gap wave only ran scoped `--tests` runs, so the full task was never green; the STATE claim "only OpenApiSnapshotTest is red" was inaccurate. 23-15 Task 2 (count reconcile) + Task 3 (VSA-02/VSA-04 completion) were HELD per anti-false-green while the suite was red. **Decision taken + executed as 23-16:** migrate the 7 legacy classes to UUID-subject JWTs (test-only) — the gate stands. Both HELD tasks are now UNBLOCKED on a green suite: 23-15 Task 1 (OpenAPI snapshot regen) is DONE + green (commit `adc1c58`), and 23-16 (commits `20ece8a`/`edb4b63`) made the full `integrationTest` task green, so 23-15 Tasks 2-3 (docs-freshness/metrics schema 56→57 + planning-record reconcile + VSA-02/VSA-04 closure) may now resume.
 - **RULE 0 — one runtime at a time on local**: compose and the minikube `jtoye` cluster share one dev Postgres. Never run compose `core-java`/`edge-go` AND cluster core/edge writers at once. Compose is canonical; cluster is STOPPED at handoff.
 - **Rebuild-all rule**: after ANY code change, rebuild ALL containers before E2E/QA. Cluster core is a pre-V51 image tag — re-tag + `minikube image load` fresh images before any k8s redeploy.
@@ -1122,8 +1126,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T16:24:00.000Z
-Stopped at: Phase 38 complete, ready to plan Phase 29
+Last session: 2026-10-05T19:51:19.160Z
+Stopped at: Phase 38 complete (verified 14/14, review 0/2/4), not yet shipped. Next: /gsd-secure-phase 38, then /gsd-ship 38; then plan Phase 31.1 per the owner order
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
