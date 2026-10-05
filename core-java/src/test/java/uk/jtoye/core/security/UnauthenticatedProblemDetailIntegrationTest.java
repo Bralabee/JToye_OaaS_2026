@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -13,7 +14,15 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
+import java.util.UUID;
+
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -53,25 +62,76 @@ class UnauthenticatedProblemDetailIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    private static final UUID WELL_KNOWN_TENANT = UUID.fromString("00000000-0000-0000-0000-00000000b005");
+
+    /**
+     * Phase 38 D-04: the challenge is asserted BY EXACT VALUE. An existence check passed on the
+     * Security-7 defect (a {@code resource_metadata} parameter advertising a URL this API does not
+     * serve); an exact {@code Bearer} cannot.
+     */
     @Test
     void missingBearerReturnsRfc7807ProblemDocument() throws Exception {
         mockMvc.perform(get("/api/v1/products"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-                .andExpect(header().exists("WWW-Authenticate"))
+                .andExpect(header().string("WWW-Authenticate", "Bearer"))
                 .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/unauthorized"))
                 .andExpect(jsonPath("$.title").value("Unauthorized"))
                 .andExpect(jsonPath("$.status").value(401));
     }
 
+    /** Phase 38 D-04: RFC 6750 error form, and never a {@code resource_metadata} parameter. */
     @Test
     void garbageBearerReturnsRfc7807ProblemDocument() throws Exception {
         mockMvc.perform(get("/api/v1/products").header("Authorization", "Bearer not-a-jwt"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-                .andExpect(header().exists("WWW-Authenticate"))
+                .andExpect(header().string("WWW-Authenticate", allOf(
+                        startsWith("Bearer error=\"invalid_token\""),
+                        not(containsString("resource_metadata")))))
                 .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/unauthorized"))
                 .andExpect(jsonPath("$.status").value(401));
+    }
+
+    /**
+     * Phase 38 (D-05 baseline): pins the PRE-migration Boot 3.5.16 answer to an UNAUTHENTICATED
+     * {@code GET /.well-known/oauth-protected-resource}, as measured (38-02 evidence,
+     * {@code 38-02-baselines.txt}). The path is not mapped on 3.5, so the chain refuses it like
+     * any other protected route. This method is EXPECTED to go red on Boot 4, where Spring
+     * Security 7 serves the path, until 38-06 lands D-05 (404 for every caller); 38-06 changes it
+     * deliberately and the baseline file records what changed.
+     */
+    @Test
+    void wellKnownProtectedResourceUnauthenticated_boot35Baseline() throws Exception {
+        mockMvc.perform(get("/.well-known/oauth-protected-resource"))
+                .andDo(print())
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/unauthorized"));
+    }
+
+    /**
+     * Phase 38 (D-05 baseline): pins the PRE-migration Boot 3.5.16 answer to an AUTHENTICATED
+     * {@code GET /.well-known/oauth-protected-resource} (a tenant JWT for an ACTIVE tenant), as
+     * measured: the unmapped path reaches {@code GlobalExceptionHandler}'s
+     * {@code NoResourceFoundException} mapping. EXPECTED to go red on Boot 4 until 38-06 lands
+     * D-05.
+     */
+    @Test
+    void wellKnownProtectedResourceAuthenticated_boot35Baseline() throws Exception {
+        jdbcTemplate.update("INSERT INTO tenants (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+                WELL_KNOWN_TENANT, "Well-known Baseline Tenant");
+        mockMvc.perform(get("/.well-known/oauth-protected-resource")
+                        .with(jwt().jwt(j -> j
+                                .subject(UUID.randomUUID().toString())
+                                .claim("tenant_id", WELL_KNOWN_TENANT.toString()))))
+                .andDo(print())
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+                .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/not-found"));
     }
 
     /**
