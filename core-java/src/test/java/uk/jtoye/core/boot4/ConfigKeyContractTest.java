@@ -199,7 +199,7 @@ class ConfigKeyContractTest {
     void literalPatternControl() {
         // The Boot-3 name is assembled from pieces so that this file's own literals do not trip the
         // scan below: no single literal here spells a stale auto-configuration name.
-        String boot3RedisName = "org.springframework.boot.autoconfigure.data.redis." + "Redis" + "AutoConfiguration";
+        String boot3RedisName = "org.springframework.boot.autoconfigure." + "data.redis." + "Redis" + "AutoConfiguration";
         assertThat(AUTOCONFIG_FQCN.matcher("org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration").find()).isTrue();
         assertThat(AUTOCONFIG_FQCN.matcher(boot3RedisName).find()).isTrue();
         assertThat(AUTOCONFIG_FQCN.matcher("uk.jtoye.core.config.CacheConfig").find()).isFalse();

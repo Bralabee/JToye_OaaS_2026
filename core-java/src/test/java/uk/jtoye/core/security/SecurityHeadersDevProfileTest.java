@@ -72,8 +72,8 @@ class SecurityHeadersDevProfileTest {
         // setting cache type to none is an extra guard.
         registry.add("spring.cache.type", () -> "none");
         registry.add("spring.autoconfigure.exclude",
-                () -> "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                    + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration");
+                () -> "org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration,"
+                    + "org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration");
     }
 
     @Autowired

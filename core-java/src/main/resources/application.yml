@@ -485,14 +485,19 @@ server:
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/xml,text/plain
-  error:
-    include-message: always
-    include-binding-errors: always
   tomcat:
     # Phase 24 IMG-02 (RESEARCH Pitfall 5): cap how many bytes Tomcat will
     # swallow from a body it has already decided to reject, so an oversize
     # upload is NOT fully drained before the 413 — bounds the reject-early cost.
     max-swallow-size: 2MB
+
+# 38-11 (Boot 4): the error-detail keys moved from server.error.* to spring.web.error.*.
+# Boot 4 silently ignores the old names, so these values reverted to Boot's defaults until
+# renamed. Values unchanged. Proven bound by RenamedConfigKeysBindingTest; old names are
+# refused by ConfigKeyContractTest (scripts/check-boot-config-keys.sh in CI).
+spring.web.error:
+  include-message: always
+  include-binding-errors: always
 
 management:
   endpoints:
@@ -552,9 +557,11 @@ management:
   tracing:
     sampling:
       probability: ${TRACING_PROBABILITY:0.1}  # Sample 10% of requests (increase in staging/dev)
-  zipkin:
-    tracing:
-      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+    # 38-11 (Boot 4): was management.zipkin.tracing.endpoint, which Boot 4 no longer binds, so
+    # ZIPKIN_ENDPOINT was ignored everywhere until renamed. Same placeholder and default.
+    export:
+      zipkin:
+        endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
 
 logging:
   level:

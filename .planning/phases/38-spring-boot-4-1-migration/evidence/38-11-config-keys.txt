@@ -66,3 +66,121 @@ Count reconciliation:
 - The three OK literal rows are this test's own controls (FlywayAutoConfiguration and
   DataRedisAutoConfiguration names); the Boot-3 control name is assembled from pieces so no literal in
   the test spells a stale name.
+
+2. Task 1 GREEN: the renames and the Boot-4 exclude names
+---------------------------------------------------------
+Renamed, values byte-identical:
+  application.yml          server.error.include-{message,binding-errors} -> spring.web.error.* (top-level
+                           dotted block "spring.web.error:", like staging/prod's "spring.lifecycle:")
+                           management.zipkin.tracing.endpoint -> management.tracing.export.zipkin.endpoint
+                           (same ZIPKIN_ENDPOINT placeholder and default)
+  application-staging.yml  server.error.include-* (4) -> spring.web.error.*; logging.file.max-size/
+                           max-history/total-size-cap -> logging.logback.rollingpolicy.max-file-size/
+                           max-history/total-size-cap (logging.file.name kept)
+                           management.metrics.export.prometheus.enabled DELETED (Boot-2 name, level=error
+                           since 3.0; base's management.prometheus.metrics.export.enabled=true applies;
+                           RenamedConfigKeysBindingTest asserts true for staging)
+  application-prod.yml     as staging, values NEVER/NEVER/NEVER/false and 10MB/30/1GB
+Excludes: org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
+            -> org.springframework.boot.amqp.autoconfigure.RabbitAutoConfiguration (main application-test.yml)
+          org.springframework.boot.autoconfigure.data.redis.Redis{,Repositories}AutoConfiguration
+            -> org.springframework.boot.data.redis.autoconfigure.DataRedis{,Repositories}AutoConfiguration
+            (test application-test.yml and the five security test classes, 2 each)
+
+Command: ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.ConfigKeyContractTest' --no-daemon
+rc=0 (BUILD SUCCESSFUL; :core-java:test executed, only compileJava UP-TO-DATE)
+XML: tests="9" skipped="0" failures="0" errors="0" timestamp="2026-10-05T12:21:57.542Z"
+awk -F'\t' 'NR>1 && $3!="OK"{n++} END{print "non_ok="n+0}' core-java/build-local/boot4/config-key-report.tsv
+  -> non_ok=0   (same awk on the RED report -> non_ok=31)
+Verdicts: OK=234  (218 keys + 3 yml excludes + 13 literals)
+
+Location criterion, stronger form (the report's full key paths for every renamed key; the plan's
+line grep alone also prints rc=0 on the plan base, so only the paths can discriminate):
+  GREEN:
+    core-java/src/main/resources/application-prod.yml  spring.web.error.include-message  OK
+    core-java/src/main/resources/application-prod.yml  spring.web.error.include-binding-errors  OK
+    core-java/src/main/resources/application-prod.yml  spring.web.error.include-stacktrace  OK
+    core-java/src/main/resources/application-prod.yml  spring.web.error.include-exception  OK
+    core-java/src/main/resources/application-prod.yml  logging.logback.rollingpolicy.max-file-size  OK
+    core-java/src/main/resources/application-prod.yml  logging.logback.rollingpolicy.max-history  OK
+    core-java/src/main/resources/application-prod.yml  logging.logback.rollingpolicy.total-size-cap  OK
+    core-java/src/main/resources/application-prod.yml  management.prometheus.metrics.export.enabled  OK
+    core-java/src/main/resources/application-staging.yml  spring.web.error.include-message  OK
+    core-java/src/main/resources/application-staging.yml  spring.web.error.include-binding-errors  OK
+    core-java/src/main/resources/application-staging.yml  spring.web.error.include-stacktrace  OK
+    core-java/src/main/resources/application-staging.yml  spring.web.error.include-exception  OK
+    core-java/src/main/resources/application-staging.yml  logging.logback.rollingpolicy.max-file-size  OK
+    core-java/src/main/resources/application-staging.yml  logging.logback.rollingpolicy.max-history  OK
+    core-java/src/main/resources/application-staging.yml  logging.logback.rollingpolicy.total-size-cap  OK
+    core-java/src/main/resources/application.yml  spring.web.error.include-message  OK
+    core-java/src/main/resources/application.yml  spring.web.error.include-binding-errors  OK
+    core-java/src/main/resources/application.yml  management.prometheus.metrics.export.enabled  OK
+    core-java/src/main/resources/application.yml  management.tracing.export.zipkin.endpoint  OK
+  RED (plan base):
+    core-java/src/main/resources/application-prod.yml  server.error.include-message  DEPRECATED
+    core-java/src/main/resources/application-prod.yml  server.error.include-binding-errors  DEPRECATED
+    core-java/src/main/resources/application-prod.yml  server.error.include-stacktrace  DEPRECATED
+    core-java/src/main/resources/application-prod.yml  server.error.include-exception  DEPRECATED
+    core-java/src/main/resources/application-prod.yml  logging.file.max-size  DEPRECATED
+    core-java/src/main/resources/application-prod.yml  logging.file.max-history  DEPRECATED
+    core-java/src/main/resources/application-prod.yml  logging.file.total-size-cap  DEPRECATED
+    core-java/src/main/resources/application-prod.yml  management.prometheus.metrics.export.enabled  OK
+    core-java/src/main/resources/application-staging.yml  server.error.include-message  DEPRECATED
+    core-java/src/main/resources/application-staging.yml  server.error.include-binding-errors  DEPRECATED
+    core-java/src/main/resources/application-staging.yml  server.error.include-stacktrace  DEPRECATED
+    core-java/src/main/resources/application-staging.yml  server.error.include-exception  DEPRECATED
+    core-java/src/main/resources/application-staging.yml  logging.file.max-size  DEPRECATED
+    core-java/src/main/resources/application-staging.yml  logging.file.max-history  DEPRECATED
+    core-java/src/main/resources/application-staging.yml  logging.file.total-size-cap  DEPRECATED
+    core-java/src/main/resources/application-staging.yml  management.metrics.export.prometheus.enabled  DEPRECATED
+    core-java/src/main/resources/application.yml  server.error.include-message  DEPRECATED
+    core-java/src/main/resources/application.yml  server.error.include-binding-errors  DEPRECATED
+    core-java/src/main/resources/application.yml  management.prometheus.metrics.export.enabled  OK
+    core-java/src/main/resources/application.yml  management.zipkin.tracing.endpoint  DEPRECATED
+
+The plan's line grep, as written (read line by line: each sits under spring.web.error,
+management.tracing.export.zipkin or logging.logback.rollingpolicy; the two 38-11 comment lines
+sit inside those blocks):
+  git grep -n -e include-message -e include-stacktrace -e zipkin -e max-history -- core-java/src/main/resources ; rc=0
+    core-java/src/main/resources/application-prod.yml:76:  include-message: never  # Security: Don't expose error details
+    core-java/src/main/resources/application-prod.yml:78:  include-stacktrace: never
+    core-java/src/main/resources/application-prod.yml:101:  # 38-11 (Boot 4): rotation moved from logging.file.max-size/max-history/total-size-cap,
+    core-java/src/main/resources/application-prod.yml:107:      max-history: 30
+    core-java/src/main/resources/application-staging.yml:77:  include-message: always  # Show errors for debugging (staging only!)
+    core-java/src/main/resources/application-staging.yml:79:  include-stacktrace: on_param  # Show stack trace with ?trace=true
+    core-java/src/main/resources/application-staging.yml:98:  # 38-11 (Boot 4): rotation moved from logging.file.max-size/max-history/total-size-cap,
+    core-java/src/main/resources/application-staging.yml:103:      max-history: 15
+    core-java/src/main/resources/application.yml:499:  include-message: always
+    core-java/src/main/resources/application.yml:560:    # 38-11 (Boot 4): was management.zipkin.tracing.endpoint, which Boot 4 no longer binds, so
+    core-java/src/main/resources/application.yml:563:      zipkin:
+  Same grep at the plan base 6187936e: rc=0 as well, lines under server.error / logging.file /
+  management.zipkin, which is why the report paths above are the discriminating form.
+
+Exclude-name criteria:
+  git grep -n 'org.springframework.boot.autoconfigure.data.redis' -- core-java/src ; rc=1
+  git grep -n 'org.springframework.boot.autoconfigure.amqp' -- core-java/src ; rc=1
+  fail direction at the plan base: redis 12 lines rc=0, amqp 1 line rc=0.
+  (ConfigKeyContractTest's own Boot-3 control name is concatenated from pieces, so it matches neither.)
+
+Regression check for the excludes that now TAKE EFFECT (beyond the plan's verify):
+  Renaming the test-resources Redis excludes turns them from no-ops back into real exclusions in
+  every test that runs the "test" profile, which is how Boot 3.5 ran them. So both suites were re-run
+  on the GREEN tree, results dirs deleted first:
+  ./gradlew :core-java:cleanTest :core-java:test --no-daemon
+    rc=0, BUILD SUCCESSFUL in 2m 25s; 179 XML; tests=1477 failures=0 errors=0 skipped=1
+    (= the orchestrator's 1468 on 6187936e + ConfigKeyContractTest's 9)
+  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --no-daemon
+    rc=1, BUILD FAILED in 33m 13s; 155 XML, all 155 newer than the run start; tests=768 failures=1 errors=0 skipped=1
+    the single failure: OpenApiSnapshotTest.apiDocsMatchCommittedSnapshot (the springdoc 3.1.1 schema
+    change; 38-04's expected-red ledger category (a), owner 38-14). Not caused by this plan.
+    "Successfully applied 67 migrations" in 147 contexts.
+    The five classes whose literals were renamed (all @Tag("testcontainers"), so integrationTest):
+      OpenApiDevProfileGatingTest: tests="2" skipped="0" failures="0" errors="0"
+      OpenApiProdProfileGatingTest: tests="3" skipped="0" failures="0" errors="0"
+      SecurityHeadersDevProfileTest: tests="2" skipped="0" failures="0" errors="0"
+      SecurityHeadersProdProfileTest: tests="2" skipped="0" failures="0" errors="0"
+      StagingActuatorPortIsolationTest: tests="4" skipped="0" failures="0" errors="0"
+  Unverified at runtime: no test asserts that the Redis auto-configuration is ABSENT from a
+  test-profile context. What is proven is that each exclude now names a class Boot lists in an
+  AutoConfiguration.imports file (the precondition for Boot to apply it) and that every suite that
+  runs with the exclusion applied is green.
