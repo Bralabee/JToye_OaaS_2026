@@ -1,0 +1,1 @@
+{"refundId":"38010000-0000-4000-8000-00000000a009","orderId":"38010000-0000-4000-8000-00000000a003","tenantId":"38010000-0000-4000-8000-00000000a001","orderNumber":"JT-20261004-0001","stripeRefundId":"re_golden_0001","amountPennies":500,"currency":"gbp","type":"REFUND_SUCCEEDED","status":"succeeded","failureReason":null,"occurredAt":1791117296.123456789}
