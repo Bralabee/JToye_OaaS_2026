@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
-current_phase: 29
-current_phase_name: Deployable Staging, With Its Own Monitoring
+current_phase: "31.1"
+current_phase_name: Persona gap closure
 status: paused
 stopped_at: "Phase 36 COMPLETE 18/18 and MERGED as PR #763 (squash commit c5d16ff6, 2026-09-29 22:14 UTC; post-merge CI/CD run 36638381316 green incl. all four image builds; the first scheduled nightly on main, 36658969040, green — 319 of 325 Playwright tests ran and passed, 6 skipped, 0 failed, restore drill PASS); required Operational Contracts red on every branch since 2026-09-30 (14 expired terminal-state deferrals) until PR #768 merges; Phase 29 stays PAUSED on owner actions (staging DNS + 3 operator secrets); next open defect is #764 (GDPR erasure: missing reviews UPDATE policy AND a cross-tenant review lookup — both, never the policy alone)"
-last_updated: "2026-09-30T15:25:22.386Z"
+last_updated: "2026-10-05T02:07:14.321Z"
 last_activity: 2026-09-30
 last_activity_desc: "Phase 36 merged (PR #763) and its post-merge CI + first scheduled nightly on main read green by content; STATE advanced past shipping"
-state_head: f93412d13ca76d3182a2c0eea75e0cd302e7cd77
+state_head: edf9de4a3756d8c76b7a2ddcb98440f58ce81fa9
 progress:
-  total_phases: 17
+  total_phases: 19
   completed_phases: 12
-  total_plans: 137
+  total_plans: 166
   completed_plans: 137
-  percent: 71
+  percent: 63
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
+Phase: 31.1 (Persona gap closure) — **PLANNED 2026-10-05: 30 plans in 16 waves**, plan-checker passed after one revision; READY TO EXECUTE only after Phase 38 merges to `main` (owner ruling D-21; plan 31.1-01 stops otherwise). Before that: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
 Wave 6 DONE 2026-09-29: 36-16 retired-object-store residue gate (scripts/check-no-object-store-residue.sh + reasoned line-level allowlist + 41-arm selftest) wired into ci-cd.yaml and enforced by check-gate-enforcement; rc=0 on the tree (0 violations), 657 violations on the pre-phase tree; handoff gate count 45 -> 46. Line-level allowlist entries fail CI when an edit moves an allowed line (deliberate; the message names the new line). .planning/ is allowlisted whole (per plan).
 Wave 5 DONE 2026-09-29: 36-15 live docs (27 files incl. CLAUDE.md/AGENTS.md/HANDOFF.md, .planning/codebase, agent-context mirrors) on Azure Blob/Azurite 3.37.0; ADR-0002 gets an appended "Superseded in part" note (original lines untouched); check-doc-versions now also gates the Azurite version (157 claims). Doc gates green (citations back at its 5 pre-existing .planning/codebase failures). OPEN outside this repo: jtoye-orgos charters/oaas-core-java.md:46 and oaas-platform.md:18 still name the retired store — regenerating the roster from orgos would undo 36-15's hand edits to AGENTS.md + 6 mirrors.
@@ -576,7 +576,7 @@ Status: Ready to execute
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
 Last activity: 2026-09-30 - Completed quick task 260930-l63: Fix #771, erasure deletes only a review's own order-path photos not referenced by the catalogue; foreign photo URLs refused at creation (400). Previously: 2026-09-30 - Completed quick task 260930-bvp: Fix #764 GDPR erasure for customers with reviews (V67). Previously: 2026-09-30 — Phase 36 merged as PR #763 (`c5d16ff6`); post-merge CI/CD and the first scheduled nightly on `main` read green by content. Previously: 2026-09-29 — Phase 36 re-verified and marked complete. Previously: 2026-09-29 - Completed quick task 260929-i9c: jackson-bom 2.21.6 pin clears CVE-2026-68497 from the core-java image.
 
-Progress: [████████░░] 75%
+Progress: [██████░░░░] 63%
 
 ## Milestone v2.3 Phase Map
 
