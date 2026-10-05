@@ -183,3 +183,70 @@ Arm D is the orchestrator-carried obligation (38-19 -> 38-12): a Spring Jackson-
 file turns the widened scan red, while the plan's narrow grep over the same armed file prints nothing (rc=1).
 Arm E: in the red message, JacksonLineContractTest itself appears in the set of files carrying a reason line, because its
 Javadoc documents the marker; that set is only checked with containsAll, so the extra name cannot pass or fail anything.
+
+## Tracer feedback gate (Task 1 -> Task 2)
+
+Interactive run (workflow.auto_advance=false, _auto_chain_active=false), human_verify_mode=end-of-phase, tracer verify is
+automated-only -> row 3: re-run the verify after the commits, no checkpoint. The arms' closing run on committed a2b52b22/e2941b6e
+(contract test 5/5 green, fresh XML 15:12:38 local) and verify 2 (forbidden=0) are that re-run. Expanded to Task 2.
+
+## Task 2: both full suites on the end-state (bridge-free) tree
+
+HEAD e2941b6e8b254cd100f8aeeb28497a5fcb4ee70d, started 2026-10-05T14:13:01Z, finished 14:41:35Z:
+  ./gradlew :core-java:cleanTest :core-java:cleanIntegrationTest :core-java:test :core-java:integrationTest --continue --no-daemon
+  rc=1   (expected: the one owned red below)   "BUILD FAILED in 28m 34s"
+  > Task :core-java:cleanTest  > Task :core-java:cleanIntegrationTest  > Task :core-java:test  > Task :core-java:integrationTest
+  (both test tasks EXECUTED, neither UP-TO-DATE)
+Totals read from the fresh XML (all written after the start: unit 15:14:19 local, integration 15:41:35 local):
+  test             181 files  tests=1490  failures=0  errors=0  skipped=1
+  integrationTest  155 files  tests=769   failures=1  errors=0  skipped=1
+  the only failing class in either directory: uk.jtoye.core.integration.OpenApiSnapshotTest (owner 38-14)
+    apiDocsMatchCommittedSnapshot(): "The OpenAPI spec served by /v3/api-docs no longer matches the reviewed snapshot ..."
+    (the same red as the 38-04 ledger and the wave-4 gate)
+
+Against the earlier figures:
+                         unit (tests/failures/skipped)   integration (tests/failures)
+  38-04 ledger (Boot 4)  1337 / 2 / 1                    750 / 5   (2 + 5 reds, all owned and since closed except OpenApiSnapshotTest)
+  wave-4 gate c2c64e78   1485 / 0 / 1                    768 / 1   (OpenApiSnapshotTest)
+  38-19 end 31f8a36e     1485 / 0 / 1                    (per batch, bridge-off: A 92, B 62, C unit 37 / IT 21, residuals 19 + 1)
+  38-12 end state        1490 / 0 / 1                    769 / 1   (OpenApiSnapshotTest)
+  delta unit +5 = JacksonLineContractTest's 5 tests; delta integration +1 = Boot4ModuleLivenessIntegrationTest
+  .jackson3MapperExistsAndNoJackson2MapperBean. Nothing else added, lost or newly red. Every class in 38-19's batches ran
+  in this bridge-free run and none is failing, so the batch-by-batch bridge-off result holds for the whole tree at once.
+
+Plan verify 2 (contexts failing for want of a Jackson-2 bean):
+  awk '/No qualifying bean/ && /jackson/{n++} END{print "missing_jackson_bean="n+0}' <both XML dirs>   -> missing_jackson_bean=0
+  broader form (No qualifying bean | UnsatisfiedDependency | Unsatisfied dependency) AND (ObjectMapper | jackson) -> n=0
+  fail direction of the awk: fed 38-19's tracer failure text ("No qualifying bean of type '...databind.ObjectMapper'")
+    -> missing_jackson_bean=1
+  Residuals: NONE. No main class and no test class needed the bridge; no main-code change was made in this plan.
+
+OpenAPI, measured for 38-14 (bridge removal does not move the 38-14 diff):
+  the served spec written by this run (build-local/openapi/openapi-current.json, 15:19:36 local), copied aside;
+  then a bracketed arm re-added the bridge line and ran ./gradlew :core-java:generateOpenApiSpec --rerun   rc=0 (fresh file 15:42:57)
+  bridge-off sha256 60c52aa16c74e502bc5c174d477b44f257b466dc8717709894d8bfd1e9d4c96a
+  bridge-on  sha256 60c52aa16c74e502bc5c174d477b44f257b466dc8717709894d8bfd1e9d4c96a   -> byte-IDENTICAL
+  build file restored from HEAD, sha256 56ab71db... == HEAD blob. diff snapshot vs current: 530 lines (38-14's to regenerate).
+
+Plan verify 3 (test side, read independently of the contract test):
+  out=$(git grep -l -e 'com.fasterxml.jackson.databind' -e 'com.fasterxml.jackson.core' -- core-java/src/test/java); rc=0
+    core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java   deliberate=1 (awk)
+    core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java         deliberate=1 (awk)
+  both are in the allowlist constant. The narrow grep cannot see AmqpJackson2CompatibilityTest (adapter only), so the list is
+  also read with the contract's widened pattern (git grep -P, the same regex): rc=0, 3 files, each deliberate=1:
+    AmqpJackson2CompatibilityTest, OutboxPayloadCompatibilityTest, OpenApiSnapshotTest
+  diff (widened scan) vs (the 3 constant lines in JacksonLineContractTest.java): EQUAL
+  fail direction: the same widened scan at c2c64e78 (38-19's base) vs the constant: diff rc=1, 41 files.
+
+The allowlist with reasons (the DELIBERATE_JACKSON2_LIST constant; reasons verbatim from 38-19's DELIBERATE-JACKSON2-LIST):
+  core-java/src/test/java/uk/jtoye/core/boot4/AmqpJackson2CompatibilityTest.java | emulates Boot-3.5 pods during a rolling deploy:
+    a Boot-3.5 Jackson2JsonMessageConverter reads every message the Boot-4 converter writes (38-08)
+  core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java | emulates Boot-3.5 pods during a rolling deploy:
+    a mapper built like Boot 3.5's reads the outbox rows Boot 4 writes (38-08)
+  core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java | byte-stable normalizer of springdoc's swagger-core
+    (Jackson-2) output; its writer decides the committed snapshot's bytes, and 38-14 regenerates that snapshot
+
+No golden or snapshot changed:
+  git diff --name-only 31f8a36e..HEAD -- docs/api core-java/src/test/resources; echo rc=$?   -> no name, rc=0
+  NOTE: git diff --name-only exits 0 whether or not it prints names, so the criterion's "rc=0" cannot fail; the falsifiable
+  form is the NAME COUNT. Fail direction: the same command over 38-01's capture commit (e12177e1^..e12177e1) -> 38 names, rc=0.
