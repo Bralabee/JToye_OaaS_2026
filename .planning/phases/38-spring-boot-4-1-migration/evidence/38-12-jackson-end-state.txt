@@ -81,3 +81,46 @@ RED run 2 (integration), bridge line present (2026-10-05T14:04:41Z):
     jacksonGeoModule : org.springframework.data.geo.GeoModule
     pageModule : org.springframework.data.web.config.SpringDataJacksonConfiguration$PageModule
   (the last two are Spring Data's Jackson-2 modules; whether they outlive the bridge is read after GREEN below.)
+
+## GREEN (Task 1): the INTERIM-JACKSON2-BRIDGE line deleted from core-java/build.gradle.kts
+
+diff: 2 deletions (the bridge line and the blank line after it); nothing else in the build file changed.
+
+  ./gradlew :core-java:cleanTest :core-java:compileTestJava :core-java:test --tests 'uk.jtoye.core.boot4.JacksonLineContractTest' --no-daemon   rc=0
+  > Task :core-java:compileJava (ran: main compiles without spring-boot-jackson2)  > Task :core-java:compileTestJava  > Task :core-java:test
+  TEST-uk.jtoye.core.boot4.JacksonLineContractTest.xml (15:06:26 local): tests=5 failures=0 errors=0 skipped=0
+
+Context check, bridge-off, FIRST run (14:06:39Z) rc=1, 6 tests / 1 failure, and it was a real finding:
+  the bridge's 4 beans were gone (jackson2ObjectMapper, jackson2ParameterNamesModule, jackson2JsonMixinModule,
+  jackson2JsonComponentModule), but 2 Jackson-2-typed beans remained:
+    jacksonGeoModule : org.springframework.data.geo.GeoModule
+    pageModule : org.springframework.data.web.config.SpringDataJacksonConfiguration$PageModule
+  Cause (read from spring-data-commons-4.1.1.jar): Spring Data registers BOTH SpringDataJacksonConfiguration (Jackson 2) and
+  SpringDataJackson3Configuration whenever each Jackson line is on the classpath; Jackson 2 stays transitively (springdoc's
+  swagger-core, Azure SDK, Stripe), so the Jackson-2 pair is registered. They are Module beans, not mappers: with no Jackson-2
+  ObjectMapper (and no Jackson-2 mapper builder) nothing registers them anywhere, so they are inert.
+  Measured beside them (a throwaway arm inverting the positive control, restored by sha256 e8fe160f... == the kept copy):
+    jacksonMixinModule, jsonComponentModule, jsonMapperBuilder, jacksonJsonMapper : tools.jackson.databind.json.JsonMapper,
+    jackson3GeoModule : org.springframework.data.geo.GeoJacksonModule, jackson3pageModule : SpringDataJackson3Configuration$PageModule
+  -> Spring Data's Jackson-3 counterparts are live on Boot's mapper.
+  Resolution (no main change, no suppression of Spring Data config): the check now asserts (1) NO bean is a Jackson-2
+  ObjectMapper (the plan's truth, exactly), and (2) the Jackson-2-typed beans are EXACTLY {jacksonGeoModule, pageModule}, a
+  closed set like the test allowlist: the bridge coming back adds 4 names and fails it; Spring Data dropping its pair fails it
+  too, so the set shrinks with the tree.
+Context check, bridge-off, final form (14:08:38Z):
+  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.boot4.Boot4ModuleLivenessIntegrationTest' --no-daemon   rc=0
+  TEST-...Boot4ModuleLivenessIntegrationTest.xml (15:09:01 local): tests=6 failures=0 errors=0 skipped=0
+  (its fail direction in this final form is arm A below.)
+
+Plan verify 2 (runtimeClasspath), bridge-off:
+  ./gradlew -q :core-java:dependencies --configuration runtimeClasspath   rc=0 (769 lines)
+  forbidden=0     fail direction: the same awk over the PLAN_BASE capture -> forbidden=1
+  com.fasterxml.jackson.core:jackson-databind lines = 5 (transitive Jackson 2 stays, as expected)
+
+Acceptance criteria:
+  AC1  git grep -n 'INTERIM-JACKSON2-BRIDGE' -- core-java/build.gradle.kts                  rc=1 (no line)
+       fail direction, same grep on HEAD 738cd0ea (bridge committed): core-java/build.gradle.kts:283, rc=0
+  AC2  git grep -n -e 'import com.fasterxml.jackson.databind' -e '...core' -e '...datatype' -- core-java/src/main/java   rc=1
+       positive control git grep -c 'import com.fasterxml.jackson.annotation' -- core-java/src/main/java   rc=0, 6 files:
+         dev/DemoImageManifest 2, onboarding/client/CompanyProfile 2, FhrsClient 1, FhrsEstablishment 2, shop/dto/CreateShopRequest 1, sync/dto/SyncItem 1
+       fail direction, same grep at c7d1a473 (end of 38-03, before 38-06 migrated main): rc=0, 35 lines

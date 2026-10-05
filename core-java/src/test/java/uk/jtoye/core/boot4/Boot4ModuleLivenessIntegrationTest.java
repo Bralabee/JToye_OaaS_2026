@@ -186,21 +186,32 @@ class Boot4ModuleLivenessIntegrationTest {
                 .as("positive control: the bean walk must find Boot's Jackson-3 mapper in %s, or its empty "
                         + "answer for Jackson 2 below proves nothing", jackson3Databind)
                 .isNotEmpty();
-        assertThat(beansWhoseTypeIsIn(jackson2Databind))
-                .as("a Jackson-2 mapper bean (%s) is back beside Boot's Jackson-3 JsonMapper: the application has "
+        assertThat(beansWhoseTypeIsIn(jackson2Databind + ".ObjectMapper"))
+                .as("a Jackson-2 ObjectMapper bean is back beside Boot's Jackson-3 JsonMapper: the application has "
                         + "two JSON behaviours again. 38-12 removed the INTERIM-JACKSON2-BRIDGE line "
-                        + "(spring-boot-jackson2); JacksonLineContractTest names the module that brought it", jackson2Databind)
+                        + "(spring-boot-jackson2); JacksonLineContractTest names the module jar that brought it")
                 .isEmpty();
+        // Closed set, like the test-side DELIBERATE-JACKSON2 list: Spring Data registers its Jackson-2 Module beans
+        // (SpringDataJacksonConfiguration, GeoModule) whenever Jackson 2 is on the classpath, and springdoc keeps it
+        // there transitively. With no Jackson-2 mapper they are inert; Spring Data registers the Jackson-3
+        // counterparts beside them. Any other Jackson-2-typed bean (the bridge's mapper or modules) fails here.
+        assertThat(beansWhoseTypeIsIn(jackson2Databind).stream().map(hit -> hit.substring(0, hit.indexOf(" : "))).sorted().toList())
+                .as("the only Jackson-2-typed beans are Spring Data's two inert modules; got %s",
+                        beansWhoseTypeIsIn(jackson2Databind))
+                .containsExactly("jacksonGeoModule", "pageModule");
     }
 
-    /** Bean names whose type, or a superclass of it, lives in {@code pkg} or below; types read without initialising beans. */
-    private List<String> beansWhoseTypeIsIn(String pkg) {
+    /**
+     * {@code name : type} of every bean whose type, or a superclass of it, is the class {@code prefix} or lives in the
+     * package {@code prefix} or below; types are read without initialising any bean.
+     */
+    private List<String> beansWhoseTypeIsIn(String prefix) {
         List<String> hits = new ArrayList<>();
         for (String name : context.getBeanDefinitionNames()) {
             Class<?> type = context.getType(name, false);
             for (Class<?> c = type; c != null; c = c.getSuperclass()) {
                 String p = c.getPackageName();
-                if (p.equals(pkg) || p.startsWith(pkg + ".")) {
+                if (c.getName().equals(prefix) || p.equals(prefix) || p.startsWith(prefix + ".")) {
                     hits.add(name + " : " + type.getName());
                     break;
                 }

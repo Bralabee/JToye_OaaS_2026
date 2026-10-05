@@ -280,8 +280,6 @@ dependencies {
     // springdoc 3.x is the Boot-4 line (2.8.x is Boot-3 only); 3.1.1 supersedes dependabot #739.
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1")
 
-    implementation("org.springframework.boot:spring-boot-jackson2") // INTERIM-JACKSON2-BRIDGE removed by 38-12; keeps the Jackson-2 ObjectMapper bean for injectors 38-06..38-10 and 38-19 migrate
-
     // Lombok for boilerplate reduction
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
