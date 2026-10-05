@@ -377,3 +377,89 @@ fail direction: a copy with a second verdict line appended                     -
                 /dev/null                                                       -> verdicts=0
                 a copy whose line reads "VERDICT: VALUE-DIFF." (malformed)      -> verdicts=0
 ```
+
+## 10. Owner decision (Task 2)
+
+Presented on 2026-10-05 from sections 2-7 (verdict VALUE-DIFF), with four options: jackson3-defaults
+(recommended), jackson2-defaults, targeted `sort-properties-alphabetically=false`, and targeted
+`sort-properties-alphabetically=false` plus `fail-on-trailing-tokens=false`. The deprecated
+Jackson-2 converter switch was not offered (D-01).
+
+The owner's answer, exact words, selected via AskUserQuestion on 2026-10-05:
+
+> jackson3-defaults (Recommended)
+
+**Decision: jackson3-defaults.** Boot's `JsonMapper` keeps Jackson 3's defaults.
+
+**Applied keys: none.** No `spring.jackson.*` key is added to any `application*.yml`, and
+`spring.http.converters.preferred-json-mapper` is not set anywhere (D-01).
+
+Rationale, from the measurement: no published VALUE changes (15/15 tree-equal); the outbox payloads,
+the webhook envelope (the HMAC input) and every record response keep their exact bytes; the 7
+input-side differences other than trailing tokens reach no request DTO and no enum of this API
+(section 5); and Boot 4's intended state carries nothing to remove later (a Jackson-2-defaults
+switch or a targeted key would be a standing exception and a second contract change on removal).
+The persisted-hash paths do not depend on this choice: idempotency (38-10) uses its own frozen
+mapper, AMQP (38-08) and Redis (38-09) build their own.
+
+### Contract changes this decision accepts (for ADR-0006 and the PR description)
+
+1. **Alphabetical key order on class-based responses.** `OrderDto`, `ProductDto`, `ShopDto` and
+   every Spring `ProblemDetail` body this mapper writes (measured: the 401 fixture, and a
+   `GlobalExceptionHandler` problem on the real HTTP path in section 4) are written with their
+   properties in alphabetical order instead of declaration order.
+   Values, key sets and byte lengths are unchanged (section 2b); a `ProblemDetail`'s extension
+   properties still follow its sorted standard members (section 4). Records (all 6 outbox payloads,
+   the webhook envelope and `data`, `CustomerDto`, `DsarIntakeAck`, `MediaAcceptDto`,
+   `WebhookDeliveryView`, and records nested in a class such as `ProductDto.allergenSpans[*]` and
+   `media[*]`) keep declaration order and their exact bytes. A JSON consumer that relies on key
+   order is the only one affected.
+2. **Trailing content after a request body is rejected.** A body followed by any further token
+   (`{...} {...}`, `{...}}`) is now a 400 `https://jtoye.uk/errors/unreadable-request`
+   ("Malformed or unreadable request body") without the body being read; on Boot 3.5 the trailing
+   content was ignored and the first value processed (section 4). Same status code, different
+   problem type, and no field-level `errors` map.
+
+Behaviour that changed in the mapper but reaches nothing on this API today (asserted on Boot's
+mapper so a future DTO meets it knowingly): JSON `null` or an absent record component into an
+`int`/`long` is rejected; an enum is read and written by `toString()` (all 40 enums here have
+`toString()==name()`, so no byte or accepted spelling changes).
+
+### Where the documentation obligation lands
+
+- **ADR-0006** is written by plan **38-16** Task 2 (`docs/architecture/decisions/ADR-0006-spring-boot-4-migration.md`;
+  its must-have: "ADR-0006 records ... the 38-05 Jackson-defaults decision"). It must name the two
+  contract changes above with this file as the evidence reference.
+- **The PR description** is composed at ship time (38-18's ship checklist, then `/gsd-ship`). It
+  must name the same two contract changes.
+
+Both are carried obligations of 38-05, recorded in `38-05-SUMMARY.md`; neither is written here.
+
+### What the permanent `Jackson3WireContractTest` now asserts (12 tests)
+
+| Test | Decided relationship |
+|---|---|
+| `everyFixtureIsTreeEqualAndOnlyTheAcceptedOrderingDifferencesAreRawUnequal` | all 15 fixtures tree-equal; the raw-unequal set is EXACTLY `ACCEPTED_ORDERING_DIFFERENCES` (OrderDto, ProblemDetail-401, ProductDto, ShopDto); writes `build-local/boot4/jackson-wire-diff.tsv` |
+| `recordsKeepTheirBytesAndClassBasedTypesAreAlphabetical` | every record sample byte-equal; every class-based sample's top-level keys == the fixture's keys sorted; the class-based set == the accepted set |
+| `restBodiesUseThisMapper` | the MVC `JacksonJsonHttpMessageConverter` holds this `JsonMapper` bean |
+| `trailingTokensAreRejected` | `{..} {..}` and `{..}}` rejected; control accepted |
+| `trailingTokenAfterARequestBodyIsUnreadableRequest` | real HTTP path: control 400 `errors/validation`, trailing token 400 `errors/unreadable-request` |
+| `nullOrAbsentIntoAPrimitiveIsRejected` | null/absent into record `int`/`long` and setter `int` rejected; control accepted |
+| `unknownPropertiesAreIgnored` | unknown property accepted |
+| `enumsUseToString` | read by toString accepted, by name rejected, written as toString |
+| `datesReadToTheSameInstantInUtc` | epoch decimal and ISO `+01:00` read to the same instant, offset `Z` |
+| `aSingleValueIsNotAList` | single value for a List rejected; control accepted |
+| `aFloatIntoAnIntIsTruncated` | `1.5` into `int` reads as `1` |
+| `treeDiffCanFail` | the diff reports a changed value and a missing key by pointer, and ignores order/number spelling |
+
+`Jackson3AcceptanceProbeTest` is deleted (it needs the interim Jackson-2 bean that 38-12 removes).
+The web environment moved from NONE to the default MOCK with `@AutoConfigureMockMvc`, because the
+decided trailing-token outcome is asserted on the real HTTP path.
+
+First green run on the decided sources (run start 2026-10-05T08:25Z):
+
+```
+./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.Jackson3WireContractTest' --no-daemon
+rc=0   BUILD SUCCESSFUL; ':core-java:cleanTest' and ':core-java:test' both executed
+TEST-uk.jtoye.core.boot4.Jackson3WireContractTest.xml  tests="12" skipped="0" failures="0" errors="0"  newer than run start: 1
+```

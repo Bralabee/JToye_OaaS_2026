@@ -4,7 +4,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -12,11 +20,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -24,30 +36,39 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
- * Phase 38 (BOOT4-04, plan 38-05): the wire contract between Boot 4's Jackson-3
- * {@link JsonMapper} and the Jackson-2 golden fixtures captured on Boot 3.5.16 (plan 38-01).
+ * Phase 38 (BOOT4-04, plan 38-05): the PERMANENT wire contract of Boot 4's Jackson-3
+ * {@link JsonMapper}, against the Jackson-2 golden fixtures captured on Boot 3.5.16 (plan 38-01).
  *
- * <p>Boot's {@code JsonMapper} writes every REST response, the DSAR acknowledgement and the 401
- * problem body, and (from 38-08) the outbox payloads and the webhook envelope vendors verify. For
- * each fixture under {@code jackson2-golden/responses} and {@code jackson2-golden/outbox} the
- * matching {@link GoldenSamples} instance is serialised with the injected mapper and compared with
- * the Jackson-2 bytes two ways:
+ * <p><b>Owner decision, 2026-10-05 (38-05 Task 2): "jackson3-defaults (Recommended)".</b> Boot's
+ * mapper keeps Jackson 3's defaults; no {@code spring.jackson.*} key is set. The measurement it was
+ * taken from is {@code .planning/phases/38-spring-boot-4-1-migration/evidence/38-05-jackson-wire-diff.md}.
+ * This class locks the decided relationship, so a future default drift (a Jackson upgrade, a
+ * {@code spring.jackson.*} key, a customizer) on a published shape turns it red:
  * <ul>
- *   <li><b>raw</b>: byte equality;</li>
- *   <li><b>tree</b>: both sides parsed with the same Jackson-3 mapper; objects compare
- *       order-insensitively, numbers by value. Every difference is reported as a JSON pointer with
- *       both values.</li>
+ *   <li><b>Every fixture is TREE-equal</b> to Boot's output: same keys, same values, numbers by
+ *       value. No published value changes.</li>
+ *   <li><b>Records are BYTE-equal</b>: the 6 outbox payloads, the webhook envelope vendors verify
+ *       the HMAC over, and every record response keep their exact bytes.</li>
+ *   <li><b>Class-based types are written in alphabetical key order</b> (Jackson 3's
+ *       {@code SORT_PROPERTIES_ALPHABETICALLY}). Exactly those fixtures are raw-unequal, and they are
+ *       listed in {@link #ACCEPTED_ORDERING_DIFFERENCES}: the first of the two contract changes this
+ *       decision accepts.</li>
+ *   <li><b>Acceptance</b>: the decided reading behaviour of Boot's mapper, asserted on this mapper
+ *       alone (the Jackson-2 comparison column disappears with the bridge in 38-12). The one change
+ *       that reaches the API is the second accepted contract change: trailing content after a
+ *       request body is a 400 {@code errors/unreadable-request} instead of being ignored.</li>
  * </ul>
- * The comparison table is written to {@code build-local/boot4/jackson-wire-diff.tsv}
- * ({@code fixture TAB raw_equal TAB tree_equal TAB differing pointers}) and Boot's bytes to
- * {@code build-local/boot4/jackson3-wire/}.
- *
- * <p>Task 1 of 38-05 asserts the measurement invariants only; Task 3 sets the contract the owner
- * decides. Untagged and on H2, so the fast {@code test} task runs it.
+ * The REST message converter is asserted to hold this very mapper, so the mapper-level assertions
+ * are the REST behaviour. The comparison table is still written to
+ * {@code build-local/boot4/jackson-wire-diff.tsv} and Boot's bytes to
+ * {@code build-local/boot4/jackson3-wire/}. Untagged and on H2, so the fast {@code test} task runs it.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest
+@AutoConfigureMockMvc
 @ActiveProfiles("test")
 class Jackson3WireContractTest {
 
@@ -59,6 +80,19 @@ class Jackson3WireContractTest {
     static final List<String> FAMILIES = List.of("responses", "outbox");
 
     /**
+     * The fixtures whose bytes Boot's mapper does NOT reproduce, each an accepted ORDERING
+     * difference (owner decision 2026-10-05): the class-based types, whose properties Jackson 3
+     * writes alphabetically. Measured in 38-05 Task 1 (equal byte length, equal trees). A fixture
+     * leaving this set (the order reverted) or joining it (a record's bytes changed) is a contract
+     * change and turns this test red.
+     */
+    static final Set<String> ACCEPTED_ORDERING_DIFFERENCES = Set.of(
+            "responses/OrderDto.json",
+            "responses/ProblemDetail-401.json",
+            "responses/ProductDto.json",
+            "responses/ShopDto.json");
+
+    /**
      * Fixture (family/file) to the factory its bytes were captured from. Every fixture file on disk
      * must have exactly one entry here; a file without a factory fails the test.
      */
@@ -66,6 +100,12 @@ class Jackson3WireContractTest {
 
     @Autowired
     private JsonMapper jsonMapper;
+
+    @Autowired
+    private RequestMappingHandlerAdapter handlerAdapter;
+
+    @Autowired
+    private MockMvc mockMvc;
 
     /** One fixture compared with one mapper's output. */
     record Comparison(String fixture, boolean rawEqual, boolean treeEqual, List<String> differences,
@@ -76,9 +116,11 @@ class Jackson3WireContractTest {
         }
     }
 
+    // ------------------------------------------------------------------ the wire contract
+
     @Test
-    @DisplayName("every responses/ and outbox/ fixture is compared with Boot's JsonMapper and the diff is written")
-    void bootJsonMapperIsComparedWithEveryJackson2Fixture() throws IOException {
+    @DisplayName("every responses/ and outbox/ fixture is tree-equal to Boot's output; only the accepted ordering differences are raw-unequal")
+    void everyFixtureIsTreeEqualAndOnlyTheAcceptedOrderingDifferencesAreRawUnequal() throws IOException {
         List<String> onDisk = fixtureFiles();
         assertThat(onDisk).as("fixture files under %s %s", GOLDEN_ROOT.toAbsolutePath(), FAMILIES).isNotEmpty();
         assertThat(SAMPLES.keySet())
@@ -87,13 +129,180 @@ class Jackson3WireContractTest {
 
         List<Comparison> comparisons = compareAll(this::serialize);
         writeReport(comparisons, DIFF_OUT, WIRE_OUT);
-
-        // Task 1 asserts the measurement only: every fixture compared, the report written. The
-        // RED first run asserted raw equality for every fixture and failed on 4 of 15 (evidence
-        // 38-05-jackson-wire-diff.md); Task 3 replaces this with the owner-decided contract.
         assertThat(comparisons).hasSize(onDisk.size());
-        assertThat(DIFF_OUT).exists();
-        assertThat(Files.readAllLines(DIFF_OUT, StandardCharsets.UTF_8)).hasSize(onDisk.size() + 1);
+
+        assertThat(comparisons.stream().filter(c -> !c.treeEqual()).map(Comparison::tsv).toList())
+                .as("fixtures whose parsed JSON (keys, values, numbers by value) differs from Boot's output")
+                .isEmpty();
+        assertThat(comparisons.stream().filter(c -> !c.rawEqual()).map(Comparison::fixture).collect(Collectors.toSet()))
+                .as("fixtures whose bytes Boot does not reproduce must be exactly the accepted ordering differences")
+                .isEqualTo(ACCEPTED_ORDERING_DIFFERENCES);
+    }
+
+    @Test
+    @DisplayName("records keep their bytes; class-based types are written in alphabetical key order")
+    void recordsKeepTheirBytesAndClassBasedTypesAreAlphabetical() throws IOException {
+        Set<String> classBased = new TreeSet<>();
+        List<String> violations = new ArrayList<>();
+        for (Comparison c : compareAll(this::serialize)) {
+            Object sample = SAMPLES.get(c.fixture()).get();
+            if (sample.getClass().isRecord()) {
+                if (!c.rawEqual()) {
+                    violations.add(c.fixture() + " is a record and its bytes changed");
+                }
+                continue;
+            }
+            classBased.add(c.fixture());
+            List<String> actualOrder = new ArrayList<>(jsonMapper.readTree(c.actual()).propertyNames());
+            List<String> sorted = new ArrayList<>(new TreeSet<>(
+                    jsonMapper.readTree(Files.readAllBytes(GOLDEN_ROOT.resolve(c.fixture()))).propertyNames()));
+            if (!actualOrder.equals(sorted)) {
+                violations.add(c.fixture() + " top-level keys " + actualOrder + " are not the fixture's keys sorted " + sorted);
+            }
+        }
+        assertThat(violations).as("record byte identity and class-based alphabetical order").isEmpty();
+        assertThat(classBased)
+                .as("the class-based samples are exactly the accepted ordering differences (positive control: both kinds exist)")
+                .isEqualTo(ACCEPTED_ORDERING_DIFFERENCES);
+    }
+
+    @Test
+    @DisplayName("the REST message converter writes and reads with this very JsonMapper")
+    void restBodiesUseThisMapper() {
+        List<String> converters = new ArrayList<>();
+        boolean found = false;
+        for (HttpMessageConverter<?> c : handlerAdapter.getMessageConverters()) {
+            converters.add(c.getClass().getName());
+            if (c instanceof JacksonJsonHttpMessageConverter j && j.getMapper() == jsonMapper) {
+                found = true;
+            }
+        }
+        assertThat(found).as("a JacksonJsonHttpMessageConverter holding Boot's JsonMapper bean among %s", converters).isTrue();
+    }
+
+    // ------------------------------------------------------------- the decided acceptance
+
+    record Named(String name) {
+    }
+
+    record Prims(int i, long l) {
+    }
+
+    /** A setter-based POJO with a primitive, the shape of the Lombok request DTOs. */
+    static class PojoPrim {
+        private int quantity;
+
+        public int getQuantity() {
+            return quantity;
+        }
+
+        public void setQuantity(int quantity) {
+            this.quantity = quantity;
+        }
+    }
+
+    /** An enum whose toString differs from its name: the only kind the enum flags can change. */
+    enum Labelled {
+        ALPHA;
+
+        @Override
+        public String toString() {
+            return "alpha-label";
+        }
+    }
+
+    record Tagged(Labelled tag) {
+    }
+
+    record When(OffsetDateTime at) {
+    }
+
+    record Items(List<String> items) {
+    }
+
+    record Count(int count) {
+    }
+
+    @Test
+    @DisplayName("trailing content after a value is rejected (FAIL_ON_TRAILING_TOKENS: accepted contract change)")
+    void trailingTokensAreRejected() {
+        assertThatThrownBy(() -> jsonMapper.readValue("{\"name\":\"a\"} {\"name\":\"b\"}", Named.class))
+                .isInstanceOf(JacksonException.class).hasMessageContaining("Trailing token");
+        assertThatThrownBy(() -> jsonMapper.readValue("{\"name\":\"a\"}}", Named.class))
+                .isInstanceOf(JacksonException.class).hasMessageContaining("Unexpected close marker");
+        assertThat(jsonMapper.readValue("{\"name\":\"a\"}", Named.class)).isEqualTo(new Named("a"));
+    }
+
+    @Test
+    @DisplayName("a trailing token after a request body is a 400 errors/unreadable-request on the real HTTP path")
+    void trailingTokenAfterARequestBodyIsUnreadableRequest() throws Exception {
+        // 38-02's guest-order body, valid except that customerEmail is absent: a body that is READ
+        // is answered by validation, one that is NOT read by the unreadable-body handler.
+        String body = "{\"customerName\":\"Ada Test\",\"customerPhone\":\"07700900000\","
+                + "\"fulfilmentType\":\"COLLECTION\","
+                + "\"items\":[{\"productId\":\"00000000-0000-0000-0000-000000000001\",\"quantity\":1}]}";
+
+        JsonNode control = postGuestOrder(body);
+        assertThat(control.path("status").asInt()).as("control status").isEqualTo(400);
+        assertThat(control.path("type").asString()).as("control: the body is read and validated")
+                .isEqualTo("https://jtoye.uk/errors/validation");
+
+        JsonNode trailing = postGuestOrder(body + " {\"x\":1}");
+        assertThat(trailing.path("status").asInt()).as("trailing-token status").isEqualTo(400);
+        assertThat(trailing.path("type").asString()).as("trailing token: the body is not read at all")
+                .isEqualTo("https://jtoye.uk/errors/unreadable-request");
+    }
+
+    @Test
+    @DisplayName("JSON null, or an absent record component, into an int/long is rejected (FAIL_ON_NULL_FOR_PRIMITIVES)")
+    void nullOrAbsentIntoAPrimitiveIsRejected() {
+        assertThatThrownBy(() -> jsonMapper.readValue("{\"i\":null,\"l\":null}", Prims.class))
+                .isInstanceOf(JacksonException.class).hasMessageContaining("Cannot map `null` into type `int`");
+        assertThatThrownBy(() -> jsonMapper.readValue("{}", Prims.class))
+                .isInstanceOf(JacksonException.class).hasMessageContaining("Cannot map `null` into type `int`");
+        assertThatThrownBy(() -> jsonMapper.readValue("{\"quantity\":null}", PojoPrim.class))
+                .isInstanceOf(JacksonException.class).hasMessageContaining("Cannot map `null` into type `int`");
+        assertThat(jsonMapper.readValue("{\"i\":1,\"l\":2}", Prims.class)).isEqualTo(new Prims(1, 2L));
+    }
+
+    @Test
+    @DisplayName("an unknown property is ignored")
+    void unknownPropertiesAreIgnored() {
+        assertThat(jsonMapper.readValue("{\"name\":\"a\",\"bogus\":1}", Named.class)).isEqualTo(new Named("a"));
+    }
+
+    @Test
+    @DisplayName("enums are read and written by toString (READ_/WRITE_ENUMS_USING_TO_STRING)")
+    void enumsUseToString() {
+        assertThat(jsonMapper.readValue("{\"tag\":\"alpha-label\"}", Tagged.class)).isEqualTo(new Tagged(Labelled.ALPHA));
+        assertThatThrownBy(() -> jsonMapper.readValue("{\"tag\":\"ALPHA\"}", Tagged.class))
+                .isInstanceOf(JacksonException.class).hasMessageContaining("not one of the values accepted");
+        assertThat(jsonMapper.writeValueAsString(new Tagged(Labelled.ALPHA))).isEqualTo("{\"tag\":\"alpha-label\"}");
+    }
+
+    @Test
+    @DisplayName("an epoch decimal and an ISO +01:00 string read to the same instant, normalised to UTC")
+    void datesReadToTheSameInstantInUtc() {
+        Instant expected = Instant.parse("2026-10-04T12:34:56.123456789Z");
+        for (String json : List.of("{\"at\":1791117296.123456789}", "{\"at\":\"2026-10-04T13:34:56.123456789+01:00\"}")) {
+            OffsetDateTime at = jsonMapper.readValue(json, When.class).at();
+            assertThat(at.toInstant()).as("instant of %s", json).isEqualTo(expected);
+            assertThat(at.getOffset()).as("offset of %s", json).isEqualTo(ZoneOffset.UTC);
+        }
+    }
+
+    @Test
+    @DisplayName("a single value is not accepted where a List is expected")
+    void aSingleValueIsNotAList() {
+        assertThatThrownBy(() -> jsonMapper.readValue("{\"items\":\"a\"}", Items.class))
+                .isInstanceOf(JacksonException.class);
+        assertThat(jsonMapper.readValue("{\"items\":[\"a\"]}", Items.class)).isEqualTo(new Items(List.of("a")));
+    }
+
+    @Test
+    @DisplayName("a float into an int is truncated")
+    void aFloatIntoAnIntIsTruncated() {
+        assertThat(jsonMapper.readValue("{\"count\":1.5}", Count.class)).isEqualTo(new Count(1));
     }
 
     @Test
@@ -114,6 +323,14 @@ class Jackson3WireContractTest {
     }
 
     // ------------------------------------------------------------------------------ harness
+
+    private JsonNode postGuestOrder(String body) throws Exception {
+        MvcResult r = mockMvc.perform(post("/public/shops/any-slug/orders")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andReturn();
+        assertThat(r.getResponse().getStatus()).as("HTTP status for %s", body).isEqualTo(400);
+        return jsonMapper.readTree(r.getResponse().getContentAsString(StandardCharsets.UTF_8));
+    }
 
     private byte[] serialize(Object sample) {
         return jsonMapper.writeValueAsBytes(sample);
