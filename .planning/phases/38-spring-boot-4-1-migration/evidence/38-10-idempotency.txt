@@ -107,3 +107,49 @@ gsd check tdd-red-evidence:
   DSAR fresh-store ......................................... RED_EVIDENCE_OK (target_test_failed)
   IdempotencyFingerprintGoldenTest as target ............... INVALID_RED (nonzero_exit_without_test_failure)
       (recorded, not hidden: the golden extension is not a RED target on this tree; see above)
+
+--- GREEN (commit feat(38-10), Task 2)
+DsarIntakeService injects Boot's tools.jackson.databind.json.JsonMapper; both catches are
+JacksonException (unchecked in Jackson 3) with the existing IllegalStateException messages kept.
+IdempotencyJson: NOT changed in Task 2. All 7 hashes and all 4 response types already matched on
+the Task 1 mapper, so no further feature is justified by a measured mismatch.
+
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.common.idempotency.IdempotencyFingerprintGoldenTest' \
+    --tests 'uk.jtoye.core.gdpr.DsarAckCompatibilityTest' --tests 'uk.jtoye.core.media.MediaUploadIdempotencyTest' --no-daemon
+rc=0, cleanTest executed, BUILD SUCCESSFUL.
+  IdempotencyFingerprintGoldenTest tests=13 failures=0 errors=0   (>= 11 required: 7 hash rows + 4 response rows + 2 controls)
+  DsarAckCompatibilityTest         tests=2  failures=0 errors=0
+
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.common.idempotency.*' \
+    --tests 'uk.jtoye.core.storefront.GuestCheckoutIdempotencyIntegrationTest' --tests 'uk.jtoye.core.gdpr.DsarIntakeIntegrationTest' \
+    --tests 'uk.jtoye.core.boot4.JsonbColumnsReadBackIntegrationTest' --tests 'uk.jtoye.core.media.MediaUploadIdempotencyTest' \
+    --tests 'uk.jtoye.core.gdpr.DsarSubjectAndGlobalRateLimitIntegrationTest' \
+    --tests 'uk.jtoye.core.security.CrossTenantMcpWriteRlsIntegrationTest' \
+    --tests 'uk.jtoye.core.webhook.WebhookDeliveryLogIntegrationTest' --no-daemon
+(the plan's command plus MediaUploadIdempotencyTest, which only this task can run, and three more
+ classes that exercise IdempotencyService or DsarIntakeService)
+rc=0, cleanIntegrationTest executed, BUILD SUCCESSFUL in 3m 28s. XML (tests/skipped/failures/errors):
+  JsonbColumnsReadBackIntegrationTest              3/0/0/0
+  CustomerIdempotencyIntegrationTest               1/0/0/0
+  IdempotencyKeysRlsPolicyIntegrationTest          3/0/0/0
+  IdempotencyLegacyHashReplayIntegrationTest       2/0/0/0
+  IdempotencyServiceUnstoredResponseIntegrationTest 4/0/0/0
+  OrderIdempotencyIntegrationTest                  4/0/0/0
+  DsarIntakeIntegrationTest                       13/0/0/0
+  DsarSubjectAndGlobalRateLimitIntegrationTest     2/0/0/0
+  MediaUploadIdempotencyTest                       4/0/0/0
+  CrossTenantMcpWriteRlsIntegrationTest            3/0/0/0
+  GuestCheckoutIdempotencyIntegrationTest         13/0/0/0
+  WebhookDeliveryLogIntegrationTest               11/0/0/0
+
+HibernateJsonFormatConfig: NOT NEEDED, so NOT created. JsonbColumnsReadBackIntegrationTest is green
+3/3 on Boot 4.1.1 / Hibernate 7 here (and was green in the 38-04 ledger). Its fail direction is
+38-02's corrupted-span arm (evidence/38-02-baselines.txt), so the green is not vacuous.
+ls core-java/src/main/java/uk/jtoye/core/config/HibernateJsonFormatConfig.java -> No such file.
+
+--- Task 2 acceptance criteria (import checks, both directions)
+git grep -n -e 'com.fasterxml.jackson.databind' -e 'com.fasterxml.jackson.core' -- core-java/src/main/java/uk/jtoye/core/gdpr/DsarIntakeService.java
+  pass: rc=1, no lines
+  fail direction (plan base 295e37df): rc=0, DsarIntakeService.java:3 and :4
+Prohibition sweep: git grep -n 'com.fasterxml.jackson' -- core-java/src/main/java/uk/jtoye/core/common/idempotency \
+  core-java/src/main/java/uk/jtoye/core/gdpr/DsarIntakeService.java -> rc=1, no lines.
