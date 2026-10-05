@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-12-PLAN.md
-last_updated: "2026-10-05T14:48:00.000Z"
+stopped_at: Completed 38-13-PLAN.md
+last_updated: "2026-10-05T15:03:00.000Z"
 last_activity: 2026-10-05
-state_head: 4d5e63d8f93d4ef918d2b67e1ba9a2f049ebec62
+state_head: 392a2c9042ff760a104e2d034105fe91f90014cc
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 155
-  completed_plans: 150
+  completed_plans: 151
   percent: 67
 ---
 
@@ -126,7 +126,13 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - Arms A (bridge; the context check red on `jackson2ObjectMapper`), B (main import), C (converter switch), D (adapter import in a test, which the plan's narrow grep cannot see), D2 (FQCN adapter) and E (reason line removed) each went red naming the offender. Restores were sha256-equal and the closing run green.
   - End-state suites: unit 1490/0/1 skipped, integration 769/1 (OpenApiSnapshotTest, 38-14)/1 skipped, from fresh XML, `missing_jackson_bean=0`. The deltas are this plan's +5 unit and +1 integration tests. The served OpenAPI spec is byte-identical with the bridge on and off. BOOT4-04 is complete; BOOT4-02 stays open (38-13).
   - Carried: 38-16 metrics: +1 Java test file (5 tests) and +1 method in Boot4ModuleLivenessIntegrationTest. 38-17: the rebuilt jar must carry no `BOOT-INF/lib/spring-boot-jackson2-*.jar`. 38-14: if OpenApiSnapshotTest's normalizer leaves Jackson 2, its path must come off `DELIBERATE_JACKSON2_LIST` (the contract test turns red until it does).
-- Next: 38-13 and 38-14 (wave 7, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
+- 38-13 DONE 2026-10-05: D-02 measured against a classic baseline. On the end-state commit the explicit starters activate 130 auto-configurations and a throwaway classic swap activates 133.
+  - Classic-only 3, all INTENDED: GsonAutoConfiguration (Gson is only transitive via stripe-java and unused in main), IntegrationMetricsAutoConfiguration (an empty unconditional class; Spring Integration is on no classpath), Jackson2AutoConfiguration (D-01). Explicit-only 0. No starter added; the build file is unchanged.
+  - `AutoConfigurationCensusIntegrationTest` (@Tag testcontainers, 2 tests) asserts 21 must-have auto-configurations by name and writes the set to `$JTOYE_CENSUS_OUT`. It clears the test profile's Data Redis exclusion and stands in for CacheConfig's `@Profile("!test")` `@EnableCaching`, or those modules are invisible in both arms.
+  - The classic swap ADDS the classic pair, as the spike did. The literal "replace" was measured not to compile: classic carries modules, not tomcat/lettuce/rabbit/mail/validator/websocket.
+  - Zipkin arm: Brave, Zipkin and Zipkin-with-Brave disappear, NoopTracerAutoConfiguration appears, and the must-have test names all three. Restores were sha256-verified; the closing census was 2/0 and liveness 6/0.
+  - Carried: 38-16 metrics: +1 Java test file (2 integration tests). ADR-0006 may cite explicit 130 vs classic 133 with 3 intended classic-only entries. BOOT4-02 is complete.
+- Next: 38-14 (wave 7, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -788,6 +794,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P11 | 53 min | 3 tasks | 16 files |
 | Phase 38 P19 | 45 min | 3 tasks | 40 files |
 | Phase 38 P12 | 47 min | 2 tasks | 4 files |
+| Phase 38 P13 | 14 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -957,6 +964,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-12: JacksonLineContractTest scans main and test code with one pattern (any com.fasterxml.jackson package but annotation, or a package-qualified Spring Jackson-2 adapter); test-side users must equal the closed DELIBERATE_JACKSON2_LIST
 - [Phase 38]: 38-12: Spring Data's Jackson-2 GeoModule/PageModule beans stay registered (Jackson 2 is transitively on the classpath) and are inert; held as a closed set in the context check, not suppressed
 - [Phase 38]: 38-12: no residual; the bridge removal needed no main-code change
+- [Phase 38]: 38-13: the classic comparison ADDS spring-boot-starter-classic/-test-classic to the explicit build (the spike's route); a literal replacement drops every technology library and cannot compile
+- [Phase 38]: 38-13: all 3 classic-only auto-configurations are intended (Gson, an empty Spring Integration metrics class, Jackson 2); no starter added
+- [Phase 38]: 38-13: the census context undoes the test profile's Redis exclusion and @Profile("!test") caching, and asserts no auto-configuration is excluded
 
 ### Pending Todos
 
@@ -1026,8 +1036,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T14:48:00.000Z
-Stopped at: Completed 38-12-PLAN.md. Next is 38-13 (wave 7, sequential) on branch `phase-37-spring-boot-4-1`.
+Last session: 2026-10-05T15:03:00.000Z
+Stopped at: Completed 38-13-PLAN.md. Next is 38-14 (wave 7, sequential) on branch `phase-37-spring-boot-4-1`.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
