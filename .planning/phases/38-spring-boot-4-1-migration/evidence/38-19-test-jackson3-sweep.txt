@@ -187,3 +187,43 @@ uk.jtoye.core.payment.PaymentEventOutboxReliabilityIntegrationTest tests=6 failu
 uk.jtoye.core.webhook.WebhookSubscriptionControllerIntegrationTest tests=5 failures=0 errors=0
 (extra, 38-07 residual)
 uk.jtoye.core.tenant.TenantLifecycleAdminIntegrationTest tests=10 failures=0 errors=0
+Committed: 23fa9c8e test(38-19): batch B: onboarding, payment-outbox and webhook tests inject Boot's Jackson-3 JsonMapper
+
+### Batch B gate 3+4: bridge OFF probe over the same thirteen, on committed 23fa9c8e (2026-10-05T13:34:39Z -> 13:37:51Z)
+
+bridge_lines_in_worktree=0
+> Task :core-java:cleanIntegrationTest  > Task :core-java:compileJava  > Task :core-java:compileTestJava  > Task :core-java:integrationTest
+BUILD SUCCESSFUL in 3m 11s
+bridge_off_rc=0
+head_show_rc=0
+d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  core-java/build.gradle.kts           (restored)
+d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  scratch/build.head (HEAD blob)       EQUAL
+git status after restore: only "?? .planning/milestone.lock"
+XML read (bridge OFF):
+uk.jtoye.core.onboarding.OnboardingAdminQueueIntegrationTest tests=11 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingCompanyNumberValidationIntegrationTest tests=3 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingCreateCrossTenantIntegrationTest tests=3 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingResubmitIntegrationTest tests=3 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingReviewQueueIntegrationTest tests=10 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingStallOutboxIntegrationTest tests=1 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingSubmitIntegrationTest tests=2 failures=0 errors=0
+uk.jtoye.core.onboarding.OnboardingSubmitterResolverIntegrationTest tests=4 failures=0 errors=0
+uk.jtoye.core.onboarding.VendorOnboardingEndToEndIntegrationTest tests=2 failures=0 errors=0
+uk.jtoye.core.payment.PaymentEventOutboxFlusherCrossTenantIntegrationTest tests=2 failures=0 errors=0
+uk.jtoye.core.payment.PaymentEventOutboxReliabilityIntegrationTest tests=6 failures=0 errors=0
+uk.jtoye.core.webhook.WebhookSubscriptionControllerIntegrationTest tests=5 failures=0 errors=0
+(extra, 38-07 residual)
+uk.jtoye.core.tenant.TenantLifecycleAdminIntegrationTest tests=10 failures=0 errors=0
+
+=> all 24 bridge-bean injectors (the plan's 23 + the 38-07 residual) are green with the bridge line removed.
+
+### Task 2 acceptance criteria (both directions)
+
+AC1 (HEAD): git grep -l -e com.fasterxml.jackson.databind -e com.fasterxml.jackson.core -e com.fasterxml.jackson.datatype -- <12 batch-B files>
+<no output>
+rc=1
+AC1 fail direction at PLAN_BASE: lines=12 rc=0
+AC2 positive control (HEAD): lines=12 rc=0
+AC2 fail direction at PLAN_BASE: lines=0 rc=1
+AC3: core-java/build.gradle.kts:1  (fail direction: probe worktree bridge_lines_in_worktree=0)
+Residual TenantLifecycleAdminIntegrationTest: HEAD rc=1; at PLAN_BASE: 1 line(s)
