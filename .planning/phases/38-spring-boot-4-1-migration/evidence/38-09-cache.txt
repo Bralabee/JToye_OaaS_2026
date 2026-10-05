@@ -123,3 +123,28 @@ TASK 1 - Jackson-3 cache serializer with an allowlist re-derived from its own by
        Both refusals now have root cause tools.jackson.databind.exc.InvalidTypeIdException naming the type.
    Prohibition: git grep 'enableUnsafeDefaultTyping' -- core-java/src/main  rc=1;
        positive control git grep -c 'enableDefaultTyping' -- core-java/src/main  rc=0 (1 match).
+
+6. Dropped-prefix arms (bracketed on the committed GREEN tree 41b2f6d3)
+   CacheConfig.java HEAD blob sha256 b0d224d0cda0f721a88aa1b70354fd97a165f459f56c0a6d1427ebaf668751af
+   = tree before the arms. Backup copied to scratch; each restore is a cp from it.
+   ARM M (the plan's arm: drop the prefix covering the BigDecimal member) -> prefixes {uk.jtoye., java.util.}
+     rc=1, "tests completed, 2 failed"; allowlist xml failures="2" errors="0":
+       aBigDecimalRoundTripsThroughTheProductionSerializer()  root: InvalidTypeIdException: Could not
+         resolve type id 'java.math.BigDecimal' as a subtype of `java.lang.Object`: Configured
+         `PolymorphicTypeValidator` ... denied
+       everyAllowlistPrefixCoversAnObservedTypeIdAndEveryIdIsCovered()  (BigDecimal uncovered)
+     restore sha256 b0d224d0...751af  match=yes
+     (No cached DTO carries a Long/BigDecimal id under Jackson 3; the Long member is bare, see section 2.)
+   ARM U (extra: drop java.util.) -> prefixes {uk.jtoye., java.math.}
+     rc=1, "tests completed, 8 failed": allowlist failures="5" (productDto, shopDto and golden-sample
+       round-trips, the coverage test, the TreeMap residual) and all 3 MembershipSerializerRoundTripTest
+       cases. Roots: Could not resolve type id 'java.util.ArrayList' / 'java.util.ImmutableCollections$List12'
+       / 'java.util.LinkedHashMap' as a subtype of java.util.List / java.util.Map ... denied
+     restore sha256 b0d224d0...751af  match=yes
+   CLOSE (same verify command, restored tree): rc=0, BUILD SUCCESSFUL, compileJava executed;
+     allowlist tests="11" failures="0" errors="0"; membership tests="3" failures="0" errors="0".
+     git diff --quiet HEAD -- CacheConfig.java rc=0.
+
+7. Tracer feedback gate (interactive run; workflow.human_verify_mode absent -> end-of-phase; the
+   tracer's <verify> is automated-only): the CLOSE run above IS the tracer verify re-run on the
+   committed tree, and it is green. Tracer verified end-to-end -> expanding to Task 2.
