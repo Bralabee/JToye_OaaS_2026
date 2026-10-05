@@ -37,3 +37,39 @@ gsd check tdd-red-evidence (record = the RED XML, targetTest = the display name)
   unit   orders.create fingerprint ................................ RED_EVIDENCE_OK (target_test_failed)
   it     Boot-3.5 reservation replays ............................. RED_EVIDENCE_OK (target_test_failed)
   fail direction: the same IT record naming the (passing) control test -> INVALID_RED (no_target_test_failure)
+
+--- GREEN (commit feat(38-10), Task 1)
+IdempotencyJson's mapper = JsonMapper.builderWithJackson2Defaults()
+  .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)        Boot 3.5 JacksonAutoConfiguration
+  .disable(DateTimeFeature.WRITE_DURATIONS_AS_TIMESTAMPS)    Boot 3.5 JacksonAutoConfiguration
+  .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES) Boot 3.5 JacksonAutoConfiguration
+  .disable(MapperFeature.DEFAULT_VIEW_INCLUSION)              Boot 3.5 JacksonAutoConfiguration
+No further feature was needed: no measured golden mismatch remained (Task 2 extends the measurement
+to all 7 rows and 4 response types). Class Javadoc: why frozen, what it reproduces, dual-hash rule.
+IdempotencyService class Javadoc gains the "Persisted format (Phase 38, BOOT4-08)" paragraph.
+
+$ ./gradlew :core-java:cleanTest :core-java:test \
+    --tests 'uk.jtoye.core.common.idempotency.IdempotencyFingerprintGoldenTest' --no-daemon
+rc=0, cleanTest executed, BUILD SUCCESSFUL. XML: tests=1 failures=0 errors=0.
+
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest \
+    --tests 'uk.jtoye.core.common.idempotency.IdempotencyLegacyHashReplayIntegrationTest' --no-daemon
+rc=0, cleanIntegrationTest executed, BUILD SUCCESSFUL. XML: tests=2 failures=0 errors=0.
+  log (from the XML system-out):
+    Idempotency reserve+complete: endpoint=orders.create key=boot35-reserved-key-3810 status=201 storedBody=true   <- tenant B control, fresh
+    Idempotency replay: endpoint=orders.create key=boot35-reserved-key-3810 status=201                            <- tenant A, Boot-3.5 row replayed
+
+Tracer feedback gate: workflow.auto_advance=false, human_verify_mode=end-of-phase (default), the
+tracer's <verify> is <automated> only -> both verify commands re-run above, green -> expand to Task 2.
+
+--- Task 1 acceptance criteria (both directions)
+AC1 git grep -n 'SET LOCAL ROLE' -- .../IdempotencyLegacyHashReplayIntegrationTest.java
+    pass: rc=0, 2 lines (l.45 Javadoc, l.126 the jdbc.execute call)
+    fail direction (same grep at the plan base 295e37df, file absent): rc=1, 0 lines
+    weakness: the grep also counts the Javadoc mention; the code line (l.126) is present, and the
+    replay test itself proves the role took effect (control: count 1 as superuser, 0 under the role).
+AC2 git grep -n -e 'com.fasterxml.jackson.databind' -e 'com.fasterxml.jackson.core' -- core-java/src/main/java/uk/jtoye/core/common/idempotency
+    pass: rc=1, no lines
+    fail direction (same grep at the plan base 295e37df): rc=0, IdempotencyService.java:3 and :4
+AC3 RED test(38-10) precedes GREEN feat(38-10); RED outputs above.
+AC4 control case passes on RED and GREEN (it does not depend on the format; it proves RLS).

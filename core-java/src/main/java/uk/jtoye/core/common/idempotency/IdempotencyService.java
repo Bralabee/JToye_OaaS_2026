@@ -69,6 +69,13 @@ import java.util.function.Supplier;
  * body-storing adopter (a stored NULL body under a storing endpoint would be
  * undeserialisable on replay).
  *
+ * <p><b>Persisted format (Phase 38, BOOT4-08).</b> {@code request_hash} and
+ * {@code response_body} are written by {@link IdempotencyJson}, a frozen mapper that
+ * reproduces the Boot-3.5 bytes, NOT by the app-wide {@code JsonMapper}. A key reserved
+ * against an older pod must still match after a deploy, so the format can never follow
+ * the application's Jackson defaults; changing it needs a dual-hash window (see
+ * {@link IdempotencyJson}).
+ *
  * <p><b>Status.</b> All current adopters are creates, so a first request stamps
  * 201; a replay echoes the stored status. Parameterizing a non-201 status is a
  * documented follow-up (docs/idempotency.md).
