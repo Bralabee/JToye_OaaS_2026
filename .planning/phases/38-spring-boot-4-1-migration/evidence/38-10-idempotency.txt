@@ -153,3 +153,65 @@ git grep -n -e 'com.fasterxml.jackson.databind' -e 'com.fasterxml.jackson.core' 
   fail direction (plan base 295e37df): rc=0, DsarIntakeService.java:3 and :4
 Prohibition sweep: git grep -n 'com.fasterxml.jackson' -- core-java/src/main/java/uk/jtoye/core/common/idempotency \
   core-java/src/main/java/uk/jtoye/core/gdpr/DsarIntakeService.java -> rc=1, no lines.
+
+--- REFACTOR (commit refactor(38-10))
+DsarAckCompatibilityTest builds DsarIntakeService with new (compile-checked) instead of the RED-only
+reflective lookup. Re-run: IdempotencyFingerprintGoldenTest 13/0, DsarAckCompatibilityTest 2/0, rc=0.
+
+--- Bracketed arms: clean -> arms -> clean (all source committed first; HEAD c8699df7)
+Opening clean: IdempotencyJson.java sha256 ef2fc2cd...e71d (blob bde11182 == HEAD blob),
+DsarIntakeService.java sha256 3a883845...9b39 (blob 2df5c65f == HEAD blob); both green at HEAD
+(unit 13/0 + 2/0 after the refactor; replay IT 2/0 at 333450da, production identical since).
+Backups copied to the job scratch dir before any edit; restores by cp, verified by blob/sha256.
+
+ARM P (the plan's arm): IdempotencyJson MAPPER = JsonMapper.builder().build() (plain Jackson-3 defaults)
+  unit: rc=1, IdempotencyFingerprintGoldenTest tests=13 failures=4
+    FAIL request hash "orders.create"                  expected 7c58d685... but was 10da4462...
+    FAIL request hash "storefront.guest-order"         expected d93f1c15... but was 33fc0...
+    FAIL request hash "storefront.guest-order.legacy"  expected cb91a890... but was (different)
+    FAIL stored response "OrderDto"                    write != Boot-3.5 bytes (alphabetical order)
+    pass request hash customers.create, media.reprocess, media.upload, webhooks.replay;
+    pass stored response CustomerDto, MediaAcceptDto, WebhookDeliveryView
+    MEASURED: plain Jackson 3 sorts the properties of CLASSES (CreateOrderRequest, GuestOrderRequest,
+    OrderDto) but keeps RECORDS in declaration order, so the record-shaped adopters
+    (customers.create, media.upload, media.reprocess, webhooks.replay) would have kept their hashes
+    even without the frozen mapper. The orders.create and storefront guest-order hashes, and the
+    OrderDto body, are the ones the frozen mapper saves. Those record rows are still byte-compared
+    against their fixtures, so any other byte change turns them red.
+  integration: rc=1, IdempotencyLegacyHashReplayIntegrationTest tests=2 failures=1
+    FAIL a Boot-3.5 orders.create reservation replays ... -> IdempotencyPayloadMismatchException (the 422)
+    pass control (format-independent)
+  restore: cp from backup; blob bde11182 == HEAD blob, sha256 ef2fc2cd...e71d -> RESTORE_P_OK
+
+ARM D (added): DsarIntakeService ACK status "received" -> "received-ARM-D" (stored/current ack drift)
+  unit: rc=1, DsarAckCompatibilityTest tests=2 failures=2
+    FAIL replay: expected DsarIntakeAck[status=received-ARM-D, ...] (current constant) but the
+         Boot-3.5 stored body replays status=received
+    FAIL fresh store: [response_body as stored vs the Boot-3.5 bytes] expected {"status":"received",...}
+  restore: cp from backup; blob 2df5c65f == HEAD blob, sha256 3a883845...9b39 -> RESTORE_OK
+  arm-token sweep after both restores: rg -uu -c 'ARM-' on both files -> no lines, rc=1
+  (positive control: the same token was printed from each file while its arm was applied)
+
+Closing clean:
+  ./gradlew :core-java:cleanTest :core-java:test --tests '...IdempotencyFingerprintGoldenTest' --tests '...DsarAckCompatibilityTest'
+    rc=0, cleanTest executed; 13/0/0/0 and 2/0/0/0
+  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests '...IdempotencyLegacyHashReplayIntegrationTest'
+    rc=0, cleanIntegrationTest executed; 2/0/0/0
+  git status --short: only the orchestrator's untracked .planning/milestone.lock
+
+--- Full unit suite (regression, after the closing clean)
+./gradlew :core-java:cleanTest :core-java:test --no-daemon
+rc=0, BUILD SUCCESSFUL in 2m 7s; 178 classes, 1468 tests, 0 failures, 0 errors, 1 skipped
+(38-09 recorded 1453; +13 golden, +2 DSAR = 1468).
+
+--- Prohibitions
+- legacyRequestBody seam: not used. git diff 295e37df..HEAD -- IdempotencyService.java touches only
+  the Jackson imports, the constructor/field, serialize/deserialize bodies and the Javadoc paragraph.
+- The persisted fingerprint never routes through Boot's app-wide JsonMapper: IdempotencyService has
+  no mapper field; IdempotencyJson owns a private static mapper built from builderWithJackson2Defaults().
+- Replay proof runs under rls_test_role (SET LOCAL ROLE) with the tenant-B control. DsarAckCompatibilityTest
+  is a unit test of the read/write format (dsar_request is deliberately not tenant-scoped, V62), and
+  JsonbColumnsReadBackIntegrationTest (38-02) is a format test whose row visibility is not under test.
+- No Jackson-2 import in IdempotencyService, IdempotencyJson or DsarIntakeService (sweep above).
+- No compose service was started, stopped or rebuilt (Testcontainers only).
+  (positive control for the legacy grep: the plan-base file itself has 6 lines naming legacy; the diff has 0)
