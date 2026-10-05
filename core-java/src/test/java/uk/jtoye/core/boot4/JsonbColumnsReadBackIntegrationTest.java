@@ -57,6 +57,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * superuser and is used deliberately; RLS is proven in {@code RlsContractTest}. The tenant is
  * still set through {@link TenantContext} inside the transaction, as the scoping analog does, so
  * the load runs the production path (TenantSetLocalAspect pins the GUC).
+ *
+ * <p><b>Capture record.</b> The fixtures were captured at commit
+ * {@code f548d6c833ccc696d891ba686d8baf4e831e815b} (Boot 3.5.16, Hibernate 6 JSON FormatMapper on
+ * Jackson 2) by a one-shot, environment-gated capture method that persisted the three values
+ * below through the repositories and recorded {@code SELECT col::text}. That method has been
+ * DELETED from the tree: re-running it on a Boot-4 tree would re-capture under Hibernate 7 /
+ * Jackson 3 and defeat the purpose. Reproduce from that commit only
+ * ({@code git show f548d6c8:core-java/src/test/java/uk/jtoye/core/boot4/JsonbColumnsReadBackIntegrationTest.java}).
+ * The fixtures and {@code jsonb/MANIFEST.tsv} are guarded byte-for-byte by
+ * {@link GoldenFixturesIntegrityTest}. Key order in the stored text is Postgres jsonb's normalised
+ * order, so only the value formats are under test.
  */
 @SpringBootTest
 @Testcontainers
@@ -181,37 +192,6 @@ class JsonbColumnsReadBackIntegrationTest {
         assertThat(loaded.getEvidence())
                 .as("vendor_onboarding_gate.evidence read back from %s", GATE_EVIDENCE)
                 .isEqualTo(expectedGateEvidence());
-    }
-
-    // ---- capture (one-shot, Boot 3.5 tree only; deleted after the capture commit) ----
-
-    @Test
-    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "JTOYE_GOLDEN_CAPTURE", matches = "true")
-    @DisplayName("CAPTURE: persist the three values through Hibernate's JSON mapper and record the stored text")
-    void captureJackson2EraStoredText() throws IOException {
-        UUID shopId = createShop("jsonb-capture-shop", expectedOpeningHours());
-        UUID productId = createProduct("JSONB-CAP-1", expectedAllergenSpans());
-        UUID gateId = createGate(expectedGateEvidence());
-
-        Map<String, String> stored = new java.util.TreeMap<>();
-        stored.put(OPENING_HOURS, jdbcTemplate.queryForObject(
-                "SELECT opening_hours::text FROM shops WHERE id = ?", String.class, shopId));
-        stored.put(ALLERGEN_SPANS, jdbcTemplate.queryForObject(
-                "SELECT allergen_spans::text FROM products WHERE id = ?", String.class, productId));
-        stored.put(GATE_EVIDENCE, jdbcTemplate.queryForObject(
-                "SELECT evidence::text FROM vendor_onboarding_gate WHERE id = ?", String.class, gateId));
-
-        Files.createDirectories(JSONB_DIR);
-        StringBuilder manifest = new StringBuilder();
-        for (Map.Entry<String, String> e : stored.entrySet()) {
-            assertThat(e.getValue()).as("stored text of %s", e.getKey()).isNotBlank();
-            byte[] bytes = e.getValue().getBytes(StandardCharsets.UTF_8);
-            Files.write(JSONB_DIR.resolve(e.getKey()), bytes);
-            manifest.append(e.getKey()).append('\t')
-                    .append(GoldenFixturesIntegrityTest.sha256Hex(bytes)).append('\t')
-                    .append(bytes.length).append('\n');
-        }
-        Files.writeString(JSONB_DIR.resolve("MANIFEST.tsv"), manifest.toString(), StandardCharsets.UTF_8);
     }
 
     // ---- helpers ----
