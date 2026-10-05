@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 38
 current_phase_name: Spring Boot 4.1 Migration
 status: executing
-stopped_at: Completed 38-05-PLAN.md
-last_updated: "2026-10-05T08:36:00.000Z"
+stopped_at: Completed 38-06-PLAN.md
+last_updated: "2026-10-05T10:20:00.000Z"
 last_activity: 2026-10-05
-state_head: 370cc0fc58b9d39efa8e3e805aa7e65b686371b9
+state_head: 36dd304327edcb83ea33307a07f53bb083894c6c
 progress:
   total_phases: 18
   completed_phases: 12
   total_plans: 155
-  completed_plans: 142
+  completed_plans: 143
   percent: 67
 ---
 
@@ -66,7 +66,17 @@ Phase: 38 (Spring Boot 4.1 Migration) — EXECUTING
   - `Jackson3WireContractTest` (12 tests, permanent) locks the contract: all 15 fixtures are tree-equal; only OrderDto, ProductDto, ShopDto and ProblemDetail-401 are raw-unequal (alphabetical order); records are byte-identical (outbox, webhook envelope). The trailing-token 400 `errors/unreadable-request` is asserted on the real HTTP path.
   - Four arms turned it red (fixture-copy value, sort=false, trailing=false, use-jackson2-defaults=true), each restored by content. `Jackson3AcceptanceProbeTest` is deleted.
   - Carried: ADR-0006 (38-16) and the PR body (38-18/ship) must name the two contract changes: alphabetical key order on class-based responses, and the trailing-token 400. For 38-07: Boot's mapper rejects trailing content, so ImageAnalysisService needs its own reader.
-- Next: 38-06 (Wave 3, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
+- 38-06 DONE 2026-10-05: D-04 and D-05 are both in place.
+  - D-04: 401s carry the plain `Bearer` challenge again, with `resource_metadata` stripped by an auth-param parser in a response wrapper, and Boot's Jackson-3 body.
+  - D-05: the owner refined it at a decision checkpoint (exact words "anon-401-parity (Recommended)"). `ProtectedResourceMetadataSuppressionFilter` is not a bean and sits after CorsFilter, ahead of Security 7.1's metadata filter. It answers `GET /.well-known/oauth-protected-resource/**` as follows:
+    - no credentials: the standard 401, the same status, headers and bytes as any protected route;
+    - credentials present: the 404 not-found document, the same as an unmapped path.
+  - With the registration removed (arm R), the path returns 200 with the false `tls_client_certificate_bound_access_tokens: true`.
+  - Recorded residual: a well-formed invalid or expired bearer gets 404 on that path, where 3.5 gave `401 invalid_token`. A test pins it.
+  - CONTEXT D-05 and BOOT4-09 now state both answers.
+  - Unit suite: 1385 tests; the only red is KeycloakAdminClientTest (38-07).
+  - Carried, must change: 38-17's live probe expects 404 for an anonymous curl, but the answer is now 401 (404 only with a bearer). 38-16's ADR-0006 and 38-18's PR body must name the residual.
+- Next: 38-07 (Wave 3, sequential). STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -720,6 +730,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P03 | 14 min | 2 tasks | 108 files |
 | Phase 38 P04 | 39 min | 3 tasks | 3 files |
 | Phase 38 P05 | 27 min | 3 tasks | 3 files |
+| Phase 38 P06 | 43 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -863,6 +874,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-05: the owner chose jackson3-defaults ("jackson3-defaults (Recommended)", 2026-10-05). Boot's JsonMapper keeps Jackson 3's defaults, with no spring.jackson key and no preferred-json-mapper
 - [Phase 38]: 38-05: two contract changes are accepted: alphabetical key order on class-based responses (OrderDto/ProductDto/ShopDto/ProblemDetail), and a trailing token after a request body returning 400 errors/unreadable-request. ADR-0006 and the PR body must name both
 - [Phase 38]: 38-05: records keep their exact bytes (6 outbox payloads, the webhook envelope that is the HMAC input, record responses); Jackson3WireContractTest asserts it permanently
+- [Phase 38]: 38-06: the owner chose anon-401-parity for D-05 ("anon-401-parity (Recommended)", 2026-10-05): /.well-known/oauth-protected-resource[/**] answers the standard plain-Bearer 401 without credentials and the 404 not-found document with them; no corrected metadata, and the false claim is unreachable
+- [Phase 38]: 38-06: recorded residual: the suppression answers before authentication, so a well-formed invalid or expired bearer gets 404 on that path (3.5 gave 401 invalid_token); ADR-0006 and the PR body must name it, and 38-17's live probe must expect 401 for an anonymous caller
+- [Phase 38]: 38-06: the suppression filter is anchored after CorsFilter, because addFilterBefore(OAuth2ProtectedResourceMetadataFilter) is refused at build ("does not have a registered order"); it rebuilds the framework's own matcher (GET + /**)
 
 ### Pending Todos
 
@@ -932,8 +946,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T08:36:00.000Z
-Stopped at: Completed 38-05-PLAN.md. Next is 38-06 (wave 3, sequential) on branch `phase-37-spring-boot-4-1`.
+Last session: 2026-10-05T10:20:00.000Z
+Stopped at: Completed 38-06-PLAN.md. Next is 38-07 (wave 3, sequential) on branch `phase-37-spring-boot-4-1`.
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
