@@ -244,9 +244,10 @@ class TenantCacheEvictorTest {
         TenantContext.set(tenant);
         redisEvictor.evictEntity("shops", "getShopById", shopId);
 
-        verify(writer).evict(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
-        // The legacy delete is the SYNCHRONOUS evictIfPresent: Spring Data Redis 4's evict may be
-        // fire-and-forget, which would let the Boot-3.5 key outlive the caller's write.
+        // BOTH deletes are the SYNCHRONOUS evictIfPresent: Spring Data Redis 4's evict may be
+        // fire-and-forget, which would let either key outlive the caller's write (PR #898 round 1
+        // for the v4 key, WR-01 for the Boot-3.5 key). verifyNoMoreInteractions fails on any evict.
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
         verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
         verifyNoMoreInteractions(writer);
     }
@@ -266,7 +267,7 @@ class TenantCacheEvictorTest {
         assertDoesNotThrow(() -> redisEvictor.evictEntity("shops", "getShopById", shopId),
                 "the legacy delete is best-effort: it must never fail the caller's write");
 
-        verify(writer).evict(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
+        verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("v4:shops::" + suffix)));
         verify(writer).evictIfPresent(eq("shops"), aryEq(utf8("shops::" + suffix)));
     }
 

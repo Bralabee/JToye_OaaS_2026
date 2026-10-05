@@ -241,23 +241,15 @@ class CacheFormatIsolationIntegrationTest {
         }
 
         try (RedisConnection c = redisConnectionFactory.getConnection()) {
-            // The legacy delete is synchronous, so it is checked IMMEDIATELY, with no wait.
-            List<String> immediately = scanKeys(c);
-            System.out.println("WR-01 SCAN immediately after eviction: " + immediately);
-            assertThat(immediately).as("the Boot-3.5 entry for this tenant's shop is gone as soon as "
-                    + "evictEntity returns").doesNotContain(BOOT35_KEY);
-
-            // The v4 delete goes through RedisCache.evict, which Spring Data Redis 4 may issue
-            // asynchronously (its default writer), so wait for it — bounded, never open-ended.
-            List<String> after = immediately;
-            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
-            while (after.contains(BOOT4_KEY) && System.nanoTime() < deadline) {
-                Thread.sleep(20);
-                after = scanKeys(c);
-            }
-            System.out.println("WR-01 SCAN after eviction: " + after);
-            assertThat(after).as("this tenant's v4 AND Boot-3.5 entries are gone; the other tenant's "
-                    + "entries for the same shop id are untouched")
+            // BOTH deletes are synchronous (evictIfPresent), so both are checked IMMEDIATELY, with no
+            // wait. This real-Redis check is NOT the guard against a regression to the fire-and-forget
+            // RedisCache.evict (PR #898 review round 1): on a local Redis the async DEL usually wins
+            // the race, and with evict restored this test stayed green in 4 runs of 4. The
+            // deterministic guard is TenantCacheEvictorTest's verifyNoMoreInteractions (red on evict).
+            List<String> after = scanKeys(c);
+            System.out.println("WR-01 SCAN immediately after eviction: " + after);
+            assertThat(after).as("this tenant's v4 AND Boot-3.5 entries are gone as soon as evictEntity "
+                    + "returns; the other tenant's entries for the same shop id are untouched")
                     .containsExactlyInAnyOrder(otherBoot4Key, otherBoot35Key);
             assertThat(sha256(c.stringCommands().get(otherBoot35Key.getBytes(StandardCharsets.UTF_8))))
                     .as("the other tenant's Boot-3.5 entry is byte-identical to what was planted")

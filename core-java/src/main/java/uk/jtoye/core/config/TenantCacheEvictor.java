@@ -150,7 +150,12 @@ public class TenantCacheEvictor {
             return;
         }
         String key = String.format("tenant:%s:%s:%s", tenantId, methodName, entityId);
-        cache.evict(key);
+        // evictIfPresent, NOT evict (PR #898 review round 1): Spring Data Redis 4's RedisCache.evict
+        // is fire-and-forget when asynchronous writes are on (its default), so the DEL could land
+        // after this method returned — a revoked shopMembership grant still served in that window —
+        // and a failed DEL would be lost without a trace. evictIfPresent issues a synchronous DEL,
+        // as Boot 3.5's evict did, so a failure surfaces to the caller exactly as it did on 3.5.
+        cache.evictIfPresent(key);
         log.debug("Evicted cache entry {}::{}", cacheName, key);
         evictLegacyBoot35Key(cache, key);
     }
