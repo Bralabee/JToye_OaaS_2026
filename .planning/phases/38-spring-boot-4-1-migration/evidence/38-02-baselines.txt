@@ -86,3 +86,54 @@ message="org.opentest4j.AssertionFailedError: [jsonb golden fixture src/test/res
 Expecting value to be true but was false
 (the same message for products.allergen_spans.json and vendor_onboarding_gate.evidence.json)
 gsd check tdd-red-evidence: RED_EVIDENCE_OK (target_test_failed, 3 failing)
+
+=== Capture (GREEN), once, on the Boot 3.5.16 tree
+$ JTOYE_GOLDEN_CAPTURE=true ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.boot4.JsonbColumnsReadBackIntegrationTest' --no-daemon
+rc=0, > Task :core-java:cleanIntegrationTest (executed), BUILD SUCCESSFUL in 28s
+XML: tests="4" skipped="0" failures="0" errors="0"
+Stored text written (SELECT col::text; Postgres jsonb normalises key order, so only value formats are compared):
+  shops.opening_hours.json              {"monday": "09:00 - 17:00", "saturday": "Closed"}
+  products.allergen_spans.json          [{"end": 5, "start": 0}, {"end": 17, "start": 12}]
+  vendor_onboarding_gate.evidence.json  {"scheme": "FHRS", "sources": ["fsa-api", "manual"], "verified": true, "fhrs_rating": 4, "establishment": {"score": 4.5, "local_authority": "Southwark"}, "establishment_id": "1234567"}
+jsonb/MANIFEST.tsv:
+  products.allergen_spans.json	afbec7c134d60c3920d7c48344e43993f2d6d8d50edf70bcdbe09f43ddabd334	50
+  shops.opening_hours.json	0aa7f422c7ed9f1cd8509e9238ee9c959f41c847ef7040bb24098577ed4cc8a4	49
+  vendor_onboarding_gate.evidence.json	e50ad98a8b7e532a6a08c5029e424c1ea45a0a5942e978b1185257801ee5243a	184
+CAPTURE commit: f548d6c833ccc696d891ba686d8baf4e831e815b (capture method present only there)
+
+=== Read-back without the variable (capture commit): rc=0, tests="4" skipped="1" failures="0" errors="0"
+GoldenFixturesIntegrityTest with the jsonb family: rc=0, tests="5" failures="0" errors="0" (41 fixtures)
+
+=== Capture retired (7ae5799c)
+$ git grep -n 'JTOYE_GOLDEN_CAPTURE' -- core-java/src/test/java/uk/jtoye/core/boot4/JsonbColumnsReadBackIntegrationTest.java; echo rc=$?
+rc=1
+fail dir: the same grep at f548d6c8 -> line 189 @EnabledIfEnvironmentVariable(named = "JTOYE_GOLDEN_CAPTURE", ...), rc=0
+read-back after retirement: rc=0, cleanIntegrationTest executed, tests="3" skipped="0" failures="0" errors="0"
+
+=== Corrupted-span arm (bracketed: clean run above -> arm -> clean again; committed first at 7ae5799c)
+before: afbec7c134d60c3920d7c48344e43993f2d6d8d50edf70bcdbe09f43ddabd334
+armed ("end": 17 -> "end": 18): [{"end": 5, "start": 0}, {"end": 18, "start": 12}]  sha256 896c0bdc79ff3142f058592ba8a81462a8e6d5f0f9f197c8e378dce9ab98b908
+read-back arm rc=1:
+JsonbColumnsReadBackIntegrationTest > products.allergen_spans: Jackson-2-era stored text reads back to the same List<AllergenSpan> FAILED
+3 tests completed, 1 failed
+message="org.opentest4j.AssertionFailedError: [products.allergen_spans read back from products.allergen_spans.json]
+expected: [AllergenSpan[start=0, end=5], AllergenSpan[start=12, end=17]]
+ but was: [AllergenSpan[start=0, end=5], AllergenSpan[start=12, end=18]]
+integrity test on the same armed file rc=1, tests="5" failures="1":
+message="java.lang.AssertionError: [golden fixture integrity] Expecting empty but was: ["products.allergen_spans.json sha256 is 896c0bdc...b908, manifest says afbec7c1...d334"]
+restore: git checkout -- products.allergen_spans.json -> afbec7c134d60c3920d7c48344e43993f2d6d8d50edf70bcdbe09f43ddabd334 (= MANIFEST row)
+
+=== Family arm (why GoldenFixturesIntegrityTest had to gain the jsonb family)
+families.put("jsonb", ...) commented out -> rc=1, tests="5" failures="1":
+message="java.lang.AssertionError: [the fixture set under src/test/resources/jackson2-golden] Expecting actual: ["amqp/MediaProcessingEvent.body", ... (the jsonb files present but not expected)
+restore: git checkout -- GoldenFixturesIntegrityTest.java -> a9decc6f...8ff1 = HEAD blob
+
+=== Clean again
+GoldenFixturesIntegrityTest rc=0, tests="5" failures="0" errors="0"
+JsonbColumnsReadBackIntegrationTest rc=0, cleanIntegrationTest executed, tests="3" skipped="0" failures="0" errors="0"; git status clean
+
+=== MANIFEST criteria (pass, then fail direction)
+$ awk -F'\t' 'NF==3{n++} END{print n+0}' core-java/src/test/resources/jackson2-golden/jsonb/MANIFEST.tsv
+3                      (fail dir: same awk over /dev/null -> 0)
+sha256sum -c over the MANIFEST rows: 3 x OK, rc=0
+fail dir: the same rows with the first hex digit replaced -> 3 x FAILED, "3 computed checksums did NOT match", rc=1
