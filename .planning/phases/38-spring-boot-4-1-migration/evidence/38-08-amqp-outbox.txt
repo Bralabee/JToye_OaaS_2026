@@ -100,4 +100,110 @@ AC2 the three trust tests are passed testcases in TEST-uk.jtoye.core.config.Rabb
 AC3 RED before GREEN: git merge-base --is-ancestor 62abed7b e693b554 rc=0; reversed rc=1
 AC4 A2 recorded above.
 
-<!-- task 2 and task 3 sections follow -->
+Tracer feedback gate: interactive run (workflow.auto_advance false, _auto_chain_active false),
+human_verify_mode unset (default end-of-phase), tracer <verify> is automated-only -> re-ran the
+verify after the evidence commit: rc=0, cleanTest executed, 34/34 (same six XMLs). Expanded to Task 2.
+
+=====================================================================================================
+TASK 2: every payload type, both persisted forms, both directions; remaining publishers and the media flusher
+=====================================================================================================
+
+--- Design notes (measured, not assumed)
+* MediaProcessingEvent's __TypeId__ (uk.jtoye.core.media...) is NOT in TRUSTED_PAYLOAD_PACKAGES, on
+  Boot 3.5 or now. Its only consumer, MediaProcessingWorker.onMediaEvent(MediaProcessingEvent), is
+  a typed single-method listener: the container sets the inferred argument type and the type mapper
+  uses that ahead of the header. The media cases therefore carry the inferred type, as the real
+  consumer does; the other five convert from __TypeId__ alone, the stricter path the class-level
+  WebhookFanoutListener takes. A separate permanent case, mediaTypeIdAloneIsRefused, shows both the
+  Boot-4 and the Boot-3.5 converter refuse media's header alone ("not in the trusted packages"), so
+  the trust list was not widened to make anything pass.
+* The Boot-3.5 reader for the outbox reverse cases is Jackson2ObjectMapperBuilder.json() with
+  WRITE_DATES_AS_TIMESTAMPS and WRITE_DURATIONS_AS_TIMESTAMPS disabled (Boot 3.5's feature defaults);
+  the builder registers jsr310/jdk8/parameter-names and turns FAIL_ON_UNKNOWN_PROPERTIES off. A
+  permanent test asserts those three properties. The AMQP reverse reader is
+  new Jackson2JsonMessageConverter(TRUSTED_PAYLOAD_PACKAGES), exactly the Boot-3.5 bean.
+* Each reverse direction has a permanent negative control: a Jackson-3 writer emitting millisecond
+  timestamps loses the nanoseconds and assertSameEvent throws. So the reverse cases can fail.
+* The three media integration test files construct nothing with a mapper (they @Autowire the
+  beans); they needed no edit and run in the integration verify below.
+
+--- RED (commit dde52b59, test(38-08))
+Tests: both compatibility classes extended to six names x both directions (parameterised, names
+from InFlightFixtures.SAMPLES, cross-checked against the 38-01 MANIFEST), plus a truncated-row case
+per name; the three publisher unit tests on Boot's JsonMapper; a new PaymentEventPublisherTest
+serialization-failure case. Main: the compiler-minimal swap of the five files (catches dropped).
+
+The plan expected "the publisher-side reverse cases" to be the RED. On a tree that compiles they
+cannot be: with the publishers still taking a Jackson-2 ObjectMapper, a test that hands them Boot's
+JsonMapper does not compile, and a compile error is INVALID_RED. So, as in Task 1 and 38-07, the
+RED tree carries the compiler-minimal swap, and the RED targets are the fallbacks that swap loses.
+
+First run: rc=1, 49 tests, 5 failed. Four were targets; the fifth was a defect in my own new test
+(boot35ReaderIsConfiguredLikeBoot35 looked for "JavaTime" in the module ids, which are
+[Jdk8Module, jackson-module-parameter-names, jackson-datatype-jsr310]). Fixed to "jsr310" and re-run
+so the RED holds only target failures. (cleanTest showed UP-TO-DATE on that first run only because
+the attempt before it had died at compileTestJava with no results to clean; the test task executed.)
+
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.AmqpJackson2CompatibilityTest' \
+    --tests 'uk.jtoye.core.boot4.OutboxPayloadCompatibilityTest' --tests 'uk.jtoye.core.payment.*PublisherTest' \
+    --tests 'uk.jtoye.core.onboarding.OnboardingEventPublisherTest' --no-daemon
+rc=1; cleanTest executed; "49 tests completed, 4 failed"
+XML: AmqpJackson2CompatibilityTest 18/0/0, OutboxPayloadCompatibilityTest 21/1/0,
+     OnboardingEventPublisherTest 2/1/0, PaymentEventPublisherTest 4/1/0, RefundEventPublisherTest 4/1/0
+Failures:
+  outbox/"MediaProcessingEvent" truncated by one character -> its flusher poisons it:
+    an unreadable row must flip FAILED, lastError=Unexpected end-of-input: expected close marker...
+    (the media flusher retried a corrupt row as transient: status PENDING)
+  OnboardingEventPublisherTest publishStall ... serialization failure: OnboardingEventPublisherTest$1: boom (escaped)
+  RefundEventPublisherTest WR-05: RefundEventPublisherTest$1: simulated (escaped; the dedup row would roll back)
+  PaymentEventPublisherTest serialization failure: expected IllegalStateException but was PaymentEventPublisherTest$1
+Every reverse and forward compatibility case was green on RED (the swap already reads/writes with
+Jackson 3): 6+6 amqp, 6+6 outbox.
+
+gsd check tdd-red-evidence:
+  OnboardingEventPublisherTest ............ RED_EVIDENCE_OK (target_test_failed)
+  RefundEventPublisherTest ................ RED_EVIDENCE_OK (target_test_failed)
+  PaymentEventPublisherTest ............... RED_EVIDENCE_OK (target_test_failed)
+  OutboxPayloadCompatibilityTest (media truncated case; the classifier keeps the XML entities, so
+    the target is the raw name outbox/&quot;MediaProcessingEvent&quot; truncated ...) RED_EVIDENCE_OK
+  fail direction: the same record naming the RefundEvent truncated case (green on RED, because
+    Task 1 restored the payment flusher's catch) -> INVALID_RED (no_target_test_failure)
+
+--- GREEN (commit 6882de7b, feat(38-08))
+Each catch restored verbatim from the plan-base blob (f97a8161) with JsonProcessingException ->
+JacksonException. git diff f97a8161 on each of the five files shows only: the two Jackson-2 imports
+-> JacksonException + JsonMapper imports, the field and constructor type, the catch type, the added
+"unchecked" note, and (RefundEventPublisher) the comment word. RefundEventPublisher's no-mapper
+placeholder (String.format literal) is untouched.
+
+Unit verify (same command): rc=0, BUILD SUCCESSFUL, cleanTest executed.
+XML: AmqpJackson2CompatibilityTest 18/0/0, OutboxPayloadCompatibilityTest 21/0/0,
+     OnboardingEventPublisherTest 2/0/0, PaymentEventPublisherTest 4/0/0, RefundEventPublisherTest 4/0/0  (49/49)
+The two compatibility XMLs together: 39 tests (>= 24): amqp forward 6, amqp reverse 6, outbox
+forward 6, outbox reverse 6 (the 24 planned cases), truncated rows 6, plus coverage, boundary,
+reader-config and five negative controls.
+
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.media.MediaDedupAttachIntegrationTest' \
+    --tests 'uk.jtoye.core.media.MediaDurabilityIntegrationTest' --tests 'uk.jtoye.core.media.MediaPipelineAzuriteIntegrationTest' \
+    --tests 'uk.jtoye.core.payment.PaymentEventOutboxReliabilityIntegrationTest' \
+    --tests 'uk.jtoye.core.onboarding.OnboardingStallOutboxIntegrationTest' --no-daemon
+(Docker 29.8.2) rc=0, cleanIntegrationTest executed, BUILD SUCCESSFUL in 2m 15s
+XML (build-local/test-results/integrationTest): MediaDedupAttachIntegrationTest 4/0/0,
+     MediaDurabilityIntegrationTest 11/0/0, MediaPipelineAzuriteIntegrationTest 3/0/0,
+     OnboardingStallOutboxIntegrationTest 1/0/0, PaymentEventOutboxReliabilityIntegrationTest 6/0/0  (25/25)
+PaymentEventOutboxReliabilityIntegrationTest and OnboardingStallOutboxIntegrationTest still read the
+rows with the interim Jackson-2 ObjectMapper bean (38-19's test sweep): rows written by the Boot-4
+publishers were read by a Jackson-2 reader in a real context, which is the reverse direction again.
+
+--- Acceptance criteria, both directions
+AC1 git grep -n -e 'com.fasterxml.jackson.databind' -e 'com.fasterxml.jackson.core' -- RabbitMQConfig.java
+    OrderEventPublisher.java core/payment OnboardingEventPublisher.java core/media
+    HEAD: prints only rc=1
+    fail direction, the same grep at the plan base f97a8161: 14 lines
+AC2 awk '/DELIBERATE-JACKSON2/{n++} END{print n+0}' <the two compatibility classes>
+    HEAD: 2; per file (stronger, so one file with two lines cannot hide a missing one):
+    AmqpJackson2CompatibilityTest 1, OutboxPayloadCompatibilityTest 1
+    fail direction, the Task 1 versions of both files (62abed7b): 0
+AC3 RED before GREEN: git merge-base --is-ancestor dde52b59 6882de7b rc=0; reversed rc=1
+
+<!-- task 3 section follows -->
