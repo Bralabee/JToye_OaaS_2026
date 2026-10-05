@@ -148,15 +148,11 @@
                 "items" : {
                   "properties" : {
                     "annotations" : {
-                      "items" : {
-                        "type" : "object"
-                      },
+                      "items" : { },
                       "type" : "array"
                     },
                     "declaredAnnotations" : {
-                      "items" : {
-                        "type" : "object"
-                      },
+                      "items" : { },
                       "type" : "array"
                     },
                     "implementationTitle" : {
@@ -201,15 +197,11 @@
                     "items" : {
                       "properties" : {
                         "annotations" : {
-                          "items" : {
-                            "type" : "object"
-                          },
+                          "items" : { },
                           "type" : "array"
                         },
                         "declaredAnnotations" : {
-                          "items" : {
-                            "type" : "object"
-                          },
+                          "items" : { },
                           "type" : "array"
                         },
                         "implementationTitle" : {
@@ -250,15 +242,66 @@
                   "unnamedModule" : {
                     "properties" : {
                       "annotations" : {
-                        "items" : {
-                          "type" : "object"
-                        },
+                        "items" : { },
                         "type" : "array"
                       },
-                      "declaredAnnotations" : {
-                        "items" : {
-                          "type" : "object"
+                      "classLoader" : {
+                        "properties" : {
+                          "defaultAssertionStatus" : {
+                            "type" : "boolean",
+                            "writeOnly" : true
+                          },
+                          "definedPackages" : {
+                            "items" : {
+                              "properties" : {
+                                "annotations" : {
+                                  "items" : { },
+                                  "type" : "array"
+                                },
+                                "declaredAnnotations" : {
+                                  "items" : { },
+                                  "type" : "array"
+                                },
+                                "implementationTitle" : {
+                                  "type" : "string"
+                                },
+                                "implementationVendor" : {
+                                  "type" : "string"
+                                },
+                                "implementationVersion" : {
+                                  "type" : "string"
+                                },
+                                "name" : {
+                                  "type" : "string"
+                                },
+                                "sealed" : {
+                                  "type" : "boolean"
+                                },
+                                "specificationTitle" : {
+                                  "type" : "string"
+                                },
+                                "specificationVendor" : {
+                                  "type" : "string"
+                                },
+                                "specificationVersion" : {
+                                  "type" : "string"
+                                }
+                              },
+                              "type" : "object"
+                            },
+                            "type" : "array"
+                          },
+                          "name" : {
+                            "type" : "string"
+                          },
+                          "registeredAsParallelCapable" : {
+                            "type" : "boolean"
+                          }
                         },
+                        "type" : "object"
+                      },
+                      "declaredAnnotations" : {
+                        "items" : { },
                         "type" : "array"
                       },
                       "descriptor" : {
@@ -272,9 +315,7 @@
                         },
                         "type" : "object"
                       },
-                      "layer" : {
-                        "type" : "object"
-                      },
+                      "layer" : { },
                       "name" : {
                         "type" : "string"
                       },
@@ -303,15 +344,66 @@
               "unnamedModule" : {
                 "properties" : {
                   "annotations" : {
-                    "items" : {
-                      "type" : "object"
-                    },
+                    "items" : { },
                     "type" : "array"
                   },
-                  "declaredAnnotations" : {
-                    "items" : {
-                      "type" : "object"
+                  "classLoader" : {
+                    "properties" : {
+                      "defaultAssertionStatus" : {
+                        "type" : "boolean",
+                        "writeOnly" : true
+                      },
+                      "definedPackages" : {
+                        "items" : {
+                          "properties" : {
+                            "annotations" : {
+                              "items" : { },
+                              "type" : "array"
+                            },
+                            "declaredAnnotations" : {
+                              "items" : { },
+                              "type" : "array"
+                            },
+                            "implementationTitle" : {
+                              "type" : "string"
+                            },
+                            "implementationVendor" : {
+                              "type" : "string"
+                            },
+                            "implementationVersion" : {
+                              "type" : "string"
+                            },
+                            "name" : {
+                              "type" : "string"
+                            },
+                            "sealed" : {
+                              "type" : "boolean"
+                            },
+                            "specificationTitle" : {
+                              "type" : "string"
+                            },
+                            "specificationVendor" : {
+                              "type" : "string"
+                            },
+                            "specificationVersion" : {
+                              "type" : "string"
+                            }
+                          },
+                          "type" : "object"
+                        },
+                        "type" : "array"
+                      },
+                      "name" : {
+                        "type" : "string"
+                      },
+                      "registeredAsParallelCapable" : {
+                        "type" : "boolean"
+                      }
                     },
+                    "type" : "object"
+                  },
+                  "declaredAnnotations" : {
+                    "items" : { },
                     "type" : "array"
                   },
                   "descriptor" : {
@@ -325,9 +417,7 @@
                     },
                     "type" : "object"
                   },
-                  "layer" : {
-                    "type" : "object"
-                  },
+                  "layer" : { },
                   "name" : {
                     "type" : "string"
                   },
@@ -372,9 +462,7 @@
         },
         "type" : "object"
       },
-      "AutowireCapableBeanFactory" : {
-        "type" : "object"
-      },
+      "AutowireCapableBeanFactory" : { },
       "BatchSyncRequest" : {
         "properties" : {
           "items" : {
@@ -402,9 +490,7 @@
         },
         "type" : "object"
       },
-      "BeanFactory" : {
-        "type" : "object"
-      },
+      "BeanFactory" : { },
       "BulkImportResult" : {
         "properties" : {
           "created" : {
@@ -482,7 +568,8 @@
           }
         },
         "required" : [
-          "shopId"
+          "shopId",
+          "title"
         ],
         "type" : "object"
       },
@@ -494,6 +581,7 @@
             "type" : "integer"
           },
           "email" : {
+            "format" : "email",
             "maxLength" : 255,
             "minLength" : 0,
             "type" : "string"
@@ -509,6 +597,10 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "email",
+          "name"
+        ],
         "type" : "object"
       },
       "CreateOnboardingRequest" : {
@@ -600,6 +692,7 @@
           }
         },
         "required" : [
+          "items",
           "shopId"
         ],
         "type" : "object"
@@ -782,6 +875,7 @@
           }
         },
         "required" : [
+          "label",
           "shopId",
           "validFrom",
           "validUntil"
@@ -791,6 +885,7 @@
       "CreateRefundRequest" : {
         "properties" : {
           "amountPennies" : {
+            "exclusiveMinimum" : 0,
             "format" : "int64",
             "type" : "integer"
           },
@@ -914,11 +1009,15 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "name"
+        ],
         "type" : "object"
       },
       "CreateTenantRequest" : {
         "properties" : {
           "contactEmail" : {
+            "format" : "email",
             "maxLength" : 320,
             "minLength" : 0,
             "type" : "string"
@@ -947,6 +1046,9 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "name"
+        ],
         "type" : "object"
       },
       "CreateTransactionRequest" : {
@@ -1000,6 +1102,10 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "eventTypes",
+          "targetUrl"
+        ],
         "type" : "object"
       },
       "CustomerDto" : {
@@ -1150,6 +1256,7 @@
           "email" : {
             "description" : "The email address the request concerns. Stored only as a one-way SHA-256 digest; the readable address is never persisted.",
             "example" : "someone@example.com",
+            "format" : "email",
             "maxLength" : 254,
             "minLength" : 0,
             "type" : "string"
@@ -1164,6 +1271,7 @@
           }
         },
         "required" : [
+          "email",
           "requestType"
         ],
         "type" : "object"
@@ -1469,6 +1577,7 @@
             "type" : "string"
           },
           "customerEmail" : {
+            "format" : "email",
             "maxLength" : 255,
             "minLength" : 0,
             "type" : "string"
@@ -1506,6 +1615,13 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "customerEmail",
+          "customerName",
+          "customerPhone",
+          "fulfilmentType",
+          "items"
+        ],
         "type" : "object"
       },
       "HttpStatus" : {
@@ -1519,7 +1635,6 @@
           "101 SWITCHING_PROTOCOLS",
           "102 PROCESSING",
           "103 EARLY_HINTS",
-          "103 CHECKPOINT",
           "200 OK",
           "201 CREATED",
           "202 ACCEPTED",
@@ -1533,10 +1648,8 @@
           "300 MULTIPLE_CHOICES",
           "301 MOVED_PERMANENTLY",
           "302 FOUND",
-          "302 MOVED_TEMPORARILY",
           "303 SEE_OTHER",
           "304 NOT_MODIFIED",
-          "305 USE_PROXY",
           "307 TEMPORARY_REDIRECT",
           "308 PERMANENT_REDIRECT",
           "400 BAD_REQUEST",
@@ -1552,17 +1665,15 @@
           "410 GONE",
           "411 LENGTH_REQUIRED",
           "412 PRECONDITION_FAILED",
+          "413 CONTENT_TOO_LARGE",
           "413 PAYLOAD_TOO_LARGE",
-          "413 REQUEST_ENTITY_TOO_LARGE",
           "414 URI_TOO_LONG",
-          "414 REQUEST_URI_TOO_LONG",
           "415 UNSUPPORTED_MEDIA_TYPE",
           "416 REQUESTED_RANGE_NOT_SATISFIABLE",
           "417 EXPECTATION_FAILED",
           "418 I_AM_A_TEAPOT",
-          "419 INSUFFICIENT_SPACE_ON_RESOURCE",
-          "420 METHOD_FAILURE",
-          "421 DESTINATION_LOCKED",
+          "421 MISDIRECTED_REQUEST",
+          "422 UNPROCESSABLE_CONTENT",
           "422 UNPROCESSABLE_ENTITY",
           "423 LOCKED",
           "424 FAILED_DEPENDENCY",
@@ -1799,7 +1910,10 @@
               "format" : "uuid",
               "type" : "string"
             },
-            "type" : "array",
+            "type" : [
+              "array",
+              "null"
+            ],
             "uniqueItems" : true
           },
           "groupAdmin" : {
@@ -3244,9 +3358,7 @@
             "writeOnly" : true
           },
           "attributesMap" : {
-            "additionalProperties" : {
-              "type" : "object"
-            },
+            "additionalProperties" : { },
             "type" : "object"
           },
           "beanName" : {
@@ -3313,9 +3425,7 @@
             "writeOnly" : true
           },
           "staticAttributes" : {
-            "additionalProperties" : {
-              "type" : "object"
-            },
+            "additionalProperties" : { },
             "type" : "object"
           },
           "statusCode" : {
@@ -3407,6 +3517,9 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "reason"
+        ],
         "type" : "object"
       },
       "ResolveGateRequest" : {
@@ -3505,9 +3618,7 @@
       },
       "ServletContext" : {
         "properties" : {
-          "attributeNames" : {
-            "type" : "object"
-          },
+          "attributeNames" : { },
           "classLoader" : {
             "properties" : {
               "defaultAssertionStatus" : {
@@ -3518,15 +3629,11 @@
                 "items" : {
                   "properties" : {
                     "annotations" : {
-                      "items" : {
-                        "type" : "object"
-                      },
+                      "items" : { },
                       "type" : "array"
                     },
                     "declaredAnnotations" : {
-                      "items" : {
-                        "type" : "object"
-                      },
+                      "items" : { },
                       "type" : "array"
                     },
                     "implementationTitle" : {
@@ -3561,21 +3668,223 @@
               "name" : {
                 "type" : "string"
               },
+              "parent" : {
+                "properties" : {
+                  "defaultAssertionStatus" : {
+                    "type" : "boolean",
+                    "writeOnly" : true
+                  },
+                  "definedPackages" : {
+                    "items" : {
+                      "properties" : {
+                        "annotations" : {
+                          "items" : { },
+                          "type" : "array"
+                        },
+                        "declaredAnnotations" : {
+                          "items" : { },
+                          "type" : "array"
+                        },
+                        "implementationTitle" : {
+                          "type" : "string"
+                        },
+                        "implementationVendor" : {
+                          "type" : "string"
+                        },
+                        "implementationVersion" : {
+                          "type" : "string"
+                        },
+                        "name" : {
+                          "type" : "string"
+                        },
+                        "sealed" : {
+                          "type" : "boolean"
+                        },
+                        "specificationTitle" : {
+                          "type" : "string"
+                        },
+                        "specificationVendor" : {
+                          "type" : "string"
+                        },
+                        "specificationVersion" : {
+                          "type" : "string"
+                        }
+                      },
+                      "type" : "object"
+                    },
+                    "type" : "array"
+                  },
+                  "name" : {
+                    "type" : "string"
+                  },
+                  "registeredAsParallelCapable" : {
+                    "type" : "boolean"
+                  },
+                  "unnamedModule" : {
+                    "properties" : {
+                      "annotations" : {
+                        "items" : { },
+                        "type" : "array"
+                      },
+                      "classLoader" : {
+                        "properties" : {
+                          "defaultAssertionStatus" : {
+                            "type" : "boolean",
+                            "writeOnly" : true
+                          },
+                          "definedPackages" : {
+                            "items" : {
+                              "properties" : {
+                                "annotations" : {
+                                  "items" : { },
+                                  "type" : "array"
+                                },
+                                "declaredAnnotations" : {
+                                  "items" : { },
+                                  "type" : "array"
+                                },
+                                "implementationTitle" : {
+                                  "type" : "string"
+                                },
+                                "implementationVendor" : {
+                                  "type" : "string"
+                                },
+                                "implementationVersion" : {
+                                  "type" : "string"
+                                },
+                                "name" : {
+                                  "type" : "string"
+                                },
+                                "sealed" : {
+                                  "type" : "boolean"
+                                },
+                                "specificationTitle" : {
+                                  "type" : "string"
+                                },
+                                "specificationVendor" : {
+                                  "type" : "string"
+                                },
+                                "specificationVersion" : {
+                                  "type" : "string"
+                                }
+                              },
+                              "type" : "object"
+                            },
+                            "type" : "array"
+                          },
+                          "name" : {
+                            "type" : "string"
+                          },
+                          "registeredAsParallelCapable" : {
+                            "type" : "boolean"
+                          }
+                        },
+                        "type" : "object"
+                      },
+                      "declaredAnnotations" : {
+                        "items" : { },
+                        "type" : "array"
+                      },
+                      "descriptor" : {
+                        "properties" : {
+                          "automatic" : {
+                            "type" : "boolean"
+                          },
+                          "open" : {
+                            "type" : "boolean"
+                          }
+                        },
+                        "type" : "object"
+                      },
+                      "layer" : { },
+                      "name" : {
+                        "type" : "string"
+                      },
+                      "named" : {
+                        "type" : "boolean"
+                      },
+                      "nativeAccessEnabled" : {
+                        "type" : "boolean"
+                      },
+                      "packages" : {
+                        "items" : {
+                          "type" : "string"
+                        },
+                        "type" : "array",
+                        "uniqueItems" : true
+                      }
+                    },
+                    "type" : "object"
+                  }
+                },
+                "type" : "object"
+              },
               "registeredAsParallelCapable" : {
                 "type" : "boolean"
               },
               "unnamedModule" : {
                 "properties" : {
                   "annotations" : {
-                    "items" : {
-                      "type" : "object"
-                    },
+                    "items" : { },
                     "type" : "array"
                   },
-                  "declaredAnnotations" : {
-                    "items" : {
-                      "type" : "object"
+                  "classLoader" : {
+                    "properties" : {
+                      "defaultAssertionStatus" : {
+                        "type" : "boolean",
+                        "writeOnly" : true
+                      },
+                      "definedPackages" : {
+                        "items" : {
+                          "properties" : {
+                            "annotations" : {
+                              "items" : { },
+                              "type" : "array"
+                            },
+                            "declaredAnnotations" : {
+                              "items" : { },
+                              "type" : "array"
+                            },
+                            "implementationTitle" : {
+                              "type" : "string"
+                            },
+                            "implementationVendor" : {
+                              "type" : "string"
+                            },
+                            "implementationVersion" : {
+                              "type" : "string"
+                            },
+                            "name" : {
+                              "type" : "string"
+                            },
+                            "sealed" : {
+                              "type" : "boolean"
+                            },
+                            "specificationTitle" : {
+                              "type" : "string"
+                            },
+                            "specificationVendor" : {
+                              "type" : "string"
+                            },
+                            "specificationVersion" : {
+                              "type" : "string"
+                            }
+                          },
+                          "type" : "object"
+                        },
+                        "type" : "array"
+                      },
+                      "name" : {
+                        "type" : "string"
+                      },
+                      "registeredAsParallelCapable" : {
+                        "type" : "boolean"
+                      }
                     },
+                    "type" : "object"
+                  },
+                  "declaredAnnotations" : {
+                    "items" : { },
                     "type" : "array"
                   },
                   "descriptor" : {
@@ -3589,9 +3898,7 @@
                     },
                     "type" : "object"
                   },
-                  "layer" : {
-                    "type" : "object"
-                  },
+                  "layer" : { },
                   "name" : {
                     "type" : "string"
                   },
@@ -3655,9 +3962,7 @@
             },
             "type" : "object"
           },
-          "initParameterNames" : {
-            "type" : "object"
-          },
+          "initParameterNames" : { },
           "jspConfigDescriptor" : {
             "$ref" : "#/components/schemas/JspConfigDescriptor"
           },
@@ -4120,6 +4425,7 @@
             "type" : "integer"
           },
           "email" : {
+            "format" : "email",
             "maxLength" : 255,
             "minLength" : 0,
             "type" : "string"
@@ -4135,6 +4441,10 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "email",
+          "name"
+        ],
         "type" : "object"
       },
       "UpdateOnboardingRequest" : {
