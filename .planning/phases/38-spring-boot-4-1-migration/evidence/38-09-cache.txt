@@ -201,3 +201,41 @@ TASK 2 - Versioned cache keys: Boot-3.5 entries are never read, proven on a real
      everyRegionReadsAndWritesUnderTheVersionedKeyPrefixAndANewRegionInheritsIt()  RED_EVIDENCE_OK target_test_failed
      aBoot35CacheEntryIsNeverReadAndTheBoot4EntryServesTheReadAfterWrite()          RED_EVIDENCE_OK target_test_failed
      control, a passing case as target (theCacheFixturesBelowAreExactlyTheManifestCacheFamily()) INVALID_RED no_target_test_failure
+
+10. GREEN (feat(38-09)): CacheConfig
+    static final String CACHE_KEY_FORMAT_VERSION = "v4";
+    defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
+        .computePrefixWith(cacheName -> CACHE_KEY_FORMAT_VERSION + ":" + cacheName + "::") ...
+    Every region is derived from defaultConfig, so products / shops / shopMembership and any later
+    region inherit it. Javadoc: why (Jackson-3 format, Phase 38), old entries expire by TTL (max
+    15 min), bump-the-constant is the standing procedure, no flush at deploy.
+    a. Unit: ./gradlew :core-java:cleanTest :core-java:test --tests '...CacheSerializerTypeAllowlistTest'
+       rc=0, BUILD SUCCESSFUL, compileJava executed; xml tests="16" skipped="0" failures="0" errors="0".
+    b. Integration: ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest
+         --tests 'uk.jtoye.core.boot4.CacheFormatIsolationIntegrationTest'
+         --tests 'uk.jtoye.core.resilience.RedisFaultInjectionIntegrationTest' --no-daemon
+       rc=0, BUILD SUCCESSFUL in 57s
+       CacheFormatIsolationIntegrationTest  tests="1" skipped="0" failures="0" errors="0"
+       RedisFaultInjectionIntegrationTest   tests="1" skipped="0" failures="0" errors="0"
+       Redis listing from the passing run (SCAN MATCH * COUNT 100, never KEYS), test stdout in the xml:
+         38-09 SCAN after first call: [shops::tenant:38010000-0000-4000-8000-00000000a001:getShopById:38010000-0000-4000-8000-00000000a002,
+                                       v4:shops::tenant:38010000-0000-4000-8000-00000000a001:getShopById:38010000-0000-4000-8000-00000000a002]
+         38-09 TTL of v4:shops::tenant:...a001:getShopById:...a002: 900s
+         38-09 SCAN after second call: [the same two keys]
+       Read: the v4 key keeps the tenant segment (the prefix is prepended, T-38-25); the Boot-3.5 key
+       is untouched (its bytes still sha256-equal the planted fixture, asserted); the second call
+       returned "Database Kitchen" after the row was renamed behind the cache, so it was a hit on
+       the v4 entry; jtoye.cache.errors delta 0 across both calls.
+       "Cache GET failed" log lines: GREEN xml rg -uu --count-matches -> none, rc=1;
+       positive control on the RED xml -> 1, rc=0.
+
+11. Task 2 acceptance criteria
+    AC1 (plan form) git grep -n 'CACHE_KEY_FORMAT_VERSION' -- CacheConfig.java: 5 lines, rc=0
+        (l.33 class Javadoc, l.87 declaration, l.95 comment, l.97 computePrefixWith use, l.207 Javadoc link)
+        fail direction: same grep at HEAD fd7368e7 (the RED commit): rc=1, 0 lines.
+        Weakness recorded: the plan form also counts comments, so a comment-only mention would pass.
+        Stronger form used alongside it:
+          declaration  git grep -c 'static final String CACHE_KEY_FORMAT_VERSION = "v4";'  -> 1
+          code use     git grep -cE 'computePrefixWith\(.*CACHE_KEY_FORMAT_VERSION'         -> 1
+        (fail direction of the stronger form: the prefix-removed arm, section 12)
+    Task 1 greps re-run on this tree: all five forbidden tokens rc=1.

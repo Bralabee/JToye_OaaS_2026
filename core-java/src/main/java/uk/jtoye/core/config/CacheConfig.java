@@ -29,7 +29,8 @@ import java.util.Map;
  * Features:
  * - Tenant-aware caching with TenantAwareCacheKeyGenerator
  * - Per-cache TTL configuration (products: 10min, shops: 15min)
- * - JSON serialization for cache values
+ * - JSON serialization for cache values (Jackson 3, allowlisted polymorphic typing)
+ * - Versioned cache keys ({@code v4:{region}::...}, see CACHE_KEY_FORMAT_VERSION)
  * - Disabled for test profile to maintain test isolation
  * 
  * Cache Strategy:
@@ -62,12 +63,38 @@ public class CacheConfig implements CachingConfigurer {
     }
 
     /**
+     * The cache value FORMAT version, carried in every cache key as {@code v4:{region}::…}
+     * (Phase 38, 38-09).
+     *
+     * <p><b>Why.</b> The Spring Boot 4 move put the cache value serializer on Jackson 3, whose typing
+     * scheme writes different bytes: every value a Boot-3.5 pod cached under {@code {region}::…} is
+     * unreadable by a Boot-4 pod (measured on the three 38-01 golden values). Read under the old key,
+     * each would be a GET error that {@link RedisCacheErrorHandler} swallows and counts in
+     * {@code jtoye.cache.errors} on every request; and during a rolling deploy a Boot-3.5 pod would
+     * equally fail on what a Boot-4 pod wrote. With the version in the key the two formats never meet:
+     * a Boot-4 pod neither reads nor overwrites an old entry.
+     *
+     * <p><b>No flush at deploy.</b> Old entries are simply never read again and expire by their
+     * region TTL (shopMembership 5 min, products 10 min, shops 15 min; the 10-minute default for any
+     * other region), so no operator step is required. {@code CacheFormatIsolationIntegrationTest}
+     * proves it on a real Redis.
+     *
+     * <p><b>Standing procedure.</b> Any future change to the cache value FORMAT (serializer, typing
+     * scheme, or a DTO change that old bytes cannot be read into) bumps this constant in the same
+     * change. It sits on the default configuration, so every region, including one added later,
+     * inherits it.
+     */
+    static final String CACHE_KEY_FORMAT_VERSION = "v4";
+
+    /**
      * Configure Redis Cache Manager with per-cache TTL settings.
      */
     @Bean
     public CacheManager cacheManager(RedisConnectionFactory connectionFactory) {
-        // Default cache configuration (fallback)
+        // Default cache configuration (fallback). Every region derives from it, so every region
+        // inherits the versioned key prefix (see CACHE_KEY_FORMAT_VERSION).
         RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
+                .computePrefixWith(cacheName -> CACHE_KEY_FORMAT_VERSION + ":" + cacheName + "::")
                 .entryTtl(Duration.ofMinutes(10))  // Default TTL: 10 minutes
                 .serializeKeysWith(
                         RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer())
@@ -177,7 +204,7 @@ public class CacheConfig implements CachingConfigurer {
      *
      * <p>Entries written by the Jackson-2 serializer before Phase 38 are format-incompatible (measured:
      * all three 38-01 golden cache values fail to read). They are made unreachable by the versioned key
-     * prefix, not by a deploy-time flush.
+     * prefix ({@link #CACHE_KEY_FORMAT_VERSION}), not by a deploy-time flush.
      *
      * <p>Static and public so the serializer tests exercise THIS serializer rather than a hand-kept
      * mirror of it: the previous mirror in {@code MembershipSerializerRoundTripTest} would have stayed
