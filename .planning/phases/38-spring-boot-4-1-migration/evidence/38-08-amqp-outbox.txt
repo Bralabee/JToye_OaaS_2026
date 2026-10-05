@@ -206,4 +206,116 @@ AC2 awk '/DELIBERATE-JACKSON2/{n++} END{print n+0}' <the two compatibility class
     fail direction, the Task 1 versions of both files (62abed7b): 0
 AC3 RED before GREEN: git merge-base --is-ancestor dde52b59 6882de7b rc=0; reversed rc=1
 
-<!-- task 3 section follows -->
+=====================================================================================================
+TASK 3: real-broker __TypeId__ dispatch of a Jackson-2 message, and the trust and mutation arms
+=====================================================================================================
+
+--- Test shape
+AmqpTypeIdDispatchIntegrationTest: @Tag("testcontainers") @SpringBootTest, Postgres 15 via
+IntegrationTestSupport.registerPostgresTestProperties, RabbitMQ rabbitmq:4.3.4-management-alpine
+(as the analog). The spring.rabbitmq.* properties are registered AFTER the support method (which
+points at a dead port). The probe is a class-level @RabbitListener of WebhookFanoutListener's shape
+(handlers for OrderStateChangeEvent, RefundEvent, OnboardingStateChangeEvent, PaymentEvent, plus
+isDefault), declared through a nested @TestConfiguration with its own durable auto-delete queue
+"boot4.typeid-dispatch.probe" bound to nothing production-side, on the application's
+rabbitListenerContainerFactory. The test profile keeps listener auto-startup false, so every
+production listener stays stopped; only the probe starts (autoStartup = "true" on the endpoint).
+The message is published RAW (rabbitTemplate.send) with the fixture bytes and every fixture
+property, so no Boot-4 code touches it before the consumer.
+Bounded wait: CountDownLatch, 20 s; the timeout message lists what the catch-all and the other
+handlers received.
+
+--- RED (commit 69e17fed, test(38-08)): the probe without its PaymentEvent handler
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.boot4.AmqpTypeIdDispatchIntegrationTest' --no-daemon
+rc=1, cleanIntegrationTest executed; XML tests=1 failures=1 errors=0
+  the PaymentEvent @RabbitHandler received NOTHING within 20s. Catch-all got [PaymentEvent[orderId=38010000-...-a003,
+  tenantId=...-a001, orderNumber=JT-20261004-0001, paymentIntentId=pi_golden_0001, amountPennies=1799, currency=gbp,
+  type=SUCCEEDED, failureReason=null, occurredAt=2026-10-04T12:34:56.123456789Z]]; other handlers got [].
+  (The converter already resolved the Boot-3.5 bytes to a PaymentEvent with the instant intact;
+   with no matching handler it fell to the catch-all.)
+gsd check tdd-red-evidence: RED_EVIDENCE_OK (target_test_failed); control naming another test: INVALID_RED
+
+--- GREEN (commit 9fc97c09, feat(38-08)): the probe gains onPayment(PaymentEvent)
+Test-scope only; the production path (Jackson-3 converter + exact trusted list on the app's
+factory) landed in e693b554.
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.boot4.AmqpTypeIdDispatchIntegrationTest' \
+    --tests 'uk.jtoye.core.order.OrderEventFanoutTopologyIntegrationTest' --no-daemon
+rc=0, cleanIntegrationTest executed; AmqpTypeIdDispatchIntegrationTest 1/0/0, OrderEventFanoutTopologyIntegrationTest 1/0/0
+The PaymentEvent handler received exactly one event, equal to GoldenSamples.paymentEvent() by
+instant; after a 1 s grace the catch-all and the other handlers were empty.
+(OrderEventFanoutTopologyIntegrationTest still CONSUMES with a Jackson2JsonMessageConverter and now
+PUBLISHES through the Jackson-3 production converter: a third, real-broker reverse-direction check.)
+
+--- Arms (bracketed: committed tree 9fc97c09 -> arms -> restore by sha256 -> closing clean run)
+Opening: git status clean (only the orchestrator's untracked .planning/milestone.lock); HEAD-blob
+sha256 = worktree sha256 for the three arm targets:
+  RabbitMQConfig.java                 b7d15f4951c6b290...
+  AmqpJackson2CompatibilityTest.java  e1b3a68761543d7e...
+  OutboxPayloadCompatibilityTest.java 999f8c240d300423...
+
+(A) remove "uk.jtoye.core.payment" from TRUSTED_PAYLOAD_PACKAGES (main code)
+  unit: RabbitMQConfigMessageConverterTest + AmqpJackson2CompatibilityTest -> rc=1, 25 tests, 6 failed:
+    amqp/"PaymentEvent" and amqp/"RefundEvent" (Boot 3.5 bytes) -> the Boot-4 converter          FAILED
+    "PaymentEvent" and "RefundEvent" written by the Boot-4 converter -> a Boot-3.5 converter     FAILED
+      (all four: "... is not in the trusted packages")
+    the trusted list read reflectively is the three exact packages                               FAILED
+    D-03 guard: every multi-handler payload package is on the allowlist                          FAILED
+      ("@RabbitHandler payload package 'uk.jtoye.core.payment' is NOT in RabbitMQConfig.TRUSTED_PAYLOAD_PACKAGES ...")
+  integration: AmqpTypeIdDispatchIntegrationTest -> rc=1:
+    "the PaymentEvent @RabbitHandler received NOTHING within 20s. Catch-all got []; other handlers got []"
+    captured log: ConditionalRejectingErrorHandler - Execution of Rabbit message listener failed ...
+      Caused by: ListenerExecutionFailedException: Failed to convert message
+      Caused by: java.lang.IllegalArgumentException: The class 'uk.jtoye.core.payment.PaymentEvent' is not in the
+      trusted packages: [java.util, java.lang, uk.jtoye.core.order, uk.jtoye.core.onboarding]
+  restore: cp from scratch backup; sha256 b7d15f4951c6b2900c2f3fc84d3b8873db584085cb86ef49dbfaa8317c40d11b
+    = HEAD blob -> RESTORE A VERIFIED
+
+(B) in the forward case's in-memory copy of the PaymentEvent properties, __TypeId__ = java.net.URI
+    (the fixture file is not touched; the edit is in AmqpJackson2CompatibilityTest)
+  rc=1, 18 tests, 1 failed: amqp/"PaymentEvent" (Boot 3.5 bytes) -> the Boot-4 converter FAILED
+    java.lang.IllegalArgumentException: The class 'java.net.URI' is not in the trusted packages:
+    [java.util, java.lang, uk.jtoye.core.order, uk.jtoye.core.payment, uk.jtoye.core.onboarding]
+  restore: sha256 e1b3a68761543d7e78a4555b5f501e0e5b22d7bee1f3a471d85a0ce72c2d5bac = HEAD blob -> RESTORE B VERIFIED
+
+(C) the forward case's copy of outbox/RefundEvent.json truncated by one character
+    (the fixture file is not touched; the edit is in OutboxPayloadCompatibilityTest)
+  rc=1, 21 tests, 1 failed: outbox/"RefundEvent" (Boot 3.5 row) -> its Boot-4 flusher -> the golden event, row SENT FAILED
+    "row status, lastError=payload deserialization failed: Unexpected end-of-input: expected close marker for Object ..."
+    Only the flusher's catch (JacksonException) writes "payload deserialization failed", so the
+    poison branch ran; the test reached its assertion, so no exception escaped flushPending().
+    Captured log: 7 x "is unrecoverable (poisoned)" (the six permanent truncated-row cases + this arm).
+  restore: sha256 999f8c240d30042321d439ea78045a55dbd4bbac080799868823d77ee61966b5 = HEAD blob -> RESTORE C VERIFIED
+
+Closing:
+  all three files: sha256 = HEAD blob (OK x3); rg -uu -l 'ARM [ABC]' core-java/src -> rc=1, no file
+    (positive control: the same search on a scratch file holding "// ARM C" -> rc=0, found)
+  git status: clean (only .planning/milestone.lock)
+  integration (Task 3 verify): rc=0, cleanIntegrationTest executed; AmqpTypeIdDispatchIntegrationTest 1/0/0,
+    OrderEventFanoutTopologyIntegrationTest 1/0/0
+  unit (RabbitMQConfigMessageConverterTest, boot4.*, OrderEventPublisherTest, payment.*, OnboardingEventPublisherTest):
+    rc=0, cleanTest executed; 20 classes, 165 tests, 0 failures, 0 errors (incl. GoldenFixturesIntegrityTest 5/5:
+    every fixture still matches its MANIFEST sha256)
+  full unit suite: ./gradlew :core-java:cleanTest :core-java:test -> rc=0; 176 classes, 1444 tests,
+    0 failures, 0 errors, 1 skipped (38-07 closed at 1403 + 1 skipped; this plan adds 41:
+    18 + 21 compatibility, the converter instance test, the payment-publisher failure test)
+
+--- Acceptance criteria, both directions
+AC1 arms A, B, C recorded red with test names and messages; every restore verified by sha256 against
+    the committed file; closing runs green (above).
+AC2 git diff --name-only f97a8161..HEAD -- core-java/src/test/resources/jackson2-golden; echo rc=$?
+    HEAD: prints only rc=0
+    fail direction, the same diff from before the 38-01 capture (767f5658..HEAD): 44 paths
+    (MANIFEST.tsv, README.md, amqp/MediaProcessingEvent.body, ...)
+
+--- Prohibitions, checked
+* Trusted list exact, no '*' or prefix: the TRUSTED_PAYLOAD_PACKAGES block (5 lines) hashes
+  d849ea5a... at both f97a8161 and HEAD; with "uk.jtoye.core.payment" removed (arm A's edit) it
+  hashes 58086c82..., so the comparison can fail. A git grep for '"*"' / '"uk.jtoye.core"' /
+  'uk.jtoye.core.*' matches only the Javadoc lines that name those forms in order to forbid them
+  (l.397, 398, 421), not the list.
+* No Jackson-2 databind/core import in the eight main files: Task 2 AC1 (rc=1; 14 lines at base).
+* No fixture modified: AC2 above, and GoldenFixturesIntegrityTest green.
+* Nothing dropped, skipped or dead-lettered to pass: every compatibility case asserts SENT and the
+  golden event; media uses the inferred argument type its only (typed) consumer uses, with a
+  permanent case showing its __TypeId__ alone is still refused.
+* No compose service started, stopped or rebuilt: only Testcontainers (Postgres, RabbitMQ, Azurite).
