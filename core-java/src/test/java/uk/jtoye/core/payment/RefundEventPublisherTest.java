@@ -1,9 +1,5 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,6 +7,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
+import uk.jtoye.core.testsupport.BootJsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 
 import java.util.UUID;
@@ -36,7 +35,7 @@ class RefundEventPublisherTest {
 
     @Mock private PaymentEventOutboxRepository outboxRepository;
 
-    private ObjectMapper objectMapper;
+    private JsonMapper objectMapper;
     private RefundEventPublisher publisher;
 
     private UUID refundId;
@@ -45,9 +44,8 @@ class RefundEventPublisherTest {
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper()
-                .registerModule(new JavaTimeModule())
-                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        // 38-08: Boot's Jackson-3 JsonMapper, the bean the publisher is injected with.
+        objectMapper = BootJsonMapper.get();
         publisher = new RefundEventPublisher(outboxRepository, objectMapper);
         refundId = UUID.randomUUID();
         orderId = UUID.randomUUID();
@@ -137,11 +135,13 @@ class RefundEventPublisherTest {
     }
 
     @Test
-    @DisplayName("WR-05: persist on JsonProcessingException records FAILED placeholder and does NOT propagate")
-    void persist_objectMapperThrows_persistsFailedPlaceholder() throws JsonProcessingException {
-        ObjectMapper throwingMapper = org.mockito.Mockito.mock(ObjectMapper.class);
+    @DisplayName("WR-05: persist on JacksonException records FAILED placeholder and does NOT propagate")
+    void persist_objectMapperThrows_persistsFailedPlaceholder() {
+        // Jackson 3's JacksonException is unchecked, so nothing forces the publisher to catch it:
+        // this test is what keeps the WR-05 placeholder (38-08).
+        JsonMapper throwingMapper = org.mockito.Mockito.mock(JsonMapper.class);
         when(throwingMapper.writeValueAsString(org.mockito.ArgumentMatchers.any()))
-                .thenThrow(new JsonProcessingException("simulated") {});
+                .thenThrow(new JacksonException("simulated") {});
 
         RefundEventPublisher throwingPublisher = new RefundEventPublisher(outboxRepository, throwingMapper);
 

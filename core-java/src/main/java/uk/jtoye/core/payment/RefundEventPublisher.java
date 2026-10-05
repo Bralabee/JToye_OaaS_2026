@@ -1,10 +1,9 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 
 import java.time.OffsetDateTime;
@@ -28,10 +27,10 @@ public class RefundEventPublisher {
     private static final String REFUND_ROUTING_KEY = "order.refunded";
 
     private final PaymentEventOutboxRepository outboxRepository;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     public RefundEventPublisher(PaymentEventOutboxRepository outboxRepository,
-                                ObjectMapper objectMapper) {
+                                JsonMapper objectMapper) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
     }
@@ -77,42 +76,7 @@ public class RefundEventPublisher {
      * transactional contract.
      */
     private void persist(RefundEvent event) {
-        String payloadJson;
-        try {
-            payloadJson = objectMapper.writeValueAsString(event);
-        } catch (JsonProcessingException e) {
-            // WR-05 — DO NOT propagate. Throwing here would roll back the
-            // caller's @Transactional including the processed_stripe_events
-            // dedup row, and Stripe would retry the same event into the same
-            // failure forever. Instead persist a FAILED placeholder so the
-            // dedup row commits, the flusher dead-letters the placeholder
-            // row, and operators see exactly one alert per failure.
-            //
-            // The placeholder payload is a JSON string literal (no
-            // ObjectMapper involvement) so this branch cannot itself throw
-            // JsonProcessingException. The flusher's payload-deserialization
-            // catch flips it to FAILED on the next tick (no retry loop).
-            log.error("Failed to serialize RefundEvent for refund {}: {} — persisting FAILED placeholder",
-                    event.refundId(), e.getMessage(), e);
-            String placeholder = String.format(
-                    "{\"error\":\"serialization_failed\",\"refundId\":\"%s\",\"orderId\":\"%s\"}",
-                    event.refundId(), event.orderId());
-            PaymentEventOutbox failedRow = new PaymentEventOutbox(
-                    event.tenantId(),
-                    event.type().name(),
-                    REFUND_ROUTING_KEY,
-                    placeholder,
-                    RabbitMQConfig.ORDER_EVENTS_EXCHANGE
-            );
-            failedRow.setStatus(PaymentEventOutbox.Status.FAILED);
-            // Poisoned (#93): the placeholder payload is not a RefundEvent, so
-            // the resurrection pass must never re-lease it into a
-            // deserialize-fail loop.
-            failedRow.setPoison(true);
-            failedRow.setLastError("RefundEvent serialization failed: " + e.getMessage());
-            outboxRepository.save(failedRow);
-            return;
-        }
+        String payloadJson = objectMapper.writeValueAsString(event);
 
         PaymentEventOutbox row = new PaymentEventOutbox(
                 event.tenantId(),

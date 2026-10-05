@@ -1,11 +1,10 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -29,10 +28,10 @@ public class PaymentEventPublisher {
     private static final Logger log = LoggerFactory.getLogger(PaymentEventPublisher.class);
 
     private final PaymentEventOutboxRepository outboxRepository;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     public PaymentEventPublisher(PaymentEventOutboxRepository outboxRepository,
-                                 ObjectMapper objectMapper) {
+                                 JsonMapper objectMapper) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
     }
@@ -64,16 +63,7 @@ public class PaymentEventPublisher {
     @Transactional
     protected void persist(PaymentEvent event) {
         String routingKey = "payment." + event.type().name().toLowerCase();
-        String payloadJson;
-        try {
-            payloadJson = objectMapper.writeValueAsString(event);
-        } catch (JsonProcessingException e) {
-            // Serialization failure is a programmer error (record is fixed shape);
-            // loudly surface it rather than silently drop the event.
-            log.error("Failed to serialize PaymentEvent for order {}: {}",
-                    event.orderNumber(), e.getMessage(), e);
-            throw new IllegalStateException("PaymentEvent serialization failed", e);
-        }
+        String payloadJson = objectMapper.writeValueAsString(event);
 
         PaymentEventOutbox row = new PaymentEventOutbox(
                 event.tenantId(),

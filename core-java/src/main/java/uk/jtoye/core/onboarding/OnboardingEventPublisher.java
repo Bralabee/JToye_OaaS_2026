@@ -1,10 +1,9 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.payment.PaymentEventOutbox;
 import uk.jtoye.core.payment.PaymentEventOutboxRepository;
@@ -48,10 +47,10 @@ public class OnboardingEventPublisher {
     public static final String MANUAL_REVIEW_ROUTING_KEY = "onboarding.state.manual_review";
 
     private final PaymentEventOutboxRepository outboxRepository;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     public OnboardingEventPublisher(PaymentEventOutboxRepository outboxRepository,
-                                    ObjectMapper objectMapper) {
+                                    JsonMapper objectMapper) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
     }
@@ -69,29 +68,7 @@ public class OnboardingEventPublisher {
                 onboardingId, tenantId, shopId, status, reason, OffsetDateTime.now()
         );
 
-        String payloadJson;
-        try {
-            payloadJson = objectMapper.writeValueAsString(event);
-        } catch (JsonProcessingException e) {
-            // Fixed-shape record — serialization failure is a programmer error.
-            // DO NOT propagate: throwing would roll back the recompute (and with
-            // it the committed gate evaluations). Persist a poisoned FAILED
-            // placeholder so the failure is durable and visible to operators
-            // instead of a swallowed log line (the flusher skips poison rows).
-            log.error("Failed to serialize OnboardingStateChangeEvent for onboarding {}: {} — persisting FAILED placeholder",
-                    onboardingId, e.getMessage(), e);
-            String placeholder = String.format(
-                    "{\"error\":\"serialization_failed\",\"onboardingId\":\"%s\",\"tenantId\":\"%s\"}",
-                    onboardingId, tenantId);
-            PaymentEventOutbox failedRow = new PaymentEventOutbox(
-                    tenantId, EVENT_TYPE, MANUAL_REVIEW_ROUTING_KEY, placeholder,
-                    RabbitMQConfig.ONBOARDING_EVENTS_EXCHANGE);
-            failedRow.setStatus(PaymentEventOutbox.Status.FAILED);
-            failedRow.setPoison(true);
-            failedRow.setLastError("OnboardingStateChangeEvent serialization failed: " + e.getMessage());
-            outboxRepository.save(failedRow);
-            return;
-        }
+        String payloadJson = objectMapper.writeValueAsString(event);
 
         PaymentEventOutbox row = new PaymentEventOutbox(
                 tenantId, EVENT_TYPE, MANUAL_REVIEW_ROUTING_KEY, payloadJson,

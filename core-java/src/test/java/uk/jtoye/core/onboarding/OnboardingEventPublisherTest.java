@@ -1,15 +1,14 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
+import uk.jtoye.core.testsupport.BootJsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.payment.PaymentEventOutbox;
 import uk.jtoye.core.payment.PaymentEventOutboxRepository;
@@ -42,9 +41,8 @@ class OnboardingEventPublisherTest {
     @Mock
     private PaymentEventOutboxRepository outboxRepository;
 
-    private final ObjectMapper realMapper = new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    /** 38-08: Boot's Jackson-3 JsonMapper, the bean the publisher is injected with. */
+    private final JsonMapper realMapper = BootJsonMapper.get();
 
     @Test
     @DisplayName("publishStall writes an onboarding.events outbox row (5-arg ctor, tenant-stamped, round-trippable)")
@@ -83,9 +81,10 @@ class OnboardingEventPublisherTest {
     @Test
     @DisplayName("publishStall persists a poisoned FAILED placeholder and does NOT propagate on serialization failure")
     void publishStall_serializationFailure_persistsPoisonedPlaceholder() throws Exception {
-        ObjectMapper failingMapper = org.mockito.Mockito.mock(ObjectMapper.class);
+        // Jackson 3's JacksonException is unchecked: this test is what keeps the placeholder (38-08).
+        JsonMapper failingMapper = org.mockito.Mockito.mock(JsonMapper.class);
         when(failingMapper.writeValueAsString(any()))
-                .thenThrow(new JsonProcessingException("boom") {});
+                .thenThrow(new JacksonException("boom") {});
         OnboardingEventPublisher publisher = new OnboardingEventPublisher(outboxRepository, failingMapper);
 
         UUID tenantId = UUID.randomUUID();
