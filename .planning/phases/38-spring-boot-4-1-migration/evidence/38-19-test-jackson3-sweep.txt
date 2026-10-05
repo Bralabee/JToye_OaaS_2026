@@ -48,3 +48,67 @@ Bridge ON (2026-10-05T13:15Z):
 ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.integration.ShopControllerIntegrationTest' --no-daemon
   rc=0  > Task :core-java:cleanIntegrationTest  > Task :core-java:compileTestJava  > Task :core-java:integrationTest  BUILD SUCCESSFUL in 1m
   XML (14:15:51 local): tests="6" skipped="0" failures="0" errors="0"
+Committed: eb29318c test(38-19): tracer: ShopControllerIntegrationTest injects Boot's Jackson-3 JsonMapper
+
+Bridge OFF, migrated (2026-10-05T13:16:25Z, on committed eb29318c):
+  bridge_lines_in_worktree=0
+  > Task :core-java:cleanIntegrationTest  > Task :core-java:compileJava  > Task :core-java:compileTestJava  > Task :core-java:integrationTest
+  BUILD SUCCESSFUL in 1m 16s   (compileJava re-ran: main compiled on the bridge-free classpath)
+  bridge_off_rc=0
+  head_show_rc=0
+  d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  core-java/build.gradle.kts           (restored)
+  d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d  scratch/build.head (HEAD blob)       EQUAL
+  XML (14:17:42 local): tests="6" skipped="0" failures="0" errors="0"
+=> tracer RED (6/6 failed, field 'objectMapper') then GREEN (6/6) with the bridge line removed. The probe can fail.
+Tracer feedback gate: interactive, human_verify_mode end-of-phase, automated-only verify -> re-ran green; expanding.
+
+### Expansion: the other ten batch-A files
+
+Edits (per file, mechanical): the injected field's type ObjectMapper -> tools.jackson.databind.json.JsonMapper (name unchanged);
+com.fasterxml.jackson.databind.JsonNode -> tools.jackson.databind.JsonNode; JsonNode.asText() -> asString() (javap on
+jackson-databind 3.1.7: asText() survives as a final alias, asString() is the primary; JsonNode still implements Iterable).
+No asserted value changed. Files:
+  integration/CustomerControllerIntegrationTest, integration/FinancialTransactionControllerIntegrationTest,
+  integration/LocationHeaderContractTest, storefront/GuestCheckoutIdempotencyIntegrationTest,
+  storefront/PublicApiVersionAliasIntegrationTest, storefront/PublicStorefrontPostcodeSearchIntegrationTest,
+  gdpr/DsarFanoutIntegrationTest, gdpr/DsarIntakeIntegrationTest, gdpr/DsarSubjectAndGlobalRateLimitIntegrationTest,
+  gdpr/DsarVerificationIntegrationTest  (+ the tracer, integration/ShopControllerIntegrationTest)
+
+### A migrated assertion turned red (first bridge-on run, 2026-10-05T13:18Z -> 13:21:32Z)
+
+rc=1  "92 tests completed, 1 failed"  BUILD FAILED in 3m 19s
+  GuestCheckoutIdempotencyIntegrationTest > legacyBodyOnlyHashAllowsOnlyMatchingBodyAndOwningShop() FAILED
+  uk.jtoye.core.exception.IdempotencyPayloadMismatchException: Idempotency-Key reused with a different request payload
+    at uk.jtoye.core.common.idempotency.IdempotencyService.run(IdempotencyService.java:243)
+    at uk.jtoye.core.common.idempotency.IdempotencyService.executeWithoutStoringResponse(IdempotencyService.java:168)
+  (the other 10 classes green; GuestCheckoutIdempotencyIntegrationTest tests=13 failures=1)
+Diagnosis: the test PLANTS a "legacy body-only" request_hash = sha256(objectMapper.writeValueAsString(request)) and then expects
+the owning-shop replay of the same body to succeed. Production computes the legacy hash as sha256(IdempotencyJson.write(request)),
+the format 38-10 froze on the Boot-3.5 bytes (Jackson-2 declaration order). With the bridge's Jackson-2 bean the planted bytes
+equalled those; with Boot's Jackson-3 JsonMapper they are written alphabetically (GuestOrderRequest is a class: 38-05 wire diff
+section 2b, the property-order mechanism), so the planted hash is one no Boot-3.5 pod could have written and the replay is refused.
+This is NOT a production wire change: the server's fingerprint is unchanged (frozen since 38-10). It is the test's emulation
+of the legacy writer that moved.
+Fix (assertions untouched): the planted legacy hash is written by BOOT35_FINGERPRINT_WRITER = JsonMapper.builderWithJackson2Defaults()
+minus WRITE_DATES_AS_TIMESTAMPS, WRITE_DURATIONS_AS_TIMESTAMPS, FAIL_ON_UNKNOWN_PROPERTIES, DEFAULT_VIEW_INCLUSION: the recipe of
+IdempotencyJson, which IdempotencyFingerprintGoldenTest pins to the Boot 3.5.16 bytes for this exact body
+(samples.put("storefront.guest-order.legacy", GoldenSamples::guestOrderRequest), line 75). Every assertion of the method
+(cross-shop mismatch, different-body mismatch, owning-shop replay = first order number, count 1, response_body null) is kept.
+The red run above is this fix's fail direction (Boot-mapper bytes -> refused).
+
+### Batch A gate 1+2: bridge ON, all eleven (2026-10-05T13:22:33Z -> 13:25:30Z)
+
+./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests <the 11 batch-A classes> --no-daemon
+rc=0  > Task :core-java:cleanIntegrationTest  > Task :core-java:compileTestJava  > Task :core-java:integrationTest  BUILD SUCCESSFUL in 2m 57s
+XML read (bridge ON), files written 14:25:30 local, after the clean:
+uk.jtoye.core.integration.ShopControllerIntegrationTest tests=6 failures=0 errors=0
+uk.jtoye.core.integration.CustomerControllerIntegrationTest tests=7 failures=0 errors=0
+uk.jtoye.core.integration.FinancialTransactionControllerIntegrationTest tests=6 failures=0 errors=0
+uk.jtoye.core.integration.LocationHeaderContractTest tests=7 failures=0 errors=0
+uk.jtoye.core.storefront.GuestCheckoutIdempotencyIntegrationTest tests=13 failures=0 errors=0
+uk.jtoye.core.storefront.PublicApiVersionAliasIntegrationTest tests=4 failures=0 errors=0
+uk.jtoye.core.storefront.PublicStorefrontPostcodeSearchIntegrationTest tests=15 failures=0 errors=0
+uk.jtoye.core.gdpr.DsarFanoutIntegrationTest tests=11 failures=0 errors=0
+uk.jtoye.core.gdpr.DsarIntakeIntegrationTest tests=13 failures=0 errors=0
+uk.jtoye.core.gdpr.DsarSubjectAndGlobalRateLimitIntegrationTest tests=2 failures=0 errors=0
+uk.jtoye.core.gdpr.DsarVerificationIntegrationTest tests=8 failures=0 errors=0

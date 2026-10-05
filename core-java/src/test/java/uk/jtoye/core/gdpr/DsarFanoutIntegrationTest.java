@@ -1,6 +1,6 @@
 package uk.jtoye.core.gdpr;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.hibernate.Session;
@@ -130,7 +130,7 @@ class DsarFanoutIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private DsarFanoutWorker worker;
     @Autowired private PlatformTransactionManager txManager;
     @PersistenceContext private EntityManager entityManager;

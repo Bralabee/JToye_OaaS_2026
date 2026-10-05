@@ -1,6 +1,9 @@
 package uk.jtoye.core.storefront;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -102,13 +105,29 @@ class GuestCheckoutIdempotencyIntegrationTest {
     @Autowired PublicStorefrontService publicStorefrontService;
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired MockMvc mockMvc;
-    @Autowired ObjectMapper objectMapper;
+    @Autowired JsonMapper objectMapper;
 
     /** Dedicated tenant so a parallel fork's fixtures cannot collide on slug/SKU. */
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000902");
     private static final String SHOP_SLUG = "shop-qa0902-guest-idempotency";
     /** The logical operation id the guest path reserves under — namespaced away from {@code orders.create}. */
     private static final String ENDPOINT = "storefront.orders.create";
+
+    /**
+     * Writes a request the way a pre-Phase-38 (Boot 3.5) pod fingerprinted it, so a planted
+     * "legacy" request_hash is the hash such a pod really stored. It is the recipe of the frozen
+     * idempotency format ({@code uk.jtoye.core.common.idempotency.IdempotencyJson}), which
+     * {@code IdempotencyFingerprintGoldenTest} pins to the Boot 3.5.16 bytes for this exact body
+     * ({@code storefront.guest-order.legacy}). Boot's app-wide Jackson-3 mapper is NOT that format:
+     * it writes class properties alphabetically (38-05), so a hash planted with it is one no
+     * Boot-3.5 pod could have written, and the owning-shop replay below would be refused.
+     */
+    private static final JsonMapper BOOT35_FINGERPRINT_WRITER = JsonMapper.builderWithJackson2Defaults()
+            .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .disable(DateTimeFeature.WRITE_DURATIONS_AS_TIMESTAMPS)
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .disable(MapperFeature.DEFAULT_VIEW_INCLUSION)
+            .build();
 
     private UUID shopId;
 
@@ -396,7 +415,7 @@ class GuestCheckoutIdempotencyIntegrationTest {
         GuestOrderRequest request = guestRequest(product, 1, key);
         GuestOrderConfirmation first = publicStorefrontService.createGuestOrder(SHOP_SLUG, request);
         String legacyHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                .digest(objectMapper.writeValueAsString(request).getBytes(StandardCharsets.UTF_8)));
+                .digest(BOOT35_FINGERPRINT_WRITER.writeValueAsString(request).getBytes(StandardCharsets.UTF_8)));
         assertThat(jdbcTemplate.update("UPDATE idempotency_keys SET request_hash = ? "
                 + "WHERE tenant_id = ? AND endpoint = ? AND idempotency_key = ?",
                 legacyHash, TENANT_ID, ENDPOINT, key)).isEqualTo(1);

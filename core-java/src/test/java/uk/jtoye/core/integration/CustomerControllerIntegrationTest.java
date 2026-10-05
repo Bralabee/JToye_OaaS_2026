@@ -1,6 +1,6 @@
 package uk.jtoye.core.integration;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,7 +54,7 @@ class CustomerControllerIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private JsonMapper objectMapper;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -139,7 +139,7 @@ class CustomerControllerIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 
-        String customerId = objectMapper.readTree(response).get("id").asText();
+        String customerId = objectMapper.readTree(response).get("id").asString();
 
         // Get customer by ID
         mockMvc.perform(get("/api/v1/customers/" + customerId)
@@ -167,7 +167,7 @@ class CustomerControllerIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 
-        String customerId = objectMapper.readTree(response).get("id").asText();
+        String customerId = objectMapper.readTree(response).get("id").asString();
 
         // Update customer
         UpdateCustomerRequest updateRequest = new UpdateCustomerRequest(
@@ -206,7 +206,7 @@ class CustomerControllerIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 
-        String customerId = objectMapper.readTree(response).get("id").asText();
+        String customerId = objectMapper.readTree(response).get("id").asString();
 
         // Delete customer
         mockMvc.perform(delete("/api/v1/customers/" + customerId)

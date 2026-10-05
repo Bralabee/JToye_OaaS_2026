@@ -1,6 +1,6 @@
 package uk.jtoye.core.gdpr;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
@@ -81,7 +81,7 @@ class DsarSubjectAndGlobalRateLimitIntegrationTest {
     private static final String INTAKE_PATH = "/api/v1/public/gdpr/dsar";
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
 
     // ------------------------------------------------------------------
     // SEC-1: same email, rotating XFF — the (defeated) IP bucket must not be the only defence
