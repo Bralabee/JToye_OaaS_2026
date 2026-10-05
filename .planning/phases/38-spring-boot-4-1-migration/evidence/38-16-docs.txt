@@ -1,0 +1,227 @@
+38-16 evidence: version gates, docs, ADR-0006, metrics, static-gate sweep
+===========================================================================
+PLAN_BASE  4656a7f7762a30d1e52aeac42c8dbf3731d20b78 (docs(38-15): record 38-15 completion)
+Branch     phase-37-spring-boot-4-1
+Host       no remote touched. Python gates (check-dependency-horizons.sh, check-doc-citations.sh) run
+           inside the existing conda env engineering-doctrine (PyYAML), never base: the machine's
+           python shim refuses a bare python3 outside an env (measured below, section 1.3).
+Every gate run: out=$(bash scripts/<gate> 2>&1); rc=$?   (rc captured on the same line)
+
+
+1. STARTING POINT (plan base, before any edit)
+----------------------------------------------
+1.1 check-doc-versions.sh @ 4656a7f7: rc=2
+    | VOID: could not resolve the real version for 'Resilience4j' from the build files
+    Same as 38-03's "Interim red (expected; owner 38-16)": the row read the Boot-3 coordinate
+    io.github.resilience4j:resilience4j-spring-boot3, which left the build in 38-03.
+
+1.2 check-dependency-horizons.sh @ 4656a7f7 (engineering-doctrine env): rc=2
+    | H-3 EXEMPT spring-boot: spring-boot/3.5 PAST EOL 2026-06-30 (catalogue, 97 days) until 2027-02-28 [#706]
+    |   H-5 sites      pin-not-at-site=2          (NOTE class, advisory — run --refresh)
+    |                  site-unresolvable=2          (VOID class)
+    |   H-2/H-3        violations=0  active-exemptions=6
+    | VOID (H-5 drift):
+    |   H-5 spring-boot: declared pin 'id("org.springframework.boot") version "3.5.16"' NOT FOUND on any non-comment line of build.gradle.kts (declared site build.gradle.kts:2)
+    |   H-5 spring-boot: declared pin 'id("org.springframework.boot") version "3.5.16"' NOT FOUND on any non-comment line of core-java/build.gradle.kts (declared site core-java/build.gradle.kts:2)
+    Same two VOID lines 38-03 recorded. The two pin-not-at-site NOTEs are go-ci-setup
+    (.github/workflows/ci-cd.yaml:907/:1269, found at 53,939,1323): advisory NOTE class, no exit
+    effect, pre-existing (38-03 recorded the same NOTE pair at its plan base) and not this phase's.
+
+1.3 check-doc-citations.sh @ 4656a7f7
+    Outside a conda env: rc=1 with "BLOCKED by pyshim ..." and
+    "VOID: cannot extract YAML citations from docs/ops/terminal-states.yaml" (that file's 17
+    citations unread). That run says nothing about the citations; re-run inside the env:
+    rc=1, total=52 verified=39 uncheckable=7, violations 6:
+    | FAIL: C-3 .planning/codebase/STACK.md:33 cites core-java/build.gradle.kts:2         (claim "Spring Boot 3.5.16"; line 2 now says 4.1.1)
+    | FAIL: C-3 .planning/codebase/STACK.md:52 cites core-java/build.gradle.kts:466       (JaCoCo toolVersion moved to 579)
+    | FAIL: C-3 .planning/codebase/STACK.md:70 cites core-java/build.gradle.kts:248       (postgresql coordinate moved to 351)
+    | FAIL: C-3 .planning/codebase/INTEGRATIONS.md:14 cites application.yml:745-750       (stripe breaker moved to 752-757)
+    | FAIL: C-3 .planning/codebase/INTEGRATIONS.md:33 cites ImageAnalysisService.java:91  (anthropic model @Value moved to 116)
+    | FAIL: C-3 k8s/LOCAL.md:370 cites application-prod.yml:98                           (LOG_PATH file name moved to 100)
+
+1.4 Which citation failures are pre-existing? NONE. The same gate on the commit before phase 38's
+    first execution commit (767f5658, the parent of 8964ad1b "test(38-01): ..."), run in a
+    temporary detached worktree (git worktree add --detach; removed afterwards, rc=0):
+    | citations   total=52  verified=45  uncheckable=7
+    |   violations  0
+    | PASS: all 45 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable).
+    rc=0. All six failures above were caused by this phase's edits to core-java/build.gradle.kts
+    (38-03, 38-15), application.yml / application-prod.yml (38-11) and ImageAnalysisService.java
+    (38-07). Every one was re-pointed BY CONTENT (the cited line's new number, found with grep -n
+    on the cited token), none deleted. The 7 UNCHECKABLE are the same 7 k8s/LOCAL.md lines on
+    both trees (claims without a distinctive token; pre-existing, not this phase's).
+
+
+2. THE VERSION GATES FOLLOW THE PLUGIN
+--------------------------------------
+2.1 infra/dependency-horizons.yaml, row id spring-boot
+    pin       id("org.springframework.boot") version "4.1.1"     (was 3.5.16)
+    sites     build.gradle.kts:2, core-java/build.gradle.kts:2     (unchanged)
+    eol_cycle "4.1"  eol_date "2027-07-31"                          (was "3.5" / "2026-06-30")
+    exemption block (#706, expires 2027-02-28) DELETED; a dated header line records the move.
+    Leaving the exemption on an in-window row would also have been an H-4 STALE exemption.
+
+2.2 scripts/check-doc-versions.sh, Resilience4j row
+    actual  $(g 'io.github.resilience4j:resilience4j-spring-boot4')   -> 2.4.0
+    label   Resilience4j( Spring Boot [34] Starter)? x.y.z
+    The Spring Boot row (boot_version(), reads the plugin) and the SpringDoc row (coordinate
+    unchanged) were left as they were. --list after the change:
+      Spring Boot 4.1.1 · Resilience4j 2.4.0 · SpringDoc 3.1.1 · Spring StateMachine 4.0.2
+
+2.3 With the VOID gone the gate names the stale claims (run after 2.2, before any doc edit): rc=1
+    | FAIL: 17 stale version claim(s) across 7 doc(s) (151 checked).
+      CLAUDE.md  6x Spring Boot doc=3.5.16, 1x SpringDoc doc=2.8.6
+      AGENTS.md  6x Spring Boot doc=3.5.16, 1x SpringDoc doc=2.8.6
+      STACK.md   2x Spring Boot doc=3.5.16 (l.33 and the Gradle plugin l.59)
+      ESSENTIAL_ARCHITECTURE.md 1x Spring Boot doc=3.5.16
+    The 38-03 note predicted exactly this: the Resilience4j VOID hid the Spring Boot and SpringDoc
+    claims behind it.
+
+
+3. DOC AND PROSE CHANGES (commit 0f477503)
+------------------------------------------
+Versions were READ, not assumed: ./gradlew :core-java:dependencies on runtimeClasspath and
+testRuntimeClasspath, plus spring-boot-dependencies-4.1.1.pom:
+  spring-core 7.0.9 · spring-security-core 7.1.1 · spring-amqp/spring-rabbit 4.1.1 ·
+  spring-data-bom 2026.0.1 (spring-data-jpa/-redis 4.1.1) · hibernate-core 7.4.5.Final ·
+  flyway-core 12.4.0 · lettuce-core 7.5.2.RELEASE · tomcat-embed-core 11.0.24 -> 11.0.26 ·
+  netty-codec-http 4.2.17.Final · tools.jackson databind 3.1.7 · com.fasterxml databind 2.22.3 ·
+  springdoc 3.1.1 · resilience4j-spring-boot4 2.4.0 · statemachine 4.0.2 · junit-jupiter 6.0.3 ·
+  mockito 5.23.0 · assertj 3.27.7 · testcontainers 1.21.4 (explicit pin; Boot manages 2.0.5) ·
+  amqp-client 5.34.0 (Boot manages 5.30.0, pom l.181).
+
+Gated docs:
+  CLAUDE.md / AGENTS.md (identical 17-line change via one sed script; outside ORGOS):
+    Constraints: "Spring Boot 4.1.1 (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38)";
+    stack block: Spring Boot 4.1.1 (Framework 7.0.9, explicit starters incl. restclient, webclient,
+    zipkin, no classic), Spring Data 2026.0, Security 7.1, AMQP 4.1, SpringDoc 3.1.1, tracing via
+    spring-boot-starter-zipkin, Jackson 3 line (+1 line), JUnit Jupiter 6, Gradle plugin 4.1.1,
+    Flyway 12, Hibernate ORM 7 (via Spring Boot 4.1.1), Lettuce 7, Tomcat 11.0.26 (+1 line),
+    Netty 4.2.17.Final no pin (+1 line), "Spring Boot: 4.1.1 (Java 25)".
+    ORGOS block sha256 61a53382db62fbf5443d67e22fac515b196ede2c00f8e818d660ae2d2248ed9f before and
+    after. The two GSD stack blocks still differ only on the pre-existing schema line (2 diff lines).
+  .planning/codebase/STACK.md: Boot-4 refresh header; Spring Boot 4.1.1 on Framework 7.0.9 with the
+    migrated clause; explicit-starter line (census 130 vs 133, 38-13); Tomcat 11.0.26 (gate needs
+    >= 11.0.25, advisory reason for .26, 38-15); netty no pin on 4.2.17.Final; Jackson 3 application
+    line with both floors; Spring Data 2026.0 + Hibernate 7.4; Security 7.1 with D-04/D-05 as
+    refined (401 anonymous / 404 with credentials); webclient/restclient starters; AMQP 4.1 with
+    JacksonJsonMessageConverter; statemachine D-03 pointer; Lettuce 7 + v4: keys; SpringDoc 3.1.1
+    (newly claimed in STACK.md, so the SpringDoc row now reads it); JUnit Jupiter 6; plugin 4.1.1;
+    Flyway 12 + starter-flyway; amqp-client floor reason on 5.30.0; resilience4j-spring-boot4;
+    zipkin starter + renamed endpoint key. The three failing citations re-pointed (2, 579, 351);
+    three existing citations narrowed to their Boot-4 lines (netty :21-54 -> :21-28, jackson
+    :104-153 -> :222-231, resilience4j :724-775 -> :749-800, whose prose "at 724" was also wrong);
+    one new checkable citation (tomcat.version :71), so STACK.md goes from 15 to 16 citations.
+  README.md:21 "Spring Boot 4"; docs/architecture/ESSENTIAL_ARCHITECTURE.md:78 "Spring Boot 4.1.1
+    (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38)". SETUP.md and QUICK_START.md carry no
+    Boot claim (their 4 claims each are Java/Gradle/Go; unchanged, drift 0).
+Ungated but agent/operator-facing, fixed in the same commit:
+  .planning/codebase/ARCHITECTURE.md:93 "Core Java (Spring Boot 4.1.1)";
+  .planning/codebase/INTEGRATIONS.md:14 (:752-757), :33 (:116); k8s/LOCAL.md:370 (:100);
+  core-java/Dockerfile:115 LABEL description "Spring Boot 4 backend with multi-tenant isolation";
+  docs/AI_CONTEXT.md:7 (Spring Boot 4.1.1, Framework 7, Jackson 3, Hibernate 7), :256 (cache key
+  v4:{region}::tenant:{tenantId}:{method}:{params}, the deferred 38-09 item), :282 (JUnit Jupiter 6
+  + Mockito 5); docs/guides/DEPLOYMENT_GUIDE.md:41 and docs/guides/USER_GUIDE.md:7 "Spring Boot 4".
+  mcp-server/src/tools/create-customer.ts and create-order.ts: comment-only (deferred 38-14 item).
+  Checked with jq on docs/api/openapi-snapshot.json:
+    CreateCustomerRequest.required = ["email","name"]   (plan-phase base 767f5658: null)
+    CreateOrderRequest.required    = ["items","shopId"] (plan-phase base 767f5658: ["shopId"])
+  deferred-items.md: both entries now "status: resolved" with a "Resolved by: 38-16 Task 1" line.
+Left as history, deliberately (dated records or archives; rewriting them would rewrite the record):
+  docs/architecture/ARCHITECTURE.md and docs/PRD.md ("Last verified 2026-08-19 against main @
+  53d7bd7d"; ARCHITECTURE.md also still says JDK 21 from that verification), SYSTEM_DESIGN_V2.md
+  (§1 "re-verified 2026-07-25"), CHANGELOG.md, HANDOFF.md, docs/analysis|archive|audit|planning|
+  reports|status/**. .planning/PROJECT.md:139 is not gated (check-doc-versions.sh excludes the file
+  by design) and was already stale before this phase on other values (Next.js 16.2.11, Go 1.25).
+  docs/architecture/core-java.architecture.{html,json} subtitle "core-java · Spring Boot 3.5 · JDK
+  25" is a generated archify artifact: not hand-edited here; it changes at its next regeneration.
+  Code comments that name Boot 3.5 as the source of a measured baseline (IdempotencyJson, the
+  boot4 compatibility tests, the suppression filter) are correct history and stay.
+
+
+4. GATES AFTER THE EDITS
+------------------------
+4.1 check-doc-versions.sh: rc=0
+    | PASS: all 153 version claim(s) across 7 doc(s) match the build files.
+    skipped '(migrated from ...)' clauses: CLAUDE.md 2, AGENTS.md 3, STACK.md 1, ESSENTIAL_ARCHITECTURE.md 1
+4.2 check-dependency-horizons.sh (engineering-doctrine env, online): rc=0
+    |   H-5 sites      pin-not-at-site=2   (the pre-existing go-ci-setup NOTEs, advisory)
+    |                  site-unresolvable=0          (VOID class)
+    |   H-2/H-3        violations=0  active-exemptions=5      (6 before: the #706 one is gone)
+    | OK: every pinned artifact carries a resolved, in-window or explicitly-deferred horizon.
+    No H-2 VOID line: the endoflife.date fetch ran (arm F below proves it read spring-boot/4.1).
+4.3 check-doc-citations.sh (engineering-doctrine env): rc=0
+    | citations   total=53  verified=46  uncheckable=7
+    | PASS: all 46 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable).
+4.4 Both version gates: rc 2 (38-03's interim red, reproduced in 1.1/1.2) -> rc 0.
+
+
+5. BREAK ARMS (bracketed; committed first at 0f477503, so every restore target is a HEAD blob)
+---------------------------------------------------------------------------------------------
+Script: scratch arms.sh, run once in the engineering-doctrine env. Each arm backs the file up,
+breaks it, runs the gate, restores by cp, and compares sha256 with `git show HEAD:<file>`.
+
+clean (before arms)       doc-versions rc=0 (153) · citations rc=0 (46, 0 violations) · horizons rc=0
+arm A  CLAUDE.md "SpringDoc OpenAPI 3.1.1" -> 3.1.0                      check-doc-versions rc=1
+       | == CLAUDE.md ==
+       |   DRIFT  SpringDoc              doc=3.1.0            actual=3.1.1
+       | FAIL: 1 stale version claim(s) across 7 doc(s) (153 checked).
+       restore CLAUDE.md: sha256 OK (d5e681ae472487e77ba8b90bf2c722a5aee16772ef1f75e8fd682452c1e4755b)
+arm B  STACK.md `core-java/build.gradle.kts:2` -> :3 (one line off)      check-doc-citations rc=1
+       | FAIL: C-3 .planning/codebase/STACK.md:34 cites core-java/build.gradle.kts:3, but that line says nothing the claim names
+       |        claim: - Spring Boot 4.1.1 on Spring Framework 7.0.9 — Web framework, DI, auto-configuration (`co
+       |        cited: id("io.spring.dependency-management") version "1.1.7"
+       |   violations  1
+       restore .planning/codebase/STACK.md: sha256 OK (465a76e2266c214a05be4d0883a9bc870461c0f31f784aa1f11d7a8a5b8b54da)
+arm C  core-java/build.gradle.kts:2 -> version "3.5.16" (root stays 4.1.1: a half-bump)
+                                                                          check-dependency-horizons rc=2
+       |                  site-unresolvable=1          (VOID class)
+       |   H-5 spring-boot: declared pin 'id("org.springframework.boot") version "4.1.1"' NOT FOUND on any non-comment line of core-java/build.gradle.kts (declared site core-java/build.gradle.kts:2)
+       | VOIDED: ... Exit 2 takes precedence over the 0 contract violation(s) also reported.
+       rc=2 is the correct "caught" (H-5 precedence 2 > 1 > 0); 38-03's plan had expected 1.
+       restore core-java/build.gradle.kts: sha256 OK (dcdfbbe7c31bb82d0ad6ca0f3b416c1ab4f0555e09d73a7c83200e31fc7c3adf)
+arm D  first CLAUDE.md "Spring Boot 4.1.1" -> 4.1.0 (the Constraints line)  check-doc-versions rc=1
+       | == CLAUDE.md ==
+       |   DRIFT  Spring Boot            doc=4.1.0            actual=4.1.1
+       | FAIL: 1 stale version claim(s) across 7 doc(s) (153 checked).
+       restore CLAUDE.md: sha256 OK (d5e681ae…4755b)
+arm E  Resilience4j row -> io.github.resilience4j:resilience4j-spring-boot9  check-doc-versions rc=2
+       | VOID: could not resolve the real version for 'Resilience4j' from the build files
+       restore scripts/check-doc-versions.sh: sha256 OK (6f22942c3c0421b06a1a3cd0772401ec170ce0ba471ebf142c98d75fd9061248)
+arm F  (added) spring-boot row eol_date 2027-07-31 -> 2027-07-30         check-dependency-horizons rc=1
+       | FAIL: H-2 spring-boot: cached eol_date 2027-07-30 disagrees with fetched 2027-07-31 for spring-boot/4.1 — run `bash scripts/check-dependency-horizons.sh --refresh`
+       |   H-2/H-3        violations=1  active-exemptions=5
+       Proves the clean run's H-2 fetch was online and read cycle 4.1, and that 2027-07-31 is the
+       catalogue's date, not a typed one.
+       restore infra/dependency-horizons.yaml: sha256 OK (d7a948d193650e4b6232234ce10f1fb78fe299e73dcdff67d3ea19d60ee36096)
+clean (after arms)        doc-versions rc=0 (153) · citations rc=0 (46, 0 violations) · horizons rc=0
+                          git diff --quiet rc=0 (tracked tree == HEAD); RESTORE_FAIL=0
+
+
+6. TASK 1 ACCEPTANCE (each with its fail direction)
+---------------------------------------------------
+AC1 git diff 4656a7f7..HEAD -- AGENTS.md > agents.diff: rc=0. Hunk headers (old side):
+    9-15, 20-26, 37-53, 59-77, 89-95, 129-135 -> hunks inside 389..811: 0.
+    Fail direction: a synthetic "@@ -400,1 +400,1 @@" header through the same awk -> 1.
+    ORGOS block sha256 identical at base and HEAD (61a53382…ed9f).
+AC2 arms A/B 1/1, C 2 with the H-5 spring-boot line naming core-java/build.gradle.kts, D 1 naming
+    CLAUDE.md, E 2 (VOID); every restore sha256-verified (section 5).
+AC3 pre-existing citation failures: none; the pre-phase run (1.4) is rc=0 with 0 violations.
+AC4 awk row extract rc=0 (16 lines): exemption|#706 count 0; eol_cycle "4.1" count 1.
+    Fail direction (the plan-base row): exemption|#706 count 2; eol_cycle "4.1" count 0.
+AC5 git grep resilience4j-spring-boot4 -- scripts/check-doc-versions.sh: 1 line (l.198), rc=0.
+    Fail direction (plan base): rc=1, no line.
+AC6 git grep -E 'Spring Boot[ A-Za-z]*:? ?3\.5\.16' over the 7 gated docs prints 4 lines, each
+    inside a "(migrated from" clause: STACK.md:34, AGENTS.md:12, CLAUDE.md:12,
+    ESSENTIAL_ARCHITECTURE.md:78. Stronger form (clauses stripped with the gate's own sed first):
+    0 hits. Fail direction (plan base, same stripped form): 15 hits.
+AC7 both version gates moved from 38-03's rc 2 to rc 0 (sections 1.1, 1.2, 4.1, 4.2).
+Prose verify (no gate reads these claims, so this grep is their check):
+    git grep -n -e 'JUnit 5' -e 'Tomcat 10\.1' -e 'Spring Boot 3 backend' -e '4\.1\.137'
+      -- CLAUDE.md AGENTS.md README.md .planning/codebase/STACK.md core-java/Dockerfile
+    HEAD: no output, rc=1. Fail direction (plan base): 6 lines, rc=0 (STACK.md:34/35/49,
+    AGENTS.md:62, CLAUDE.md:63, core-java/Dockerfile:115).
+
+Tracer feedback gate (interactive run, human_verify_mode end-of-phase, automated-only verify):
+the four <verify> commands were re-run after the arms (section 5, clean after) and pass, so the
+plan continues to Task 2 without a checkpoint.
