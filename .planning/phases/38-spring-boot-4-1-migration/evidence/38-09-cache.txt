@@ -94,3 +94,32 @@ TASK 1 - Jackson-3 cache serializer with an allowlist re-derived from its own by
      theTypeIdsInTheBytesAreExactlyTheReDerivedSet()              RED_EVIDENCE_OK target_test_failed
      aTypeOutsideTheAllowlistIsRefusedEvenUnderTheObjectBase()    RED_EVIDENCE_OK target_test_failed
      control, a PASSING test as target (productDtoRoundTrips...)  INVALID_RED no_target_test_failure
+
+4. GREEN (feat(38-09)): CacheConfig
+   - jsonRedisSerializer() = GenericJacksonJsonRedisSerializer.builder()
+       .enableDefaultTyping(cacheTypeValidator()).build()      (no customize(): dates measured ISO)
+   - cacheTypeValidator() = tools.jackson BasicPolymorphicTypeValidator, allowIfSubType per prefix only.
+   - CACHE_TYPE_ID_PREFIXES re-derived: {uk.jtoye., java.util., java.math.}
+       uk.jtoye.  <- ProductDto, AllergenSpan, MediaAssetDto, ShopDto, Membership (+ the test's MoneyField)
+       java.util. <- ArrayList, ImmutableCollections$ListN, LinkedHashMap, ImmutableCollections$Map1, $MapN
+       java.math. <- BigDecimal, top-level and as a member (["java.math.BigDecimal",12.50])
+       DROPPED java.lang. (Long now bare) and java.time. (OffsetDateTime now bare ISO text): no observed id.
+   - The Jackson-2 cacheObjectMapper() is removed (no caller: the two tests call jsonRedisSerializer()).
+   - The Javadoc no longer quotes the Jackson-2 typing call, the base-type matcher or the permissive
+     validator by name; the stale "flush the caches on deploy" note is replaced by the key prefix (Task 2).
+   Same command as RED: rc=0, "BUILD SUCCESSFUL", compileJava executed (not UP-TO-DATE).
+   TEST xml: CacheSerializerTypeAllowlistTest tests="11" skipped="0" failures="0" errors="0"
+             MembershipSerializerRoundTripTest tests="3" skipped="0" failures="0" errors="0"
+
+5. Task 1 acceptance criteria, both directions
+   AC1 git grep 'com.fasterxml.jackson.databind' | 'GenericJackson2JsonRedisSerializer' -- CacheConfig.java
+       tree: rc=1 (no lines)            plan base 9ae069f8: rc=0, 8 lines (imports l.4-7, l.21, l.161, l.187-188)
+   AC2 git grep 'activateDefaultTyping' | 'allowIfBaseType' | 'LaissezFaire' -- CacheConfig.java
+       tree: rc=1 (no lines)            plan base 9ae069f8: rc=0, 5 lines (Javadoc l.115-136, call l.182)
+   AC4 refusal testcases are self-closing (passed) in the GREEN xml:
+       aTypeOutsideTheAllowlistIsRefusedEvenUnderTheObjectBase(), aKnownGadgetBaseStaysRefused(),
+       theDroppedJackson2PrefixesAreNowRefused()
+       fail direction: all three carried a <failure> child in the RED xml (section 3).
+       Both refusals now have root cause tools.jackson.databind.exc.InvalidTypeIdException naming the type.
+   Prohibition: git grep 'enableUnsafeDefaultTyping' -- core-java/src/main  rc=1;
+       positive control git grep -c 'enableDefaultTyping' -- core-java/src/main  rc=0 (1 match).
