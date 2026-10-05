@@ -75,7 +75,7 @@ Postgres **5433**, Keycloak **8085**, Grafana **3002**.
 
 ## The stack (fixed — do not migrate without a decision)
 
-Spring Boot 3.5.16 · JDK 25 (Gradle 9.7.1 wrapper — JDK 25 requires Gradle >= 9.1) · Next.js 16.3.6 / React 19 · Go 1.27 /
+Spring Boot 4.1.1 (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38) · JDK 25 (Gradle 9.7.1 wrapper — JDK 25 requires Gradle >= 9.1) · Next.js 16.3.6 / React 19 · Go 1.27 /
 Gin · PostgreSQL 15 · Redis 7 · RabbitMQ 4.3.4 · Keycloak 24.0.5 · Azure Blob Storage (Azurite 3.37.0 locally) · Ollama.
 
 ## The culture, in one line

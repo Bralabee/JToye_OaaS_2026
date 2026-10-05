@@ -18,7 +18,7 @@ J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS p
 | Layer | Technology |
 |-------|------------|
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS, NextAuth.js v5 |
-| **Backend** | Spring Boot 3, Java 25, MapStruct 1.6.3, Redis Caching, Spring State Machine |
+| **Backend** | Spring Boot 4, Java 25, MapStruct 1.6.3, Redis Caching, Spring State Machine |
 | **Edge** | Go 1.27, Gin, Circuit Breakers, Rate Limiting |
 | **Database** | PostgreSQL 15 with Row-Level Security (RLS) |
 | **Auth** | Keycloak 24 (OAuth2/OIDC) |

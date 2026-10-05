@@ -1,6 +1,7 @@
 # Technology Stack
 
 **Analysis Date:** 2026-09-03
+**Boot-4 refresh:** 2026-10-05 (Phase 38, #706). The core-java lines below describe the Spring Boot 4.1.1 tree, with versions read from the resolved runtime and test classpaths. The migration's decisions, risks and deploy notes are in `docs/architecture/decisions/ADR-0006-spring-boot-4-migration.md`.
 
 ## Languages
 
@@ -30,34 +31,36 @@
 ## Frameworks
 
 **Core:**
-- Spring Boot 3.5.16 — Web framework, DI, auto-configuration (`core-java/build.gradle.kts:2`).
-- Embedded Tomcat 10.1.59 — security override of Boot's managed Tomcat family (`tomcat.version` in `core-java/build.gradle.kts`, PR #733).
-- io.netty — security override of Boot's managed netty family, pinned to 4.1.137.Final via the `netty.version` Gradle extra property (`core-java/build.gradle.kts:21-54`; NOT a direct dependency — it arrives transitively via reactor-netty and `azure-core-http-netty`, the Azure Blob SDK's HTTP client). Raised twice for security: 4.1.136.Final in PR #318 for four Trivy-flagged codec CVEs, then 4.1.137.Final in PR #752 for CVE-2026-75595 / CVE-2026-75596 in netty-handler. The second pair is NOT reachable in this topology (server-side SNI; core-java serves over Tomcat) and was taken for image hygiene — see the in-file comment before changing it.
-- Jackson (`com.fasterxml.jackson`) — security override of Boot's managed Jackson family, pinned to 2.21.7 via the `jackson-bom.version` Gradle extra property (`core-java/build.gradle.kts:104-153`; NOT a direct dependency — it arrives through the web/json starters, and the property re-points the imported jackson-bom so the whole family moves together). Taken at 2.21.6 for CVE-2026-68497 (HIGH, jackson-databind 2.21.4, Trivy image gate), then moved to 2.21.7 on 2026-10-04 for CVE-2026-89407 / CVE-2026-89425 (jackson-core) and CVE-2026-91776 / CVE-2026-91777 (jackson-databind), all HIGH in 2.21.6 — each time the smallest clearing bump on the 2.21 line; 2.22.x deliberately not taken. jackson-annotations stays at `2.21` by the BOM's own major.minor versioning. Delete the pin once Boot manages Jackson 2 at or above 2.21.7; under Boot 4 (#706) `jackson-bom.version` names the Jackson 3 BOM, so the pin must be re-keyed to `jackson-2-bom.version`, not deleted — see the in-file comment.
-- Spring Data JPA + Hibernate ORM (Boot-managed version) — ORM/persistence, plus Hibernate Envers for `_aud` audit-history tables.
-- Spring Security + Spring OAuth2 Resource Server — JWT/OIDC validation against Keycloak, dual-realm (staff `jtoye-dev` + customer `jtoye-customers`).
-- Spring WebFlux (`spring-boot-starter-webflux`) — non-blocking `WebClient` used for the Anthropic/AI call path and other outbound HTTP (FHRS, Companies House, webhook delivery).
-- Spring AMQP — RabbitMQ integration (listeners, transactional outbox flushers for payment/media events).
+- Spring Boot 4.1.1 on Spring Framework 7.0.9 — Web framework, DI, auto-configuration (`core-java/build.gradle.kts:2`) (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38).
+- Explicit per-module Boot starters, no classic starter (owner decision D-02, ADR-0006): webmvc, data-jpa, flyway, aspectj, security, security-oauth2-resource-server, validation, actuator, restclient, data-redis, cache, amqp, websocket, mail, webflux, webclient and zipkin, plus the test, webmvc-test, security-test and data-jpa-test slices. The classic starter would pull Boot's gRPC auto-configuration without gRPC. A classic swap of the same commit activates 133 auto-configurations against the explicit set's 130; the 3 classic-only ones (Gson, an empty Spring Integration metrics placeholder, the Jackson-2 mapper) are intended absences (38-13).
+- Embedded Tomcat 11.0.26 — security floor over Boot 4.1.1's managed 11.0.24, held by the `tomcat.version` Gradle extra property (`core-java/build.gradle.kts:71`). The Trivy image gate needs at least 11.0.25; 11.0.26 is held for Tomcat's advisory-only CVE-2026-76183 and CVE-2026-86350, which Trivy does not carry (38-15).
+- io.netty — no pin under Boot 4. Every netty artifact resolves to Boot 4.1.1's managed 4.2.17.Final (the `netty.version` key of Boot's BOM), arriving transitively via reactor-netty and `azure-core-http-netty`, the Azure Blob SDK's HTTP client (`core-java/build.gradle.kts:21-28`). The Boot-3 era 4.1-line pin was deleted in Phase 38: forcing a 4.1 netty under the 4.2-line reactor-netty would be a cross-line mismatch, not a floor. If a future Trivy DB flags 4.2.17, raise the floor on the 4.2 line.
+- Jackson 3 (`tools.jackson`) is the application JSON line: Boot's `JsonMapper` with Jackson 3's defaults, by owner decision on 2026-10-05 (ADR-0006), floored at 3.1.7 by the `jackson-bom.version` Gradle extra property (Boot manages 3.1.5). Jackson 2 (`com.fasterxml.jackson`) is transitive-only, for springdoc's swagger-core, the Azure SDK, Stripe and others, floored at 2.22.3 by `jackson-2-bom.version` (Boot manages 2.21.5; `core-java/build.gradle.kts:222-231`). No main class imports Jackson-2 databind, and `JacksonLineContractTest` fails if one does. Both keys are proven load-bearing by near-miss arms (38-15).
+- Spring Data JPA (Spring Data 2026.0) + Hibernate ORM 7.4 (Boot-managed) — ORM/persistence, plus Hibernate Envers for `_aud` audit-history tables.
+- Spring Security 7.1 + Spring OAuth2 Resource Server — JWT/OIDC validation against Keycloak, dual-realm (staff `jtoye-dev` + customer `jtoye-customers`). A 401 carries a plain `Bearer` challenge with no `resource_metadata` (D-04). `/.well-known/oauth-protected-resource` answers 401 without credentials and 404 with them, so Security 7.1's built-in metadata is never served (D-05 as refined by the owner, ADR-0006). `spring-security-access` is declared for spring-statemachine (D-03).
+- Spring WebFlux (`spring-boot-starter-webflux`, kept per D-02) — non-blocking `WebClient`, auto-configured by `spring-boot-starter-webclient`, used for the Anthropic/AI call path and other outbound HTTP (FHRS, Companies House, webhook delivery). `RestClient` and `RestTemplateBuilder` come from `spring-boot-starter-restclient`.
+- Spring AMQP 4.1 — RabbitMQ integration (listeners, transactional outbox flushers for payment/media events). The message converter is Jackson 3's `JacksonJsonMessageConverter` with the same three trusted packages.
 - Spring WebSocket (STOMP) — real-time KDS/order updates; in-memory broker locally, RabbitMQ STOMP relay in k8s (`stomp.broker.mode`).
-- Spring State Machine 4.0.2 (`spring-statemachine-starter`) — order lifecycle state machine.
-- Spring Cache + Spring Data Redis — tenant-aware caching.
+- Spring State Machine 4.0.2 (`spring-statemachine-starter`) — order lifecycle state machine. It has no Spring Framework 7 release and runs on 7.0.9; see `.planning/codebase/CONCERNS.md` and ADR-0006 (D-03).
+- Spring Cache + Spring Data Redis (Lettuce 7) — tenant-aware caching. Cache keys carry a `v4:` format version (`v4:{region}::tenant:…`), so a Boot-3.5 entry is never read after the deploy.
+- SpringDoc OpenAPI 3.1.1 (`springdoc-openapi-starter-webmvc-ui`, the Boot-4 line) — Swagger UI and the served OpenAPI document; the committed snapshot was regenerated on 3.1.1 (38-14).
 - Spring AOP — cross-cutting concerns (tenant pinning, caching).
 - Next.js 16.3.6 + React 19.3.0 — Frontend framework (file-based routing, standalone output build).
 - Gin v1.12.0 — Go HTTP routing/middleware for the edge gateway (`edge-go/go.mod:6`).
 
 **Testing:**
-- JUnit 5 (via `spring-boot-starter-test`) — Java unit/integration tests.
+- JUnit Jupiter 6 (6.0.3, Boot-managed; via `spring-boot-starter-test` and the per-technology test starters) — Java unit/integration tests. Mockito 5.23 and AssertJ 3.27 come with it.
 - Testcontainers 1.21.4 (`testcontainers`, `postgresql`, `rabbitmq`, `junit-jupiter` modules) — real Postgres + RLS and real-broker fan-out proofs; run via the dedicated `integrationTest` Gradle task, tagged `testcontainers`, excluded from the default `test` task.
 - H2 (`com.h2database:h2`) — lightweight in-memory unit tests.
-- JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:466` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
+- JaCoCo 0.8.15 (pinned explicitly, `core-java/build.gradle.kts:579` `toolVersion = "0.8.15"`; required for JDK 25 class-file support — 0.8.12 cannot read major version 69) — coverage, aggregated over `test.exec` + `integrationTest.exec`.
 - Jest 30.5.2 + @testing-library/react 16.3.0 + jest-environment-jsdom 30.5.2 — Frontend unit/component tests. `overrides` pins the transitive `nwsapi` at 2.2.24: 2.2.27 breaks Radix-Select role queries (two suites timeout deterministically; bisected 2026-09-07, exit criteria in #736).
 - jest-axe 11.0.0 + @axe-core/playwright 4.13.0 + axe-core 4.13.0 — Accessibility testing.
 - @playwright/test 1.63.0 — E2E browser automation (`frontend/playwright.config.ts`).
 - vitest ^4 — MCP server unit tests (`mcp-server/package.json`).
 
 **Build/Dev:**
-- Spring Boot Gradle Plugin 3.5.16 — bootJar packaging, redirected to `core-java/build-local/` (`layout.buildDirectory.set(file("build-local"))`) — `core-java/build/` is a stale artifact directory, never read.
-- Flyway 3-part: `flyway-core` + `flyway-database-postgresql` (Boot-managed versions) — schema migration.
+- Spring Boot Gradle Plugin 4.1.1 — bootJar packaging, redirected to `core-java/build-local/` (`layout.buildDirectory.set(file("build-local"))`) — `core-java/build/` is a stale artifact directory, never read.
+- Flyway 12 (Boot-managed 12.4.0): `flyway-core` + `flyway-database-postgresql` — schema migration. Under Boot 4 the Flyway auto-configuration is its own module, so `spring-boot-starter-flyway` is declared explicitly; without it 0 of 67 migrations apply and `RlsContractTest` goes 4/7 red (38-03, 38-04).
 - Lombok + MapStruct 1.6.3 (+ `lombok-mapstruct-binding` 0.2.0) — boilerplate reduction / compile-time DTO mapping.
 - ESLint 9 flat config (`frontend/eslint.config.mjs`) — the only lint config; Next 16 removed `next lint`. Spreads `eslint-config-next@16.3.6`'s native flat-config arrays (`/core-web-vitals`, `/typescript`) directly — do NOT wrap with `FlatCompat` (crashes with a circular-structure error per that file's own header).
 - TailwindCSS 3.4.1 + PostCSS 8.5.12 — Frontend styling.
@@ -67,7 +70,7 @@
 ## Key Dependencies
 
 **Critical:**
-- PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:248`) — explicit pin, not Boot-managed.
+- PostgreSQL JDBC Driver 42.7.13 (`core-java/build.gradle.kts:351`) — explicit pin, not Boot-managed.
 - Azure Storage Blob SDK 12.35.1 (`com.azure:azure-storage-blob`) + Azure Identity 1.18.6 (`com.azure:azure-identity`) — the object-store client (Azurite emulator locally, Azure Blob Storage in staging/production) and the Workload Identity credential used in AKS.
 - Stripe Java SDK 33.4.2 — Payment intents, Connect (destination charges), webhook signature verification.
 - @stripe/react-stripe-js 6.12.0 + @stripe/stripe-js 9.17.0 — Frontend Stripe Elements integration.
@@ -77,10 +80,10 @@
 - sony/gobreaker v1.0.0 — Edge gateway circuit breaker (no fallback; breaker-open returns 502).
 
 **Infrastructure:**
-- com.rabbitmq:amqp-client — pinned to 5.34.0 via the `rabbit-amqp-client.version` Gradle extra property (NOT a direct dependency; see extensive in-file rationale) to close 6 HIGH/MEDIUM CVEs Boot's own 5.25.0 BOM pin would otherwise ship.
-- Resilience4j 2.4.0 (`resilience4j-spring-boot3`) — circuit breakers for Stripe, FHRS, Companies House, email, AI, webhook egress (config in `core-java/src/main/resources/application.yml:724-775`, `resilience4j:` at 724).
+- com.rabbitmq:amqp-client — pinned to 5.34.0 via the `rabbit-amqp-client.version` Gradle extra property (NOT a direct dependency; see extensive in-file rationale) to close the four HIGH CVEs Trivy names on Boot 4.1.1's managed 5.30.0 (CVE-2026-63337, CVE-2026-69219, CVE-2026-69220, CVE-2026-75516; measured in 38-15). The key is unchanged from Boot 3.5.
+- Resilience4j 2.4.0 (`resilience4j-spring-boot4`, the Boot-4 artifact) — circuit breakers for Stripe, FHRS, Companies House, email, AI, webhook egress (config in `core-java/src/main/resources/application.yml:749-800`, `resilience4j:` at 749).
 - Bucket4j 8.10.1 (`bucket4j-core`, `bucket4j-redis`) — Redis-backed token-bucket rate limiting.
-- Micrometer Prometheus + Micrometer Tracing (Brave/Zipkin bridge) — metrics + distributed tracing.
+- Micrometer Prometheus + Micrometer Tracing (Brave/Zipkin bridge, via `spring-boot-starter-zipkin`) — metrics + distributed tracing. Boot 4 reads the Zipkin endpoint from `management.tracing.export.zipkin.endpoint` (renamed in 38-11; `ZIPKIN_ENDPOINT` drives it again).
 - com.sksamuel.scrimage 4.6.8 (`scrimage-core`, `scrimage-webp`) + TwelveMonkeys ImageIO 3.15.2 (`imageio-webp`, `imageio-core`) — image decode/resize/WebP transcode pipeline (Phase 24 media pipeline); scrimage-webp's bundled `cwebp` is glibc-linked and does NOT run on the Alpine (musl) runtime image, so the Dockerfile installs `libwebp-tools` and points the JVM at `/usr/bin` via `-Dcom.sksamuel.scrimage.webp.binary.dir`.
 - OpenPDF 2.0.3 (`com.github.librepdf:openpdf`) — PDF generation for allergen labels (JasperReports was removed 2026-07-27 as unused, closing 3 Trivy HIGHs).
 - Framer Motion 13.4.4, GSAP 3.15.0 (+`@gsap/react` 2.1.2) — animation.

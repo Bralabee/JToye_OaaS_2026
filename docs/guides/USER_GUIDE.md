@@ -4,7 +4,7 @@
 J'Toye OaaS (Operations as a Service) is a production-ready, multi-tenant SaaS platform designed for retail management in the UK. It utilizes a distributed architecture with strong data isolation via PostgreSQL Row-Level Security (RLS).
 
 ### Core Components
-*   **core-java**: Spring Boot 3 service (System of Record). Handles business logic, data persistence, and RLS enforcement.
+*   **core-java**: Spring Boot 4 service (System of Record). Handles business logic, data persistence, and RLS enforcement.
 *   **edge-go**: Go 1.27 Gin service (System of Engagement). Provides rate limiting, circuit breaking, and batch synchronization.
 *   **frontend**: Next.js 14 application with NextAuth.js and Keycloak integration.
 *   **Keycloak**: OIDC provider for identity and access management.
