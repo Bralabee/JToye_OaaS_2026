@@ -125,8 +125,30 @@ export interface Product {
   dietaryTags: string | null
   shopId: string | null
   quantityInStock: number | null
+  /**
+   * D-09 (31.1-06): the bits this product's EMPHASISED ingredients text names but its declared
+   * mask omits. Advisory, never merged into allergenMask. ABSENT means "not computed" (a cache
+   * entry from before 31.1-06), which is not the same as "no disagreement".
+   */
+  allergenWarnings?: ProductAllergenWarning[]
+  /**
+   * D-16 (31.1-14): the "may contain" (cross-contact) mask, same 14-bit layout as allergenMask,
+   * kept separate from it. Absent/null = not recorded; 0 = the vendor recorded no risk.
+   */
+  mayContainMask?: number | null
   createdAt: string
   updatedAt: string
+}
+
+/** One D-09 save-time warning (core-java ProductAllergenWarning). */
+export interface ProductAllergenWarning {
+  /** "UNDECLARED_INGREDIENT_ALLERGEN" today; typed as string so a new code is not a parse failure. */
+  code: string
+  /** Bit in the 14-bit FSA layout (ALLERGENS below). */
+  allergenBit: number
+  /** Catalogue name for the bit, e.g. "Milk". */
+  allergen: string
+  message: string
 }
 
 export interface CreateProductRequest {
@@ -145,6 +167,8 @@ export interface CreateProductRequest {
   dietaryTags?: string
   shopId?: string
   quantityInStock?: number | null
+  /** D-16: omitted or null on PUT keeps the stored value; 0 is an explicit "no cross-contact risk". */
+  mayContainMask?: number | null
 }
 
 // Order Types

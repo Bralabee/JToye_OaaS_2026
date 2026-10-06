@@ -1,0 +1,101 @@
+/**
+ * 31.1-19 (#787, #861; D-09, D-16, D-18) — the one source of the allergen phrases the vendor
+ * and the storefront surfaces print.
+ *
+ * The strings are asserted VERBATIM. A paraphrase in passing is the failure this module exists
+ * to stop: the persona saw "No allergens" for a dish whose ingredients said MILK, and the
+ * wording that replaces it has to be the same wherever it appears.
+ *
+ * The forbidden-phrase arm reads the module SOURCE, not only the exported values, so a phrase
+ * added in a comment, an unexported constant or a new export is caught too.
+ */
+import { readFileSync } from "fs"
+import path from "path"
+import {
+  NO_ALLERGENS_DECLARED_COPY,
+  INGREDIENTS_EMPHASIS_HELP_COPY,
+  MAY_CONTAIN_HELP_COPY,
+  KEEP_AS_IS_COPY,
+  mayContainCopy,
+  tickAllergenCopy,
+  undeclaredIngredientCopy,
+  undeclaredIngredientVendorCopy,
+  vendorSaveWarningCopy,
+} from "@/lib/allergen-copy"
+
+const MODULE_PATH = path.join(__dirname, "..", "allergen-copy.ts")
+
+// Claims the platform can never stand behind: an absence of DECLARED allergens is not an
+// absence of allergens, and nothing here knows who the reader is.
+const FORBIDDEN = [/allergen[-\s]free/i, /safe for you/i, /no allergens present/i]
+
+describe("D-09: the undeclared-ingredient wording names the allergen as the vendor typed it", () => {
+  it("storefront form: 'Ingredients name: MILK – check with the shop' (the en dash is part of it)", () => {
+    expect(undeclaredIngredientCopy(["Milk"])).toBe("Ingredients name: MILK – check with the shop")
+    expect(undeclaredIngredientCopy(["Milk"])).toContain("–")
+  })
+
+  it("vendor form: 'Ingredients name: MILK – not ticked'", () => {
+    expect(undeclaredIngredientVendorCopy(["Milk"])).toBe("Ingredients name: MILK – not ticked")
+  })
+
+  it("names every allergen, in the order given, never a bare count", () => {
+    expect(undeclaredIngredientCopy(["Milk", "Eggs"])).toBe(
+      "Ingredients name: MILK, EGGS – check with the shop"
+    )
+    expect(undeclaredIngredientVendorCopy(["Cereals containing gluten"])).toBe(
+      "Ingredients name: CEREALS CONTAINING GLUTEN – not ticked"
+    )
+    expect(undeclaredIngredientCopy(["Milk", "Eggs"])).not.toMatch(/\d/)
+  })
+
+  it("has nothing to say when nothing disagrees (null, not an empty sentence)", () => {
+    expect(undeclaredIngredientCopy([])).toBeNull()
+    expect(undeclaredIngredientVendorCopy([])).toBeNull()
+  })
+
+  it("the save-time warning names the allergen twice, as the vendor reads it on the form", () => {
+    expect(vendorSaveWarningCopy("Milk")).toBe("The ingredients mention Milk, but Milk is not ticked")
+    expect(tickAllergenCopy("Milk")).toBe("Tick Milk")
+    expect(KEEP_AS_IS_COPY).toBe("Keep as it is")
+  })
+})
+
+describe("D-18: an empty declaration says what was declared, not what the food contains", () => {
+  it("NO_ALLERGENS_DECLARED_COPY is 'No allergens declared'", () => {
+    expect(NO_ALLERGENS_DECLARED_COPY).toBe("No allergens declared")
+  })
+})
+
+describe("D-16: may contain is its own line", () => {
+  it("'May contain: Sesame' for one, joined for several, null for none", () => {
+    expect(mayContainCopy(["Sesame"])).toBe("May contain: Sesame")
+    expect(mayContainCopy(["Peanuts", "Sesame"])).toBe("May contain: Peanuts, Sesame")
+    expect(mayContainCopy([])).toBeNull()
+  })
+
+  it("the vendor helper text says these are not ingredients", () => {
+    expect(MAY_CONTAIN_HELP_COPY).toBe(
+      "Allergens that may get into this dish from your kitchen, shown separately to customers. These are not ingredients."
+    )
+  })
+})
+
+describe("Pitfall 6: the ingredients helper text teaches the two emphasis forms the server reads", () => {
+  it("mentions CAPITALS and **double asterisks**", () => {
+    expect(INGREDIENTS_EMPHASIS_HELP_COPY).toContain("CAPITALS")
+    expect(INGREDIENTS_EMPHASIS_HELP_COPY).toContain("**double asterisks**")
+  })
+})
+
+describe("no phrase the platform cannot stand behind appears anywhere in the module", () => {
+  const source = readFileSync(MODULE_PATH, "utf8")
+
+  it("control: the source was read (it contains its own named export)", () => {
+    expect(source).toContain("NO_ALLERGENS_DECLARED_COPY")
+  })
+
+  it.each(FORBIDDEN.map((re) => [re.source, re] as const))("absent: %s", (_name, re) => {
+    expect(source).not.toMatch(re)
+  })
+})
