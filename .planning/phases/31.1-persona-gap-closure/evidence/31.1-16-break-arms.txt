@@ -1,0 +1,59 @@
+# 31.1-16 break arms (each run after the change was COMMITTED; restored with git checkout from HEAD, verified by sha256 prefix)
+
+## Task 1 (GREEN commit 57bd62f2)
+
+T1-A  RlsContractTest exemption load-bearing
+      break: remove "dsar_access_export" from EXEMPT_TABLES (grep count 0)
+      run:   ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.security.RlsContractTest' --no-daemon
+      RED:   rc=1, tests=7 failures=1 errors=0
+             "ENABLE ROW LEVEL SECURITY missing on public.dsar_access_export — every tenant-scoped table must enable RLS ..."
+      restore: sha c5c979d2c3ed2b06 -> c5c979d2c3ed2b06 (match)
+
+T1-B  Email-body prohibition can fail
+      break: worker passes token + " " + <decrypted export JSON> to sendAccessExportReady (link regex still matches)
+      run:   ... --tests 'uk.jtoye.core.gdpr.DsarAccessExportIntegrationTest'
+      RED:   rc=1, tests=1 failures=1: "[the email body must not carry Grace Persona]"
+      restore: sha match yes
+
+T1-C  grep criterion `git grep -n "dsar_access_requests_outstanding" -- core-java/src/main/java`
+      HEAD: rc=1, empty.  Fail direction at 899b727f (pre-GREEN): rc=0,
+      DsarFanoutWorker.java:177: log.warn("event=dsar_access_requests_outstanding count={} ...
+
+Closing clean run (tracer gate): DsarAccessExportIntegrationTest 1/0/0, RlsContractTest 7/0/0, rc=0, 2026-10-06T18:41:57Z
+
+## Task 2 (GREEN commit 42c9f0d0; worker sha256 prefix 00cbf3652bf4c1ac)
+
+T2-1  Complete before the send result (plan break arm 1)
+      break: completeAccess(...) moved BEFORE sendAccessExportReady, result ignored
+      run:   --tests '...DsarAccessExportIntegrationTest.aFailedSendReleasesTheRequest_andTheRetryReplacesTheTokenAndCompletes'
+      RED:   rc=1, tests=1 failures=1: "[not complete: the subject does not have the link] expected VERIFIED but was COMPLETED"
+      restore: 00cbf3652bf4c1ac (match)
+
+T2-2  Drop the per-tenant pin for collection (plan break arm 2) — TenantContext.set AND the explicit
+      set_config both removed (breaking only the explicit pin is a known vacuous arm here: the global
+      TenantSetLocalAspect re-pins from TenantContext before every repository/JdbcTemplate call)
+      break: collection runs as transactionTemplate.execute(asSystem(collectForTenant)) with no TenantContext
+      run:   --tests '...DsarAccessExportIntegrationTest.aVerifiedAccessRequestProducesAnEncryptedExportEmailsALinkAndCompletes'
+             (role downgraded to NOSUPERUSER; precondition rolsuper=false asserted)
+      RED:   rc=1, tests=1 failures=1: "[one section per tenant that holds the subject] expected: 2 but was: 0"
+             -> under FORCE RLS an unpinned collection sees nothing; the reach comes from the loop + pin
+      restore: 00cbf3652bf4c1ac (match)
+
+T2-3  Claim order (deviation fix: execute claimed rows by received_at)
+      break: iterate `claimed` (RETURNING order) instead of the received_at-sorted copy
+      run x2: --tests '...anAccessAndAnErasureForTheSameSubjectAreSeparateRequests_neitherMergesIntoTheOther'
+      result: run 1 rc=0 (1/0/0), run 2 rc=1 (failures=1: export "vendors":[] — the erasure ran first)
+      -> NON-DETERMINISTIC fail direction (RETURNING order is unspecified); RED was also observed on
+         the Task 2 RED run before the fix. With the sort the order is total (received_at, id).
+      restore: 00cbf3652bf4c1ac (match)
+
+T2-4  k8s env contract (deviation fix 01858cc6)
+      before: k8s/scripts/check-env-contract.sh rc=1 —
+        "DIRECTION (b) VIOLATION [core-java] ... DSAR_EXPORT_DOWNLOAD_BASE_URL (default: 'http://localhost:3000/data-request/download' — local-only token: 'localhost')"
+      after:  rc=0 "PASS: core-java 67 injected / 163 read ..."
+      goldens: render-golden.sh --diff-since 31.1-16 = +1 configmap key, +5 env lines per overlay; check mode rc=0
+
+T2-5  Plan verify vacuity: `./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.security.access.SystemPrincipalGuardTest'`
+      exits rc=1 "No tests found for given includes" — the class is @SpringBootTest @Testcontainers
+      @Tag("testcontainers"), so it runs only under integrationTest. Replaced with
+      `:core-java:cleanIntegrationTest :core-java:integrationTest --tests '...SystemPrincipalGuardTest'`: rc=0, 8/0/0.

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 4
+open_count: 5
 waived_count: 0
 fixed_count: 1
-total_count: 5
-last_updated: 2026-10-06T18:25:22.970Z
+total_count: 6
+last_updated: 2026-10-06T19:52:27.849Z
 ---
 
 # Broken Windows Ledger
@@ -20,6 +20,7 @@ last_updated: 2026-10-06T18:25:22.970Z
 | 3 | 36 | unrun-verify | k8s/staging/workload-identity-patch.yaml |  | 36-09: Workload Identity is proven at render level (INV-8/9/10) and against the real validators (core-java validateShape, blobctl config) only; that the AKS webhook mutates the labelled pods, projects its token with automountServiceAccountToken false (A6) and the Entra exchange succeeds needs a WI-enabled cluster and the Phase 29 client-id annotations (jtoye-staging-aks has WI off and is stopped) | open |  | 2026-09-29T06:23:37.497Z |  |
 | 4 | 31.1 | unrun-verify | scripts/openapi-gate.sh |  | 31.1-14: oasdiff-based OpenAPI compat gate not run locally (oasdiff not installed); OpenApiSnapshotTest byte-equality ran green after regeneration | open |  | 2026-10-06T17:35:41.148Z |  |
 | 5 | 31.1 | unrun-verify | frontend/e2e/allergen-ack-race.spec.ts |  | 31.1-15 #785 race spec listed only; RED (pre-rebuild runtime) and GREEN runs owed to 31.1-30 | open |  | 2026-10-06T18:25:22.970Z |  |
+| 6 | 31.1 | unrun-verify | core-java/src/main/java/uk/jtoye/core/gdpr/DsarOutcomeMailer.java |  | 31.1-16 ACCESS link email proven only against a mocked JavaMailSender; live Mailhog capture, live customer-realm lookup and a click-through to /data-request/download (page built by 31.1-17) owed to 31.1-30 | open |  | 2026-10-06T19:52:27.849Z |  |
 
 ````json
 [
@@ -85,6 +86,19 @@ last_updated: 2026-10-06T18:25:22.970Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-06T18:25:22.970Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 6,
+    "kind": "unrun-verify",
+    "phase": "31.1",
+    "file": "core-java/src/main/java/uk/jtoye/core/gdpr/DsarOutcomeMailer.java",
+    "line": null,
+    "description": "31.1-16 ACCESS link email proven only against a mocked JavaMailSender; live Mailhog capture, live customer-realm lookup and a click-through to /data-request/download (page built by 31.1-17) owed to 31.1-30",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T19:52:27.849Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
