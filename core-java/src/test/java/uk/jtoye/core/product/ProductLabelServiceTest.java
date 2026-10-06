@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
+import uk.jtoye.core.exception.InvalidProductionDateException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.LabelRenderModel.IngredientRun;
 import uk.jtoye.core.security.TenantContext;
@@ -222,6 +223,194 @@ class ProductLabelServiceTest {
         assertThat(text).contains("Produced: 4 July 2026");
         assertThat(text).contains("Use by: 7 July 2026");
         assertThat(text).contains("12 Market Street, London, E1 6AN");
+    }
+
+    // ---- #861 (D-16, D-17): may-contain, production date, en-GB ----
+
+    private static final int CRUSTACEANS = 1 << 1;
+    private static final int MILK = 1 << 6;
+    private static final int NUTS = 1 << 7;
+    private static final int SESAME = 1 << 10;
+
+    /** A product declaring Milk, shelf life 2, use-by, with the given may-contain mask. */
+    private Product milkProduct(Integer mayContainMask) {
+        Product product = compliantProduct();
+        product.setIngredientsText("Rice, **milk**, pepper");
+        product.setAllergenMask(MILK);
+        product.setShelfLifeDays(2);
+        product.setMayContainMask(mayContainMask);
+        return product;
+    }
+
+    private String labelText(Product product, LocalDate productionDate, Clock clock) throws Exception {
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(compliantShop()));
+        return extractText(serviceAt(clock).generateLabel(productId, productionDate));
+    }
+
+    @Test
+    @DisplayName("#861 feature case: Milk declared, may-contain Sesame|Milk, produced 2026-10-03, shelf life 2 -> Produced 3 October, Use by 5 October, May contain: Sesame (Milk omitted)")
+    void buildRenderModelProductionDateAndMayContain() {
+        LabelRenderModel model = ProductLabelService.buildRenderModel(
+                milkProduct(SESAME | MILK), compliantShop(), LocalDate.of(2026, 10, 3));
+
+        assertThat(model.productionDate()).isEqualTo(LocalDate.of(2026, 10, 3));
+        assertThat(model.productionLine()).isEqualTo("Produced: 3 October 2026");
+        assertThat(model.durabilityLine()).isEqualTo("Use by: 5 October 2026");
+        assertThat(model.mayContainNames()).containsExactly("Sesame");
+        assertThat(model.mayContainLine()).isEqualTo("May contain: Sesame");
+        // The declared emphasis is unchanged: milk is still the one emphasised run.
+        assertThat(model.ingredientRuns()).filteredOn(IngredientRun::emphasised)
+                .extracting(IngredientRun::text).containsExactly("milk");
+    }
+
+    @Test
+    @DisplayName("#861 adjacency: a bit in BOTH masks is shown only under the declaration; the stored may-contain mask keeps it")
+    void declaredBitIsOmittedFromMayContainButKeptInTheMask() {
+        Product product = milkProduct(MILK);
+
+        LabelRenderModel model = ProductLabelService.buildRenderModel(
+                product, compliantShop(), LocalDate.of(2026, 10, 3));
+
+        assertThat(model.mayContainNames()).as("Milk is declared, so nothing is left to say").isEmpty();
+        assertThat(model.mayContainLine()).isNull();
+        assertThat(product.getMayContainMask()).as("stored may-contain mask is untouched").isEqualTo(MILK);
+        assertThat(product.getAllergenMask()).as("declared mask is untouched").isEqualTo(MILK);
+    }
+
+    @Test
+    @DisplayName("#861 empty: may-contain NULL and 0 both give no 'May contain' line and an empty list")
+    void mayContainNullAndZeroPrintNoLine() throws Exception {
+        for (Integer mask : new Integer[]{null, 0}) {
+            LabelRenderModel model = ProductLabelService.buildRenderModel(
+                    milkProduct(mask), compliantShop(), LocalDate.of(2026, 10, 3));
+            assertThat(model.mayContainNames()).as("names for mask %s", mask).isEmpty();
+            assertThat(model.mayContainLine()).as("line for mask %s", mask).isNull();
+
+            String text = labelText(milkProduct(mask), LocalDate.of(2026, 10, 3),
+                    Clock.fixed(Instant.parse("2026-10-04T10:00:00Z"), ZoneOffset.UTC));
+            assertThat(text).as("PDF for mask %s", mask).doesNotContain("May contain");
+        }
+    }
+
+    @Test
+    @DisplayName("#861 ordering: may-contain names are in AllergenCatalog bit order whatever order the mask was built in")
+    void mayContainNamesAreInCatalogueOrder() {
+        int builtBackwards = 0;
+        builtBackwards |= SESAME;
+        builtBackwards |= NUTS;
+        builtBackwards |= CRUSTACEANS;
+
+        LabelRenderModel model = ProductLabelService.buildRenderModel(
+                milkProduct(builtBackwards), compliantShop(), LocalDate.of(2026, 10, 3));
+
+        assertThat(model.mayContainNames()).containsExactly("Crustaceans", "Nuts", "Sesame");
+        assertThat(model.mayContainLine()).isEqualTo("May contain: Crustaceans, Nuts, Sesame");
+    }
+
+    @Test
+    @DisplayName("#861 encoding: dates are en-GB with the FULL month name ('30 September 2026', never 'Sept' or 'Sep')")
+    void datesUseTheFullUkMonthName() {
+        LabelRenderModel model = ProductLabelService.buildRenderModel(
+                milkProduct(null), compliantShop(), LocalDate.of(2026, 9, 28));
+
+        assertThat(model.productionLine()).isEqualTo("Produced: 28 September 2026");
+        assertThat(model.durabilityLine()).isEqualTo("Use by: 30 September 2026");
+    }
+
+    @Test
+    @DisplayName("#861 BST midnight: no productionDate at 2026-10-03T23:30Z (00:30 BST on 4 October) is labelled 4 October")
+    void defaultProductionDateIsTheLondonDateAtBstMidnight() throws Exception {
+        Clock halfPastMidnightBst = Clock.fixed(Instant.parse("2026-10-03T23:30:00Z"), ZoneOffset.UTC);
+
+        String text = labelText(milkProduct(null), null, halfPastMidnightBst);
+
+        assertThat(text).contains("Produced: 4 October 2026");
+        assertThat(text).contains("Use by: 6 October 2026");
+    }
+
+    @Test
+    @DisplayName("#861 BST midnight: at 00:30 BST on 4 October, productionDate 4 October is today (allowed) and 5 October is tomorrow (422 naming productionDate)")
+    void futureProductionDateIsJudgedAgainstTheLondonDate() throws Exception {
+        Clock halfPastMidnightBst = Clock.fixed(Instant.parse("2026-10-03T23:30:00Z"), ZoneOffset.UTC);
+
+        assertThat(labelText(milkProduct(null), LocalDate.of(2026, 10, 4), halfPastMidnightBst))
+                .contains("Produced: 4 October 2026");
+
+        assertThatThrownBy(() -> labelText(milkProduct(null), LocalDate.of(2026, 10, 5), halfPastMidnightBst))
+                .isInstanceOf(InvalidProductionDateException.class)
+                .hasMessageContaining("productionDate")
+                .hasMessageContaining("after today");
+    }
+
+    @Test
+    @DisplayName("#861: a productionDate whose use-by (or best-before) is before today is a 422 naming productionDate; a durability date of today is allowed")
+    void passedDurabilityDateIsRefused() throws Exception {
+        Clock fourthOctober = Clock.fixed(Instant.parse("2026-10-04T10:00:00Z"), ZoneOffset.UTC);
+
+        assertThatThrownBy(() -> labelText(milkProduct(null), LocalDate.of(2026, 10, 1), fourthOctober))
+                .isInstanceOf(InvalidProductionDateException.class)
+                .hasMessageContaining("productionDate")
+                .hasMessageContaining("use-by date of 3 October 2026");
+
+        Product bestBefore = milkProduct(null);
+        bestBefore.setDurabilityType("BEST_BEFORE");
+        assertThatThrownBy(() -> labelText(bestBefore, LocalDate.of(2026, 10, 1), fourthOctober))
+                .isInstanceOf(InvalidProductionDateException.class)
+                .hasMessageContaining("best-before date of 3 October 2026");
+
+        assertThat(labelText(milkProduct(null), LocalDate.of(2026, 10, 2), fourthOctober))
+                .contains("Use by: 4 October 2026");
+    }
+
+    @Test
+    @DisplayName("#861 concurrency: the default date is read from the clock on EVERY request, so downloads either side of UK midnight get their own dates")
+    void defaultDateIsResolvedPerRequest() throws Exception {
+        // Two downloads one minute before and one minute after midnight BST, through ONE service.
+        Clock ticking = new SequenceClock(
+                Instant.parse("2026-10-03T22:59:00Z"),   // 23:59 BST, 3 October
+                Instant.parse("2026-10-03T23:01:00Z"));  // 00:01 BST, 4 October
+        when(productRepository.findById(productId)).thenReturn(Optional.of(milkProduct(null)));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId)).thenReturn(Optional.of(compliantShop()));
+        ProductLabelService service = serviceAt(ticking);
+
+        String before = extractText(service.generateLabel(productId));
+        String after = extractText(service.generateLabel(productId));
+
+        assertThat(before).contains("Produced: 3 October 2026");
+        assertThat(after).contains("Produced: 4 October 2026");
+    }
+
+    /** A clock that returns the given instants in turn (the last one repeats), zone UTC. */
+    private static final class SequenceClock extends Clock {
+        private final Instant[] instants;
+        private int next;
+
+        SequenceClock(Instant... instants) {
+            this.instants = instants;
+        }
+
+        @Override
+        public java.time.ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(java.time.ZoneId zone) {
+            SequenceClock outer = this;
+            return new Clock() {
+                @Override public java.time.ZoneId getZone() { return zone; }
+                @Override public Clock withZone(java.time.ZoneId z) { return outer.withZone(z); }
+                @Override public Instant instant() { return outer.instant(); }
+            };
+        }
+
+        @Override
+        public Instant instant() {
+            Instant i = instants[Math.min(next, instants.length - 1)];
+            next++;
+            return i;
+        }
     }
 
     // ---- Fail-loud (422) ----
