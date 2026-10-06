@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: "31.1"
 current_phase_name: Persona gap closure
 status: executing
-stopped_at: "Completed 31.1-07-PLAN.md (D-19: dsar_request.subject_email_ciphertext AES-256-GCM via DsarCipher, key only from DSAR_ENCRYPTION_KEY with fail-fast boot; NULL at COMPLETED/FAILED and the new DsarRequestExpirySweep EXPIRED path; V70 CHECK ck_dsar_request_ciphertext_terminal; retention R-14); next: 31.1-08"
-last_updated: "2026-10-06T11:55:00.000Z"
+stopped_at: "Completed 31.1-08-PLAN.md (D-19 key wired into every runtime: compose :? guard + verify-env 64-hex FORMAT_RULES, start-dev export, nightly openssl rand -hex 32, k8s Secret dsar-credentials/encryption-key not optional + goldens, k8s-local-secrets, env-contract MUST_SUPPLY_CORE); next: 31.1-09"
+last_updated: "2026-10-06T12:05:00.000Z"
 last_activity: 2026-10-06
-state_head: b7311b80180825347faf3a1617bd535e8845ff1b
+state_head: 879d4fdb5e0cad4894c7ad78a905a690502b43c5
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 185
-  completed_plans: 163
+  completed_plans: 164
   percent: 65
-last_activity_desc: "31.1-07 complete (D-19 the DSAR subject address is held only as AES-256-GCM ciphertext and destroyed at every terminal state, enforced by a database CHECK)"
+last_activity_desc: "31.1-08 complete (DSAR_ENCRYPTION_KEY supplied from a secret by compose, start-dev, the nightly and every k8s overlay; the env-contract gate can now fail on its absence)"
 ---
 
 # Project State
@@ -37,6 +37,7 @@ Phase: 31.1 (Persona gap closure) — EXECUTING
 - 31.1-05 DONE 2026-10-06: #840 closed in the frontend. lib/client-storage-keys.ts (17 entries: 12 localStorage incl. the cart and checkout-email <shop> prefixes, 5 sessionStorage; personal + clearedOnSignOut) renders the cookie policy's two storage tables (jtoye-customer-last-signin now disclosed; order list now says it holds the email and is not guest-only; v1.1) and clearSignedOutState removes every clearedOnSignOut entry (collect-then-remove), clearMarker untouched. Transition test sign-in -> order -> lapse -> sign-out by stored content 5/5 (RED: jtoye-guest-orders survived customerLogout, RED_EVIDENCE_OK); source scan 20 setItem sites, 2 via CALL_SITE_KEYS, stale-map and over-disclosure checks; R-12/R-13 "Until you sign out or clear your browser's site data" (manifest + page transcription). Break arms 6 + 8, restores sha-verified; full jest 175/1913, tsc 0, build fresh. retention/claims gates rc 0 but cannot see R-12/R-13 text (recorded vacuous; parity + new consistency test are the falsifiable checks). FINDING for owner: nothing reads jtoye-guest-orders (getLocalOrders called only by saveLocalOrder) — write-only personal data. e2e/storage-keys-signout.spec.ts lists mobile+desktop; live run is 31.1-30's (needs 31.1-15's ack wiring). PGC-840 stays open (shared with 31.1-30).
 - 31.1-06 DONE 2026-10-06: #787 closed at the backend. OrderAllergenAggregator.collectFlags reads a whole word of 3+ ASCII CAPITALS as emphasis beside ** spans (one linear walk; Title Case and MILKy are not), flags per item in bit order; IngredientMarkupParser untouched (diff empty), label golden green. ProductAllergenWarning(code UNDECLARED_INGREDIENT_ALLERGEN, allergenBit, allergen, message); ProductDto.allergenWarnings filled by a ProductMapper @AfterMapping on every toDto (create/update/get/list/search), @JsonInclude(NON_NULL) = 31.1-01 route (a), jackson2-golden untouched; PublicProductDto.undeclaredIngredientAllergens (names, bit order). The kitchen-ticket V63 flag mask now sees capitals. ProductSaveAllergenWarningIntegrationTest 4/0/0 (RED: no allergenWarnings; arm A merge -> stored mask 64 red). A7: 57 products (21 seeder + 36 live) 0 -> 1 flag (ade-Party Jollof, Milk, true positive). Plan's run-length-2 arm is vacuous (no synonym <3 letters), replaced by L4/any-case/word-boundary arms, all red. OpenAPI +2 fields +1 schema, paths identical. Full unit 1506/0/0, full integration 794/0/0. Residual: a pre-deploy cached by-id ProductDto lacks the field for <=10 min (frontend must read absent as not computed). PGC-787 stays open (shared).
 - 31.1-07 DONE 2026-10-06: D-19 built. V70 adds dsar_request.subject_email_ciphertext BYTEA + CHECK ck_dsar_request_ciphertext_terminal (NULL in COMPLETED/FAILED/EXPIRED; V62-style header amending "no readable-address column", the four uses, both rejected alternatives; no backfill). DsarCipher (JDK AES/GCM/NoPadding, 12-byte IV, 128-bit tag, AAD purpose:requestId, IV||ct in one BYTEA; key only jtoye.gdpr.dsar.encryption-key = env DSAR_ENCRYPTION_KEY, empty default, validated at construction, message names the property never the value; no logging). Intake encrypts the trimmed address under the pre-minted request id; the worker NULLs it in the COMPLETED and exhausted-FAILED UPDATEs; DsarRequestExpirySweep (every 900000 ms) is the first EXPIRED writer. Retention R-14 (168 h for an unconfirmed request) published on /legal/retention + claims rule. DsarCipherTest 9/0/0, DsarSubjectAddressIntegrationTest 7/0/0 (RED valid x3), 14 break arms red and sha-restored. Full unit 1515/0/0, full integration 801/0/0; four non-test-profile contexts given per-run random keys (3 dev + DatabaseConfigurationValidatorOwnershipTest). **31.1-08 must wire DSAR_ENCRYPTION_KEY into every runtime before any core-java rebuild, or core-java refuses to start.** PGC-778/777 stay open (shared).
+- 31.1-08 DONE 2026-10-06: D-19 key wired into every runtime that starts core-java. Compose core-java DSAR_ENCRYPTION_KEY behind a :? guard naming openssl rand -hex 32 (key absent -> config rc 1); .env.example CHANGE_ME with comments on their own lines; core-java/.env.example documents it commented (run-app.sh sources it second). verify-env.sh: REQUIRED_VARS (19) + FORMAT_RULES (c2) ^[0-9a-fA-F]{64}$ by name only (placeholder/63-char/non-hex/absent rc 1, real rc 0, value never printed). start-dev.sh exports the key from the validated env file for the host bootRun. Nightly: DERIVED + openssl rand -hex 32 (old step fails verify-env on the key, new passes). k8s/base secretKeyRef dsar-credentials/encryption-key, NO optional flag; goldens +5 lines each (--diff-since 31.1-08); template/QUICK_START/DEPLOYMENT/sealed-secrets runbook list the Secret; k8s-local-secrets.sh requires + 64-hex-checks the .env key (no generation: shared dev DB) and creates it. check-env-contract.sh gained MUST_SUPPLY_CORE: the unmodified gate stayed rc 0 with the env entry deleted (empty default scored "pass by rule"); now rc 1, plus STALE/overlap hygiene arms. Local .env has a generated key (untracked); shared stack NOT rebuilt (31.1-30). **Staging/production need a sealed dsar-credentials per environment before rollout (31.1-USER-SETUP.md).** PGC-778/777 stay open (shared).
 - **Phase 38 (Spring Boot 4.1) COMPLETE 2026-10-05, MERGED as PR #898:** 19/19 plans, `38-VERIFICATION.md` passed 14/14 (BOOT4-01..14), code review 0 critical / 2 warning / 4 info (`38-REVIEW.md`, disposition in `38-REVIEW-DISPOSITION.md`). Not yet shipped: `/gsd-secure-phase 38` then `/gsd-ship 38` remain. Phase 29 is GSD's numeric next; the owner-set planning order in HANDOFF.md is 31.1 then 37.
 - The bullets below are Phase 38's execution history, kept for the record.
 - 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
@@ -878,6 +879,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P04 | 8 min | 2 tasks | 9 files |
 | Phase 31.1 P06 | 50 min | 2 tasks | 17 files |
 | Phase 31.1 P07 | 73 min | 2 tasks | 22 files |
+| Phase 31.1 P08 | 9 min | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -1084,6 +1086,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: 31.1-07: D-19 — the DSAR subject address is stored only as AES-256-GCM ciphertext (as typed, trimmed) and NULLed in the same UPDATE that makes a request COMPLETED, FAILED or EXPIRED; the V70 CHECK makes a terminal row holding it unstorable
 - [Phase 31.1]: 31.1-07: the test-profile DSAR key is two random.value placeholders only, deliberately not routed through DSAR_ENCRYPTION_KEY; key rotation is not built (T-31.1-25 accepted: drain the queue, then swap)
 - [Phase 31.1]: 31.1-07: R-14 publishes 168 hours as the window for an UNCONFIRMED request only; a confirmed request is held until answered (no fixed number)
+- [Phase 31.1]: 31.1-08: k8s/base references dsar-credentials/encryption-key with NO optional flag (an absent Secret stops the pod naming it); k8s/local reuses the .env key and never generates one (shared dev DB with compose)
+- [Phase 31.1]: 31.1-08: check-env-contract.sh MUST_SUPPLY_CORE is the opposite of an allowlist: names whose empty application.yml default is a refusal to boot must be injected, no allowlist entry can excuse them, and an entry goes STALE when the default stops being exactly empty
 
 ### Pending Todos
 
@@ -1154,8 +1158,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-06T11:55:00Z
-Stopped at: Completed 31.1-07-PLAN.md; next 31.1-08
+Last session: 2026-10-06T12:05:00Z
+Stopped at: Completed 31.1-08-PLAN.md; next 31.1-09
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
