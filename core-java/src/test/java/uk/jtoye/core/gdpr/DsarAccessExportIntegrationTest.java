@@ -143,13 +143,14 @@ class DsarAccessExportIntegrationTest {
     @MockitoBean KeycloakAdminClient keycloak;
     @MockitoBean JavaMailSender mailSender;
     @MockitoSpyBean DsarVerificationMailer verificationMailer;
+    @MockitoSpyBean DsarAccessExportService exportService;
 
     @BeforeEach
     void setUp() {
         TenantContext.clear();
         // The worker claims every VERIFIED request in the table; start each arm from an empty queue.
         jdbc.update("DELETE FROM dsar_request");
-        reset(keycloak, mailSender, verificationMailer);
+        reset(keycloak, mailSender, verificationMailer, exportService);
         adminProperties.setEnabled(true);
         when(keycloak.obtainAdminToken()).thenReturn(TOKEN);
         // Only a superuser may run ALTER ROLE, so this happens exactly once per container.
@@ -270,7 +271,360 @@ class DsarAccessExportIntegrationTest {
         assertThat(output.getAll()).as("the address is never logged").doesNotContain(verified);
     }
 
+    // ---- Task 2: complete content, the empty subject, retries, deterministic order ---------------
+
+    /**
+     * Every section of a vendor's part of the export, from one tenant that holds the subject as a
+     * {@code customers} row, as an order linked only by {@code customer_id} (no address on it), as a
+     * guest order with an allergy note and an acknowledged allergen set, as a review with a photo, as a
+     * marketing opt-in and an unsubscribe, and as a staff-directory entry — plus the customer-realm
+     * sign-in account and the "about" section.
+     */
+    @Test
+    void theExportCarriesEverySectionForAVendorAndThePlatformAccount() throws Exception {
+        String verified = "Grace.Full+" + shortId() + "@Example.test";
+        String lower = verified.toLowerCase(Locale.ROOT);
+        String kcUserId = UUID.randomUUID().toString();
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, lower, TOKEN))
+                .thenReturn(List.of(realmUser(kcUserId, lower)));
+
+        UUID c = seedTenant();
+        seedTraderIdentity(c, "Mama Ade's Kitchen Ltd", "COMPANY");
+        seedCompanyNumber(c, "16471464");
+        UUID shop = seedShop(c, "Mama Ade's Peckham");
+        UUID customer = seedCustomer(c, lower, "Grace Customer", "07700900111", 144, "prefers collection");
+        Order linked = seedOrder(c, shop, customer, null, "Grace Customer", "07700900111",
+                "Egusi Soup " + shortId(), "2026-09-01T12:00:00Z");
+        Order guest = seedOrder(c, shop, null, verified, "Grace Guest", "07700900222",
+                "Puff Puff " + shortId(), "2026-09-02T12:00:00Z");
+        update(c, "UPDATE orders SET allergy_note = 'My child has a severe peanut allergy', "
+                + "allergy_note_ack_at = '2026-09-02T12:05:00Z', allergy_note_ack_by = 'kitchen.staff', "
+                + "allergen_ack_mask = 65, allergen_ack_at = '2026-09-02T11:59:00Z', placed_via = 'STOREFRONT', "
+                + "payment_method = 'CASH' WHERE id = ?", guest.id());
+        UUID review = seedReview(c, shop, guest.id(), verified, "Grace G.", "lovely puff puff");
+        update(c, "UPDATE reviews SET photo_urls = ARRAY['https://cdn.example.test/r/1.jpg'] WHERE id = ?", review);
+        update(c, "INSERT INTO marketing_opt_in (tenant_id, recipient, opted_in_at) VALUES (?, ?, '2026-08-01T09:00:00Z')",
+                c, verified);
+        update(c, "INSERT INTO notification_suppression (tenant_id, recipient, category, created_at) "
+                + "VALUES (?, ?, 'ONBOARDING', '2026-08-02T09:00:00Z')", c, lower);
+        update(c, "INSERT INTO user_directory (tenant_id, user_id, email, display_name, last_seen) "
+                + "VALUES (?, ?, ?, 'Grace (staff)', '2026-08-03T09:00:00Z')", c, UUID.randomUUID(), verified);
+        assertThat(countUnder(c, "SELECT COUNT(*) FROM orders WHERE id = ? AND customer_email IS NULL", linked.id()))
+                .as("PRECONDITION: the linked order carries NO address, so only the customer_id path reaches it")
+                .isEqualTo(1L);
+
+        UUID requestId = lodgeVerified(verified, "ACCESS");
+        worker.executeLodgedRequests();
+        assertThat(request(requestId).status()).isEqualTo("COMPLETED");
+
+        JsonNode doc = decryptedDocument(requestId);
+        assertThat(doc.get("requestedFor").asString()).isEqualTo(verified);
+
+        // "about": purposes, recipients, retention pointer, rights, source.
+        assertThat(doc.has("about")).as("the export carries an 'about' section").isTrue();
+        assertThat(doc.has("platformAccount")).as("the export carries a 'platformAccount' section").isTrue();
+        JsonNode about = doc.get("about");
+        assertThat(about.get("purposes").size()).isPositive();
+        assertThat(about.get("recipients").asString()).isNotBlank();
+        assertThat(about.get("retention").asString()).contains("/legal/retention");
+        assertThat(about.get("rights").toString()).contains("rectification").contains("erasure").contains("ico.org.uk");
+        assertThat(about.get("source").asString()).containsIgnoringCase("you");
+
+        // The platform account, from the customer realm.
+        JsonNode account = doc.get("platformAccount");
+        assertThat(account.get("status").asString()).isEqualTo("FOUND");
+        JsonNode user = account.get("accounts").get(0);
+        assertThat(user.get("username").asString()).isEqualTo("grace.persona");
+        assertThat(user.get("email").asString()).isEqualTo(lower);
+        assertThat(user.get("firstName").asString()).isEqualTo("Grace");
+        assertThat(user.get("lastName").asString()).isEqualTo("Persona");
+        assertThat(user.get("createdAt").asString()).isEqualTo("2026-10-04T07:46:40Z");
+
+        JsonNode v = singleVendor(doc);
+        JsonNode recipient = v.get("recipient");
+        assertThat(recipient.get("legalName").asString()).isEqualTo("Mama Ade's Kitchen Ltd");
+        assertThat(recipient.get("entityType").asString()).isEqualTo("COMPANY");
+        assertThat(recipient.get("companyNumber").asString()).isEqualTo("16471464");
+        assertThat(recipient.get("vatNumber").asString()).isEqualTo("GB123456789");
+        assertThat(recipient.get("address").get("line1").asString()).isEqualTo("1 Trading Street");
+        assertThat(recipient.get("address").get("postcode").asString()).isEqualTo("B2 4QA");
+        assertThat(recipient.get("shops").get(0).asString()).isEqualTo("Mama Ade's Peckham");
+
+        JsonNode customerRecord = v.get("customerRecords").get(0);
+        assertThat(customerRecord.get("name").asString()).isEqualTo("Grace Customer");
+        assertThat(customerRecord.get("email").asString()).isEqualTo(lower);
+        assertThat(customerRecord.get("phone").asString()).isEqualTo("07700900111");
+        assertThat(texts(customerRecord.get("allergenRestrictions"))).containsExactly("Peanuts", "Nuts");
+        assertThat(customerRecord.get("notes").asString()).isEqualTo("prefers collection");
+
+        JsonNode orders = v.get("orders");
+        assertThat(orders.size()).as("the customer_id-linked order AND the guest order").isEqualTo(2);
+        assertThat(orders.get(0).get("orderNumber").asString()).isEqualTo(linked.number());
+        JsonNode g = orders.get(1);
+        assertThat(g.get("orderNumber").asString()).isEqualTo(guest.number());
+        assertThat(g.get("placedAt").asString()).isEqualTo("2026-09-02T12:00:00Z");
+        assertThat(g.get("fulfilmentType").asString()).isEqualTo("DELIVERY");
+        assertThat(g.get("customerName").asString()).isEqualTo("Grace Guest");
+        assertThat(g.get("customerPhone").asString()).isEqualTo("07700900222");
+        assertThat(g.get("deliveryAddress").get("line1").asString()).isEqualTo("14 Persona Road");
+        assertThat(g.get("deliveryAddress").get("line2").asString()).isEqualTo("Flat 2");
+        assertThat(g.get("deliveryAddress").get("city").asString()).isEqualTo("Birmingham");
+        assertThat(g.get("deliveryAddress").get("postcode").asString()).isEqualTo("B1 1AA");
+        assertThat(g.get("notes").asString()).isEqualTo("ring the bell twice");
+        assertThat(g.get("allergyNote").asString()).isEqualTo("My child has a severe peanut allergy");
+        assertThat(g.get("allergyNoteReadByShopAt").asString()).isEqualTo("2026-09-02T12:05:00Z");
+        assertThat(g.toString()).as("who in the shop read it is a staff record, not the subject's data")
+                .doesNotContain("kitchen.staff");
+        assertThat(texts(g.get("acknowledgedAllergens"))).as("catalogue order").containsExactly("Gluten", "Milk");
+        assertThat(g.get("acknowledgedAt").asString()).isEqualTo("2026-09-02T11:59:00Z");
+        assertThat(g.get("paymentMethod").asString()).isEqualTo("CASH");
+        JsonNode totals = g.get("totals");
+        assertThat(totals.get("subtotalPennies").asLong()).isEqualTo(1000);
+        assertThat(totals.get("vatAmountPennies").asLong()).isEqualTo(167);
+        assertThat(totals.get("deliveryFeePennies").asLong()).isEqualTo(250);
+        assertThat(totals.get("totalAmountPennies").asLong()).isEqualTo(1250);
+        assertThat(g.get("items").get(0).get("quantity").asInt()).isEqualTo(2);
+        assertThat(orders.get(0).get("acknowledgedAllergens").isNull())
+                .as("an order with no recorded acknowledgement says so (null), never an invented []").isTrue();
+
+        JsonNode r = v.get("reviews").get(0);
+        assertThat(r.get("name").asString()).isEqualTo("Grace G.");
+        assertThat(r.get("comment").asString()).isEqualTo("lovely puff puff");
+        assertThat(r.get("foodRating").asInt()).isEqualTo(5);
+        assertThat(r.get("deliveryRating").asInt()).isEqualTo(4);
+        assertThat(r.get("orderNumber").asString()).isEqualTo(guest.number());
+        assertThat(texts(r.get("photoUrls"))).containsExactly("https://cdn.example.test/r/1.jpg");
+
+        JsonNode prefs = v.get("communicationPreferences");
+        assertThat(prefs.get("marketingOptIn").get("optedInAt").asString()).isEqualTo("2026-08-01T09:00:00Z");
+        assertThat(prefs.get("unsubscribed").get(0).get("category").asString()).isEqualTo("ONBOARDING");
+        assertThat(v.get("staffDirectory").get(0).get("displayName").asString()).isEqualTo("Grace (staff)");
+    }
+
+    @Test
+    void aTenantWithNoTraderIdentityIsNamedByItsShopsAndSaysSo_andTheAccountIsNoneFound() throws Exception {
+        String verified = "no.identity." + shortId() + "@example.test";
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, verified, TOKEN)).thenReturn(List.of());
+        UUID t = seedTenant();
+        UUID shop = seedShop(t, "Unnamed Trader Shop " + shortId());
+        seedGuestOrder(t, shop, verified, "Grace", "07700900333", "Chin Chin " + shortId());
+
+        UUID requestId = lodgeVerified(verified, "ACCESS");
+        worker.executeLodgedRequests();
+
+        JsonNode doc = decryptedDocument(requestId);
+        JsonNode recipient = singleVendor(doc).get("recipient");
+        assertThat(recipient.get("legalName").isNull()).as("stated as unknown, never invented").isTrue();
+        assertThat(recipient.has("traderIdentityOnFile")).as("the recipient says whether an identity is on file")
+                .isTrue();
+        assertThat(recipient.get("traderIdentityOnFile").asBoolean()).isFalse();
+        assertThat(recipient.get("note").asString()).containsIgnoringCase("not");
+        assertThat(texts(recipient.get("shops"))).hasSize(1);
+        assertThat(doc.get("platformAccount").get("status").asString()).isEqualTo("NONE_FOUND");
+        assertThat(doc.get("platformAccount").get("accounts").size()).isZero();
+    }
+
+    @Test
+    void whenTheAdminSeamIsNotConfiguredThePlatformAccountIsNotChecked_andTheRequestStillCompletes()
+            throws Exception {
+        String verified = "not.checked." + shortId() + "@example.test";
+        adminProperties.setEnabled(false);
+
+        UUID requestId = lodgeVerified(verified, "ACCESS");
+        worker.executeLodgedRequests();
+
+        assertThat(request(requestId).status()).isEqualTo("COMPLETED");
+        JsonNode notCheckedDoc = decryptedDocument(requestId);
+        assertThat(notCheckedDoc.has("platformAccount")).as("the export carries a 'platformAccount' section")
+                .isTrue();
+        JsonNode account = notCheckedDoc.get("platformAccount");
+        assertThat(account.get("status").asString()).isEqualTo("NOT_CHECKED");
+        assertThat(account.get("note").asString()).isNotBlank();
+        verify(keycloak, org.mockito.Mockito.never()).findUsersByEmail(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void aFailedAccountLookupReleasesTheRequest_neverAnAnswerThatSkippedTheAccount() throws Exception {
+        String verified = "lookup.down." + shortId() + "@example.test";
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, verified, TOKEN))
+                .thenThrow(new uk.jtoye.core.tenant.keycloak.KeycloakAdminException("down"));
+
+        UUID requestId = lodgeVerified(verified, "ACCESS");
+        worker.executeLodgedRequests();
+
+        assertThat(request(requestId).status()).isEqualTo("VERIFIED");
+        assertThat(exports(requestId)).isEmpty();
+        verify(mailSender, org.mockito.Mockito.never()).send(any(SimpleMailMessage.class));
+    }
+
+    /** Article 15's "we hold nothing" reply — the reason D-19 keeps the address at all. */
+    @Test
+    void anAddressNoTenantHoldsStillGetsAnExportSayingSo_andCompletes() throws Exception {
+        String verified = "nobody." + shortId() + "@example.test";
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, verified, TOKEN)).thenReturn(List.of());
+        seedTenant();
+
+        UUID requestId = lodgeVerified(verified, "ACCESS");
+        worker.executeLodgedRequests();
+
+        RequestRow row = request(requestId);
+        assertThat(row.status()).isEqualTo("COMPLETED");
+        assertThat(row.ciphertextPresent()).isFalse();
+        JsonNode doc = decryptedDocument(requestId);
+        assertThat(doc.get("vendors").size()).isZero();
+        assertThat(doc.has("summary")).as("the export carries a 'summary' with the no-data statement").isTrue();
+        assertThat(doc.get("summary").get("vendorDataHeld").asBoolean()).isFalse();
+        assertThat(doc.get("summary").get("statement").asString())
+                .containsIgnoringCase("no shop").containsIgnoringCase("hold");
+        verify(mailSender, times(1)).send(any(SimpleMailMessage.class));
+    }
+
+    /**
+     * A failed send releases the request with the export row in place; the next sweep, with mail
+     * working, builds a NEW token (the old hash is replaced on the same row) and only then completes.
+     */
+    @Test
+    void aFailedSendReleasesTheRequest_andTheRetryReplacesTheTokenAndCompletes() throws Exception {
+        String verified = "mail.down." + shortId() + "@example.test";
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, verified, TOKEN)).thenReturn(List.of());
+        UUID t = seedTenant();
+        seedGuestOrder(t, seedShop(t, "Retry Shop"), verified, "Grace", "07700900444", "Akara " + shortId());
+        UUID requestId = lodgeVerified(verified, "ACCESS");
+        org.mockito.Mockito.doThrow(new org.springframework.mail.MailSendException("smtp down"))
+                .when(mailSender).send(any(SimpleMailMessage.class));
+
+        worker.executeLodgedRequests();
+
+        RequestRow open = request(requestId);
+        assertThat(open.status()).as("not complete: the subject does not have the link").isEqualTo("VERIFIED");
+        assertThat(open.ciphertextPresent()).as("the address is kept for the retry").isTrue();
+        String firstHash = export(requestId).tokenSha256();
+
+        reset(mailSender);
+        worker.executeLodgedRequests();
+
+        assertThat(request(requestId).status()).isEqualTo("COMPLETED");
+        ExportRow second = export(requestId);
+        assertThat(second.tokenSha256()).as("a retry issues a new token; the unsent one is dead").isNotEqualTo(firstHash);
+        ArgumentCaptor<SimpleMailMessage> mail = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender, times(1)).send(mail.capture());
+        Matcher link = LINK.matcher(mail.getValue().getText());
+        assertThat(link.find()).isTrue();
+        assertThat(sha256Hex(link.group(1))).isEqualTo(second.tokenSha256());
+    }
+
+    @Test
+    void aTenantFailingDuringCollectionReleasesTheRequest_noEmail_noExport() throws Exception {
+        String verified = "tenant.fails." + shortId() + "@example.test";
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, verified, TOKEN)).thenReturn(List.of());
+        UUID good = seedTenant();
+        UUID bad = seedTenant();
+        seedGuestOrder(good, seedShop(good, "Good Shop"), verified, "Grace", "07700900555", "Moi Moi " + shortId());
+        org.mockito.Mockito.doThrow(new IllegalStateException("deliberate tenant failure"))
+                .when(exportService).collectForTenant(org.mockito.ArgumentMatchers.eq(bad), anyString());
+
+        UUID requestId = lodgeVerified(verified, "ACCESS");
+        worker.executeLodgedRequests();
+
+        RequestRow row = request(requestId);
+        assertThat(row.status()).isEqualTo("VERIFIED");
+        assertThat(row.ciphertextPresent()).isTrue();
+        assertThat(exports(requestId)).as("a partial answer is not stored").isEmpty();
+        verify(mailSender, org.mockito.Mockito.never()).send(any(SimpleMailMessage.class));
+    }
+
+    /**
+     * Vendor sections by legal name then tenant id (null names last), orders by placed time, allergen
+     * names in catalogue order — so two exports of the same data are byte-identical apart from
+     * generatedAt.
+     */
+    @Test
+    void twoExportsOfTheSameDataAreByteIdenticalApartFromGeneratedAt_andAreDeterministicallyOrdered()
+            throws Exception {
+        String verified = "ordering." + shortId() + "@example.test";
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, verified, TOKEN)).thenReturn(List.of());
+        UUID named = seedTenant();
+        seedTraderIdentity(named, "Beta Bakes Ltd", "COMPANY");
+        UUID anon1 = seedTenant();
+        UUID anon2 = seedTenant();
+        for (UUID t : List.of(anon2, named, anon1)) {
+            UUID shop = seedShop(t, "Shop " + shortId());
+            // Inserted LATEST first, so insertion order is the reverse of placed order.
+            seedOrder(t, shop, null, verified, "Grace", "07700900666", "Late " + shortId(), "2026-09-03T10:00:00Z");
+            seedOrder(t, shop, null, verified, "Grace", "07700900666", "Early " + shortId(), "2026-09-01T10:00:00Z");
+        }
+        update(named, "UPDATE orders SET allergen_ack_mask = 8257, allergen_ack_at = NOW() WHERE tenant_id = ?", named);
+
+        UUID first = lodgeVerified(verified, "ACCESS");
+        worker.executeLodgedRequests();
+        String one = decryptedJson(first);
+        UUID second = lodgeVerified(verified, "ACCESS");
+        worker.executeLodgedRequests();
+        String two = decryptedJson(second);
+
+        JsonNode doc = jsonMapper.readTree(one);
+        JsonNode vendors = doc.get("vendors");
+        assertThat(vendors.size()).isEqualTo(3);
+        assertThat(vendors.get(0).get("recipient").get("legalName").asString()).isEqualTo("Beta Bakes Ltd");
+        List<String> anonRefs = new ArrayList<>(List.of(anon1.toString(), anon2.toString()));
+        anonRefs.sort(null);
+        assertThat(List.of(vendors.get(1).get("reference").asString(), vendors.get(2).get("reference").asString()))
+                .as("null legal names last, then by tenant id").isEqualTo(anonRefs);
+        JsonNode namedOrders = vendors.get(0).get("orders");
+        assertThat(namedOrders.get(0).get("placedAt").asString()).isEqualTo("2026-09-01T10:00:00Z");
+        assertThat(namedOrders.get(1).get("placedAt").asString()).isEqualTo("2026-09-03T10:00:00Z");
+        // 8257 = bits 0, 6, 13: Gluten, Milk, Molluscs — catalogue order, not alphabetical.
+        assertThat(texts(namedOrders.get(0).get("acknowledgedAllergens"))).containsExactly("Gluten", "Milk", "Molluscs");
+
+        String generatedAt = "\"generatedAt\":\"[^\"]*\"";
+        assertThat(one).as("PRECONDITION: the two documents differ only if generatedAt differs").contains("generatedAt");
+        assertThat(one.replaceFirst(generatedAt, "\"generatedAt\":\"X\""))
+                .as("byte-identical apart from generatedAt")
+                .isEqualTo(two.replaceFirst(generatedAt, "\"generatedAt\":\"X\""));
+    }
+
+    @Test
+    void anAccessAndAnErasureForTheSameSubjectAreSeparateRequests_neitherMergesIntoTheOther() throws Exception {
+        String verified = "both." + shortId() + "@example.test";
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, verified, TOKEN)).thenReturn(List.of());
+        UUID t = seedTenant();
+        Order order = seedGuestOrder(t, seedShop(t, "Both Shop"), verified, "Grace Both", "07700900777",
+                "Suya " + shortId());
+
+        UUID access = lodgeVerified(verified, "ACCESS");
+        UUID erasure = lodgeVerified(verified, "ERASURE");
+        assertThat(access).isNotEqualTo(erasure);
+        worker.executeLodgedRequests();
+
+        assertThat(request(access).status()).isEqualTo("COMPLETED");
+        assertThat(request(erasure).status()).isEqualTo("COMPLETED");
+        assertThat(exports(access)).hasSize(1);
+        assertThat(exports(erasure)).as("an erasure produces no export").isEmpty();
+        // The access request was lodged first and claimed first (oldest first), so its export holds the
+        // data as it was before the erasure ran.
+        assertThat(decryptedDocument(access).toString()).contains(order.number()).contains("Grace Both");
+        assertThat(countUnder(t, "SELECT COUNT(*) FROM orders WHERE id = ? AND customer_name = '[REDACTED]'",
+                order.id())).as("the erasure ran on its own row").isEqualTo(1L);
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------
+
+    JsonNode singleVendor(JsonNode doc) {
+        assertThat(doc.get("vendors").size()).as("exactly one vendor section").isEqualTo(1);
+        return doc.get("vendors").get(0);
+    }
+
+    void seedCompanyNumber(UUID tenant, String companyNumber) {
+        update(tenant, "INSERT INTO vendor_onboarding (id, tenant_id, model, company_number) VALUES (?, ?, 'MARKETPLACE', ?)",
+                UUID.randomUUID(), tenant, companyNumber);
+    }
+
+    UUID seedCustomer(UUID tenant, String email, String name, String phone, int allergenRestrictions, String notes) {
+        UUID id = UUID.randomUUID();
+        update(tenant, "INSERT INTO customers (id, tenant_id, name, email, phone, allergen_restrictions, notes) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)", id, tenant, name, email, phone, allergenRestrictions, notes);
+        return id;
+    }
 
     record Order(UUID id, String number) {
     }
@@ -465,10 +819,11 @@ class DsarAccessExportIntegrationTest {
         }
     }
 
-    @SuppressWarnings("unused")
-    private static List<String> texts(JsonNode array, String field) {
+    private static List<String> texts(JsonNode array) {
+        assertThat(array).as("an array node").isNotNull();
+        assertThat(array.isArray()).as("an array, not %s", array).isTrue();
         List<String> out = new ArrayList<>();
-        array.forEach(n -> out.add(n.get(field).isNull() ? null : n.get(field).asString()));
+        array.forEach(n -> out.add(n.isNull() ? null : n.asString()));
         return out;
     }
 }
