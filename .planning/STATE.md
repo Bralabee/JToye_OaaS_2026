@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: "31.1"
 current_phase_name: Persona gap closure
 status: executing
-stopped_at: "Completed 31.1-06-PLAN.md (#787 backend: OrderAllergenAggregator reads whole-word CAPITALS as emphasis beside ** spans; ProductDto.allergenWarnings (UNDECLARED_INGREDIENT_ALLERGEN, NON_NULL, mapper @AfterMapping) and PublicProductDto.undeclaredIngredientAllergens from the one aggregator; stored mask unchanged; A7 1 new flag in 57 products, the #787 product itself); next: 31.1-07"
-last_updated: "2026-10-06T10:34:57.000Z"
+stopped_at: "Completed 31.1-07-PLAN.md (D-19: dsar_request.subject_email_ciphertext AES-256-GCM via DsarCipher, key only from DSAR_ENCRYPTION_KEY with fail-fast boot; NULL at COMPLETED/FAILED and the new DsarRequestExpirySweep EXPIRED path; V70 CHECK ck_dsar_request_ciphertext_terminal; retention R-14); next: 31.1-08"
+last_updated: "2026-10-06T11:55:00.000Z"
 last_activity: 2026-10-06
-state_head: 322de7898374b0254dccfb9921644366664a8e9b
+state_head: b7311b80180825347faf3a1617bd535e8845ff1b
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 185
-  completed_plans: 162
+  completed_plans: 163
   percent: 65
-last_activity_desc: "31.1-06 complete (#787 a product whose ingredients name an allergen in CAPITALS or **bold** saves with a typed warning; every product DTO carries the disagreement)"
+last_activity_desc: "31.1-07 complete (D-19 the DSAR subject address is held only as AES-256-GCM ciphertext and destroyed at every terminal state, enforced by a database CHECK)"
 ---
 
 # Project State
@@ -36,6 +36,7 @@ Phase: 31.1 (Persona gap closure) — EXECUTING
 - 31.1-04 DONE 2026-10-06: #793 closed in the checkout. page.tsx imports loadStripe from @stripe/stripe-js/pure (the default entry injected js.stripe.com at module load); module-scope stripePromise deleted; a ref-memoised getStripe() runs only where a clientSecret confirmation moves to the payment step, never without NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY, render reads a state copy; fraud signals left at default (owner choice). stripe-lazy-load.test.tsx 4/4 (RED: default entry imported, RED_EVIDENCE_OK); five checkout suites switched to the /pure mock only, 57/57; build green. Break arms A-E + type-error each red, restores sha-verified. e2e/cash-checkout-no-stripe.spec.ts lists mobile+desktop (zero stripe.com/stripe.network requests and cookies, control: core-API request + the order POST); its live RED/GREEN run is 31.1-30's, and needs 31.1-15's ack wiring on a rebuilt backend to reach the confirmation. docs-freshness already red (31.1-29 regenerates). PGC-793 stays open (shared with 31.1-30).
 - 31.1-05 DONE 2026-10-06: #840 closed in the frontend. lib/client-storage-keys.ts (17 entries: 12 localStorage incl. the cart and checkout-email <shop> prefixes, 5 sessionStorage; personal + clearedOnSignOut) renders the cookie policy's two storage tables (jtoye-customer-last-signin now disclosed; order list now says it holds the email and is not guest-only; v1.1) and clearSignedOutState removes every clearedOnSignOut entry (collect-then-remove), clearMarker untouched. Transition test sign-in -> order -> lapse -> sign-out by stored content 5/5 (RED: jtoye-guest-orders survived customerLogout, RED_EVIDENCE_OK); source scan 20 setItem sites, 2 via CALL_SITE_KEYS, stale-map and over-disclosure checks; R-12/R-13 "Until you sign out or clear your browser's site data" (manifest + page transcription). Break arms 6 + 8, restores sha-verified; full jest 175/1913, tsc 0, build fresh. retention/claims gates rc 0 but cannot see R-12/R-13 text (recorded vacuous; parity + new consistency test are the falsifiable checks). FINDING for owner: nothing reads jtoye-guest-orders (getLocalOrders called only by saveLocalOrder) — write-only personal data. e2e/storage-keys-signout.spec.ts lists mobile+desktop; live run is 31.1-30's (needs 31.1-15's ack wiring). PGC-840 stays open (shared with 31.1-30).
 - 31.1-06 DONE 2026-10-06: #787 closed at the backend. OrderAllergenAggregator.collectFlags reads a whole word of 3+ ASCII CAPITALS as emphasis beside ** spans (one linear walk; Title Case and MILKy are not), flags per item in bit order; IngredientMarkupParser untouched (diff empty), label golden green. ProductAllergenWarning(code UNDECLARED_INGREDIENT_ALLERGEN, allergenBit, allergen, message); ProductDto.allergenWarnings filled by a ProductMapper @AfterMapping on every toDto (create/update/get/list/search), @JsonInclude(NON_NULL) = 31.1-01 route (a), jackson2-golden untouched; PublicProductDto.undeclaredIngredientAllergens (names, bit order). The kitchen-ticket V63 flag mask now sees capitals. ProductSaveAllergenWarningIntegrationTest 4/0/0 (RED: no allergenWarnings; arm A merge -> stored mask 64 red). A7: 57 products (21 seeder + 36 live) 0 -> 1 flag (ade-Party Jollof, Milk, true positive). Plan's run-length-2 arm is vacuous (no synonym <3 letters), replaced by L4/any-case/word-boundary arms, all red. OpenAPI +2 fields +1 schema, paths identical. Full unit 1506/0/0, full integration 794/0/0. Residual: a pre-deploy cached by-id ProductDto lacks the field for <=10 min (frontend must read absent as not computed). PGC-787 stays open (shared).
+- 31.1-07 DONE 2026-10-06: D-19 built. V70 adds dsar_request.subject_email_ciphertext BYTEA + CHECK ck_dsar_request_ciphertext_terminal (NULL in COMPLETED/FAILED/EXPIRED; V62-style header amending "no readable-address column", the four uses, both rejected alternatives; no backfill). DsarCipher (JDK AES/GCM/NoPadding, 12-byte IV, 128-bit tag, AAD purpose:requestId, IV||ct in one BYTEA; key only jtoye.gdpr.dsar.encryption-key = env DSAR_ENCRYPTION_KEY, empty default, validated at construction, message names the property never the value; no logging). Intake encrypts the trimmed address under the pre-minted request id; the worker NULLs it in the COMPLETED and exhausted-FAILED UPDATEs; DsarRequestExpirySweep (every 900000 ms) is the first EXPIRED writer. Retention R-14 (168 h for an unconfirmed request) published on /legal/retention + claims rule. DsarCipherTest 9/0/0, DsarSubjectAddressIntegrationTest 7/0/0 (RED valid x3), 14 break arms red and sha-restored. Full unit 1515/0/0, full integration 801/0/0; four non-test-profile contexts given per-run random keys (3 dev + DatabaseConfigurationValidatorOwnershipTest). **31.1-08 must wire DSAR_ENCRYPTION_KEY into every runtime before any core-java rebuild, or core-java refuses to start.** PGC-778/777 stay open (shared).
 - **Phase 38 (Spring Boot 4.1) COMPLETE 2026-10-05, MERGED as PR #898:** 19/19 plans, `38-VERIFICATION.md` passed 14/14 (BOOT4-01..14), code review 0 critical / 2 warning / 4 info (`38-REVIEW.md`, disposition in `38-REVIEW-DISPOSITION.md`). Not yet shipped: `/gsd-secure-phase 38` then `/gsd-ship 38` remain. Phase 29 is GSD's numeric next; the owner-set planning order in HANDOFF.md is 31.1 then 37.
 - The bullets below are Phase 38's execution history, kept for the record.
 - 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
@@ -876,6 +877,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P03 | 53 min | 3 tasks | 21 files |
 | Phase 31.1 P04 | 8 min | 2 tasks | 9 files |
 | Phase 31.1 P06 | 50 min | 2 tasks | 17 files |
+| Phase 31.1 P07 | 73 min | 2 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -1079,6 +1081,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: 31.1-05: one storage-key registry (lib/client-storage-keys.ts) is the cookie policy's storage list AND the explicit sign-out's removal list; every personal entry is cleared on sign-out (jtoye-track-email included), nothing in it is reachable from the lapse path; COOKIE_POLICY_VERSION deliberately not bumped (re-prompting every visitor is an owner call)
 - [Phase 31.1]: 31.1-06: capitals are allergen emphasis only as a WHOLE word of 3+ ASCII capitals (FSA lists capitals); Title Case is not; the one OrderAllergenAggregator feeds the order snapshot, ProductDto.allergenWarnings and PublicProductDto.undeclaredIngredientAllergens, and nothing it finds is ever merged into a declared mask
 - [Phase 31.1]: 31.1-06: ProductDto.allergenWarnings takes 31.1-01 route (a) (NON_NULL, null default, always set by the mapper) so Phase 38's golden ProductDto sample and Jackson3WireContractTest stay untouched; consumers read an absent field as not computed
+- [Phase 31.1]: 31.1-07: D-19 — the DSAR subject address is stored only as AES-256-GCM ciphertext (as typed, trimmed) and NULLed in the same UPDATE that makes a request COMPLETED, FAILED or EXPIRED; the V70 CHECK makes a terminal row holding it unstorable
+- [Phase 31.1]: 31.1-07: the test-profile DSAR key is two random.value placeholders only, deliberately not routed through DSAR_ENCRYPTION_KEY; key rotation is not built (T-31.1-25 accepted: drain the queue, then swap)
+- [Phase 31.1]: 31.1-07: R-14 publishes 168 hours as the window for an UNCONFIRMED request only; a confirmed request is held until answered (no fixed number)
 
 ### Pending Todos
 
@@ -1149,8 +1154,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-06T10:34:57Z
-Stopped at: Completed 31.1-06-PLAN.md; next 31.1-07
+Last session: 2026-10-06T11:55:00Z
+Stopped at: Completed 31.1-07-PLAN.md; next 31.1-08
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
