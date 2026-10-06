@@ -1488,6 +1488,18 @@
       },
       "GuestOrderConfirmation" : {
         "properties" : {
+          "acknowledgedAllergenMask" : {
+            "description" : "The allergen mask (AllergenCatalog bits 0..13) the customer acknowledged at checkout (orders.allergen_ack_mask). 0 means they acknowledged a basket declaring none of the 14 regulated allergens; null means no acknowledgement was recorded (the order predates the acknowledgement).",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "acknowledgedAllergens" : {
+            "description" : "The names of acknowledgedAllergenMask, in AllergenCatalog bit order. [] when the mask is 0; null when no acknowledgement was recorded.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
           "allergenWarnings" : {
             "items" : {
               "type" : "string"
@@ -1507,6 +1519,20 @@
           },
           "orderNumber" : {
             "type" : "string"
+          },
+          "recordedAllergenFlags" : {
+            "description" : "ADVISORY reconciliation lines: an allergen a product's ingredients text emphasises but its declaration omits. Separate from, and never merged into, recordedAllergens. [] when nothing was flagged; null when the lines carry no snapshot.",
+            "items" : {
+              "$ref" : "#/components/schemas/OrderAllergenFlagDto"
+            },
+            "type" : "array"
+          },
+          "recordedAllergens" : {
+            "description" : "The allergens the order's lines DECLARED when it was placed (the order-line snapshot union), in AllergenCatalog bit order. [] when the lines declared none; null when the lines carry no snapshot (not recorded). Reconciliation flags are never included here.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
           },
           "shopName" : {
             "type" : "string"
@@ -2013,6 +2039,13 @@
       },
       "OrderDetailDto" : {
         "properties" : {
+          "acknowledgedAllergenNames" : {
+            "description" : "The names of allergenAckMask, in AllergenCatalog bit order. [] when the mask is 0; null when no acknowledgement was recorded.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
           "addressCity" : {
             "type" : "string"
           },
@@ -2024,6 +2057,16 @@
           },
           "addressPostcode" : {
             "type" : "string"
+          },
+          "allergenAckAt" : {
+            "description" : "When the server accepted allergenAckMask; null when no acknowledgement was recorded.",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergenAckMask" : {
+            "description" : "The allergen mask (AllergenCatalog bits 0..13) the customer acknowledged at checkout. 0 means they acknowledged a basket declaring none of the 14 regulated allergens; null means no acknowledgement was recorded (placedVia VENDOR, or the order predates the acknowledgement).",
+            "format" : "int32",
+            "type" : "integer"
           },
           "allergenFlags" : {
             "items" : {
@@ -2098,6 +2141,14 @@
             ],
             "type" : "string"
           },
+          "placedVia" : {
+            "description" : "Which channel placed the order: STOREFRONT (the customer, who acknowledged the allergen set) or VENDOR (the shop entered it; no customer acknowledgement). Null when the order predates the channel being recorded.",
+            "enum" : [
+              "STOREFRONT",
+              "VENDOR"
+            ],
+            "type" : "string"
+          },
           "refunds" : {
             "items" : {
               "$ref" : "#/components/schemas/RefundDto"
@@ -2142,6 +2193,16 @@
       },
       "OrderDto" : {
         "properties" : {
+          "allergenAckAt" : {
+            "description" : "When the server accepted allergenAckMask. Absent when no acknowledgement was recorded.",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergenAckMask" : {
+            "description" : "The allergen mask (AllergenCatalog bits 0..13) the customer acknowledged at checkout. 0 means they acknowledged a basket declaring none of the 14 regulated allergens. ABSENT means no acknowledgement was recorded (placedVia VENDOR, or the order predates the acknowledgement).",
+            "format" : "int32",
+            "type" : "integer"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -2194,6 +2255,14 @@
               "CAPTURED",
               "FAILED",
               "REFUNDED"
+            ],
+            "type" : "string"
+          },
+          "placedVia" : {
+            "description" : "Which channel placed the order: STOREFRONT (the customer, who acknowledged the allergen set) or VENDOR (the shop entered it; no customer acknowledgement). Absent when the order predates the channel being recorded.",
+            "enum" : [
+              "STOREFRONT",
+              "VENDOR"
             ],
             "type" : "string"
           },
@@ -3186,6 +3255,18 @@
       },
       "PublicOrderStatus" : {
         "properties" : {
+          "acknowledgedAllergenMask" : {
+            "description" : "The allergen mask (AllergenCatalog bits 0..13) the customer acknowledged at checkout. 0 means they acknowledged a basket declaring none of the 14 regulated allergens; null means no acknowledgement was recorded: the shop entered the order (placedVia VENDOR) or it predates the acknowledgement.",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "acknowledgedAllergens" : {
+            "description" : "The names of acknowledgedAllergenMask, in AllergenCatalog bit order. [] when the mask is 0; null when no acknowledgement was recorded.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -3199,6 +3280,28 @@
           },
           "paymentStatus" : {
             "type" : "string"
+          },
+          "placedVia" : {
+            "description" : "Which channel placed the order: STOREFRONT (the customer, who acknowledged the allergen set) or VENDOR (the shop entered it; no customer acknowledgement was recorded). Null when the order predates the channel being recorded.",
+            "enum" : [
+              "STOREFRONT",
+              "VENDOR"
+            ],
+            "type" : "string"
+          },
+          "recordedAllergenFlags" : {
+            "description" : "ADVISORY reconciliation lines, separate from and never merged into recordedAllergens. [] when nothing was flagged; null when not recorded. Tracking response only, like recordedAllergens.",
+            "items" : {
+              "$ref" : "#/components/schemas/OrderAllergenFlagDto"
+            },
+            "type" : "array"
+          },
+          "recordedAllergens" : {
+            "description" : "The allergens the order's lines DECLARED when it was placed (the order-line snapshot union), in AllergenCatalog bit order. [] when the lines declared none; null when the lines carry no snapshot (not recorded). Populated on the single-order tracking response only: always null on the order-history list, which does not load order lines.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
           },
           "shopName" : {
             "type" : "string"

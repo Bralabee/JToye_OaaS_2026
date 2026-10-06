@@ -8,6 +8,7 @@ import uk.jtoye.core.order.OrderAllergenSnapshot.OrderAllergenView;
 import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
 import uk.jtoye.core.order.dto.OrderItemDto;
+import uk.jtoye.core.product.AllergenCatalog;
 
 import java.util.List;
 
@@ -49,6 +50,11 @@ public interface OrderMapper {
     @Mapping(target = "deliveryFeePennies", source = "deliveryFeePennies")
     @Mapping(target = "createdAt", source = "createdAt")
     @Mapping(target = "updatedAt", source = "updatedAt")
+    // Phase 31.1 D-06/D-07: the acknowledgement and the channel are scalar V69 COLUMNS, so the
+    // list carries them with no collection load. placedVia maps the enum by name (null stays null).
+    @Mapping(target = "allergenAckMask", source = "allergenAckMask")
+    @Mapping(target = "allergenAckAt", source = "allergenAckAt")
+    @Mapping(target = "placedVia", source = "placedVia")
     OrderDto toDto(Order order);
 
     @Mapping(target = "items", source = "items")
@@ -74,6 +80,12 @@ public interface OrderMapper {
     @Mapping(target = "allergenMask", ignore = true)
     @Mapping(target = "allergenNames", ignore = true)
     @Mapping(target = "allergenFlags", ignore = true)
+    // Phase 31.1 D-06/D-07: the acknowledgement and channel columns, explicit so a rename on either
+    // side fails the build rather than silently un-mapping. The names are derived in fillAllergens.
+    @Mapping(target = "allergenAckMask", source = "allergenAckMask")
+    @Mapping(target = "allergenAckAt", source = "allergenAckAt")
+    @Mapping(target = "placedVia", source = "placedVia")
+    @Mapping(target = "acknowledgedAllergenNames", ignore = true)
     OrderDetailDto toDetailDto(Order order);
 
     /**
@@ -92,5 +104,9 @@ public interface OrderMapper {
         dto.setAllergenMask(view.declaredMask());
         dto.setAllergenNames(view.declaredNames());
         dto.setAllergenFlags(view.flags());
+        // The ACKNOWLEDGED set comes from the order's own column, not from the lines: a separate
+        // fact, and the flags above are never merged into it. Null (not recorded) stays null.
+        Integer acknowledged = order.getAllergenAckMask();
+        dto.setAcknowledgedAllergenNames(acknowledged == null ? null : AllergenCatalog.namesFor(acknowledged));
     }
 }

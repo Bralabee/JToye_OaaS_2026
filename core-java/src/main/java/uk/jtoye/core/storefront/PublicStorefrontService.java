@@ -613,6 +613,14 @@ public class PublicStorefrontService {
             status.setUnitCount(order.getUnitCount());
             status.setCreatedAt(order.getCreatedAt());
             status.setUpdatedAt(order.getUpdatedAt());
+            // Phase 31.1 D-07/D-08: the acknowledgement and channel from the order's own COLUMNS
+            // ONLY. The recorded set (recordedAllergens / recordedAllergenFlags) is deliberately
+            // left null here and documented as tracking-only: deriving it reads order.getItems(),
+            // which initialises one collection per row on this list path (the V63 measurement:
+            // 7 orders, 7 extra SELECTs). CustomerRecordedAllergenSetIntegrationTest guards this.
+            status.setAcknowledgedAllergenMask(order.getAllergenAckMask());
+            status.setAcknowledgedAllergens(acknowledgedAllergenNames(order));
+            status.setPlacedVia(placedVia(order));
             return status;
         });
     }
