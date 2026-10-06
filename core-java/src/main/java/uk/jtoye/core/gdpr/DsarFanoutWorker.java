@@ -77,6 +77,16 @@ import java.util.UUID;
  *       reason, which is this plan's own threat register rather than an oversight.</li>
  * </ul>
  *
+ * <h2>An erasure is complete only when the sign-in account is gone (31.1-11, D-03)</h2>
+ *
+ * After every tenant's erasure has committed, the worker decrypts the verified address (D-19) and
+ * deletes the subject's customer-realm Keycloak account through
+ * {@link CustomerAccountDeletionService}. The request becomes {@code COMPLETED} only when that is
+ * confirmed ({@code DELETED}) or no account exists ({@code NONE_FOUND}); then, and only after that
+ * commit, {@link DsarOutcomeMailer} tells the subject. Anything else — an outage, an error, the admin
+ * seam switched off — records {@code OUTSTANDING} or {@code NOT_CONFIGURED} and releases the request;
+ * the erasure is never rolled back, and the retry re-runs a harmless erasure before trying again.
+ *
  * <h2>The outcome tells the subject nothing about which vendors held their data</h2>
  *
  * The row records a COUNT of tenants erased, never their identities (T-31-09-05). "Which of your
@@ -119,6 +129,7 @@ public class DsarFanoutWorker {
     private final GdprService gdprService;
     private final DsarCipher dsarCipher;
     private final CustomerAccountDeletionService accountDeletionService;
+    private final DsarOutcomeMailer outcomeMailer;
     private final JdbcTemplate jdbcTemplate;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
@@ -137,12 +148,14 @@ public class DsarFanoutWorker {
     public DsarFanoutWorker(GdprService gdprService,
                             DsarCipher dsarCipher,
                             CustomerAccountDeletionService accountDeletionService,
+                            DsarOutcomeMailer outcomeMailer,
                             JdbcTemplate jdbcTemplate,
                             EntityManager entityManager,
                             PlatformTransactionManager transactionManager) {
         this.gdprService = gdprService;
         this.dsarCipher = dsarCipher;
         this.accountDeletionService = accountDeletionService;
+        this.outcomeMailer = outcomeMailer;
         this.jdbcTemplate = jdbcTemplate;
         this.entityManager = entityManager;
         // Built here rather than annotating a method: see hazard 2 in the class javadoc.
@@ -207,31 +220,87 @@ public class DsarFanoutWorker {
 
         // D-03: every tenant's erasure has COMMITTED (each ran in its own transaction above). Only now
         // is the sign-in account deleted, so a Keycloak failure can never roll an erasure back.
-        AccountDeletionResult account = deleteSubjectAccount(requestId, ciphertext);
-        if (account == AccountDeletionResult.DELETED || account == AccountDeletionResult.NONE_FOUND) {
-            complete(requestId, tenantsErased, tenantIds.size(), account);
+        AccountStep account = deleteSubjectAccount(requestId, ciphertext);
+        if (account.result() == AccountDeletionResult.DELETED
+                || account.result() == AccountDeletionResult.NONE_FOUND) {
+            complete(requestId, tenantsErased, tenantIds.size(), account.result());
+            // After the COMPLETED UPDATE has committed, never before: a subject is told "done" only
+            // about a request the database already records as done. The address is the one decrypted
+            // above, held in memory only; the row no longer carries it.
+            outcomeMailer.sendErasureCompleted(account.address(), account.result());
             return;
         }
-        release(requestId, tenantsErased, 0, attempts);
+        releaseAccountOutstanding(requestId, tenantsErased, account.result(), attempts);
+    }
+
+    /** The outcome of the account step, and the decrypted address the completion email goes to. */
+    private record AccountStep(AccountDeletionResult result, String address) {
     }
 
     /**
      * Decrypt the verified address (D-19) and delete the subject's customer-realm account. Never
      * throws: anything unexpected is an unconfirmed deletion, not a reason to abandon the sweep.
+     * Nothing logged here carries the address.
      */
-    private AccountDeletionResult deleteSubjectAccount(UUID requestId, byte[] ciphertext) {
+    private AccountStep deleteSubjectAccount(UUID requestId, byte[] ciphertext) {
         if (ciphertext == null) {
+            // Without the address the account cannot be found, so the deletion cannot be confirmed.
+            // Retrying will not produce one; the request runs out its attempts and is parked FAILED.
             log.error("event=dsar_account_deletion_failed request={} reason=no_subject_address", requestId);
-            return AccountDeletionResult.FAILED;
+            return new AccountStep(AccountDeletionResult.FAILED, null);
         }
+        String address = null;
         try {
-            String address = dsarCipher.decrypt(DsarCipher.Purpose.SUBJECT_ADDRESS, requestId, ciphertext);
+            address = dsarCipher.decrypt(DsarCipher.Purpose.SUBJECT_ADDRESS, requestId, ciphertext);
             AccountDeletionResult result = accountDeletionService.deleteCustomerAccount(address);
-            return result == null ? AccountDeletionResult.FAILED : result;
+            return new AccountStep(result == null ? AccountDeletionResult.FAILED : result, address);
         } catch (RuntimeException e) {
             log.error("event=dsar_account_deletion_failed request={} error={}", requestId,
                     e.getClass().getName());
-            return AccountDeletionResult.FAILED;
+            return new AccountStep(AccountDeletionResult.FAILED, address);
+        }
+    }
+
+    /**
+     * The data is erased but the sign-in account is not confirmed gone: the request goes back to
+     * {@code VERIFIED} with the ciphertext KEPT (the retry needs the address), recording
+     * {@code OUTSTANDING} — or {@code NOT_CONFIGURED} when the admin seam is off in this runtime,
+     * which is still not complete. The next sweep re-runs the erasure, which now matches nothing and
+     * writes no second record, and then the deletion.
+     *
+     * <p>After {@code max-process-attempts} the request is parked {@code FAILED}, the ciphertext is
+     * dropped like every other terminal state, and an ERROR is logged: a data subject's statutory
+     * right is then unsatisfied and somebody has to act.
+     */
+    private void releaseAccountOutstanding(UUID requestId, int tenantsErased, AccountDeletionResult account,
+                                           int attempts) {
+        String accountStatus = account == AccountDeletionResult.NOT_CONFIGURED ? "NOT_CONFIGURED" : "OUTSTANDING";
+        boolean exhausted = attempts >= maxProcessAttempts;
+        String error = "sign-in account deletion " + accountStatus + "; " + tenantsErased
+                + " tenant(s) erased; attempt " + attempts + " of " + maxProcessAttempts;
+
+        transactionTemplate.executeWithoutResult(status -> {
+            if (exhausted) {
+                jdbcTemplate.update(
+                        "UPDATE dsar_request SET status = 'FAILED', completed_at = NOW(), last_error = ?, "
+                                + "subject_email_ciphertext = NULL, account_deletion_status = ?, "
+                                + "account_deletion_attempts = account_deletion_attempts + 1 WHERE id = ?",
+                        error, accountStatus, requestId);
+            } else {
+                jdbcTemplate.update(
+                        "UPDATE dsar_request SET status = 'VERIFIED', claimed_at = NULL, last_error = ?, "
+                                + "account_deletion_status = ?, "
+                                + "account_deletion_attempts = account_deletion_attempts + 1 WHERE id = ?",
+                        error, accountStatus, requestId);
+            }
+        });
+
+        if (exhausted) {
+            log.error("event=dsar_account_deletion_exhausted request={} {} — the personal data is erased "
+                    + "but the customer sign-in account may still exist; this request will NOT be retried "
+                    + "again", requestId, error);
+        } else {
+            log.warn("event=dsar_account_deletion_outstanding request={} {}", requestId, error);
         }
     }
 

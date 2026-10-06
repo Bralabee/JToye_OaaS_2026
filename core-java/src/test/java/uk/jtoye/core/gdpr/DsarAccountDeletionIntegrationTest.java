@@ -464,7 +464,9 @@ class DsarAccountDeletionIntegrationTest {
     }
 
     long erasureRecordCount(UUID tenant) {
-        String n = queryString(tenant, "SELECT COUNT(*)::text FROM erasure_records");
+        // Explicit tenant predicate: this class runs as the Testcontainers SUPERUSER, which bypasses
+        // FORCE RLS, so the GUC pin alone would count every test's records (measured: 3 and 8).
+        String n = queryString(tenant, "SELECT COUNT(*)::text FROM erasure_records WHERE tenant_id = ?", tenant);
         return Long.parseLong(n);
     }
 
