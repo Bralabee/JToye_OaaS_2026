@@ -326,6 +326,10 @@ data:
   notification.email.tracking-base-url: "https://app.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app.olajay.co.uk"
   gdpr.dsar.verify-base-url: "https://api.olajay.co.uk/api/v1/public/gdpr/dsar/verify"
+  # 31.1-16 (D-01, #778): the frontend page the emailed Article 15 download link
+  # opens. Its application.yml default is http://localhost:3000/... — outside a
+  # laptop every link would be dead and the statutory reply silently undelivered.
+  gdpr.dsar.export-download-base-url: "https://app.olajay.co.uk/data-request/download"
 
   # --- D-19 Stripe Connect return origins (production-affecting) -------------
   # Same defect class: a vendor completing Stripe Connect onboarding was

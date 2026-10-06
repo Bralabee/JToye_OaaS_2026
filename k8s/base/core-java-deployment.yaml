@@ -470,6 +470,17 @@ spec:
             configMapKeyRef:
               name: app-config
               key: gdpr.dsar.verify-base-url
+        # Phase 31.1 plan 16 (D-01, #778): the page the emailed Article 15
+        # download link opens. Its application.yml default is
+        # http://localhost:3000/... — the same silent dead-link failure as the
+        # verify URL above, except that here the request is marked COMPLETED
+        # because the email itself sent. Supplied per environment, never
+        # allowlisted.
+        - name: DSAR_EXPORT_DOWNLOAD_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: gdpr.dsar.export-download-base-url
         # REQUIRED Secret (dsar-credentials), phase 31.1 plan 07 decision D-19
         # (not the Phase 26 D-19 above). The AES-256-GCM key the DSAR subject
         # address is encrypted under: 64 hexadecimal characters, generated per
