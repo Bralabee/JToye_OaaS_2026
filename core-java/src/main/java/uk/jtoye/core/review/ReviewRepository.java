@@ -25,6 +25,15 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
      */
     List<Review> findByTenantIdAndCustomerEmail(UUID tenantId, String customerEmail);
 
+    /**
+     * Every distinct stored spelling of a reviewer address in ONE tenant (#777). The tenant predicate is
+     * explicit for the same reason as {@link #findByTenantIdAndCustomerEmail}: the SELECT policy shows
+     * PUBLISHED shops' reviews across tenants.
+     */
+    @Query("SELECT DISTINCT r.customerEmail FROM Review r "
+            + "WHERE r.tenantId = :tenantId AND r.customerEmail IS NOT NULL")
+    List<String> findDistinctCustomerEmailsByTenantId(@Param("tenantId") UUID tenantId);
+
     @Query(value = "SELECT COUNT(*) FROM reviews WHERE shop_id = :shopId", nativeQuery = true)
     long countByShopId(@Param("shopId") UUID shopId);
 

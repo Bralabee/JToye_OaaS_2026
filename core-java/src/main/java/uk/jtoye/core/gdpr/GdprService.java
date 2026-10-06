@@ -29,10 +29,14 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -200,7 +204,17 @@ public class GdprService {
     public ErasureOutcome eraseCustomerData(UUID customerId) {
         Customer customer = customerRepository.findById(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
+        return eraseCustomer(customer, Set.of());
+    }
 
+    /**
+     * Anonymise one {@code customers} row, then everything else of the subject's in its tenant through
+     * {@link #anonymiseSubjectInTenant}. {@code additionalSpellings} are further stored spellings of the
+     * same address (#777: the DSAR fan-out finds them by digest); the admin erasure passes none, so its
+     * behaviour is exactly what it was.
+     */
+    private ErasureOutcome eraseCustomer(Customer customer, Set<String> additionalSpellings) {
+        UUID customerId = customer.getId();
         // Capture up front — tenantId drives the native _aud scrub WHERE clauses
         // (explicit tenant scoping, not just RLS), and the email is needed for the
         // guest-order sweep + the durable-record hash before we overwrite it.
@@ -216,14 +230,54 @@ public class GdprService {
         customer.setUpdatedAt(OffsetDateTime.now());
         customerRepository.save(customer);
 
+        // The customer's own address first, so its orders_aud rows are scrubbed by the original
+        // (customer_id OR email) statement and are not counted again under another spelling.
+        Set<String> spellings = new LinkedHashSet<>();
+        spellings.add(originalEmail);
+        spellings.addAll(additionalSpellings);
+        // The record hash stays the RAW email, as every admin erasure has always written it; changing it
+        // would silently change the meaning of historic rows (see the 31.1-02 summary observation).
+        return anonymiseSubjectInTenant(tenantId, customerId, spellings, sha256Hex(originalEmail));
+    }
+
+    /**
+     * The one anonymisation routine behind BOTH Article-17 entry points (#777, D-02): the admin
+     * {@link #eraseCustomerData(UUID)} and the DSAR fan-out's {@link #eraseSubjectByDigest}. V42's
+     * tenant-scoped UPDATE policies on {@code orders_aud}/{@code customers_aud} were written for this
+     * routine, so a second implementation would drift from the policies that permit its audit scrub.
+     *
+     * <p>Only PII columns change. Order rows, their items, amounts, VAT fields and the
+     * {@code financial_transactions} ledger are kept: tax records have their own retention (D-02).
+     *
+     * <p>Every address lookup carries an explicit {@code tenant_id} predicate as well as running under the
+     * pinned tenant's FORCE row-level security (#764). An order reachable both by {@code customer_id} and
+     * by an address, or by two spellings, is updated once.
+     *
+     * <p>No {@code @Transactional} here: a private method is not proxied. The caller's transaction (the
+     * class-level one for the admin path, the worker's per-tenant {@code TransactionTemplate} for the
+     * fan-out) is the boundary.
+     *
+     * @param customerIdOrNull the erased customer, or {@code null} for a guest subject — then a record is
+     *                         written only if an order or a review actually changed
+     * @param emailSpellings   every stored spelling of the subject's address to sweep, exact-match each
+     * @param recordDigest     the {@code subject_email_sha256} for the evidence row
+     * @return the outcome; for a guest pass that changed nothing, {@code recordId} is {@code null} and no
+     *         record was written
+     */
+    private ErasureOutcome anonymiseSubjectInTenant(UUID tenantId, UUID customerIdOrNull,
+                                                    Set<String> emailSpellings, String recordDigest) {
         // Order sweep: merge customer_id-linked orders with email-matched guest orders,
         // de-duplicated by order id so an order reachable both ways is counted once.
         Map<UUID, Order> ordersById = new LinkedHashMap<>();
-        for (Order order : orderRepository.findByCustomerId(customerId)) {
-            ordersById.put(order.getId(), order);
+        if (customerIdOrNull != null) {
+            for (Order order : orderRepository.findByCustomerId(customerIdOrNull)) {
+                ordersById.put(order.getId(), order);
+            }
         }
-        for (Order order : orderRepository.findByCustomerEmailOrderByCreatedAtDesc(originalEmail)) {
-            ordersById.put(order.getId(), order);
+        for (String spelling : emailSpellings) {
+            for (Order order : orderRepository.findByTenantIdAndCustomerEmail(tenantId, spelling)) {
+                ordersById.put(order.getId(), order);
+            }
         }
         for (Order order : ordersById.values()) {
             order.setCustomerName(ANONYMISED);
@@ -243,7 +297,20 @@ public class GdprService {
 
         // Anonymise PII on this tenant's reviews and COLLECT their photo URLs. Nothing is deleted
         // from storage here: object storage cannot roll back, so the deletion waits for commit.
-        List<Review> reviews = reviewRepository.findByTenantIdAndCustomerEmail(tenantId, originalEmail);
+        Map<UUID, Review> reviewsById = new LinkedHashMap<>();
+        for (String spelling : emailSpellings) {
+            for (Review review : reviewRepository.findByTenantIdAndCustomerEmail(tenantId, spelling)) {
+                reviewsById.put(review.getId(), review);
+            }
+        }
+        List<Review> reviews = new ArrayList<>(reviewsById.values());
+        if (customerIdOrNull == null && ordersAnonymised == 0 && reviews.isEmpty()) {
+            // A guest pass that matched no row changes nothing and leaves no evidence row: there is no
+            // erasure to evidence, and the fan-out must not count this tenant as erased (D-02).
+            PhotoErasureTally none = new PhotoErasureTally();
+            none.settle(0, 0);
+            return new ErasureOutcome(null, OffsetDateTime.now(), 0, 0, 0, null, none);
+        }
         int reviewsAnonymised = 0;
         List<String> photoUrlsToDelete = new ArrayList<>();
         int photoUrlsDetached = 0;
@@ -284,9 +351,21 @@ public class GdprService {
 
         // Scrub pre-erasure PII from the Envers audit history. @Modifying(flushAutomatically)
         // flushes the live-entity changes above first, so the post-erasure audit rows are
-        // already redacted; these tenant-scoped UPDATEs then scrub the pre-erasure rows.
-        int audRowsScrubbed = orderRepository.scrubOrdersAudit(tenantId, customerId, originalEmail, ANONYMISED)
-                + customerRepository.scrubCustomerAudit(tenantId, customerId, ANONYMISED);
+        // already redacted; these tenant-scoped UPDATEs then scrub the pre-erasure rows. For a
+        // customer, the first spelling is their own address and goes through the original
+        // (customer_id OR email) statement; that nulls customer_email on every row it scrubs, so a
+        // further spelling's by-address scrub cannot count the same row twice.
+        int audRowsScrubbed = 0;
+        boolean customersOwnSpelling = customerIdOrNull != null;
+        for (String spelling : emailSpellings) {
+            audRowsScrubbed += customersOwnSpelling
+                    ? orderRepository.scrubOrdersAudit(tenantId, customerIdOrNull, spelling, ANONYMISED)
+                    : orderRepository.scrubOrdersAuditByEmail(tenantId, spelling, ANONYMISED);
+            customersOwnSpelling = false;
+        }
+        if (customerIdOrNull != null) {
+            audRowsScrubbed += customerRepository.scrubCustomerAudit(tenantId, customerIdOrNull, ANONYMISED);
+        }
 
         // WR-10 (Phase 23): the user_directory grant-target cache carries staff email PII
         // introduced by V52 — before it, this data did not exist in the platform. It is keyed
@@ -296,25 +375,28 @@ public class GdprService {
         // is NOT an erasure failure — the ErasureRecord accounting (orders/reviews/aud/photos)
         // is unaffected. No _aud mirror exists (D-09), so a straight tenant-scoped DELETE is
         // the complete erasure — there is no audit history to scrub.
-        int directoryRowsErased = userDirectoryRepository.deleteByTenantIdAndEmail(tenantId, originalEmail);
+        int directoryRowsErased = 0;
+        for (String spelling : emailSpellings) {
+            directoryRowsErased += userDirectoryRepository.deleteByTenantIdAndEmail(tenantId, spelling);
+        }
 
         // Durable, PII-free proof of erasure — SHA-256 hex of the email, never plaintext. Written
         // HERE, atomically with the anonymisation, so the evidence row can never be lost while the
         // data was erased. photos_deleted is 0, which is literally true at commit: no photo has
         // been deleted yet. The post-commit step writes the real count once.
-        String subjectEmailSha256 = sha256Hex(originalEmail);
         String erasedBy = resolveErasedBy();
         OffsetDateTime erasedAt = OffsetDateTime.now();
         ErasureRecord record = erasureRecordRepository.save(new ErasureRecord(
-                tenantId, customerId, subjectEmailSha256,
+                tenantId, customerIdOrNull, recordDigest,
                 ordersAnonymised, reviewsAnonymised, audRowsScrubbed, 0,
                 erasedBy, erasedAt));
 
+        // "customer null" is a guest subject (#777); no address and no name is ever logged.
         log.info("GDPR erasure for customer {} — {} orders, {} reviews anonymised, "
                         + "{} audit rows scrubbed, {} review photo URL(s) detached, {} eligible for deletion "
                         + "after commit, {} retained as not this review's photo, {} retained as referenced by "
                         + "the catalogue, {} directory rows erased; record {}",
-                customerId, ordersAnonymised, reviewsAnonymised, audRowsScrubbed, photoUrlsDetached,
+                customerIdOrNull, ordersAnonymised, reviewsAnonymised, audRowsScrubbed, photoUrlsDetached,
                 photoUrlsToDelete.size(), retainedNotReviewPhoto, retainedCatalogueReferenced,
                 directoryRowsErased, record.getId());
         if (retainedNotReviewPhoto > 0 || retainedCatalogueReferenced > 0) {
@@ -326,9 +408,9 @@ public class GdprService {
         }
 
         PhotoErasureTally photos = new PhotoErasureTally();
-        schedulePhotoErasure(tenantId, customerId, record.getId(), List.copyOf(photoUrlsToDelete), photos);
+        schedulePhotoErasure(tenantId, customerIdOrNull, record.getId(), List.copyOf(photoUrlsToDelete), photos);
 
-        return new ErasureOutcome(customerId, erasedAt, ordersAnonymised, reviewsAnonymised,
+        return new ErasureOutcome(customerIdOrNull, erasedAt, ordersAnonymised, reviewsAnonymised,
                 audRowsScrubbed, record.getId(), photos);
     }
 
@@ -413,55 +495,127 @@ public class GdprService {
     }
 
     /**
-     * Erase every customer in ONE tenant whose address matches a DSAR subject digest
-     * (Phase 31, plan 31-09 — {@link DsarFanoutWorker}'s per-tenant unit of work).
-     *
-     * <p><b>This is a lookup, not a second erasure routine.</b> The erasure itself is
-     * {@link #eraseCustomerData(UUID)} above, unchanged and unbypassed — which matters because
-     * V42's tenant-scoped UPDATE policies on {@code orders_aud}/{@code customers_aud} were written
-     * for exactly that routine, and a parallel implementation would diverge from the policies that
-     * permit its audit scrub. All this method adds is the step {@code eraseCustomerData} cannot do:
-     * it is keyed by {@code customerId}, and a data subject arrives as a hash.
+     * Who the subject of a DSAR digest is in ONE tenant: every {@code customers} row and every stored
+     * spelling of an address on {@code customers}, {@code orders} and {@code reviews} whose
+     * {@link DsarSubjectDigest} equals the digest (#777, D-02). Read-only; also the lookup the ACCESS
+     * export (31.1-16) reuses, so both rights find exactly the same rows.
      *
      * <p><b>Why a scan rather than an indexed lookup.</b> The plaintext address is never stored on
-     * {@code dsar_request} (V62), so there is nothing to pass to {@code findByEmail} — matching is
-     * digest to digest. The comparison is performed in Java through {@link DsarSubjectDigest}, the
-     * single implementation the public intake also uses, so agreement between the two sides is
-     * structural rather than a written rule two files can drift away from. The alternative — a
-     * server-side {@code encode(sha256(convert_to(lower(btrim(email)), 'UTF8')), 'hex')} — was
-     * rejected on measurement, not taste: {@code btrim} and {@code String.trim()} strip different
-     * character sets, and {@code lower()} follows the database collation while
-     * {@code toLowerCase(Locale.ROOT)} does not. A divergence there matches NOTHING and reports
-     * success, which is the failure mode the whole DSAR path is built to avoid.
+     * {@code dsar_request} (V62), so there is nothing to pass to an email finder — matching is digest to
+     * digest. The comparison is performed in Java through {@link DsarSubjectDigest}, the single
+     * implementation the public intake also uses, so agreement between the two sides is structural
+     * rather than a written rule two files can drift away from. The alternative — a server-side
+     * {@code encode(sha256(convert_to(lower(btrim(email)), 'UTF8')), 'hex')} — was rejected on
+     * measurement, not taste: {@code btrim} and {@code String.trim()} strip different character sets,
+     * and {@code lower()} follows the database collation while {@code toLowerCase(Locale.ROOT)} does
+     * not. A divergence there matches NOTHING and reports success, which is the failure mode the whole
+     * DSAR path is built to avoid.
      *
-     * <p><b>Tenant scoping.</b> The projection carries an explicit {@code tenant_id} predicate AND
-     * runs under FORCE row-level security with the GUC pinned by the caller. The fan-out's reach
-     * comes from iterating tenants, never from a query that ignores the wall.
+     * <p><b>Why every spelling.</b> The finders are exact-match and nothing normalises a stored address,
+     * so "Grace@x" on one guest order and " grace@X " on another are two strings for one subject, and
+     * each must be swept.
+     *
+     * <p><b>Tenant scoping.</b> Every projection carries an explicit {@code tenant_id} predicate AND runs
+     * under FORCE row-level security with the GUC pinned by the caller. The fan-out's reach comes from
+     * iterating tenants, never from a query that ignores the wall. The sets are sorted, so the result does
+     * not depend on the order rows come back in.
+     *
+     * @param tenantId      the tenant currently pinned by the caller
+     * @param subjectDigest the subject digest from {@code dsar_request}
+     */
+    public SubjectMatch matchSubjectInTenant(UUID tenantId, String subjectDigest) {
+        Set<UUID> customerIds = new TreeSet<>();
+        Set<String> spellings = new TreeSet<>();
+        for (Object[] row : customerRepository.findIdAndEmailByTenantId(tenantId)) {
+            String email = (String) row[1];
+            if (matchesDigest(email, subjectDigest)) {
+                customerIds.add((UUID) row[0]);
+                spellings.add(email);
+            }
+        }
+        for (String email : orderRepository.findDistinctCustomerEmailsByTenantId(tenantId)) {
+            if (matchesDigest(email, subjectDigest)) {
+                spellings.add(email);
+            }
+        }
+        for (String email : reviewRepository.findDistinctCustomerEmailsByTenantId(tenantId)) {
+            if (matchesDigest(email, subjectDigest)) {
+                spellings.add(email);
+            }
+        }
+        return new SubjectMatch(Collections.unmodifiableSet(customerIds), Collections.unmodifiableSet(spellings));
+    }
+
+    private static boolean matchesDigest(String email, String subjectDigest) {
+        return email != null && DsarSubjectDigest.of(email).equals(subjectDigest);
+    }
+
+    /**
+     * A DSAR subject in one tenant: the matched {@code customers} ids and every stored spelling of the
+     * address (customers, orders and reviews together). Both sets are sorted and unmodifiable.
+     */
+    public record SubjectMatch(Set<UUID> customerIds, Set<String> emailSpellings) {
+        public boolean isEmpty() {
+            return customerIds.isEmpty() && emailSpellings.isEmpty();
+        }
+    }
+
+    /**
+     * Erase a DSAR subject in ONE tenant (Phase 31, plan 31-09 — {@link DsarFanoutWorker}'s per-tenant
+     * unit of work; #777 extended it from {@code customers} to every storefront subject).
+     *
+     * <p><b>No second erasure routine.</b> The subject is found by {@link #matchSubjectInTenant}, and
+     * everything is anonymised through {@link #anonymiseSubjectInTenant}, the routine the admin
+     * {@link #eraseCustomerData(UUID)} uses.
+     * <ul>
+     *   <li><b>A subject with a {@code customers} row</b> is erased as a customer, exactly as the admin
+     *       path does it — record carries the customer id. The first matched customer's erasure also
+     *       sweeps every other stored spelling, so the tenant gets ONE record and no order is updated
+     *       twice.</li>
+     *   <li><b>A subject with no {@code customers} row</b> (every storefront guest — guest checkout never
+     *       creates one) is erased by address: order PII, review authorship and their {@code _aud}
+     *       history. The record carries a NULL customer id (V68) and the DSAR digest, and is written
+     *       ONLY when an order or a review actually changed.</li>
+     * </ul>
+     * Order rows, items, amounts, VAT fields and the ledger are kept (D-02).
+     *
+     * <p>Re-running is harmless: the anonymised addresses no longer hash to the digest, so a second
+     * sweep matches nothing and writes no second record.
      *
      * <p>Each erasure's review photos are deleted when the caller's per-tenant transaction COMMITS
      * (#764), not when this method returns — which is why the outcomes are not read here.
      *
      * @param tenantId           the tenant currently pinned by the caller
      * @param subjectEmailSha256 the subject digest from {@code dsar_request}
-     * @return how many customers were erased in this tenant — usually 0 or 1, since
-     *         {@code uq_customers_tenant_email} makes an address unique per tenant
+     * @return how many erasure records were written in this tenant — 0 when the tenant holds nothing for
+     *         the subject, so the worker's {@code tenantsErased} counts only real erasures
      */
     public int eraseSubjectByDigest(UUID tenantId, String subjectEmailSha256) {
-        int erased = 0;
-        for (Object[] row : customerRepository.findIdAndEmailByTenantId(tenantId)) {
-            String email = (String) row[1];
-            if (email == null || !DsarSubjectDigest.of(email).equals(subjectEmailSha256)) {
+        SubjectMatch match = matchSubjectInTenant(tenantId, subjectEmailSha256);
+        int records = 0;
+        Set<String> unswept = match.emailSpellings();
+        for (UUID customerId : match.customerIds()) {
+            Optional<Customer> customer = customerRepository.findById(customerId);
+            if (customer.isEmpty()) {
                 continue;
             }
-            eraseCustomerData((UUID) row[0]);
-            erased++;
+            eraseCustomer(customer.get(), unswept);
+            unswept = Set.of();
+            records++;
         }
-        if (erased > 0) {
+        if (!unswept.isEmpty()) {
+            ErasureOutcome guest = anonymiseSubjectInTenant(tenantId, null, unswept, subjectEmailSha256);
+            if (guest.recordId() != null) {
+                records++;
+            }
+        }
+        if (records > 0) {
             // The subject digest is one-way and the tenant id is not personal data; neither the
             // address nor any name is logged.
-            log.info("DSAR fan-out erased {} customer(s) for tenant {}", erased, tenantId);
+            log.info("DSAR fan-out wrote {} erasure record(s) for tenant {} ({} customer row(s) matched)",
+                    records, tenantId, match.customerIds().size());
         }
-        return erased;
+        return records;
     }
 
     /**

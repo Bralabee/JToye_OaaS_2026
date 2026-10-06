@@ -181,7 +181,7 @@ class GdprServiceTest {
 
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of(linkedOrder));
-        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com"))
+        when(orderRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com"))
                 .thenReturn(List.of(guestOrder));
         when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of(review));
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -273,7 +273,7 @@ class GdprServiceTest {
 
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
-        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
+        when(orderRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of());
         when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of(review));
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
@@ -314,7 +314,7 @@ class GdprServiceTest {
     void eraseCustomerData_noOrdersOrReviews() {
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
-        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
+        when(orderRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of());
         when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of());
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
@@ -366,7 +366,7 @@ class GdprServiceTest {
         var export = gdprService.exportCustomerData(customerId);
         assertEquals(0, export.reviews().size(), "the export must not carry another tenant's review");
 
-        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
+        when(orderRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of());
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
         when(reviewRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));
@@ -401,7 +401,7 @@ class GdprServiceTest {
         review.setPhotoUrls(new ArrayList<>(List.of(urls)));
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(orderRepository.findByCustomerId(customerId)).thenReturn(List.of());
-        when(orderRepository.findByCustomerEmailOrderByCreatedAtDesc("jane@example.com")).thenReturn(List.of());
+        when(orderRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of());
         when(reviewRepository.findByTenantIdAndCustomerEmail(tenantId, "jane@example.com")).thenReturn(List.of(review));
         when(customerRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(orderRepository.saveAll(any())).thenAnswer(i -> i.getArgument(0));

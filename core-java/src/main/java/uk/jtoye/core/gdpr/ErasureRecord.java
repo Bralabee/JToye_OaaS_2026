@@ -32,7 +32,12 @@ public class ErasureRecord implements Persistable<UUID> {
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
-    @Column(name = "subject_customer_id", nullable = false)
+    /**
+     * The erased {@code customers} row, or {@code null} when the subject had none in this tenant: a guest
+     * storefront subject erased by the DSAR fan-out (#777, V68). Such a record carries the DSAR subject
+     * digest in {@link #subjectEmailSha256}.
+     */
+    @Column(name = "subject_customer_id")
     private UUID subjectCustomerId;
 
     /** One-way SHA-256 hex digest of the erased email — never the plaintext. */
@@ -66,6 +71,8 @@ public class ErasureRecord implements Persistable<UUID> {
      * application here (a fresh {@link UUID#randomUUID()}) rather than by a DB
      * default — the value is available to the caller immediately (returned in the
      * erasure response) without a round-trip to the database.
+     *
+     * @param subjectCustomerId the erased customer, or {@code null} for a guest subject (V68)
      */
     public ErasureRecord(UUID tenantId,
                          UUID subjectCustomerId,
