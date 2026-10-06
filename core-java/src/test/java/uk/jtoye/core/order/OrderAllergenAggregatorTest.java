@@ -278,6 +278,111 @@ class OrderAllergenAggregatorTest {
         assertThat(result.declaredMask()).isZero();
     }
 
+    @Test
+    @DisplayName("#787 with Milk ticked: 'rice, butter (MILK), pepper' -> NO flag; the good path is not nagged")
+    void capitalisedDeclaredMilkIsNotFlagged() {
+        OrderAllergens result = OrderAllergenAggregator.aggregate(List.of(
+                item("Rice", MILK, "rice, butter (MILK), pepper")));
+
+        assertThat(result.flags()).isEmpty();
+        assertThat(result.declaredNames()).containsExactly("Milk");
+    }
+
+    @Test
+    @DisplayName("the **...** path is unchanged: 'rice, **butter** (milk), pepper' with mask 0 -> one flag, Milk")
+    void markupPathStillFlagsAlongsideCapitals() {
+        OrderAllergens result = OrderAllergenAggregator.aggregate(List.of(
+                item("Rice", 0, "rice, **butter** (milk), pepper")));
+
+        assertThat(result.flags()).extracting(ReconciliationFlag::allergenName).containsExactly("Milk");
+    }
+
+    @Test
+    @DisplayName("'rice, MILK, MILK powder' -> ONE Milk flag; capitals share the per-product de-duplication")
+    void repeatedCapitalisedMentionsProduceOneFlag() {
+        OrderAllergens result = OrderAllergenAggregator.aggregate(List.of(
+                item("Rice", 0, "rice, MILK, MILK powder")));
+
+        assertThat(result.flags()).hasSize(1);
+        assertThat(result.flags().get(0).allergenName()).isEqualTo("Milk");
+    }
+
+    @Test
+    @DisplayName("'beef, UK onions, BBQ sauce' -> NO flag: UK is two letters and BBQ names no allergen")
+    void initialismsThatNameNoAllergenAreNotFlagged() {
+        OrderAllergens result = OrderAllergenAggregator.aggregate(List.of(
+                item("Stew", 0, "beef, UK onions, BBQ sauce")));
+
+        assertThat(result.flags()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("'WHEAT flour, EGG glaze' with mask 0 -> Gluten then Eggs, in catalogue bit order")
+    void severalCapitalisedAllergensAreFlaggedInBitOrder() {
+        OrderAllergens result = OrderAllergenAggregator.aggregate(List.of(
+                item("Bread", 0, "WHEAT flour, EGG glaze")));
+
+        assertThat(result.flags()).extracting(ReconciliationFlag::allergenBit).containsExactly(0, 2);
+        assertThat(result.flags()).extracting(ReconciliationFlag::allergenName)
+                .containsExactly("Gluten", "Eggs");
+    }
+
+    @Test
+    @DisplayName("null, empty, blank and punctuation-only ingredients -> no flag and no throw through the capitals pass")
+    void capitalsPassIsFailSoftOnAbsentText() {
+        List<ItemAllergens> items = Arrays.asList(
+                item("No Text", 0, null),
+                item("Empty Text", 0, ""),
+                item("Blank Text", 0, "   "),
+                item("Punctuation", 0, "(), ; ** -- 100%"));
+
+        assertDoesNotThrow(() -> OrderAllergenAggregator.aggregate(items));
+        assertThat(OrderAllergenAggregator.aggregate(items).flags()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Title Case is not emphasis: 'Flour, Milk, Yeast' with mask 0 -> NO flag")
+    void titleCaseWordsAreNotEmphasis() {
+        // Only CAPITALS count. A list written in Title Case is ordinary prose, and reading it
+        // as emphasis would fire on every product whose vendor capitalises each ingredient.
+        OrderAllergens result = OrderAllergenAggregator.aggregate(List.of(
+                item("Loaf", 0, "Flour, Milk, Yeast")));
+
+        assertThat(result.flags()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a capital run that continues into lower case is not a word in capitals: 'MILKy foam, NUTmeg' -> NO flag")
+    void capitalsMustBeTheWholeWord() {
+        OrderAllergens result = OrderAllergenAggregator.aggregate(List.of(
+                item("Shake", 0, "MILKy foam, NUTmeg")));
+
+        assertThat(result.flags()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("flags from both passes come out in bit order: '**sesame** seeds, WHEAT flour' -> Gluten, Sesame")
+    void flagsFromBothPassesAreInBitOrder() {
+        // Text order is Sesame (bit 10) then Wheat (bit 0); the catalogue order is the contract.
+        OrderAllergens result = OrderAllergenAggregator.aggregate(List.of(
+                item("Sesame Loaf", 0, "**sesame** seeds, WHEAT flour")));
+
+        assertThat(result.flags()).extracting(ReconciliationFlag::allergenName)
+                .containsExactly("Gluten", "Sesame");
+    }
+
+    @Test
+    @DisplayName("kitchen ticket: OrderAllergenSnapshot.capture on 'butter (MILK)' with mask 0 -> flag mask Milk, declared mask still 0")
+    void orderSnapshotCarriesTheCapitalisedFlag() {
+        // The V63 order-line snapshot goes through the same aggregator, so the kitchen ticket's
+        // "Check" line now sees capitals too; the declared line mask is still what was declared.
+        OrderItem line = new OrderItem();
+        OrderAllergenSnapshot.capture(line, "Rice", 0, "rice, butter (MILK), pepper");
+
+        assertThat(line.getAllergenFlagMask()).isEqualTo(MILK);
+        assertThat(line.getAllergenMask()).isZero();
+    }
+
     // ----------------------------------------------------------------- fail-soft input
 
     @Test
