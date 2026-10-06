@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: "31.1"
 current_phase_name: Persona gap closure
 status: executing
-stopped_at: "Completed 31.1-03-PLAN.md (#784/#785 server-enforced allergen acknowledgement: V69 + 422 required / 409 stale with current set; GuestOrderAllergenAckIntegrationTest 10/0/0, RED 201 -> GREEN; full unit 1495/0/0, full integration 790/0/0); next: 31.1-04..05 (wave 2)"
-last_updated: "2026-10-06T09:13:54.159Z"
+stopped_at: "Completed 31.1-04-PLAN.md (#793 Stripe lazy load: /pure entry + ref-memoised getStripe() only after a clientSecret; stripe-lazy-load 4/4, RED default-entry import -> GREEN, 6 checkout suites 57/57, build green; e2e cash-checkout-no-stripe listed, live run owned by 31.1-30); next: 31.1-05 (wave 2)"
+last_updated: "2026-10-06T09:24:49.000Z"
 last_activity: 2026-10-06
-state_head: 4dee8389edafeca19babcf842798f677a47ae6e3
+state_head: b97af935bdd13ee8699ef229ec0f0b8dea34d404
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 185
-  completed_plans: 158
+  completed_plans: 159
   percent: 65
-last_activity_desc: "31.1-03 complete (#784/#785 server-enforced allergen acknowledgement, V69)"
+last_activity_desc: "31.1-04 complete (#793 Stripe loaded lazily, only for a card payment)"
 ---
 
 # Project State
@@ -33,6 +33,7 @@ Phase: 31.1 (Persona gap closure) — EXECUTING
 - 31.1-01 DONE 2026-10-06: D-21 gate passed on origin/main itself (Boot 4.1.1); merge 2f0bcc41 verified, code tree byte-identical to origin/main; KeycloakAdminClientTest 5, DsarFanout 11, DsarVerification 8, GuestCheckoutIdempotency 13, OrderAllergenSnapshot 8, all 0 failures/errors. `evidence/31.1-01-baseline.md` is the Boot 4 interface record (JsonMapper, golden-contract additive-field rule, A1 measured on a replica, MockitoBean idioms, V68..V75 reservation, stack provenance). Requirements stay open: shared with later plans (ready-ids 0/5).
 - 31.1-02 DONE 2026-10-06: #777 closed at the service. V68 (erasure_records.subject_customer_id nullable, no backfill); GdprService.matchSubjectInTenant + one private anonymisation core behind eraseCustomerData and eraseSubjectByDigest (returns records written, so tenantsErased counts real erasures); tenant-predicated order finder + DISTINCT email projections; unpredicated unpaged finder deleted. DsarGuestErasureRlsIntegrationTest 8/0/0 (RED tenantsErased=0 with all PII present), GdprErasure 4, GdprErasureReviewRls 7, DsarFanout 11, RlsContract 7, GdprServiceTest 16, full unit 1495/0/0. Break arms 1 and 3 red, 2 green under RLS as predicted. PGC-777 stays open (shared with 31.1-07/-11).
 - 31.1-03 DONE 2026-10-06: #784/#785 closed at the server. V69 (orders + orders_aud allergen_ack_mask, allergen_ack_at, placed_via; nullable, no backfill, no default; CHECKs on orders). GuestOrderRequest.acknowledgedAllergenMask (@Min 0 @Max 16383, NON_NULL). Missing -> 422 allergen-acknowledgement-required; differs from the union read in the V63 snapshot loop -> 409 allergen-acknowledgement-stale with currentAllergenMask/currentAllergens (bit order)/lines (basket order); both roll the reservation back. Vendor/API/MCP orders: placed_via VENDOR, ack NULL. GuestOrderAllergenAckIntegrationTest 10/0/0 (RED: missing-ack 201; stale arms 201). Containment break arm red on the removed-bit arm. A1 in-tree confirmed: without NON_NULL the two storefront.guest-order* golden rows red; with it IdempotencyFingerprintGoldenTest 15/0/0, jackson2-golden untouched. Six callers + seed-order-metric.sh send the CURRENT mask (GuestOrderAcknowledgements); OpenAPI snapshot +1 field. Full unit 1495/0/0, full integration 790/0/0. Owed: seed-order-metric.sh live run + fail direction (31.1-30); 31.1-15 must send the mask before 31.1-30's rebuild. PGC-784/785 stay open (shared).
+- 31.1-04 DONE 2026-10-06: #793 closed in the checkout. page.tsx imports loadStripe from @stripe/stripe-js/pure (the default entry injected js.stripe.com at module load); module-scope stripePromise deleted; a ref-memoised getStripe() runs only where a clientSecret confirmation moves to the payment step, never without NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY, render reads a state copy; fraud signals left at default (owner choice). stripe-lazy-load.test.tsx 4/4 (RED: default entry imported, RED_EVIDENCE_OK); five checkout suites switched to the /pure mock only, 57/57; build green. Break arms A-E + type-error each red, restores sha-verified. e2e/cash-checkout-no-stripe.spec.ts lists mobile+desktop (zero stripe.com/stripe.network requests and cookies, control: core-API request + the order POST); its live RED/GREEN run is 31.1-30's, and needs 31.1-15's ack wiring on a rebuilt backend to reach the confirmation. docs-freshness already red (31.1-29 regenerates). PGC-793 stays open (shared with 31.1-30).
 - **Phase 38 (Spring Boot 4.1) COMPLETE 2026-10-05, MERGED as PR #898:** 19/19 plans, `38-VERIFICATION.md` passed 14/14 (BOOT4-01..14), code review 0 critical / 2 warning / 4 info (`38-REVIEW.md`, disposition in `38-REVIEW-DISPOSITION.md`). Not yet shipped: `/gsd-secure-phase 38` then `/gsd-ship 38` remain. Phase 29 is GSD's numeric next; the owner-set planning order in HANDOFF.md is 31.1 then 37.
 - The bullets below are Phase 38's execution history, kept for the record.
 - 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
@@ -871,6 +872,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P01 | 8 min | 2 tasks | 1 files |
 | Phase 31.1 P02 | 20 min | 2 tasks | 7 files |
 | Phase 31.1 P03 | 53 min | 3 tasks | 21 files |
+| Phase 31.1 P04 | 8 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -1070,6 +1072,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: 31.1-02: DSAR erasure of a customers-row subject folds the subject's other stored spellings into that customer's erasure, so each tenant gets exactly one erasure_records row; the guest pass (NULL subject_customer_id, DSAR digest) runs only when no customers row matched and records only when an order or review changed
 - [Phase 31.1]: 31.1-02: customer-path erasure records keep sha256Hex(raw email) while guest records carry the normalised DsarSubjectDigest; not unified (would reinterpret historic rows), recorded as an observation for a later dual-hash decision
 - [Phase 31.1]: 31.1-03: the storefront allergen acknowledgement is compared by EQUALITY with the declared union read in the V63 snapshot loop (not containment); only the declared mask is acknowledged, reconciliation flags excluded (Open Question 7, not owner-ruled)
+- [Phase 31.1]: 31.1-04: Stripe loads only where a clientSecret confirmation reaches the payment step, not gated on shop.acceptsCardPayments (the server's clientSecret is the card-payment authority; the client shop fetch degrades silently); fraud signals kept on the card path
 
 ### Pending Todos
 
