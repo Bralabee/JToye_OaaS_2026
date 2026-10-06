@@ -8,6 +8,7 @@
   "webhook_delivery_days": 30,
   "media_quarantine_hours": 72,
   "customer_refresh_cookie_days": 30,
+  "dsar_unconfirmed_request_hours": 168,
 
   "rows": [
     {
@@ -219,6 +220,28 @@
       "claim_key": null,
       "enforced_by": null,
       "note": "Same shape as R-12: removed by an explicit sign-out (#840) or by you; no time-based expiry exists on our side, so no automated period may be claimed."
+    },
+    {
+      "id": "R-14",
+      "category": "Your email address on a data request",
+      "detail": "When you ask us for a copy of your data or to erase it, the email address you give us, so that we can confirm the request with you, act on it and reply. We hold it only in encrypted form, and delete it when the request is completed, cannot be completed, or expires.",
+      "period_value": 168,
+      "period_unit": "hours",
+      "period_display": "Until your request is closed, or 168 hours if you never confirm it",
+      "lawful_basis": "Legal obligation (UK GDPR Art. 6(1)(c)) - answering a data-subject request under Articles 12, 15 and 17 requires us to be able to reach the person who made it.",
+      "enforcement": "Automated",
+      "claim_key": "dsar_unconfirmed_request_hours",
+      "enforced_by": {
+        "path": "core-java/src/main/resources/application.yml",
+        "key": "verification-ttl-hours",
+        "kind": "yaml-env-default",
+        "unit": "hours",
+        "consumer": {
+          "path": "core-java/src/main/java/uk/jtoye/core/gdpr/DsarIntakeService.java",
+          "must_contain": "jtoye.gdpr.dsar.verification-ttl-hours"
+        }
+      },
+      "note": "Held only as AES-256-GCM ciphertext, with the key outside the database (V70, decision D-19). Three mechanisms drop it, each proven by DsarSubjectAddressIntegrationTest: DsarFanoutWorker NULLs it in the same statement that marks a request COMPLETED or FAILED; DsarRequestExpirySweep moves an unconfirmed request whose verification window has passed (stamped at intake by DsarIntakeService from the key named here) to EXPIRED and NULLs it in the same statement; and the database CHECK ck_dsar_request_ciphertext_terminal refuses any closed request that still holds it. The published number is the window for an unconfirmed request only; the sweep runs every 15 minutes (jtoye.gdpr.dsar.expiry-sweep-interval-ms), so such a request is expired within 15 minutes of the window closing. A confirmed request has no fixed number: the address is held until the request is answered, within the statutory response period. Measured 2026-10-06 (31.1-07)."
     }
   ],
 

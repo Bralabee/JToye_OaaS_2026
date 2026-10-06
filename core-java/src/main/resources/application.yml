@@ -237,6 +237,12 @@ jtoye:
       # (DsarCipher refuses to construct, naming this property and never the value) instead of
       # silently encrypting under something guessable. Never commit a value here.
       encryption-key: ${DSAR_ENCRYPTION_KEY:}
+      # 31.1-07 (D-19): how often DsarRequestExpirySweep moves unverified requests whose
+      # verification window has passed to EXPIRED, dropping their encrypted address in the same
+      # statement. Fifteen minutes: an address must not outlive verification-ttl-hours by much, and
+      # the sweep is a single UPDATE over a table that is almost always empty. The
+      # @Scheduled annotation carries the same inline default, so absence never disables it.
+      expiry-sweep-interval-ms: ${DSAR_EXPIRY_SWEEP_INTERVAL_MS:900000}
       # QA-council cluster S1 (SEC-1): DsarIntakeRateLimiter's three independent axes. The
       # pre-existing IP-keyed bucket (requests-per-hour / max-tracked-clients — deliberately left
       # undocumented here to match its own prior convention) is keyed on the client-controllable

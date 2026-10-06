@@ -45,9 +45,9 @@ export const metadata: Metadata = {
  *      test suite does not execute, and its M-1 invariant means deleting the
  *      sentence fails the gate rather than silently satisfying it.
  *
- * ── THE FOUR GATED PERIODS ───────────────────────────────────────────────────
+ * ── THE FIVE GATED PERIODS ───────────────────────────────────────────────────
  *
- * These four are the rows the manifest gives a `claim_key`, i.e. the ones this
+ * These five are the rows the manifest gives a `claim_key`, i.e. the ones this
  * platform enforces itself and can be held to. They are named constants rather
  * than inline strings for one specific reason: `grep -P` is LINE-based, so a
  * rule anchored on a row's category words cannot reach a `period:` sitting four
@@ -59,11 +59,17 @@ export const metadata: Metadata = {
  * The remaining eight rows publish no number at all (they publish prose such as
  * "Kept indefinitely"), so there is nothing for a numeric rule to gate; the
  * field-by-field test above is what holds them.
+ *
+ * R-14 (31.1-07, D-19) is the one gated period with prose around its number:
+ * a request is held until it is closed, and the number is the window for one
+ * that is never confirmed. Its claims rule anchors on the constant and reads the
+ * integer in front of " hours", wherever it sits in the sentence.
  */
 const PERIOD_ABANDONED_CHECKOUTS = "24 hours"
 const PERIOD_WEBHOOK_DELIVERY_RECORDS = "30 days"
 const PERIOD_QUARANTINED_IMAGE_UPLOADS = "72 hours"
 const PERIOD_CUSTOMER_SIGN_IN_COOKIES = "30 days"
+const PERIOD_DATA_REQUEST_EMAIL = "Until your request is closed, or 168 hours if you never confirm it"
 
 /**
  * Exported so the test can compare it to `docs/retention-manifest.json`. The
@@ -190,6 +196,16 @@ export const RETENTION_ROWS: readonly RetentionRow[] = [
     lawfulBasis:
       "Strictly necessary (PECR reg. 6(4)) - it is what lets a guest find the order they just placed, and it stays on your device.",
     enforcement: "Operational",
+  },
+  {
+    id: "R-14",
+    category: "Your email address on a data request",
+    detail:
+      "When you ask us for a copy of your data or to erase it, the email address you give us, so that we can confirm the request with you, act on it and reply. We hold it only in encrypted form, and delete it when the request is completed, cannot be completed, or expires.",
+    period: PERIOD_DATA_REQUEST_EMAIL,
+    lawfulBasis:
+      "Legal obligation (UK GDPR Art. 6(1)(c)) - answering a data-subject request under Articles 12, 15 and 17 requires us to be able to reach the person who made it.",
+    enforcement: "Automated",
   },
 ]
 
