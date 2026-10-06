@@ -93,6 +93,25 @@ public class GuestOrderRequest {
             + "refused 409 with code ALLERGEN_ACKNOWLEDGEMENT_STALE, carrying the current set.")
     private Integer acknowledgedAllergenMask;
 
+    /**
+     * The customer's allergy or dietary note for THIS shop to prepare THIS order (Phase 31.1 #812,
+     * D-15). Optional, and separate from {@link #notes}, which stays the delivery note. The service
+     * trims it and stores a blank one as NULL. It may be health data: it goes to the named shop only,
+     * and the platform does not read, derive from, match on or analyse it
+     * (docs/legal/article-9-allergen-basis.md, 2026-10 extension).
+     *
+     * <p>{@code NON_NULL} for the same reason as {@link #acknowledgedAllergenMask}: the idempotency
+     * fingerprint serialises this DTO, so a request without the field hashes exactly as it did before
+     * V73, and a resubmit under the same key with a different note is a payload mismatch (422).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Size(max = 500, message = "allergyNote must be at most 500 characters")
+    @Schema(description = "Optional allergy or dietary note for the shop preparing this order, separate from the "
+            + "delivery notes. At most 500 characters; trimmed, and a blank note is treated as none. The shop must "
+            + "acknowledge it, and the order's tracking shows when it did. Never echoed on the public tracking "
+            + "response.", maxLength = 500)
+    private String allergyNote;
+
     public String getCustomerName() { return customerName; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }
     public String getCustomerEmail() { return customerEmail; }
@@ -119,4 +138,6 @@ public class GuestOrderRequest {
     public void setAcknowledgedAllergenMask(Integer acknowledgedAllergenMask) {
         this.acknowledgedAllergenMask = acknowledgedAllergenMask;
     }
+    public String getAllergyNote() { return allergyNote; }
+    public void setAllergyNote(String allergyNote) { this.allergyNote = allergyNote; }
 }

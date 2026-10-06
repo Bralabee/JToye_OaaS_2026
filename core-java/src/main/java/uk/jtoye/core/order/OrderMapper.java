@@ -55,6 +55,12 @@ public interface OrderMapper {
     @Mapping(target = "allergenAckMask", source = "allergenAckMask")
     @Mapping(target = "allergenAckAt", source = "allergenAckAt")
     @Mapping(target = "placedVia", source = "placedVia")
+    // Phase 31.1 D-15 (#812): the allergy note and its acknowledgement, scalar V73 columns. The DTO
+    // names differ from the entity's (AcknowledgedAt/By vs AckAt/By), so these are explicit: an
+    // implicit by-name mapping would leave them silently null.
+    @Mapping(target = "allergyNote", source = "allergyNote")
+    @Mapping(target = "allergyNoteAcknowledgedAt", source = "allergyNoteAckAt")
+    @Mapping(target = "allergyNoteAcknowledgedBy", source = "allergyNoteAckBy")
     OrderDto toDto(Order order);
 
     @Mapping(target = "items", source = "items")
@@ -86,6 +92,12 @@ public interface OrderMapper {
     @Mapping(target = "allergenAckAt", source = "allergenAckAt")
     @Mapping(target = "placedVia", source = "placedVia")
     @Mapping(target = "acknowledgedAllergenNames", ignore = true)
+    // Phase 31.1 D-15 (#812): the allergy note and its acknowledgement, scalar V73 columns. The DTO
+    // names differ from the entity's (AcknowledgedAt/By vs AckAt/By), so these are explicit: an
+    // implicit by-name mapping would leave them silently null.
+    @Mapping(target = "allergyNote", source = "allergyNote")
+    @Mapping(target = "allergyNoteAcknowledgedAt", source = "allergyNoteAckAt")
+    @Mapping(target = "allergyNoteAcknowledgedBy", source = "allergyNoteAckBy")
     OrderDetailDto toDetailDto(Order order);
 
     /**

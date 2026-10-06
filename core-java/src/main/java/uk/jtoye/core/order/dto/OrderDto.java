@@ -84,6 +84,41 @@ public class OrderDto {
     public void setPlacedVia(String placedVia) { this.placedVia = placedVia; }
 
     // ------------------------------------------------------------------
+    // Phase 31.1 D-15 (#812): the customer's allergy note and the shop's acknowledgement of it.
+    // Scalar V73 columns on the order row, so the list carries them with no extra query.
+    //
+    // NON_NULL for the same golden-contract reason as the acknowledgement fields above: ABSENT
+    // means no note was given, or nobody in the shop has acknowledged it yet. Never written as null
+    // on this DTO.
+    // ------------------------------------------------------------------
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "The customer's allergy or dietary note for this order, separate from notes (delivery). "
+            + "Absent when none was given.")
+    private String allergyNote;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "When someone in the shop acknowledged reading allergyNote. Absent until acknowledged.")
+    private OffsetDateTime allergyNoteAcknowledgedAt;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Who in the shop acknowledged allergyNote (the authenticated principal name). Absent until "
+            + "acknowledged.")
+    private String allergyNoteAcknowledgedBy;
+
+    public String getAllergyNote() { return allergyNote; }
+    public void setAllergyNote(String allergyNote) { this.allergyNote = allergyNote; }
+
+    public OffsetDateTime getAllergyNoteAcknowledgedAt() { return allergyNoteAcknowledgedAt; }
+    public void setAllergyNoteAcknowledgedAt(OffsetDateTime allergyNoteAcknowledgedAt) {
+        this.allergyNoteAcknowledgedAt = allergyNoteAcknowledgedAt;
+    }
+
+    public String getAllergyNoteAcknowledgedBy() { return allergyNoteAcknowledgedBy; }
+    public void setAllergyNoteAcknowledgedBy(String allergyNoteAcknowledgedBy) {
+        this.allergyNoteAcknowledgedBy = allergyNoteAcknowledgedBy;
+    }
+
+    // ------------------------------------------------------------------
     // LGL-03 / V63 — the order-level allergen aggregate is deliberately NOT on this DTO. It is
     // on OrderDetailDto, which is what both declared consumers read: the kitchen board
     // (OrderService.getKitchenBoard, which already batch-fetches the lines) and

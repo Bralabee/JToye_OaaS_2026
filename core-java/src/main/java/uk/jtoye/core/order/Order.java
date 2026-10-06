@@ -160,6 +160,26 @@ public class Order {
     @Column(name = "placed_via", length = 16)
     private OrderChannel placedVia;
 
+    /**
+     * The customer's own allergy or dietary note (V73, Phase 31.1 D-15, #812), sent for THIS shop
+     * to prepare THIS order. Separate from {@link #notes}, which stays the delivery note. Trimmed by
+     * the storefront write path; null means none was given (or an Article 17 erasure removed it).
+     * Never read for any other purpose: no derivation, matching, profiling or analytics.
+     */
+    @Column(name = "allergy_note", length = 500)
+    private String allergyNote;
+
+    /**
+     * When someone in the shop confirmed reading {@link #allergyNote} (V73). Null means not
+     * acknowledged. First write wins and is never overwritten; an erasure keeps it.
+     */
+    @Column(name = "allergy_note_ack_at")
+    private OffsetDateTime allergyNoteAckAt;
+
+    /** Who confirmed reading it: the authenticated principal name (V73). Written with {@link #allergyNoteAckAt}. */
+    @Column(name = "allergy_note_ack_by", length = 255)
+    private String allergyNoteAckBy;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", length = 20)
     private PaymentStatus paymentStatus = PaymentStatus.NONE;
@@ -385,6 +405,30 @@ public class Order {
 
     public void setPlacedVia(OrderChannel placedVia) {
         this.placedVia = placedVia;
+    }
+
+    public String getAllergyNote() {
+        return allergyNote;
+    }
+
+    public void setAllergyNote(String allergyNote) {
+        this.allergyNote = allergyNote;
+    }
+
+    public OffsetDateTime getAllergyNoteAckAt() {
+        return allergyNoteAckAt;
+    }
+
+    public void setAllergyNoteAckAt(OffsetDateTime allergyNoteAckAt) {
+        this.allergyNoteAckAt = allergyNoteAckAt;
+    }
+
+    public String getAllergyNoteAckBy() {
+        return allergyNoteAckBy;
+    }
+
+    public void setAllergyNoteAckBy(String allergyNoteAckBy) {
+        this.allergyNoteAckBy = allergyNoteAckBy;
     }
 
     public void setItemCount(Integer itemCount) {

@@ -699,6 +699,15 @@ public class PublicStorefrontService {
         return mask == null ? null : AllergenCatalog.namesFor(mask);
     }
 
+    /** {@code value.strip()}, or {@code null} when the value is null or only whitespace. */
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String stripped = value.strip();
+        return stripped.isEmpty() ? null : stripped;
+    }
+
     /** The channel's enum name, or {@code null} for a row from before V69: no channel is guessed. */
     private static String placedVia(Order order) {
         OrderChannel channel = order.getPlacedVia();
@@ -920,6 +929,9 @@ public class PublicStorefrontService {
         order.setCustomerEmail(request.getCustomerEmail());
         order.setCustomerPhone(request.getCustomerPhone());
         order.setNotes(request.getNotes());
+        // D-15 (#812): the allergy note is its own column, never folded into the delivery notes.
+        // Trimmed; a blank note is no note (NULL = none given). Never logged.
+        order.setAllergyNote(trimToNull(request.getAllergyNote()));
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             order.setIdempotencyKey(idempotencyKey);
         }

@@ -112,6 +112,35 @@ public class OrderDetailDto {
     public List<String> getAcknowledgedAllergenNames() { return acknowledgedAllergenNames; }
     public void setAcknowledgedAllergenNames(List<String> acknowledgedAllergenNames) { this.acknowledgedAllergenNames = acknowledgedAllergenNames; }
 
+    // ------------------------------------------------------------------
+    // Phase 31.1 D-15 (#812): the customer's allergy note, which the kitchen board and the order
+    // page show prominently, and the shop's acknowledgement of it (who and when). Scalar V73
+    // columns. Null means no note was given / not acknowledged yet.
+    // ------------------------------------------------------------------
+    @Schema(description = "The customer's allergy or dietary note for this order, separate from notes (delivery). "
+            + "Null when none was given.")
+    private String allergyNote;
+
+    @Schema(description = "When someone in the shop acknowledged reading allergyNote; null until acknowledged.")
+    private OffsetDateTime allergyNoteAcknowledgedAt;
+
+    @Schema(description = "Who in the shop acknowledged allergyNote (the authenticated principal name); null until "
+            + "acknowledged.")
+    private String allergyNoteAcknowledgedBy;
+
+    public String getAllergyNote() { return allergyNote; }
+    public void setAllergyNote(String allergyNote) { this.allergyNote = allergyNote; }
+
+    public OffsetDateTime getAllergyNoteAcknowledgedAt() { return allergyNoteAcknowledgedAt; }
+    public void setAllergyNoteAcknowledgedAt(OffsetDateTime allergyNoteAcknowledgedAt) {
+        this.allergyNoteAcknowledgedAt = allergyNoteAcknowledgedAt;
+    }
+
+    public String getAllergyNoteAcknowledgedBy() { return allergyNoteAcknowledgedBy; }
+    public void setAllergyNoteAcknowledgedBy(String allergyNoteAcknowledgedBy) {
+        this.allergyNoteAcknowledgedBy = allergyNoteAcknowledgedBy;
+    }
+
     // Getters and Setters
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
