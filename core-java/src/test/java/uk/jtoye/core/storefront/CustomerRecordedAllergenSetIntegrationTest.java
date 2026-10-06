@@ -3,6 +3,9 @@ package uk.jtoye.core.storefront;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -74,11 +77,18 @@ class CustomerRecordedAllergenSetIntegrationTest {
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         IntegrationTestSupport.registerPostgresTestProperties(registry, postgres);
+        // The N+1 guard on the history list reads Hibernate's per-collection fetch statistics.
+        registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
     }
+
+    /** The Hibernate collection role whose initialisation the history list must never trigger. */
+    private static final String ORDER_ITEMS_ROLE = "uk.jtoye.core.order.Order.items";
 
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired MockMvc mockMvc;
     @Autowired JsonMapper jsonMapper;
+    @Autowired EntityManagerFactory entityManagerFactory;
+    @Autowired PublicStorefrontService publicStorefrontService;
 
     /** Dedicated tenant so a parallel fork's fixtures cannot collide on slug or SKU. */
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000311091");
@@ -295,7 +305,156 @@ class CustomerRecordedAllergenSetIntegrationTest {
         assertEmptyArray(field(status, "recordedAllergens", trackedText), trackedText);
     }
 
+    // ------------------------------------------------------------------
+    // The signed-in / verified order history reads order COLUMNS only. It states the acknowledged
+    // set and the channel on every entry, leaves the recorded set null (detail-only), and must not
+    // initialise a single order-item collection: the V63 measurement was one extra SELECT per row
+    // (7 orders, 7 statements) the moment the lines are touched on a list path (T-31.1-31).
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("History: 7 orders carry the acknowledged set and placedVia from columns, recordedAllergens null, and no order-items collection is initialised")
+    void history_carriesTheAcknowledgedSetFromColumns_withoutLoadingOrderLines() throws Exception {
+        UUID bread = seedProduct("SKU-31109-HIST-A", "Sourdough", GLUTEN, "flour, water, salt");
+        UUID cheese = seedProduct("SKU-31109-HIST-B", "Cheddar", MILK, "cheese");
+        String email = "history-" + UUID.randomUUID() + "@example.com";
+        List<String> storefrontOrders = new ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            storefrontOrders.add(placeStorefrontOrder(email, List.of(bread, cheese)));
+        }
+        String vendorOrder = placeVendorOrder(email, cheese);
+
+        // Through the real endpoint: what the client reads.
+        MvcResult listed = mockMvc.perform(get("/api/v1/public/orders")
+                .param("email", email).param("verify", storefrontOrders.get(0)).param("size", "20")).andReturn();
+        JsonNode page = json(listed, 200);
+        String text = responseText(listed);
+        JsonNode content = page.path("content");
+        assertThat(content.size()).as(text).isEqualTo(7);
+        int storefrontSeen = 0;
+        for (JsonNode entry : content) {
+            String number = entry.path("orderNumber").asString();
+            assertThat(field(entry, "recordedAllergens", text).isNull())
+                    .as("detail-only: the list does not load lines, so it states nothing about them").isTrue();
+            assertThat(field(entry, "recordedAllergenFlags", text).isNull()).as(text).isTrue();
+            if (number.equals(vendorOrder)) {
+                assertThat(field(entry, "placedVia", text).asString()).isEqualTo("VENDOR");
+                assertThat(field(entry, "acknowledgedAllergenMask", text).isNull()).as("not recorded: " + text).isTrue();
+                assertThat(field(entry, "acknowledgedAllergens", text).isNull()).as("not recorded: " + text).isTrue();
+            } else {
+                assertThat(storefrontOrders).contains(number);
+                storefrontSeen++;
+                assertThat(field(entry, "placedVia", text).asString()).isEqualTo("STOREFRONT");
+                assertField(entry, "acknowledgedAllergenMask", text).isEqualTo(GLUTEN | MILK);
+                assertThat(texts(field(entry, "acknowledgedAllergens", text))).containsExactly("Gluten", "Milk");
+            }
+        }
+        assertThat(storefrontSeen).isEqualTo(6);
+
+        // The N+1 guard, measured on the service call alone (the endpoint's verify step is a
+        // single-order trackOrder, which legitimately loads ONE order's lines).
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        assertThat(statistics.getCollectionRoleNames()).as("the probe names a real collection role")
+                .contains(ORDER_ITEMS_ROLE);
+
+        statistics.clear();
+        org.springframework.data.domain.Page<uk.jtoye.core.storefront.dto.PublicOrderStatus> history =
+                publicStorefrontService.getCustomerOrders(email, org.springframework.data.domain.PageRequest.of(0, 20));
+        long historyFetches = statistics.getCollectionStatistics(ORDER_ITEMS_ROLE).getFetchCount();
+        assertThat(history.getContent()).hasSize(7);
+        assertThat(history.getContent()).allSatisfy(entry -> assertThat(entry.getPlacedVia()).isNotNull());
+        assertThat(historyFetches)
+                .as("T-31.1-31: the history list initialised order-item collections (one SELECT per row)")
+                .isZero();
+
+        // Positive control: the same probe DOES see a single-order read load its lines, so the zero
+        // above is a measurement and not a blind instrument.
+        statistics.clear();
+        publicStorefrontService.trackOrder(storefrontOrders.get(0), email);
+        assertThat(statistics.getCollectionStatistics(ORDER_ITEMS_ROLE).getFetchCount())
+                .as("control: trackOrder loads exactly one order's lines").isEqualTo(1);
+    }
+
+    // ------------------------------------------------------------------
+    // The vendor DETAIL view (the dashboard order page, the kitchen board and the MCP read_orders
+    // orderId call) carries the acknowledgement and the channel beside the existing recorded set
+    // and flags, which stay separate.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("Vendor detail: GET /orders/{id}/detail carries allergenAckMask, allergenAckAt, placedVia and acknowledgedAllergenNames; a vendor order carries null and VENDOR")
+    void vendorDetail_carriesTheAcknowledgementAndTheChannel() throws Exception {
+        UUID croissant = seedProduct("SKU-31109-DETAIL-A", "Croissant", GLUTEN, "flour, butter (MILK), yeast");
+        String email = "detail-" + UUID.randomUUID() + "@example.com";
+        String storefrontOrder = placeStorefrontOrder(email, List.of(croissant));
+        String vendorOrder = placeVendorOrder(email, croissant);
+
+        MvcResult storefront = mockMvc.perform(get("/api/v1/orders/" + orderId(storefrontOrder) + "/detail")
+                .with(vendorJwt())).andReturn();
+        JsonNode detail = json(storefront, 200);
+        String text = responseText(storefront);
+        assertField(detail, "allergenAckMask", text).isEqualTo(GLUTEN);
+        assertThat(field(detail, "allergenAckAt", text).isNull()).as("acknowledged-at is recorded: " + text).isFalse();
+        assertThat(field(detail, "placedVia", text).asString()).isEqualTo("STOREFRONT");
+        assertThat(texts(field(detail, "acknowledgedAllergenNames", text))).containsExactly("Gluten");
+        assertThat(texts(field(detail, "allergenNames", text)))
+                .as("the recorded set is unchanged and excludes the flag").containsExactly("Gluten");
+        assertThat(field(detail, "allergenFlags", text).get(0).path("allergenName").asString()).isEqualTo("Milk");
+
+        MvcResult vendor = mockMvc.perform(get("/api/v1/orders/" + orderId(vendorOrder) + "/detail")
+                .with(vendorJwt())).andReturn();
+        JsonNode vendorDetail = json(vendor, 200);
+        String vendorText = responseText(vendor);
+        assertThat(field(vendorDetail, "allergenAckMask", vendorText).isNull()).as("not recorded: " + vendorText).isTrue();
+        assertThat(field(vendorDetail, "allergenAckAt", vendorText).isNull()).as(vendorText).isTrue();
+        assertThat(field(vendorDetail, "acknowledgedAllergenNames", vendorText).isNull())
+                .as("not recorded, never []: " + vendorText).isTrue();
+        assertThat(field(vendorDetail, "placedVia", vendorText).asString()).isEqualTo("VENDOR");
+    }
+
+    // ------------------------------------------------------------------
+    // The vendor LIST view (OrderDto) carries the three column fields. OrderDto is a Phase 38
+    // golden DTO, so the new fields are NON_NULL (31.1-01 section 2, route (a)): ABSENT means not
+    // recorded, and it is never written as 0.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("Vendor list: OrderDto carries allergenAckMask, allergenAckAt and placedVia; a vendor order has placedVia VENDOR and no acknowledgement")
+    void vendorList_carriesTheColumnFields() throws Exception {
+        UUID cheese = seedProduct("SKU-31109-LIST", "Cheddar", MILK, "cheese");
+        String email = "list-" + UUID.randomUUID() + "@example.com";
+        String storefrontOrder = placeStorefrontOrder(email, List.of(cheese));
+        String vendorOrder = placeVendorOrder(email, cheese);
+
+        MvcResult listed = mockMvc.perform(get("/api/v1/orders/shop/" + shopId)
+                .param("size", "200").with(vendorJwt())).andReturn();
+        JsonNode content = json(listed, 200).path("content");
+        String text = responseText(listed);
+
+        JsonNode storefront = entryFor(content, storefrontOrder, text);
+        assertField(storefront, "allergenAckMask", text).isEqualTo(MILK);
+        assertThat(field(storefront, "allergenAckAt", text).isNull()).as(text).isFalse();
+        assertThat(field(storefront, "placedVia", text).asString()).isEqualTo("STOREFRONT");
+
+        JsonNode vendor = entryFor(content, vendorOrder, text);
+        assertThat(field(vendor, "placedVia", text).asString()).isEqualTo("VENDOR");
+        assertThat(vendor.has("allergenAckMask")).as("not recorded is ABSENT on OrderDto, never 0: " + text).isFalse();
+        assertThat(vendor.has("allergenAckAt")).as(text).isFalse();
+    }
+
     // ---- order placement ----
+
+    private UUID orderId(String orderNumber) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT id FROM orders WHERE tenant_id = ? AND order_number = ?", UUID.class, TENANT_ID, orderNumber));
+    }
+
+    private static JsonNode entryFor(JsonNode content, String orderNumber, String text) {
+        for (JsonNode entry : content) {
+            if (orderNumber.equals(entry.path("orderNumber").asString())) {
+                return entry;
+            }
+        }
+        throw new AssertionError("order " + orderNumber + " is not on the list: " + text);
+    }
 
     private String placeStorefrontOrder(String email, List<UUID> basket) throws Exception {
         MvcResult created = perform(post(ordersUrl()), body(email, basket, currentMask(basket)));
