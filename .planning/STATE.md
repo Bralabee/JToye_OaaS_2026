@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: "31.1"
 current_phase_name: Persona gap closure
 status: executing
-stopped_at: "Completed 31.1-08-PLAN.md (D-19 key wired into every runtime: compose :? guard + verify-env 64-hex FORMAT_RULES, start-dev export, nightly openssl rand -hex 32, k8s Secret dsar-credentials/encryption-key not optional + goldens, k8s-local-secrets, env-contract MUST_SUPPLY_CORE); next: 31.1-09"
-last_updated: "2026-10-06T12:05:00.000Z"
+stopped_at: "Completed 31.1-09-PLAN.md (acknowledged set from V69 columns + recorded set from the V63 snapshot on GuestOrderConfirmation/replay, PublicOrderStatus tracking + history, OrderDto NON_NULL, OrderDetailDto; placedVia channel; Order.items fetch-count N+1 guard; OpenAPI +16 properties); next: 31.1-10"
+last_updated: "2026-10-06T12:55:00.000Z"
 last_activity: 2026-10-06
-state_head: 879d4fdb5e0cad4894c7ad78a905a690502b43c5
+state_head: e00770def4e4fe0a183cf09eddab33842b73ddfc
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 185
-  completed_plans: 164
+  completed_plans: 165
   percent: 65
-last_activity_desc: "31.1-08 complete (DSAR_ENCRYPTION_KEY supplied from a secret by compose, start-dev, the nightly and every k8s overlay; the env-contract gate can now fail on its absence)"
+last_activity_desc: "31.1-09 complete (every order contract states the acknowledged allergen set, the recorded set and the channel; null never collapses to 0 or []; history reads columns only)"
 ---
 
 # Project State
@@ -38,6 +38,7 @@ Phase: 31.1 (Persona gap closure) — EXECUTING
 - 31.1-06 DONE 2026-10-06: #787 closed at the backend. OrderAllergenAggregator.collectFlags reads a whole word of 3+ ASCII CAPITALS as emphasis beside ** spans (one linear walk; Title Case and MILKy are not), flags per item in bit order; IngredientMarkupParser untouched (diff empty), label golden green. ProductAllergenWarning(code UNDECLARED_INGREDIENT_ALLERGEN, allergenBit, allergen, message); ProductDto.allergenWarnings filled by a ProductMapper @AfterMapping on every toDto (create/update/get/list/search), @JsonInclude(NON_NULL) = 31.1-01 route (a), jackson2-golden untouched; PublicProductDto.undeclaredIngredientAllergens (names, bit order). The kitchen-ticket V63 flag mask now sees capitals. ProductSaveAllergenWarningIntegrationTest 4/0/0 (RED: no allergenWarnings; arm A merge -> stored mask 64 red). A7: 57 products (21 seeder + 36 live) 0 -> 1 flag (ade-Party Jollof, Milk, true positive). Plan's run-length-2 arm is vacuous (no synonym <3 letters), replaced by L4/any-case/word-boundary arms, all red. OpenAPI +2 fields +1 schema, paths identical. Full unit 1506/0/0, full integration 794/0/0. Residual: a pre-deploy cached by-id ProductDto lacks the field for <=10 min (frontend must read absent as not computed). PGC-787 stays open (shared).
 - 31.1-07 DONE 2026-10-06: D-19 built. V70 adds dsar_request.subject_email_ciphertext BYTEA + CHECK ck_dsar_request_ciphertext_terminal (NULL in COMPLETED/FAILED/EXPIRED; V62-style header amending "no readable-address column", the four uses, both rejected alternatives; no backfill). DsarCipher (JDK AES/GCM/NoPadding, 12-byte IV, 128-bit tag, AAD purpose:requestId, IV||ct in one BYTEA; key only jtoye.gdpr.dsar.encryption-key = env DSAR_ENCRYPTION_KEY, empty default, validated at construction, message names the property never the value; no logging). Intake encrypts the trimmed address under the pre-minted request id; the worker NULLs it in the COMPLETED and exhausted-FAILED UPDATEs; DsarRequestExpirySweep (every 900000 ms) is the first EXPIRED writer. Retention R-14 (168 h for an unconfirmed request) published on /legal/retention + claims rule. DsarCipherTest 9/0/0, DsarSubjectAddressIntegrationTest 7/0/0 (RED valid x3), 14 break arms red and sha-restored. Full unit 1515/0/0, full integration 801/0/0; four non-test-profile contexts given per-run random keys (3 dev + DatabaseConfigurationValidatorOwnershipTest). **31.1-08 must wire DSAR_ENCRYPTION_KEY into every runtime before any core-java rebuild, or core-java refuses to start.** PGC-778/777 stay open (shared).
 - 31.1-08 DONE 2026-10-06: D-19 key wired into every runtime that starts core-java. Compose core-java DSAR_ENCRYPTION_KEY behind a :? guard naming openssl rand -hex 32 (key absent -> config rc 1); .env.example CHANGE_ME with comments on their own lines; core-java/.env.example documents it commented (run-app.sh sources it second). verify-env.sh: REQUIRED_VARS (19) + FORMAT_RULES (c2) ^[0-9a-fA-F]{64}$ by name only (placeholder/63-char/non-hex/absent rc 1, real rc 0, value never printed). start-dev.sh exports the key from the validated env file for the host bootRun. Nightly: DERIVED + openssl rand -hex 32 (old step fails verify-env on the key, new passes). k8s/base secretKeyRef dsar-credentials/encryption-key, NO optional flag; goldens +5 lines each (--diff-since 31.1-08); template/QUICK_START/DEPLOYMENT/sealed-secrets runbook list the Secret; k8s-local-secrets.sh requires + 64-hex-checks the .env key (no generation: shared dev DB) and creates it. check-env-contract.sh gained MUST_SUPPLY_CORE: the unmodified gate stayed rc 0 with the env entry deleted (empty default scored "pass by rule"); now rc 1, plus STALE/overlap hygiene arms. Local .env has a generated key (untracked); shared stack NOT rebuilt (31.1-30). **Staging/production need a sealed dsar-credentials per environment before rollout (31.1-USER-SETUP.md).** PGC-778/777 stay open (shared).
+- 31.1-09 DONE 2026-10-06: #785 data half / D-07 / D-08 at the contract. GuestOrderConfirmation (first response AND replay, re-derived from the row) + PublicOrderStatus (trackOrder) carry acknowledgedAllergenMask/acknowledgedAllergens (V69 columns; names only when the mask is non-null), recordedAllergens/recordedAllergenFlags (OrderAllergenSnapshot.viewOf, null = not recorded) and placedVia (tracking). getCustomerOrders sets the acknowledged pair + placedVia from COLUMNS only, recorded pair null + @Schema tracking-only. OrderDto allergenAckMask/allergenAckAt/placedVia @JsonInclude(NON_NULL) (golden DTO, route (a): ABSENT = not recorded); OrderDetailDto the same + acknowledgedAllergenNames in fillAllergens; flags never merged. MCP read_orders forwards core JSON (buildPath l.46-48), no MCP change. CustomerRecordedAllergenSetIntegrationTest 10/0/0 (RED 7/7 then 3/10, RED_EVIDENCE_OK x2); N+1 guard = CollectionStatistics(Order.items).fetchCount 0 with trackOrder control 1; break arms A/A2/B/C/N1/N1b(0 vs 7)/N2(Jackson3Wire 2 red + idempotency OrderDto red)/N3/N4 all red, sha-restored. OpenAPI +16 properties on 4 schemas, 0 removed; jackson2-golden diff empty (control 44 files). Full unit 1515/0/0, full integration 811/0/0. oasdiff not installed locally (CI gate not run). PGC-784/785 stay open (shared).
 - **Phase 38 (Spring Boot 4.1) COMPLETE 2026-10-05, MERGED as PR #898:** 19/19 plans, `38-VERIFICATION.md` passed 14/14 (BOOT4-01..14), code review 0 critical / 2 warning / 4 info (`38-REVIEW.md`, disposition in `38-REVIEW-DISPOSITION.md`). Not yet shipped: `/gsd-secure-phase 38` then `/gsd-ship 38` remain. Phase 29 is GSD's numeric next; the owner-set planning order in HANDOFF.md is 31.1 then 37.
 - The bullets below are Phase 38's execution history, kept for the record.
 - 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
@@ -880,6 +881,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P06 | 50 min | 2 tasks | 17 files |
 | Phase 31.1 P07 | 73 min | 2 tasks | 22 files |
 | Phase 31.1 P08 | 9 min | 2 tasks | 16 files |
+| Phase 31.1 P09 | 47 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1088,6 +1090,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: 31.1-07: R-14 publishes 168 hours as the window for an UNCONFIRMED request only; a confirmed request is held until answered (no fixed number)
 - [Phase 31.1]: 31.1-08: k8s/base references dsar-credentials/encryption-key with NO optional flag (an absent Secret stops the pod naming it); k8s/local reuses the .env key and never generates one (shared dev DB with compose)
 - [Phase 31.1]: 31.1-08: check-env-contract.sh MUST_SUPPLY_CORE is the opposite of an allowlist: names whose empty application.yml default is a refusal to boot must be injected, no allowlist entry can excuse them, and an entry goes STALE when the default stops being exactly empty
+- [Phase 31.1]: 31.1-09: OrderDto's allergenAckMask/allergenAckAt/placedVia are @JsonInclude(NON_NULL) (route (a); its stored-response bytes are frozen in IdempotencyFingerprintGoldenTest), so on OrderDto ABSENT means not recorded; every other new field in 31.1-09 is written as JSON null
+- [Phase 31.1]: 31.1-09: the recorded allergen set (V63 snapshot) is single-order only: PublicOrderStatus.recordedAllergens/recordedAllergenFlags are null on the history list (one Order.items fetch per row otherwise, measured 7 for 7); the acknowledged set and placedVia are column reads everywhere
 
 ### Pending Todos
 
@@ -1158,8 +1162,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-06T12:05:00Z
-Stopped at: Completed 31.1-08-PLAN.md; next 31.1-09
+Last session: 2026-10-06T12:55:00Z
+Stopped at: Completed 31.1-09-PLAN.md; next 31.1-10
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
