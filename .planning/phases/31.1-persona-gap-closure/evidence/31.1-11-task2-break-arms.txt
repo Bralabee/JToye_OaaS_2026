@@ -1,0 +1,43 @@
+clean-before: git status (code paths): [] svc=23981d19e00541cae4a911e7ee3d78455269f452047e7abb2b23bd31e123a1bc wrk=e3eebb74ba5c154a545562d182054da26598a36bfd47fd3f8e1b53dde44267f8
+ARM A1: the deletion service's FAILED path reports NONE_FOUND, so a Keycloak outage completes the request
+  [A1] unit rc=1 tests="11" skipped="0" failures="3" errors="0"
+    unit FAIL aKeycloakFailureIsReportedNotThrown_andTheAddressIsNotLogged(CapturedOutput) :: org.opentest4j.AssertionFailedError:  expected: FAILED  but was: NONE_FOUND
+    unit FAIL aDeleteFailurePartWayIsFailed_notDeleted() :: org.opentest4j.AssertionFailedError:  expected: FAILED  but was: NONE_FOUND
+    unit FAIL aTokenFailureOrAnyRuntimeErrorIsReportedNotThrown() :: org.opentest4j.AssertionFailedError:  expected: FAILED  but was: NONE_FOUND
+  [A1] it   rc=1 tests="9" skipped="0" failures="2" errors="0"
+    it FAIL anOutageLeavesTheDataErasedAndTheRequestOutstanding_andTheNextSweepCompletesIt() :: org.opentest4j.AssertionFailedError: [the failed attempt is recorded]  expected: "OUTSTANDING"  but was: "NONE_FOUND&
+    it FAIL aDeletionThatFailsOnEverySweepIsParkedFailedLoudly_andNoCompletionEmailIsSent(CapturedOutput) :: org.opentest4j.AssertionFailedError: [still open after sweep 1]  expected: "VERIFIED"  but was: "COMPLETED"
+  restored: sha match
+ARM A2: the equalsIgnoreCase re-check is dropped: every user the search returns is deleted
+  [A2] unit rc=1 tests="11" skipped="0" failures="3" errors="0"
+    unit FAIL aUserWithNoStoredEmailIsNeverDeleted() :: org.opentest4j.AssertionFailedError:  expected: NONE_FOUND  but was: DELETED
+    unit FAIL aUserWhoseEmailOnlyContainsTheAddressIsNeverDeleted() :: org.mockito.exceptions.verification.NeverWantedButInvoked:  keycloakAdminClient.deleteUser(     <any string>,     "36
+    unit FAIL onlySubstringMatchesComeBack_soNothingIsDeletedAndTheResultIsNoneFound() :: org.opentest4j.AssertionFailedError:  expected: NONE_FOUND  but was: DELETED
+  [A2] it   rc=0 tests="9" skipped="0" failures="0" errors="0"
+  restored: sha match
+ARM A3: the service uses the first VENDOR realm instead of the customer realm
+  [A3] unit rc=1 tests="11" skipped="0" failures="7" errors="0"
+    unit FAIL theServiceOnlyEverCallsTheClientWithTheCustomerRealm() :: org.mockito.exceptions.verification.opentest4j.ArgumentsAreDifferent:  Argument(s) are different! Wanted: keycloakAdminClient.findUs
+    unit FAIL aKeycloakFailureIsReportedNotThrown_andTheAddressIsNotLogged(CapturedOutput) :: org.opentest4j.AssertionFailedError:  expected: FAILED  but was: NONE_FOUND
+    unit FAIL aDeleteThatFindsTheUserAlreadyGoneStillCountsAsDeleted() :: org.opentest4j.AssertionFailedError:  expected: DELETED  but was: NONE_FOUND
+    unit FAIL aDeleteFailurePartWayIsFailed_notDeleted() :: org.opentest4j.AssertionFailedError:  expected: FAILED  but was: NONE_FOUND
+    unit FAIL aUserWhoseEmailOnlyContainsTheAddressIsNeverDeleted() :: org.opentest4j.AssertionFailedError:  expected: DELETED  but was: NONE_FOUND
+    unit FAIL aConfiguredCustomerRealmIsTheOneUsed() :: org.mockito.exceptions.verification.opentest4j.ArgumentsAreDifferent:  Argument(s) are different! Wanted: keycloakAdminClient.findUs
+    unit FAIL theAddressIsTrimmedAndLowerCasedForTheSearch() :: org.mockito.exceptions.verification.opentest4j.ArgumentsAreDifferent:  Argument(s) are different! Wanted: keycloakAdminClient.findUs
+  [A3] it   rc=1 tests="9" skipped="0" failures="5" errors="0"
+    it FAIL aVerifiedErasureDeletesTheSubjectsCustomerRealmAccountAfterTheErasureCommits() :: org.mockito.exceptions.verification.WantedButNotInvoked:  Wanted but not invoked: keycloakAdminClient.deleteUser(     "jtoy
+    it FAIL theCompletionEmailTellsTheSubjectWhatWasErasedAndKept_andNamesNoVendor() :: java.lang.AssertionError: [the sign-in account outcome]  Expecting actual:   "We have completed your request to erase the perso
+    it FAIL anOutageLeavesTheDataErasedAndTheRequestOutstanding_andTheNextSweepCompletesIt() :: org.opentest4j.AssertionFailedError: [the failed attempt is recorded]  expected: "OUTSTANDING"  but was: "NONE_FOUND&
+    it FAIL aSubjectWithNoRealmAccountCompletesAsNoneFound() :: org.mockito.exceptions.verification.opentest4j.ArgumentsAreDifferent:  Argument(s) are different! Wanted: keycloakAdminClient.findUs
+    it FAIL aDeletionThatFailsOnEverySweepIsParkedFailedLoudly_andNoCompletionEmailIsSent(CapturedOutput) :: org.opentest4j.AssertionFailedError: [still open after sweep 1]  expected: "VERIFIED"  but was: "COMPLETED"
+  restored: sha match
+ARM A4: the completion email is sent while the deletion is still outstanding
+  [A4] unit rc=0 tests="11" skipped="0" failures="0" errors="0"
+  [A4] it   rc=1 tests="9" skipped="0" failures="3" errors="0"
+    it FAIL anOutageLeavesTheDataErasedAndTheRequestOutstanding_andTheNextSweepCompletesIt() :: org.mockito.exceptions.verification.NeverWantedButInvoked:  mailSender.send(     <any org.springframework.mail.SimpleMailMessage&
+    it FAIL anUnconfiguredAdminSeamIsOutstanding_neverComplete() :: org.mockito.exceptions.verification.NeverWantedButInvoked:  mailSender.send(     <any org.springframework.mail.SimpleMailMessage&
+    it FAIL aDeletionThatFailsOnEverySweepIsParkedFailedLoudly_andNoCompletionEmailIsSent(CapturedOutput) :: org.mockito.exceptions.verification.NeverWantedButInvoked:  mailSender.send(     <any org.springframework.mail.SimpleMailMessage&
+  restored: sha match
+clean-after: git status (code paths): [] svc=23981d19e00541cae4a911e7ee3d78455269f452047e7abb2b23bd31e123a1bc wrk=e3eebb74ba5c154a545562d182054da26598a36bfd47fd3f8e1b53dde44267f8
+  [clean-after] unit rc=0 tests="11" skipped="0" failures="0" errors="0"
+  [clean-after] it   rc=0 tests="9" skipped="0" failures="0" errors="0"
