@@ -15,6 +15,13 @@ data:
   keycloak.admin.enabled: "false"
   keycloak.admin.base-url: "http://keycloak.jtoye-infrastructure.svc.cluster.local:8080"
   keycloak.admin.realms: "jtoye-prod"
+  # 31.1-11 (D-03): the realm holding CUSTOMER sign-in accounts, the only realm a
+  # verified DSAR erasure deletes from. Separate from keycloak.admin.realms (the
+  # vendor offboarding sweep, T-kc-04). With keycloak.admin.enabled "false" (above)
+  # an erasure here stays NOT_CONFIGURED and is parked FAILED after
+  # max-process-attempts: enabling the admin seam (plus the keycloak-credentials
+  # Secret) in staging/production is a deployment step, not done here.
+  keycloak.admin.customer-realm: "jtoye-customers"
 
   # API URLs
   api.url: "https://api.olajay.co.uk"

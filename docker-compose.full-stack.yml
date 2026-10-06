@@ -322,14 +322,26 @@ services:
       # isDeclaredMachineClient never fires, so its GROUP_ADMIN comes solely from the strict-OFF
       # implicit-admin rule and arming breaks MCP create_order.
       ACCESS_STRICT_SCOPING: ${ACCESS_STRICT_SCOPING:-false}
-      # Keycloak user deprovisioning on offboard (issue #102 remainder). OFF by
-      # default; when enabled the core service disables an offboarded tenant's
-      # Keycloak users. base-url is the INTERNAL host (like KC_ISSUER_URI above),
-      # NOT the public localhost:8085. Admin creds reach core here (they were
-      # previously only on the keycloak container).
-      KC_ADMIN_ENABLED: ${KC_ADMIN_ENABLED:-false}
+      # Keycloak admin seam — ON BY DEFAULT in this stack (31.1 D-22, owner ruling).
+      # Turning it on has TWO effects, and both are intended here:
+      #   1. DSAR erasure (D-03, #777): after a verified erasure has anonymised the
+      #      subject's data, core deletes their sign-in account in the customer realm
+      #      (KC_CUSTOMER_REALM), so the person can no longer sign in and see their
+      #      orders. The request is not reported complete until that is confirmed.
+      #   2. Tenant offboarding (issue #102 remainder): offboarding a tenant now
+      #      ALSO disables and logs out that tenant's vendor users in the
+      #      KC_DEPROVISION_REALMS realms. In dev, offboarding a dev tenant disables
+      #      its vendor logins.
+      # Opt out with KC_ADMIN_ENABLED=false in .env; an erasure then stays open as
+      # NOT_CONFIGURED and is parked FAILED after DSAR_MAX_PROCESS_ATTEMPTS sweeps.
+      # base-url is the INTERNAL host (like KC_ISSUER_URI above), NOT the public
+      # localhost:8085. Admin creds reach core here (they were previously only on
+      # the keycloak container). k8s keeps keycloak.admin.enabled "false": D-22
+      # scopes this default to compose.
+      KC_ADMIN_ENABLED: ${KC_ADMIN_ENABLED:-true}
       KC_ADMIN_BASE_URL: ${KC_ADMIN_BASE_URL:-http://keycloak:8080}
       KC_DEPROVISION_REALMS: ${KC_DEPROVISION_REALMS:-jtoye-dev}
+      KC_CUSTOMER_REALM: ${KC_CUSTOMER_REALM:-jtoye-customers}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set}
       # Local-stack opt-in for the Prometheus scrape endpoint (base profile

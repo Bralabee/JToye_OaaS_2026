@@ -316,6 +316,12 @@ jtoye:
       # realm only: jtoye-customers has no tenant_id user attributes, so it is
       # deliberately excluded.
       realms: ${KC_DEPROVISION_REALMS:jtoye-dev}
+      # 31.1-11 (D-03, #777): the realm holding CUSTOMER sign-in accounts (ADR-0005), and
+      # the ONLY realm a verified DSAR erasure deletes an account from. Deliberately a
+      # separate key from `realms` above, which stays the vendor offboarding sweep
+      # (T-kc-04). Same enabled/base-url/password switch: with the seam off, an erasure
+      # is recorded NOT_CONFIGURED and is never reported complete.
+      customer-realm: ${KC_CUSTOMER_REALM:jtoye-customers}
       username: ${KEYCLOAK_ADMIN:admin}
       password: ${KEYCLOAK_ADMIN_PASSWORD:}
   # Phase 22 COMMS-07: WhatsApp/SMS provider seam. FULLY INERT by default —

@@ -57,6 +57,7 @@ data:
   gdpr.dsar.verify-base-url: https://api.olajay.co.uk/api/v1/public/gdpr/dsar/verify
   jwt.expected-audience: core-api
   keycloak.admin.base-url: http://keycloak.jtoye-infrastructure.svc.cluster.local:8080
+  keycloak.admin.customer-realm: jtoye-customers
   keycloak.admin.enabled: "false"
   keycloak.admin.realms: jtoye-prod
   keycloak.client-id: frontend
@@ -370,6 +371,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: keycloak.admin.realms
+              name: app-config
+        - name: KC_CUSTOMER_REALM
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.admin.customer-realm
               name: app-config
         - name: KEYCLOAK_ADMIN
           valueFrom:

@@ -223,6 +223,12 @@ spec:
             configMapKeyRef:
               name: app-config
               key: keycloak.admin.realms
+        # 31.1-11 (D-03): DSAR erasure deletes the subject's account in this realm only.
+        - name: KC_CUSTOMER_REALM
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.admin.customer-realm
         - name: KEYCLOAK_ADMIN
           valueFrom:
             secretKeyRef:
