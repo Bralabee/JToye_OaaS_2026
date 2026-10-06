@@ -48,6 +48,58 @@ export const RECORDED_ACK_NOT_RECORDED_COPY = "No allergen acknowledgement was r
 export const RECORDED_ACK_NONE_COPY =
   "You confirmed you had read that the kitchen declared none of the 14 regulated allergens for these items."
 
+/**
+ * The shop placed the order (placedVia VENDOR, D-07): no customer acknowledgement exists, and the
+ * reason is stated. Different from NOT RECORDED (a pre-acknowledgement order) and from "none".
+ */
+export const VENDOR_PLACED_COPY =
+  "This order was placed by the shop for you, so no allergen confirmation was recorded."
+
+/** The recorded set is not part of this response (the history list never loads order lines). */
+export const RECORDED_SET_NOT_LOADED_COPY = "not loaded with your order list."
+
+/** Action that loads the single-order tracking response, which carries the recorded set. */
+export const RECORDED_SET_SHOW_COPY = "Show what the kitchen recorded"
+
+/** D-15: the customer sent an allergy note with the order. The TEXT is never shown here. */
+export function ALLERGY_NOTE_SENT_COPY(shopName: string): string {
+  return `Your allergy note was sent to ${shopName}.`
+}
+
+/** D-15: the shop marked the note read. `time` comes from {@link formatAllergyNoteReadAt}. */
+export function ALLERGY_NOTE_READ_COPY(time: string): string {
+  return `Read by the shop at ${time}.`
+}
+
+/** D-15: sent, not yet marked read. */
+export const ALLERGY_NOTE_UNREAD_COPY = "The shop has not marked it as read yet."
+
+/** My Orders: lead-in for the acknowledged set on each order row. */
+export const MY_ORDERS_ACK_HEADING_COPY = "Allergens you confirmed:"
+
+/** My Orders: the per-row link to the tracking page, where the full record is shown. */
+export const MY_ORDERS_FULL_RECORD_LINK_COPY = "Full allergen record"
+
+/**
+ * When the shop read the note, en-GB in Europe/London ("18:05", or "18:05 on 4 Oct" when that is
+ * not today in London). RED skeleton.
+ */
+export function formatAllergyNoteReadAt(_iso: string, _now: Date = new Date()): string {
+  return ""
+}
+
+/** The acknowledgement sentence for an order, shared by the block and My Orders. RED skeleton. */
+export type AcknowledgementStatement =
+  | { kind: "vendor" | "not-recorded" | "none"; text: string }
+  | { kind: "list"; names: string[] }
+
+export function acknowledgementStatement(
+  _acknowledged: string[] | null | undefined,
+  _placedVia: string | null | undefined
+): AcknowledgementStatement | null {
+  return null
+}
+
 export interface RecordedAllergenSetProps {
   /** null = no acknowledgement recorded. [] = acknowledged a declared-none basket. */
   acknowledged: string[] | null

@@ -191,3 +191,34 @@ export interface AllergenAcknowledgementStaleProblem {
   /** One entry per basket line, in basket order. */
   lines: Array<{ productId: string; productName: string; allergenMask: number; allergens: string[] }>
 }
+
+/** Which channel placed an order (31.1-09): the customer's storefront, or the shop on their behalf. */
+export type OrderPlacedVia = "STOREFRONT" | "VENDOR"
+
+/**
+ * The allergen record carried by `PublicOrderStatus` (core-java storefront/dto): the tracking
+ * response `GET /public/orders/{orderNumber}?email=` and each entry of the signed-in history
+ * (`/api/customer-orders` -> `/public/orders/mine`). Phase 31.1-09 (D-07, D-08) and 31.1-13 (D-15).
+ *
+ * Every field is optional AND nullable: an ABSENT field (older backend) reads exactly like `null`,
+ * "not recorded", never like `[]` / `0` / `false`.
+ *   acknowledgedAllergenMask / acknowledgedAllergens — what the customer ticked at checkout.
+ *     null: no acknowledgement was recorded (the shop placed the order, or it predates V69).
+ *   recordedAllergens / recordedAllergenFlags — the order-line snapshot the kitchen works from, and
+ *     its ADVISORY reconciliation lines. TRACKING RESPONSE ONLY: the history list always carries
+ *     null here BY DESIGN (it reads order columns, never order lines — no N+1), so a list entry's
+ *     null means "not loaded with the list", not "not recorded". Never render it as either.
+ *   placedVia — STOREFRONT | VENDOR; null when the order predates the channel being recorded.
+ *   allergyNoteProvided / allergyNoteAcknowledgedAt — the customer sent an allergy note, and when
+ *     the shop marked it read. The note's TEXT is never on this response (T-31.1-46).
+ */
+export interface PublicOrderAllergenRecord {
+  acknowledgedAllergenMask?: number | null
+  acknowledgedAllergens?: string[] | null
+  recordedAllergens?: string[] | null
+  recordedAllergenFlags?: OrderAllergenFlag[] | null
+  placedVia?: OrderPlacedVia | null
+  allergyNoteProvided?: boolean | null
+  /** ISO-8601 instant. */
+  allergyNoteAcknowledgedAt?: string | null
+}

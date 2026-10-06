@@ -13,7 +13,7 @@
  * it never made — the direction that injures someone.
  */
 
-import { render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import {
   RecordedAllergenSet,
   RECORDED_ACK_HEADING_COPY,
@@ -21,6 +21,14 @@ import {
   RECORDED_ACK_NOT_RECORDED_COPY,
   RECORDED_ALLERGEN_SET_TITLE_COPY,
   RECORDED_SET_HEADING_COPY,
+  RECORDED_SET_NOT_LOADED_COPY,
+  RECORDED_SET_SHOW_COPY,
+  VENDOR_PLACED_COPY,
+  ALLERGY_NOTE_SENT_COPY,
+  ALLERGY_NOTE_READ_COPY,
+  ALLERGY_NOTE_UNREAD_COPY,
+  formatAllergyNoteReadAt,
+  acknowledgementStatement,
 } from "@/components/storefront/recorded-allergen-set"
 import {
   ALLERGEN_PANEL_EMPTY_HEADING_COPY,
@@ -120,5 +128,129 @@ describe("RecordedAllergenSet — reconciliation flags are separate advisory lin
   it("renders no flag line when there are none (null or [])", () => {
     render(<RecordedAllergenSet acknowledged={["Gluten"]} recorded={["Gluten"]} flags={null} />)
     expect(screen.queryAllByTestId("recorded-allergen-flag")).toHaveLength(0)
+  })
+})
+
+
+/*
+ * 31.1-18 (D-07, D-08, D-15): the same block on the tracking pages, which know two more facts —
+ * WHO placed the order, and whether the shop READ the customer's allergy note.
+ */
+describe("RecordedAllergenSet — who placed the order (D-07)", () => {
+  it("a shop-placed order states WHY there is no acknowledgement; the recorded set still shows", () => {
+    render(
+      <RecordedAllergenSet acknowledged={null} recorded={["Milk"]} flags={[]} placedVia="VENDOR" />
+    )
+    expect(VENDOR_PLACED_COPY).toBe(
+      "This order was placed by the shop for you, so no allergen confirmation was recorded."
+    )
+    expect(screen.getByTestId("recorded-ack")).toHaveTextContent(VENDOR_PLACED_COPY)
+    expect(screen.getByTestId("recorded-set")).toHaveTextContent("Recorded on your order: Milk")
+  })
+
+  it("NULL (not recorded), VENDOR (placed by the shop) and [] (declared none) are three different sentences", () => {
+    const texts: string[] = []
+    for (const props of [
+      { acknowledged: null, placedVia: null },
+      { acknowledged: null, placedVia: "VENDOR" as const },
+      { acknowledged: [] as string[], placedVia: "STOREFRONT" as const },
+    ]) {
+      const { unmount } = render(<RecordedAllergenSet recorded={[]} flags={[]} {...props} />)
+      texts.push(screen.getByTestId("recorded-ack").textContent ?? "")
+      unmount()
+    }
+    expect(texts[0]).toContain(RECORDED_ACK_NOT_RECORDED_COPY)
+    expect(texts[1]).toContain(VENDOR_PLACED_COPY)
+    expect(texts[2]).toContain(RECORDED_ACK_NONE_COPY)
+    expect(new Set(texts).size).toBe(3)
+    // Neither absence is ever "none".
+    expect(texts[0]).not.toMatch(/none|no allergens/i)
+    expect(texts[1]).not.toMatch(/none|no allergens/i)
+  })
+
+  it("acknowledgementStatement is the one source both surfaces quote", () => {
+    expect(acknowledgementStatement(null, "VENDOR")).toEqual({ kind: "vendor", text: VENDOR_PLACED_COPY })
+    expect(acknowledgementStatement(null, null)).toEqual({ kind: "not-recorded", text: RECORDED_ACK_NOT_RECORDED_COPY })
+    expect(acknowledgementStatement(undefined, undefined)).toEqual({
+      kind: "not-recorded",
+      text: RECORDED_ACK_NOT_RECORDED_COPY,
+    })
+    expect(acknowledgementStatement([], "STOREFRONT")).toEqual({ kind: "none", text: RECORDED_ACK_NONE_COPY })
+    expect(acknowledgementStatement(["Gluten", "Milk"], "STOREFRONT")).toEqual({
+      kind: "list",
+      names: ["Gluten", "Milk"],
+    })
+  })
+})
+
+describe("RecordedAllergenSet — a recorded set this response does not carry", () => {
+  it("recorded undefined (the history list) says NOT LOADED, never 'not recorded' and never 'none'", () => {
+    const onShow = jest.fn()
+    render(
+      <RecordedAllergenSet acknowledged={["Milk"]} recorded={undefined} flags={null} onShowRecorded={onShow} />
+    )
+    const set = screen.getByTestId("recorded-set")
+    expect(set).toHaveTextContent(`${RECORDED_SET_HEADING_COPY} ${RECORDED_SET_NOT_LOADED_COPY}`)
+    expect(set).not.toHaveTextContent(ALLERGEN_PANEL_NOT_RECORDED_HEADING_COPY)
+    expect(set).not.toHaveTextContent(ALLERGEN_PANEL_EMPTY_HEADING_COPY)
+    fireEvent.click(screen.getByRole("button", { name: RECORDED_SET_SHOW_COPY }))
+    expect(onShow).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("RecordedAllergenSet — the allergy note (D-15)", () => {
+  it("says the note was sent to the named shop, and that it is not read yet", () => {
+    render(
+      <RecordedAllergenSet
+        acknowledged={["Milk"]}
+        recorded={["Milk"]}
+        flags={[]}
+        shopName="Mama Ade's Kitchen"
+        allergyNoteProvided
+        allergyNoteAcknowledgedAt={null}
+      />
+    )
+    const note = screen.getByTestId("allergy-note-status")
+    expect(note).toHaveTextContent("Your allergy note was sent to Mama Ade's Kitchen.")
+    expect(note).toHaveTextContent(ALLERGY_NOTE_SENT_COPY("Mama Ade's Kitchen"))
+    expect(note).toHaveTextContent(ALLERGY_NOTE_UNREAD_COPY)
+    expect(note).not.toHaveTextContent(/Read by the shop/)
+  })
+
+  it("once acknowledged, says when the shop read it (en-GB, Europe/London)", () => {
+    // 17:05Z on 6 Oct 2026 is 18:05 BST.
+    render(
+      <RecordedAllergenSet
+        acknowledged={["Milk"]}
+        recorded={["Milk"]}
+        flags={[]}
+        shopName="Mama Ade's Kitchen"
+        allergyNoteProvided
+        allergyNoteAcknowledgedAt="2026-10-06T17:05:00Z"
+      />
+    )
+    const note = screen.getByTestId("allergy-note-status")
+    expect(note).toHaveTextContent("Your allergy note was sent to Mama Ade's Kitchen.")
+    expect(note).toHaveTextContent(/Read by the shop at 18:05/)
+    expect(note).not.toHaveTextContent(ALLERGY_NOTE_UNREAD_COPY)
+  })
+
+  it("renders no note line when the customer sent none (false, null or absent)", () => {
+    render(<RecordedAllergenSet acknowledged={["Milk"]} recorded={["Milk"]} flags={[]} shopName="X" />)
+    expect(screen.queryByTestId("allergy-note-status")).not.toBeInTheDocument()
+  })
+
+  it("formats the read time in London, adding the London date when it is not today there", () => {
+    const now = new Date("2026-10-06T20:00:00Z") // 21:00 BST, 6 Oct
+    expect(formatAllergyNoteReadAt("2026-10-06T17:05:00Z", now)).toBe("18:05")
+    expect(ALLERGY_NOTE_READ_COPY(formatAllergyNoteReadAt("2026-10-06T17:05:00Z", now))).toBe(
+      "Read by the shop at 18:05."
+    )
+    // 23:30Z on 5 Oct is 00:30 BST on 6 Oct — TODAY in London, whatever the host zone says.
+    expect(formatAllergyNoteReadAt("2026-10-05T23:30:00Z", now)).toBe("00:30")
+    // 22:30Z on 5 Oct is 23:30 BST on 5 Oct — yesterday in London.
+    expect(formatAllergyNoteReadAt("2026-10-05T22:30:00Z", now)).toBe("23:30 on 5 Oct")
+    // GMT after the clocks go back (25 Oct 2026): 18:05Z is 18:05 GMT.
+    expect(formatAllergyNoteReadAt("2026-11-02T18:05:00Z", new Date("2026-11-02T20:00:00Z"))).toBe("18:05")
   })
 })
