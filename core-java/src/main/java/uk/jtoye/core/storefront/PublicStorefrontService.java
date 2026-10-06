@@ -668,7 +668,33 @@ public class PublicStorefrontService {
         status.setUnitCount(order.getUnitCount());
         status.setCreatedAt(order.getCreatedAt());
         status.setUpdatedAt(order.getUpdatedAt());
+        // Phase 31.1 D-07/D-08: what the customer acknowledged (the order's own V69 columns) and
+        // what the kitchen recorded (the V63 line snapshot, never a live join to products, so a
+        // vendor edit after the order cannot rewrite what this response says was recorded). One
+        // order, so loading its lines here is one statement, not one per row.
+        status.setAcknowledgedAllergenMask(order.getAllergenAckMask());
+        status.setAcknowledgedAllergens(acknowledgedAllergenNames(order));
+        status.setPlacedVia(placedVia(order));
+        OrderAllergenSnapshot.OrderAllergenView recorded = OrderAllergenSnapshot.viewOf(order.getItems());
+        status.setRecordedAllergens(recorded.declaredNames());
+        status.setRecordedAllergenFlags(recorded.flags());
         return status;
+    }
+
+    /**
+     * The names of the acknowledged mask, or {@code null} when none was recorded. Null is NOT
+     * RECORDED (a vendor order, or a row from before V69) and must never become [] — that would
+     * claim the customer acknowledged a basket declaring nothing. A recorded 0 gives [].
+     */
+    private static List<String> acknowledgedAllergenNames(Order order) {
+        Integer mask = order.getAllergenAckMask();
+        return mask == null ? null : AllergenCatalog.namesFor(mask);
+    }
+
+    /** The channel's enum name, or {@code null} for a row from before V69: no channel is guessed. */
+    private static String placedVia(Order order) {
+        OrderChannel channel = order.getPlacedVia();
+        return channel == null ? null : channel.name();
     }
 
     /**
@@ -827,6 +853,8 @@ public class PublicStorefrontService {
                         existingOrder.getOrderNumber(), e);
             }
         }
+        OrderAllergenSnapshot.OrderAllergenView replayedSnapshot =
+                OrderAllergenSnapshot.viewOf(existingOrder.getItems());
         return new GuestOrderConfirmation(
                 existingOrder.getOrderNumber(),
                 existingOrder.getStatus().name(),
@@ -842,7 +870,14 @@ public class PublicStorefrontService {
                 // line count, so it is neither coalesced nor substituted.
                 existingOrder.getUnitCount(),
                 existingClientSecret,
-                List.of()
+                List.of(),
+                // Phase 31.1 D-08: re-derived from the ROW, like everything else on a replay, so a
+                // retry shows the same acknowledged and recorded sets the first response did. A
+                // replayed row from before V69 / V63 carries null here, which is "not recorded".
+                existingOrder.getAllergenAckMask(),
+                acknowledgedAllergenNames(existingOrder),
+                replayedSnapshot.declaredNames(),
+                replayedSnapshot.flags()
         );
     }
 
@@ -1144,6 +1179,10 @@ public class PublicStorefrontService {
                 order.getVatRate(), shop.getName(),
                 clientSecret != null ? " (awaiting payment)" : " (COD)");
 
+        // Phase 31.1 D-08: the recorded set is rebuilt from the lines just captured above, through
+        // the same read model the kitchen display uses, so the confirmation and the ticket cannot
+        // disagree. The acknowledged set is the column 31.1-03 wrote in this transaction.
+        OrderAllergenSnapshot.OrderAllergenView recordedSnapshot = OrderAllergenSnapshot.viewOf(order.getItems());
         return new GuestOrderConfirmation(
                 order.getOrderNumber(),
                 order.getStatus().name(),
@@ -1158,7 +1197,11 @@ public class PublicStorefrontService {
                 // populated by calculateTotal() above; itemCount above stays LINES.
                 order.getUnitCount(),
                 clientSecret,
-                allergenWarnings
+                allergenWarnings,
+                order.getAllergenAckMask(),
+                acknowledgedAllergenNames(order),
+                recordedSnapshot.declaredNames(),
+                recordedSnapshot.flags()
         );
     }
 
