@@ -11,12 +11,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.AopTestUtils;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
@@ -26,10 +28,16 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import uk.jtoye.core.gdpr.DsarCipher;
+import uk.jtoye.core.gdpr.DsarFanoutWorker;
+import uk.jtoye.core.gdpr.DsarSubjectDigest;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.AccountDeletionResult;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
 import java.sql.Timestamp;
 import java.time.OffsetDateTime;
@@ -40,7 +48,10 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -65,6 +76,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @Testcontainers
 @ActiveProfiles("test")
 @Tag("testcontainers")
+// The DSAR fan-out is @Scheduled; the erasure arm drives it by hand and must own the timeline (#418).
+@Import(NoScheduledTriggersTestConfig.class)
 class AllergyNoteAckIntegrationTest {
 
     @Container
@@ -82,6 +95,11 @@ class AllergyNoteAckIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired JsonMapper jsonMapper;
     @Autowired ShopAccessService shopAccessService;
+    @Autowired DsarFanoutWorker dsarWorker;
+    @Autowired DsarCipher dsarCipher;
+
+    /** 31.1-11 (D-03): the account-deletion step answers "no account"; DsarAccountDeletionIntegrationTest owns it. */
+    @MockitoBean CustomerAccountDeletionService accountDeletion;
 
     /** Dedicated tenant so a parallel fork's fixtures cannot collide on slug or SKU. */
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000311131");
@@ -100,6 +118,7 @@ class AllergyNoteAckIntegrationTest {
     @BeforeEach
     void setUp() {
         TenantContext.clear();
+        when(accountDeletion.deleteCustomerAccount(anyString())).thenReturn(AccountDeletionResult.NONE_FOUND);
         jdbcTemplate.update(
                 "INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now()) ON CONFLICT (id) DO NOTHING",
                 TENANT_ID, "31.1-13 Allergy Note Tenant");
@@ -344,6 +363,76 @@ class AllergyNoteAckIntegrationTest {
         assertThat(history.getResponse().getContentAsString()).doesNotContain("peanuts");
     }
 
+    // ------------------------------------------------------------------
+    // T-31.1-47 (Article 9 + 17): a verified DSAR erasure (31.1-02's guest path, through the real
+    // fan-out worker) nulls the note on the order AND on every orders_aud revision. Who/when of the
+    // acknowledgement are staff records and stay.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("T-31.1-47: a DSAR guest erasure nulls allergy_note on the order and on every orders_aud revision, and keeps who acknowledged it and when")
+    void dsarGuestErasure_nullsTheNoteEverywhere_andKeepsTheAcknowledgement() throws Exception {
+        UUID bread = seedProduct("SKU-31113-DSAR", "Sourdough", GLUTEN);
+        String email = "dsar-" + UUID.randomUUID() + "@example.com";
+        String orderNumber = placeStorefrontOrder(email, bread, DELIVERY_NOTE, NOTE);
+        UUID orderId = orderId(orderNumber);
+        json(mockMvc.perform(post(ackUrl(orderId)).with(adminJwt())).andReturn(), 200);
+        Map<String, Object> ackBefore = ackColumns(orderId);
+        assertThat(ackBefore.get("allergy_note_ack_by")).as("PRECONDITION: acknowledged").isNotNull();
+        long notedRevisions = audRevisionsWithNote(orderId);
+        assertThat(notedRevisions)
+                .as("PRECONDITION: Envers wrote the note into orders_aud (create + acknowledgement revisions)")
+                .isGreaterThanOrEqualTo(2L);
+
+        jdbcTemplate.update("DELETE FROM dsar_request");
+        insertVerifiedErasure(DsarSubjectDigest.of(email));
+        dsarWorker.executeLodgedRequests();
+
+        Map<String, Object> live = inTenant(() -> jdbcTemplate.queryForMap(
+                "SELECT customer_email, allergy_note FROM orders WHERE id = ?", orderId));
+        assertThat(live.get("customer_email")).as("PRECONDITION: the erasure reached this order").isNull();
+        assertThat(live.get("allergy_note")).as("Article 17: the note is erased on the order").isNull();
+        assertThat(audRevisionsWithNote(orderId)).as("Article 17: and on every orders_aud revision").isZero();
+        assertThat(audRevisions(orderId)).as("the revisions themselves are kept, only scrubbed")
+                .isGreaterThanOrEqualTo(notedRevisions);
+        assertThat(ackColumns(orderId)).as("who read it and when stay: staff records, not subject data")
+                .isEqualTo(ackBefore);
+    }
+
+    // ------------------------------------------------------------------
+    // Article 20 + 17 on the admin path (a customers row): the export carries the note, and the
+    // erasure (scrubOrdersAudit's customer_id-OR-email statement) nulls it on the row and in history.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("Article 20/17: the admin export carries the allergy note, and the admin erasure nulls it on the order and on every orders_aud revision")
+    void adminExportCarriesTheNote_andAdminErasureNullsItEverywhere() throws Exception {
+        UUID bread = seedProduct("SKU-31113-ADMIN", "Sourdough", GLUTEN);
+        String email = "admin-" + UUID.randomUUID() + "@example.com";
+        String orderNumber = placeStorefrontOrder(email, bread, DELIVERY_NOTE, NOTE);
+        UUID orderId = orderId(orderNumber);
+        UUID customerId = UUID.randomUUID();
+        inTenant(() -> jdbcTemplate.update("INSERT INTO customers (id, tenant_id, name, email, phone) "
+                + "VALUES (?, ?, 'Allergy Note Buyer', ?, '07700900313')", customerId, TENANT_ID, email));
+        int linked = inTenant(() -> jdbcTemplate.update(
+                "UPDATE orders SET customer_id = ? WHERE id = ?", customerId, orderId));
+        assertThat(linked).as("PRECONDITION: the order belongs to the customer").isEqualTo(1);
+        assertThat(audRevisionsWithNote(orderId)).as("PRECONDITION: the note is in orders_aud").isPositive();
+
+        MvcResult exported = mockMvc.perform(get("/api/v1/gdpr/customers/" + customerId + "/export")
+                .with(adminJwt())).andReturn();
+        String exportText = responseText(exported);
+        JsonNode orders = json(exported, 200).path("orders");
+        assertThat(orders.size()).as(exportText).isEqualTo(1);
+        assertThat(field(orders.get(0), "allergyNote", exportText).asString())
+                .as("Article 20: the subject receives the note they wrote").isEqualTo(NOTE);
+
+        MvcResult erased = mockMvc.perform(delete("/api/v1/gdpr/customers/" + customerId + "/erase")
+                .with(adminJwt())).andReturn();
+        assertThat(erased.getResponse().getStatus()).as(responseText(erased)).isEqualTo(200);
+
+        assertThat(allergyNoteColumn(orderNumber)).as("Article 17: erased on the order").isNull();
+        assertThat(audRevisionsWithNote(orderId)).as("Article 17: and on every orders_aud revision").isZero();
+    }
+
     // ---- order placement ----
 
     private String placeStorefrontOrder(String email, UUID product, String notes, String allergyNote) throws Exception {
@@ -380,6 +469,29 @@ class AllergyNoteAckIntegrationTest {
     private Map<String, Object> ackColumns(UUID orderId) {
         return inTenant(() -> jdbcTemplate.queryForMap(
                 "SELECT allergy_note_ack_at, allergy_note_ack_by FROM orders WHERE id = ?", orderId));
+    }
+
+    private long audRevisionsWithNote(UUID orderId) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM orders_aud WHERE id = ? AND allergy_note IS NOT NULL", Long.class, orderId));
+    }
+
+    private long audRevisions(UUID orderId) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM orders_aud WHERE id = ?", Long.class, orderId));
+    }
+
+    /**
+     * A VERIFIED ERASURE row for a digest, as the verify endpoint leaves it (the
+     * DsarGuestErasureRlsIntegrationTest recipe). Since V70 it carries the encrypted address; the account
+     * step is mocked here, so the plaintext only has to be well-formed, and matching stays by digest.
+     */
+    private void insertVerifiedErasure(String subjectDigest) {
+        UUID id = UUID.randomUUID();
+        byte[] ciphertext = dsarCipher.encrypt(DsarCipher.Purpose.SUBJECT_ADDRESS, id, "subject@example.test");
+        jdbcTemplate.update("INSERT INTO dsar_request (id, subject_email_sha256, request_type, status, verified_at, "
+                + "subject_email_ciphertext) VALUES (?, ?, 'ERASURE', 'VERIFIED', NOW(), ?)",
+                id, subjectDigest, ciphertext);
     }
 
     private static String ackUrl(UUID orderId) {
