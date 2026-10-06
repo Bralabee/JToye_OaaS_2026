@@ -56,3 +56,55 @@ F5  Treat a 404 like any other failure.
 
 Clean re-run after all Task 1 arms (tracer gate, interactive end-of-phase, automated-only
 verify): DsarExportDownloadIntegrationTest 4/0/0 rc 0; download-page.test.tsx 11/11 rc 0.
+
+== Task 2 (committed at 593874ce) ==
+
+T2-C   Replace the single conditional UPDATE with read-then-write (SELECT the row, then an
+       unconditional UPDATE by id; a 150 ms pause between them widens the window so the
+       race is exercised on every round).
+       twoSimultaneousPressesOfOneLinkYieldExactlyOnePayload FAILS on round 0:
+       Expecting actual [200, 200] to contain exactly in any order [200, 404].
+
+T2-C2  Keep the statement, remove only `FOR UPDATE` from its subquery (no pause added).
+       The same arm FAILS on round 0 with [200, 200]: without the lock the second press's
+       subquery reads the row from its own snapshot, the outer UPDATE waits on the first
+       press's row lock and then re-checks only `e.id = prior.id`, and returns the stale
+       ciphertext a second time. FOR UPDATE is load-bearing; the outer UPDATE's own lock
+       is not enough. (Run together with T2-P1 and T2-S, which target other arms.)
+
+T2-P1  Purge predicate `WHERE consumed_at IS NULL` -> `WHERE TRUE`.
+       thePurgeNeverTouchesAConsumedOrAnUnexpiredExport FAILS:
+       [nothing here is an unconsumed, lapsed export] expected: 0 but was: 1.
+
+T2-P2  Purge expiry predicate -> `(expires_at <= ? OR TRUE)`.
+       thePurgeNeverTouchesAConsumedOrAnUnexpiredExport FAILS: expected: 0 but was: 1
+       (the live export was purged).
+
+T2-S   Put the literal "SystemPrincipal.asSystem" into DsarExportDownloadService's javadoc.
+       SystemPrincipalGuardTest.theDsarIntakePathNeverDeclaresSystemAuthority FAILS:
+       "uk/jtoye/core/gdpr/DsarExportDownloadService.java declares system authority on the
+       DSAR INTAKE path ..." (8 tests, 1 failure). Real tree: 8/0/0.
+
+T2-SSR Delete the `STATIC data-request/download/page.tsx ...` line.
+       scripts/check-ssr-coverage-contract.sh rc=1:
+       "FAIL: R-1 undeclared page: data-request/download/page.tsx". Restored by cp from a
+       scratch copy, sha256 OK; real tree rc=0 "PASS: all 39 app route(s) are declared".
+
+T2-RET application.yml export-link-ttl-hours default 168 -> 169.
+       scripts/check-retention-enforcement.sh rc=1: "FAIL: [R-15] published 168 hours
+       (= 604800s) but core-java/src/main/resources/application.yml holds 169 hours
+       (= 608400s) for 'export-link-ttl-hours'". Restored, sha256 OK; real tree rc=0.
+
+T2-CLM frontend/app/legal/retention/page.tsx PERIOD_PREPARED_DATA_COPY 168 -> 167.
+       scripts/check-claims.sh rc=1: "FAIL: frontend/app/legal/retention/page.tsx
+       [R-15 prepared copy of your data]: claims '167', retention says '168'". Restored,
+       sha256 OK; real tree rc=0 (49 claims).
+
+T2-LNK (observed, not constructed) the full jest run before the allowlist entry:
+       __tests__/link-graph.test.ts named "/data-request/download <- app/data-request/
+       download/page.tsx" as an orphan (1 failed of 1970); green with the entry (be7a92ec).
+
+VACUOUS VERIFY (recorded, replaced): the plan's
+  ./gradlew :core-java:cleanTest :core-java:test --tests '...SystemPrincipalGuardTest'
+exits rc=1 "No tests found for given includes": the class is @Tag("testcontainers") and runs
+only under integrationTest. Replaced by the integrationTest run (8/0/0) and T2-S above.
