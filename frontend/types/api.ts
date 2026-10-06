@@ -448,8 +448,8 @@ export type OnboardingState =
   | "REJECTED"
   | "WITHDRAWN"
 
-// INT-6 (QA council 20260902-134741): ALL eight backend constants, in Java declaration
-// order. This union was a hand-maintained 3-of-8 subset; because the pages' copy maps are
+// INT-6 (QA council 20260902-134741): ALL backend constants (nine since 31.1-12 added
+// TRADER_IDENTITY, #789), in Java declaration order. This union was a hand-maintained 3-of-8 subset; because the pages' copy maps are
 // typed Record<GateType, …>, tsc was satisfied and the five missing types rendered as the
 // literal "Check". Parity with GateType.java / GateStatus.java / OnboardingState.java is
 // now enforced by frontend/__tests__/onboarding-enum-parity.test.ts.
@@ -462,6 +462,7 @@ export type GateType =
   | "AGREEMENT_SIGNED"
   | "ALLERGEN_DATA_COMPLETE"
   | "MENU_MINIMUM"
+  | "TRADER_IDENTITY"
 
 export type GateStatus =
   | "PENDING"

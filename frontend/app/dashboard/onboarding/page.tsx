@@ -101,7 +101,7 @@ const STATE_SUBTITLE: Record<OnboardingState, string> = {
 }
 
 // INT-6: one entry per backend GateType (Record<GateType, …> now enforces it, because the
-// union in types/api.ts carries all eight). The five slice-2 gates used to fall through to
+// union in types/api.ts carries every backend constant). The five slice-2 gates used to fall through to
 // GATE_FALLBACK and render the literal word "Check".
 const GATE_META: Record<GateType, { label: string; icon: LucideIcon }> = {
   BUSINESS_VERIFIED: { label: "Business verification", icon: Building2 },
@@ -112,6 +112,8 @@ const GATE_META: Record<GateType, { label: string; icon: LucideIcon }> = {
   AGREEMENT_SIGNED: { label: "Agreement signed", icon: FileCheck },
   ALLERGEN_DATA_COMPLETE: { label: "Allergen data", icon: Wheat },
   MENU_MINIMUM: { label: "Menu minimum", icon: ListChecks },
+  // #789 / 31.1-12: the statutory seller details customers see before they order.
+  TRADER_IDENTITY: { label: "Business details", icon: Store },
 }
 
 const GATE_STATUS_META: Record<
@@ -147,9 +149,22 @@ const GATE_STATUS_FALLBACK = {
 // instruction is composed per lifecycle state by nextStepFor() below, because the state
 // machine declares RESUBMIT from ACTION_REQUIRED only — telling a vendor in VERIFYING to
 // "re-run your checks" named an action that state cannot perform and had no control for.
-const REMEDIATION: Partial<
-  Record<`${GateType}:${GateStatus}`, { why: string; what: string; href: string; cta: string }>
-> = {
+// A remediation may name a SECOND place to fix the blocker: TRADER_IDENTITY needs the
+// tenant's business details (this page) AND an email on the shop (the shop editor).
+type Remediation = {
+  why: string
+  what: string
+  href: string
+  cta: string
+  secondary?: { href: string; cta: string }
+}
+
+// In-page anchors whose target card renders only in DRAFT / ACTION_REQUIRED. Every other
+// in-page anchor (#business-details: the trader-identity form is mounted in every state)
+// is always a valid link target.
+const STATE_GATED_ANCHORS = new Set(["#company-number"])
+
+const REMEDIATION: Partial<Record<`${GateType}:${GateStatus}`, Remediation>> = {
   "BUSINESS_VERIFIED:FAILED": {
     why: "We couldn't verify your business against Companies House.",
     what: "Check your Companies House number is right — or clear it if you trade as a sole trader.",
@@ -177,6 +192,16 @@ const REMEDIATION: Partial<
       "Check the number is your registered company number — 8 characters, with older numbers zero-padded (e.g. 00445790) — or clear it if you trade as a sole trader.",
     href: "#company-number",
     cta: "Edit company number",
+  },
+  // #789 / 31.1-12: go-live is refused until customers can see who the seller is and how to
+  // email them. The gate reason names which detail is missing; both places are offered.
+  "TRADER_IDENTITY:FAILED": {
+    why: "Your business details are not complete yet.",
+    what:
+      "Customers must see your legal name, address and an email address before they order. Add your business details on this page, and an email address to your shop.",
+    href: "#business-details",
+    cta: "Edit business details",
+    secondary: { href: "/dashboard/shops", cta: "Add a shop email" },
   },
 }
 
@@ -455,6 +480,10 @@ export default function OnboardingPage() {
       // Guard veto (400): a mandatory gate is not satisfied. Keep the status
       // view (and its gate breakdown) mounted so the vendor sees the blocker.
       if (httpStatus(err) === 400) {
+        // #789 / 31.1-12: the refused go-live re-checks the gates and records the result
+        // (an onboarding approved before the business-details gate existed gets its row
+        // here), so re-read it — otherwise the blocker named below is not on screen.
+        void loadOnboarding(false)
         toast({
           variant: "destructive",
           title: "Not ready to go live yet",
@@ -1023,9 +1052,12 @@ function RemediationRow({ gate, status }: { gate: GateDto; status: OnboardingSta
   const nextStep = nextStepFor(status, gate.status)
   // INT-6: the "#company-number" anchor targets the inline edit card, which renders only in
   // DRAFT / ACTION_REQUIRED (server-enforced). Offer that CTA only where its target exists;
-  // internal route links (/dashboard/…) are always valid.
+  // internal route links (/dashboard/…) and always-mounted anchors are always valid.
   const ctaAvailable =
-    isInternal || status === "DRAFT" || status === "ACTION_REQUIRED"
+    isInternal ||
+    !STATE_GATED_ANCHORS.has(remediation?.href ?? "") ||
+    status === "DRAFT" ||
+    status === "ACTION_REQUIRED"
 
   return (
     <li className="rounded-lg border border-slate-100 p-4">
@@ -1038,7 +1070,7 @@ function RemediationRow({ gate, status }: { gate: GateDto; status: OnboardingSta
         <>
           <p className="mt-2 text-sm text-slate-600">{`${remediation.what} ${nextStep}`.trim()}</p>
           {ctaAvailable && (
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap gap-2">
             {isInternal ? (
               <Link href={remediation.href}>
                 <Button variant="outline" size="sm">
@@ -1053,6 +1085,14 @@ function RemediationRow({ gate, status }: { gate: GateDto; status: OnboardingSta
                   <Pencil className="ml-1.5 h-3.5 w-3.5" />
                 </Button>
               </a>
+            )}
+            {remediation.secondary && (
+              <Link href={remediation.secondary.href}>
+                <Button variant="outline" size="sm">
+                  {remediation.secondary.cta}
+                  <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                </Button>
+              </Link>
             )}
           </div>
           )}
