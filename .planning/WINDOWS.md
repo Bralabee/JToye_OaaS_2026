@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 5
+open_count: 7
 waived_count: 0
 fixed_count: 1
-total_count: 6
-last_updated: 2026-10-06T19:52:27.849Z
+total_count: 8
+last_updated: 2026-10-06T22:47:38.806Z
 ---
 
 # Broken Windows Ledger
@@ -21,6 +21,8 @@ last_updated: 2026-10-06T19:52:27.849Z
 | 4 | 31.1 | unrun-verify | scripts/openapi-gate.sh |  | 31.1-14: oasdiff-based OpenAPI compat gate not run locally (oasdiff not installed); OpenApiSnapshotTest byte-equality ran green after regeneration | open |  | 2026-10-06T17:35:41.148Z |  |
 | 5 | 31.1 | unrun-verify | frontend/e2e/allergen-ack-race.spec.ts |  | 31.1-15 #785 race spec listed only; RED (pre-rebuild runtime) and GREEN runs owed to 31.1-30 | open |  | 2026-10-06T18:25:22.970Z |  |
 | 6 | 31.1 | unrun-verify | core-java/src/main/java/uk/jtoye/core/gdpr/DsarOutcomeMailer.java |  | 31.1-16 ACCESS link email proven only against a mocked JavaMailSender; live Mailhog capture, live customer-realm lookup and a click-through to /data-request/download (page built by 31.1-17) owed to 31.1-30 | open |  | 2026-10-06T19:52:27.849Z |  |
+| 7 | 31.1 | stub | frontend/app/data-request/download/download-client.tsx |  | Unavailable state links 'Request a new copy' to /shop/account, which 31.1-26 builds; until then the link 404s | open |  | 2026-10-06T22:47:38.670Z |  |
+| 8 | 31.1 | unrun-verify | frontend/app/data-request/download/page.tsx |  | Live click-through of the emailed Article 15 link (Mailhog -> /data-request/download -> Show my data once, second open unavailable) not run: shared stack not rebuilt; owed to 31.1-30 | open |  | 2026-10-06T22:47:38.806Z |  |
 
 ````json
 [
@@ -99,6 +101,32 @@ last_updated: 2026-10-06T19:52:27.849Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-06T19:52:27.849Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 7,
+    "kind": "stub",
+    "phase": "31.1",
+    "file": "frontend/app/data-request/download/download-client.tsx",
+    "line": null,
+    "description": "Unavailable state links 'Request a new copy' to /shop/account, which 31.1-26 builds; until then the link 404s",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T22:47:38.670Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 8,
+    "kind": "unrun-verify",
+    "phase": "31.1",
+    "file": "frontend/app/data-request/download/page.tsx",
+    "line": null,
+    "description": "Live click-through of the emailed Article 15 link (Mailhog -> /data-request/download -> Show my data once, second open unavailable) not run: shared stack not rebuilt; owed to 31.1-30",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T22:47:38.806Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
