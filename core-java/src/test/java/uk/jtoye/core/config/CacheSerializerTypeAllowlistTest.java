@@ -22,6 +22,7 @@ import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.media.MediaAssetDto;
 import uk.jtoye.core.media.MediaAssetStatus;
 import uk.jtoye.core.product.AllergenSpan;
+import uk.jtoye.core.product.dto.ProductAllergenWarning;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.access.Membership;
 import uk.jtoye.core.shop.dto.ShopDto;
@@ -29,6 +30,7 @@ import uk.jtoye.core.shop.dto.ShopDto;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -120,6 +122,11 @@ class CacheSerializerTypeAllowlistTest {
         p.setAllergenSpans(List.of(new AllergenSpan(0, 4), new AllergenSpan(24, 33)));
         p.setMedia(List.of(new MediaAssetDto(UUID.randomUUID(), MediaAssetStatus.ACTIVE, false, null,
                 "https://cdn.example/a.webp", "https://cdn.example/a-thumb.webp", 800, 600, false, false)));
+        // 31.1-06 (#787): the derived warning list, as ProductMapper builds it (an ArrayList of a
+        // record). A by-id product read is cached, so a product whose ingredients name an
+        // undeclared allergen must come back from Redis with its warning intact.
+        p.setAllergenWarnings(new ArrayList<>(List.of(
+                ProductAllergenWarning.undeclaredIngredientAllergen(6, "Milk"))));
         return p;
     }
 
