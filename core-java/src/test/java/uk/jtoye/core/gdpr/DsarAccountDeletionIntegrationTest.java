@@ -7,13 +7,18 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -28,8 +33,11 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
 import uk.jtoye.core.tenant.keycloak.CustomerRealmUser;
 import uk.jtoye.core.tenant.keycloak.KeycloakAdminClient;
+import uk.jtoye.core.tenant.keycloak.KeycloakAdminException;
+import uk.jtoye.core.tenant.keycloak.KeycloakAdminProperties;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
@@ -44,11 +52,13 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -78,6 +88,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // The fan-out is @Scheduled and a fixedDelay task fires once at context refresh (#418): this class
 // drives the worker by hand and owns the timeline.
 @Import(NoScheduledTriggersTestConfig.class)
+@ExtendWith(OutputCaptureExtension.class)
 class DsarAccountDeletionIntegrationTest {
 
     @Container
@@ -121,20 +132,24 @@ class DsarAccountDeletionIntegrationTest {
     @MockitoBean KeycloakAdminClient keycloak;
     @MockitoBean JavaMailSender mailSender;
     @MockitoSpyBean DsarVerificationMailer verificationMailer;
+    @MockitoSpyBean CustomerAccountDeletionService accountDeletion;
+    @Autowired KeycloakAdminProperties adminProperties;
 
-    private int ipCounter = 0;
+    private static final java.util.concurrent.atomic.AtomicInteger IP_COUNTER = new java.util.concurrent.atomic.AtomicInteger();
 
     @BeforeEach
     void setUp() {
         TenantContext.clear();
         jdbc.update("DELETE FROM dsar_request");
-        reset(keycloak, mailSender, verificationMailer);
+        reset(keycloak, mailSender, verificationMailer, accountDeletion);
+        adminProperties.setEnabled(true);
         when(keycloak.obtainAdminToken()).thenReturn(TOKEN);
     }
 
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+        adminProperties.setEnabled(true);
     }
 
     // ---- Task 1: the tracer ----------------------------------------------------------------------
@@ -189,6 +204,194 @@ class DsarAccountDeletionIntegrationTest {
         assertThat(row.ciphertextPresent()).isFalse();
     }
 
+    // ---- Task 2: outage, retry, exhaustion, not configured, interruption, the email -------------
+
+    /**
+     * A Keycloak outage costs a retry and nothing else: the erasure has committed and STAYS committed
+     * (asserted by SQL while the request is still open), and the next healthy sweep re-runs a harmless
+     * erasure (no second record), deletes the account and only then completes and tells the subject.
+     */
+    @Test
+    void anOutageLeavesTheDataErasedAndTheRequestOutstanding_andTheNextSweepCompletesIt() throws Exception {
+        String typed = "  Outage.Subject+" + shortId() + "@Example.test ";
+        String verified = typed.trim();
+        String lower = verified.toLowerCase(Locale.ROOT);
+        Fixture fx = seedSubjectWithAGuestOrder(verified);
+        String kcUserId = UUID.randomUUID().toString();
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, lower, TOKEN))
+                .thenThrow(new KeycloakAdminException("Keycloak user email search failed for realm=" + CUSTOMER_REALM));
+
+        UUID requestId = lodgeVerifiedErasure(typed);
+        worker.executeLodgedRequests();
+
+        RequestRow open = request(requestId);
+        assertThat(open.accountDeletionStatus()).as("the failed attempt is recorded").isEqualTo("OUTSTANDING");
+        assertThat(open.status()).as("released for retry, not completed").isEqualTo("VERIFIED");
+        assertThat(open.accountDeletionAttempts()).isEqualTo(1);
+        assertThat(open.ciphertextPresent()).as("the address is kept for the retry").isTrue();
+        assertThat(orderEmail(fx.tenant(), fx.order())).as("the erasure was NOT rolled back").isNull();
+        assertThat(orderName(fx.tenant(), fx.order())).isEqualTo(REDACTED);
+        assertThat(erasureRecordCount(fx.tenant())).isEqualTo(1);
+        verify(keycloak, never()).deleteUser(anyString(), anyString(), anyString());
+        verify(mailSender, never()).send(any(SimpleMailMessage.class));
+
+        // Keycloak is back.
+        reset(keycloak);
+        when(keycloak.obtainAdminToken()).thenReturn(TOKEN);
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, lower, TOKEN)).thenReturn(List.of(realmUser(kcUserId, lower)));
+        when(keycloak.deleteUser(CUSTOMER_REALM, kcUserId, TOKEN)).thenReturn(true);
+
+        worker.executeLodgedRequests();
+
+        RequestRow done = request(requestId);
+        assertThat(done.status()).isEqualTo("COMPLETED");
+        assertThat(done.accountDeletionStatus()).isEqualTo("DELETED");
+        assertThat(done.accountDeletionAttempts()).isEqualTo(2);
+        assertThat(done.ciphertextPresent()).isFalse();
+        assertThat(erasureRecordCount(fx.tenant())).as("the retry's erasure matched nothing: no second record")
+                .isEqualTo(1);
+        verify(keycloak, times(1)).deleteUser(CUSTOMER_REALM, kcUserId, TOKEN);
+        ArgumentCaptor<SimpleMailMessage> mail = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender, times(1)).send(mail.capture());
+        assertThat(mail.getValue().getTo()).as("sent to the verified address, as typed and trimmed")
+                .containsExactly(verified);
+    }
+
+    @Test
+    void aDeletionThatFailsOnEverySweepIsParkedFailedLoudly_andNoCompletionEmailIsSent(CapturedOutput output)
+            throws Exception {
+        String verified = "always.down." + shortId() + "@example.test";
+        Fixture fx = seedSubjectWithAGuestOrder(verified);
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, verified, TOKEN))
+                .thenThrow(new KeycloakAdminException("Keycloak user email search failed for realm=" + CUSTOMER_REALM));
+
+        UUID requestId = lodgeVerifiedErasure(verified);
+        for (int sweep = 1; sweep <= MAX_ATTEMPTS; sweep++) {
+            worker.executeLodgedRequests();
+            if (sweep < MAX_ATTEMPTS) {
+                assertThat(request(requestId).status()).as("still open after sweep %d", sweep).isEqualTo("VERIFIED");
+            }
+        }
+
+        RequestRow row = request(requestId);
+        assertThat(output.getAll()).as("the exhaustion is an ERROR naming the request")
+                .containsPattern("ERROR.*event=dsar_account_deletion_exhausted request=" + requestId);
+        assertThat(row.status()).isEqualTo("FAILED");
+        assertThat(row.accountDeletionStatus()).isEqualTo("OUTSTANDING");
+        assertThat(row.accountDeletionAttempts()).isEqualTo(MAX_ATTEMPTS);
+        assertThat(row.ciphertextPresent()).as("FAILED drops the encrypted address").isFalse();
+        assertThat(orderEmail(fx.tenant(), fx.order())).as("the data stays erased").isNull();
+        verify(mailSender, never()).send(any(SimpleMailMessage.class));
+        assertThat(output.getAll()).as("the address is never logged").doesNotContain(verified);
+    }
+
+    @Test
+    void anUnconfiguredAdminSeamIsOutstanding_neverComplete() throws Exception {
+        String verified = "not.configured." + shortId() + "@example.test";
+        Fixture fx = seedSubjectWithAGuestOrder(verified);
+        adminProperties.setEnabled(false);
+
+        UUID requestId = lodgeVerifiedErasure(verified);
+        worker.executeLodgedRequests();
+
+        RequestRow row = request(requestId);
+        assertThat(row.accountDeletionStatus()).isEqualTo("NOT_CONFIGURED");
+        assertThat(row.status()).isEqualTo("VERIFIED");
+        assertThat(row.ciphertextPresent()).isTrue();
+        assertThat(orderEmail(fx.tenant(), fx.order())).as("the data is erased regardless").isNull();
+        verify(keycloak, never()).findUsersByEmail(anyString(), anyString(), anyString());
+        verify(mailSender, never()).send(any(SimpleMailMessage.class));
+    }
+
+    /**
+     * A sweep that breaks between the erasure commit and the Keycloak call (here: the deletion step
+     * itself throws, which its contract forbids) leaves the request released, and the retry re-runs a
+     * harmless erasure and then the deletion.
+     */
+    @Test
+    void aSweepInterruptedAfterTheErasureCommitIsReleased_andTheRetryFinishesIt() throws Exception {
+        String verified = "interrupted." + shortId() + "@example.test";
+        Fixture fx = seedSubjectWithAGuestOrder(verified);
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, verified, TOKEN)).thenReturn(List.of());
+        doThrow(new IllegalStateException("simulated interruption"))
+                .doCallRealMethod()
+                .when(accountDeletion).deleteCustomerAccount(anyString());
+
+        UUID requestId = lodgeVerifiedErasure(verified);
+        worker.executeLodgedRequests();
+
+        RequestRow open = request(requestId);
+        assertThat(open.accountDeletionStatus()).isEqualTo("OUTSTANDING");
+        assertThat(open.status()).isEqualTo("VERIFIED");
+        assertThat(orderEmail(fx.tenant(), fx.order())).isNull();
+
+        worker.executeLodgedRequests();
+
+        RequestRow done = request(requestId);
+        assertThat(done.status()).isEqualTo("COMPLETED");
+        assertThat(done.accountDeletionStatus()).isEqualTo("NONE_FOUND");
+        assertThat(erasureRecordCount(fx.tenant())).isEqualTo(1);
+    }
+
+    @Test
+    void theCompletionEmailTellsTheSubjectWhatWasErasedAndKept_andNamesNoVendor() throws Exception {
+        String typed = " Mail.Subject+" + shortId() + "@Example.test ";
+        String verified = typed.trim();
+        String lower = verified.toLowerCase(Locale.ROOT);
+        Fixture fx = seedSubjectWithAGuestOrder(verified);
+        String kcUserId = UUID.randomUUID().toString();
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, lower, TOKEN)).thenReturn(List.of(realmUser(kcUserId, lower)));
+        when(keycloak.deleteUser(CUSTOMER_REALM, kcUserId, TOKEN)).thenReturn(true);
+
+        lodgeVerifiedErasure(typed);
+        worker.executeLodgedRequests();
+
+        ArgumentCaptor<SimpleMailMessage> mail = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender, times(1)).send(mail.capture());
+        SimpleMailMessage m = mail.getValue();
+        assertThat(m.getTo()).containsExactly(verified);
+        assertThat(m.getSubject()).isNotBlank();
+        String body = m.getText();
+        assertThat(body).as("what was kept and why").contains("order and tax records");
+        assertThat(body).as("the sign-in account outcome").contains("sign-in account has been deleted");
+        assertThat(body).as("the vendor is never named").doesNotContain(fx.shopName());
+        assertThat(body).doesNotContain(fx.tenant().toString());
+        assertThat(body).doesNotContain(fx.shop().toString());
+        // CONTROL: the shop name really is in the fixture, so the absence above is about the email.
+        assertThat(fx.shopName()).startsWith("Persona Jollof Kitchen ");
+    }
+
+    @Test
+    void theCompletionEmailSaysSoWhenThereWasNoAccount() throws Exception {
+        String verified = "no.account.mail." + shortId() + "@example.test";
+        seedSubjectWithAGuestOrder(verified);
+        when(keycloak.findUsersByEmail(CUSTOMER_REALM, verified, TOKEN)).thenReturn(List.of());
+
+        lodgeVerifiedErasure(verified);
+        worker.executeLodgedRequests();
+
+        ArgumentCaptor<SimpleMailMessage> mail = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender, times(1)).send(mail.capture());
+        assertThat(mail.getValue().getText()).contains("no sign-in account");
+        assertThat(mail.getValue().getText()).doesNotContain("sign-in account has been deleted");
+    }
+
+    @Test
+    void v72RefusesAnUnknownAccountDeletionStatus_andStartsAttemptsAtZero() throws Exception {
+        String verified = "v72." + shortId() + "@example.test";
+        UUID requestId = lodgeVerifiedErasure(verified);
+        assertThat(request(requestId).accountDeletionAttempts()).isZero();
+        assertThat(request(requestId).accountDeletionStatus()).as("no attempt yet").isNull();
+
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE dsar_request SET account_deletion_status = 'MAYBE' WHERE id = ?", requestId))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_dsar_request_account_deletion_status");
+        // CONTROL: a listed value is accepted, so the refusal above is the vocabulary CHECK.
+        assertThat(jdbc.update("UPDATE dsar_request SET account_deletion_status = 'OUTSTANDING' WHERE id = ?",
+                requestId)).isEqualTo(1);
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------
 
     record Fixture(UUID tenant, UUID shop, String shopName, UUID order) {
@@ -235,7 +438,7 @@ class DsarAccountDeletionIntegrationTest {
     }
 
     UUID lodgeVerifiedErasure(String email) throws Exception {
-        String ip = "203.0.113." + (100 + (ipCounter++ % 100));
+        String ip = "203.0.113." + (100 + (IP_COUNTER.getAndIncrement() % 100));
         mockMvc.perform(post(INTAKE_PATH)
                         .header("X-Forwarded-For", ip)
                         .contentType(MediaType.APPLICATION_JSON)
