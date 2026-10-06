@@ -325,7 +325,12 @@ data:
   # SOURCE: the existing frontend.url key above (overlays patch per env).
   notification.email.tracking-base-url: "https://app.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app.olajay.co.uk"
-  gdpr.dsar.verify-base-url: "https://api.olajay.co.uk/api/v1/public/gdpr/dsar/verify"
+  # 31.1-20 (#839): the page the emailed DSAR verification link opens, on the
+  # WEB origin. It used to be the API, which answers a person who clicks it
+  # with raw JSON. The page spends the token (carried in the #fragment) only
+  # when the person presses "Confirm my request". Pinned to the same origin as
+  # the unsubscribe link by DsarLinkConfigContractTest.
+  gdpr.dsar.verify-base-url: "https://app.olajay.co.uk/data-request/confirm"
   # 31.1-16 (D-01, #778): the frontend page the emailed Article 15 download link
   # opens. Its application.yml default is http://localhost:3000/... — outside a
   # laptop every link would be dead and the statutory reply silently undelivered.

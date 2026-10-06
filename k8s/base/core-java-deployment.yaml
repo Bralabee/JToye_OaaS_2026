@@ -460,11 +460,13 @@ spec:
               name: app-config
               key: notification.unsubscribe.base-url
         # Phase 31 (LGL-01): the link a data subject clicks to verify a DSAR.
-        # Its application.yml default is http://localhost:8080/... — outside a
-        # laptop that link is DEAD, and it fails SILENTLY: the email sends, the
-        # subject clicks, nothing verifies, and UK GDPR's one-month clock keeps
-        # running. Supplied per environment rather than allowlisted for exactly
-        # that reason. Same shape as the two notification origins above.
+        # Since 31.1-20 (#839) it opens the web app's /data-request/confirm page
+        # (the API answered a click with raw JSON). Its application.yml default
+        # is http://localhost:3000/... — outside a laptop that link is DEAD, and
+        # it fails SILENTLY: the email sends, the subject clicks, nothing
+        # verifies, and UK GDPR's one-month clock keeps running. Supplied per
+        # environment rather than allowlisted for exactly that reason. Same
+        # shape as the two notification origins above.
         - name: DSAR_VERIFY_BASE_URL
           valueFrom:
             configMapKeyRef:
