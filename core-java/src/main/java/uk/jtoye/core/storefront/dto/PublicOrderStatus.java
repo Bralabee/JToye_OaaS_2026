@@ -61,6 +61,28 @@ public class PublicOrderStatus {
             allowableValues = {"STOREFRONT", "VENDOR"})
     private String placedVia;
 
+    // ------------------------------------------------------------------
+    // Phase 31.1 D-15 (#812): did the customer send an allergy note, and when did the shop read it.
+    // The note's TEXT is deliberately not on this unauthenticated response (data minimisation,
+    // T-31.1-46): the customer wrote it, and the response only has to say it arrived and was read.
+    // Both come from order COLUMNS, so the history list carries them at no extra query.
+    // ------------------------------------------------------------------
+
+    @Schema(description = "Whether the customer sent an allergy or dietary note with this order. The note's text "
+            + "is never returned here.")
+    private Boolean allergyNoteProvided;
+
+    @Schema(description = "When someone in the shop acknowledged reading the allergy note; null until they have "
+            + "(or when no note was sent).")
+    private OffsetDateTime allergyNoteAcknowledgedAt;
+
+    public Boolean getAllergyNoteProvided() { return allergyNoteProvided; }
+    public void setAllergyNoteProvided(Boolean allergyNoteProvided) { this.allergyNoteProvided = allergyNoteProvided; }
+    public OffsetDateTime getAllergyNoteAcknowledgedAt() { return allergyNoteAcknowledgedAt; }
+    public void setAllergyNoteAcknowledgedAt(OffsetDateTime allergyNoteAcknowledgedAt) {
+        this.allergyNoteAcknowledgedAt = allergyNoteAcknowledgedAt;
+    }
+
     public Integer getAcknowledgedAllergenMask() { return acknowledgedAllergenMask; }
     public void setAcknowledgedAllergenMask(Integer acknowledgedAllergenMask) { this.acknowledgedAllergenMask = acknowledgedAllergenMask; }
     public List<String> getAcknowledgedAllergens() { return acknowledgedAllergens; }

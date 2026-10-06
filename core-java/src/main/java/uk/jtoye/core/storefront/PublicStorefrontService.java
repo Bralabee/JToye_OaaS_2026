@@ -621,6 +621,8 @@ public class PublicStorefrontService {
             status.setAcknowledgedAllergenMask(order.getAllergenAckMask());
             status.setAcknowledgedAllergens(acknowledgedAllergenNames(order));
             status.setPlacedVia(placedVia(order));
+            // D-15: that a note was sent and when the shop read it, from columns. Never the text.
+            setAllergyNoteStatus(status, order);
             return status;
         });
     }
@@ -683,6 +685,8 @@ public class PublicStorefrontService {
         status.setAcknowledgedAllergenMask(order.getAllergenAckMask());
         status.setAcknowledgedAllergens(acknowledgedAllergenNames(order));
         status.setPlacedVia(placedVia(order));
+        // D-15 (#812): the customer sees that the shop read their allergy note. Never the text (T-31.1-46).
+        setAllergyNoteStatus(status, order);
         OrderAllergenSnapshot.OrderAllergenView recorded = OrderAllergenSnapshot.viewOf(order.getItems());
         status.setRecordedAllergens(recorded.declaredNames());
         status.setRecordedAllergenFlags(recorded.flags());
@@ -697,6 +701,15 @@ public class PublicStorefrontService {
     private static List<String> acknowledgedAllergenNames(Order order) {
         Integer mask = order.getAllergenAckMask();
         return mask == null ? null : AllergenCatalog.namesFor(mask);
+    }
+
+    /**
+     * D-15: whether an allergy note was sent and when the shop acknowledged it. The note TEXT is never
+     * copied onto the public response: it is minimised to a flag (T-31.1-46).
+     */
+    private static void setAllergyNoteStatus(PublicOrderStatus status, Order order) {
+        status.setAllergyNoteProvided(order.getAllergyNote() != null);
+        status.setAllergyNoteAcknowledgedAt(order.getAllergyNoteAckAt());
     }
 
     /** {@code value.strip()}, or {@code null} when the value is null or only whitespace. */

@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.customer.Customer;
@@ -29,6 +32,8 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -594,6 +599,57 @@ public class OrderService {
         }
 
         return orderMapper.toDto(order);
+    }
+
+    /**
+     * Record that someone in the shop has read the customer's allergy note (Phase 31.1 D-15, #812).
+     *
+     * <p>Requires at least STAFF on the order's own shop: a person on another shop of the tenant
+     * gets the typed shop-access 403 and nothing is written (T-31.1-45). An order with no note has
+     * nothing to acknowledge (typed 400). The FIRST acknowledgement stands: a repeat, by anyone,
+     * returns it unchanged, so the call is idempotent by construction and needs no Idempotency-Key.
+     * Two truly concurrent first calls are serialised by the order's {@code @Version}: the loser gets
+     * the existing 409 and a retry returns the winner's acknowledgement.
+     *
+     * <p>WHO is the authenticated principal name; WHEN is truncated to microseconds, the precision
+     * {@code TIMESTAMPTZ} stores, so the response states exactly the value that was recorded.
+     * The note's text is never logged (T-31.1-49).
+     */
+    public OrderDetailDto acknowledgeAllergyNote(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+        shopAccessService.require(order.getShopId(), ShopRole.STAFF);
+
+        if (order.getAllergyNote() == null) {
+            throw new InvalidStateTransitionException("This order has no allergy note to acknowledge");
+        }
+        if (order.getAllergyNoteAckAt() == null) {
+            order.setAllergyNoteAckAt(OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS));
+            order.setAllergyNoteAckBy(currentPrincipalName());
+            order.setUpdatedAt(OffsetDateTime.now());
+            order = orderRepository.save(order);
+            log.info("Allergy note on order {} acknowledged", order.getOrderNumber());
+        } else {
+            log.debug("Allergy note on order {} was already acknowledged; returning the first acknowledgement",
+                    order.getOrderNumber());
+        }
+
+        OrderDetailDto dto = orderMapper.toDetailDto(order);
+        dto.setRefunds(refundService.findByOrderId(orderId));
+        return dto;
+    }
+
+    /**
+     * The authenticated principal's name, for the acknowledgement's WHO. There is no "system"
+     * fallback: an acknowledgement asserts that a person read the note, so an unauthenticated call
+     * must fail rather than record a name nobody holds.
+     */
+    private static String currentPrincipalName() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null || auth.getName().isBlank()) {
+            throw new AccessDeniedException("An allergy note can only be acknowledged by an authenticated user");
+        }
+        return auth.getName();
     }
 
     /**
