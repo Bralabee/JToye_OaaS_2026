@@ -26,8 +26,15 @@ import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -176,6 +183,100 @@ class DsarExportDownloadIntegrationTest {
         assertThat(output.getAll()).doesNotContain(email);
     }
 
+    // ---- Task 2: the purge and the concurrency edge ---------------------------------------------
+
+    @Test
+    void anUnconsumedExportPastItsExpiryIsPurged_andItsTokenIsRefused(CapturedOutput output) throws Exception {
+        Issued lapsed = issue(sampleDocument("purge+" + shortId() + "@example.test"));
+        assertThat(jdbc.update("UPDATE dsar_access_export SET expires_at = now() - interval '1 minute' "
+                + "WHERE dsar_request_id = ?", lapsed.requestId()))
+                .as("PRECONDITION: the fixture row was moved into the past").isEqualTo(1);
+        assertThat(exportRow(lapsed.requestId()).get("payload_ciphertext"))
+                .as("PRECONDITION: the lapsed export still holds its payload before the sweep").isNotNull();
+
+        int purged = runPurge();
+
+        assertThat(purged).as("the sweep reports the export it destroyed").isEqualTo(1);
+        Map<String, Object> row = exportRow(lapsed.requestId());
+        assertThat(row.get("payload_ciphertext")).as("the payload is gone").isNull();
+        assertThat(row.get("purged_at")).as("and the row says when").isNotNull();
+        assertThat(row.get("consumed_at")).as("a purge is not a download").isNull();
+        assertThat(output.getAll()).contains("event=dsar_exports_purged count=1");
+
+        MvcResult refused = postToken(lapsed.token());
+        assertThat(refused.getResponse().getStatus()).isEqualTo(404);
+        assertThat(problemType(refused)).isEqualTo(UNAVAILABLE_TYPE);
+    }
+
+    @Test
+    void thePurgeNeverTouchesAConsumedOrAnUnexpiredExport() throws Exception {
+        Issued consumed = issue(sampleDocument("consumed+" + shortId() + "@example.test"));
+        assertThat(postToken(consumed.token()).getResponse().getStatus()).isEqualTo(200);
+        // A consumed export whose link has ALSO lapsed: the purge must leave its consumed record alone.
+        jdbc.update("UPDATE dsar_access_export SET expires_at = now() - interval '1 minute' "
+                + "WHERE dsar_request_id = ?", consumed.requestId());
+        Issued live = issue(sampleDocument("live+" + shortId() + "@example.test"));
+
+        int purged = runPurge();
+
+        assertThat(purged).as("nothing here is an unconsumed, lapsed export").isZero();
+        Map<String, Object> consumedRow = exportRow(consumed.requestId());
+        assertThat(consumedRow.get("purged_at")).as("a consumed export is not re-stamped").isNull();
+        assertThat(consumedRow.get("consumed_at")).isNotNull();
+        Map<String, Object> liveRow = exportRow(live.requestId());
+        assertThat(liveRow.get("payload_ciphertext")).as("an unexpired export keeps its payload").isNotNull();
+        assertThat(liveRow.get("purged_at")).isNull();
+        assertThat(postToken(live.token()).getResponse().getStatus())
+                .as("and its link still works").isEqualTo(200);
+    }
+
+    /**
+     * PGC-778 concurrency edge (T-31.1-63): two presses of one link at the same instant. Two real
+     * threads against the real database through the real endpoint, released together by a latch,
+     * repeated over fresh tokens so the race is actually exercised rather than hoped for.
+     */
+    @Test
+    void twoSimultaneousPressesOfOneLinkYieldExactlyOnePayload() throws Exception {
+        int rounds = 10;
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            for (int round = 0; round < rounds; round++) {
+                String document = sampleDocument("race" + round + "+" + shortId() + "@example.test");
+                Issued issued = issue(document);
+                CountDownLatch start = new CountDownLatch(1);
+                Callable<MvcResult> press = () -> {
+                    start.await();
+                    return postToken(issued.token());
+                };
+                Future<MvcResult> a = pool.submit(press);
+                Future<MvcResult> b = pool.submit(press);
+                start.countDown();
+                MvcResult ra = a.get(30, TimeUnit.SECONDS);
+                MvcResult rb = b.get(30, TimeUnit.SECONDS);
+
+                List<Integer> statuses = List.of(ra.getResponse().getStatus(), rb.getResponse().getStatus());
+                assertThat(statuses).as("round %d: exactly one 200 and one 404", round)
+                        .containsExactlyInAnyOrder(200, 404);
+                long payloads = java.util.stream.Stream.of(ra, rb)
+                        .map(r -> {
+                            try {
+                                return r.getResponse().getContentAsString(StandardCharsets.UTF_8);
+                            } catch (Exception e) {
+                                throw new IllegalStateException(e);
+                            }
+                        })
+                        .filter(document::equals)
+                        .count();
+                assertThat(payloads).as("round %d: the document is handed over exactly once", round)
+                        .isEqualTo(1);
+                MvcResult loser = ra.getResponse().getStatus() == 404 ? ra : rb;
+                assertThat(problemType(loser)).isEqualTo(UNAVAILABLE_TYPE);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     // ---- fixtures ----------------------------------------------------------------------------------
 
     record Issued(UUID requestId, String token) {
@@ -197,6 +298,17 @@ class DsarExportDownloadIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(jsonMapper.writeValueAsString(Map.of("token", token))))
                 .andReturn();
+    }
+
+    @Autowired org.springframework.context.ApplicationContext context;
+
+    /** Run the purge sweep by hand (no scheduled trigger fires in this context). */
+    int runPurge() throws Exception {
+        assertThat(context.containsBean("dsarExportPurgeJob"))
+                .as("a DsarExportPurgeJob bean destroys exports nobody downloaded")
+                .isTrue();
+        Object job = context.getBean("dsarExportPurgeJob");
+        return (Integer) job.getClass().getMethod("purgeExpiredExports").invoke(job);
     }
 
     Map<String, Object> exportRow(UUID requestId) {
