@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 38: core-java on Spring Boot 4.1.1, Jackson 3 throughout (#898) — 2026-10-06
+
+- **Spring Boot 3.5.16 → 4.1.1 (Spring Framework 7.0.9), on explicit per-module starters.** Boot 3.5's
+  open-source support ended 2026-06-30 (#706). Owner decisions:
+  - D-01: Jackson 3 throughout, keeping Boot's Jackson-3 defaults after a measured wire diff.
+    Class-based responses are now written alphabetically, and trailing request content is a 400.
+  - D-02: explicit starters, census-checked (130 vs 133 auto-configurations; the 3 classic-only
+    ones are intended absences).
+  - D-03: spring-statemachine kept on Framework 7.
+  - D-04: 401s stay plain `Bearer`.
+  - D-05: Security 7's protected-resource metadata, which falsely claims cert-bound tokens, is
+    suppressed with a 404.
+
+  springdoc moves to 3.1.1, which supersedes Dependabot #739. ADR-0006 records the decisions and the
+  deploy and rollback notes.
+- **No deploy-time drain or flush.** Every byte a Boot-3.5 pod writes is proven readable by Boot 4 against
+  38 golden Jackson-2 fixtures captured from the 3.5 serializers before any change:
+  - idempotency hashes, through a frozen `IdempotencyJson`, so a key reserved on 3.5 replays its
+    201 rather than a 422;
+  - AMQP messages and outbox rows, readable in both directions and on a real broker;
+  - Redis entries, behind a new `v4:` key prefix. An eviction also deletes the Boot-3.5 key during
+    the rolling deploy.
+- **Three defects the old tests could not see, closed.**
+  - KeycloakAdminClient sent a garbage body under Jackson 3, so tenant offboarding would have left
+    users enabled.
+  - 18 config keys were silently ignored, among them the Zipkin endpoint, prod error detail and
+    log retention. A new production-classpath metadata gate now fails CI on any unknown or
+    deprecated key.
+  - The Tomcat and Jackson CVE floors are re-keyed onto their Boot-4 lines, and each is shown to be
+    load-bearing.
+- **Cache evictions are synchronous again** (review round 1). Spring Data Redis 4's `RedisCache.evict`
+  is fire-and-forget by default, so a revoked `shopMembership` grant could be served after the
+  evictor returned. `TenantCacheEvictor` now calls `evictIfPresent`, Boot 3.5's behaviour.
+- **Proof.**
+  - Phase verification passed 14/14, and SECURITY reports `threats_open: 0` at ASVS L2.
+  - Local full suites on the final code: unit 1495/0, integration 772/0.
+  - Every required CI check passed on the merged head.
+  - The local compose runtime was rebuilt, and the freshness gate passes for all 4 services.
+
 ### Issue de-duplication searches by title, so the nightly stops filing duplicates (#885, #892) — 2026-10-04
 
 - **Three de-dup sites now use `gh issue list --state open --search "in:title \"${TITLE}\"" --limit 1000`.**
