@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * AC3 golden-file compliance test for the PPDS (Natasha's Law) label render model.
  *
  * <p>Serializes {@link ProductLabelService#buildRenderModel} output for a FIXED
- * compliant fixture at a FIXED {@code generationDate} and asserts recursive
+ * compliant fixture at a FIXED {@code productionDate} and asserts recursive
  * equality with a committed golden JSON. Because {@code buildRenderModel} is a
  * pure, package-visible method, this test needs NO Testcontainers/Spring (unlike
  * the finance golden test) — it lives in {@code uk.jtoye.core.product} so it can
@@ -37,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       with an {@code emphasised} flag on the allergen run and NO standalone
  *       allergen-summary block.</li>
  *   <li><b>A durability (use-by / best-before) date</b> — asserted by
- *       {@code durabilityLine}.</li>
+ *       {@code durabilityLine}, counted from the production date ({@code productionDate},
+ *       {@code productionLine}) and written en-GB with the full month name (#861, D-17).</li>
  *   <li><b>The food business operator's name and address</b> — asserted by
  *       {@code businessName} + {@code businessAddress}.</li>
  * </ol>
@@ -54,7 +55,11 @@ class ProductLabelGoldenFileTest {
     private static final Path GOLDEN_RELATIVE =
             Paths.get("src", "test", "resources", "fixtures", "ppds-label-compliant.golden.json");
 
-    /** Fixed generation date so "Use by: 8 Jul 2026" (= GEN + 3 days) is byte-stable. */
+    /**
+     * Fixed production date so "Produced: 5 July 2026" and "Use by: 8 July 2026" (= GEN + 3 days)
+     * are byte-stable. The fixture records no may-contain mask, so the golden pins the empty
+     * may-contain list and the absent line (#861, D-16).
+     */
     private static final LocalDate GEN = LocalDate.of(2026, 7, 5);
 
     private static void setField(Object target, String fieldName, Object value) {
