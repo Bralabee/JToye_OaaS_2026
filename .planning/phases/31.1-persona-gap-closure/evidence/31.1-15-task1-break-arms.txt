@@ -1,0 +1,13 @@
+31.1-15 Task 1 break arms — frontend/app/shop/[slug]/checkout/page.tsx, run 2026-10-06 against commit 48e39dad
+Suite: app/shop/[slug]/checkout/__tests__/allergen-ack-stale.test.tsx (11 tests)
+Method: clean -> arm (scripted string edit, anchor must exist or VOID) -> jest -> cp restore -> next arm -> clean again.
+Restore verified BY CONTENT: sha256 prefix of the work-tree file vs `git show HEAD:<file>`.
+
+clean (before): work=cb1c52d98d26c29a head=cb1c52d98d26c29a
+A1 drop acknowledgedAllergenMask from the intent      rc=1  Tests: 4 failed, 7 passed, 11 total
+A2 disable the stale-409 branch (generic error path)  rc=1  Tests: 7 failed, 4 passed, 11 total
+A3 no focus move on the stale 409                     rc=1  Tests: 1 failed, 10 passed, 11 total
+A4 skip the unresolved-set refusal (POST with no mask) rc=1 Tests: 2 failed, 9 passed, 11 total
+A5 do not hold the 409's current set (refetch fails)  rc=1  Tests: 1 failed, 10 passed, 11 total
+restored: cb1c52d98d26c29a (expect cb1c52d98d26c29a); git status clean for the file
+clean (after): rc=0 Tests: 11 passed, 11 total
