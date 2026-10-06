@@ -106,6 +106,24 @@ describe("the acknowledged allergen set is part of the signed intent (#785, D-05
   })
 })
 
+describe("the allergy note is part of the signed intent (#812, D-15)", () => {
+  it("is carried on the body, trimmed", () => {
+    expect(buildGuestOrderIntent({ ...BASE, allergyNote: "  Severe sesame allergy " }).allergyNote).toBe(
+      "Severe sesame allergy"
+    )
+  })
+
+  it("changing only the note produces a different signature", () => {
+    expect(sig({ allergyNote: "Severe sesame allergy" })).not.toBe(sig())
+    expect(sig({ allergyNote: "Severe sesame allergy" })).not.toBe(sig({ allergyNote: "Coeliac" }))
+  })
+
+  it("a blank note is ABSENT, exactly as before the field existed (31.1-13 fingerprint rule)", () => {
+    expect(buildGuestOrderIntent({ ...BASE, allergyNote: "   " }).allergyNote).toBeUndefined()
+    expect(sig({ allergyNote: "   " })).toBe(sig())
+  })
+})
+
 describe("buildGuestOrderIntent — the body IS the signed object", () => {
   it("serialises to the flat GuestOrderRequest shape the server expects", () => {
     expect(JSON.parse(sig())).toEqual({

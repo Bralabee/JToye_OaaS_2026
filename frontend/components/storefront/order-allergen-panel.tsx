@@ -87,6 +87,25 @@ export const ALLERGEN_ACK_STALE_COPY =
 export const ALLERGEN_ACK_UNAVAILABLE_COPY =
   "We could not load the allergen information for your basket, so we cannot place this order yet. Check your connection and try again."
 
+/**
+ * #812 (D-15, 31.1-15): the checkout's dedicated allergy note. Separate from the order/delivery
+ * notes because it goes to the kitchen ticket and the shop must acknowledge reading it (31.1-13).
+ */
+export const ALLERGY_NOTE_LABEL_COPY = "Allergy or dietary note (optional)"
+
+/** GuestOrderRequest.allergyNote @Size(max = 500) (31.1-13). */
+export const ALLERGY_NOTE_MAX_LENGTH = 500
+
+/** Who reads the note, said where the customer writes it — so they write only what the kitchen needs. */
+export function allergyNoteHelpCopy(shopName: string): string {
+  return `Goes to ${shopName} so they can prepare your order. Only write what the kitchen needs to know.`
+}
+
+/** The live character count under the note. */
+export function allergyNoteCountCopy(length: number): string {
+  return `${length} of ${ALLERGY_NOTE_MAX_LENGTH}`
+}
+
 /** Which refusal the alert region is announcing. */
 export type AllergenAckErrorKind = "unticked" | "stale" | "unavailable"
 
