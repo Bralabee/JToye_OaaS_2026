@@ -17,6 +17,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.util.AopTestUtils;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -25,9 +27,12 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
+import java.sql.Timestamp;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -76,10 +81,12 @@ class AllergyNoteAckIntegrationTest {
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired MockMvc mockMvc;
     @Autowired JsonMapper jsonMapper;
+    @Autowired ShopAccessService shopAccessService;
 
     /** Dedicated tenant so a parallel fork's fixtures cannot collide on slug or SKU. */
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000311131");
     private static final String SHOP_SLUG = "shop-311-13-allergy-note";
+    private static final String OTHER_SHOP_SLUG = "shop-311-13-other-shop";
 
     /** The persona's request, verbatim apart from the dash. */
     private static final String NOTE = "My child is allergic to peanuts and sesame - please confirm.";
@@ -88,6 +95,7 @@ class AllergyNoteAckIntegrationTest {
     private static final int GLUTEN = 1;
 
     private UUID shopId;
+    private UUID otherShopId;
 
     @BeforeEach
     void setUp() {
@@ -96,10 +104,12 @@ class AllergyNoteAckIntegrationTest {
                 "INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now()) ON CONFLICT (id) DO NOTHING",
                 TENANT_ID, "31.1-13 Allergy Note Tenant");
         shopId = seedShopIdempotent(SHOP_SLUG, "31.1-13 Allergy Note Shop");
+        otherShopId = seedShopIdempotent(OTHER_SHOP_SLUG, "31.1-13 Other Shop");
     }
 
     @AfterEach
     void tearDown() {
+        setStrictScoping(false);
         TenantContext.clear();
     }
 
@@ -202,6 +212,138 @@ class AllergyNoteAckIntegrationTest {
         assertThat(allergyNoteColumn(accepted)).hasSize(500);
     }
 
+    // ------------------------------------------------------------------
+    // D-15: STAFF of the order's own shop acknowledges the note. The platform records WHO (the
+    // authenticated principal) and WHEN, and the first acknowledgement is the one that stands: a
+    // second call, even by a different person, returns it unchanged (idempotent by construction).
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-15: STAFF of the order's shop acknowledges the note (who and when are recorded); a second acknowledgement returns the first unchanged")
+    void staffOfTheOrdersShop_acknowledges_andTheFirstAcknowledgementStands() throws Exception {
+        UUID bread = seedProduct("SKU-31113-ACK", "Sourdough", GLUTEN);
+        String orderNumber = placeStorefrontOrder("ack-" + UUID.randomUUID() + "@example.com", bread, null, NOTE);
+        UUID orderId = orderId(orderNumber);
+        UUID cook = UUID.randomUUID();
+        UUID secondCook = UUID.randomUUID();
+        grantShopStaff(cook, shopId, "STAFF");
+        grantShopStaff(secondCook, shopId, "STAFF");
+        setStrictScoping(true);
+
+        MvcResult first = mockMvc.perform(post(ackUrl(orderId)).with(staffJwt(cook))).andReturn();
+        JsonNode acknowledged = json(first, 200);
+        String text = responseText(first);
+        assertThat(field(acknowledged, "allergyNoteAcknowledgedBy", text).asString())
+                .as("who: the authenticated principal").isEqualTo(cook.toString());
+        OffsetDateTime when = OffsetDateTime.parse(field(acknowledged, "allergyNoteAcknowledgedAt", text).asString());
+        assertThat(field(acknowledged, "allergyNote", text).asString()).isEqualTo(NOTE);
+
+        Map<String, Object> row = ackColumns(orderId);
+        assertThat(row.get("allergy_note_ack_by")).isEqualTo(cook.toString());
+        assertThat(((Timestamp) row.get("allergy_note_ack_at")).toInstant())
+                .as("the response states exactly what was recorded").isEqualTo(when.toInstant());
+
+        MvcResult again = mockMvc.perform(post(ackUrl(orderId)).with(staffJwt(secondCook))).andReturn();
+        JsonNode repeated = json(again, 200);
+        String againText = responseText(again);
+        assertThat(field(repeated, "allergyNoteAcknowledgedBy", againText).asString())
+                .as("first write wins: a second acknowledgement does not overwrite who").isEqualTo(cook.toString());
+        assertThat(OffsetDateTime.parse(field(repeated, "allergyNoteAcknowledgedAt", againText).asString()).toInstant())
+                .as("first write wins: nor when").isEqualTo(when.toInstant());
+        assertThat(ackColumns(orderId)).as("the stored acknowledgement is unchanged").isEqualTo(row);
+    }
+
+    // ------------------------------------------------------------------
+    // T-31.1-45: STAFF of ANOTHER shop of the same tenant cannot acknowledge (or thereby claim to
+    // have read) this shop's note. Typed shop-access 403, and nothing is written.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("T-31.1-45: STAFF of another shop of the same tenant is refused with the typed shop-access 403 and nothing is recorded")
+    void staffOfAnotherShop_isRefused_andNothingIsRecorded() throws Exception {
+        UUID bread = seedProduct("SKU-31113-XSHOP", "Sourdough", GLUTEN);
+        String orderNumber = placeStorefrontOrder("xshop-" + UUID.randomUUID() + "@example.com", bread, null, NOTE);
+        UUID orderId = orderId(orderNumber);
+        UUID outsider = UUID.randomUUID();
+        grantShopStaff(outsider, otherShopId, "STAFF");
+        setStrictScoping(true);
+
+        MvcResult refused = mockMvc.perform(post(ackUrl(orderId)).with(staffJwt(outsider))).andReturn();
+        JsonNode problem = json(refused, 403);
+        assertThat(problem.path("type").asString()).as(responseText(refused))
+                .isEqualTo("https://jtoye.uk/errors/shop-access-denied");
+        Map<String, Object> row = ackColumns(orderId);
+        assertThat(row.get("allergy_note_ack_at")).as("nothing recorded").isNull();
+        assertThat(row.get("allergy_note_ack_by")).isNull();
+    }
+
+    // ------------------------------------------------------------------
+    // D-15: there is nothing to acknowledge on an order without a note. Typed 400, nothing written.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-15: acknowledging an order that has no allergy note is refused 400 and nothing is recorded")
+    void acknowledgingAnOrderWithoutANote_isRefused() throws Exception {
+        UUID bread = seedProduct("SKU-31113-NONOTE", "Sourdough", GLUTEN);
+        String orderNumber = placeStorefrontOrder("nonote-" + UUID.randomUUID() + "@example.com", bread,
+                DELIVERY_NOTE, null);
+        UUID orderId = orderId(orderNumber);
+
+        MvcResult refused = mockMvc.perform(post(ackUrl(orderId)).with(adminJwt())).andReturn();
+        JsonNode problem = json(refused, 400);
+        assertThat(problem.path("type").asString()).as(responseText(refused))
+                .isEqualTo("https://jtoye.uk/errors/invalid-state-transition");
+        assertThat(problem.path("detail").asString()).contains("no allergy note");
+        assertThat(ackColumns(orderId).get("allergy_note_ack_at")).as("nothing recorded").isNull();
+    }
+
+    // ------------------------------------------------------------------
+    // D-15 + T-31.1-46: the customer's tracking (and history) says a note was sent and WHEN the shop
+    // read it, and never echoes the note's text on the unauthenticated response.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-15: tracking shows allergyNoteProvided and allergyNoteAcknowledgedAt (null before, set after), never the note text; history carries the same two fields")
+    void tracking_showsTheNoteWasRead_neverTheNoteText() throws Exception {
+        UUID bread = seedProduct("SKU-31113-TRACK", "Sourdough", GLUTEN);
+        String email = "track-" + UUID.randomUUID() + "@example.com";
+        String withNote = placeStorefrontOrder(email, bread, DELIVERY_NOTE, NOTE);
+        String withoutNote = placeStorefrontOrder(email, bread, null, null);
+
+        MvcResult before = mockMvc.perform(get(trackUrl(withNote)).param("email", email)).andReturn();
+        String beforeText = responseText(before);
+        JsonNode status = json(before, 200);
+        assertThat(field(status, "allergyNoteProvided", beforeText).asBoolean()).isTrue();
+        assertThat(field(status, "allergyNoteAcknowledgedAt", beforeText).isNull())
+                .as("not read yet: " + beforeText).isTrue();
+        assertThat(before.getResponse().getContentAsString())
+                .as("T-31.1-46: the note text never reaches the public tracking response")
+                .doesNotContain("peanuts").doesNotContain(NOTE).doesNotContain("allergyNote\"");
+
+        MvcResult none = mockMvc.perform(get(trackUrl(withoutNote)).param("email", email)).andReturn();
+        String noneText = responseText(none);
+        JsonNode noneStatus = json(none, 200);
+        assertThat(field(noneStatus, "allergyNoteProvided", noneText).isBoolean()).as(noneText).isTrue();
+        assertThat(noneStatus.get("allergyNoteProvided").asBoolean()).as(noneText).isFalse();
+
+        UUID orderId = orderId(withNote);
+        json(mockMvc.perform(post(ackUrl(orderId)).with(adminJwt())).andReturn(), 200);
+        Timestamp recorded = (Timestamp) ackColumns(orderId).get("allergy_note_ack_at");
+        assertThat(recorded).isNotNull();
+
+        MvcResult after = mockMvc.perform(get(trackUrl(withNote)).param("email", email)).andReturn();
+        String afterText = responseText(after);
+        JsonNode read = json(after, 200);
+        assertThat(OffsetDateTime.parse(field(read, "allergyNoteAcknowledgedAt", afterText).asString()).toInstant())
+                .as("the customer sees when the shop read it").isEqualTo(recorded.toInstant());
+        assertThat(after.getResponse().getContentAsString()).doesNotContain("peanuts");
+
+        MvcResult history = mockMvc.perform(get("/api/v1/public/orders")
+                .param("email", email).param("verify", withNote).param("size", "20")).andReturn();
+        String historyText = responseText(history);
+        JsonNode entry = entryFor(json(history, 200).path("content"), withNote, historyText);
+        assertThat(field(entry, "allergyNoteProvided", historyText).asBoolean()).isTrue();
+        assertThat(OffsetDateTime.parse(field(entry, "allergyNoteAcknowledgedAt", historyText).asString()).toInstant())
+                .isEqualTo(recorded.toInstant());
+        assertThat(history.getResponse().getContentAsString()).doesNotContain("peanuts");
+    }
+
     // ---- order placement ----
 
     private String placeStorefrontOrder(String email, UUID product, String notes, String allergyNote) throws Exception {
@@ -233,6 +375,41 @@ class AllergyNoteAckIntegrationTest {
     private UUID orderId(String orderNumber) {
         return inTenant(() -> jdbcTemplate.queryForObject(
                 "SELECT id FROM orders WHERE tenant_id = ? AND order_number = ?", UUID.class, TENANT_ID, orderNumber));
+    }
+
+    private Map<String, Object> ackColumns(UUID orderId) {
+        return inTenant(() -> jdbcTemplate.queryForMap(
+                "SELECT allergy_note_ack_at, allergy_note_ack_by FROM orders WHERE id = ?", orderId));
+    }
+
+    private static String ackUrl(UUID orderId) {
+        return "/api/v1/orders/" + orderId + "/allergy-note/acknowledgement";
+    }
+
+    private static String trackUrl(String orderNumber) {
+        return "/api/v1/public/orders/" + orderNumber;
+    }
+
+    private void grantShopStaff(UUID userId, UUID shop, String role) {
+        jdbcTemplate.update("INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, created_at) "
+                + "VALUES (?, ?, ?, ?, ?, now())", UUID.randomUUID(), TENANT_ID, userId, shop, role);
+    }
+
+    /**
+     * Strict scoping ON, so a user is confined to the shops they are granted (the
+     * ShopAccessEnforcementIntegrationTest recipe: the flag is flipped on the proxy-unwrapped bean).
+     */
+    private void setStrictScoping(boolean value) {
+        // A typed local: passed inline, the generic getTargetObject is inferred as Class and the
+        // static setField(Class, ...) overload is chosen.
+        ShopAccessService target = AopTestUtils.getTargetObject(shopAccessService);
+        ReflectionTestUtils.setField(target, "strictScoping", value);
+    }
+
+    /** A shop user (no realm role) of the tenant with the order-write scope; their shop comes from shop_staff. */
+    private static RequestPostProcessor staffJwt(UUID subject) {
+        return jwt().jwt(j -> j.subject(subject.toString()).claim("tenant_id", TENANT_ID.toString()))
+                .authorities(new SimpleGrantedAuthority("SCOPE_orders:write"));
     }
 
     private String allergyNoteColumn(String orderNumber) {
