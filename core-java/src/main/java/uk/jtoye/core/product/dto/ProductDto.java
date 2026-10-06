@@ -1,5 +1,6 @@
 package uk.jtoye.core.product.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.media.MediaAssetDto;
 import uk.jtoye.core.product.AllergenSpan;
@@ -43,6 +44,24 @@ public class ProductDto {
      * empty for an un-migrated product (which still renders via the flat fields).
      */
     private List<MediaAssetDto> media;
+
+    /**
+     * #787 (D-09): the allergens this product's ingredients text emphasises (in CAPITALS or
+     * {@code **bold**} markup) that its declared {@code allergenMask} omits, one warning per
+     * allergen in bit order. Empty when the declaration and the text agree.
+     *
+     * <p>Derived, never stored: {@code ProductMapper} recomputes it from title, mask and
+     * ingredients through {@code OrderAllergenAggregator} on every mapping, so every create,
+     * update, get, list and search response carries it and the vendor products list can show
+     * the disagreement instead of "No allergens" (Pitfall 11). The declared mask is never
+     * changed by it.
+     *
+     * <p>{@code NON_NULL}: every mapped DTO carries a list (possibly empty); a DTO built by
+     * hand without one, such as Phase 38's Boot-3.5 golden {@code ProductDto} sample, keeps
+     * its exact wire form (31.1-01 baseline section 2, route (a)).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private List<ProductAllergenWarning> allergenWarnings;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -90,4 +109,6 @@ public class ProductDto {
     public void setAllergenSpans(List<AllergenSpan> allergenSpans) { this.allergenSpans = allergenSpans; }
     public List<MediaAssetDto> getMedia() { return media; }
     public void setMedia(List<MediaAssetDto> media) { this.media = media; }
+    public List<ProductAllergenWarning> getAllergenWarnings() { return allergenWarnings; }
+    public void setAllergenWarnings(List<ProductAllergenWarning> allergenWarnings) { this.allergenWarnings = allergenWarnings; }
 }

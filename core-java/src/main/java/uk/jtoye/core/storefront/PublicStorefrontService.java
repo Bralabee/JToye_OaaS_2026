@@ -25,6 +25,7 @@ import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.order.FulfilmentPolicy;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
+import uk.jtoye.core.order.OrderAllergenAggregator;
 import uk.jtoye.core.order.OrderAllergenSnapshot;
 import uk.jtoye.core.order.OrderChannel;
 import uk.jtoye.core.order.OrderEventPublisher;
@@ -1331,6 +1332,19 @@ public class PublicStorefrontService {
             allImages.addAll(product.getAdditionalImageUrls());
         }
         dto.setImageUrls(allImages);
+
+        // #787 (D-09): the ingredients text vs the declared mask, reconciled HERE by the one
+        // aggregator the order snapshot and the vendor ProductDto also use, so no storefront
+        // surface renders "No allergens" while the text names one and the browser never
+        // parses ingredients. Names only, bit order; the declared mask above is untouched.
+        List<String> undeclared = new ArrayList<>();
+        int declaredMask = product.getAllergenMask() == null ? 0 : product.getAllergenMask();
+        for (OrderAllergenAggregator.ReconciliationFlag flag : OrderAllergenAggregator.aggregate(List.of(
+                new OrderAllergenAggregator.ItemAllergens(
+                        product.getTitle(), declaredMask, product.getIngredientsText()))).flags()) {
+            undeclared.add(flag.allergenName());
+        }
+        dto.setUndeclaredIngredientAllergens(undeclared);
 
         return dto;
     }

@@ -33,6 +33,18 @@ public class PublicProductDto {
     private Boolean featured;
     private boolean inStock;
     private List<String> imageUrls;
+    /**
+     * #787 (D-09): the allergen names this product's ingredients text emphasises (in CAPITALS
+     * or {@code **bold**} markup) that its declared {@code allergenMask} omits, in
+     * {@code AllergenCatalog} bit order. Empty when the declaration and the text agree.
+     *
+     * <p>Computed on the server by the same {@code OrderAllergenAggregator} the order
+     * snapshot and the vendor's {@code ProductDto.allergenWarnings} use, so the browser never
+     * parses ingredients text. A storefront surface must render a non-empty list as an
+     * advisory beside the declared allergens ("Ingredients name: Milk"), never as "No
+     * allergens", and must never merge it into the declared set.
+     */
+    private List<String> undeclaredIngredientAllergens;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -62,4 +74,6 @@ public class PublicProductDto {
     public void setInStock(boolean inStock) { this.inStock = inStock; }
     public List<String> getImageUrls() { return imageUrls; }
     public void setImageUrls(List<String> imageUrls) { this.imageUrls = imageUrls; }
+    public List<String> getUndeclaredIngredientAllergens() { return undeclaredIngredientAllergens; }
+    public void setUndeclaredIngredientAllergens(List<String> undeclaredIngredientAllergens) { this.undeclaredIngredientAllergens = undeclaredIngredientAllergens; }
 }

@@ -1,12 +1,18 @@
 package uk.jtoye.core.product;
 
+import org.mapstruct.AfterMapping;
 import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 import org.mapstruct.NullValuePropertyMappingStrategy;
+import uk.jtoye.core.order.OrderAllergenAggregator;
 import uk.jtoye.core.product.dto.CreateProductRequest;
+import uk.jtoye.core.product.dto.ProductAllergenWarning;
 import uk.jtoye.core.product.dto.ProductDto;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Mapper(componentModel = "spring")
 public interface ProductMapper {
@@ -16,7 +22,31 @@ public interface ProductMapper {
     // 24-02 convention). Ignored here so the asset-first media list is a deliberate,
     // service-owned enrichment, not an accidental unmapped null.
     @Mapping(target = "media", ignore = true)
+    // #787 (D-09): derived from title, mask and ingredients in fillAllergenWarnings below,
+    // never copied from a stored value.
+    @Mapping(target = "allergenWarnings", ignore = true)
     ProductDto toDto(Product product);
+
+    /**
+     * #787 (D-09): every product response says when the ingredients text emphasises an
+     * allergen the declared mask omits. The answer comes from the ONE reconciliation the
+     * order snapshot and the public menu also use ({@link OrderAllergenAggregator}), so the
+     * vendor form, the storefront and the kitchen ticket cannot disagree. Pure and
+     * dependency-free (no DB lookup in the mapper, 24-02 convention). The declared mask on
+     * the DTO and the entity is left exactly as the vendor sent it.
+     */
+    @AfterMapping
+    default void fillAllergenWarnings(Product product, @MappingTarget ProductDto dto) {
+        int declaredMask = product.getAllergenMask() == null ? 0 : product.getAllergenMask();
+        List<ProductAllergenWarning> warnings = new ArrayList<>();
+        for (OrderAllergenAggregator.ReconciliationFlag flag : OrderAllergenAggregator.aggregate(List.of(
+                new OrderAllergenAggregator.ItemAllergens(
+                        product.getTitle(), declaredMask, product.getIngredientsText()))).flags()) {
+            warnings.add(ProductAllergenWarning.undeclaredIngredientAllergen(
+                    flag.allergenBit(), flag.allergenName()));
+        }
+        dto.setAllergenWarnings(warnings);
+    }
 
     // allergenSpans is not client-supplied: ProductService parses ingredientsText
     // and sets it after mapping, so ignore it on both write paths (V41, Issue #82).
