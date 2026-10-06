@@ -54,3 +54,39 @@ RESTORE OK by sha256 (page.tsx)
 == closing clean run
 rc=0
 Tests:       29 passed, 29 total
+
+######## Task 3 (label dialog) break arms, run on committed 56e9857b ########
+== Arm UTC: today computed in UTC (toISOString), not Europe/London
+rc=1
+  ● D-17: Download allergen label asks for the production date › defaults to today's Europe/London date, which is also the latest date allowed (00:30 BST case)
+  ● D-17: Download allergen label asks for the production date › confirming requests ?productionDate=YYYY-MM-DD as a blob and downloads it
+Tests:       2 failed, 13 passed, 15 total
+== Arm P: productionDate dropped from the request
+rc=1
+  ● D-17: Download allergen label asks for the production date › confirming requests ?productionDate=YYYY-MM-DD as a blob and downloads it
+  ● D-17: Download allergen label asks for the production date › a date the vendor picks is the date requested
+Tests:       2 failed, 13 passed, 15 total
+== Arm 422: a 422 is toasted, not shown under the field
+rc=1
+  ● D-17: Download allergen label asks for the production date › a 422 from the server is shown under the date field; nothing is downloaded
+Tests:       1 failed, 14 passed, 15 total
+== Arm FUT: the client future-date guard removed
+rc=1
+  ● D-17: Download allergen label asks for the production date › a future date is refused before any request, under the field
+Tests:       1 failed, 14 passed, 15 total
+RESTORE OK by sha256 (page.tsx)
+== closing clean run
+rc=0
+Tests:       15 passed, 15 total
+
+######## Build gate (npm run build is the only TypeScript check) ########
+clean build rc=0 ("Running TypeScript ... Finished TypeScript in 2.2s")
+ARM type-error (const today: number = ukTodayIso()) build rc=1:
+  app/dashboard/products/page.tsx(492,11): error TS2322: Type 'string' is not assignable to type 'number'.
+  Failed to type check.
+RESTORE OK by sha256; closing clean build rc=0 ("Finished TypeScript in 3.1s")
+
+######## Final runs on 56e9857b ########
+npm --prefix frontend run lint: rc=0, 0 errors, 31 warnings (baseline 32; the unused `allergen` in the old list block is gone; the one warning this plan briefly added, `_omit`, was removed before commit)
+npm --prefix frontend run build: rc=0
+npx jest --ci (full): 185 suites / 2035 tests passed (baseline 182 / 1998; +3 suites, +37 tests). Includes __tests__/allergen-table-parity.test.ts.
