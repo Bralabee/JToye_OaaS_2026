@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
@@ -19,7 +18,10 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
 import java.lang.reflect.Field;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,7 +52,13 @@ class ProductLabelServiceTest {
     @Mock
     private ShopAccessService shopAccessService;
 
-    @InjectMocks
+    /**
+     * #861 (D-17): "today" for the label comes from an injected clock. Fixed at 10:00 UTC on
+     * 5 July 2026 (11:00 BST), and deliberately in UTC, so the service must resolve the London
+     * date itself.
+     */
+    private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-07-05T10:00:00Z"), ZoneOffset.UTC);
+
     private ProductLabelService productLabelService;
 
     private UUID tenantId;
@@ -74,6 +82,11 @@ class ProductLabelServiceTest {
         shopId = UUID.randomUUID();
         // generateLabel calls TenantContext.get() whenever shopId != null.
         TenantContext.set(tenantId);
+        productLabelService = serviceAt(FIXED_CLOCK);
+    }
+
+    private ProductLabelService serviceAt(Clock clock) {
+        return new ProductLabelService(productRepository, shopRepository, shopAccessService, clock);
     }
 
     @AfterEach
@@ -121,7 +134,7 @@ class ProductLabelServiceTest {
                 .extracting(IngredientRun::text)
                 .contains("Wheat flour, ", ", sugar");
 
-        assertThat(model.durabilityLine()).isEqualTo("Use by: 8 Jul 2026");
+        assertThat(model.durabilityLine()).isEqualTo("Use by: 8 July 2026");
         assertThat(model.businessName()).isEqualTo("Test Kitchen Ltd");
         assertThat(model.businessAddress()).isEqualTo("12 Market Street, London, E1 6AN");
     }
@@ -136,7 +149,7 @@ class ProductLabelServiceTest {
         LabelRenderModel model = ProductLabelService.buildRenderModel(
                 product, compliantShop(), LocalDate.of(2026, 7, 5));
 
-        assertThat(model.durabilityLine()).isEqualTo("Best before: 15 Jul 2026");
+        assertThat(model.durabilityLine()).isEqualTo("Best before: 15 July 2026");
     }
 
     @Test
@@ -178,6 +191,7 @@ class ProductLabelServiceTest {
 
         byte[] pdf = productLabelService.generateLabel(productId);
         String text = extractText(pdf);
+        assertThat(pageCount(pdf)).as("label pages").isEqualTo(1);
 
         // Positive: FSA-required content is present.
         assertThat(text).contains("Yam Pottage 500g");
@@ -189,6 +203,25 @@ class ProductLabelServiceTest {
         // Negative: the removed non-compliant format must be gone.
         assertThat(text).doesNotContain("CONTAINS");
         assertThat(text).doesNotContain("No allergens declared");
+    }
+
+    @Test
+    @DisplayName("generateLabel - the two new #861 lines (May contain, Produced) still fit the 100x60mm label on ONE page")
+    void generateLabelWithMayContainFitsOnePage() throws Exception {
+        Product product = compliantProduct();
+        product.setMayContainMask((1 << 10) | (1 << 7)); // Sesame, Nuts: neither declared
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+        when(shopRepository.findByIdAndTenantId(shopId, tenantId))
+                .thenReturn(Optional.of(compliantShop()));
+
+        byte[] pdf = productLabelService.generateLabel(productId, LocalDate.of(2026, 7, 4));
+
+        assertThat(pageCount(pdf)).as("label pages").isEqualTo(1);
+        String text = extractText(pdf);
+        assertThat(text).contains("May contain: Nuts, Sesame");
+        assertThat(text).contains("Produced: 4 July 2026");
+        assertThat(text).contains("Use by: 7 July 2026");
+        assertThat(text).contains("12 Market Street, London, E1 6AN");
     }
 
     // ---- Fail-loud (422) ----
@@ -249,6 +282,15 @@ class ProductLabelServiceTest {
     }
 
     // ---- Helpers ----
+
+    private static int pageCount(byte[] pdf) throws Exception {
+        PdfReader reader = new PdfReader(pdf);
+        try {
+            return reader.getNumberOfPages();
+        } finally {
+            reader.close();
+        }
+    }
 
     private static String extractText(byte[] pdf) throws Exception {
         PdfReader reader = new PdfReader(pdf);

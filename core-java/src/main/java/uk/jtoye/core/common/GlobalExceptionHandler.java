@@ -30,6 +30,7 @@ import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
 import uk.jtoye.core.exception.InsufficientStockException;
+import uk.jtoye.core.exception.InvalidProductionDateException;
 import uk.jtoye.core.exception.InvalidReviewPhotoException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.LastGroupAdminException;
@@ -505,6 +506,21 @@ public class GlobalExceptionHandler {
                 HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         problem.setTitle("Incomplete Label Data");
         problem.setType(URI.create("https://jtoye.uk/errors/incomplete-label-data"));
+        return problem;
+    }
+
+    /**
+     * #861 (D-17) — a PPDS label's production date is after today (UK time) or implies a
+     * durability date that has already passed. 422 with a typed {@code field} member so a client
+     * can point at the date input without parsing the detail; no label is produced.
+     */
+    @ExceptionHandler(InvalidProductionDateException.class)
+    public ProblemDetail handleInvalidProductionDate(InvalidProductionDateException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Invalid Production Date");
+        problem.setType(URI.create("https://jtoye.uk/errors/invalid-production-date"));
+        problem.setProperty("field", InvalidProductionDateException.FIELD);
         return problem;
     }
 

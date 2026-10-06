@@ -63,6 +63,18 @@ public class ProductDto {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private List<ProductAllergenWarning> allergenWarnings;
 
+    /**
+     * #861 (D-16): the "may contain" (cross-contact) allergens the vendor recorded, in the same
+     * 14-bit layout as {@code allergenMask}, exactly as stored. Never merged into
+     * {@code allergenMask}.
+     *
+     * <p>{@code NON_NULL} (31.1-01 baseline section 2, route (a)): absent means "not recorded",
+     * {@code 0} means "no cross-contact risk declared", so the vendor API still tells the two
+     * apart, and Phase 38's Boot-3.5 golden {@code ProductDto} sample keeps its exact wire form.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer mayContainMask;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public String getSku() { return sku; }
@@ -111,4 +123,6 @@ public class ProductDto {
     public void setMedia(List<MediaAssetDto> media) { this.media = media; }
     public List<ProductAllergenWarning> getAllergenWarnings() { return allergenWarnings; }
     public void setAllergenWarnings(List<ProductAllergenWarning> allergenWarnings) { this.allergenWarnings = allergenWarnings; }
+    public Integer getMayContainMask() { return mayContainMask; }
+    public void setMayContainMask(Integer mayContainMask) { this.mayContainMask = mayContainMask; }
 }

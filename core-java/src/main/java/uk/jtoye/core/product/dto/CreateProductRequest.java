@@ -40,6 +40,16 @@ public class CreateProductRequest {
     @Schema(description = "Bitmask representing allergens (Natasha's Law requirement)", example = "0", required = true)
     private Integer allergenMask;
 
+    // #861 (D-16, V74): cross-contact risk, its own field. Optional. On an edit, omitting it
+    // keeps the stored value (ProductMapper.updateEntity IGNORE); sending 0 records "none".
+    @Min(value = 0, message = "May-contain mask must be non-negative")
+    @Max(value = 16383, message = "May-contain mask must not exceed 16383 (14 allergens max)")
+    @Schema(description = "\"May contain\" (cross-contact) allergens as a bitmask in the same 14-bit "
+            + "layout as allergenMask. Printed on the PPDS label as its own 'May contain' line and "
+            + "never merged into allergenMask. Omit when not recorded; 0 means no cross-contact risk "
+            + "declared. On an edit, omitting it keeps the stored value.", example = "1024")
+    private Integer mayContainMask;
+
     @NotNull(message = "Price is required")
     @Min(value = 0, message = "Price must be non-negative")
     @Max(value = 1000000000L, message = "Price must not exceed £10,000,000")
@@ -121,6 +131,8 @@ public class CreateProductRequest {
     public void setIngredientsText(String ingredientsText) { this.ingredientsText = ingredientsText; }
     public Integer getAllergenMask() { return allergenMask; }
     public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
+    public Integer getMayContainMask() { return mayContainMask; }
+    public void setMayContainMask(Integer mayContainMask) { this.mayContainMask = mayContainMask; }
     public Long getPricePennies() { return pricePennies; }
     public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
     public VatRate getVatRate() { return vatRate; }

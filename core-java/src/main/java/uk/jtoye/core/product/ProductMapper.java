@@ -69,6 +69,10 @@ public interface ProductMapper {
     // (`trackInventory ? qty : null`) and reconstructs "is tracking on" from whether it is null,
     // so under blanket IGNORE a vendor could never turn tracking off again. SET_TO_NULL overrides
     // the bean-level IGNORE for this field alone, so an explicit null still clears it.
+    //
+    // mayContainMask (#861, D-16) maps by name on toDto, toEntity and here, under the bean-level
+    // IGNORE: an edit form that does not render it keeps the stored value, and 0 is the explicit
+    // "no cross-contact risk declared". It is copied as sent and never combined with allergenMask.
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "tenantId", ignore = true)
