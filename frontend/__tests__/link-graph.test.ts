@@ -48,6 +48,14 @@ const WILDCARD = "*"
  *                          link to satisfy this guard would ship a dashboard
  *                          entry that goes nowhere useful — the allowlist is the
  *                          honest answer, not a decorative link.
+ *  - "/data-request/download" the Article 15 export page (#778, D-01). Reached
+ *                          ONLY via the single-use link emailed to a verified
+ *                          data subject, with the token in the URL fragment
+ *                          (core-java `jtoye.gdpr.dsar.export-download-base-url`).
+ *                          Same shape as /unsubscribe: an in-app link could
+ *                          never carry a token, so it would open the page only
+ *                          to say the link is unusable; noindex, not in the
+ *                          sitemap.
  *
  * NOTE: API route handlers under `app/api/**` have no `page.tsx`, so they are
  * never enumerated as routes — they need no allowlist entry.
@@ -58,6 +66,7 @@ const ALLOWLIST = new Set<string>([
   "/unsubscribe",
   "/dashboard/payments/connect/return",
   "/dashboard/payments/connect/refresh",
+  "/data-request/download",
 ])
 
 function isTestFile(file: string): boolean {
