@@ -528,6 +528,11 @@ spec:
             configMapKeyRef:
               key: gdpr.dsar.verify-base-url
               name: app-config
+        - name: DSAR_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              key: encryption-key
+              name: dsar-credentials
         - name: NOTIFICATION_UNSUBSCRIBE_SECRET
           valueFrom:
             secretKeyRef:

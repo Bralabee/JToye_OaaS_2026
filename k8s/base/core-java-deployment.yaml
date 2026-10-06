@@ -464,6 +464,19 @@ spec:
             configMapKeyRef:
               name: app-config
               key: gdpr.dsar.verify-base-url
+        # REQUIRED Secret (dsar-credentials), phase 31.1 plan 07 decision D-19
+        # (not the Phase 26 D-19 above). The AES-256-GCM key the DSAR subject
+        # address is encrypted under: 64 hexadecimal characters, generated per
+        # environment with `openssl rand -hex 32` and sealed, never committed.
+        # core-java refuses to start without a valid key, and there is
+        # deliberately NO optional flag: an absent Secret holds the pod in
+        # CreateContainerConfigError, naming the Secret, instead of starting a
+        # container whose boot then fails on the empty application.yml default.
+        - name: DSAR_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: dsar-credentials
+              key: encryption-key
         # OPTIONAL Secret (notification-credentials). The application.yml
         # default for this signing secret is the EMPTY STRING — i.e. an HMAC
         # over an empty key, which is forgeable. Wiring it here makes the real
