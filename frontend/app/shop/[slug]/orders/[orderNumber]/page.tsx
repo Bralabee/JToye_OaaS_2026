@@ -11,8 +11,14 @@ import {
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
+import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
+import type { PublicOrderAllergenRecord } from "@/types/storefront"
 
-interface OrderStatus {
+/**
+ * The tracking response (`PublicOrderStatus`). The allergen record (31.1-09) and the allergy-note
+ * status (31.1-13) come from {@link PublicOrderAllergenRecord}; all optional, absent = not recorded.
+ */
+interface OrderStatus extends PublicOrderAllergenRecord {
   orderNumber: string
   status: string
   shopName: string
@@ -52,8 +58,13 @@ function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
 }
 
+/** UK time, whatever zone the browser is in (goods P2-CHA-18): the shop and the customer read one clock. */
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+  return new Date(iso).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/London",
+  })
 }
 
 export default function OrderTrackingPage({
@@ -325,6 +336,23 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
             please contact the shop.
           </p>
         </div>
+      )}
+
+      {/* What this order recorded about allergens, who placed it, and whether the shop read the
+          customer's allergy note (31.1-18: #785, #812; D-07, D-08, D-15). Rendered from the
+          tracking response only — this page computes nothing about allergens. Shown for every
+          status, cancelled and refunded included: the record is a fact about the order. */}
+      {order && (
+        <RecordedAllergenSet
+          acknowledged={order.acknowledgedAllergens ?? null}
+          recorded={order.recordedAllergens ?? null}
+          flags={order.recordedAllergenFlags ?? null}
+          placedVia={order.placedVia ?? null}
+          allergyNoteProvided={order.allergyNoteProvided ?? null}
+          allergyNoteAcknowledgedAt={order.allergyNoteAcknowledgedAt ?? null}
+          shopName={order.shopName}
+          className="mb-6"
+        />
       )}
 
       {/* Auto-refresh indicator */}
