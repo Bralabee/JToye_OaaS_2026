@@ -21,6 +21,11 @@ import {
   type OrdersLoad,
 } from "@/lib/customer-orders"
 import type { OrderStatus } from "@/types/api"
+import {
+  MY_ORDERS_ACK_HEADING_COPY,
+  MY_ORDERS_FULL_RECORD_LINK_COPY,
+  acknowledgementStatement,
+} from "@/components/storefront/recorded-allergen-set"
 
 /**
  * The interactive half of "My Orders" (issues #463, #467).
@@ -64,9 +69,13 @@ function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
 }
 
+/**
+ * UK date and time whatever zone the browser is in (goods P2-CHA-18): an order placed at 00:01 BST
+ * on 4 Oct is "4 Oct" here, as on every other surface the customer reads.
+ */
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"
+    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London"
   })
 }
 
@@ -139,17 +148,23 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
   const trackUrl = shopSlug
     ? `/shop/${shopSlug}/orders/${order.orderNumber}`
     : `/track?order=${order.orderNumber}`
+  const handOffEmail = () => {
+    try {
+      if (email) sessionStorage.setItem("jtoye-track-email", email)
+    } catch {
+      /* ignore — destination falls back to session pre-fill / prompt */
+    }
+  }
+  // 31.1-18 (#785, D-08): what the customer confirmed at checkout, from the list's own columns.
+  // The recorded set is NOT on the list (it needs order lines — the N+1 31.1-09 measured and
+  // refused), so the row links to the tracking page for it rather than fetching per row.
+  const ack = acknowledgementStatement(order.acknowledgedAllergens, order.placedVia)
 
   return (
+    <div>
     <Link
       href={trackUrl}
-      onClick={() => {
-        try {
-          if (email) sessionStorage.setItem("jtoye-track-email", email)
-        } catch {
-          /* ignore — destination falls back to session pre-fill / prompt */
-        }
-      }}
+      onClick={handOffEmail}
       className="block group"
     >
       <div className={`rounded-xl bg-white border ${active ? "border-amber-300 shadow-sm" : "border-cream-100"} p-4 ${CARD_MOTION}`}>
@@ -182,6 +197,32 @@ function OrderCard({ order, shopSlug, email }: { order: OrderSummary; shopSlug?:
         <p className="mt-2 text-xs font-mono text-slate-300 truncate">{order.orderNumber}</p>
       </div>
     </Link>
+    {/* A sibling of the card link, never inside it: an anchor nested in an anchor is invalid and
+        leaves the inner one unreachable for many assistive technologies. */}
+    <div
+      data-testid={`order-allergens-${order.orderNumber}`}
+      className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 rounded-lg border border-amber-600 bg-amber-50 px-3 py-2 text-xs text-amber-700"
+    >
+      <p className="min-w-0">
+        {ack.kind === "list" ? (
+          <>
+            {MY_ORDERS_ACK_HEADING_COPY}{" "}
+            <span className="font-semibold text-amber-800">{ack.names.join(", ")}</span>
+          </>
+        ) : (
+          ack.text
+        )}
+      </p>
+      <Link
+        href={trackUrl}
+        onClick={handOffEmail}
+        className="shrink-0 rounded-sm font-semibold text-amber-800 underline underline-offset-2 transition-colors duration-150 ease-out [@media(hover:hover)_and_(pointer:fine)]:hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-1"
+      >
+        {MY_ORDERS_FULL_RECORD_LINK_COPY}
+        <span className="sr-only"> for order {order.orderNumber}</span>
+      </Link>
+    </div>
+    </div>
   )
 }
 

@@ -121,7 +121,9 @@ describe("My Orders: the allergens each order recorded at checkout (#785, D-08)"
       order({ orderNumber: `ORD-${i}-PAST`, placedVia: "STOREFRONT", acknowledgedAllergens: ["Milk"] })
     )
     render(<OrdersClient initial={loadOf(...many)} email="buyer@example.com" />)
-    expect(screen.getAllByText(`${MY_ORDERS_ACK_HEADING_COPY} Milk`, { exact: false })).toHaveLength(6)
+    const rows = screen.getAllByTestId(/^order-allergens-/)
+    expect(rows).toHaveLength(6)
+    for (const row of rows) expect(row).toHaveTextContent(`${MY_ORDERS_ACK_HEADING_COPY} Milk`)
     // Let any effect-scheduled request fire before counting.
     await new Promise((r) => setTimeout(r, 50))
     expect(fetchMock).toHaveBeenCalledTimes(0)

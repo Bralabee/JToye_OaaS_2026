@@ -18,8 +18,13 @@
  * spelled as an empty list, because a failure has no list to be empty.
  */
 import type { OrderStatus } from "@/types/api"
+import type { PublicOrderAllergenRecord } from "@/types/storefront"
 
-export interface OrderSummary {
+/**
+ * One entry of the signed-in history (`PublicOrderStatus` from `/public/orders/mine`). The allergen
+ * fields (31.1-09/-13) are the column-backed ones only: the list never carries the recorded set.
+ */
+export interface OrderSummary extends PublicOrderAllergenRecord {
   orderNumber: string
   status: string
   shopName: string
