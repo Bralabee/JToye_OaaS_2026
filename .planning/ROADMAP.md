@@ -736,7 +736,7 @@ Plans:
   6. The cookie, privacy and accessibility statements match the site: no Stripe code on a cash checkout, every stored key disclosed and personal keys cleared on sign-out, emails described truthfully, and the accessibility statement targeting WCAG 2.2 AA over the full order journey (PGC-793, PGC-840, PGC-871, PGC-878).
   7. 31.1 executes on the Boot 4.1 / Jackson 3 tree: Phase 38 is merged into this branch before any 31.1 code, the Keycloak deletion path is re-proved on it, and Phase 38's Jackson-3 goldens are extended rather than its Jackson-2 captures (D-21).
 
-**Plans:** 12/30 plans executed (16 waves)
+**Plans:** 13/30 plans executed (16 waves)
 
 *Wave depth (re-derived 2026-10-05).* The waves come from true data dependencies plus file overlap, applied in plan order. They are not padding:
 - The eight plans that edit `docs/api/openapi-snapshot.json` run one per wave. Together with the frontend chain 14 → 19 → 21 → 23 and the tail 24 → 25 → 27 → 28 → 29 → 30, they set the depth.
@@ -767,7 +767,7 @@ Plans:
 
 **Wave 6**
 - [x] 31.1-12-PLAN.md — #789 TRADER_IDENTITY go-live gate (PASSED only) + demo/e2e backfill
-- [ ] 31.1-13-PLAN.md — #812 allergy note + recorded vendor acknowledgement (V73)
+- [x] 31.1-13-PLAN.md — #812 allergy note + recorded vendor acknowledgement (V73)
 
 **Wave 7**
 - [ ] 31.1-14-PLAN.md — #861 may-contain mask, production-dated en-GB labels (V74)
