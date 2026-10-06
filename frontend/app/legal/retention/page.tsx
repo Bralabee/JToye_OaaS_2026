@@ -176,17 +176,17 @@ export const RETENTION_ROWS: readonly RetentionRow[] = [
     category: "Saved checkout email in your browser",
     detail:
       "The email address you last used at a shop's checkout, kept in your browser's local storage so it can be filled in for you next time.",
-    period: "Until you clear your browser's site data",
+    period: "Until you sign out or clear your browser's site data",
     lawfulBasis:
       "Strictly necessary (PECR reg. 6(4)) - it is a convenience within the checkout you asked for, stays on your device, and is never read by us as a stored record.",
     enforcement: "Operational",
   },
   {
     id: "R-13",
-    category: "Guest order history in your browser",
+    category: "Order history in your browser",
     detail:
-      "The list of orders you placed as a guest, kept in your browser's local storage so you can find them again without an account.",
-    period: "Until you clear your browser's site data",
+      "The orders you placed on this device, each with the email address it was placed with, kept in your browser's local storage so you can find them again. Signing out removes the list.",
+    period: "Until you sign out or clear your browser's site data",
     lawfulBasis:
       "Strictly necessary (PECR reg. 6(4)) - it is what lets a guest find the order they just placed, and it stays on your device.",
     enforcement: "Operational",

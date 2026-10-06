@@ -200,25 +200,25 @@
       "detail": "The email address you last used at a shop's checkout, kept in your browser's local storage so it can be filled in for you next time.",
       "period_value": "until-cleared",
       "period_unit": "",
-      "period_display": "Until you clear your browser's site data",
+      "period_display": "Until you sign out or clear your browser's site data",
       "lawful_basis": "Strictly necessary (PECR reg. 6(4)) - it is a convenience within the checkout you asked for, stays on your device, and is never read by us as a stored record.",
       "enforcement": "Operational",
       "claim_key": null,
       "enforced_by": null,
-      "note": "Local storage has no expiry, so there is nothing on our side that deletes it: you control it. Marked Operational rather than Automated for exactly that reason - claiming an automated period here would be false."
+      "note": "Removed by an explicit sign-out (frontend/lib/client-storage-keys.ts, #840) or by you clearing site data. Local storage has no time-based expiry, so nothing on our side deletes it on a schedule. Marked Operational rather than Automated for exactly that reason - an event-driven removal is not an automated retention period, and claiming one here would be false."
     },
     {
       "id": "R-13",
-      "category": "Guest order history in your browser",
-      "detail": "The list of orders you placed as a guest, kept in your browser's local storage so you can find them again without an account.",
+      "category": "Order history in your browser",
+      "detail": "The orders you placed on this device, each with the email address it was placed with, kept in your browser's local storage so you can find them again. Signing out removes the list.",
       "period_value": "until-cleared",
       "period_unit": "",
-      "period_display": "Until you clear your browser's site data",
+      "period_display": "Until you sign out or clear your browser's site data",
       "lawful_basis": "Strictly necessary (PECR reg. 6(4)) - it is what lets a guest find the order they just placed, and it stays on your device.",
       "enforcement": "Operational",
       "claim_key": null,
       "enforced_by": null,
-      "note": "Same shape as R-12: no expiry exists on our side, so no automated period may be claimed."
+      "note": "Same shape as R-12: removed by an explicit sign-out (#840) or by you; no time-based expiry exists on our side, so no automated period may be claimed."
     }
   ],
 
