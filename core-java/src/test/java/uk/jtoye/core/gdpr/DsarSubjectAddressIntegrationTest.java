@@ -4,6 +4,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -24,13 +30,17 @@ import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -64,6 +74,9 @@ class DsarSubjectAddressIntegrationTest {
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         IntegrationTestSupport.registerPostgresTestProperties(registry, postgres);
+        // One attempt, so a single failing sweep exhausts the request and parks it FAILED. No
+        // test in this class relies on a retry.
+        registry.add("jtoye.gdpr.dsar.max-process-attempts", () -> "1");
     }
 
     private static final String INTAKE_PATH = "/api/v1/public/gdpr/dsar";
@@ -75,13 +88,15 @@ class DsarSubjectAddressIntegrationTest {
     @Autowired private DsarCipher cipher;
     @Autowired private DsarFanoutWorker worker;
     @Autowired private Environment environment;
+    @Autowired private DsarRequestExpirySweep expirySweep;
 
     @MockitoSpyBean private DsarVerificationMailer mailer;
+    @MockitoSpyBean private GdprService gdprService;
 
     @BeforeEach
     void clean() {
         jdbc.update("DELETE FROM dsar_request");
-        reset(mailer);
+        reset(mailer, gdprService);
     }
 
     // ---- The test key itself ------------------------------------------------------------------
@@ -142,7 +157,108 @@ class DsarSubjectAddressIntegrationTest {
         assertThat(ciphertextIsPresent()).as("COMPLETED must NULL the encrypted address").isFalse();
     }
 
+    @Test
+    void anExhaustedRequestIsParkedFailedAndDestroysTheCiphertext() throws Exception {
+        UUID tenant = UUID.randomUUID();
+        jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?)", tenant, "T-" + tenant);
+        doThrow(new IllegalStateException("deliberate per-tenant failure"))
+                .when(gdprService).eraseSubjectByDigest(any(), anyString());
+        lodgeVerified("exhausts-" + UUID.randomUUID() + "@example.test", "ERASURE", "198.51.100.73");
+        assertThat(ciphertextIsPresent()).as("PRECONDITION: a verified request still holds it").isTrue();
+
+        worker.executeLodgedRequests();
+
+        assertThat(requestStatus()).as("max-process-attempts is 1 here").isEqualTo("FAILED");
+        assertThat(ciphertextIsPresent()).as("FAILED must NULL the encrypted address").isFalse();
+    }
+
+    @Test
+    void anUnverifiedRequestPastItsExpiryIsSweptToExpiredAndDestroysTheCiphertext() throws Exception {
+        lodge("never-verified-" + UUID.randomUUID() + "@example.test", "ERASURE", "198.51.100.74");
+        UUID lapsed = jdbc.queryForObject("SELECT id FROM dsar_request", UUID.class);
+        jdbc.update("UPDATE dsar_request SET verification_expires_at = NOW() - INTERVAL '1 hour' WHERE id = ?",
+                lapsed);
+        lodge("still-pending-" + UUID.randomUUID() + "@example.test", "ACCESS", "198.51.100.75");
+        UUID live = jdbc.queryForObject("SELECT id FROM dsar_request WHERE id <> ?", UUID.class, lapsed);
+
+        expirySweep.expireLapsedVerifications();
+
+        Map<String, Object> swept = jdbc.queryForMap(
+                "SELECT status, completed_at IS NOT NULL AS done, subject_email_ciphertext IS NULL AS dropped "
+                        + "FROM dsar_request WHERE id = ?", lapsed);
+        assertThat(swept.get("status")).isEqualTo("EXPIRED");
+        assertThat(swept.get("done")).as("completed_at is stamped").isEqualTo(true);
+        assertThat(swept.get("dropped")).as("EXPIRED must NULL the encrypted address").isEqualTo(true);
+
+        // CONTROL: a request still inside its window is untouched, so the sweep is selective and the
+        // assertions above are about the expiry, not about a sweep that clears everything.
+        Map<String, Object> untouched = jdbc.queryForMap(
+                "SELECT status, completed_at IS NULL AS open, subject_email_ciphertext IS NOT NULL AS kept "
+                        + "FROM dsar_request WHERE id = ?", live);
+        assertThat(untouched.get("status")).isEqualTo("PENDING_VERIFICATION");
+        assertThat(untouched.get("open")).isEqualTo(true);
+        assertThat(untouched.get("kept")).isEqualTo(true);
+    }
+
+    @Test
+    void theDatabaseRefusesATerminalRowThatStillHoldsTheAddress() throws Exception {
+        lodge("check-" + UUID.randomUUID() + "@example.test", "ERASURE", "198.51.100.76");
+        assertThat(ciphertextIsPresent()).as("PRECONDITION: the row holds ciphertext").isTrue();
+
+        for (String terminal : new String[]{"COMPLETED", "FAILED", "EXPIRED"}) {
+            assertThatThrownBy(() -> jdbc.update(
+                    "UPDATE dsar_request SET status = ?, completed_at = NOW()", terminal))
+                    .as("status %s with the ciphertext still present", terminal)
+                    .isInstanceOf(DataIntegrityViolationException.class)
+                    .hasMessageContaining("ck_dsar_request_ciphertext_terminal");
+        }
+        // CONTROL: the same UPDATE succeeds once the ciphertext is gone, so the refusals above are
+        // the CHECK and not some other constraint on these columns.
+        assertThat(jdbc.update("UPDATE dsar_request SET status = 'COMPLETED', completed_at = NOW(), "
+                + "subject_email_ciphertext = NULL")).isEqualTo(1);
+    }
+
+    @Test
+    void theApplicationRefusesToStartWithoutAKeyAndNamesThePropertyNotTheValue() {
+        // The REAL application.yml, through Boot's own config-data loading and strict placeholder
+        // resolver, with the process environment removed so a developer shell that exports
+        // DSAR_ENCRYPTION_KEY cannot turn the fail arm into a false pass (the
+        // StagingRedisPasswordFailClosedTest idiom).
+        ApplicationContextRunner runner = new ApplicationContextRunner()
+                .withInitializer(ctx -> ctx.getEnvironment().getPropertySources()
+                        .remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME))
+                .withInitializer(new ConfigDataApplicationContextInitializer())
+                .withConfiguration(AutoConfigurations.of(PropertyPlaceholderAutoConfiguration.class))
+                .withUserConfiguration(DsarCipher.class);
+
+        runner.run(ctx -> {
+            assertThat(ctx).as("no DSAR_ENCRYPTION_KEY: application.yml's empty default must fail fast")
+                    .hasFailed();
+            assertThat(ctx.getStartupFailure()).rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("jtoye.gdpr.dsar.encryption-key");
+        });
+
+        String wrongLength = randomHexKey().substring(0, 63);
+        runner.withSystemProperties("DSAR_ENCRYPTION_KEY=" + wrongLength).run(ctx -> {
+            assertThat(ctx).hasFailed();
+            assertThat(ctx.getStartupFailure()).rootCause()
+                    .hasMessageContaining("jtoye.gdpr.dsar.encryption-key")
+                    .satisfies(e -> assertThat(e.getMessage()).doesNotContain(wrongLength.substring(0, 16)));
+        });
+
+        // CONTROL: the same runner starts with a valid key, so the failures above are the key.
+        runner.withSystemProperties("DSAR_ENCRYPTION_KEY=" + randomHexKey())
+                .run(ctx -> assertThat(ctx).hasNotFailed().hasSingleBean(DsarCipher.class));
+    }
+
     // ---- helpers -------------------------------------------------------------------------------
+
+    private static String randomHexKey() {
+        byte[] key = new byte[32];
+        new SecureRandom().nextBytes(key);
+        return HexFormat.of().formatHex(key);
+    }
 
     private void lodge(String email, String type, String clientIp) throws Exception {
         mockMvc.perform(post(INTAKE_PATH)
