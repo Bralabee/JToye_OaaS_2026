@@ -53,11 +53,15 @@ class VendorOnboardingStateMachineServiceTest {
         return List.of(gate(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true));
     }
 
-    /** All mandatory PASSED plus a PASSED allergen row — satisfies the GO_LIVE/REINSTATE guard. */
+    /**
+     * All mandatory PASSED plus PASSED allergen and trader-identity rows — satisfies the
+     * GO_LIVE/REINSTATE guard (31.1-12 added the explicit TRADER_IDENTITY requirement, #789).
+     */
     private List<VendorOnboardingGate> allMandatoryPassedPlusAllergen() {
         return List.of(
                 gate(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true),
-                gate(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true));
+                gate(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true),
+                gate(GateType.TRADER_IDENTITY, GateStatus.PASSED, true));
     }
 
     @Test
@@ -181,6 +185,27 @@ class VendorOnboardingStateMachineServiceTest {
         when(gateRepository.findByOnboardingId(any(UUID.class))).thenReturn(List.of(
                 gate(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true),
                 gate(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PENDING, true)));
+        assertThrows(InvalidStateTransitionException.class, () ->
+                stateMachineService.sendEvent(UUID.randomUUID(), OnboardingState.APPROVED, OnboardingEvent.GO_LIVE));
+    }
+
+    @Test
+    @DisplayName("GO_LIVE and REINSTATE guards reject a WAIVED or absent TRADER_IDENTITY row (#789)")
+    void goLiveRejectedWhenTraderIdentityWaivedOrAbsent() {
+        // Everything else satisfies the guard; a waiver satisfies APPROVE but never GO_LIVE.
+        when(gateRepository.findByOnboardingId(any(UUID.class))).thenReturn(List.of(
+                gate(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true),
+                gate(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true),
+                gate(GateType.TRADER_IDENTITY, GateStatus.WAIVED, true)));
+        assertThrows(InvalidStateTransitionException.class, () ->
+                stateMachineService.sendEvent(UUID.randomUUID(), OnboardingState.APPROVED, OnboardingEvent.GO_LIVE));
+        assertThrows(InvalidStateTransitionException.class, () ->
+                stateMachineService.sendEvent(UUID.randomUUID(), OnboardingState.SUSPENDED, OnboardingEvent.REINSTATE));
+
+        // No row at all: the shape of an onboarding submitted before the gate existed.
+        when(gateRepository.findByOnboardingId(any(UUID.class))).thenReturn(List.of(
+                gate(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true),
+                gate(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true)));
         assertThrows(InvalidStateTransitionException.class, () ->
                 stateMachineService.sendEvent(UUID.randomUUID(), OnboardingState.APPROVED, OnboardingEvent.GO_LIVE));
     }

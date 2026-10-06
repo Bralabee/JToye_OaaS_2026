@@ -1438,7 +1438,8 @@
               "PAYMENTS_CONNECTED",
               "AGREEMENT_SIGNED",
               "ALLERGEN_DATA_COMPLETE",
-              "MENU_MINIMUM"
+              "MENU_MINIMUM",
+              "TRADER_IDENTITY"
             ],
             "type" : "string"
           },
@@ -6685,7 +6686,8 @@
                 "PAYMENTS_CONNECTED",
                 "AGREEMENT_SIGNED",
                 "ALLERGEN_DATA_COMPLETE",
-                "MENU_MINIMUM"
+                "MENU_MINIMUM",
+                "TRADER_IDENTITY"
               ],
               "type" : "string"
             }
