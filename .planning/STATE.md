@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: "31.1"
 current_phase_name: Persona gap closure
 status: executing
-stopped_at: "Completed 31.1-09-PLAN.md (acknowledged set from V69 columns + recorded set from the V63 snapshot on GuestOrderConfirmation/replay, PublicOrderStatus tracking + history, OrderDto NON_NULL, OrderDetailDto; placedVia channel; Order.items fetch-count N+1 guard; OpenAPI +16 properties); next: 31.1-10"
-last_updated: "2026-10-06T12:55:00.000Z"
+stopped_at: "Completed 31.1-10-PLAN.md (V71 trader_identity + V65-shape append-only _aud under FORCE RLS, gate CHECK admits TRADER_IDENTITY; GROUP_ADMIN upsert GET/PUT /api/v1/trader-identity with field-level RFC 7807; vendor Business details form on the onboarding page; OpenAPI additive); next: 31.1-11"
+last_updated: "2026-10-06T13:50:00.000Z"
 last_activity: 2026-10-06
-state_head: e00770def4e4fe0a183cf09eddab33842b73ddfc
+state_head: dd276150c5f1542b8603f4fee5d2174cff087d1f
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 185
-  completed_plans: 165
+  completed_plans: 166
   percent: 65
-last_activity_desc: "31.1-09 complete (every order contract states the acknowledged allergen set, the recorded set and the channel; null never collapses to 0 or []; history reads columns only)"
+last_activity_desc: "31.1-10 complete (one legal entity per tenant, tenant-walled and audited, editable only by a group admin, entered once from the onboarding page)"
 ---
 
 # Project State
@@ -39,6 +39,7 @@ Phase: 31.1 (Persona gap closure) — EXECUTING
 - 31.1-07 DONE 2026-10-06: D-19 built. V70 adds dsar_request.subject_email_ciphertext BYTEA + CHECK ck_dsar_request_ciphertext_terminal (NULL in COMPLETED/FAILED/EXPIRED; V62-style header amending "no readable-address column", the four uses, both rejected alternatives; no backfill). DsarCipher (JDK AES/GCM/NoPadding, 12-byte IV, 128-bit tag, AAD purpose:requestId, IV||ct in one BYTEA; key only jtoye.gdpr.dsar.encryption-key = env DSAR_ENCRYPTION_KEY, empty default, validated at construction, message names the property never the value; no logging). Intake encrypts the trimmed address under the pre-minted request id; the worker NULLs it in the COMPLETED and exhausted-FAILED UPDATEs; DsarRequestExpirySweep (every 900000 ms) is the first EXPIRED writer. Retention R-14 (168 h for an unconfirmed request) published on /legal/retention + claims rule. DsarCipherTest 9/0/0, DsarSubjectAddressIntegrationTest 7/0/0 (RED valid x3), 14 break arms red and sha-restored. Full unit 1515/0/0, full integration 801/0/0; four non-test-profile contexts given per-run random keys (3 dev + DatabaseConfigurationValidatorOwnershipTest). **31.1-08 must wire DSAR_ENCRYPTION_KEY into every runtime before any core-java rebuild, or core-java refuses to start.** PGC-778/777 stay open (shared).
 - 31.1-08 DONE 2026-10-06: D-19 key wired into every runtime that starts core-java. Compose core-java DSAR_ENCRYPTION_KEY behind a :? guard naming openssl rand -hex 32 (key absent -> config rc 1); .env.example CHANGE_ME with comments on their own lines; core-java/.env.example documents it commented (run-app.sh sources it second). verify-env.sh: REQUIRED_VARS (19) + FORMAT_RULES (c2) ^[0-9a-fA-F]{64}$ by name only (placeholder/63-char/non-hex/absent rc 1, real rc 0, value never printed). start-dev.sh exports the key from the validated env file for the host bootRun. Nightly: DERIVED + openssl rand -hex 32 (old step fails verify-env on the key, new passes). k8s/base secretKeyRef dsar-credentials/encryption-key, NO optional flag; goldens +5 lines each (--diff-since 31.1-08); template/QUICK_START/DEPLOYMENT/sealed-secrets runbook list the Secret; k8s-local-secrets.sh requires + 64-hex-checks the .env key (no generation: shared dev DB) and creates it. check-env-contract.sh gained MUST_SUPPLY_CORE: the unmodified gate stayed rc 0 with the env entry deleted (empty default scored "pass by rule"); now rc 1, plus STALE/overlap hygiene arms. Local .env has a generated key (untracked); shared stack NOT rebuilt (31.1-30). **Staging/production need a sealed dsar-credentials per environment before rollout (31.1-USER-SETUP.md).** PGC-778/777 stay open (shared).
 - 31.1-09 DONE 2026-10-06: #785 data half / D-07 / D-08 at the contract. GuestOrderConfirmation (first response AND replay, re-derived from the row) + PublicOrderStatus (trackOrder) carry acknowledgedAllergenMask/acknowledgedAllergens (V69 columns; names only when the mask is non-null), recordedAllergens/recordedAllergenFlags (OrderAllergenSnapshot.viewOf, null = not recorded) and placedVia (tracking). getCustomerOrders sets the acknowledged pair + placedVia from COLUMNS only, recorded pair null + @Schema tracking-only. OrderDto allergenAckMask/allergenAckAt/placedVia @JsonInclude(NON_NULL) (golden DTO, route (a): ABSENT = not recorded); OrderDetailDto the same + acknowledgedAllergenNames in fillAllergens; flags never merged. MCP read_orders forwards core JSON (buildPath l.46-48), no MCP change. CustomerRecordedAllergenSetIntegrationTest 10/0/0 (RED 7/7 then 3/10, RED_EVIDENCE_OK x2); N+1 guard = CollectionStatistics(Order.items).fetchCount 0 with trackOrder control 1; break arms A/A2/B/C/N1/N1b(0 vs 7)/N2(Jackson3Wire 2 red + idempotency OrderDto red)/N3/N4 all red, sha-restored. OpenAPI +16 properties on 4 schemas, 0 removed; jackson2-golden diff empty (control 44 files). Full unit 1515/0/0, full integration 811/0/0. oasdiff not installed locally (CI gate not run). PGC-784/785 stay open (shared).
+- 31.1-10 DONE 2026-10-06: #789 storage + API + vendor form (D-10/D-11). V71 trader_identity (UNIQUE tenant_id FK tenants, legal_name, entity_type COMPANY|SOLE_TRADER|PARTNERSHIP, address line1/line2/city/postcode, vat_number; NO contact columns, NO company-number copy, NO backfill) + trader_identity_aud, ENABLE+FORCE RLS via current_tenant_id(); _aud = V65 shape (SELECT tenant-scoped, INSERT tenant_id IS NULL OR =), no UPDATE/DELETE policy (append-only); vendor_onboarding_gate_gate_type_check rewritten with TRADER_IDENTITY (9 values, for 31.1-12). TraderIdentityService get/upsert (requireGroupAdmin; every PUT advances updated_at so a re-save is a revision)/findForTenant (THROWS unless the tenant is pinned in TenantContext - for 31.1-24/-25). GET/PUT /api/v1/trader-identity; 404 detail names the record (type+status alone passed with no endpoint). Handlers getTraderIdentity/upsertTraderIdentity: get()/put() renumbered two existing operationIds. OpenAPI +1 path +2 schemas +1 tag, 217 ins / 0 del. TraderIdentityRlsIntegrationTest 11/0/0 NOSUPERUSER (RED 6/6, RED_EVIDENCE_OK); RlsContractTest 7/0/0 no exemption; 10 backend + 7 jest break arms + build TS2322 arm all red, sha-restored. Form on /dashboard/onboarding (every state): aria-required, role=alert + aria-invalid + aria-describedby + focus, persistent status, re-read after save; jest 60/60 (form 7 + page 53), full jest 176/1920, lint 0 errors, build green. Full unit 1515/0/0, full integration 822/0/0. Plan verify vacuities recorded: case-sensitive ::uuid grep (V43 spells ::UUID), --runTestsByPath with a directory ran 1 suite. Owed: oasdiff gate (not installed), browser click-through + screenshots (31.1-30). PGC-789 stays open (shared).
 - **Phase 38 (Spring Boot 4.1) COMPLETE 2026-10-05, MERGED as PR #898:** 19/19 plans, `38-VERIFICATION.md` passed 14/14 (BOOT4-01..14), code review 0 critical / 2 warning / 4 info (`38-REVIEW.md`, disposition in `38-REVIEW-DISPOSITION.md`). Not yet shipped: `/gsd-secure-phase 38` then `/gsd-ship 38` remain. Phase 29 is GSD's numeric next; the owner-set planning order in HANDOFF.md is 31.1 then 37.
 - The bullets below are Phase 38's execution history, kept for the record.
 - 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
@@ -882,6 +883,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P07 | 73 min | 2 tasks | 22 files |
 | Phase 31.1 P08 | 9 min | 2 tasks | 16 files |
 | Phase 31.1 P09 | 47 min | 2 tasks | 8 files |
+| Phase 31.1 P10 | 52 min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -1092,6 +1094,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: 31.1-08: check-env-contract.sh MUST_SUPPLY_CORE is the opposite of an allowlist: names whose empty application.yml default is a refusal to boot must be injected, no allowlist entry can excuse them, and an entry goes STALE when the default stops being exactly empty
 - [Phase 31.1]: 31.1-09: OrderDto's allergenAckMask/allergenAckAt/placedVia are @JsonInclude(NON_NULL) (route (a); its stored-response bytes are frozen in IdempotencyFingerprintGoldenTest), so on OrderDto ABSENT means not recorded; every other new field in 31.1-09 is written as JSON null
 - [Phase 31.1]: 31.1-09: the recorded allergen set (V63 snapshot) is single-order only: PublicOrderStatus.recordedAllergens/recordedAllergenFlags are null on the history list (one Order.items fetch per row otherwise, measured 7 for 7); the acknowledged set and placedVia are column reads everywhere
+- [Phase 31.1]: 31.1-10: trader_identity is one row per tenant (company number READ from vendor_onboarding, contact stays per shop); trader_identity_aud is the V65 two-policy shape with no UPDATE/DELETE policy, so the audit of who published which legal identity is append-only
+- [Phase 31.1]: 31.1-10: PUT /api/v1/trader-identity is GROUP_ADMIN-only and idempotent by construction (upsert keyed by tenant); no MCP tool, because the legal-entity declaration is a statutory statement a person signs off
+- [Phase 31.1]: 31.1-10: TraderIdentityService.findForTenant(tenantId) throws unless that tenant is pinned in TenantContext: under FORCE RLS an unpinned read is silently empty and would read as "this trader has no identity"
 
 ### Pending Todos
 
@@ -1162,8 +1167,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-06T12:55:00Z
-Stopped at: Completed 31.1-09-PLAN.md; next 31.1-10
+Last session: 2026-10-06T13:50:00Z
+Stopped at: Completed 31.1-10-PLAN.md; next 31.1-11
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
