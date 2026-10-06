@@ -181,3 +181,149 @@ describe("D-16: mayContainMaskSchema mirrors CreateProductRequest @Min(0) @Max(1
     expect(mayContainMaskSchema.safeParse(1.5).success).toBe(false)
   })
 })
+
+/**
+ * Task 3 — D-17: the label asks for the production date.
+ *
+ * The clock is fixed at 2026-10-03T23:30Z, which is 00:30 on 4 October in London (BST): a
+ * default computed in UTC, or in the browser's zone on a UTC machine, would say the 3rd and
+ * date a label a day early. Only Date is faked; timers stay real so the async UI settles.
+ */
+describe("D-17: Download allergen label asks for the production date", () => {
+  const LONDON_TODAY = "2026-10-04"
+  const PDF = new Blob(["%PDF-1.4"], { type: "application/pdf" })
+  const createObjectURL = jest.fn(() => "blob:label")
+  const revokeObjectURL = jest.fn()
+  let anchorClick: jest.SpyInstance
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    jest.useFakeTimers({
+      now: new Date("2026-10-03T23:30:00Z"),
+      doNotFake: [
+        "setTimeout",
+        "clearTimeout",
+        "setInterval",
+        "clearInterval",
+        "setImmediate",
+        "clearImmediate",
+        "queueMicrotask",
+        "nextTick",
+        "requestAnimationFrame",
+        "cancelAnimationFrame",
+        "requestIdleCallback",
+        "cancelIdleCallback",
+        "performance",
+        "hrtime",
+      ],
+    })
+    Object.defineProperty(URL, "createObjectURL", { value: createObjectURL, configurable: true })
+    Object.defineProperty(URL, "revokeObjectURL", { value: revokeObjectURL, configurable: true })
+    anchorClick = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+    mockedApiClient.get.mockImplementation((url: string) =>
+      url.includes("/label")
+        ? Promise.resolve({ data: PDF })
+        : Promise.resolve(listOf([{ ...product, mayContainMask: SESAME_BIT }]))
+    )
+  })
+
+  afterEach(() => {
+    anchorClick.mockRestore()
+    jest.useRealTimers()
+  })
+
+  const labelCalls = () =>
+    mockedApiClient.get.mock.calls.filter(([url]) => String(url).includes("/label"))
+
+  async function openLabelDialog() {
+    render(<ProductsPage />)
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Download allergen label for Jollof Rice" })
+    )
+    return screen.findByRole("dialog")
+  }
+
+  it("the trigger keeps its accessible name and opens a dialog instead of downloading", async () => {
+    const dialog = await openLabelDialog()
+    expect(within(dialog).getByLabelText("Production date")).toBeInTheDocument()
+    expect(labelCalls()).toHaveLength(0)
+    expect(createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it("defaults to today's Europe/London date, which is also the latest date allowed (00:30 BST case)", async () => {
+    const dialog = await openLabelDialog()
+    const input = within(dialog).getByLabelText("Production date") as HTMLInputElement
+    expect(input.type).toBe("date")
+    expect(input.value).toBe(LONDON_TODAY)
+    expect(input.max).toBe(LONDON_TODAY)
+  })
+
+  it("confirming requests ?productionDate=YYYY-MM-DD as a blob and downloads it", async () => {
+    const dialog = await openLabelDialog()
+    fireEvent.click(within(dialog).getByRole("button", { name: "Download label" }))
+
+    await waitFor(() => expect(labelCalls()).toHaveLength(1))
+    expect(labelCalls()[0][0]).toBe(`/api/v1/products/p-1/label?productionDate=${LONDON_TODAY}`)
+    expect(labelCalls()[0][1]).toEqual({ responseType: "blob" })
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledWith(PDF))
+    expect(anchorClick).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+  })
+
+  it("a date the vendor picks is the date requested", async () => {
+    const dialog = await openLabelDialog()
+    fireEvent.change(within(dialog).getByLabelText("Production date"), {
+      target: { value: "2026-10-02" },
+    })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Download label" }))
+
+    await waitFor(() => expect(labelCalls()).toHaveLength(1))
+    expect(labelCalls()[0][0]).toBe("/api/v1/products/p-1/label?productionDate=2026-10-02")
+  })
+
+  it("a future date is refused before any request, under the field", async () => {
+    const dialog = await openLabelDialog()
+    const input = within(dialog).getByLabelText("Production date")
+    fireEvent.change(input, { target: { value: "2026-10-05" } })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Download label" }))
+
+    await waitFor(() => expect(input).toHaveAttribute("aria-invalid", "true"))
+    expect(input).toHaveAccessibleDescription(/future/i)
+    expect(labelCalls()).toHaveLength(0)
+  })
+
+  it("a 422 from the server is shown under the date field; nothing is downloaded", async () => {
+    const detail = "The use-by date for this production date has already passed."
+    mockedApiClient.get.mockImplementation((url: string) =>
+      url.includes("/label")
+        ? Promise.reject({
+            response: {
+              status: 422,
+              data: new Blob(
+                [
+                  JSON.stringify({
+                    type: "https://api.jtoye.uk/errors/invalid-production-date",
+                    title: "Invalid production date",
+                    status: 422,
+                    detail,
+                    field: "productionDate",
+                  }),
+                ],
+                { type: "application/problem+json" }
+              ),
+            },
+          })
+        : Promise.resolve(listOf([{ ...product, mayContainMask: SESAME_BIT }]))
+    )
+    const dialog = await openLabelDialog()
+    const input = within(dialog).getByLabelText("Production date")
+    fireEvent.change(input, { target: { value: "2026-09-01" } })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Download label" }))
+
+    await waitFor(() => expect(input).toHaveAttribute("aria-invalid", "true"))
+    expect(input).toHaveAccessibleDescription(detail)
+    expect(createObjectURL).not.toHaveBeenCalled()
+    expect(anchorClick).not.toHaveBeenCalled()
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+  })
+})

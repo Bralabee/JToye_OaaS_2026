@@ -28,3 +28,29 @@ rc=1
   ● #787 vendor side: the save-time warning (D-09) › 'Keep as it is' closes without saving again
 Tests:       1 failed, 8 passed, 9 total
 RESTORE OK by sha256 (page.tsx)
+
+######## Task 2 (may-contain) break arms, run on committed efae0d42 ########
+== Arm M: may-contain OR-ed into the declared allergenMask (T-31.1-69)
+rc=1
+  ● D-16: the separate 'May contain' checkboxes › ticking Sesame there sends mayContainMask with the Sesame bit; allergenMask carries the declared ticks only
+Tests:       1 failed, 8 passed, 9 total
+== Arm Z: null collapsed to 0 on send
+rc=1
+  ● D-16: the separate 'May contain' checkboxes › an untouched fieldset on a new product sends null (not recorded), never 0
+  ● D-16: the separate 'May contain' checkboxes › editing a product with mayContainMask null shows none ticked and saves null if untouched
+  ● D-16: the separate 'May contain' checkboxes › editing a product whose mayContainMask is absent (not recorded) also saves null
+Tests:       3 failed, 6 passed, 9 total
+== Arm D: the may-contain checkboxes drive the declared mask
+rc=1
+  ● D-16: the separate 'May contain' checkboxes › ticking Sesame there sends mayContainMask with the Sesame bit; allergenMask carries the declared ticks only
+  ● D-16: the separate 'May contain' checkboxes › a stored Sesame shows ticked under May contain only; unticking it records 0
+Tests:       2 failed, 7 passed, 9 total
+== Arm S: schema loses its upper bound
+rc=1
+  ● D-16: mayContainMaskSchema mirrors CreateProductRequest @Min(0) @Max(16383) › rejects a 15th bit, a negative and a fraction
+Tests:       1 failed, 8 passed, 9 total
+RESTORE OK by sha256 (schema)
+RESTORE OK by sha256 (page.tsx)
+== closing clean run
+rc=0
+Tests:       29 passed, 29 total
