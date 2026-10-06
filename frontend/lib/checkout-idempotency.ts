@@ -52,6 +52,12 @@ export interface GuestOrderFields {
    * the 14) and is SIGNED — it is never collapsed into "absent".
    */
   acknowledgedAllergenMask?: number | null
+  /**
+   * #812 (D-15): the dedicated allergy/dietary note for the kitchen, separate from `notes`.
+   * Optional; trimmed, and a blank note is ABSENT so a request without one fingerprints exactly as
+   * it did before the field existed (31.1-13).
+   */
+  allergyNote?: string
 }
 
 /**
@@ -72,6 +78,8 @@ export interface GuestOrderIntent {
   items: GuestOrderLine[]
   /** GuestOrderRequest.acknowledgedAllergenMask (31.1-03). Part of the signed intent. */
   acknowledgedAllergenMask?: number
+  /** GuestOrderRequest.allergyNote (31.1-13, max 500). Part of the signed intent. */
+  allergyNote?: string
 }
 
 /** Normalise the form state into the body the checkout page submits. */
@@ -96,6 +104,7 @@ export function buildGuestOrderIntent(fields: GuestOrderFields): GuestOrderInten
     })),
     // `??`, not `||`: a 0 mask is "declared none", a statement the customer acknowledged.
     acknowledgedAllergenMask: fields.acknowledgedAllergenMask ?? undefined,
+    allergyNote: fields.allergyNote?.trim() || undefined,
   }
 }
 

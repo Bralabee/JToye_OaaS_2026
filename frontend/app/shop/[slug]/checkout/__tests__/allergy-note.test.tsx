@@ -246,7 +246,12 @@ describe("the allergy note field (#812, D-15)", () => {
 
   it("does not send a blank note at all — the field is absent from the body", async () => {
     await armAndSubmit({ note: "    " })
-    expect(Object.prototype.hasOwnProperty.call(body(), "allergyNote")).toBe(false)
+    // Asserted on the WIRE form: axios serialises the body with JSON.stringify, which drops an
+    // undefined member — the same rule lib/checkout-idempotency.ts signs by. Non-vacuity: the same
+    // serialisation does keep a real note (the arm above).
+    const wire = JSON.parse(JSON.stringify(body())) as Record<string, unknown>
+    expect(Object.prototype.hasOwnProperty.call(wire, "allergyNote")).toBe(false)
+    expect(wire.acknowledgedAllergenMask).toBe(MILK)
   })
 
   it("never writes the note to browser storage (T-31.1-55)", async () => {

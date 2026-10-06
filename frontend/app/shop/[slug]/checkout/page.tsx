@@ -13,7 +13,15 @@ import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-
 import { useCart } from "@/components/storefront/cart-provider"
 // The refusal copy lives in the panel, which owns its own `role="alert"` region — the page sets
 // only the errored flag, so there is one source for the legally-operative string.
-import { OrderAllergenPanel, type AllergenAckErrorKind } from "@/components/storefront/order-allergen-panel"
+import {
+  ALLERGY_NOTE_LABEL_COPY,
+  ALLERGY_NOTE_MAX_LENGTH,
+  OrderAllergenPanel,
+  allergyNoteCountCopy,
+  allergyNoteHelpCopy,
+  type AllergenAckErrorKind,
+} from "@/components/storefront/order-allergen-panel"
+import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { describeOrderError } from "@/lib/order-error"
@@ -25,7 +33,7 @@ import { buildGuestOrderIntent, guestOrderIntentSignature } from "@/lib/checkout
 import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/vat"
 import publicApiClient from "@/lib/public-api-client"
 // FulfilmentType is the shared two-member union (mirrors the backend enum), not a local re-declaration.
-import { getAllergenNames, type FulfilmentType } from "@/types/api"
+import { getAllergenNames, type FulfilmentType, type OrderAllergenFlag } from "@/types/api"
 import {
   ALLERGEN_ACK_STALE_PROBLEM_TYPE,
   type AllergenAcknowledgementStaleProblem,
@@ -154,6 +162,25 @@ export function readStaleAllergenProblem(
     Array.isArray(names) &&
     names.every((n) => typeof n === "string")
   return { stale: true, current: wellFormed ? { mask, names: [...names] } : null }
+}
+
+/**
+ * The recorded allergen set from the confirmation response (31.1-09, D-08), carried into the COD
+ * confirmation and the payment step. An ABSENT field (older backend) is read as `null` — "not
+ * recorded" — never as `[]`.
+ */
+type RecordedAllergens = {
+  acknowledgedAllergens: string[] | null
+  recordedAllergens: string[] | null
+  recordedAllergenFlags: OrderAllergenFlag[] | null
+}
+
+function recordedAllergensOf(confirmation: GuestOrderConfirmation): RecordedAllergens {
+  return {
+    acknowledgedAllergens: confirmation.acknowledgedAllergens ?? null,
+    recordedAllergens: confirmation.recordedAllergens ?? null,
+    recordedAllergenFlags: confirmation.recordedAllergenFlags ?? null,
+  }
 }
 
 /** What `loadStripe` resolves to. Derived from the `/pure` export so no default-entry import is needed for the type. */
@@ -285,6 +312,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   }, [])
   const [customerPhone, setCustomerPhone] = useState("")
   const [notes, setNotes] = useState("")
+  // #812 (D-15): the dedicated allergy note. React state ONLY — never written to browser storage
+  // (T-31.1-55); its one destination is the POST body.
+  const [allergyNote, setAllergyNote] = useState("")
   const idempotencyKeyRef = useRef<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -399,6 +429,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         // re-acknowledged resubmit after a stale 409 rotates the Idempotency-Key and an unchanged
         // resubmit after a lost reply replays.
         acknowledgedAllergenMask: declaredAllergenMask,
+        allergyNote,
       }),
     [
       customerName,
@@ -412,6 +443,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       postcode,
       items,
       declaredAllergenMask,
+      allergyNote,
     ]
   )
   const intentSignature = useMemo(() => guestOrderIntentSignature(orderIntent), [orderIntent])
@@ -466,7 +498,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     vatAmountPennies: number
     totalAmountPennies: number
     allergenWarnings: string[]
-  } | null>(null)
+  } & RecordedAllergens | null>(null)
 
   // COD confirmation — shows full breakdown before redirect. Carries the
   // submitted fulfilment type so the payment instruction reads "Pay on
@@ -480,7 +512,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     vatAmountPennies: number
     totalAmountPennies: number
     allergenWarnings: string[]
-  } | null>(null)
+  } & RecordedAllergens | null>(null)
 
   if (items.length === 0 && !paymentState && !codConfirmation) {
     return (
@@ -604,6 +636,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           vatAmountPennies: confirmation.vatAmountPennies,
           totalAmountPennies: confirmation.totalAmountPennies,
           allergenWarnings: confirmation.allergenWarnings || [],
+          ...recordedAllergensOf(confirmation),
         })
         return
       }
@@ -623,6 +656,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         vatAmountPennies: confirmation.vatAmountPennies,
         totalAmountPennies: confirmation.totalAmountPennies,
         allergenWarnings: confirmation.allergenWarnings || [],
+        ...recordedAllergensOf(confirmation),
       })
     } catch (err: unknown) {
       // #785 (D-05): the set the customer acknowledged is no longer the basket's declared set — a
@@ -700,6 +734,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </div>
           </div>
         </div>
+
+        {/* D-08: what the order RECORDS — the set acknowledged and the set the kitchen works from —
+            read from the confirmation response, never from the basket the client computed. */}
+        <RecordedAllergenSet
+          acknowledged={codConfirmation.acknowledgedAllergens}
+          recorded={codConfirmation.recordedAllergens}
+          flags={codConfirmation.recordedAllergenFlags}
+          className="mb-6"
+        />
 
         {codConfirmation.allergenWarnings.length > 0 && (
           <div className="rounded-xl bg-amber-50 border border-amber-600 p-4 mb-6">
@@ -804,6 +847,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </div>
           </div>
         </div>
+
+        {/* D-08: the order exists at this step, so its record is shown before the card is taken. */}
+        <RecordedAllergenSet
+          acknowledged={paymentState.acknowledgedAllergens}
+          recorded={paymentState.recordedAllergens}
+          flags={paymentState.recordedAllergenFlags}
+          className="mb-4"
+        />
 
         {paymentState.allergenWarnings.length > 0 && (
           <div className="rounded-xl bg-amber-50 border border-amber-600 p-4 mb-4">
@@ -1059,10 +1110,41 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               id="notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any special requests or dietary requirements..."
+              placeholder="Any special requests..."
               rows={2}
               className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 resize-none"
             />
+          </div>
+
+          {/* #812 (D-15): the allergy note is its OWN field. It goes to the kitchen ticket and the
+              shop must acknowledge reading it (31.1-13), so it must not be buried in order notes.
+              Optional; no autocomplete token — it collects no autofillable data about the user. */}
+          <div className="space-y-1.5">
+            <label htmlFor="allergy-note" className="block text-xs font-medium text-slate-600">
+              {ALLERGY_NOTE_LABEL_COPY}
+            </label>
+            <textarea
+              id="allergy-note"
+              value={allergyNote}
+              onChange={(e) => setAllergyNote(e.target.value)}
+              maxLength={ALLERGY_NOTE_MAX_LENGTH}
+              rows={2}
+              aria-describedby="allergy-note-help allergy-note-count"
+              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 resize-none"
+            />
+            <div className="flex items-start justify-between gap-3">
+              <p id="allergy-note-help" className="text-xs text-slate-600">
+                {allergyNoteHelpCopy(shop?.name ?? "the shop")}
+              </p>
+              <p
+                id="allergy-note-count"
+                data-testid="allergy-note-count"
+                aria-live="polite"
+                className="flex-shrink-0 text-xs tabular-nums text-slate-600"
+              >
+                {allergyNoteCountCopy(allergyNote.length)}
+              </p>
+            </div>
           </div>
         </div>
 
