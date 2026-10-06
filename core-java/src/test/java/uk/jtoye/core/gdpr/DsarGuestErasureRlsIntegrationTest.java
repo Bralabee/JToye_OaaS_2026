@@ -105,6 +105,7 @@ class DsarGuestErasureRlsIntegrationTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private JsonMapper jsonMapper;
     @Autowired private DsarFanoutWorker worker;
+    @Autowired private GdprService gdprService;
     @Autowired private PlatformTransactionManager txManager;
     @PersistenceContext private EntityManager entityManager;
 
@@ -245,7 +246,225 @@ class DsarGuestErasureRlsIntegrationTest {
                 .as("erasure_records has no _aud mirror").isZero();
     }
 
+    // ---- Task 2 arms -----------------------------------------------------------------------------
+
+    /**
+     * Every stored spelling that normalises to the subject is erased in ONE sweep, and so is the Envers
+     * history behind it: {@code orders_aud} rows written under each spelling lose the address.
+     */
+    @Test
+    void everySpellingAndItsAuditHistoryIsScrubbedInOneSweep(CapturedOutput output) {
+        String local = "grace.persona14." + shortId();
+        String spellingA = "Grace.Persona14." + local.substring("grace.persona14.".length()) + "@example.test";
+        String spellingB = " " + local + "@EXAMPLE.test ";
+        String digest = DsarSubjectDigest.of(local + "@example.test");
+        UUID a = seedTenant();
+        UUID shop = seedShop(a);
+        UUID order1 = seedGuestOrder(a, shop, spellingA, "Grace Persona");
+        UUID order2 = seedGuestOrder(a, shop, spellingB, "Grace Persona");
+        seedOrderAud(a, order1, spellingA);
+        seedOrderAud(a, order2, spellingB);
+        // A third party's audit history in the same tenant must survive the scrub.
+        UUID bystander = seedGuestOrder(a, shop, "bystander-" + shortId() + "@example.test", "Bystander");
+        seedOrderAud(a, bystander, "bystander-aud@example.test");
+
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM orders_aud WHERE id IN (?, ?) AND customer_email IS NOT NULL",
+                order1, order2))
+                .as("PRECONDITION: the downgraded role SEES both spellings' audit rows").isEqualTo(2L);
+
+        UUID requestId = insertVerifiedErasure(digest);
+        worker.executeLodgedRequests();
+
+        assertThat(readOrderPii(a, order1).customerEmail()).as("spelling A on the live row").isNull();
+        assertThat(readOrderPii(a, order2).customerEmail()).as("spelling B on the live row").isNull();
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM orders_aud WHERE id IN (?, ?) AND customer_email IS NOT NULL",
+                order1, order2))
+                .as("no audit row of either spelling still carries an address").isZero();
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM orders_aud WHERE id IN (?, ?) AND customer_phone IS NOT NULL",
+                order1, order2))
+                .as("no audit row of either spelling still carries a phone number").isZero();
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM orders_aud WHERE id = ? AND customer_email = ?",
+                bystander, "bystander-aud@example.test"))
+                .as("a third party's audit row is untouched").isEqualTo(1L);
+        assertThat(readOrderPii(a, bystander).customerName()).as("a third party's live order").isEqualTo("Bystander");
+        List<RecordRow> records = erasureRecords(a);
+        assertThat(records).as("one record for one tenant, however many spellings").hasSize(1);
+        assertThat(records.get(0).ordersAnonymised()).isEqualTo(2);
+        assertThat(completedLine(output, requestId)).contains("tenantsErased=1");
+    }
+
+    /** T-31.1-03: a tenant holding only a different address is untouched and gets no record. */
+    @Test
+    void aTenantHoldingADifferentAddressIsUntouched(CapturedOutput output) {
+        String subject = "subject-" + shortId() + "@example.test";
+        String other = "someone-else-" + shortId() + "@example.test";
+        UUID a = seedTenant();
+        UUID c = seedTenant();
+        UUID orderA = seedGuestOrder(a, seedShop(a), subject, "Subject");
+        UUID orderC = seedGuestOrder(c, seedShop(c), other, "Someone Else");
+        OrderPii cBefore = readOrderPii(c, orderC);
+        assertThat(cBefore.customerEmail()).as("PRECONDITION: tenant C's order is visible with its address")
+                .isEqualTo(other);
+
+        UUID requestId = insertVerifiedErasure(DsarSubjectDigest.of(subject));
+        worker.executeLodgedRequests();
+
+        assertThat(readOrderPii(a, orderA).customerEmail()).as("CONTROL: the sweep did erase tenant A").isNull();
+        assertThat(readOrderPii(c, orderC)).as("tenant C's order, by content").isEqualTo(cBefore);
+        assertThat(erasureRecords(c)).as("tenant C held nothing for the subject").isEmpty();
+        assertThat(completedLine(output, requestId)).contains("tenantsErased=1");
+    }
+
+    /**
+     * The customer-row path is unchanged in kind: the record names the customer. An address reachable both
+     * through the customers row and through a guest order under another spelling yields ONE record, and the
+     * order linked by customer_id AND by address is updated once (it is counted once).
+     */
+    @Test
+    void aCustomerRowSubjectIsErasedOnceWithTheCustomerOnItsRecord(CapturedOutput output) {
+        String address = "Customer.Row." + shortId() + "@example.test";
+        String guestSpelling = address.toLowerCase(java.util.Locale.ROOT);
+        UUID d = seedTenant();
+        UUID shop = seedShop(d);
+        UUID customerId = seedCustomer(d, address);
+        UUID linked = seedOrder(d, shop, customerId, address, "Customer Row");
+        UUID guest = seedGuestOrder(d, shop, guestSpelling, "Customer Row");
+        assertThat(countUnder(d, "SELECT COUNT(*) FROM customers WHERE id = ? AND email = ?", customerId, address))
+                .as("PRECONDITION: the customers row is visible").isEqualTo(1L);
+
+        UUID requestId = insertVerifiedErasure(DsarSubjectDigest.of(address));
+        worker.executeLodgedRequests();
+
+        assertThat(countUnder(d, "SELECT COUNT(*) FROM customers WHERE id = ? AND name = ? AND phone IS NULL",
+                customerId, REDACTED))
+                .as("the customers row is anonymised as the admin erasure does it").isEqualTo(1L);
+        assertThat(readOrderPii(d, linked).customerEmail()).as("the customer-linked order").isNull();
+        assertThat(readOrderPii(d, guest).customerEmail()).as("the guest order under another spelling").isNull();
+        List<RecordRow> records = erasureRecords(d);
+        assertThat(records).as("ONE record for the tenant, not one per path").hasSize(1);
+        assertThat(records.get(0).subjectCustomerId()).as("the record names the erased customer").isEqualTo(customerId);
+        assertThat(records.get(0).ordersAnonymised()).as("two distinct orders, each counted once").isEqualTo(2);
+        assertThat(completedLine(output, requestId)).contains("tenantsErased=1");
+    }
+
+    /** A fresh VERIFIED request for an already-erased subject matches nothing and writes nothing. */
+    @Test
+    void aSecondSweepForTheSameSubjectChangesNothingAndWritesNoRecord(CapturedOutput output) {
+        String address = "twice." + shortId() + "@example.test";
+        UUID a = seedTenant();
+        UUID shop = seedShop(a);
+        UUID order = seedGuestOrder(a, shop, address, "Twice");
+        UUID review = seedReview(a, shop, order, address, "Twice", "again");
+        String digest = DsarSubjectDigest.of(address);
+
+        UUID first = insertVerifiedErasure(digest);
+        worker.executeLodgedRequests();
+        assertThat(completedLine(output, first)).as("PRECONDITION: the first sweep erased")
+                .contains("tenantsErased=1");
+        OrderPii orderAfterFirst = readOrderPii(a, order);
+        ReviewPii reviewAfterFirst = readReviewPii(a, review);
+        assertThat(erasureRecords(a)).as("PRECONDITION: one record after the first sweep").hasSize(1);
+
+        UUID second = insertVerifiedErasure(digest);
+        worker.executeLodgedRequests();
+
+        assertThat(completedLine(output, second)).as("the second request's completion").contains("tenantsErased=0");
+        assertThat(requestStatus(second)).isEqualTo("COMPLETED");
+        assertThat(erasureRecords(a)).as("no second record").hasSize(1);
+        assertThat(readOrderPii(a, order)).as("the order after the second sweep").isEqualTo(orderAfterFirst);
+        assertThat(readReviewPii(a, review)).as("the review after the second sweep").isEqualTo(reviewAfterFirst);
+    }
+
+    /** D-02: a request for an address no tenant holds is SATISFIED with zero erasures and changes nothing. */
+    @Test
+    void anAddressNoTenantHoldsCompletesWithZeroAndChangesNothing(CapturedOutput output) {
+        UUID a = seedTenant();
+        UUID orderA = seedGuestOrder(a, seedShop(a), "held-" + shortId() + "@example.test", "Held");
+        OrderPii before = readOrderPii(a, orderA);
+
+        UUID requestId = insertVerifiedErasure(DsarSubjectDigest.of("nobody-" + shortId() + "@example.test"));
+        worker.executeLodgedRequests();
+
+        String line = completedLine(output, requestId);
+        assertThat(line).as("PRECONDITION: the request was processed and logged").isNotEmpty();
+        assertThat(line).contains("tenantsErased=0");
+        assertThat(requestStatus(requestId)).isEqualTo("COMPLETED");
+        assertThat(erasureRecords(a)).isEmpty();
+        assertThat(readOrderPii(a, orderA)).isEqualTo(before);
+    }
+
+    /**
+     * {@code matchSubjectInTenant} finds every stored spelling on customers, orders and reviews in the pinned
+     * tenant — and NOT a spelling that only another tenant's PUBLISHED review carries, although the reviews
+     * SELECT policy shows that review to this tenant's session (#764, T-31.1-03).
+     */
+    @Test
+    void theMatchFindsEverySpellingInThePinnedTenantOnly() {
+        String local = "match." + shortId();
+        String onCustomer = local + "@example.test";
+        String onOrder = local.toUpperCase(java.util.Locale.ROOT) + "@example.test";
+        String onReview = "  " + local + "@Example.Test";
+        String onlyElsewhere = "\t" + local + "@EXAMPLE.test";
+        String digest = DsarSubjectDigest.of(onCustomer);
+        UUID a = seedTenant();
+        UUID e = seedTenant();
+        UUID shopA = seedShop(a);
+        UUID customerId = seedCustomer(a, onCustomer);
+        UUID orderA = seedGuestOrder(a, shopA, onOrder, "Match");
+        seedReview(a, shopA, orderA, onReview, "Match", "in A");
+        UUID publishedShopE = seedPublishedShop(e);
+        UUID orderE = seedGuestOrder(e, publishedShopE, "other-" + shortId() + "@example.test", "Other");
+        seedReview(e, publishedShopE, orderE, onlyElsewhere, "Match", "in E");
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM reviews WHERE customer_email = ?", onlyElsewhere))
+                .as("PRECONDITION: tenant A's session SEES tenant E's published review, so a projection "
+                        + "without the tenant predicate WOULD return its spelling — this arm can discriminate")
+                .isEqualTo(1L);
+
+        GdprService.SubjectMatch match = inPinnedTransaction(a, () -> gdprService.matchSubjectInTenant(a, digest));
+
+        assertThat(match.customerIds()).containsExactly(customerId);
+        assertThat(match.emailSpellings())
+                .as("every stored spelling of the subject in tenant A, and only those")
+                .containsExactlyInAnyOrder(onCustomer, onOrder, onReview);
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------
+
+    private <T> T inPinnedTransaction(UUID tenant, java.util.function.Supplier<T> work) {
+        TenantContext.set(tenant);
+        try {
+            return new TransactionTemplate(txManager).execute(s -> {
+                entityManager.unwrap(Session.class).doWork(connection -> {
+                    try (PreparedStatement pin = connection.prepareStatement(
+                            "SELECT set_config('app.current_tenant_id', ?, true)")) {
+                        pin.setString(1, tenant.toString());
+                        pin.execute();
+                    }
+                });
+                return work.get();
+            });
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private UUID seedPublishedShop(UUID tenant) {
+        UUID id = UUID.randomUUID();
+        update(tenant, "INSERT INTO shops (id, tenant_id, name, slug, address, published, delivery_fee_pennies) "
+                        + "VALUES (?, ?, ?, ?, ?, true, 0)",
+                id, tenant, "shop-" + id, "shop-777p-" + id, "Test Address");
+        return id;
+    }
+
+    /** One pre-erasure Envers row for an order, as Hibernate would have written it on create. */
+    private void seedOrderAud(UUID tenant, UUID orderId, String email) {
+        int rev = 1_000_000_000 + java.util.concurrent.ThreadLocalRandom.current().nextInt(1_000_000_000);
+        update(tenant, "INSERT INTO revinfo (rev, revtstmp, tenant_id) VALUES (?, 0, ?)", rev, tenant);
+        update(tenant, "INSERT INTO orders_aud (id, rev, revtype, tenant_id, customer_name, customer_email, "
+                        + "  customer_phone, notes, address_line1, address_postcode) "
+                        + "VALUES (?, ?, 0, ?, 'Pre-erasure Name', ?, '07700900789', 'aud note', '1 Aud Street', 'B2 2BB')",
+                orderId, rev, tenant, email);
+    }
 
     private static String shortId() {
         return UUID.randomUUID().toString().substring(0, 8);
