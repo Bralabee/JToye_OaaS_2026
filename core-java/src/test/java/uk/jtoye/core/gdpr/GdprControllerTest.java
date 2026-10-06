@@ -51,7 +51,7 @@ class GdprControllerTest {
                 UUID.randomUUID(), "ORD-001", "COMPLETED",
                 "Jane Doe", "jane@example.com",
                 1500L, 300L, 200L, 2000L,
-                "CARD", "No onions",
+                "CARD", "No onions", "Sesame allergy",
                 OffsetDateTime.parse("2025-05-20T12:00:00Z")
         );
         var reviewExport = new GdprController.ReviewExport(

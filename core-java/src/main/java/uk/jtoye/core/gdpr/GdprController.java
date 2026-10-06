@@ -93,6 +93,8 @@ public class GdprController {
             Long totalAmountPennies,
             String paymentMethod,
             String notes,
+            // Phase 31.1 D-15 (#812): the allergy note the subject wrote is theirs to receive (Article 20).
+            String allergyNote,
             OffsetDateTime createdAt
     ) {}
 

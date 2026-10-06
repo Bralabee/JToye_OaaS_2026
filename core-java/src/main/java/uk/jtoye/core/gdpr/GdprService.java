@@ -126,6 +126,7 @@ public class GdprService {
                 o.getTotalAmountPennies(),
                 o.getPaymentMethod(),
                 o.getNotes(),
+                o.getAllergyNote(),
                 o.getCreatedAt()
         )).toList();
 
@@ -284,6 +285,10 @@ public class GdprService {
             order.setCustomerEmail(null);
             order.setCustomerPhone(null);
             order.setNotes(null);
+            // D-15 / T-31.1-47: the allergy note is the subject's own text and may be health data.
+            // Erased here and in orders_aud (scrubOrdersAudit*). The acknowledgement who/when stay:
+            // they record a member of staff reading it, not data about the subject.
+            order.setAllergyNote(null);
             // Delivery address is PII (V45) — Article-17 erasure must null it on
             // the live row too; the matching orders_aud scrub runs below.
             order.setAddressLine1(null);

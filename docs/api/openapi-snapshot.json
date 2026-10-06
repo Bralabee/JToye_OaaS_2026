@@ -1610,6 +1610,12 @@
             "minLength" : 0,
             "type" : "string"
           },
+          "allergyNote" : {
+            "description" : "Optional allergy or dietary note for the shop preparing this order, separate from the delivery notes. At most 500 characters; trimmed, and a blank note is treated as none. The shop must acknowledge it, and the order's tracking shows when it did. Never echoed on the public tracking response.",
+            "maxLength" : 500,
+            "minLength" : 0,
+            "type" : "string"
+          },
           "customerEmail" : {
             "format" : "email",
             "maxLength" : 255,
@@ -2085,6 +2091,19 @@
             },
             "type" : "array"
           },
+          "allergyNote" : {
+            "description" : "The customer's allergy or dietary note for this order, separate from notes (delivery). Null when none was given.",
+            "type" : "string"
+          },
+          "allergyNoteAcknowledgedAt" : {
+            "description" : "When someone in the shop acknowledged reading allergyNote; null until acknowledged.",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergyNoteAcknowledgedBy" : {
+            "description" : "Who in the shop acknowledged allergyNote (the authenticated principal name); null until acknowledged.",
+            "type" : "string"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -2204,6 +2223,19 @@
             "format" : "int32",
             "type" : "integer"
           },
+          "allergyNote" : {
+            "description" : "The customer's allergy or dietary note for this order, separate from notes (delivery). Absent when none was given.",
+            "type" : "string"
+          },
+          "allergyNoteAcknowledgedAt" : {
+            "description" : "When someone in the shop acknowledged reading allergyNote. Absent until acknowledged.",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergyNoteAcknowledgedBy" : {
+            "description" : "Who in the shop acknowledged allergyNote (the authenticated principal name). Absent until acknowledged.",
+            "type" : "string"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -2322,6 +2354,9 @@
       },
       "OrderExport" : {
         "properties" : {
+          "allergyNote" : {
+            "type" : "string"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -3267,6 +3302,15 @@
               "type" : "string"
             },
             "type" : "array"
+          },
+          "allergyNoteAcknowledgedAt" : {
+            "description" : "When someone in the shop acknowledged reading the allergy note; null until they have (or when no note was sent).",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergyNoteProvided" : {
+            "description" : "Whether the customer sent an allergy or dietary note with this order. The note's text is never returned here.",
+            "type" : "boolean"
           },
           "createdAt" : {
             "format" : "date-time",
@@ -7622,6 +7666,94 @@
           }
         ],
         "summary" : "Update order",
+        "tags" : [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}/allergy-note/acknowledgement" : {
+      "post" : {
+        "description" : "Records that someone in the shop has read the customer's allergy note: who (the authenticated user) and when. Requires at least STAFF on the order's shop. Idempotent: the first acknowledgement stands and every repeat returns it unchanged. The customer's order tracking shows when the note was read.",
+        "operationId" : "acknowledgeAllergyNote",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OrderDetailDto"
+                }
+              }
+            },
+            "description" : "Acknowledged, or already acknowledged: the order detail carrying allergyNoteAcknowledgedAt and allergyNoteAcknowledgedBy of the FIRST acknowledgement"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The order has no allergy note to acknowledge (errors/invalid-state-transition)"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or invalid bearer token"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks the orders:write scope, or lacks at least STAFF on the order's shop (errors/shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Two first acknowledgements raced on the same order; retry to read the one that won"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Acknowledge the allergy note",
         "tags" : [
           "Orders"
         ]
