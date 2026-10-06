@@ -1,0 +1,30 @@
+== clean (before)
+CLEAN core-java/src/main/java/uk/jtoye/core/gdpr/DsarVerificationMailer.java cda4676e4378e1e3
+CLEAN frontend/app/data-request/confirm/confirm-client.tsx 5db5c0ef8903cd93
+ARM J1-query-string rc=1 tests="6" skipped="0" failures="4" errors="0"
+   red: testcase name="aBase64UrlTokenIsCarriedVerbatim()"
+   red: testcase name="theTokenNeverTravelsInAQueryString()"
+   red: testcase name="theInCodeDefaultIsTheWebConfirmPageNotTheApi()"
+   red: testcase name="theLinkOpensTheWebConfirmPageWithTheTokenInTheFragment()"
+ARM J2-api-default rc=1 tests="6" skipped="0" failures="1" errors="0"
+   red: testcase name="theInCodeDefaultIsTheWebConfirmPageNotTheApi()"
+ARM F1-confirm-on-mount rc=1 total=14 failed=2
+   red: offers 'Confirm my request' and sends nothing before it is pressed
+   red: keeps the token and offers a retry, which sends the same token
+ARM F2-empty-token-is-a-token rc=0 total=14 failed=0
+ARM F3-unknown-reads-verified rc=1 total=14 failed=2
+   red: invalid -> the invalid copy with a route to a new request and the privacy notice, never JSON
+   red: an unrecognised status is treated as invalid, never as confirmed
+ARM F4-fragment-kept rc=1 total=14 failed=2
+   red: removes the token from the address bar on load
+   red: shows the invalid state and sends nothing for an empty token
+ARM F5-already-reads-invalid rc=1 total=14 failed=1
+   red: already_verified -> 'already confirmed', not 'confirmed' and not 'invalid'
+== clean (after)
+CLEAN core-java/src/main/java/uk/jtoye/core/gdpr/DsarVerificationMailer.java cda4676e4378e1e3
+CLEAN frontend/app/data-request/confirm/confirm-client.tsx 5db5c0ef8903cd93
+before 5db5c0ef8903cd93 head 5db5c0ef8903cd93
+applied 3 edits
+ARM F2-empty-token-is-a-token rc=1 total=14 failed=1
+   red: shows the invalid state and sends nothing for an empty token
+after 5db5c0ef8903cd93 head 5db5c0ef8903cd93
