@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
+import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -24,6 +25,7 @@ import uk.jtoye.core.order.FulfilmentPolicy;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
 import uk.jtoye.core.order.OrderAllergenSnapshot;
+import uk.jtoye.core.order.OrderChannel;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
 import uk.jtoye.core.order.OrderNumberGenerator;
@@ -909,6 +911,13 @@ public class PublicStorefrontService {
         // The client cannot supply a rate (no rate field on the request) —
         // it is always resolved from product.vat_rate server-side.
         List<VatCalculator.LineRate> lineRates = new ArrayList<>();
+        // Phase 31.1 #784/#785 (D-05/D-06): the allergen set the server holds for this basket NOW,
+        // accumulated from the SAME Product entities, in the SAME loop and transaction, that the V63
+        // line snapshot below captures. That is what makes the recorded acknowledgement equal
+        // OR(order_items.allergen_mask) by construction: a vendor edit can land before this read or
+        // after this transaction, never between the comparison and the snapshot.
+        // products.allergen_mask is NOT NULL DEFAULT 0 (Product.java), so there is no null branch.
+        int currentAllergenMask = 0;
 
         for (GuestOrderItemRequest itemReq : request.getItems()) {
             Product product = productRepository.findById(itemReq.getProductId())
@@ -958,10 +967,23 @@ public class PublicStorefrontService {
             // are stored beside the declaration, never folded into it.
             OrderAllergenSnapshot.capture(item, product.getTitle(),
                     product.getAllergenMask(), product.getIngredientsText());
+            currentAllergenMask |= product.getAllergenMask();
             order.addItem(item);
             lineRates.add(new VatCalculator.LineRate(
                     item.getTotalPricePennies(), product.getVatRate()));
         }
+
+        // D-05: the acknowledgement is enforced HERE, on the server, before the first save. Both
+        // refusals are thrown inside the reserved idempotency work, so the reservation rolls back
+        // with this transaction and a corrected resubmit under the same key succeeds.
+        Integer acknowledgedAllergenMask = request.getAcknowledgedAllergenMask();
+        if (acknowledgedAllergenMask == null) {
+            throw new AllergenAcknowledgementRequiredException();
+        }
+        // D-06: what the customer acknowledged, when, and through which channel.
+        order.setAllergenAckMask(acknowledgedAllergenMask);
+        order.setAllergenAckAt(OffsetDateTime.now());
+        order.setPlacedVia(OrderChannel.STOREFRONT);
 
         // Resolve the order's single predominant VAT rate from the basket
         // (replaces the former hardcoded STANDARD). Delivery VAT then follows

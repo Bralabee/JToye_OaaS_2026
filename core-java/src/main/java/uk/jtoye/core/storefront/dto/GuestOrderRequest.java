@@ -1,7 +1,11 @@
 package uk.jtoye.core.storefront.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
@@ -63,6 +67,32 @@ public class GuestOrderRequest {
     @Valid
     private List<GuestOrderItemRequest> items;
 
+    /**
+     * The allergen set the checkout panel SHOWED the customer when they ticked the acknowledgement
+     * (Phase 31.1 #784/#785, D-05): a 14-bit mask in the {@code AllergenCatalog} layout, the union
+     * of the basket products' declared {@code allergenMask} values as the public menu served them.
+     *
+     * <p>Nullable at the DTO so an old client's body still binds, but REQUIRED by the service: a
+     * storefront order without it is refused 422 {@code allergen-acknowledgement-required}, and one
+     * that differs from the set the server reads for the basket at submit is refused 409
+     * {@code allergen-acknowledgement-stale}. It is not health data: it describes the products, not
+     * the customer.
+     *
+     * <p>{@code NON_NULL}: the idempotency fingerprint ({@code IdempotencyJson}, frozen at the
+     * Boot 3.5 bytes by {@code IdempotencyFingerprintGoldenTest}) serialises this DTO. Absent when
+     * null, so a request without the field hashes exactly as it did before V69, and a key reserved
+     * by an older pod still matches; present when set, so a resubmit with a different acknowledgement
+     * under the same key is a payload mismatch (422), never a replay.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Min(value = 0, message = "acknowledgedAllergenMask must be between 0 and 16383")
+    @Max(value = 16383, message = "acknowledgedAllergenMask must be between 0 and 16383")
+    @Schema(description = "The 14-bit allergen set (AllergenCatalog bits 0..13) shown to the customer and "
+            + "acknowledged at checkout. Required for a storefront order: missing is refused 422 "
+            + "allergen-acknowledgement-required; different from the basket's current declared set is "
+            + "refused 409 allergen-acknowledgement-stale, which carries the current set.")
+    private Integer acknowledgedAllergenMask;
+
     public String getCustomerName() { return customerName; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }
     public String getCustomerEmail() { return customerEmail; }
@@ -85,4 +115,8 @@ public class GuestOrderRequest {
     public void setAddressPostcode(String addressPostcode) { this.addressPostcode = addressPostcode; }
     public List<GuestOrderItemRequest> getItems() { return items; }
     public void setItems(List<GuestOrderItemRequest> items) { this.items = items; }
+    public Integer getAcknowledgedAllergenMask() { return acknowledgedAllergenMask; }
+    public void setAcknowledgedAllergenMask(Integer acknowledgedAllergenMask) {
+        this.acknowledgedAllergenMask = acknowledgedAllergenMask;
+    }
 }

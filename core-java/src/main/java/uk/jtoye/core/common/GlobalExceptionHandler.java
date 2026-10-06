@@ -23,6 +23,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
 import uk.jtoye.core.exception.DsarRateLimitExceededException;
 import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
@@ -724,6 +725,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
                 .body(problem);
+    }
+
+    /**
+     * Phase 31.1 #784 (D-05) — a storefront guest order carried no {@code acknowledgedAllergenMask}.
+     * 422: the body is well-formed, but the server will not place an order whose allergen
+     * information the customer has not acknowledged. Its own stable type, distinct from the stale
+     * 409 and from both idempotency problems, so a client can branch on {@code type} alone.
+     */
+    @ExceptionHandler(AllergenAcknowledgementRequiredException.class)
+    public ProblemDetail handleAllergenAcknowledgementRequired(AllergenAcknowledgementRequiredException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY,
+                "Confirm you have read the allergen information for this order.");
+        problem.setTitle("Allergen acknowledgement required");
+        problem.setType(URI.create("https://jtoye.uk/errors/allergen-acknowledgement-required"));
+        problem.setProperty("code", "ALLERGEN_ACKNOWLEDGEMENT_REQUIRED");
+        return problem;
     }
 
     @ExceptionHandler(Exception.class)

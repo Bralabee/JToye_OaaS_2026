@@ -138,6 +138,10 @@ public class OrderService {
         order.setOrderNumber(orderNumberGenerator.generate(tenantId));
         order.setStatus(OrderStatus.DRAFT);
         order.setNotes(request.getNotes());
+        // Phase 31.1 D-07: the vendor channel (dashboard, REST API, MCP create_order). It takes no
+        // allergen acknowledgement, so allergenAckMask/allergenAckAt stay NULL ("not recorded"),
+        // never 0. CreateOrderRequest and the MCP contract are unchanged.
+        order.setPlacedVia(OrderChannel.VENDOR);
 
         // Link customer: if customerId provided, look up and populate denormalized fields
         if (request.getCustomerId() != null) {
