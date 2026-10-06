@@ -58,7 +58,10 @@ public class DsarCipher {
 
     /** What a ciphertext is for. Part of the associated data, so purposes cannot be swapped. */
     public enum Purpose {
-        SUBJECT_ADDRESS
+        /** The verified subject address on {@code dsar_request} (V70). */
+        SUBJECT_ADDRESS,
+        /** The assembled Article 15 export document on {@code dsar_access_export} (V75, 31.1-16). */
+        ACCESS_EXPORT
     }
 
     static final String PROPERTY = "jtoye.gdpr.dsar.encryption-key";
@@ -132,9 +135,10 @@ public class DsarCipher {
     }
 
     /**
-     * The decrypt path with the associated-data label supplied directly. Package-private so the
-     * purpose binding can be proven while only one {@link Purpose} exists; production code goes
-     * through {@link #decrypt}.
+     * The decrypt path with the associated-data label supplied directly. Package-private so tests
+     * can prove the purpose binding with labels of their choosing (31.1-07, written while only one
+     * {@link Purpose} existed; 31.1-16 reads an ACCESS_EXPORT payload through it by its label);
+     * production code goes through {@link #decrypt}.
      */
     String decryptWithLabel(String label, UUID requestId, byte[] stored) {
         Objects.requireNonNull(label, "label");

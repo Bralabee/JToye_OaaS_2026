@@ -230,6 +230,17 @@ jtoye:
       # request: a link built from an attacker-supplied Host header would redirect a live,
       # single-use bearer token to a collector of their choosing.
       verify-base-url: ${DSAR_VERIFY_BASE_URL:http://localhost:8080/api/v1/public/gdpr/dsar/verify}
+      # 31.1-16 (D-01, #778): how long the emailed Article 15 download link lives. Seven days
+      # (assumption A5, cheap to change): the same window the verification link gets. Read by
+      # DsarAccessExportService when stamping dsar_access_export.expires_at AND quoted to the subject
+      # by DsarOutcomeMailer from that same value, so the promise and the column cannot disagree.
+      export-link-ttl-hours: ${DSAR_EXPORT_LINK_TTL_HOURS:168}
+      # 31.1-16 (D-01): where the emailed download link points — the frontend page (31.1-17), with the
+      # single-use token appended in the URL FRAGMENT (#token=...), which a browser never sends to a
+      # server. Config-injected and NEVER derived from a request: a link built from an
+      # attacker-supplied Host header would hand a live bearer token for a personal-data document to
+      # whoever supplied it.
+      export-download-base-url: ${DSAR_EXPORT_DOWNLOAD_BASE_URL:http://localhost:3000/data-request/download}
       # 31.1-07 (D-19): the AES-256-GCM key for the subject's address, which dsar_request holds
       # ENCRYPTED from intake until a terminal state (V70). A SECRET, unlike every key above: 64
       # hexadecimal characters (32 bytes), generated with `openssl rand -hex 32`, supplied only by
