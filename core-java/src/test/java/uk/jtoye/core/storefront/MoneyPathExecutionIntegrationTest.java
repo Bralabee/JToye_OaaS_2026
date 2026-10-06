@@ -20,6 +20,7 @@ import uk.jtoye.core.security.access.SystemPrincipal;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
+import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
 import java.util.List;
@@ -223,7 +224,8 @@ class MoneyPathExecutionIntegrationTest {
         request.setCustomerPhone("+447700900909");
         request.setIdempotencyKey(idempotencyKey);
         request.setItems(List.of(item));
-        return request;
+        // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
+        return GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
     }
 
     private GuestOrderRequest deliveryRequest(UUID productId, int qty, String idempotencyKey) {

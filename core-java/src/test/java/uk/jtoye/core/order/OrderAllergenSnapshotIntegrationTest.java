@@ -23,6 +23,7 @@ import uk.jtoye.core.storefront.PublicStorefrontService;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
+import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
 import java.util.ArrayList;
@@ -382,6 +383,8 @@ class OrderAllergenSnapshotIntegrationTest {
         request.setItems(items);
         // COLLECTION: this class is fulfilment-agnostic and COLLECTION needs no UK address.
         request.setFulfilmentType("COLLECTION");
+        // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
+        GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
 
         TenantContext.clear();
         GuestOrderConfirmation confirmation =

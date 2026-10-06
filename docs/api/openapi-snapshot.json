@@ -1556,6 +1556,13 @@
       },
       "GuestOrderRequest" : {
         "properties" : {
+          "acknowledgedAllergenMask" : {
+            "description" : "The 14-bit allergen set (AllergenCatalog bits 0..13) shown to the customer and acknowledged at checkout. Required for a storefront order: missing is refused 422 with code ALLERGEN_ACKNOWLEDGEMENT_REQUIRED; different from the basket's current declared set is refused 409 with code ALLERGEN_ACKNOWLEDGEMENT_STALE, carrying the current set.",
+            "format" : "int32",
+            "maximum" : 16383,
+            "minimum" : 0,
+            "type" : "integer"
+          },
           "addressCity" : {
             "maxLength" : 120,
             "minLength" : 0,

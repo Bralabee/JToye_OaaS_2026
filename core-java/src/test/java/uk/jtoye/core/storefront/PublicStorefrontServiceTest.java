@@ -40,6 +40,7 @@ import uk.jtoye.core.shop.ShopPromotion;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopWithDistance;
 import uk.jtoye.core.storefront.dto.*;
+import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
 
 import java.lang.reflect.Field;
 import java.time.DayOfWeek;
@@ -574,6 +575,8 @@ class PublicStorefrontServiceTest {
         request.setAddressCity("London");
         request.setAddressPostcode("E1 6AN");
         request.setItems(List.of(itemFor(product, 2)));
+        // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
+        request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
         return request;
     }
 
@@ -624,6 +627,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerPhone("07700900001");
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1)));
+        request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
 
         service.createGuestOrder("test-shop-abc12345", request);
 
@@ -668,6 +672,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerPhone("07700900002");
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1)));
+        request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
 
         service.createGuestOrder("test-shop-abc12345", request);
 
@@ -961,6 +966,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerPhone("07700900003");
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1))); // 300 < 1000 minimum
+        request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
 
         var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
