@@ -1,0 +1,76 @@
+31.1-09 break arms. Every arm ran on a COMMITTED tree and was restored with cp from a scratch
+backup. Each restore was checked by sha256 (first 16 hex) against `git show HEAD:<file>`.
+Integration results are read from core-java/build-local/test-results (the live dir), never build/.
+
+== Task 1 (committed at 9c3dc36d; PublicStorefrontService.java HEAD sha256 eae59753194d1f5f) ==
+
+Arm A: trackOrder coalesces a null acknowledgement to 0 / []
+  CustomerRecordedAllergenSetIntegrationTest tests=7 failures=2
+  FAIL D-07 vendor order   -> [not recorded, never 0: HTTP 200 {"acknowledgedAllergenMask":0,...
+  FAIL D-06 pre-V69 order  -> [JSON null, not 0: HTTP 200 {"acknowledgedAllergenMask":0,...
+  restored eae59753194d1f5f == HEAD
+
+Arm A2: only the names coalesce to [] (the mask stays null)
+  tests=7 failures=2
+  FAIL D-07 -> [not recorded, never []: HTTP 200 {"acknowledgedAllergenMask":null,"acknowledgedAllergens":[]
+  FAIL D-06 -> [JSON null, not []: HTTP 200 {"acknowledgedAllergenMask":null,"acknowledgedAllergens":[],...
+  restored eae59753194d1f5f == HEAD
+
+Arm B: the confirmation's recordedAllergens = names(declaredMask | flag bits), i.e. flags merged in
+  tests=7 failures=1
+  FAIL D-03 -> [the declaration is not widened by the heuristic] Expecting actual: ["Gluten", "Milk"]
+  restored eae59753194d1f5f == HEAD
+
+Arm C: the replay passes null for recordedAllergens
+  tests=7 failures=1
+  FAIL D-08 -> [the replay re-derives recordedAllergens from the order row] expected: ["Gluten","Milk"]
+  restored eae59753194d1f5f == HEAD
+
+Closing clean (Task 1): tests=7 failures=0 errors=0, :integrationTest executed (0 UP-TO-DATE lines)
+
+== Task 2 (committed at 97d3782e) ==
+
+Arm N1: getCustomerOrders also sets recordedAllergens / recordedAllergenFlags from viewOf(items)
+  tests=10 failures=1
+  FAIL History -> [detail-only: the list does not load lines, so it states nothing about them]
+  (the JSON assertion fires first, so the fetch-count assertion is not reached; arm N1b isolates it)
+  restored 5ba7c272fc8a1970 == HEAD
+
+Arm N1b: getCustomerOrders touches viewOf(order.getItems()) and exposes nothing
+  tests=10 failures=1
+  FAIL History -> [T-31.1-31: the history list initialised order-item collections (one SELECT per row)]
+                  expected: 0L but was: 7L
+  (7 orders -> 7 collection fetches: the V63 one-per-row shape, reproduced)
+  restored 5ba7c272fc8a1970 == HEAD
+  Positive control inside the same test, on the clean tree: trackOrder -> Order.items fetchCount == 1
+
+Arm N2: the three @JsonInclude(NON_NULL) removed from OrderDto
+  Jackson3WireContractTest tests=12 failures=2
+    FAIL record byte identity -> responses/OrderDto.json top-level keys [allergenAckAt, allergenAckMask, createdAt, ...
+    FAIL tree-equal           -> responses/OrderDto.json false false /allergenAckAt expected=<absent> actual=null ...
+  IdempotencyFingerprintGoldenTest tests=15 failures=1
+    FAIL stored response "OrderDto" -> [OrderDto as IdempotencyJson stores it vs the Boot-3.5 bytes ...]
+  restored OrderDto.java d9681210a2b6bd14 == HEAD
+
+Arm N3: the pre-regeneration OpenAPI snapshot planted (b84b50758b63ed22 == HEAD~1 copy)
+  OpenApiSnapshotTest tests=1 failures=1
+    FAIL apiDocsMatchCommittedSnapshot() -> The OpenAPI spec served by /v3/api-docs no longer matches the reviewed snapshot
+  restored openapi-snapshot.json 69efda655f49fd16 == HEAD
+
+Arm N4: OrderMapper.fillAllergens coalesces a null acknowledgement to acknowledgedAllergenNames []
+  (ran together with N3; the two touch disjoint tests)
+  CustomerRecordedAllergenSetIntegrationTest tests=10 failures=1
+    FAIL Vendor detail -> [not recorded, never []: HTTP 200 {"acknowledgedAllergenNames":[],...
+  restored OrderMapper.java 95a64538872523c8 == HEAD
+
+jackson2-golden untouched:
+  git diff --stat f7d79c67..HEAD -- core-java/src/test/resources/jackson2-golden -> rc 0, 0 bytes
+  control ca7e0fa4~1..ca7e0fa4 (the capture commit) -> " 44 files changed, 203 insertions(+)"
+
+Closing clean (Task 2), after every restore:
+  CustomerRecordedAllergenSetIntegrationTest 10/0/0, OpenApiSnapshotTest 1/0/0,
+  OrderAllergenSnapshotIntegrationTest 8/0/0 (0 UP-TO-DATE lines)
+  boot4.*: Jackson3WireContractTest 12/0/0, GoldenFixturesIntegrityTest 5/0/0, AmqpJackson2CompatibilityTest 18/0/0,
+  OutboxPayloadCompatibilityTest 21/0/0, ConfigKeyContractTest 9/0/0, RenamedConfigKeysBindingTest 8/0/0,
+  JacksonLineContractTest 5/0/0, RequestBodyConstraintEnforcementTest 2/0/0, StatemachineSecurityAccessTest 2/0/0
+  IdempotencyFingerprintGoldenTest 15/0/0
