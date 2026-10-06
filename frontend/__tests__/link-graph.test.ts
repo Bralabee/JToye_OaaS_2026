@@ -56,6 +56,11 @@ const WILDCARD = "*"
  *                          never carry a token, so it would open the page only
  *                          to say the link is unusable; noindex, not in the
  *                          sitemap.
+ *  - "/data-request/confirm" the DSAR verification page (#839, D-04, 31.1-20).
+ *                          Reached ONLY via the link emailed to the address a
+ *                          data-subject request names, with the token in the
+ *                          URL fragment (core-java `jtoye.gdpr.dsar.verify-base-url`).
+ *                          Same reasoning as /data-request/download.
  *
  * NOTE: API route handlers under `app/api/**` have no `page.tsx`, so they are
  * never enumerated as routes — they need no allowlist entry.
@@ -67,6 +72,7 @@ const ALLOWLIST = new Set<string>([
   "/dashboard/payments/connect/return",
   "/dashboard/payments/connect/refresh",
   "/data-request/download",
+  "/data-request/confirm",
 ])
 
 function isTestFile(file: string): boolean {

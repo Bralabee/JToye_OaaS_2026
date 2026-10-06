@@ -28,3 +28,37 @@ applied 3 edits
 ARM F2-empty-token-is-a-token rc=1 total=14 failed=1
    red: shows the invalid state and sends nothing for an empty token
 after 5db5c0ef8903cd93 head 5db5c0ef8903cd93
+== clean (before)
+CLEAN core-java/src/main/resources/application.yml 1e9a3e52243374da
+CLEAN docker-compose.full-stack.yml e08d356e9d5986fb
+CLEAN k8s/staging/configmap-patch.yaml f86ba416ff68a58c
+CLEAN k8s/production/configmap-patch.yaml bfb3f4be74be9f52
+CLEAN k8s/local/configmap-patch.yaml 99fd72ece2aa7312
+ARM A1-appyml-default-is-api rc=1 tests="10" skipped="0" failures="1" errors="0"
+   red: APPLICATION_YML_DEFAULT :: java.lang.AssertionError: [core-java/src/main/resources/application.yml: the verification link base (#839)]  Expecting actual:   "http://localhost:8080/api/v1/public/gdpr
+ARM A2-compose-key-removed rc=1 tests="10" skipped="0" failures="1" errors="0"
+   red: COMPOSE :: java.lang.AssertionError: /home/sanmi/IdeaProjects/JToye_OaaS_2026/docker-compose.full-stack.yml: key 'DSAR_VERIFY_BASE_URL' is missing or empty
+ARM A3-compose-wrong-port rc=1 tests="10" skipped="0" failures="1" errors="0"
+   red: COMPOSE :: org.opentest4j.AssertionFailedError: [docker-compose.full-stack.yml: the verification link must share the runtime's web origin http://localhost:3000]  expected: "http://l
+ARM A4-staging-points-at-production rc=1 tests="10" skipped="0" failures="1" errors="0"
+   red: K8S_STAGING :: org.opentest4j.AssertionFailedError: [k8s/staging/configmap-patch.yaml: the verification link must share the runtime's web origin https://app-staging.olajay.co.uk]  expec
+ARM A5-local-download-under-api rc=1 tests="10" skipped="0" failures="1" errors="0"
+   red: K8S_LOCAL :: java.lang.AssertionError: [k8s/local/configmap-patch.yaml: the Article 15 download link base]  Expecting actual:   "http://app.jtoye.local/api/data-request/download" not 
+ARM A6-production-key-deleted rc=1 tests="10" skipped="0" failures="1" errors="0"
+   red: K8S_PRODUCTION :: java.lang.AssertionError: /home/sanmi/IdeaProjects/JToye_OaaS_2026/k8s/production/configmap-patch.yaml: key 'gdpr.dsar.export-download-base-url' is missing or empty
+ARM A7-local-file-missing rc=1 tests="10" skipped="0" failures="1" errors="0"
+   red: K8S_LOCAL :: java.lang.IllegalStateException: Could not locate repository file 'k8s/local/configmap-patch.yaml' walking up from /home/sanmi/IdeaProjects/JToye_OaaS_2026/core-java — re
+== clean (after)
+CLEAN core-java/src/main/resources/application.yml 1e9a3e52243374da
+CLEAN docker-compose.full-stack.yml e08d356e9d5986fb
+CLEAN k8s/staging/configmap-patch.yaml f86ba416ff68a58c
+CLEAN k8s/production/configmap-patch.yaml bfb3f4be74be9f52
+CLEAN k8s/local/configmap-patch.yaml 99fd72ece2aa7312
+== env-contract arm
+before 498d00c6ebafb860 head 498d00c6ebafb860
+removed DSAR_VERIFY_BASE_URL injection
+ARM E1-verify-url-not-injected env_contract_rc=1
+55:  - DSAR_VERIFY_BASE_URL  (default: 'http://localhost:3000/data-request/confirm'  — local-only token: 'localhost')
+64:FAIL: the env contract is broken — see the violations above. Fix the manifest, the build args or the code; only widen an allowlist when the omission is genuinely reviewed and you can state why.
+after 498d00c6ebafb860 head 498d00c6ebafb860
+restored env_contract_rc=0
