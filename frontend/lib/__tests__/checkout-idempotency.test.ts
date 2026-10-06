@@ -74,6 +74,38 @@ describe("guestOrderIntentSignature — any submitted field changes the key", ()
   })
 })
 
+describe("the acknowledged allergen set is part of the signed intent (#785, D-05)", () => {
+  // The mask the customer acknowledged is a submitted field like any other. A re-acknowledged
+  // resubmit after a stale 409 must therefore get a NEW key; the server's same-key/different-body
+  // refusal would otherwise answer the customer's correct resubmit with a 422.
+  const MASK_AS_READ = 25 // Gluten | Fish | Peanuts
+  const MASK_AFTER_EDIT = 89 // ... | Milk
+
+  it("is carried on the body", () => {
+    expect(
+      buildGuestOrderIntent({ ...BASE, acknowledgedAllergenMask: MASK_AS_READ }).acknowledgedAllergenMask
+    ).toBe(MASK_AS_READ)
+  })
+
+  it("changing only the acknowledged mask produces a different signature", () => {
+    expect(sig({ acknowledgedAllergenMask: MASK_AFTER_EDIT })).not.toBe(
+      sig({ acknowledgedAllergenMask: MASK_AS_READ })
+    )
+  })
+
+  it("keeps 0 (declared none) as a value: it is a statement, not an absence", () => {
+    const intent = buildGuestOrderIntent({ ...BASE, acknowledgedAllergenMask: 0 })
+    expect(intent.acknowledgedAllergenMask).toBe(0)
+    expect(sig({ acknowledgedAllergenMask: 0 })).not.toBe(sig())
+  })
+
+  it("an unchanged mask keeps the signature, so a lost-response retry replays", () => {
+    expect(sig({ acknowledgedAllergenMask: MASK_AS_READ })).toBe(
+      sig({ acknowledgedAllergenMask: MASK_AS_READ })
+    )
+  })
+})
+
 describe("buildGuestOrderIntent — the body IS the signed object", () => {
   it("serialises to the flat GuestOrderRequest shape the server expects", () => {
     expect(JSON.parse(sig())).toEqual({
