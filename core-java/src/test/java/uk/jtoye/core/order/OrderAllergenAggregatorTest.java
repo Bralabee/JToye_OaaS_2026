@@ -256,6 +256,28 @@ class OrderAllergenAggregatorTest {
         assertThat(result.flags().get(0).allergenName()).isEqualTo("Gluten");
     }
 
+    // ------------------------------------------ capitals count as emphasis (#787, Pitfall 6)
+    //
+    // FSA allergen-labelling guidance lists CAPITALS beside bold as a valid way to emphasise
+    // an allergen in an ingredients list. The #787 persona typed "butter (MILK)" with no
+    // markup at all, ticked nothing, and the storefront said "No allergens": reading only
+    // **...** spans, the reconciliation could not see what the vendor had in fact emphasised.
+
+    @Test
+    @DisplayName("#787 verbatim: mask 0 with 'rice, butter (MILK), pepper' -> exactly ONE flag, Milk")
+    void capitalisedUndeclaredMilkIsFlagged() {
+        OrderAllergens result = OrderAllergenAggregator.aggregate(List.of(
+                item("Rice", 0, "rice, butter (MILK), pepper")));
+
+        assertThat(result.flags()).hasSize(1);
+        ReconciliationFlag flag = result.flags().get(0);
+        assertThat(flag.productName()).isEqualTo("Rice");
+        assertThat(flag.allergenBit()).isEqualTo(6);
+        assertThat(flag.allergenName()).isEqualTo("Milk");
+        // The flag is advisory and the declaration is untouched.
+        assertThat(result.declaredMask()).isZero();
+    }
+
     // ----------------------------------------------------------------- fail-soft input
 
     @Test
