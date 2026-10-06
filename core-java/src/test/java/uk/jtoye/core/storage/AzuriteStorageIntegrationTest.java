@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * anonymous browser-style GET, end to end.
  *
  * <p>No Spring context and no stubbing: every media suite that existed before this phase replaces
- * storage with a {@code @SpyBean} and stubbed I/O, so none of them can say anything about what the
+ * storage with a {@code @MockitoSpyBean} and stubbed I/O, so none of them can say anything about what the
  * store actually does (36-RESEARCH Pitfall 1). This class is where that is proven.
  *
  * <p>"Anonymous" means a plain {@link HttpClient} request with NO {@code Authorization} header —

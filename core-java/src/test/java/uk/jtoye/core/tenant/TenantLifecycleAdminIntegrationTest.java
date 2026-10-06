@@ -1,12 +1,12 @@
 package uk.jtoye.core.tenant;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -68,7 +68,7 @@ class TenantLifecycleAdminIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbcTemplate;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
 
     /** The platform admin's own tenant (V13-style seed row). */
     private static final UUID ADMIN_TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -118,7 +118,7 @@ class TenantLifecycleAdminIntegrationTest {
                 .andExpect(jsonPath("$.stripeConnectStatus").value("NONE"))
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
-        return UUID.fromString(body.get("id").asText());
+        return UUID.fromString(body.get("id").asString());
     }
 
     // ------------------------------------------------------------------

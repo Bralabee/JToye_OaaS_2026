@@ -1,7 +1,7 @@
 package uk.jtoye.core.testsupport;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.mail.internet.MimeUtility;
 
 import java.net.URI;
@@ -39,7 +39,7 @@ public final class MailhogAssertions {
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
             .build();
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final JsonMapper mapper = JsonMapper.builder().build();
 
     public MailhogAssertions(String baseUrl) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
@@ -90,7 +90,7 @@ public final class MailhogAssertions {
                 String subject = firstHeader(headers, "Subject");
                 for (JsonNode to : headers.path("To")) {
                     // "To" header may be a comma-joined list of addresses.
-                    for (String addr : to.asText().split(",")) {
+                    for (String addr : to.asString().split(",")) {
                         out.add(new Captured(addr.trim(), subject));
                     }
                 }
@@ -144,7 +144,7 @@ public final class MailhogAssertions {
 
     private static String firstHeader(JsonNode headers, String name) {
         JsonNode arr = headers.path(name);
-        String raw = arr.isArray() && arr.size() > 0 ? arr.get(0).asText() : "";
+        String raw = arr.isArray() && arr.size() > 0 ? arr.get(0).asString() : "";
         // Mailhog stores the RAW header. A subject containing non-ASCII (e.g. the
         // em-dash in "Order X — an update") is RFC 2047 word-encoded, so a plain
         // substring match on the raw value would miss (Q-encoding turns spaces

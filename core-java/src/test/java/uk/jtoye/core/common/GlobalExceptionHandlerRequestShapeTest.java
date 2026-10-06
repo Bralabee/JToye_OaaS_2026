@@ -2,17 +2,17 @@ package uk.jtoye.core.common;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.mapping.PropertyPath;
-import org.springframework.data.util.TypeInformation;
+import org.springframework.data.core.PropertyPath;
+import org.springframework.data.core.TypeInformation;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import uk.jtoye.core.testsupport.BootJsonMapper;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li><b>L2</b> — a missing required {@code @RequestHeader} (e.g. the absent
  *       {@code Stripe-Signature} on the payments webhook) must map to 400, not 500.</li>
  *   <li><b>API-7</b> (QA council 20260902-134741) — a malformed {@code ?sort=} value makes
- *       Spring Data raise {@link org.springframework.data.mapping.PropertyReferenceException};
+ *       Spring Data raise {@link org.springframework.data.core.PropertyReferenceException};
  *       client-supplied input must map to 400, not the catch-all 500.</li>
  * </ul>
  *
@@ -42,13 +42,13 @@ class GlobalExceptionHandlerRequestShapeTest {
 
     @BeforeEach
     void setUp() {
-        // API-7: a BARE `new ObjectMapper()` does not register ProblemDetailJacksonMixin, so a
-        // ProblemDetail's extra members serialise NESTED under "properties" — a shape production
-        // never emits. Jackson2ObjectMapperBuilder is what Spring Boot builds its auto-configured
-        // mapper with, so asserting `$.property` here asserts what a real client receives
-        // (same reasoning as RateLimitInterceptorTest, issue #413).
-        MappingJackson2HttpMessageConverter jackson =
-                new MappingJackson2HttpMessageConverter(Jackson2ObjectMapperBuilder.json().build());
+        // API-7: a BARE mapper does not register the ProblemDetail mixin, so a ProblemDetail's
+        // extra members serialise NESTED under "properties" — a shape production never emits.
+        // BootJsonMapper is Boot's own auto-configured Jackson-3 JsonMapper (the bean production
+        // writes problem documents with, mixin included), so asserting `$.property` here asserts
+        // what a real client receives (same reasoning as RateLimitInterceptorTest, issue #413).
+        JacksonJsonHttpMessageConverter jackson =
+                new JacksonJsonHttpMessageConverter(BootJsonMapper.get());
         mockMvc = MockMvcBuilders.standaloneSetup(new ThrowingController())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setMessageConverters(jackson)
@@ -78,7 +78,7 @@ class GlobalExceptionHandlerRequestShapeTest {
     /**
      * API-7 (QA council 20260902-134741). {@code GET /api/v1/products?sort=;DROP} returned
      * <b>500 errors/internal</b> live: no handler matched
-     * {@link org.springframework.data.mapping.PropertyReferenceException}, so client input
+     * {@link org.springframework.data.core.PropertyReferenceException}, so client input
      * reached {@code handleGenericException}. A 5xx from a well-formed request the client
      * simply got wrong pollutes the error budget and tells the caller nothing actionable.
      *
@@ -133,7 +133,7 @@ class GlobalExceptionHandlerRequestShapeTest {
     static class ThrowingController {
         @GetMapping("/unmapped-resource")
         public String throwNoResource() throws NoResourceFoundException {
-            throw new NoResourceFoundException(HttpMethod.GET, "/unmapped-resource");
+            throw new NoResourceFoundException(HttpMethod.GET, "/unmapped-resource", "unmapped-resource");
         }
 
         @GetMapping("/needs-header")

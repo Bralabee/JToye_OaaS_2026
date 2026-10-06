@@ -67,15 +67,17 @@ spring:
     # Proven inherited by FreshChainMigrationIntegrationTest.
 
 server:
-  error:
-    include-message: always  # Show errors for debugging (staging only!)
-    include-binding-errors: always
-    include-stacktrace: on_param  # Show stack trace with ?trace=true
-    include-exception: false
   shutdown: graceful
   compression:
     enabled: true
     min-response-size: 1024
+
+# 38-11 (Boot 4): was server.error.*, which Boot 4 silently ignores. Values unchanged.
+spring.web.error:
+  include-message: always  # Show errors for debugging (staging only!)
+  include-binding-errors: always
+  include-stacktrace: on_param  # Show stack trace with ?trace=true
+  include-exception: false
 
 spring.lifecycle:
   timeout-per-shutdown-phase: 30s
@@ -93,9 +95,13 @@ logging:
       {"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","logger":"%logger{36}","message":"%replace(%msg){'\"','\\\"'}%replace(%msg){'\n','\\n'}","thread":"%thread","traceId":"%X{traceId:-}","spanId":"%X{spanId:-}"}%n
   file:
     name: ${LOG_PATH:/var/log/jtoye}/application-staging.log
-    max-size: 10MB
-    max-history: 15
-    total-size-cap: 500MB
+  # 38-11 (Boot 4): rotation moved from logging.file.max-size/max-history/total-size-cap,
+  # which Boot 4 silently ignores (retention would revert to the 7-day, uncapped default).
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 15
+      total-size-cap: 500MB
 
 management:
   # issue #442 [SEC-02 / F-M7]: staging was the WEAKEST profile, and the finding
@@ -128,9 +134,8 @@ management:
       probes:
         enabled: true
   metrics:
-    export:
-      prometheus:
-        enabled: true
+    # 38-11: management.metrics.export.prometheus.enabled (a Boot 2 name, unbound since Boot 3.0)
+    # was deleted; base application.yml's management.prometheus.metrics.export.enabled applies.
     tags:
       application: ${spring.application.name}
       environment: staging

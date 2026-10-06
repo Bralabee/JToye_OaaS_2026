@@ -1,12 +1,12 @@
 package uk.jtoye.core.webhook;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -68,7 +68,7 @@ class WebhookSubscriptionControllerIntegrationTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
 
     private UUID tenantId;
@@ -99,8 +99,8 @@ class WebhookSubscriptionControllerIntegrationTest {
     @Test
     void create_returnsSecretOnce_andGetNeverReturnsIt() throws Exception {
         JsonNode created = createSubscription();
-        String id = created.get("subscription").get("id").asText();
-        assertThat(created.get("signingSecret").asText()).isNotBlank();
+        String id = created.get("subscription").get("id").asString();
+        assertThat(created.get("signingSecret").asString()).isNotBlank();
 
         // A subsequent GET must NOT expose the secret.
         mockMvc.perform(get("/api/v1/webhooks/" + id)
@@ -113,15 +113,15 @@ class WebhookSubscriptionControllerIntegrationTest {
     @Test
     void rotateSecret_returnsADifferentSecret() throws Exception {
         JsonNode created = createSubscription();
-        String id = created.get("subscription").get("id").asText();
-        String firstSecret = created.get("signingSecret").asText();
+        String id = created.get("subscription").get("id").asString();
+        String firstSecret = created.get("signingSecret").asString();
 
         String rotated = mockMvc.perform(post("/api/v1/webhooks/" + id + "/rotate-secret")
                         .with(adminJwt(tenantId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.signingSecret").isNotEmpty())
                 .andReturn().getResponse().getContentAsString();
-        String newSecret = objectMapper.readTree(rotated).get("signingSecret").asText();
+        String newSecret = objectMapper.readTree(rotated).get("signingSecret").asString();
 
         assertThat(newSecret).isNotBlank().isNotEqualTo(firstSecret);
     }
@@ -129,7 +129,7 @@ class WebhookSubscriptionControllerIntegrationTest {
     @Test
     void revoke_marksSubscriptionRevoked() throws Exception {
         JsonNode created = createSubscription();
-        String id = created.get("subscription").get("id").asText();
+        String id = created.get("subscription").get("id").asString();
 
         mockMvc.perform(post("/api/v1/webhooks/" + id + "/revoke")
                         .with(adminJwt(tenantId)))

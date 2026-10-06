@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -42,8 +42,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Runs as the Testcontainers SUPERUSER (RLS bypassed) — like
  * {@code MediaCopyOnWriteIntegrationTest}, this exercises the CoW/ref-count delete
  * MECHANICS, not tenant isolation (proven separately under the NOSUPERUSER downgrade).
- * {@link StorageService} is a {@code @SpyBean} so the physical delete is asserted without a
- * live object store; {@link ShopAccessService} is a {@code @MockBean} so the SHOP_MANAGER gate is a
+ * {@link StorageService} is a {@code @MockitoSpyBean} so the physical delete is asserted without a
+ * live object store; {@link ShopAccessService} is a {@code @MockitoBean} so the SHOP_MANAGER gate is a
  * no-op here (proven elsewhere) and these tests focus on the delete wiring.
  */
 @SpringBootTest
@@ -70,8 +70,8 @@ class ProductImageDeleteIntegrationTest {
     @Autowired private ProductMediaRepository productMediaRepository;
     @Autowired private JdbcTemplate jdbc;
     @PersistenceContext private EntityManager em;
-    @SpyBean private StorageService storageService;
-    @MockBean private ShopAccessService shopAccessService;
+    @MockitoSpyBean private StorageService storageService;
+    @MockitoBean private ShopAccessService shopAccessService;
 
     private UUID tenant;
     private int seq;

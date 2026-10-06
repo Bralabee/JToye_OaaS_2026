@@ -1,0 +1,192 @@
+38-13 AUTO-CONFIGURATION CENSUS (BOOT4-02, D-02): explicit starters vs a throwaway classic swap
+====================================================================================================
+Branch phase-37-spring-boot-4-1. Plan base 26c5c5ff (38-12 complete). Gradle 9.7.1, Boot 4.1.1.
+Every test count below is read from fresh build-local XML (newer than a marker touched before the run).
+
+----------------------------------------------------------------------------------------------------
+1. TASK 1 (tracer): the census harness on the explicit build
+----------------------------------------------------------------------------------------------------
+Test: core-java/src/test/java/uk/jtoye/core/boot4/AutoConfigurationCensusIntegrationTest.java
+Activated set = every ConditionEvaluationReport source that is a full match, plus the unconditional
+classes, normalised to the declaring class (Outer$Inner / Outer#method -> Outer), kept only if listed
+in some META-INF/spring/...AutoConfiguration.imports (ImportCandidates). Context: test profile,
+Testcontainers Postgres, @AutoConfigureTracing + @AutoConfigureMetrics, the test profile's Data Redis
+exclusion cleared (spring.autoconfigure.exclude=""), spring.cache.type=redis and an @EnableCaching
+stand-in for CacheConfig (@Profile("!test")). Without those two, spring-boot-data-redis and
+spring-boot-cache would be invisible to the census in BOTH arms.
+
+Must-have constants: 21 (17 capabilities named by the plan + dispatcher servlet, Data JPA repositories,
+Zipkin-with-Brave span export, RestTemplate builder). Names read from the 4.1.1 module jars'
+AutoConfiguration.imports.
+
+1a. Fail direction FIRST (working tree, before the commit): one invented must-have added
+    org.springframework.boot.census.autoconfigure.InventedNoSuchAutoConfiguration
+    ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests '...AutoConfigurationCensusIntegrationTest' --no-daemon
+    -> rc=1; XML tests=2 failures=1 errors=0
+    java.lang.AssertionError: [must-have auto-configurations that did NOT activate. ...]
+    Expecting empty but was: ["INVENTED (fail-direction probe; must be removed) ->
+      org.springframework.boot.census.autoconfigure.InventedNoSuchAutoConfiguration"]
+    i.e. it named exactly the invented class and nothing else: all 21 real constants activated.
+    gsd check tdd-red-evidence (record = that XML, target = the must-have test's display name):
+      RED_EVIDENCE_OK (target_test_failed)
+      fail direction, same XML with the PASSING exclusions test as target: INVALID_RED (no_target_test_failure)
+
+1b. Real list, committed as 38d4d688 test(38-13), then the plan's verify on the committed tree with
+    JTOYE_CENSUS_OUT=<evidence>/38-13-census-explicit.txt:
+    -> rc=0, BUILD SUCCESSFUL, :core-java:integrationTest EXECUTED (not UP-TO-DATE); XML newer than the
+       marker; tests=2 failures=0 errors=0
+    [census] activated auto-configurations: 130, exclusions: []
+    awk 'NF{n++} END{print "entries="n+0}' 38-13-census-explicit.txt -> entries=130 before the 4-line
+       header was prepended (134 with it). Fail direction: /dev/null -> entries=0; a missing file ->
+       "awk: cannot open ..." rc=2.
+    The set equals the one the RED run wrote (diff empty): the invented constant changed nothing else.
+    Tracer gate (interactive, human_verify_mode=end-of-phase, automated-only verify): the run in 1b IS
+    the post-commit re-run; green, so expansion to Task 2 proceeds.
+
+1c. No main or build change in this plan so far:
+    git diff --name-only 26c5c5ff..HEAD -- core-java/src/main core-java/build.gradle.kts -> prints nothing
+    fail direction over 38-12's own range c7d1a473..26c5c5ff -> 26 names.
+
+----------------------------------------------------------------------------------------------------
+2. TASK 2: the classic swap (throwaway, never committed)
+----------------------------------------------------------------------------------------------------
+Committed first: 44554152 (Task 1 evidence). Build file HEAD blob dd299914, sha256 56ab71db...4e1c.
+
+2a. The plan's literal wording ("replace the explicit Boot starters with the classic aggregate pair")
+    cannot produce a bootable build, measured rather than assumed. spring-boot-starter-classic's POM
+    is spring-boot-starter + spring-boot-autoconfigure-classic -> spring-boot-autoconfigure-classic-modules,
+    i.e. Boot's auto-configuration MODULES only; the technology libraries come from the per-technology
+    starters. Probe (every implementation/testImplementation spring-boot-starter-* line removed, the
+    classic pair added, gRPC excluded; dependencies --configuration runtimeClasspath; restored by sha256):
+        literal swap:   tomcat-embed-core=0 lettuce-core=0 spring-rabbit=0 jakarta.mail=0
+                        hibernate-validator=0 spring-websocket=0
+        committed tree: tomcat-embed-core=3 lettuce-core=1 spring-rabbit=1 jakarta.mail=2
+                        hibernate-validator=1 spring-websocket=1
+    Main code imports spring-rabbit, jakarta.mail and spring-websocket types, so that build cannot
+    compile, let alone boot. The spike's own classic route (38-SPIKE.patch) KEPT the technology starters
+    and ADDED spring-boot-starter-classic, with spring-boot-starter-test -> spring-boot-starter-test-classic.
+    So the swap run here is the spike's: ADD the classic pair, keep every other line (the explicit starters
+    stay only for the libraries they carry), add the spike's two gRPC module exclusions.
+    Throwaway diff (8 added lines, build file sha256 f104ae59...7a42):
+      + implementation("org.springframework.boot:spring-boot-starter-classic")
+      + testImplementation("org.springframework.boot:spring-boot-starter-test-classic")
+      + configurations.all { exclude spring-boot-grpc-server; exclude spring-boot-grpc-client }
+
+2b. The swap is live on the classpath (runtimeClasspath, Boot modules org.springframework.boot:spring-boot-*):
+      explicit 65 modules; classic 122 modules; explicit-only modules: none (classic is a superset)
+      spring-boot-autoconfigure-classic-modules present (1); spring-boot-grpc-* 0 (exclusions held)
+      classic adds 57 modules: activemq artemis batch batch-data-mongodb batch-jdbc cassandra cloudfoundry
+      couchbase data-cassandra data-couchbase data-elasticsearch data-jdbc data-ldap data-mongodb
+      data-neo4j data-r2dbc data-rest elasticsearch freemarker graphql groovy-templates gson h2console
+      hateoas hazelcast integration jackson2 jersey jetty jms jooq jsonb kafka kotlinx-serialization-json
+      ldap liquibase micrometer-tracing-opentelemetry mongodb mustache neo4j opentelemetry pulsar quartz
+      r2dbc rsocket security-oauth2-authorization-server security-oauth2-client security-saml2 sendgrid
+      session session-data-redis session-jdbc thymeleaf webservices (+ the two classic aggregator jars)
+
+2c. Classic census: rm -rf core-java/build-local/test-results/integrationTest, then
+    JTOYE_CENSUS_OUT=<evidence>/38-13-census-classic.txt ./gradlew :core-java:cleanIntegrationTest
+    :core-java:integrationTest --tests '...AutoConfigurationCensusIntegrationTest' --no-daemon
+    -> rc=0; XML fresh; tests=2 failures=0 errors=0; activated 133; exclusions []
+    Restore: git checkout -- core-java/build.gradle.kts -> sha256 56ab71db...4e1c == HEAD blob sha256.
+    git grep -n -e 'spring-boot-starter-classic' -e 'spring-boot-starter-test-classic' -- core-java/build.gradle.kts
+      -> rc=1 (nothing). Fail direction, run separately (swap lines re-applied, then restored by sha256):
+         core-java/build.gradle.kts:162: implementation("org.springframework.boot:spring-boot-starter-classic") ...
+         core-java/build.gradle.kts:163: testImplementation("org.springframework.boot:spring-boot-starter-test-classic") ...
+         rc=0
+
+----------------------------------------------------------------------------------------------------
+3. THE CLASSIFIED DIFF (comm over the two sorted lists, headers stripped)
+----------------------------------------------------------------------------------------------------
+common 130; classic-only 3; explicit-only 0.
+
+CLASSIC-ONLY (class | module | classification)
+org.springframework.boot.gson.autoconfigure.GsonAutoConfiguration | spring-boot-gson | INTENDED: Gson. The
+  library is com.google.code.gson:gson 2.13.2, on the runtime classpath only as a transitive dependency of
+  com.stripe:stripe-java:33.4.2, which builds its own Gson internally and takes no Spring bean. The app's
+  JSON line is Jackson 3 (D-01). git grep -nE 'com\.google\.gson' -- core-java/src/main -> rc=1 (no Gson or
+  GsonBuilder injected or used anywhere in main code); no config sets preferred-json-mapper or spring.gson.*
+  (git grep over core-java/src/main/resources rc=1; positive control: the same key IS found in
+  JacksonLineContractTest, rc=0). Positive control for the main-code grep: tools.jackson.databind is found
+  in 19 main files.
+org.springframework.boot.integration.autoconfigure.metrics.IntegrationMetricsAutoConfiguration |
+  spring-boot-integration | INTENDED: Spring Integration. Not on any classpath (org.springframework.integration
+  count 0 in runtimeClasspath, testRuntimeClasspath and the classic runtimeClasspath; positive control:
+  org.springframework.amqp count 2), and git grep -nE 'org\.springframework\.integration' -- core-java/src/main
+  -> rc=1. The class carries no @Conditional and no @Bean (javap of the 4.1.1 class: annotations
+  @AutoConfiguration(before=IntegrationAutoConfiguration, afterName=CompositeMeterRegistryAutoConfiguration)
+  and a constructor, nothing else), so it is reported unconditional merely because the module jar is
+  present and it contributes nothing.
+org.springframework.boot.jackson2.autoconfigure.Jackson2AutoConfiguration | spring-boot-jackson2 | INTENDED:
+  the Jackson-2 ObjectMapper auto-configuration that D-01 removed (38-12 deleted the INTERIM-JACKSON2-BRIDGE
+  line). git grep -nE 'com\.fasterxml\.jackson\.databind' -- core-java/src/main -> rc=1;
+  JacksonLineContractTest forbids the spring-boot-jackson2 jar on the production classpath and
+  Boot4ModuleLivenessIntegrationTest asserts no Jackson-2 ObjectMapper bean.
+
+COUNTS: classic-only entries 3 = INTENDED 3 + not-intended 0 (no starter or module added; build file unchanged).
+
+EXPLICIT-ONLY: none. Expected, because the classic route is a module superset of the explicit one (2b);
+an explicit-only entry would have meant a classic module making an explicit auto-configuration back off.
+
+Observation (in BOTH sets, not a gap): Jackson2EndpointAutoConfiguration (spring-boot-actuator-autoconfigure)
+matches at class level because Jackson 2 stays on the classpath transitively (springdoc, Azure, Stripe);
+38-12's context check already proves no Jackson-2 ObjectMapper bean exists.
+
+Residual scope of a one-context census: an auto-configuration gated on a PROPERTY that only a deploy profile
+sets would not show in this test-profile context. Of the 57 classic-only modules, only two have their
+library on the test runtime classpath: gson (classified above) and h2console (com.h2database:h2 is a
+testImplementation dependency, absent from runtimeClasspath, count 0; H2ConsoleAutoConfiguration also needs
+spring.h2.console.enabled=true, which no config sets: git grep -nE '^\s*h2:|h2\.console' over main and
+test resources rc=1; the same anchored form finds 'oauth2:' rc=0). Every other classic-only module's library is absent
+(checked by coordinate over testRuntimeClasspath, including version-less "group:artifact -> version" lines;
+positive control com.h2database:h2 found), so none of them can activate under any profile.
+
+----------------------------------------------------------------------------------------------------
+4. ZIPKIN ARM (bracketed: clean -> arm -> clean)
+----------------------------------------------------------------------------------------------------
+Clean before: git diff --quiet on the build file (rc=0).
+Arm, first form: the spring-boot-starter-zipkin implementation line deleted. VOID, recorded: compileTestJava
+  fails (RenamedConfigKeysBindingTest, 38-11, imports org.springframework.boot.zipkin.autoconfigure.ZipkinProperties),
+  so no test ran and no XML was written. Not counted as a red.
+Arm, second form: the line replaced by testCompileOnly("org.springframework.boot:spring-boot-starter-zipkin"),
+  so the application (runtimeClasspath and testRuntimeClasspath) loses the starter while 38-11's test still
+  compiles. testRuntimeClasspath: spring-boot-zipkin 0, spring-boot-micrometer-tracing-brave 0 (committed
+  tree: 1 and 1).
+  -> rc=1; XML fresh; tests=2 failures=1; activated 128
+  Expecting empty but was:
+    "Brave tracing (spring-boot-micrometer-tracing-brave) -> org.springframework.boot.micrometer.tracing.brave.autoconfigure.BraveAutoConfiguration",
+    "Zipkin (spring-boot-zipkin) -> org.springframework.boot.zipkin.autoconfigure.ZipkinAutoConfiguration",
+    "Zipkin span export through Brave (spring-boot-micrometer-tracing-brave) -> org.springframework.boot.micrometer.tracing.brave.autoconfigure.zipkin.ZipkinWithBraveTracingAutoConfiguration"
+  Census diff against 38-13-census-explicit.txt:
+    disappeared: BraveAutoConfiguration, zipkin.ZipkinWithBraveTracingAutoConfiguration, ZipkinAutoConfiguration
+    appeared:    org.springframework.boot.micrometer.tracing.autoconfigure.NoopTracerAutoConfiguration
+    (the silent failure itself: tracing does not error, it degrades to a no-op tracer)
+Restore: git checkout -- core-java/build.gradle.kts -> sha256 56ab71db...4e1c == HEAD blob sha256.
+
+Closing clean run (the plan's Task 2 verify, both tests):
+  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest
+    --tests 'uk.jtoye.core.boot4.AutoConfigurationCensusIntegrationTest'
+    --tests 'uk.jtoye.core.boot4.Boot4ModuleLivenessIntegrationTest' --no-daemon
+  -> rc=0; :core-java:integrationTest executed; both XML fresh
+     AutoConfigurationCensusIntegrationTest tests=2 failures=0 errors=0
+     Boot4ModuleLivenessIntegrationTest     tests=6 failures=0 errors=0
+  The census written by this run equals 38-13-census-explicit.txt line for line (130), so the restore is
+  proven by behaviour as well as by hash.
+
+----------------------------------------------------------------------------------------------------
+5. CRITERIA, BOTH DIRECTIONS
+----------------------------------------------------------------------------------------------------
+unresolved count: awk '/ MISSING( |$)/ && !/ADDED/{n++} END{print "unresolved_missing="n+0}' 38-13-census.txt
+  real file -> see section 6; a copy with an injected "x.Y | m | MISSING" line -> unresolved_missing=1;
+  the same line with "ADDED spring-boot-starter-x" appended -> unresolved_missing=0.
+classic-starter grep on the committed build file -> rc=1; while armed -> the two swap lines, rc=0.
+must-have assertions -> green on the committed tree; red on the invented name (1a) and on the zipkin arm (4).
+
+----------------------------------------------------------------------------------------------------
+6. PLAN VERIFY ON THE FINAL TREE
+----------------------------------------------------------------------------------------------------
+awk '/ MISSING( |$)/ && !/ADDED/{n++} END{print "unresolved_missing="n+0}' 38-13-census.txt -> unresolved_missing=0
+  (fail directions in section 5: injected line -> 1; with ADDED -> 0; a missing file -> "awk: cannot open", rc=2)
+git grep -n -e 'spring-boot-starter-classic' -e 'spring-boot-starter-test-classic' -- core-java/build.gradle.kts -> rc=1
+core-java/build.gradle.kts sha256 56ab71db...4e1c == HEAD blob: the plan adds no starter, because nothing was classified
+  as missing.
+No compose service was started, stopped or rebuilt; Testcontainers ran its own throwaway Postgres.

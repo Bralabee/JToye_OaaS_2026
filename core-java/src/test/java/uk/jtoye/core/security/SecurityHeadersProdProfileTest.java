@@ -3,7 +3,7 @@ package uk.jtoye.core.security;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
@@ -95,8 +95,8 @@ class SecurityHeadersProdProfileTest {
         // picking up a stray RedisCacheConfiguration.
         registry.add("spring.cache.type", () -> "none");
         registry.add("spring.autoconfigure.exclude",
-                () -> "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                    + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration");
+                () -> "org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration,"
+                    + "org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration");
     }
 
     @Autowired

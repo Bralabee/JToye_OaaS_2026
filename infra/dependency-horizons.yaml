@@ -489,26 +489,19 @@ dependencies:
   #  with every gate green: this manifest only watched images and toolchains, so a
   #  framework EOL was structurally invisible. The row exists so that class of silence
   #  cannot recur; its exemption is dated and tracked, so it cannot become permanent.
+  #  2026-10-05 (Phase 38, #706): moved to the 4.1 line (4.1.1, OSS end 2027-07-31,
+  #  commercial 2028-07-31 per endoflife.date). The #706 exemption is removed because the
+  #  migration it deferred is done; the 3.5 pin it covered no longer exists at either site.
   - id: spring-boot
-    pin: "id(\"org.springframework.boot\") version \"3.5.16\""
+    pin: "id(\"org.springframework.boot\") version \"4.1.1\""
     sites:
       - "build.gradle.kts:2"
       - "core-java/build.gradle.kts:2"
     kind: framework
     owner: maintainer
     eol_slug: spring-boot
-    eol_cycle: "3.5"
-    eol_date: "2026-06-30"
-    exemption:
-      reason: >-
-        Spring Boot 3.5 OSS support ended 2026-06-30 (commercial runs to 2032; none held).
-        The move is Boot 4.1.x and it is a PHASE, not a bump: dependabot's naive 4.1.1 PR
-        (#676) failed five CI jobs and was closed; Boot 4 removes MockBean/SpyBean used
-        across the test suite, changes config properties, and moves to Spring Framework 7.
-        The Gradle >= 8.14/9 prerequisite for Boot 4 landed with this row. Deferred, not
-        ignored — the migration is scoped in the tracking issue.
-      expires: "2027-02-28"
-      tracked_by: "#706"
+    eol_cycle: "4.1"
+    eol_date: "2027-07-31"
 
   # ------------------------------------------------------------------ first-party images
   #  We are upstream of these, so there is no external horizon to breach. They are exempt

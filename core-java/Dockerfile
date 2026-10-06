@@ -112,6 +112,6 @@ ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
 
 # Labels for image metadata
 LABEL org.opencontainers.image.title="J'Toye OaaS Core API"
-LABEL org.opencontainers.image.description="Spring Boot 3 backend with multi-tenant isolation"
+LABEL org.opencontainers.image.description="Spring Boot 4 backend with multi-tenant isolation"
 LABEL org.opencontainers.image.vendor="J'Toye"
 LABEL org.opencontainers.image.source="https://github.com/jtoye/oaas"

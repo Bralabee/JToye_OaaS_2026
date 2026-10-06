@@ -9,10 +9,10 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 
 ### Constraints
 
-- **Tech stack**: Must use existing stack — Spring Boot 3.5.16, Next.js 16, Go 1.27, PostgreSQL 15
+- **Tech stack**: Must use existing stack — Spring Boot 4.1.1 (migrated from Spring Boot 3.5.16, 2026-10-05, Phase 38), Next.js 16, Go 1.27, PostgreSQL 15
 - **Java version**: JDK 25 (Temurin) on Gradle 9.7.1 — JDK 25 requires Gradle ≥ 9.1 (migrated from JDK 21/Gradle 8.10.2, 2026-08-31)
 - **Multi-tenancy**: All new features must respect RLS and TenantContext
-- **Testing**: All new code requires tests — project standard is 4183 logical invocations passing (2005 Java `@Test` methods across 306 files + 1891 Jest `it/test` blocks across 172 files + 98 top-level Go `Test*` funcs across 13 files + 128 Playwright `test()` blocks across 28 specs + 61 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
+- **Testing**: All new code requires tests — project standard is 4292 logical invocations passing (2114 Java `@Test` methods across 325 files + 1891 Jest `it/test` blocks across 172 files + 98 top-level Go `Test*` funcs across 13 files + 128 Playwright `test()` blocks across 28 specs + 61 MCP-server vitest `it/test` blocks across 8 files under `mcp-server/`). Multiple Java files use Testcontainers (real Postgres + RLS). Counts are the single source of truth in `docs/metrics.json`, enforced by **two** gates in `.github/workflows/docs-freshness.yml`, one per half of the loop: `scripts/docs-freshness.sh` (source tree → `docs/metrics.json`) and `scripts/check-doc-metrics.sh` (the numbers quoted in prose here, in `CLAUDE.md` and in `README.md` → `docs/metrics.json`). Both fail the build on drift. The second gate exists because the first never opened a doc: README sat at `921` for months while the tree was at `1895`, and `docs-freshness.sh` was green on every one of those commits.
 - **Docker**: Always rebuild ALL containers after code changes before E2E testing
 <!-- GSD:project-end -->
 
@@ -20,7 +20,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 ## Technology Stack
 
 ## Languages
-- Java 25 - Core API (Spring Boot 3.5.16)
+- Java 25 - Core API (Spring Boot 4.1.1)
 - TypeScript 5 - Frontend (Next.js 16.3.7, React 19)
 - Go 1.27 - Edge API gateway (Gin)
 - SQL (PostgreSQL) - Database migrations via Flyway
@@ -37,17 +37,18 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - npm: package-lock.json (implicit)
 - Go: go.sum
 ## Frameworks
-- Spring Boot 3.5.16 - Web framework, dependency injection, auto-configuration
-- Spring Data JPA - ORM and database abstraction
-- Spring Security - Authentication and authorization
+- Spring Boot 4.1.1 - Web framework, dependency injection, auto-configuration (Spring Framework 7.0.9; explicit per-module starters incl. restclient, webclient and zipkin, no classic starter)
+- Spring Data JPA (Spring Data 2026.0) - ORM and database abstraction
+- Spring Security 7.1 - Authentication and authorization
 - Spring OAuth2 Resource Server - JWT/OIDC token validation
 - Spring AOP - Aspect-oriented programming
 - Spring Cache - Distributed caching with Redis
-- Spring AMQP - RabbitMQ message queue integration
+- Spring AMQP 4.1 - RabbitMQ message queue integration
 - Spring Actuator - Metrics and health endpoints
-- SpringDoc OpenAPI 2.8.6 - Swagger/OpenAPI documentation
+- SpringDoc OpenAPI 3.1.1 - Swagger/OpenAPI documentation
 - Micrometer Prometheus - Metrics export
-- Micrometer Tracing (Brave/Zipkin) - Distributed tracing
+- Micrometer Tracing (Brave/Zipkin, via spring-boot-starter-zipkin) - Distributed tracing
+- Jackson 3 (tools.jackson) - Application JSON line: Boot's JsonMapper with Jackson 3 defaults; Jackson 2 is transitive-only, floored via jackson-2-bom.version
 - Next.js 16.3.7 - React framework with file-based routing
 - React 19 - UI component library
 - React Hook Form 7.89.0 - Form state management
@@ -59,19 +60,19 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - golang-jwt/jwt v5 - JWT validation
 - uber/zap - Structured logging
 - sony/gobreaker - Circuit breaker pattern
-- JUnit 5 - Java test framework
+- JUnit Jupiter 6 - Java test framework
 - Testcontainers 1.21.4 - Docker-based integration testing
 - Spring Boot Test - Testing utilities and test containers
 - Jest 30.5.2 - JavaScript test runner
 - @testing-library/react - React component testing
 - @playwright/test 1.63.0 - E2E browser automation
-- Spring Boot Gradle Plugin 3.5.16 - JAR packaging
-- Flyway - Database migration management
+- Spring Boot Gradle Plugin 4.1.1 - JAR packaging
+- Flyway 12 - Database migration management
 - Lombok - Boilerplate reduction (code generation)
 - MapStruct 1.6.3 - Type-safe DTO mapping
 ## Key Dependencies
 - PostgreSQL JDBC Driver 42.7.13 - Database connectivity
-- Hibernate ORM (via Spring Boot 3.5.16) - JPA implementation
+- Hibernate ORM 7 (via Spring Boot 4.1.1) - JPA implementation
 - Hibernate Envers - Audit history tracking
 - Azure Storage Blob SDK (12.35.1) - Blob API for image storage
 - Azure Identity (1.18.6) - Workload Identity credential for Blob in AKS
@@ -89,7 +90,9 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Bucket4j 8.10.1 - Token bucket rate limiting
 - Stripe Java SDK 33.4.2 - Payment intent creation and webhook handling
 - OpenPDF 2.0.3 - PDF generation for allergen labels
-- Spring Data Redis (Lettuce) - Redis connection pooling
+- Spring Data Redis (Lettuce 7) - Redis connection pooling
+- Embedded Tomcat 11.0.26 - Servlet container (security floor over Boot's managed 11.0.24)
+- Netty 4.2.17.Final - Boot-managed, no pin (transitive via reactor-netty and the Azure SDK)
 ## Configuration
 - `.env` file (required for docker-compose)
 - Environment variable precedence: Spring profiles (dev, test, staging, prod)
@@ -129,7 +132,7 @@ J'Toye OaaS is a multi-tenant UK retail SaaS platform enabling food vendors to m
 - Keycloak 24.0+ (external identity provider)
 - Azure Blob Storage (Azurite locally)
 - SMTP server (SendGrid, AWS SES, etc.)
-- Spring Boot: 3.5.16 (Java 25)
+- Spring Boot: 4.1.1 (Java 25)
 - PostgreSQL: 15-alpine
 - Keycloak: 24.0.5
 - Redis: 7-alpine

@@ -1,12 +1,12 @@
 package uk.jtoye.core.webhook;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -422,7 +422,7 @@ class WebhookDeliveryLogIntegrationTest {
         // no new row.
         String replayed = mockMvc.perform(post(url).with(adminJwt(TENANT_A)).header("Idempotency-Key", key))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
-        ObjectMapper mapper = new ObjectMapper();
+        JsonMapper mapper = JsonMapper.builder().build();
         assertThat(mapper.readTree(replayed).get("id")).isEqualTo(mapper.readTree(adminResponse).get("id"));
         assertThat(mapper.readTree(replayed).get("replayOf"))
                 .isEqualTo(mapper.readTree(adminResponse).get("replayOf"));

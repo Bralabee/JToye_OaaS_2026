@@ -367,7 +367,7 @@ further work there; what #297 still has to add is the part that was never right:
 ## 7. Known findings and caveats
 
 **PIT-5 — the logback boot error, fixed locally, then fixed durably (issue #302).** Under the prod
-profile, `core-java/src/main/resources/application-prod.yml:98` logs to `${LOG_PATH:/var/log/jtoye}/application.log`. The container
+profile, `core-java/src/main/resources/application-prod.yml:100` logs to `${LOG_PATH:/var/log/jtoye}/application.log`. The container
 runs as `runAsUser: 1000`, `/var/log` is root-owned, and the image never creates that directory — so
 logback's FileAppender fails to start with a `FileNotFoundException … Permission denied` on every
 boot. It is **non-fatal** (the app continues; the 2026-07-14 run reached 11/11 READY that way), but it

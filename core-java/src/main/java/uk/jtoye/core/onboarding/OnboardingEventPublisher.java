@@ -1,10 +1,10 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.payment.PaymentEventOutbox;
 import uk.jtoye.core.payment.PaymentEventOutboxRepository;
@@ -48,10 +48,10 @@ public class OnboardingEventPublisher {
     public static final String MANUAL_REVIEW_ROUTING_KEY = "onboarding.state.manual_review";
 
     private final PaymentEventOutboxRepository outboxRepository;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     public OnboardingEventPublisher(PaymentEventOutboxRepository outboxRepository,
-                                    ObjectMapper objectMapper) {
+                                    JsonMapper objectMapper) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
     }
@@ -72,7 +72,9 @@ public class OnboardingEventPublisher {
         String payloadJson;
         try {
             payloadJson = objectMapper.writeValueAsString(event);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
+            // Jackson 3's JacksonException is unchecked, so the compiler no longer
+            // demands this catch; a unit test keeps it (38-08).
             // Fixed-shape record — serialization failure is a programmer error.
             // DO NOT propagate: throwing would roll back the recompute (and with
             // it the committed gate evaluations). Persist a poisoned FAILED

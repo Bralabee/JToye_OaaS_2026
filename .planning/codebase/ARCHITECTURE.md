@@ -90,7 +90,7 @@
 - Depends on: Core Java (`CORE_API_URL`, default `http://localhost:9090`), Keycloak JWKS for JWT validation, `sony/gobreaker` circuit breaker with NO fallback (breaker-open or transport error → 502)
 - Used by: High-volume edge-sync clients calling `POST /api/v1/sync/batch`; Meta's WhatsApp webhook infrastructure calling `POST /api/v1/webhooks/whatsapp` (HMAC-signed, no JWT). **The frontend and mcp-server bypass the edge entirely and call Core directly.**
 
-**Core Java (Spring Boot 3.5.16):**
+**Core Java (Spring Boot 4.1.1):**
 - Purpose: Full REST API surface — CRUD, state machines, business rules, tenant isolation enforcement
 - Location: `core-java/src/main/java/uk/jtoye/core/` — one package per domain (`shop`, `product`, `order`, `customer`, `payment`, `media`, `onboarding`, `security/access`, `gdpr`, `webhook`, `notification`, `finance`, `geo`, `storefront`, `sync`, `tenant`, `ai`, `audit`, `review`, `storage`, `common`, `exception`, `config`, `security`, `websocket`)
 - Contains: `@RestController` classes, `@Service` business logic, `@Repository`/`JpaRepository` data access, JPA entities, MapStruct mappers, `@Aspect` cross-cutting concerns (tenant GUC pinning)

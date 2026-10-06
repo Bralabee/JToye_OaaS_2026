@@ -1,7 +1,5 @@
 package uk.jtoye.core.common.idempotency;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import org.hibernate.Session;
 import org.slf4j.Logger;
@@ -71,6 +69,13 @@ import java.util.function.Supplier;
  * body-storing adopter (a stored NULL body under a storing endpoint would be
  * undeserialisable on replay).
  *
+ * <p><b>Persisted format (Phase 38, BOOT4-08).</b> {@code request_hash} and
+ * {@code response_body} are written by {@link IdempotencyJson}, a frozen mapper that
+ * reproduces the Boot-3.5 bytes, NOT by the app-wide {@code JsonMapper}. A key reserved
+ * against an older pod must still match after a deploy, so the format can never follow
+ * the application's Jackson defaults; changing it needs a dual-hash window (see
+ * {@link IdempotencyJson}).
+ *
  * <p><b>Status.</b> All current adopters are creates, so a first request stamps
  * 201; a replay echoes the stored status. Parameterizing a non-201 status is a
  * documented follow-up (docs/idempotency.md).
@@ -86,14 +91,11 @@ public class IdempotencyService {
     private static final int MAX_KEY_LENGTH = 64;
 
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
     private final EntityManager entityManager;
 
     public IdempotencyService(JdbcTemplate jdbcTemplate,
-                              ObjectMapper objectMapper,
                               EntityManager entityManager) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
         this.entityManager = entityManager;
     }
 
@@ -264,20 +266,12 @@ public class IdempotencyService {
         });
     }
 
-    private String serialize(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize idempotent payload", e);
-        }
+    private static String serialize(Object value) {
+        return IdempotencyJson.write(value);
     }
 
-    private <T> T deserialize(String json, Class<T> type) {
-        try {
-            return objectMapper.readValue(json, type);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to deserialize stored idempotent response", e);
-        }
+    private static <T> T deserialize(String json, Class<T> type) {
+        return IdempotencyJson.read(json, type);
     }
 
     /** SHA-256 hex (64 chars) of the given string. Byte-identical bodies match. */

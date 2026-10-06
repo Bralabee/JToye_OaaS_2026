@@ -1,6 +1,6 @@
 package uk.jtoye.core.notification.consent;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,7 +58,7 @@ class PublicUnsubscribeRequestShapeTest {
     private UnsubscribeTokenService tokenService;
     private SuppressionService suppressionService;
     private MockMvc mockMvc;
-    private final ObjectMapper json = new ObjectMapper();
+    private final JsonMapper json = JsonMapper.builder().build();
 
     @BeforeEach
     void setUp() {

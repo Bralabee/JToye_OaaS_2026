@@ -3,13 +3,13 @@ package uk.jtoye.core.common;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import uk.jtoye.core.testsupport.BootJsonMapper;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -47,14 +47,14 @@ class OptimisticLockExceptionHandlerTest {
         // standaloneSetup omits Boot's Jackson converter, so ProblemDetail would serialize as a
         // String rather than an object. Plug it back in — same reason as the sibling handler test.
         //
-        // Jackson2ObjectMapperBuilder, NOT a bare `new ObjectMapper()`: the builder is what Boot's
-        // auto-configured mapper is built with, and it is what registers ProblemDetailJacksonMixin
-        // — the mixin that flattens setProperty() members to the top level instead of nesting them
-        // under "properties". With a bare mapper the `code` assertion below fails with
+        // BootJsonMapper, NOT a bare mapper: it is Boot's own auto-configured Jackson-3 JsonMapper
+        // (the bean production writes problem documents with), and Boot registers the ProblemDetail
+        // mixin on it — the mixin that flattens setProperty() members to the top level instead of
+        // nesting them under "properties". With a bare mapper the `code` assertion below fails with
         // PathNotFoundException against a handler that is perfectly correct in production. Same
         // reasoning, and the same fix, as RateLimitInterceptorTest (issue #413).
-        MappingJackson2HttpMessageConverter jackson =
-                new MappingJackson2HttpMessageConverter(Jackson2ObjectMapperBuilder.json().build());
+        JacksonJsonHttpMessageConverter jackson =
+                new JacksonJsonHttpMessageConverter(BootJsonMapper.get());
         mockMvc = MockMvcBuilders.standaloneSetup(new ThrowingController())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setMessageConverters(jackson)

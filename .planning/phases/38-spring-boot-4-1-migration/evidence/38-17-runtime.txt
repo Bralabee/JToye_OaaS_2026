@@ -1,0 +1,987 @@
+38-17 evidence: runtime parity on the rebuilt compose stack, jar read-back, live probes
+=========================================================================================
+PLAN_BASE  ff3b1e59d1949e94852a6e783b3b7d0f68565ceb (docs(38-16): record 38-16 completion)
+Branch     phase-37-spring-boot-4-1 (worktree /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37)
+Host       no remote written. `git fetch` (inside check-branch-behind-base.sh) only refreshed
+           refs/remotes/origin/main. The main checkout's git state was never touched; its .env was
+           only read (COMPOSE_ENV_FILES, token minting). No token or secret value is recorded here.
+Every gate run: out=$(bash scripts/<gate> 2>&1); rc=$?   (rc captured on the same line)
+
+
+0. OWNER COORDINATION DECISION (Task 1, checkpoint:decision, gate blocking)
+---------------------------------------------------------------------------
+Resolved by the owner via AskUserQuestion on 2026-10-05. Exact words:
+  - Rebuild driver: "takeover-from-worktree (Recommended)"
+  - Afterwards:     "Stay on Boot-4"
+    (leave the rebuilt Boot-4 stack running; do NOT hand back to main / do NOT rebuild main afterwards)
+
+Orchestrator-observed context at decision time (recorded as supplied):
+  - `docker ps` showed compose project jtoye_oaas_2026 (working_dir
+    /home/sanmi/IdeaProjects/JToye_OaaS_2026) running core-java, frontend, edge-go, mcp-server,
+    keycloak, rabbitmq, redis, postgres, mailhog, azurite, ollama, plus a separate `monitoring`
+    project (prometheus, grafana, alertmanager, exporters). The monitoring project is not rebuilt
+    or stopped by this plan.
+  - Two other Claude sessions have the main checkout as cwd; the owner accepted the takeover
+    knowing this. (Observed by this executor at 16:59 UTC: the main checkout is on branch
+    phase-31.1-persona-gap-closure @ 9b840d5b. Read only, via git -C; nothing changed there.)
+
+Owner decision carried from 38-06 that SUPERSEDES this plan's text on /.well-known
+("anon-401-parity (Recommended)"): an anonymous curl gets 401 with the plain `Bearer`
+challenge and the 401 problem document; a request carrying credentials gets 404 errors/not-found;
+residual: a well-formed but invalid bearer also gets 404. The plan's Task-2 verify ("prints
+anything but 404" fails for an anonymous curl) predates that decision and is replaced in §5.
+
+
+1. BEFORE: the Boot-3.5 runtime as found (no compose service touched yet)
+-------------------------------------------------------------------------
+1.1 Positive control: compose from this worktree addresses the RUNNING project
+### Positive control 2026-10-05T16:59:36Z: compose from the worktree addresses the RUNNING project
+COMPOSE_PROJECT_NAME=jtoye_oaas_2026 COMPOSE_ENV_FILES=/home/sanmi/IdeaProjects/JToye_OaaS_2026/.env (cwd /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37)
+$ docker compose -f docker-compose.full-stack.yml ps --format "{{.Service}}\t{{.Name}}\t{{.State}}"
+azurite	jtoye-azurite	running
+edge-go	jtoye-edge-go	running
+frontend	jtoye-frontend	running
+keycloak	jtoye-keycloak	running
+mailhog	jtoye-mailhog	running
+mcp-server	jtoye-mcp-server	running
+ollama	jtoye-ollama	running
+postgres	jtoye-postgres	running
+rabbitmq	jtoye-rabbitmq	running
+redis	jtoye-redis	running
+core-java	jtoye_oaas_2026-core-java-1	running
+rc=0 rows=11
+
+## Fail arm: the same command WITHOUT COMPOSE_PROJECT_NAME (project derived from the worktree directory)
+[]
+rc=0 rows=0
+
+## Config-hash control: compose's hash of the worktree+env config vs the running containers' label
+core-java   worktree=3c9c3ac0a91c36e0 running=3c9c3ac0a91c36e0 MATCH
+frontend    worktree=9f9aa957a4516f1f running=9f9aa957a4516f1f MATCH
+edge-go     worktree=f90e128723781169 running=f90e128723781169 MATCH
+mcp-server  worktree=ffa177123ca98876 running=ffa177123ca98876 MATCH
+keycloak    worktree=c9dd96e91ba6932b running=3ad34779f8d9b18a DIFFER
+postgres    worktree=08cf127fcac2b662 running=907dd27ffe8ed09a DIFFER
+rabbitmq    worktree=074ea8478a5d846b running=742c89ac3b492f98 DIFFER
+redis       worktree=32e3089f9da9dc63 running=32e3089f9da9dc63 MATCH
+
+    Reading: with the two variables the worktree invocation lists all 11 running jtoye containers
+    (rc=0, 11 rows); without COMPOSE_PROJECT_NAME the SAME command lists nothing and still exits 0 —
+    which is why rows, not rc, are the assertion. The four BUILT services' compose config-hash
+    computed from the worktree + main .env equals the running containers' label, so this invocation
+    reproduces their config exactly. keycloak/postgres/rabbitmq DIFFER: their bind-mount sources
+    resolve to this worktree instead of the main checkout (and infra/keycloak/realm-export.json is
+    untracked, present only in the main checkout). Hence the rebuild below names the four built
+    services with --no-deps, so no non-built service is recreated.
+
+1.2 BEFORE probes, anonymous and garbage bearer (Boot 3.5.16)
+### BEFORE probes 2026-10-05T16:58:56Z
+$ curl -si http://localhost:9090/.well-known/oauth-protected-resource
+HTTP/1.1 401 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Set-Cookie: JSESSIONID=5E47710F9ED4A9E1C21D550EB1FE551E; Path=/; HttpOnly
+WWW-Authenticate: Bearer
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Content-Type: application/problem+json;charset=UTF-8
+Content-Length: 116
+Date: Mon, 05 Oct 2026 16:58:56 GMT
+
+{"type":"https://jtoye.uk/errors/unauthorized","title":"Unauthorized","status":401,"detail":"Authentication failed"}
+curl_rc=0
+$ curl -si http://localhost:9090/api/v1/shops
+HTTP/1.1 401 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Set-Cookie: JSESSIONID=B35F37795EB209D98E077F51DBDD61D0; Path=/; HttpOnly
+WWW-Authenticate: Bearer
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Content-Type: application/problem+json;charset=UTF-8
+Content-Length: 116
+Date: Mon, 05 Oct 2026 16:58:56 GMT
+
+{"type":"https://jtoye.uk/errors/unauthorized","title":"Unauthorized","status":401,"detail":"Authentication failed"}
+$ curl -si -H "Authorization: Bearer garbage" http://localhost:9090/api/v1/shops
+HTTP/1.1 401 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+WWW-Authenticate: Bearer error="invalid_token", error_description="An error occurred while attempting to decode the Jwt: Malformed token", error_uri="https://tools.ietf.org/html/rfc6750#section-3.1"
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Content-Type: application/problem+json;charset=UTF-8
+Content-Length: 116
+Date: Mon, 05 Oct 2026 16:58:56 GMT
+
+{"type":"https://jtoye.uk/errors/unauthorized","title":"Unauthorized","status":401,"detail":"Authentication failed"}
+
+1.3 BEFORE probes with a valid admin-user bearer (password grant, core-api client; token not recorded)
+### BEFORE authenticated probes 2026-10-05T16:59:58Z (admin-user bearer, token not recorded)
+$ curl -si -H "Authorization: Bearer <admin-user token>" http://localhost:9090/.well-known/oauth-protected-resource
+HTTP/1.1 404 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+X-RateLimit-Limit: 120
+X-RateLimit-Remaining: 119
+X-RateLimit-Reset: 1791219658
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Content-Type: application/problem+json
+Transfer-Encoding: chunked
+Date: Mon, 05 Oct 2026 16:59:58 GMT
+
+{"type":"https://jtoye.uk/errors/not-found","title":"Not Found","status":404,"detail":"Resource not found","instance":"/.well-known/oauth-protected-resource"}
+
+$ curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer <admin-user token>" http://localhost:9090/api/v1/shops
+200
+
+1.4 BEFORE jar read-back
+### BEFORE jar read-back 2026-10-05T17:00:06Z container=35e141cbb2cb image=sha256:dc70879b3ea7
+$ docker exec <core-java> sh -c 'unzip -l /app/app.jar' | grep -E 'BOOT-INF/lib/spring-boot-[0-9]|spring-boot-jackson2|spring-boot-autoconfigure-'
+unzip_rc=0 entries=969
+BOOT-INF/lib/spring-boot-3.5.16.jar
+BOOT-INF/lib/spring-boot-autoconfigure-3.5.16.jar
+application.yml sha256 in running jar: 01896360520e7205ada4773a93caf6e8e646abc2df539135bbac070638fc267b
+
+1.5 BEFORE freshness gate against the branch tree (fail direction of §3: DRIFT, rc=1)
+### BEFORE freshness gate (Boot-3.5 runtime vs the branch tree) 2026-10-05T17:00:14Z
+Runtime freshness gate
+  compose file : /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37/docker-compose.full-stack.yml
+  repo root    : /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37
+  HEAD         : ff3b1e59 (phase-37-spring-boot-4-1)
+
+  core-java    DRIFT  [image-not-rebuilt]  image tagged 2026-10-04 17:20:36 UTC / newest build-input commit 0f477503 (2026-10-05 16:11:29 UTC)
+  edge-go      note   .dockerignore kept as build inputs (not translatable exactly): *.exe *.dll *.so *.dylib *.test *.out *.swp *.swo *.log
+  edge-go      FRESH  image tagged 2026-09-29 07:19:37 UTC >= newest build-input commit 5c1bb364 (2026-08-30 20:53:05 UTC)
+  frontend     note   .dockerignore kept as build inputs (not translatable exactly): npm-debug.log* yarn-debug.log* yarn-error.log* .env*.local *.swp *.swo *.log
+  frontend     FRESH  image tagged 2026-10-04 17:19:51 UTC >= newest build-input commit fecfd6c3 (2026-10-04 15:21:39 UTC)
+  mcp-server   note   .dockerignore kept as build inputs (not translatable exactly): npm-debug.log* yarn-debug.log* yarn-error.log* .env*.local *.swp *.swo *.log
+  mcp-server   DRIFT  [image-not-rebuilt]  image tagged 2026-09-29 07:19:11 UTC / newest build-input commit 0f477503 (2026-10-05 16:11:29 UTC)
+
+DRIFT DETAIL:
+  core-java (container 'jtoye_oaas_2026-core-java-1')
+    [image-not-rebuilt] image 'jtoye_oaas_2026-core-java' was tagged 2026-10-04 17:20:36 UTC, but its build inputs changed later:
+                        commit 0f477503  2026-10-05T17:11:29+01:00  docs(38-16): version gates follow the Boot 4.1.1 plugin; stack docs describe the Boot-4 tree
+                        build paths: core-java/Dockerfile gradlew gradlew.bat gradle build.gradle.kts settings.gradle.kts core-java/build.gradle.kts core-java/src
+  mcp-server (container 'jtoye-mcp-server')
+    [image-not-rebuilt] image 'jtoye_oaas_2026-mcp-server' was tagged 2026-09-29 07:19:11 UTC, but its build inputs changed later:
+                        commit 0f477503  2026-10-05T17:11:29+01:00  docs(38-16): version gates follow the Boot 4.1.1 plugin; stack docs describe the Boot-4 tree
+                        build paths: mcp-server/Dockerfile mcp-server/package.json mcp-server/package-lock.json* mcp-server
+
+Rebuild the named services from the current tree, then RECREATE their containers:
+  docker compose -f docker-compose.full-stack.yml up -d --build <service>...
+`docker compose start` and `restart` will NOT fix this — neither builds, and neither
+replaces a container that is holding an older image ID.
+FAIL: 2 of 4 running built service(s) do not match the source tree (0 unverified).
+rc=1
+
+1.6 BEFORE redis key snapshot (redis-cli --scan, never KEYS): 1 key(s), patterns:
+      1 rate_limit::<...>
+
+
+2. BEHIND-BASE AND THE MERGE FROM origin/main
+---------------------------------------------
+2.1 check-branch-behind-base.sh @ ff3b1e59 (fail direction, real):
+    | Branch-behind-base gate
+    |   repo root    : /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37
+    |   head         : HEAD -> ff3b1e59 (phase-37-spring-boot-4-1)
+    |   base branch  : origin/main  (resolved from refs/remotes/origin/HEAD)
+    |   fetch        : refreshed refs/remotes/origin/main
+    |   base head    : 03022f21
+    | 
+    | MISSING COMMITS — on origin/main but not in HEAD:
+    |   03022f21  2026-10-05T00:34:16+01:00  Brala Bee  docs(roadmap): add Phase 39 platform runtime upgrades (#896)
+    |   008ae38e  2026-10-04T22:17:58+01:00  dependabot[bot]  chore(deps): bump the minor-and-patch group in /frontend with 3 updates (#776)
+    |   fd1a83b6  2026-10-04T22:11:18+01:00  dependabot[bot]  chore(deps): bump github.com/Azure/azure-sdk-for-go/sdk/azcore (#775)
+    |   8a46c881  2026-10-04T21:48:16+01:00  Brala Bee  docs(handoff): record 2026-10-04 night — Phase 38 planned, runtime rebuilt (#895)
+    | 
+    | Files those commits touch that HEAD has not seen:
+    |   .planning/ROADMAP.md
+    |   .planning/STATE.md
+    |   .planning/codebase/STACK.md
+    |   .planning/phases/39-platform-runtime-upgrades/.gitkeep
+    |   AGENTS.md
+    |   CLAUDE.md
+    |   HANDOFF.md
+    |   docs/architecture/ESSENTIAL_ARCHITECTURE.md
+    |   frontend/package-lock.json
+    |   frontend/package.json
+    |   infra/backups/blobctl/go.mod
+    |   infra/backups/blobctl/go.sum
+    | 
+    | Merge the base in, then REBUILD the runtime — a rebuild alone cannot add
+    | code that is not in the tree:
+    |   git merge origin/main
+    |   docker compose -f docker-compose.full-stack.yml up -d --build core-java frontend edge-go mcp-server
+    |   scripts/check-runtime-freshness.sh
+    | FAIL: HEAD is 4 commit(s) behind origin/main (and 134 ahead). Any gate run on this tree is measuring an out-of-date product.
+    | rc=1
+
+2.2 Merge 25566e2c (git merge origin/main; 4 conflicts resolved, no remote written):
+    CLAUDE.md, AGENTS.md, docs/architecture/ESSENTIAL_ARCHITECTURE.md: kept the branch's Boot 4.1.1 /
+    Jackson 3 / tracing claims, took main's Next.js 16.3.7 (frontend/package.json from #776).
+    .planning/ROADMAP.md: kept the branch's Phase 38 plan list and main's new Phase 39 section.
+    Merged in, runtime-relevant: frontend/package.json + package-lock.json (#776, rebuilt below),
+    infra/backups/blobctl go.mod/go.sum (#775, not a compose service).
+
+2.3 Gates the merge could affect, re-run on 25566e2c:
+    | ### Post-merge doc gates 2026-10-05T17:01:27Z HEAD 25566e2c (conda env engineering-doctrine)
+    | --- check-doc-versions rc=0
+    |   (skipped 1 dated '(migrated from ...)' clause(s) — history, not claims)
+    |   checked=8 drift=0
+    | 
+    | PASS: all 153 version claim(s) across 7 doc(s) match the build files.
+    | --- check-doc-metrics rc=0
+    |   manifest : docs/metrics.json
+    |   rules    : 37 across 3 doc(s)
+    |   claims   : 37 extracted and compared
+    | PASS: all 37 prose metric claim(s) across 3 doc(s) match docs/metrics.json.
+    | --- docs-freshness rc=0
+    | docs-freshness OK: metrics match source (total logical invocations: 4286).
+    | --- check-dependency-horizons rc=0
+    |   H-2/H-3        violations=0  active-exemptions=5
+    |   H-6 UNKNOWN    rows=7  (printed above; each passes only while its review is unexpired)
+    |   warn window    HORIZON_WARN_DAYS=90
+    | OK: every pinned artifact carries a resolved, in-window or explicitly-deferred horizon.
+    | --- check-doc-citations rc=0
+    |   docs/ops/terminal-states.yaml              citations=17
+    |   citations   total=53  verified=46  uncheckable=7
+    |   violations  0
+    | PASS: all 46 verified citation(s) across 8 doc(s) resolve to lines that support their claim (7 uncheckable).
+    | --- check-handoff-contract rc=0
+    |   H-4 self  : both extractors fire and decline
+    |   H-5 cites : 5 path(s) checked, 5 resolve, 1 skipped (unrecognised extension)
+    | PASS: HANDOFF.md — 1 gate-count claim(s) and 33 state claim(s) hold; 0 commit(s) behind (budget 3).
+    |       NOTE: this gate cannot detect semantic rot — a green run is not "the handoff is accurate".
+    | blobctl (azcore bump #775): go build ./... rc=0; go test ./... rc=0 (ok github.com/jtoye/blobctl)
+    Java suites: the merge touched no core-java path (git diff --stat HEAD...origin/main lists none),
+    so the 38-16 suite state stands. The frontend change is main's CI-green dependabot bump; it is
+    exercised here by the frontend image build (npm ci + next build, §3) and the healthy container.
+
+2.4 check-branch-behind-base.sh @ 25566e2c (pass direction):
+    | Branch-behind-base gate
+    |   repo root    : /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37
+    |   head         : HEAD -> 25566e2c (phase-37-spring-boot-4-1)
+    |   base branch  : origin/main  (resolved from refs/remotes/origin/HEAD)
+    |   fetch        : refreshed refs/remotes/origin/main
+    |   base head    : 03022f21
+    | 
+    | PASS: HEAD contains every commit on origin/main (03022f21); it is 135 commit(s) ahead and 0 behind.
+    | rc=0
+
+
+3. REBUILD FROM THE BRANCH (takeover-from-worktree) AND PARITY
+-------------------------------------------------------------
+Command (env: COMPOSE_PROJECT_NAME=jtoye_oaas_2026 COMPOSE_ENV_FILES=/home/sanmi/IdeaProjects/JToye_OaaS_2026/.env):
+  docker compose -f docker-compose.full-stack.yml up -d --build --no-deps --force-recreate \
+      core-java frontend edge-go mcp-server
+  Every built service, rebuilt and recreated (never started). --force-recreate per sync-runtime.sh's
+  measured cached-build trap; --no-deps per §1.1 (non-built services keep their main-checkout binds).
+
+### After rebuild 2026-10-05T17:04:39Z HEAD 25566e2c
+rebuild start 2026-10-05T17:02:16Z HEAD 25566e2c
+ Image jtoye_oaas_2026-core-java Built 
+ Image jtoye_oaas_2026-edge-go Built 
+ Image jtoye_oaas_2026-frontend Built 
+ Image jtoye_oaas_2026-mcp-server Built 
+ Container jtoye_oaas_2026-core-java-1 Recreated 
+ Container jtoye-edge-go Recreated 
+ Container jtoye-frontend Recreated 
+ Container jtoye-mcp-server Recreated 
+rebuild end 2026-10-05T17:04:28Z rc=0
+$ cid=$(COMPOSE_ENV_FILES=/home/sanmi/IdeaProjects/JToye_OaaS_2026/.env docker compose -p jtoye_oaas_2026 -f docker-compose.full-stack.yml ps -q core-java); echo rc=$?; docker port "$cid"
+rc=0 cid=d76f8af423472e7453c80b98c5668c1cc7e65ee4f27d2e1be0af90404e51fddf
+9090/tcp -> 0.0.0.0:9090
+9090/tcp -> [::]:9090
+health: {"groups":["liveness","readiness"],"status":"UP"}
+jtoye-azurite	Up 2 days (healthy)
+jtoye-edge-go	Up 12 seconds (healthy)
+jtoye-frontend	Up 11 seconds (healthy)
+jtoye-keycloak	Up 2 days (healthy)
+jtoye-mailhog	Up 2 days (healthy)
+jtoye-mcp-server	Up 11 seconds (healthy)
+jtoye_oaas_2026-core-java-1	Up 34 seconds (healthy)
+jtoye-ollama	Up 41 hours (healthy)
+jtoye-postgres	Up 2 days (healthy)
+jtoye-rabbitmq	Up 2 days (healthy)
+jtoye-redis	Up 2 days (healthy)
+
+    Non-built services still 'Up 2 days' / 'Up 41 hours': not recreated. Monitoring project untouched.
+    Prometheus holds host 9091, so core-java's 9090-9091 range could only bind 9090 here.
+
+### Freshness gate, clean -> VOID arm -> clean 2026-10-05T17:04:49Z
+## (1) clean: COMPOSE_PROJECT_NAME=jtoye_oaas_2026 COMPOSE_ENV_FILES=<main .env> bash scripts/check-runtime-freshness.sh
+  HEAD         : 25566e2c (phase-37-spring-boot-4-1)
+  core-java    FRESH  image tagged 2026-10-05 17:03:46 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+  edge-go      FRESH  image tagged 2026-10-05 17:02:45 UTC >= newest build-input commit 5c1bb364 (2026-08-30 20:53:05 UTC)
+  frontend     FRESH  image tagged 2026-10-05 17:03:09 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+  mcp-server   FRESH  image tagged 2026-10-05 17:02:25 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+PASS: 4 running built service(s) match the source tree (0 unverified).
+rc=0
+## (2) arm: docker compose stop edge-go, re-run
+ Container jtoye-edge-go Stopping 
+ Container jtoye-edge-go Stopped 
+  core-java    FRESH  image tagged 2026-10-05 17:03:46 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+  frontend     FRESH  image tagged 2026-10-05 17:03:09 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+  mcp-server   FRESH  image tagged 2026-10-05 17:02:25 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+SKIPPED (UNVERIFIED — these services were NOT proven fresh):
+  edge-go — container 'jtoye-edge-go' is 'exited', not 'running' (nothing to verify)
+PARSE ERROR: 1 of 4 built service(s) could not be verified, listed above — 3 checked. A service that is not running cannot be proven fresh, so this assertion is VOID, not passing. Start the missing service(s), or scope the gate with --compose-file if you are deliberately running a subset.
+rc=2
+## (3) restore: docker compose start edge-go (image built 17:02-17:04 this run; start is acceptable per plan), re-run
+ Container jtoye-edge-go Starting 
+ Container jtoye-edge-go Started 
+edge-go health: healthy
+  core-java    FRESH  image tagged 2026-10-05 17:03:46 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+  edge-go      FRESH  image tagged 2026-10-05 17:02:45 UTC >= newest build-input commit 5c1bb364 (2026-08-30 20:53:05 UTC)
+  frontend     FRESH  image tagged 2026-10-05 17:03:09 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+  mcp-server   FRESH  image tagged 2026-10-05 17:02:25 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+PASS: 4 running built service(s) match the source tree (0 unverified).
+rc=0
+
+    The DRIFT direction of the same gate (rc=1) is §1.5 on the Boot-3.5 runtime.
+
+
+4. JAR READ-BACK FROM THE RUNNING CONTAINER
+-------------------------------------------
+### Jar read-back (rebuilt) 2026-10-05T17:05:23Z container=d76f8af42347 image=sha256:b6374935ab10 jar=-rw-r--r-- 1 spring spring 176389733 Oct  5 16:50 /app/app.jar
+unzip -l rc=0 entries=1019
+-- Boot jars (BOOT-INF/lib/spring-boot-[0-9]*, autoconfigure):
+BOOT-INF/lib/spring-boot-autoconfigure-4.1.1.jar
+BOOT-INF/lib/spring-boot-4.1.1.jar
+-- count of BOOT-INF/lib/spring-boot-4.1.1.jar: 1
+-- count of any spring-boot*-3.5* jar: 0
+-- count of BOOT-INF/lib/spring-boot-jackson2-*.jar: 0
+   positive control for that pattern on the same listing (spring-boot-jackson-*.jar, the Jackson-3 module): BOOT-INF/lib/spring-boot-jackson-4.1.1.jar 
+-- Jackson cores: jackson-core-3.1.7.jar jackson-databind-3.1.7.jar jackson-databind-2.22.3.jar jackson-core-2.22.3.jar 
+-- Framework/Security: spring-security-core-7.1.1.jar spring-web-7.0.9.jar spring-core-7.0.9.jar 
+-- unzip -p application.yml rc=0 bytes=46780
+   sha256 running jar : fd725d4fa1f5d016f94304738e95e15442bcbda6d690078ddc79ee6bebea576b
+   sha256 branch file : fd725d4fa1f5d016f94304738e95e15442bcbda6d690078ddc79ee6bebea576b
+   equal: YES
+   (BEFORE, Boot-3.5 jar: 01896360520e7205ada4773a93caf6e8e646abc2df539135bbac070638fc267b -> DIFFERS from the branch file: fail direction of the same comparison)
+-- renamed keys inside the running application.yml:
+   management.tracing.export.zipkin: 1 block(s); endpoint line: 564-        endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+   spring.web.error: 0 block(s); include-* keys: 
+   old keys: management.zipkin=0 server.error.include=0
+### Renamed keys, counted (awk/grep) — corrected counter (the dotted top-level form 'spring.web.error:' is how the file writes it)
+running rebuilt jar application.yml : management.tracing.export.zipkin=1 spring.web.error=1 | old management.zipkin=0 old server.error=0
+arm: pre-phase 767f5658 (Boot 3.5)  : management.tracing.export.zipkin=0 spring.web.error=0 | old management.zipkin=1 old server.error=1
+BEFORE jar sha256 0189636... vs git 767f5658 application.yml sha256 01896360520e7205... (equal: the before runtime was the pre-phase file)
+# Boot 4 silently ignores the old names, so these values reverted to Boot's defaults until
+# renamed. Values unchanged. Proven bound by RenamedConfigKeysBindingTest; old names are
+# refused by ConfigKeyContractTest (scripts/check-boot-config-keys.sh in CI).
+spring.web.error:
+  include-message: always
+  include-binding-errors: always
+
+management:
+563:      zipkin:
+564-        endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+565-
+566-logging:
+### Every application*.yml in the running jar vs the branch (sha256)
+application-dev.yml        ffe0560d6393e825 EQUAL
+application-local.yml      46f55d6fa7faa10b EQUAL
+application-prod.yml       e1d2eeefea396fea EQUAL
+application-staging.yml    7ed6ce6da0050f82 EQUAL
+application-test.yml       cd914706085d6b10 EQUAL
+application.yml            fd725d4fa1f5d016 EQUAL
+arm: a name absent from the jar hashes to the empty-input sha (e3b0c442...) and reads DIFFER:
+  e3b0c44298fc1c14 DIFFER
+prod/staging renamed keys inside the jar:
+  application-prod.yml: spring.web.error=1 rollingpolicy=1 logging.file.max-size=0
+  application-staging.yml: spring.web.error=1 rollingpolicy=1 logging.file.max-size=0
+
+    Counter correction (recorded, not hidden): the first awk counter for spring.web.error printed 0
+    on the rebuilt file. It looked for a nested 'spring:/  web:/    error:' block, but the file writes
+    the key dotted at top level ('spring.web.error:', line 498). The corrected grep counts 1 there and
+    0 on the pre-phase file (arm), and the old server.error block counts 0 vs 1 (arm).
+    Jar file mtime: 'Oct 5 16:50' (BST) predates this rebuild because the bootJar is reproducible
+    (entries dated 1980-02-01) — this run's bootJar executed ('4 actionable tasks: 4 executed') and
+    produced a byte-identical jar, so BuildKit served the COPY --from layer CACHED by content checksum
+    from the 38-15 scan build. Only comment lines of core-java/build.gradle.kts and the Dockerfile
+    label changed since (c201ccbd, 0f477503). Identity is proven by content above, not by mtime.
+
+
+5. AFTER: live probes on the rebuilt Boot-4 runtime
+---------------------------------------------------
+### AFTER probes on the rebuilt Boot-4 runtime 2026-10-05T17:06:34Z
+$ curl -si http://localhost:9090/.well-known/oauth-protected-resource   (anonymous; owner 38-06 decision: expect 401 plain Bearer + 401 problem document)
+HTTP/1.1 401 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+WWW-Authenticate: Bearer
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Content-Type: application/problem+json;charset=UTF-8
+Content-Length: 116
+Date: Mon, 05 Oct 2026 17:06:34 GMT
+
+{"detail":"Authentication failed","status":401,"title":"Unauthorized","type":"https://jtoye.uk/errors/unauthorized"}
+$ curl -si -H "Authorization: Bearer <admin-user token>" http://localhost:9090/.well-known/oauth-protected-resource   (credentials present: expect 404 not-found)
+HTTP/1.1 404 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Content-Type: application/problem+json
+Content-Length: 158
+Date: Mon, 05 Oct 2026 17:06:34 GMT
+
+{"detail":"Resource not found","instance":"/.well-known/oauth-protected-resource","status":404,"title":"Not Found","type":"https://jtoye.uk/errors/not-found"}
+$ curl -si -H "Authorization: Bearer garbage" http://localhost:9090/.well-known/oauth-protected-resource   (residual: well-formed bearer -> 404)
+404 application/problem+json
+$ curl -si http://localhost:9090/api/v1/shops   (protected route, no token)
+HTTP/1.1 401 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Set-Cookie: JSESSIONID=13C75ADA1FC5E02F0687865E69971728; Path=/; HttpOnly
+WWW-Authenticate: Bearer
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Content-Type: application/problem+json;charset=UTF-8
+Content-Length: 116
+Date: Mon, 05 Oct 2026 17:06:34 GMT
+
+{"detail":"Authentication failed","status":401,"title":"Unauthorized","type":"https://jtoye.uk/errors/unauthorized"}
+$ curl -si -H "Authorization: Bearer garbage" http://localhost:9090/api/v1/shops
+HTTP/1.1 401 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+WWW-Authenticate: Bearer error="invalid_token", error_description="An error occurred while attempting to decode the Jwt: Malformed token", error_uri="https://tools.ietf.org/html/rfc6750#section-3.1"
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Content-Type: application/problem+json;charset=UTF-8
+Content-Length: 116
+Date: Mon, 05 Oct 2026 17:06:34 GMT
+
+{"detail":"Authentication failed","status":401,"title":"Unauthorized","type":"https://jtoye.uk/errors/unauthorized"}
+$ curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer <admin-user token>" http://localhost:9090/api/v1/shops
+200
+
+### Probe assertions (each run on the live response AND on a doctored input that must fail) 2026-10-05T17:06:58Z
+anon /.well-known      live: PASS (status=401 www-auth=[Bearer])
+anon /api/v1/shops     live: PASS (status=401 www-auth=[Bearer])
+anon /api/v1/shops  doctored (Security 7 default challenge): FAIL (status=401 www-auth=[Bearer resource_metadata="http://localhost:9090/.well-known/oauth-protected-resource"] ct=[application/problem+json;charset=UTF-8])
+token /.well-known     live: PASS (status=404 type=https://jtoye.uk/errors/not-found)
+token /.well-known  doctored (the anonymous 401 fed to the 404 check): FAIL (status=401 ct=[application/problem+json;charset=UTF-8])
+token /.well-known  doctored (arm-R 200 body from 38-06): FAIL (status=200 ct=[application/json])
+garbage /api/v1/shops  live: PASS (status=401, invalid_token, no resource_metadata)
+garbage /api/v1/shops doctored (+resource_metadata): FAIL (status=401 hdr=[WWW-Authenticate: Bearer error="invalid_token", error_description="An error occurred while attempting to decode the Jwt: Malformed token", error_uri="https://tools.ietf.org/html/rfc6750#section-3.1", resource_metadata="http://localhost:9090/.well-known/oauth-protected-resource"])
+BEFORE (Boot 3.5) through the same checks:
+  anon /.well-known: PASS (status=401 www-auth=[Bearer])
+
+    Superseded plan verify (owner decision 38-06): the plan's
+      curl -s -o /dev/null -w '%{http_code}\n' http://localhost:9090/.well-known/oauth-protected-resource
+    expects 404 for an ANONYMOUS caller; it prints 401 by design. Replaced by the three checks above:
+    anonymous -> 401 plain Bearer + 401 document; credentials -> 404 not-found; never 200.
+    Observed difference, not a contract item: Boot 3.5's credentialed 404 carried X-RateLimit-* headers
+    (the request reached the rate limiter); on Boot 4 ProtectedResourceMetadataSuppressionFilter answers
+    before it, so the 404 carries none. The response body and status are the documented ones.
+
+5.1 check-openapi-snapshot-fresh on the rebuilt runtime (38-14 carried obligation)
+### check-openapi-snapshot-fresh on the REBUILT runtime 2026-10-05T17:07:05Z
+A-3  paths the RUNNING service has that the contract does not (reported, not failed)
+    /dev/tenants/ensure
+    /health/security
+  Expected for profile-specific surfaces (the compose service runs 'dev', the snapshot
+  is generated under 'test'). Anything else here means the snapshot is STALE —
+  regenerate with ./gradlew :core-java:updateOpenApiSnapshot and commit it.
+
+     tags the RUNNING service has that the contract does not (reported, not failed)
+       Health
+
+A-1  every key the contract declares, as the running service emits it
+  PASS — 0 differences across 109 declared path(s).
+
+------------------------------------------------------------------------------
+RESULT: PASS — the running service emits everything the committed contract claims.
+rc=0
+## arm: same gate, OPENAPI_SNAPSHOT=<pre-phase 767f5658 snapshot (springdoc 2.8.x)> against the rebuilt runtime
+A-2  denominators (both must be >= 1; a zero makes A-1 vacuous)
+A-1  every key the contract declares, as the running service emits it
+  FAIL — the running service does not match the committed contract.
+           "412 PRECONDITION_FAILED",
+           "417 EXPECTATION_FAILED",
+-          "420 METHOD_FAILURE",
+           "424 FAILED_DEPENDENCY",
+RESULT: FAIL
+rc=1
+
+5.2 Task 2 acceptance criteria, re-checked from this file
+    AFTER probes PASS lines (anon 401 Bearer / token 404 / garbage no resource_metadata): 1 1 1; doctored FAIL lines: 4
+    spring-boot-4.1.1.jar listed: 1; application.yml 'equal: YES': 1
+    VOID arm rc=2 recorded: 1; freshness PASS lines with 0 unverified: 2
+    cid/port record: 1 cid line, 1 9090 mapping, 0 mentions of 9091 in the port block
+
+
+6. LIVE KEYCLOAK OFFBOARD BY CONTENT (BOOT4-05), KC_ADMIN_ENABLED for the proof only
+-------------------------------------------------------------------------------------
+### 6.1 Recreate core-java with KC_ADMIN_ENABLED=true (proof only) 2026-10-05T17:08:52Z
+image before recreate: sha256:b6374935ab10
+$ KC_ADMIN_ENABLED=true docker compose -f docker-compose.full-stack.yml up -d --no-deps --no-build --force-recreate core-java
+ Container jtoye_oaas_2026-core-java-1 Recreated 
+ Container jtoye_oaas_2026-core-java-1 Starting 
+ Container jtoye_oaas_2026-core-java-1 Started 
+cid_rc=0 cid=eea0e5014a67 image=sha256:b6374935ab10
+9090/tcp -> 0.0.0.0:9090
+9090/tcp -> [::]:9090
+health: UP
+printenv KC_ADMIN_ENABLED -> 'true' rc=0
+KC_ADMIN_BASE_URL=http://keycloak:8080 KC_DEPROVISION_REALMS=jtoye-dev
+
+### 6.2 Throwaway tenant + Keycloak users 2026-10-05T17:09:27Z
+$ POST /api/v1/admin/tenants {name: p38-17-offboard-probe-20261005170926} (admin-user bearer)
+http=201
+{"id":"eda9d895-c55c-4f71-8eb0-35591fad1acb","name":"p38-17-offboard-probe-20261005170926","status":"ACTIVE","plan":"STANDARD","contactName":"38-17 runtime proof","contactEmail":"p38-17-probe@jtoye.local","contactPhone":null,"createdAt":null,"suspendedAt":null,"offboardedAt":null,"stripeAccountId":null,"stripeConnectStatus":"NONE","keycloakDeprovisionedAt":null}
+create Keycloak user p38-17-probe-20261005170926 tenant_id=eda9d895-c55c-4f71-8eb0-35591fad1acb -> http=201 id=4afacd8d-26f7-40e8-bf08-e4dc74dd13bd
+create Keycloak user p38-17-control-20261005170926 tenant_id=00000000-0000-0000-0000-000000000002 -> http=201 id=3fb4f8eb-fecc-4139-832c-1ace4600ab69
+    Throwaway tenant created through POST /api/v1/admin/tenants (the platform-admin path), not
+    /dev/tenants/ensure: the dev path only ensures the CALLER's own tenant, so it cannot mint a new
+    one. Response createdAt is null on the 201 (the GET below returns it); recorded, not chased.
+
+### 6.3 Keycloak users BEFORE offboard (GET /admin/realms/jtoye-dev/users/{id}, master-realm admin token) 2026-10-05T17:09:37Z
+probe:   {"id":"4afacd8d-26f7-40e8-bf08-e4dc74dd13bd","username":"p38-17-probe-20261005170926","enabled":true,"attributes":null,"createdTimestamp":1791220167595}
+control: {"id":"3fb4f8eb-fecc-4139-832c-1ace4600ab69","username":"p38-17-control-20261005170926","enabled":true,"attributes":null}
+search the service uses (q=tenant_id:eda9d895-c55c-4f71-8eb0-35591fad1acb): []
+full probe JSON before:
+{
+  "id": "4afacd8d-26f7-40e8-bf08-e4dc74dd13bd",
+  "username": "p38-17-probe-20261005170926",
+  "firstName": "P3817",
+  "lastName": "p38-17-probe-20261005170926",
+  "email": "p38-17-probe-20261005170926@jtoye.local",
+  "emailVerified": true,
+  "createdTimestamp": 1791220167595,
+  "enabled": true,
+  "totp": false,
+  "disableableCredentialTypes": [],
+  "requiredActions": [],
+  "notBefore": 0,
+  "access": {
+    "manageGroupMembership": true,
+    "view": true,
+    "mapRoles": true,
+    "impersonate": true,
+    "manage": true
+  }
+}
+
+### 6.4 KC24 user-profile trap hit: the admin-API create (POST /users) STRIPPED attributes.tenant_id
+    (attributes:null above; q=tenant_id search returned []). docs/security-scopes.md §5 records this: the
+    realm declares tenant_id unmanaged, and only realm IMPORT is exempt from the strip. So the two
+    attribute-less users are deleted and re-created through partialImport, the import path every real
+    jtoye-dev user (admin-user, tenant-a-user, ...) took. No realm configuration is changed.
+    delete attribute-less p38-17-probe-20261005170926 id=4afacd8d-26f7-40e8-bf08-e4dc74dd13bd -> DELETE 204, re-read 404
+    delete attribute-less p38-17-control-20261005170926 id=3fb4f8eb-fecc-4139-832c-1ace4600ab69 -> DELETE 204, re-read 404
+$ POST /admin/realms/jtoye-dev/partialImport {ifResourceExists:FAIL, users:[probe tenant_id=<throwaway>, control tenant_id=...0002]}
+{"added":2,"skipped":0,"overwritten":0,"results":[{"action":"ADDED","resourceName":"p38-17-probe-20261005170926","id":"88617369-257b-49a0-b5a8-a3ec4b1a3c91"},{"action":"ADDED","resourceName":"p38-17-control-20261005170926","id":"ba5ac420-b1c7-43c5-bce7-4712ed2454bb"}]}
+    new ids: probe=88617369-257b-49a0-b5a8-a3ec4b1a3c91 control=ba5ac420-b1c7-43c5-bce7-4712ed2454bb
+    q=tenant_id:eda9d895-c55c-4f71-8eb0-35591fad1acb -> [{"id":"88617369-257b-49a0-b5a8-a3ec4b1a3c91","username":"p38-17-probe-20261005170926","enabled":true,"attributes":{"tenant_id":["eda9d895-c55c-4f71-8eb0-35591fad1acb"]}}]
+
+### 6.5 Keycloak users BEFORE offboard (GET /users?username=<u>&exact=true&briefRepresentation=false — the list form; the single-user GET hides the unmanaged tenant_id) 2026-10-05T17:10:24Z
+probe (full JSON):
+{
+  "id": "88617369-257b-49a0-b5a8-a3ec4b1a3c91",
+  "username": "p38-17-probe-20261005170926",
+  "firstName": "P3817",
+  "lastName": "probe",
+  "email": "p38-17-probe-20261005170926@jtoye.local",
+  "emailVerified": true,
+  "attributes": {
+    "tenant_id": [
+      "eda9d895-c55c-4f71-8eb0-35591fad1acb"
+    ]
+  },
+  "enabled": true,
+  "totp": false,
+  "disableableCredentialTypes": [],
+  "requiredActions": [],
+  "notBefore": 0,
+  "access": {
+    "manageGroupMembership": true,
+    "view": true,
+    "mapRoles": true,
+    "impersonate": true,
+    "manage": true
+  }
+}
+control: {"id":"ba5ac420-b1c7-43c5-bce7-4712ed2454bb","username":"p38-17-control-20261005170926","enabled":true,"attributes":{"tenant_id":["00000000-0000-0000-0000-000000000002"]}}
+
+### 6.6 Offboard the throwaway tenant 2026-10-05T17:10:24Z
+$ POST /api/v1/admin/tenants/eda9d895-c55c-4f71-8eb0-35591fad1acb/offboard (admin-user bearer)
+http=200 {"id":"eda9d895-c55c-4f71-8eb0-35591fad1acb","status":"OFFBOARDED","offboardedAt":"2026-10-05T18:10:24.754737656+01:00","keycloakDeprovisionedAt":null}
+poll GET /admin/realms/jtoye-dev/users/88617369-257b-49a0-b5a8-a3ec4b1a3c91: enabled=false after 0s (deadline 60s)
+
+### 6.7 Keycloak users AFTER offboard 2026-10-05T17:10:25Z
+probe (full JSON):
+{
+  "id": "88617369-257b-49a0-b5a8-a3ec4b1a3c91",
+  "username": "p38-17-probe-20261005170926",
+  "firstName": "P3817",
+  "lastName": "probe",
+  "email": "p38-17-probe-20261005170926@jtoye.local",
+  "emailVerified": true,
+  "attributes": {
+    "tenant_id": [
+      "eda9d895-c55c-4f71-8eb0-35591fad1acb"
+    ]
+  },
+  "enabled": false,
+  "totp": false,
+  "disableableCredentialTypes": [],
+  "requiredActions": [],
+  "notBefore": 1791220225,
+  "access": {
+    "manageGroupMembership": true,
+    "view": true,
+    "mapRoles": true,
+    "impersonate": true,
+    "manage": true
+  }
+}
+control: {"id":"ba5ac420-b1c7-43c5-bce7-4712ed2454bb","username":"p38-17-control-20261005170926","enabled":true,"attributes":{"tenant_id":["00000000-0000-0000-0000-000000000002"]}}
+
+### 6.8 jq assertions on the read-back (and on inputs that must fail) 2026-10-05T17:10:43Z
+probe AFTER  : true   (enabled=false id=88617369-257b-49a0-b5a8-a3ec4b1a3c91 username=p38-17-probe-20261005170926 tenant_id=["eda9d895-c55c-4f71-8eb0-35591fad1acb"])
+arm: probe BEFORE fed to the same assertion: false
+arm: probe AFTER + the spike's Jackson-2 garbage keys: false
+arm: probe AFTER with tenant_id changed: false
+control AFTER enabled==true and tenant_id intact: true
+pre-existing realm users after the offboard (none carries the throwaway tenant_id):
+  admin-user: {"enabled":true,"tenant_id":"00000000-0000-0000-0000-000000000001"}
+  tenant-a-user: {"enabled":true,"tenant_id":"00000000-0000-0000-0000-000000000001"}
+  tenant-b-user: {"enabled":true,"tenant_id":"00000000-0000-0000-0000-000000000002"}
+  admin-user-b: {"enabled":true,"tenant_id":"00000000-0000-0000-0000-000000000002"}
+
+### 6.9 core-java log lines for the deprovision (container eea0e5014a67)
+2026-10-05 18:09:27 [core-java,6ac3d9c774531a4ea22cea6126068769,d41e6762c74a67dd] INFO  u.j.c.tenant.TenantLifecycleService - event=tenant_created tenant=eda9d895-c55c-4f71-8eb0-35591fad1acb plan=STANDARD
+2026-10-05 18:10:24 [core-java,6ac3da00a6a2c5ed093c21e66a31731f,5996c5f5ac0d4f4c] WARN  u.j.c.tenant.TenantLifecycleService - event=tenant_offboarded tenant=eda9d895-c55c-4f71-8eb0-35591fad1acb
+2026-10-05 18:10:25 [core-java,6ac3da00a6a2c5ed093c21e66a31731f,5996c5f5ac0d4f4c] INFO  u.j.c.t.k.KeycloakDeprovisionService - event=tenant_keycloak_deprovisioned tenant=eda9d895-c55c-4f71-8eb0-35591fad1acb usersDisabled=1
+
+### 6.10 tenants.keycloak_deprovisioned_at (psql in jtoye-postgres, as the seeders do)
+                  id                  |                 name                 |   status   |         offboarded_at         |   keycloak_deprovisioned_at   
+--------------------------------------+--------------------------------------+------------+-------------------------------+-------------------------------
+ eda9d895-c55c-4f71-8eb0-35591fad1acb | p38-17-offboard-probe-20261005170926 | OFFBOARDED | 2026-10-05 17:10:24.754738+00 | 2026-10-05 17:10:25.096694+00
+(1 row)
+
+psql_rc=0
+API read: {"id":"eda9d895-c55c-4f71-8eb0-35591fad1acb","status":"OFFBOARDED","offboardedAt":"2026-10-05T17:10:24.754738Z","keycloakDeprovisionedAt":"2026-10-05T17:10:25.096694Z","createdAt":"2026-10-05T17:09:27.415422Z"}
+
+### 6.11 Cache-error metric arm (on the KC_ADMIN_ENABLED=true container, which is recreated afterwards so the main measurement in §7 starts from fresh counters) 2026-10-05T17:11:09Z
+jtoye_cache_errors_total series before: [] (register-on-demand counter: absent until the first error)
+GET /api/v1/products/a8d6af60-d5f5-4617-829e-7a3d9e9dbc06 -> 200
+populated key: v4:products::tenant:00000000-0000-0000-0000-000000000001:getProductById:a8d6af60-d5f5-4617-829e-7a3d9e9dbc06
+TTL: 600s; value head: {"@class":"uk.jtoye.core.product.dto.ProductDto","additionalImageUrls":["java.util.ArrayList",[]],"allergenMask":0,"alle
+$ redis-cli SET <key> 'not-a-cache-value' KEEPTTL -> OK
+GET /api/v1/products/a8d6af60-d5f5-4617-829e-7a3d9e9dbc06 -> 200 id=a8d6af60-d5f5-4617-829e-7a3d9e9dbc06  (degraded to the database, not a 500)
+jtoye_cache_errors_total after the corrupted read: [jtoye_cache_errors_total{cache="products",operation="get"} 1.0]
+cleanup: DEL <key> -> 1; key now exists=0
+
+### 6.12 Delete the throwaway Keycloak users and re-read 2026-10-05T17:11:18Z
+  p38-17-probe-20261005170926 id=88617369-257b-49a0-b5a8-a3ec4b1a3c91 -> DELETE 204, re-read GET 404
+  p38-17-control-20261005170926 id=ba5ac420-b1c7-43c5-bce7-4712ed2454bb -> DELETE 204, re-read GET 404
+  username search p38-17-* -> []
+  arm for that search: 'admin-user' -> ["admin-user","admin-user-b"]
+  Throwaway tenant kept by design (offboarded rows stay): id=eda9d895-c55c-4f71-8eb0-35591fad1acb name=p38-17-offboard-probe-20261005170926 status=OFFBOARDED
+  Throwaway users created and deleted in total: 4 (2 attribute-less admin-API users, 2 partialImport users), all re-read 404.
+  No throwaway admin-role user was needed: the realm's imported admin-user holds the admin role.
+
+### 6.13 Restore: recreate core-java WITHOUT KC_ADMIN_ENABLED (shell has it unset: '<unset>') 2026-10-05T17:11:27Z
+$ docker compose -f docker-compose.full-stack.yml up -d --no-deps --no-build --force-recreate core-java
+ Container jtoye_oaas_2026-core-java-1 Starting 
+ Container jtoye_oaas_2026-core-java-1 Started 
+cid_rc=0 cid=4af0bb338b061cd9eba0a6122f48b7052c297a4b1c4512e1d8a63f68d6dddc8a
+9090/tcp -> 0.0.0.0:9090
+9090/tcp -> [::]:9090
+$ curl -s http://localhost:9090/actuator/health | jq -r .status -> UP
+$ docker exec <cid> printenv KC_ADMIN_ENABLED -> 'false' rc=0
+arm (the proof container, §6.1): printenv gave 'true' rc=0 -> the same check would fail there
+  core-java    FRESH  image tagged 2026-10-05 17:03:46 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+  edge-go      FRESH  image tagged 2026-10-05 17:02:45 UTC >= newest build-input commit 5c1bb364 (2026-08-30 20:53:05 UTC)
+  frontend     FRESH  image tagged 2026-10-05 17:03:09 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+  mcp-server   FRESH  image tagged 2026-10-05 17:02:25 UTC >= newest build-input commit 25566e2c (2026-10-05 17:01:13 UTC)
+PASS: 4 running built service(s) match the source tree (0 unverified).
+freshness rc=0
+functional read-back of the restore: POST /api/v1/admin/tenants/eda9d895-c55c-4f71-8eb0-35591fad1acb/keycloak/deprovision on the restored container
+  http=400 {"detail":"Keycloak admin is not configured — cannot deprovision users","instance":"/api/v1/admin/tenants/eda9d895-c55c-4f71-8eb0-35591fad1acb/keycloak/deprovision","status":400,"title":"Invalid State","type":"https://jtoye.uk/errors/invalid-state"}
+
+
+7. LIVE TRACING, METRICS AND THE VERSIONED CACHE (final container, KC_ADMIN_ENABLED=false)
+------------------------------------------------------------------------------------------
+### 7.1 Metrics BEFORE the calls (container 4af0bb338b06, started 2026-10-05T17:11:31.354961057Z) 2026-10-05T17:12:24Z
+Prometheus is served on the application port 9090: application.yml sets no management.server.port, compose exposes health,info,prometheus.
+HTTP=200 CT=text/plain;version=0.0.4;charset=utf-8
+http_server_requests_seconds_bucket lines: 148; # TYPE header: # TYPE http_server_requests_seconds histogram
+jtoye_cache_errors_total series: 0 (sum=0)
+redis --scan before: rate_limit::00000000-0000-0000-0000-000000000001 
+
+### 7.2 Calls 2026-10-05T17:12:25Z
+public  GET /public/shops/brixton-village-grill           -> 200
+public  GET /public/shops/brixton-village-grill/products  -> 200
+auth #1 GET /api/v1/shops/2a8c3470-7924-431d-ac2a-fd4dd1564d39             -> 200 0.057800s
+auth #1 GET /api/v1/products/a8d6af60-d5f5-4617-829e-7a3d9e9dbc06          -> 200 0.035858s
+auth #2 GET /api/v1/shops/2a8c3470-7924-431d-ac2a-fd4dd1564d39             -> 200 0.036882s
+auth #2 GET /api/v1/products/a8d6af60-d5f5-4617-829e-7a3d9e9dbc06          -> 200 0.017813s
+
+### 7.3 Redis after the calls (redis-cli --scan, never KEYS)
+rate_limit::00000000-0000-0000-0000-000000000001
+rl:public:172.18.0.1
+v4:products::tenant:00000000-0000-0000-0000-000000000001:getProductById:a8d6af60-d5f5-4617-829e-7a3d9e9dbc06
+v4:shops::tenant:00000000-0000-0000-0000-000000000001:getShopById:2a8c3470-7924-431d-ac2a-fd4dd1564d39
+v4:-prefixed keys: 2; regions: products shops 
+un-prefixed region keys (products|shops|shopMembership at key start): 0  (BEFORE snapshot §1.6 had 0)
+arm for the prefix count on a doctored listing (the Boot-3.5 key form): 0 v4 / 1 un-prefixed
+
+### 7.4 Metrics AFTER the calls
+jtoye_cache_errors_total series: 0 (sum=0)
+arm: §6.11 on the proof container showed the same counter at 1.0 after a corrupted v4: entry was read, so this read can see a non-zero value
+http_server_requests_seconds_count{error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/products/{id}"} 2
+http_server_requests_seconds_count{error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/shops/{id}"} 2
+
+### 7.5 Trace ids in core-java log lines from the call window (since 2026-10-05T17:12:24Z)
+lines with a non-empty traceId: 0; with an empty traceId: 0
+arm for the traceId regex: '2026-10-05 18:00:00 [core-java,,] INFO x - y' -> 0
+    §7.5 found no request-scoped log line: GETs, 404s and 400s log nothing at INFO on this service
+    (tried GET /api/v1/products/<absent> 404, POST /api/v1/admin/tenants {} 400, trailing-token 400;
+    docker logs for that window was empty). The traceId check therefore uses the order request below.
+    shopMembership: no key appears — with ACCESS_STRICT_SCOPING=false the admin read path never
+    resolves a membership; the region is covered by 38-09's CacheFormatIsolationIntegrationTest.
+    Reads only (miss then hit; the #2 calls are faster). The write-path eviction was not exercised
+    live; 38-09's Testcontainers proof owns it.
+
+### 7.6 One order placed through the public path (FORCE=1 scripts/seed-order-metric.sh) 2026-10-05T17:12:52Z
+seed-order-metric  (2026-10-05T17:12:52Z)
+  core       : http://localhost:9090
+  prometheus : http://localhost:9091
+  series before : 0
+  FORCE=1       : placing an order even though the series exists (target: clear NoOrdersCreated)
+  shop       : brixton-village-grill (minimum 1000p)
+  product    : 1eafcdac-2b7f-49f5-b6a7-d2e008e6812a x 1
+  placed     : HTTP 201  ORD-00000000-20261005-F939BCB6
+FAIL: order ORD-00000000-20261005-F939BCB6 was accepted (201) but 'increase(...[30m]) >= 1' still matches nothing after 90s, so NoOrdersCreated would keep firing. increase() needs at least two scrapes inside the window to show a rise — if the counter was created by THIS order, allow a scrape interval and re-check before treating it as a fault.
+rc=1
+### 7.7 Second order: the first one CREATED the counter series in this fresh process (value 1, so increase()[30m] has no rise yet — the script's own FAIL text names this); a second order gives the rise 2026-10-05T17:14:43Z
+seed-order-metric  (2026-10-05T17:14:43Z)
+  series before : 1
+  FORCE=1       : placing an order even though the series exists (target: clear NoOrdersCreated)
+  shop       : brixton-village-grill (minimum 1000p)
+  product    : 1eafcdac-2b7f-49f5-b6a7-d2e008e6812a x 1
+  placed     : HTTP 201  ORD-00000000-20261005-0336A661
+  series after  : 1
+  increase[30m]  : >= 1 — NoOrdersCreated's condition is no longer met
+PASS: an order was recorded inside the alert window; NoOrdersCreated will resolve.
+rc=0
+
+$ bash scripts/check-alert-metrics.sh
+check-alert-metrics  (2026-10-05T17:14:59Z)
+  rules      : /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37/infra/monitoring/prometheus/alerts.yml
+  prometheus : http://localhost:9091
+  live rules : 19
+  selectors  : 25 extracted, 28 queried (incl. 3 dormant)
+  self-heal  : 0 rule(s) empty-but-self-healing (#384), 1 declared
+  exemptions : 0 KNOWN_DATALESS, 3 DORMANT_RULES
+PASS: 19 live rule(s) / 25 selector(s) all match >= 1 live series (0 reasoned exemption(s)); 3 dormant rule(s) still correctly have no data.
+rc=0
+    check-alert-metrics fail direction: red on the pre-rebuild runtime (38-16 evidence §8.6; no order
+    since core-java restarted) and, here, 'series before : 0' at 17:12:52 on the fresh process.
+
+2026-10-05 18:12:52 [core-java,6ac3da946db89edd5a1de83d898a5ca7,1fa94c4f7dac51c5] WARN  o.s.d.w.c.SpringDataJackson3Configuration$PageModule$WarningLoggingModifier - Serializing PageImpl instances as-
+2026-10-05 18:12:52 [core-java,6ac3da94bce06c2973f1b42d1e082ef3,bf478a30ea1f6fcd] INFO  u.j.core.order.OrderEventPublisher - Persisted order state change to outbox: DRAFT -> PENDING for order ORD-0000
+2026-10-05 18:12:52 [core-java,6ac3da94bce06c2973f1b42d1e082ef3,bf478a30ea1f6fcd] INFO  u.j.c.s.PublicStorefrontService - Created guest order ORD-00000000-20261005-F939BCB6 with 1 items, total: 1000 p
+2026-10-05 18:12:52 [core-java,6ac3da94bce06c2973f1b42d1e082ef3,bf478a30ea1f6fcd] INFO  u.j.c.c.i.IdempotencyService - Idempotency reserve+complete: endpoint=storefront.orders.create key=metric-seed-2
+2026-10-05 18:12:57 [core-java,,] INFO  u.j.c.order.OrderStateChangeListener - Order state change received: order=ORD-00000000-20261005-F939BCB6 tenant=00000000-0000-0000-0000-000000000001 DRAFT -> PE
+2026-10-05 18:12:57 [core-java,,] INFO  u.j.c.order.OrderStateChangeListener - Sending PENDING notification for order ORD-00000000-20261005-F939BCB6 to metric-seed@jtoye.local
+
+### 7.8 traceId in the [app,traceId,spanId] bracket, from the order request's own log lines (§7.6 window)
+2026-10-05 18:12:52 [core-java,6ac3da94bce06c2973f1b42d1e082ef3,bf478a30ea1f6fcd] INFO  u.j.core.order.OrderEventPublisher - Persisted order state change to outbox: DRAFT -> PENDING for order ORD-0000
+2026-10-05 18:12:52 [core-java,6ac3da94bce06c2973f1b42d1e082ef3,bf478a30ea1f6fcd] INFO  u.j.c.s.PublicStorefrontService - Created guest order ORD-00000000-20261005-F939BCB6 with 1 items, total: 1000 p
+2026-10-05 18:12:52 [core-java,6ac3da94bce06c2973f1b42d1e082ef3,bf478a30ea1f6fcd] INFO  u.j.c.c.i.IdempotencyService - Idempotency reserve+complete: endpoint=storefront.orders.create key=metric-seed-2
+request lines with a 32-hex traceId: 3
+arm, same regex on a doctored empty-trace line: 0
+Note: the RabbitMQ consumer lines of the same order log '[core-java,,]' (no trace). Neither the pre-phase (767f5658) nor the branch application.yml/Java sets an AMQP observation flag (rg 'observation' finds 0 in both), so listener-side trace propagation is off on both lines; not a phase change. Not re-measured on the Boot-3.5 container, which the rebuild replaced.
+
+
+8. RUNTIME GATE SWEEP (HANDOFF loop: every scripts/check-*.sh + scripts/docs-freshness.sh)
+------------------------------------------------------------------------------------------
+Run from this worktree with COMPOSE_PROJECT_NAME=jtoye_oaas_2026 COMPOSE_ENV_FILES=<main .env> exported,
+inside conda env engineering-doctrine; per gate out=$(timeout 900 bash "$g" 2>&1); rc=$?
+    sweep start 2026-10-05T17:15:25Z HEAD c97ed536 env=engineering-doctrine
+    check-alert-liveness                     rc=0 31s
+    check-alert-metrics                      rc=0 0s
+    check-alert-mute                         rc=0 31s
+    check-alert-rules                        rc=0 1s
+    check-backup-restore-drill               rc=2 0s
+    check-boot-config-keys                   rc=0 8s
+    check-branch-behind-base                 rc=0 1s
+    check-changelog-cites-pr                 rc=0 0s
+    check-changelog-contract                 rc=0 0s
+    check-claims                             rc=0 0s
+    check-container-config-drift             rc=2 0s
+    check-dependency-horizons                rc=0 2s
+    check-doc-citations                      rc=0 1s
+    check-doc-metrics                        rc=0 0s
+    check-doc-versions                       rc=0 1s
+    check-e2e-baseurl-contract               rc=0 0s
+    check-e2e-skip-budget                    rc=2 0s
+    check-e2e-typecheck                      rc=2 0s
+    check-edge-core-contract                 rc=0 1s
+    check-env-example-contract               rc=0 0s
+    check-gate-enforcement                   rc=0 0s
+    check-geo-attribution                    rc=0 0s
+    check-go-coverage                        rc=2 0s
+    check-handoff-contract                   rc=0 15s
+    check-image-supply-chain                 rc=0 0s
+    check-infra-exposure                     rc=2 1s
+    check-jacoco-coverage                    rc=2 0s
+    check-keycloak-logout-uri                rc=0 0s
+    check-layout-width-contract              rc=0 4s
+    check-live-shop-coordinates              rc=0 1s
+    check-media-content-types                rc=0 0s
+    check-media-urls-resolve                 rc=0 1s
+    check-no-create-extension                rc=0 0s
+    check-no-measured-placeholders           rc=0 0s
+    check-no-object-store-residue            rc=0 0s
+    check-openapi-snapshot-fresh             rc=0 2s
+    check-pentest-triage                     rc=0 0s
+    check-playwright-mobile-contract         rc=0 0s
+    check-postgres-major-parity              rc=0 0s
+    check-project-version                    rc=0 0s
+    check-retention-enforcement              rc=0 0s
+    check-runtime-freshness                  rc=0 1s
+    check-ssr-coverage-contract              rc=0 0s
+    check-terminal-states                    rc=0 0s
+    check-test-block-counter                 rc=0 1s
+    check-test-count-oracle                  rc=2 1s
+    docs-freshness                           rc=0 1s
+    sweep end 2026-10-05T17:17:10Z
+    total=47  rc=0: 39  non-zero: 8
+
+8.1 Every non-zero, explained
+    Same environment VOIDs 38-16 recorded at its plan base 4656a7f7 (38-16 evidence §8.6, rc 2 there too),
+    each a missing local artifact, none a code or runtime defect:
+      check-backup-restore-drill: VOID: backup image 'ghcr.io/bralabee/jtoye-pg-backup:15-blob' is not present locally (rc=1) — build it: docker build -t ghcr.io/bralabee/jtoye-pg-backup:15-blob infra/b
+      check-e2e-skip-budget: VOID: no Playwright JSON report at /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37/frontend/e2e-artifacts/report.json — run the suite with --reporter=json first
+      check-e2e-typecheck: VOID: frontend/node_modules is absent — run 'npm ci' in frontend/ first; tsc cannot resolve types without it
+      check-go-coverage: VOID: coverage profile not found: /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37/edge-go/coverage.out — run 'cd edge-go && go test -coverprofile=coverage.out ./...' f
+      check-jacoco-coverage: VOID: aggregate CSV not found: /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37/core-java/build-local/reports/jacoco/aggregate/jacocoAggregateReport.csv — an absent rep
+      check-test-count-oracle: VOID: frontend/node_modules is absent — run npm ci in frontend/ first
+    Runtime-declared gates 38-16 left to this plan (gate-enforcement.conf), VOID only because they read
+    REPO_ROOT/.env, which a worktree does not have (HANDOFF: 'must be run from the MAIN checkout'):
+      check-infra-exposure: ∅ VOID: GRAFANA_ADMIN_PASSWORD is not available to this run — cannot measure C
+        re-run with the main .env's variables exported into the gate's own subshell (read-only):
+          ✓ PASS: A: all 22 discovered published ports are loopback-bound or explicitly exempt
+          ✓ PASS: B: all 23 running port bindings are loopback or exempt
+          ✓ PASS: C1: the injected Grafana administrator credential passes the strength rules
+          ✓ PASS: C2: the running Grafana accepts the injected administrator credential (HTTP 200)
+          ✓ PASS: C3: the running Grafana rejects a random credential (HTTP 401) — C2's acceptance is meaningful
+          ✓ PASS: D: broker holds exactly one account, the injected one (product defaults absent)
+          ✓ PASS: check-infra-exposure: all assertions passed
+      check-container-config-drift: VOID: .env not readable — compose interpolation would silently render different values
+        re-run with ENV_FILE=<main .env> in the conda env:
+          == docker-compose.full-stack.yml ==
+            azurite                        MATCH
+            core-java                      MATCH
+            edge-go                        MATCH
+            frontend                       MATCH
+            keycloak                       MATCH
+            keycloak-realm-render          NOT RUNNING (declared, no container)
+            mailhog                        MATCH
+            mcp-server                     MATCH
+            ollama                         MATCH
+            ollama-init                    NOT RUNNING (declared, no container)
+            postgres                       MATCH
+            rabbitmq                       MATCH
+            redis                          MATCH
+            -- match=11 drift=0 not-running=2
+          == infra/monitoring/docker-compose.monitoring.yml ==
+            alertmanager                   NOT RUNNING (declared, no container)
+            grafana                        NOT RUNNING (declared, no container)
+            postgres-exporter              NOT RUNNING (declared, no container)
+            prometheus                     NOT RUNNING (declared, no container)
+            redis-exporter                 NOT RUNNING (declared, no container)
+          VOID: infra/monitoring/docker-compose.monitoring.yml has 5 declared service(s) and NONE running — a stopped stack cannot be graded, and that is VOID rather than clean
+          rc=2
+        The full-stack file is fully graded: 11 MATCH, 0 drift (the 2 not-running are one-shot init
+        services). The monitoring file cannot be addressed from here: COMPOSE_PROJECT_NAME applies to
+        every file the gate walks, and the monitoring stack runs as project 'monitoring'. This plan never
+        touched that stack (its containers still read 'Up 41 hours'), so its config cannot have drifted
+        through 38-17; the gate stays VOID-from-worktree as designed and is recorded as such.
+    Gates red BEFORE this plan and green now: check-openapi-snapshot-fresh (38-14's intentional red,
+    cleared on the rebuilt runtime, §5.1), check-alert-metrics (no order since restart; §7.6-7.7),
+    check-branch-behind-base (4 behind; merge §2), check-handoff-contract H-3 (HANDOFF behind main;
+    the same merge brought HANDOFF.md current).
+    check-boot-config-keys ran its Gradle test task (junit tests=9 failures=0) — not an UP-TO-DATE skip:
+      |   report  : core-java/build-local/boot4/config-key-report.tsv
+      |   gradle  : rc=0
+      |   junit   : tests=9 failures=0 errors=0
+      | PASS: 218 key(s) in 7 yml file(s) and 36 autoconfigure exclude(s)/literal(s) are all known to Boot 4.
+
+### 8.3 Closing reads after the orders and the sweep 2026-10-05T17:18:11Z
+jtoye_cache_errors_total series=0 sum=0
+redis keys now: v4:products::tenant:00000000-0000-0000-0000-000000000001:getProductById:a8d6af60-d5f5-4617-829e-7a3d9e9dbc06 v4:shops::tenant:00000000-0000-0000-0000-000000000001:getShopById:2a8c3470-7924-431d-ac2a-fd4dd1564d39 
+Plan verify 1: $ curl -s http://localhost:9090/actuator/health | jq -r .status -> UP
+Plan verify 2:
+  cid_rc=0 cid=4af0bb338b061cd9eba0a6122f48b7052c297a4b1c4512e1d8a63f68d6dddc8a
+false
+  rc=0
+9090/tcp -> 0.0.0.0:9090
+9090/tcp -> [::]:9090
+freshness: PASS: 4 running built service(s) match the source tree (0 unverified). rc=0
+
+8.4 Task 3 acceptance criteria, re-checked from this file
+    Keycloak JSON before/after recorded: 2 headings; jq assertion true: 1; arms false: 3; control true: 1
+    keycloak_deprovisioned_at stamp row: 1
+    traceId request lines: 1; prometheus bucket family present: 1; cache errors 0 before/after/closing: 3
+    redis v4: keys listed: 1; un-prefixed region keys after: 1
+    gate sweep rows: 47; throwaway users re-read 404: 2; throwaway tenant id recorded: 1

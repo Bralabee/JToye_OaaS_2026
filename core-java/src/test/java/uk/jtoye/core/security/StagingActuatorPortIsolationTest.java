@@ -2,7 +2,7 @@ package uk.jtoye.core.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -62,8 +62,8 @@ class StagingActuatorPortIsolationTest {
         registry.add("spring.rabbitmq.listener.simple.auto-startup", () -> "false");
         registry.add("spring.cache.type", () -> "none");
         registry.add("spring.autoconfigure.exclude",
-                () -> "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                    + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration");
+                () -> "org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration,"
+                    + "org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration");
     }
 
     @Autowired

@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -134,7 +134,7 @@ class RedisFaultInjectionIntegrationTest {
     // keeps it (it proves resilience, not RLS isolation). Every other integration
     // test dodges the validator via @ActiveProfiles("test"), but we need a non-test
     // profile for CacheConfig to load — so neutralise the validator here instead.
-    @MockBean private DatabaseConfigurationValidator databaseConfigurationValidator;
+    @MockitoBean private DatabaseConfigurationValidator databaseConfigurationValidator;
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-0000000086f1");
     private UUID shopId;

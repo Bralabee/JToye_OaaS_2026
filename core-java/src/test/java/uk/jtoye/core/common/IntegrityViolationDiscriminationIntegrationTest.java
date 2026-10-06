@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -72,7 +72,7 @@ class IntegrityViolationDiscriminationIntegrationTest {
     // ProductService.deleteProduct gates on SHOP_MANAGER; this test is about integrity-error
     // translation, not shop authorization, so the gate is a no-op here (proven elsewhere), same
     // pattern as ProductImageDeleteIntegrationTest.
-    @MockBean private ShopAccessService shopAccessService;
+    @MockitoBean private ShopAccessService shopAccessService;
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
 

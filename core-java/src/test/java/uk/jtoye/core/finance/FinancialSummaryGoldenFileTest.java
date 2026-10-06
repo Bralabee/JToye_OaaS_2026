@@ -1,7 +1,7 @@
 package uk.jtoye.core.finance;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.SerializationFeature;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -181,8 +181,8 @@ class FinancialSummaryGoldenFileTest {
 
     // ---- Helpers ----
 
-    private static ObjectMapper objectMapper() {
-        return new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    private static JsonMapper objectMapper() {
+        return JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build();
     }
 
     private static FinancialSummaryDto stabilise(FinancialSummaryDto dto) {

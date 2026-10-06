@@ -1,8 +1,5 @@
 package uk.jtoye.core.tenant.keycloak;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -12,6 +9,9 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +38,17 @@ import java.util.UUID;
  * {@link KeycloakAdminException} carrying realm/operation context only — the
  * client never maps to an HTTP status or swallows a failure; the service layer
  * owns the best-effort availability decision.
+ *
+ * <p><b>Jackson 3 throughout (38-07, BOOT4-05):</b> the user representations are
+ * {@code tools.jackson} nodes because Boot 4's RestClient writes request bodies with
+ * the Jackson-3 converter. A Jackson-2 {@code ObjectNode} handed to that converter is
+ * not a tree to it, so it was serialized as a bean
+ * ({@code {"array":false,...,"nodeType":"OBJECT",...}}): Keycloak received no
+ * {@code enabled} field and the offboarded user stayed ENABLED. The by-content test
+ * {@code KeycloakAdminClientTest#setUserEnabled_putsTheSearchedRepBack_withOnlyEnabledFlipped_byContent}
+ * guards it. Parse failures are now the unchecked {@code JacksonException}; the
+ * generic {@code Exception} catches below still turn them into the same
+ * {@link KeycloakAdminException} messages.
  */
 @Component
 public class KeycloakAdminClient {
@@ -49,16 +60,16 @@ public class KeycloakAdminClient {
 
     private final RestClient restClient;
     private final KeycloakAdminProperties properties;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
 
     public KeycloakAdminClient(RestClient.Builder restClientBuilder,
                                KeycloakAdminProperties properties,
-                               ObjectMapper objectMapper) {
+                               JsonMapper jsonMapper) {
         // baseUrl may be empty when the feature is inert — the client is simply
         // never called in that state (the service short-circuits on configured()).
         this.restClient = restClientBuilder.baseUrl(properties.getBaseUrl()).build();
         this.properties = properties;
-        this.objectMapper = objectMapper;
+        this.jsonMapper = jsonMapper;
     }
 
     /**
@@ -78,12 +89,12 @@ public class KeycloakAdminClient {
                     .body(form)
                     .retrieve()
                     .body(String.class);
-            JsonNode node = objectMapper.readTree(body == null ? "{}" : body);
+            JsonNode node = jsonMapper.readTree(body == null ? "{}" : body);
             JsonNode token = node.get("access_token");
-            if (token == null || token.asText().isBlank()) {
+            if (token == null || token.asString().isBlank()) {
                 throw new KeycloakAdminException("Keycloak token response had no access_token");
             }
-            return token.asText();
+            return token.asString();
         } catch (KeycloakAdminException e) {
             throw e;
         } catch (RestClientException e) {
@@ -110,10 +121,10 @@ public class KeycloakAdminClient {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .retrieve()
                         .body(String.class);
-                JsonNode page = objectMapper.readTree(body == null ? "[]" : body);
+                JsonNode page = jsonMapper.readTree(body == null ? "[]" : body);
                 int pageCount = 0;
                 if (page.isArray()) {
-                    for (JsonNode user : page) {
+                    for (JsonNode user : page.values()) {
                         if (user instanceof ObjectNode on) {
                             users.add(on);
                         }
@@ -142,7 +153,7 @@ public class KeycloakAdminClient {
      * is flipped here. Disabling an already-disabled user is a harmless no-op PUT.
      */
     public void setUserEnabled(String realm, ObjectNode userRep, boolean enabled, String token) {
-        String userId = userRep.path("id").asText();
+        String userId = userRep.path("id").asString();
         ObjectNode payload = userRep.deepCopy();
         payload.put("enabled", enabled);
         try {

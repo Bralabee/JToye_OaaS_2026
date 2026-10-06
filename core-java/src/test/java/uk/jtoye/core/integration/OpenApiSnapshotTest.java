@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -69,6 +69,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *       change the API surface, and commit the snapshot diff in the same PR
  *       so the change is visible to reviewers.</dd>
  * </dl>
+ *
+ * <p>DELIBERATE-JACKSON2: byte-stable normalizer of springdoc's swagger-core (Jackson-2) output; its writer decides the committed snapshot's bytes, and 38-14 regenerates that snapshot
  */
 @SpringBootTest
 @AutoConfigureMockMvc

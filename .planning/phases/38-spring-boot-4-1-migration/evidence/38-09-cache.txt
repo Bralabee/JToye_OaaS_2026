@@ -1,0 +1,269 @@
+38-09 evidence: Redis cache on Jackson 3 (SEC-4 re-derived) and versioned cache keys
+=====================================================================================
+Plan base (ledger): 9ae069f8f540931fb6aa6d8d819ecfff0b3bf388   Started: 2026-10-05T11:23:06Z
+Tree: Boot 4.1.1, spring-data-redis 4.1.1, tools.jackson databind 3.1.7. Host JDK: Ubuntu OpenJDK 25.
+Test results are read from core-java/build-local/test-results (core-java/build/ is stale).
+
+---------------------------------------------------------------------------------------------
+TASK 1 - Jackson-3 cache serializer with an allowlist re-derived from its own bytes
+---------------------------------------------------------------------------------------------
+
+1. What the Spring Data Redis 4.1.1 builder does (javap -c of the cached jar, not the docs)
+   GenericJacksonJsonRedisSerializerBuilder.build(), when enableDefaultTyping(ptv) was called:
+     new GenericJacksonJsonRedisSerializer$TypeResolverBuilder(ptv, DefaultTyping.NON_FINAL,
+         JsonTypeInfo.As.PROPERTY, JsonTypeInfo.Id.CLASS, typePropertyName)
+     configure(FAIL_ON_MISSING_EXTERNAL_TYPE_ID_PROPERTY, false); configure(FAIL_ON_UNKNOWN_PROPERTIES, false)
+     setDefaultTyping(<that builder>)
+   So the typing scheme is NON_FINAL (Spring's resolver), not Jackson-2's EVERYTHING, which Jackson 3
+   removed. The ids written therefore change, and the allowlist has to be re-derived from bytes.
+   The builder also offers enableUnsafeDefaultTyping(); it is not used (SEC-4).
+
+2. Measurement probe (throwaway test, never committed; deleted, rg -uu for its marker over
+   core-java/src -> rc=1). It serialized with the builder's typing and an EMPTY validator (the
+   validator is consulted only on read), then read back with the five Jackson-2-era prefixes.
+   Inputs: GoldenSamples.productDto(), shopDto(), membership(); a two-grant Map.copyOf membership;
+   an empty-grant membership; a top-level BigDecimal; a top-level Long. Verbatim output:
+
+   | == uk.jtoye.core.product.dto.ProductDto
+   | {"@class":"uk.jtoye.core.product.dto.ProductDto","additionalImageUrls":["java.util.ArrayList",["https://cdn.example.test/1.webp","https://cdn.example.test/2.webp"]],"allergenMask":32,"allergenSpans":["java.util.ArrayList",[{"@class":"uk.jtoye.core.product.AllergenSpan","start":0,"end":4},{"@class":"uk.jtoye.core.product.AllergenSpan","start":24,"end":33}]],"available":true,"category":"Mains","createdAt":"2026-10-04T12:34:56.123456789Z","description":"Party-size portion","dietaryTags":null,"displayOrder":3,"durabilityType":"USE_BY","featured":false,"id":"38010000-0000-4000-8000-00000000a004","imageUrl":"https://cdn.example.test/jollof.webp","ingredientsText":"Rice, tomatoes, peppers, groundnut oil","media":["java.util.ImmutableCollections$ListN",[{"@class":"uk.jtoye.core.media.MediaAssetDto","assetId":"38010000-0000-4000-8000-00000000a006","status":"ACTIVE","flagged":false,"failureReason":null,"url":"https://cdn.example.test/a.webp","thumbnailUrl":"https://cdn.example.test/a-thumb.webp","width":800,"height":600,"redrivable":false,"delayed":false},{"@class":"uk.jtoye.core.media.MediaAssetDto","assetId":"38010000-0000-4000-8000-00000000a00d","status":"FAILED","flagged":true,"failureReason":"decode_failed","url":null,"thumbnailUrl":null,"width":null,"height":null,"redrivable":true,"delayed":false}]],"preparationTimeMinutes":25,"pricePennies":899,"quantityInStock":12,"shelfLifeDays":2,"shopId":"38010000-0000-4000-8000-00000000a002","sku":"SKU-GOLDEN-001","title":"Jollof Rice","vatRate":"ZERO"}
+   | -- five-prefix read: uk.jtoye.core.product.dto.ProductDto equals=false
+   | == uk.jtoye.core.shop.dto.ShopDto
+   | {"@class":"uk.jtoye.core.shop.dto.ShopDto","address":"12 Rye Lane, Peckham","bannerUrl":null,"createdAt":"2026-10-04T13:34:56.123456789+01:00","deliveryInfo":"Delivery within 3 miles","description":"West African kitchen","email":"hello@example.test","id":"38010000-0000-4000-8000-00000000a002","latitude":51.4736,"logoUrl":"https://cdn.example.test/logo.webp","longitude":-0.0693,"minimumOrderPennies":1500,"name":"Mama Put","openingHours":{"@class":"java.util.LinkedHashMap","monday":"09:00-17:00","saturday":"10:00-14:00"},"phone":"+44 20 7946 0000","published":true,"slug":"mama-put","tags":"nigerian,halal","tenantId":"38010000-0000-4000-8000-00000000a001"}
+   | -- five-prefix read: uk.jtoye.core.shop.dto.ShopDto equals=false
+   | == uk.jtoye.core.security.access.Membership
+   | {"@class":"uk.jtoye.core.security.access.Membership","isGroupAdmin":false,"groupAdminFromJit":false,"perShopRole":{"@class":"java.util.ImmutableCollections$Map1","38010000-0000-4000-8000-00000000a002":"SHOP_MANAGER"}}
+   | -- five-prefix read: uk.jtoye.core.security.access.Membership equals=true
+   | == uk.jtoye.core.security.access.Membership
+   | {"@class":"uk.jtoye.core.security.access.Membership","isGroupAdmin":false,"groupAdminFromJit":false,"perShopRole":{"@class":"java.util.ImmutableCollections$MapN","b5b0b029-6340-49f4-bfd8-732744b44335":"SHOP_MANAGER","7497af5a-2a6b-4f04-b83e-65021cfdfec1":"STAFF"}}
+   | -- five-prefix read: uk.jtoye.core.security.access.Membership equals=true
+   | == uk.jtoye.core.security.access.Membership
+   | {"@class":"uk.jtoye.core.security.access.Membership","isGroupAdmin":true,"groupAdminFromJit":true,"perShopRole":{"@class":"java.util.ImmutableCollections$MapN"}}
+   | -- five-prefix read: uk.jtoye.core.security.access.Membership equals=true
+   | == java.math.BigDecimal
+   | ["java.math.BigDecimal",19.99]
+   | -- five-prefix read: java.math.BigDecimal equals=true
+   | == java.lang.Long
+   | 899
+   | -- five-prefix read: java.lang.Integer equals=false
+   | -- jackson2 fixture products-ProductDto FAILED: org.springframework.data.redis.serializer.SerializationException root=tools.jackson.databind.exc.MismatchedInputException: Cannot deserialize value of type `java.util.UUID` from Array value (token `JsonToken.START_ARRAY`)
+   |  at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #54] (through reference chain: uk.jtoye.core.product.dto.ProductDto["id"])
+   | -- jackson2 fixture shops-ShopDto FAILED: org.springframework.data.redis.serializer.SerializationException root=tools.jackson.databind.exc.MismatchedInputException: Cannot deserialize value of type `java.util.UUID` from Array value (token `JsonToken.START_ARRAY`)
+   |  at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #48] (through reference chain: uk.jtoye.core.shop.dto.ShopDto["id"])
+   | -- jackson2 fixture shopMembership-Membership FAILED: org.springframework.data.redis.serializer.SerializationException root=tools.jackson.databind.exc.MismatchedInputException: Cannot deserialize value of type `uk.jtoye.core.security.access.ShopRole` from Array value (token `JsonToken.START_ARRAY`)
+   |  at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); byte offset: #201] (through reference chain: uk.jtoye.core.security.access.Membership["perShopRole"]->java.util.LinkedHashMap["38010000-0000-4000-8000-00000000a002"])
+
+   Reading the probe:
+   - Type ids written (every one, by walking the bytes):
+       @class:   uk.jtoye.core.product.dto.ProductDto, uk.jtoye.core.product.AllergenSpan,
+                 uk.jtoye.core.media.MediaAssetDto, uk.jtoye.core.shop.dto.ShopDto,
+                 uk.jtoye.core.security.access.Membership,
+                 java.util.LinkedHashMap, java.util.ImmutableCollections$Map1, java.util.ImmutableCollections$MapN
+       wrappers: java.util.ArrayList, java.util.ImmutableCollections$ListN, java.math.BigDecimal
+   - NO LONGER written: java.lang.Long ("pricePennies":899), java.time.OffsetDateTime (ISO string
+     "createdAt":"2026-10-04T12:34:56.123456789Z"), java.util.UUID (bare string), and enum ids
+     (VatRate, MediaAssetStatus, ShopRole are bare names). Spring's NON_FINAL resolver skips final
+     java.* types, primitives/wrappers and enums.
+   - Dates: ISO-8601 text, the offset kept on write. Jackson 3 needs no time module and no
+     WRITE_DATES_AS_TIMESTAMPS switch, so no customize(...) is needed for dates.
+   - A top-level Long is written bare and read back as Integer. The cache never stores a bare
+     Long (its values are ProductDto, ShopDto and Membership), so this changes nothing cached.
+   - ProductDto/ShopDto read back "equals=false" only because neither class defines equals();
+     the tests compare them recursively, OffsetDateTime by instant.
+   - All three Jackson-2 golden cache fixtures FAIL on the new serializer, root
+     tools.jackson.databind.exc.MismatchedInputException (a ["java.util.UUID", ...] or
+     ["...ShopRole", ...] wrapper where a bare value is now expected). Task 2 pins this per fixture.
+
+3. RED (test(38-09)): CacheSerializerTypeAllowlistTest rewritten for Jackson 3 (field typed
+   RedisSerializer<Object> so it compiles on both trees), MembershipSerializerRoundTripTest retyped.
+   Command: ./gradlew :core-java:cleanTest :core-java:test
+              --tests 'uk.jtoye.core.config.CacheSerializerTypeAllowlistTest'
+              --tests 'uk.jtoye.core.security.access.MembershipSerializerRoundTripTest' --no-daemon
+   rc=1. "14 tests completed, 5 failed". compileTestJava ran (not UP-TO-DATE).
+   TEST xml: CacheSerializerTypeAllowlistTest tests="11" failures="5" errors="0";
+             MembershipSerializerRoundTripTest tests="3" failures="0" errors="0".
+   The five failures, each an AssertionError on the planned behaviour:
+     theProductionSerializerIsTheJackson3GenericSerializer  - actual GenericJackson2JsonRedisSerializer
+     theTypeIdsInTheBytesAreExactlyTheReDerivedSet          - actual set holds java.lang.Long,
+                                                              java.time.OffsetDateTime, java.util.UUID, enum ids
+     aTypeOutsideTheAllowlistIsRefusedEvenUnderTheObjectBase - root cause com.fasterxml...InvalidTypeIdException
+     aKnownGadgetBaseStaysRefused                            - root cause com.fasterxml...InvalidTypeIdException
+     theDroppedJackson2PrefixesAreNowRefused                 - "Expecting code to raise a throwable"
+                                                              (java.lang. still allowed on the old tree)
+   gsd check tdd-red-evidence (record output = that TEST xml, targetTest = display name):
+     theProductionSerializerIsTheJackson3GenericSerializer()      RED_EVIDENCE_OK target_test_failed
+     theTypeIdsInTheBytesAreExactlyTheReDerivedSet()              RED_EVIDENCE_OK target_test_failed
+     aTypeOutsideTheAllowlistIsRefusedEvenUnderTheObjectBase()    RED_EVIDENCE_OK target_test_failed
+     control, a PASSING test as target (productDtoRoundTrips...)  INVALID_RED no_target_test_failure
+
+4. GREEN (feat(38-09)): CacheConfig
+   - jsonRedisSerializer() = GenericJacksonJsonRedisSerializer.builder()
+       .enableDefaultTyping(cacheTypeValidator()).build()      (no customize(): dates measured ISO)
+   - cacheTypeValidator() = tools.jackson BasicPolymorphicTypeValidator, allowIfSubType per prefix only.
+   - CACHE_TYPE_ID_PREFIXES re-derived: {uk.jtoye., java.util., java.math.}
+       uk.jtoye.  <- ProductDto, AllergenSpan, MediaAssetDto, ShopDto, Membership (+ the test's MoneyField)
+       java.util. <- ArrayList, ImmutableCollections$ListN, LinkedHashMap, ImmutableCollections$Map1, $MapN
+       java.math. <- BigDecimal, top-level and as a member (["java.math.BigDecimal",12.50])
+       DROPPED java.lang. (Long now bare) and java.time. (OffsetDateTime now bare ISO text): no observed id.
+   - The Jackson-2 cacheObjectMapper() is removed (no caller: the two tests call jsonRedisSerializer()).
+   - The Javadoc no longer quotes the Jackson-2 typing call, the base-type matcher or the permissive
+     validator by name; the stale "flush the caches on deploy" note is replaced by the key prefix (Task 2).
+   Same command as RED: rc=0, "BUILD SUCCESSFUL", compileJava executed (not UP-TO-DATE).
+   TEST xml: CacheSerializerTypeAllowlistTest tests="11" skipped="0" failures="0" errors="0"
+             MembershipSerializerRoundTripTest tests="3" skipped="0" failures="0" errors="0"
+
+5. Task 1 acceptance criteria, both directions
+   AC1 git grep 'com.fasterxml.jackson.databind' | 'GenericJackson2JsonRedisSerializer' -- CacheConfig.java
+       tree: rc=1 (no lines)            plan base 9ae069f8: rc=0, 8 lines (imports l.4-7, l.21, l.161, l.187-188)
+   AC2 git grep 'activateDefaultTyping' | 'allowIfBaseType' | 'LaissezFaire' -- CacheConfig.java
+       tree: rc=1 (no lines)            plan base 9ae069f8: rc=0, 5 lines (Javadoc l.115-136, call l.182)
+   AC4 refusal testcases are self-closing (passed) in the GREEN xml:
+       aTypeOutsideTheAllowlistIsRefusedEvenUnderTheObjectBase(), aKnownGadgetBaseStaysRefused(),
+       theDroppedJackson2PrefixesAreNowRefused()
+       fail direction: all three carried a <failure> child in the RED xml (section 3).
+       Both refusals now have root cause tools.jackson.databind.exc.InvalidTypeIdException naming the type.
+   Prohibition: git grep 'enableUnsafeDefaultTyping' -- core-java/src/main  rc=1;
+       positive control git grep -c 'enableDefaultTyping' -- core-java/src/main  rc=0 (1 match).
+
+6. Dropped-prefix arms (bracketed on the committed GREEN tree 41b2f6d3)
+   CacheConfig.java HEAD blob sha256 b0d224d0cda0f721a88aa1b70354fd97a165f459f56c0a6d1427ebaf668751af
+   = tree before the arms. Backup copied to scratch; each restore is a cp from it.
+   ARM M (the plan's arm: drop the prefix covering the BigDecimal member) -> prefixes {uk.jtoye., java.util.}
+     rc=1, "tests completed, 2 failed"; allowlist xml failures="2" errors="0":
+       aBigDecimalRoundTripsThroughTheProductionSerializer()  root: InvalidTypeIdException: Could not
+         resolve type id 'java.math.BigDecimal' as a subtype of `java.lang.Object`: Configured
+         `PolymorphicTypeValidator` ... denied
+       everyAllowlistPrefixCoversAnObservedTypeIdAndEveryIdIsCovered()  (BigDecimal uncovered)
+     restore sha256 b0d224d0...751af  match=yes
+     (No cached DTO carries a Long/BigDecimal id under Jackson 3; the Long member is bare, see section 2.)
+   ARM U (extra: drop java.util.) -> prefixes {uk.jtoye., java.math.}
+     rc=1, "tests completed, 8 failed": allowlist failures="5" (productDto, shopDto and golden-sample
+       round-trips, the coverage test, the TreeMap residual) and all 3 MembershipSerializerRoundTripTest
+       cases. Roots: Could not resolve type id 'java.util.ArrayList' / 'java.util.ImmutableCollections$List12'
+       / 'java.util.LinkedHashMap' as a subtype of java.util.List / java.util.Map ... denied
+     restore sha256 b0d224d0...751af  match=yes
+   CLOSE (same verify command, restored tree): rc=0, BUILD SUCCESSFUL, compileJava executed;
+     allowlist tests="11" failures="0" errors="0"; membership tests="3" failures="0" errors="0".
+     git diff --quiet HEAD -- CacheConfig.java rc=0.
+
+7. Tracer feedback gate (interactive run; workflow.human_verify_mode absent -> end-of-phase; the
+   tracer's <verify> is automated-only): the CLOSE run above IS the tracer verify re-run on the
+   committed tree, and it is green. Tracer verified end-to-end -> expanding to Task 2.
+
+---------------------------------------------------------------------------------------------
+TASK 2 - Versioned cache keys: Boot-3.5 entries are never read, proven on a real Redis
+---------------------------------------------------------------------------------------------
+
+8. Read-first findings
+   - Key shape (TenantAwareCacheKeyGenerator): tenant:{tid}:{method}:{params}; RedisCacheManager's
+     default prefix makes the stored key {region}::tenant:{tid}:getShopById:{id}.
+   - Evictions (TenantCacheEvictor) go through CacheManager/Cache.evict, so the prefix applies to
+     them with no change. rg -uu over core-java/src/main for "::" literals, .keys(, scan(,
+     computePrefixWith, CacheKeyPrefix: no hand-built cache key anywhere in main (rc=1 for main;
+     only k8s/scripts and docs/html matched, unrelated).
+   - RedisCacheErrorHandler: a failed GET is WARN-logged, swallowed and counted in
+     jtoye.cache.errors{operation=get,cache=<region>}.
+
+9. RED (test(38-09))
+   a. Unit, CacheSerializerTypeAllowlistTest (now 16 cases):
+      everyRegionReadsAndWritesUnderTheVersionedKeyPrefixAndANewRegionInheritsIt builds the
+      production RedisCacheManager from CacheConfig.cacheManager(mock factory) + afterPropertiesSet().
+      Command: ./gradlew :core-java:cleanTest :core-java:test --tests '...CacheSerializerTypeAllowlistTest'
+      rc=1, "16 tests completed, 1 failed"; xml tests="16" failures="1" errors="0":
+        [key prefix of shopMembership] expected: "v4:shopMembership::" but was: "shopMembership::"
+      Characterisation cases, green on both trees (the serializer is already Jackson 3):
+        theCacheFixturesBelowAreExactlyTheManifestCacheFamily (the MANIFEST cache family = the 3 files)
+        aJackson2EraCacheValueIsUnreadableByTheJackson3Serializer [1] products-ProductDto
+                                                                  [2] shops-ShopDto
+                                                                  [3] shopMembership-Membership
+      PER-FIXTURE OUTCOME (feeding the Boot-3.5 bytes to the new serializer): all three FAIL with
+      SerializationException, root tools.jackson.databind.exc.MismatchedInputException
+        products-ProductDto:        Cannot deserialize value of type `java.util.UUID` from Array value (ProductDto["id"])
+        shops-ShopDto:              Cannot deserialize value of type `java.util.UUID` from Array value (ShopDto["id"])
+        shopMembership-Membership:  Cannot deserialize value of type `...ShopRole` from Array value
+                                    (Membership["perShopRole"]->LinkedHashMap[...])
+      So the prefix is NOT belt-and-braces: without it every Boot-3.5 entry is a counted GET error
+      on every request until its TTL ends.
+   b. Integration, CacheFormatIsolationIntegrationTest (@Tag testcontainers, dev profile, Postgres via
+      IntegrationTestSupport.registerPostgresTestProperties, redis:7-alpine container).
+      First attempt: seed INSERT failed on shops.delivery_fee_pennies NOT NULL (V26 dropped its
+      default) - a fixture error, INVALID as RED, fixed (column added to the INSERT), re-run:
+      Command: ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest
+                 --tests 'uk.jtoye.core.boot4.CacheFormatIsolationIntegrationTest' --no-daemon
+      rc=1; xml tests="1" failures="1" errors="0":
+        [no cache GET error: the Boot-3.5 entry was never read (jtoye.cache.errors unchanged)]
+        expected: 0.0 but was: 1.0
+      The application's own log line in the same xml shows the old key WAS read:
+        Cache GET failed for cache 'shops' key 'tenant:38010000-...a001:getShopById:38010000-...a002'
+        - degrading to source-of-truth (treated as a cache miss): Could not read JSON: Cannot
+        deserialize value of type `java.util.UUID` fro[m Array value]
+      (This RED is also the fail direction of the counter: the instrument can move.)
+   gsd check tdd-red-evidence:
+     everyRegionReadsAndWritesUnderTheVersionedKeyPrefixAndANewRegionInheritsIt()  RED_EVIDENCE_OK target_test_failed
+     aBoot35CacheEntryIsNeverReadAndTheBoot4EntryServesTheReadAfterWrite()          RED_EVIDENCE_OK target_test_failed
+     control, a passing case as target (theCacheFixturesBelowAreExactlyTheManifestCacheFamily()) INVALID_RED no_target_test_failure
+
+10. GREEN (feat(38-09)): CacheConfig
+    static final String CACHE_KEY_FORMAT_VERSION = "v4";
+    defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
+        .computePrefixWith(cacheName -> CACHE_KEY_FORMAT_VERSION + ":" + cacheName + "::") ...
+    Every region is derived from defaultConfig, so products / shops / shopMembership and any later
+    region inherit it. Javadoc: why (Jackson-3 format, Phase 38), old entries expire by TTL (max
+    15 min), bump-the-constant is the standing procedure, no flush at deploy.
+    a. Unit: ./gradlew :core-java:cleanTest :core-java:test --tests '...CacheSerializerTypeAllowlistTest'
+       rc=0, BUILD SUCCESSFUL, compileJava executed; xml tests="16" skipped="0" failures="0" errors="0".
+    b. Integration: ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest
+         --tests 'uk.jtoye.core.boot4.CacheFormatIsolationIntegrationTest'
+         --tests 'uk.jtoye.core.resilience.RedisFaultInjectionIntegrationTest' --no-daemon
+       rc=0, BUILD SUCCESSFUL in 57s
+       CacheFormatIsolationIntegrationTest  tests="1" skipped="0" failures="0" errors="0"
+       RedisFaultInjectionIntegrationTest   tests="1" skipped="0" failures="0" errors="0"
+       Redis listing from the passing run (SCAN MATCH * COUNT 100, never KEYS), test stdout in the xml:
+         38-09 SCAN after first call: [shops::tenant:38010000-0000-4000-8000-00000000a001:getShopById:38010000-0000-4000-8000-00000000a002,
+                                       v4:shops::tenant:38010000-0000-4000-8000-00000000a001:getShopById:38010000-0000-4000-8000-00000000a002]
+         38-09 TTL of v4:shops::tenant:...a001:getShopById:...a002: 900s
+         38-09 SCAN after second call: [the same two keys]
+       Read: the v4 key keeps the tenant segment (the prefix is prepended, T-38-25); the Boot-3.5 key
+       is untouched (its bytes still sha256-equal the planted fixture, asserted); the second call
+       returned "Database Kitchen" after the row was renamed behind the cache, so it was a hit on
+       the v4 entry; jtoye.cache.errors delta 0 across both calls.
+       "Cache GET failed" log lines: GREEN xml rg -uu --count-matches -> none, rc=1;
+       positive control on the RED xml -> 1, rc=0.
+
+11. Task 2 acceptance criteria
+    AC1 (plan form) git grep -n 'CACHE_KEY_FORMAT_VERSION' -- CacheConfig.java: 5 lines, rc=0
+        (l.33 class Javadoc, l.87 declaration, l.95 comment, l.97 computePrefixWith use, l.207 Javadoc link)
+        fail direction: same grep at HEAD fd7368e7 (the RED commit): rc=1, 0 lines.
+        Weakness recorded: the plan form also counts comments, so a comment-only mention would pass.
+        Stronger form used alongside it:
+          declaration  git grep -c 'static final String CACHE_KEY_FORMAT_VERSION = "v4";'  -> 1
+          code use     git grep -cE 'computePrefixWith\(.*CACHE_KEY_FORMAT_VERSION'         -> 1
+        (fail direction of the stronger form: the prefix-removed arm, section 12)
+    Task 1 greps re-run on this tree: all five forbidden tokens rc=1.
+
+12. Prefix-removed arm (bracketed on the committed GREEN tree 7f177388)
+    CacheConfig.java HEAD blob sha256 390bdc4dd1a45eda9d19ab7d0aa74b75ee3ab64a318cea1fc489d61459f0d455
+    = tree before the arm; backup copied to scratch.
+    ARM P: the .computePrefixWith(cacheName -> CACHE_KEY_FORMAT_VERSION + ":" + cacheName + "::") line deleted
+      stronger AC form under the arm: git grep -cE 'computePrefixWith\(.*CACHE_KEY_FORMAT_VERSION' -> none, rc=1
+      unit:        rc=1; allowlist xml tests="16" failures="1" errors="0":
+                   [key prefix of products] expected: "v4:products::" but was: "products::"
+      integration: rc=1; CacheFormatIsolationIntegrationTest tests="1" failures="1" errors="0":
+                   [no cache GET error: the Boot-3.5 entry was never read (jtoye.cache.errors unchanged)]
+                   expected: 0.0 but was: 1.0
+                   RedisFaultInjectionIntegrationTest tests="1" failures="0" (the analog does not depend on keys)
+    restore: cp from the backup; sha256 390bdc4d...0d455 match=yes; git diff --quiet HEAD rc=0
+    CLOSE (both verify commands on the restored tree):
+      unit rc=0, compileJava executed: CacheSerializerTypeAllowlistTest 16/0/0, MembershipSerializerRoundTripTest 3/0/0
+      integration rc=0: CacheFormatIsolationIntegrationTest 1/0/0, RedisFaultInjectionIntegrationTest 1/0/0
+
+13. Regression checks on the final tree
+    Full unit suite (./gradlew :core-java:cleanTest :core-java:test): rc=0, BUILD SUCCESSFUL in 1m 30s,
+      176 xml files, tests=1453 failures=0 errors=0 skipped=1 (38-08 ended at 1444; +9 cases here).
+    Live-cache Testcontainers classes (the only other tests that drive a cache, none with a key literal):
+      OrderSseGrantRecheckIntegrationTest 2/0/0, BulkImportTenantCacheScopeIntegrationTest 5/0/0,
+      ShopAccessCacheBypassIntegrationTest 5/0/0; rc=0.
+    Stub scan over the four changed code files: one hit, "mapToDouble" matching /todo/i - not a stub.
+    Prohibitions: no compose service started, stopped or rebuilt (Testcontainers only); no package
+      installed; no Jackson-2 databind import in CacheConfig (git grep rc=1); no unsafe or permissive
+      typing and no base-type matcher (git grep rc=1); no prefix without an observed id (pinned by
+      everyAllowlistPrefixCoversAnObservedTypeIdAndEveryIdIsCovered).

@@ -11,7 +11,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
   - SDK/Client: `com.stripe:stripe-java:33.4.2` (server); `@stripe/react-stripe-js` 6.12.0 + `@stripe/stripe-js` 9.17.0 (browser Elements)
   - Client classes: `core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java`, `StripeRefundClient.java`, `StripeProperties.java`
   - Auth: `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` (both default empty — feature is inert without them)
-  - Circuit breaker: `resilience4j.circuitbreaker.instances.stripe` (`core-java/src/main/resources/application.yml:745-750` — `sliding-window-size` 10, `failure-rate-threshold` 50)
+  - Circuit breaker: `resilience4j.circuitbreaker.instances.stripe` (`core-java/src/main/resources/application.yml:752-757` — `sliding-window-size` 10, `failure-rate-threshold` 50)
   - Config: `stripe.currency` (default `gbp`), `stripe.platform-fee-bps` (basis points, default 0), `stripe.connect.country` (default `GB`)
   - **LOCAL-DEV and STAGING/PROD identical mechanism** — Stripe is a real external API in every environment; only the key differs (test vs live).
 
@@ -30,7 +30,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
 **AI / Image Analysis:**
 - Ollama (LOCAL-DEV) — local vision LLM, `gemma3:12b` model, GPU-accelerated. `ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}` container in `docker-compose.full-stack.yml`; `OLLAMA_KEEP_ALIVE=-1` keeps the model resident in VRAM (cold load measured at ~72s, warm ~400ms). Compose exposes it on host port `11435` for developer curl access only — nothing in the stack uses the published port; core-java reaches it as `http://ollama:11434` over the bridge network.
   - Config: `ai.provider` (`ollama` default), `ai.ollama.url`, `ai.ollama.model`
-- Anthropic Claude (STAGING/PROD alternative provider) — `ai.provider=anthropic` switch. `core-java/src/main/java/uk/jtoye/core/ai/ImageAnalysisService.java:91` — model `claude-sonnet-4-20250514`, called via the WebFlux `WebClient` (this is what the `spring-boot-starter-webflux` dependency comment "Claude API calls" refers to).
+- Anthropic Claude (STAGING/PROD alternative provider) — `ai.provider=anthropic` switch. `core-java/src/main/java/uk/jtoye/core/ai/ImageAnalysisService.java:116` — model `claude-sonnet-4-20250514`, called via the WebFlux `WebClient` (this is what the `spring-boot-starter-webflux` dependency comment "Claude API calls" refers to).
   - Auth: `ANTHROPIC_API_KEY` (default empty — disabled with a WARN log if provider=anthropic and key unset)
   - Circuit breaker: `resilience4j.circuitbreaker.instances.ai`
   - Feature flag: `ai.enabled` (default true), plus the separate advisory vision-relevance stage `jtoye.media.vision.enabled` (default **false** — "Ollama unreliable")

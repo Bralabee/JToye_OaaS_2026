@@ -1,12 +1,12 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -84,7 +84,7 @@ class OnboardingAdminQueueIntegrationTest {
     private static final String RLS_TEST_ROLE = "rls_admin_queue_role";
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private VendorOnboardingRepository onboardingRepository;
     @Autowired private VendorOnboardingGateRepository gateRepository;
@@ -151,12 +151,12 @@ class OnboardingAdminQueueIntegrationTest {
 
         JsonNode row = findById(objectMapper.readTree(body), onboardingId);
         assertThat(row).as("seeded PENDING_APPROVAL onboarding is listed").isNotNull();
-        assertThat(row.get("status").asText()).isEqualTo("PENDING_APPROVAL");
-        assertThat(row.get("model").asText()).isEqualTo("MARKETPLACE");
-        assertThat(row.get("shopName").asText()).startsWith("Mama's Kitchen");
+        assertThat(row.get("status").asString()).isEqualTo("PENDING_APPROVAL");
+        assertThat(row.get("model").asString()).isEqualTo("MARKETPLACE");
+        assertThat(row.get("shopName").asString()).startsWith("Mama's Kitchen");
         assertThat(row.get("submittedAt").isNull()).isFalse();
         assertThat(row.get("gates")).hasSize(3);
-        row.get("gates").forEach(g -> assertThat(g.get("status").asText()).isEqualTo("PASSED"));
+        row.get("gates").forEach(g -> assertThat(g.get("status").asString()).isEqualTo("PASSED"));
     }
 
     @Test
@@ -369,7 +369,7 @@ class OnboardingAdminQueueIntegrationTest {
      */
     private JsonNode findById(JsonNode list, UUID id) {
         for (JsonNode row : list) {
-            if (id.toString().equals(row.get("id").asText())) {
+            if (id.toString().equals(row.get("id").asString())) {
                 return row;
             }
         }

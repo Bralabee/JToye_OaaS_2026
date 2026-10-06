@@ -30,11 +30,11 @@ const CREATE_CUSTOMER_PATH = "/api/v1/customers";
 
 // Raw Zod shape (NOT z.object) — the @modelcontextprotocol/sdk v1.29.0 contract.
 // Field names/types mirror CustomerController.CreateCustomerRequest, verified against
-// docs/api/openapi-snapshot.json (D-08). `name`/`email` are kept required to match the
-// runtime @NotBlank constraints — the snapshot's `required` array under-reports them
-// (springdoc does not propagate @NotBlank to `required`), but a create without them is a
-// guaranteed 400, so a self-describing schema is the better agent DX. `idempotencyKey`
-// is tool-only (NOT a DTO field) — split to header.
+// docs/api/openapi-snapshot.json (D-08). `name`/`email` are required, matching the
+// runtime @NotBlank constraints (a create without them is a 400). Since the snapshot was
+// regenerated on springdoc 3.1.1 (Phase 38, 38-14) its `required` array lists both too;
+// on springdoc 2.8 it listed neither. `idempotencyKey` is tool-only (NOT a DTO field) —
+// split to header.
 export const createCustomerInputSchema = {
   name: z.string().min(1).max(255).describe("Customer full name (required)"),
   email: z
