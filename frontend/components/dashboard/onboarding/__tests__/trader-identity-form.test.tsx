@@ -53,6 +53,17 @@ function routeGet(impl: () => Promise<unknown>) {
   })
 }
 
+/**
+ * Render and wait until the initial GET has settled: Save is disabled while the identity
+ * loads (saving over values not yet shown would overwrite the stored identity), so a click
+ * before that is ignored. Measured: two arms clicked during the load and saw nothing happen.
+ */
+async function renderLoaded() {
+  render(<TraderIdentityForm />)
+  await screen.findByRole("heading", { name: "Business details shown to customers" })
+  await waitFor(() => expect(screen.getByRole("button", { name: /save business details/i })).toBeEnabled())
+}
+
 async function fillValidForm() {
   fireEvent.change(screen.getByLabelText(/^legal name/i), { target: { value: "Mama Ade Foods Ltd" } })
   fireEvent.change(screen.getByLabelText(/business type/i), { target: { value: "COMPANY" } })
@@ -121,8 +132,7 @@ describe("TraderIdentityForm (#789)", () => {
         },
       },
     })
-    render(<TraderIdentityForm />)
-    await screen.findByRole("heading", { name: "Business details shown to customers" })
+    await renderLoaded()
 
     const postcode = screen.getByLabelText(/^postcode/i)
     expect(postcode).not.toHaveAttribute("aria-invalid")
@@ -142,8 +152,7 @@ describe("TraderIdentityForm (#789)", () => {
 
   it("refuses a malformed postcode in the browser before any PUT", async () => {
     routeGet(() => Promise.reject(notFound))
-    render(<TraderIdentityForm />)
-    await screen.findByRole("heading", { name: "Business details shown to customers" })
+    await renderLoaded()
 
     await fillValidForm()
     fireEvent.change(screen.getByLabelText(/^postcode/i), { target: { value: "NOTAPOSTCODE" } })
@@ -161,14 +170,15 @@ describe("TraderIdentityForm (#789)", () => {
       return calls === 1 ? Promise.reject(notFound) : Promise.resolve({ data: { ...identity, version: 1 } })
     })
     mockedApiClient.put.mockResolvedValue({ data: identity })
-    render(<TraderIdentityForm />)
-    await screen.findByRole("heading", { name: "Business details shown to customers" })
+    await renderLoaded()
 
     await fillValidForm()
     fireEvent.change(screen.getByLabelText(/^vat number/i), { target: { value: "gb 123 4567 89" } })
     fireEvent.click(screen.getByRole("button", { name: /save business details/i }))
 
-    expect(await screen.findByRole("status")).toHaveTextContent(/business details saved/i)
+    // The status region is persistent (present, empty, from first render) so assistive tech
+    // announces the change; wait for its TEXT rather than its existence.
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/business details saved/i))
     expect(mockedApiClient.put).toHaveBeenCalledWith(
       URL,
       expect.objectContaining({

@@ -14,6 +14,7 @@ import { fetchAllMyShops } from "@/lib/shops-api"
 import { useToast } from "@/hooks/use-toast"
 import { describeLoadError } from "@/lib/human-error"
 import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
+import { TraderIdentityForm } from "@/components/dashboard/onboarding/trader-identity-form"
 import {
   Card,
   CardContent,
@@ -892,6 +893,11 @@ export default function OnboardingPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* #789 (31.1-10): the legal entity customers buy from. Tenant-level, so it is shown
+          in every onboarding state (a LIVE vendor must be able to declare or correct it too),
+          and it inherits this Detail tier like every other card here. */}
+      <TraderIdentityForm />
 
       {/* Milestone timeline */}
       <Card>

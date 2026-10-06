@@ -513,6 +513,40 @@ export interface UpdateOnboardingRequest {
   companyNumber?: string
 }
 
+// #789 (31.1-10): the tenant's legal entity, the seller customers buy from
+// (CCR 2013 Sch 2, E-Commerce Regs 2002 reg 6). One per tenant; mirrors the
+// backend TraderIdentityDto (GET/PUT /api/v1/trader-identity). companyNumber is
+// READ from the onboarding record and never sent back. Nullable fields are
+// written as JSON null (this DTO is not a Phase 38 golden), so null means
+// "not declared" (no second address line / not VAT-registered / no onboarding).
+export type TraderEntityType = "COMPANY" | "SOLE_TRADER" | "PARTNERSHIP"
+
+export interface TraderIdentity {
+  id: string
+  legalName: string
+  entityType: TraderEntityType
+  addressLine1: string
+  addressLine2: string | null
+  addressCity: string
+  addressPostcode: string
+  vatNumber: string | null
+  companyNumber: string | null
+  version: number
+  updatedAt: string
+}
+
+// Mirrors the backend UpdateTraderIdentityRequest. No tenantId and no company
+// number: the tenant comes from the session, the number from onboarding.
+export interface UpdateTraderIdentityRequest {
+  legalName: string
+  entityType: TraderEntityType
+  addressLine1: string
+  addressLine2?: string | null
+  addressCity: string
+  addressPostcode: string
+  vatNumber?: string | null
+}
+
 // ONBD-03 admin surface: an admin resolves a stuck gate. Mirrors the backend
 // ResolveGateRequest (POST /onboarding/admin/{id}/gates/{gateType}/resolve);
 // reason is required for FAIL (enforced server-side), optional for PASS/WAIVE. — 21-03.
