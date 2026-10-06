@@ -26,6 +26,7 @@ import {
   rememberCustomerId,
   rememberLastSignIn,
 } from "@/lib/cart-identity"
+import { PERSONAL_KEYS_CLEARED_ON_SIGN_OUT, removeStorageEntries } from "@/lib/client-storage-keys"
 import { safeReturnTo } from "@/lib/safe-return-to"
 
 // Phase 18: customer identity lives in its own realm (jtoye-customers), decoupled
@@ -184,6 +185,15 @@ function clearSignedOutState() {
   // FE-5: an EXPLICIT sign-out is the one moment "somebody signed in here"
   // stops being true. Only here — never in clearMarker().
   forgetLastSignIn()
+  // #840: and every other personal key the registry declares — the local
+  // order history (order numbers + the email each was placed with), every
+  // shop's saved checkout email, the order-tracking email in this tab. On a
+  // shared device these outlived the sign-out and greeted the next person.
+  // Same rule as the two lines above: ONLY here. A lapse goes through
+  // clearMarker(), which must not touch any of this (R-16 / FE-5). The calls
+  // above stay as they are — clearStoredCarts() also broadcasts to the
+  // in-memory basket, which a plain key removal would not.
+  removeStorageEntries(PERSONAL_KEYS_CLEARED_ON_SIGN_OUT)
 }
 
 /**
