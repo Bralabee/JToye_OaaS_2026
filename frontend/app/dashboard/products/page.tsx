@@ -44,13 +44,22 @@ import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye
 import { ImageUploader, type AiSuggestions } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
-import type { Product, CreateProductRequest, Shop } from "@/types/api"
+import type { Product, CreateProductRequest, Shop, ProductAllergenWarning } from "@/types/api"
 import {
   ALLERGENS,
   hasAllergen,
   toggleAllergen,
   getAllergenNames,
 } from "@/types/api"
+import {
+  INGREDIENTS_EMPHASIS_HELP_COPY,
+  KEEP_AS_IS_COPY,
+  NO_ALLERGENS_DECLARED_COPY,
+  tickAllergenCopy,
+  undeclaredIngredientCopy,
+  undeclaredIngredientVendorCopy,
+  vendorSaveWarningCopy,
+} from "@/lib/allergen-copy"
 
 // The form schema lives in its own module so it can be unit-tested — a Next
 // App Router page.tsx may not export non-route symbols (A11Y-8 / A11Y-11).
@@ -77,6 +86,19 @@ function AiSuggestionRow({ label, value, onAccept }: { label: string; value: str
 
 const PAGE_SIZE = 20
 
+/**
+ * D-09: the catalogue name for a warning's bit. The bit is the fact; the server's name is the
+ * fallback for a bit this build's catalogue does not know.
+ */
+function warningAllergenName(warning: ProductAllergenWarning): string {
+  return ALLERGENS.find((a) => a.bit === warning.allergenBit)?.name ?? warning.allergen
+}
+
+/** The allergens a product's ingredients name but its declaration omits, once each. */
+function undeclaredAllergenNames(warnings: ProductAllergenWarning[] | null | undefined): string[] {
+  return Array.from(new Set((warnings ?? []).map(warningAllergenName)))
+}
+
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,6 +111,10 @@ export default function ProductsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
   const [allergenMask, setAllergenMask] = useState(0)
+  // D-09 (#787): the warnings the LAST save returned. The save succeeded; these ask the vendor
+  // to tick the named allergen or keep the declaration as it is. Nothing here is persisted.
+  const [allergenWarnings, setAllergenWarnings] = useState<ProductAllergenWarning[]>([])
+  const allergenWarningRef = useRef<HTMLDivElement>(null)
   const [available, setAvailable] = useState(true)
   const [featured, setFeatured] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -243,6 +269,7 @@ export default function ProductsPage() {
     setTrackInventory(false)
     setQuantityInStock(0)
     setAiSuggestions(null)
+    setAllergenWarnings([])
     setDialogOpen(true)
   }
 
@@ -259,8 +286,28 @@ export default function ProductsPage() {
     setTrackInventory(product.quantityInStock != null)
     setQuantityInStock(product.quantityInStock ?? 0)
     setAiSuggestions(null)
+    setAllergenWarnings([])
     setDialogOpen(true)
   }
+
+  // The form dialog closing, by any route, drops a pending save-time warning with it.
+  const onFormDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open)
+    if (!open) setAllergenWarnings([])
+  }
+
+  const closeFormAfterSave = () => {
+    setAllergenWarnings([])
+    setDialogOpen(false)
+    reset()
+    setAllergenMask(0)
+  }
+
+  // D-09: move focus to the warning when a save returns one, so a keyboard or screen-reader
+  // user lands on the decision rather than on a form that still looks finished.
+  useEffect(() => {
+    if (allergenWarnings.length > 0) allergenWarningRef.current?.focus()
+  }, [allergenWarnings])
 
   const openDeleteDialog = (product: Product) => {
     setDeletingProduct(product)
@@ -271,7 +318,12 @@ export default function ProductsPage() {
     setAllergenMask(toggleAllergen(allergenMask, bit))
   }
 
-  const onSubmit = async (data: ProductFormData) => {
+  /**
+   * Create or update. `mask` is passed explicitly by the "Tick …" action, which sets a bit and
+   * saves in the same gesture: reading `allergenMask` state there would send the value from
+   * before the tick.
+   */
+  const saveProduct = async (data: ProductFormData, mask: number = allergenMask) => {
     try {
       setSubmitting(true)
 
@@ -288,7 +340,7 @@ export default function ProductsPage() {
         sku: data.sku,
         title: data.title,
         ingredientsText: data.ingredientsText,
-        allergenMask,
+        allergenMask: mask,
         pricePennies: toPricePennies(data.pricePounds),
         available,
         featured,
@@ -302,27 +354,37 @@ export default function ProductsPage() {
         quantityInStock: trackInventory ? quantityInStock : null,
       }
 
+      let saved: Product | undefined
       if (editingProduct) {
         // Update existing product
-        await apiClient.put(`/api/v1/products/${editingProduct.id}`, payload)
+        saved = (await apiClient.put(`/api/v1/products/${editingProduct.id}`, payload))?.data
         toast({
           title: "Product updated",
           description: `${data.title} has been updated successfully.`,
         })
       } else {
         // Create new product
-        await apiClient.post("/api/v1/products", payload)
+        saved = (await apiClient.post("/api/v1/products", payload))?.data
         toast({
           title: "Product created",
           description: `${data.title} has been created successfully.`,
         })
       }
 
-      setDialogOpen(false)
-      reset()
-      setAllergenMask(0)
       if (currentPage === 0) fetchProducts()
       else setCurrentPage(0)
+
+      // D-09 (#787): the save SUCCEEDED, but the ingredients name an allergen the declaration
+      // omits. Keep the form open on the product just saved (so "Tick …" updates it rather than
+      // creating a second one) and ask the vendor to decide.
+      const warnings = saved?.allergenWarnings ?? []
+      if (saved && warnings.length > 0) {
+        setEditingProduct(saved)
+        setAllergenWarnings(warnings)
+        return
+      }
+
+      closeFormAfterSave()
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : `Failed to ${editingProduct ? "update" : "create"} product`
       toast({
@@ -333,6 +395,22 @@ export default function ProductsPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const onSubmit = (data: ProductFormData) => saveProduct(data)
+
+  // D-09 "Tick Milk": an explicit vendor action — the warning arriving never ticks anything
+  // (T-31.1-69). Sets the bit on the declaration and saves the same product again.
+  const tickAllergenAndResave = (bit: number) => {
+    const next = allergenMask | (1 << bit)
+    setAllergenMask(next)
+    void handleSubmit((data) => saveProduct(data, next))()
+  }
+
+  // D-09 "Keep as it is": the product is already saved; the storefront keeps showing the
+  // disagreement until the ingredients and the declaration agree. Nothing is recorded.
+  const keepDeclarationAsIs = () => {
+    closeFormAfterSave()
   }
 
   const handleDelete = async () => {
@@ -492,6 +570,10 @@ export default function ProductsPage() {
                 <TableBody>
                   {products.map((product) => {
                     const allergenNames = getAllergenNames(product.allergenMask)
+                    // Pitfall 11 / D-18: the persona's dish must never read "no allergens" here.
+                    const undeclaredLine = undeclaredIngredientVendorCopy(
+                      undeclaredAllergenNames(product.allergenWarnings)
+                    )
                     return (
                       <m.tr
                         key={product.id}
@@ -534,16 +616,13 @@ export default function ProductsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {allergenNames.length === 0 ? (
+                            {allergenNames.length === 0 && !undeclaredLine ? (
                               <span className="text-sm text-muted-foreground">
-                                No allergens
+                                {NO_ALLERGENS_DECLARED_COPY}
                               </span>
                             ) : (
-                              allergenNames.map((name) => {
-                                const allergen = ALLERGENS.find(
-                                  (a) => a.name === name
-                                )
-                                return (
+                              <>
+                                {allergenNames.map((name) => (
                                   <Badge
                                     key={name}
                                     variant="outline"
@@ -551,8 +630,14 @@ export default function ProductsPage() {
                                   >
                                     {name}
                                   </Badge>
-                                )
-                              })
+                                ))}
+                                {undeclaredLine && (
+                                  <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-800">
+                                    <AlertCircle className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
+                                    {undeclaredLine}
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                         </TableCell>
@@ -628,7 +713,7 @@ export default function ProductsPage() {
       </m.div>
 
       {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={onFormDialogOpenChange}>
         <DialogContent className="max-h-[90vh] overflow-y-auto max-w-2xl">
           <DialogHeader>
             <DialogTitle>
@@ -640,6 +725,61 @@ export default function ProductsPage() {
                 : "Add a new product to your catalog."}
             </DialogDescription>
           </DialogHeader>
+          {allergenWarnings.length > 0 && (
+            // D-09 (#787): the save-time warning, above the form. role=alert announces it; focus
+            // is moved here by the effect above. The two actions are the vendor's decision.
+            <div
+              ref={allergenWarningRef}
+              role="alert"
+              tabIndex={-1}
+              data-testid="allergen-save-warning"
+              className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-2"
+            >
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" aria-hidden="true" />
+                <div className="min-w-0 flex-1 space-y-3">
+                  <p className="text-sm font-semibold">
+                    Saved. Check the allergens you ticked.
+                  </p>
+                  <ul className="space-y-2">
+                    {allergenWarnings.map((warning) => {
+                      const name = warningAllergenName(warning)
+                      return (
+                        <li
+                          key={warning.allergenBit}
+                          className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                        >
+                          <span>{vendorSaveWarningCopy(name)}</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={submitting}
+                            onClick={() => tickAllergenAndResave(warning.allergenBit)}
+                          >
+                            {tickAllergenCopy(name)}
+                          </Button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  <p className="text-sm">
+                    Until they agree, customers see &ldquo;
+                    {undeclaredIngredientCopy(undeclaredAllergenNames(allergenWarnings))}
+                    &rdquo; on this dish.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={submitting}
+                    onClick={keepDeclarationAsIs}
+                  >
+                    {KEEP_AS_IS_COPY}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
           <form id="product-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Product Details</h4>
             <div className="space-y-2">
@@ -687,9 +827,14 @@ export default function ProductsPage() {
                 placeholder="e.g., Flour, sugar, butter, chocolate chips..."
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-invalid={errors.ingredientsText ? "true" : undefined}
-                aria-describedby={errors.ingredientsText ? "ingredientsText-error" : undefined}
+                // Pitfall 6: the helper is the field's description; while a validation error
+                // is showing, the error replaces it (A11Y-7 resolves this to ONE message id).
+                aria-describedby={errors.ingredientsText ? "ingredientsText-error" : "ingredientsText-help"}
                 {...register("ingredientsText")}
               />
+              <p id="ingredientsText-help" className="text-xs text-slate-500">
+                {INGREDIENTS_EMPHASIS_HELP_COPY}
+              </p>
               {errors.ingredientsText && (
                 <p id="ingredientsText-error" className="text-sm text-red-600">
                   {errors.ingredientsText.message}
@@ -941,12 +1086,14 @@ export default function ProductsPage() {
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-orange-600" />
-                <Label>Allergens</Label>
-              </div>
-              <p className="text-sm text-slate-600">
+            {/* A fieldset so the declared set is a named group: D-16 adds a second set of the
+                same 14 names (may contain), and the two must never be confused. */}
+            <fieldset className="space-y-3" aria-describedby="allergens-help">
+              <legend className="flex items-center gap-2 text-sm font-medium leading-none">
+                <AlertCircle className="h-4 w-4 text-orange-600" aria-hidden="true" />
+                Allergens
+              </legend>
+              <p id="allergens-help" className="text-sm text-slate-600">
                 Select all allergens present in this product
               </p>
               <div className="grid grid-cols-2 gap-3 rounded-lg border p-4 bg-slate-50">
@@ -965,7 +1112,7 @@ export default function ProductsPage() {
                   </label>
                 ))}
               </div>
-            </div>
+            </fieldset>
 
             <DialogFooter>
               <Button
