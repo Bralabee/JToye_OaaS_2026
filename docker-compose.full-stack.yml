@@ -364,6 +364,13 @@ services:
       SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
       NOTIFICATION_EMAIL_ENABLED: "true"
       NOTIFICATION_EMAIL_TRACKING_BASE_URL: "http://localhost:3000"
+      # 31.1-20 (#839): the two DSAR links a data subject is emailed open the WEB app (this
+      # stack's frontend on :3000), never the API: the confirm page spends the verification token
+      # on a press, the download page the Article 15 export token. Stated here rather than left
+      # to application.yml defaults so the compose value is visible and pinned by
+      # DsarLinkConfigContractTest; .env may override both.
+      DSAR_VERIFY_BASE_URL: ${DSAR_VERIFY_BASE_URL:-http://localhost:3000/data-request/confirm}
+      DSAR_EXPORT_DOWNLOAD_BASE_URL: ${DSAR_EXPORT_DOWNLOAD_BASE_URL:-http://localhost:3000/data-request/download}
       # Object storage (Phase 36, D-02 local path): the Azurite emulator below. The
       # connection string names NO key: UseDevelopmentStorage=true makes the Azure SDK
       # supply Microsoft's published emulator key itself, and DevelopmentStorageProxyUri

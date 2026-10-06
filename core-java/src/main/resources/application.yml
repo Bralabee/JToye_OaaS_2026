@@ -226,10 +226,15 @@ jtoye:
       # quoted verbatim to the subject by DsarVerificationMailer, so the promise and the column
       # cannot disagree.
       verification-ttl-hours: ${DSAR_VERIFICATION_TTL_HOURS:168}
-      # Where the emailed confirmation link points. Config-injected and NEVER derived from the
-      # request: a link built from an attacker-supplied Host header would redirect a live,
-      # single-use bearer token to a collector of their choosing.
-      verify-base-url: ${DSAR_VERIFY_BASE_URL:http://localhost:8080/api/v1/public/gdpr/dsar/verify}
+      # Where the emailed confirmation link points: the web app's /data-request/confirm page, with
+      # the token appended in the URL FRAGMENT (#token=...), which a browser never sends to a server
+      # (31.1-20, #839: this used to be the API on localhost:8080, where nothing listens on compose,
+      # and the API answers raw JSON). The page spends the token only when the person presses
+      # "Confirm my request". Config-injected and NEVER derived from the request: a link built from
+      # an attacker-supplied Host header would redirect a live, single-use bearer token to a
+      # collector of their choosing. Every runtime supplies its own web origin, pinned by
+      # DsarLinkConfigContractTest.
+      verify-base-url: ${DSAR_VERIFY_BASE_URL:http://localhost:3000/data-request/confirm}
       # 31.1-16 (D-01, #778): how long the emailed Article 15 download link lives. Seven days
       # (assumption A5, cheap to change): the same window the verification link gets. Read by
       # DsarAccessExportService when stamping dsar_access_export.expires_at AND quoted to the subject
