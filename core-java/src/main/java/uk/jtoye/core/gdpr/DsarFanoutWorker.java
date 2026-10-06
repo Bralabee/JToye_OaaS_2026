@@ -16,9 +16,14 @@ import uk.jtoye.core.gdpr.DsarAccessExportService.TenantSection;
 import uk.jtoye.core.security.access.SystemPrincipal;
 import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
 import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.AccountDeletionResult;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.PlatformAccountLookup;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.PlatformAccountStatus;
 
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -143,7 +148,8 @@ public class DsarFanoutWorker {
                     ORDER BY received_at
                     FOR UPDATE SKIP LOCKED
                     LIMIT ?)
-            RETURNING id, request_type, subject_email_sha256, process_attempts, subject_email_ciphertext
+            RETURNING id, request_type, subject_email_sha256, process_attempts, subject_email_ciphertext,
+                      received_at
             """;
 
     private final GdprService gdprService;
@@ -200,7 +206,14 @@ public class DsarFanoutWorker {
         }
 
         List<UUID> tenantIds = listTenantIds();
-        for (Map<String, Object> request : claimed) {
+        // Oldest first, as lodged. The claim's subquery is ordered, but UPDATE ... RETURNING returns rows
+        // in no guaranteed order — measured (31.1-16): an ACCESS lodged before an ERASURE for the same
+        // subject was sometimes executed AFTER it, so the subject's copy said "no data held" about data
+        // they asked to see before they asked to erase it.
+        List<Map<String, Object>> inOrder = new ArrayList<>(claimed);
+        inOrder.sort(Comparator.comparing((Map<String, Object> r) -> receivedAt(r.get("received_at")))
+                .thenComparing(r -> r.get("id").toString()));
+        for (Map<String, Object> request : inOrder) {
             UUID requestId = (UUID) request.get("id");
             String subjectDigest = (String) request.get("subject_email_sha256");
             int attempts = ((Number) request.get("process_attempts")).intValue();
@@ -212,6 +225,16 @@ public class DsarFanoutWorker {
                 executeOne(requestId, subjectDigest, ciphertext, attempts, tenantIds);
             }
         }
+    }
+
+    private static Instant receivedAt(Object value) {
+        if (value instanceof Timestamp t) {
+            return t.toInstant();
+        }
+        if (value instanceof OffsetDateTime t) {
+            return t.toInstant();
+        }
+        return Instant.EPOCH;
     }
 
     // ---- ACCESS (Article 15, 31.1-16, D-01) ----------------------------------------------------------
@@ -254,10 +277,28 @@ public class DsarFanoutWorker {
         }
 
         String address;
-        IssuedToken issued;
         try {
             address = dsarCipher.decrypt(DsarCipher.Purpose.SUBJECT_ADDRESS, requestId, ciphertext);
-            byte[] document = accessExportService.buildDocument(address, sections, OffsetDateTime.now());
+        } catch (RuntimeException e) {
+            log.error("event=dsar_access_failed request={} stage=decrypt error={}", requestId,
+                    e.getClass().getName());
+            releaseAccess(requestId, "the subject address could not be decrypted", attempts);
+            return;
+        }
+
+        // The customer-realm sign-in account is personal data held about the subject too. The same
+        // realm and matching rules as the erasure's deletion. A failed lookup is "not answered yet",
+        // never "no account": the request is retried rather than answered with a hole in it. A seam
+        // that is switched off is stated in the document as NOT_CHECKED.
+        PlatformAccountLookup account = accountDeletionService.lookupCustomerAccounts(address);
+        if (account == null || account.status() == PlatformAccountStatus.FAILED) {
+            releaseAccess(requestId, "the sign-in account lookup failed", attempts);
+            return;
+        }
+
+        IssuedToken issued;
+        try {
+            byte[] document = accessExportService.buildDocument(address, sections, account, OffsetDateTime.now());
             // Stored and COMMITTED before the email goes: a link must never point at nothing.
             issued = accessExportService.storeAndIssueToken(requestId, document);
         } catch (RuntimeException e) {
