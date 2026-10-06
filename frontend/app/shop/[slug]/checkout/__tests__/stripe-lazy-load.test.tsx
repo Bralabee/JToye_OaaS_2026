@@ -66,6 +66,18 @@ jest.mock("@stripe/react-stripe-js", () => ({
 
 const mockedLoadStripe = loadStripe as unknown as jest.Mock
 const mockedGet = publicApiClient.get as jest.Mock
+
+// 31.1-15 (T-31.1-53): the checkout now refuses to submit without the basket's declared allergen
+// set, which it reads from the products endpoint. This harness used to answer EVERY GET with the
+// shop, so the catalogue never resolved — a state in which the server (31.1-03) would refuse the
+// order 422. Serve a catalogue for the basket's lines (declared none) and the shop for everything
+// else. Harness only: no assertion in this file changed.
+const CATALOGUE = { Mains: Array.from({ length: 10 }, (_, i) => ({ id: `p${i}`, allergenMask: 0 })) }
+function mockShop(shop: unknown) {
+  mockedGet.mockImplementation((url: string) =>
+    Promise.resolve({ data: typeof url === "string" && url.endsWith("/products") ? CATALOGUE : shop })
+  )
+}
 const mockedPost = publicApiClient.post as jest.Mock
 
 const SLUG = "jollof-express"
@@ -171,7 +183,7 @@ beforeEach(() => {
   mockedPost.mockReset()
   mockedLoadStripe.mockClear()
   elementsStripeProps.length = 0
-  mockedGet.mockResolvedValue({ data: { ...SHOP, acceptsCardPayments: true } })
+  mockShop({ ...SHOP, acceptsCardPayments: true })
   seedCart()
 })
 
@@ -193,7 +205,7 @@ describe("Stripe lazy load (#793)", () => {
 
   it("a cash (no clientSecret) order calls loadStripe ZERO times, even with a publishable key set", async () => {
     process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = PUBLISHABLE_KEY
-    mockedGet.mockResolvedValue({ data: { ...SHOP, acceptsCardPayments: false } })
+    mockShop({ ...SHOP, acceptsCardPayments: false })
     mockedPost.mockResolvedValue({ data: COD_CONFIRMATION })
     await renderCheckout()
     await armCheckout()

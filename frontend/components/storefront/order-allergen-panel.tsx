@@ -70,6 +70,32 @@ export const ALLERGEN_PANEL_SUBLINE_COPY =
 export const ALLERGEN_ACK_ERROR_COPY =
   "Confirm you have read the allergen information before placing this order."
 
+/**
+ * #785 (D-05, 31.1-15): rendered in the SAME `role="alert"` region when the server refused the
+ * submit because the set the customer acknowledged is no longer the basket's declared set (a
+ * vendor edit landed after they read it), or when a set arrived for a basket the panel had shown
+ * as NOT RECORDED. The panel now shows the current set and the box is unticked.
+ */
+export const ALLERGEN_ACK_STALE_COPY =
+  "The allergen information for your basket has changed. Read it again and tick the box to confirm."
+
+/**
+ * T-31.1-53 (31.1-15): rendered in the same alert region when the basket's declared set could not
+ * be loaded, so there is no set to acknowledge. The checkout refuses rather than send a guessed or
+ * zero mask — NOT RECORDED is never "none".
+ */
+export const ALLERGEN_ACK_UNAVAILABLE_COPY =
+  "We could not load the allergen information for your basket, so we cannot place this order yet. Check your connection and try again."
+
+/** Which refusal the alert region is announcing. */
+export type AllergenAckErrorKind = "unticked" | "stale" | "unavailable"
+
+const ALLERGEN_ACK_ERROR_COPY_BY_KIND: Record<AllergenAckErrorKind, string> = {
+  unticked: ALLERGEN_ACK_ERROR_COPY,
+  stale: ALLERGEN_ACK_STALE_COPY,
+  unavailable: ALLERGEN_ACK_UNAVAILABLE_COPY,
+}
+
 /** The intro line, which attributes the declaration to the kitchen that made it. */
 export function allergenPanelIntroCopy(vendorName: string): string {
   return `These items are prepared by ${vendorName}. Based on what the kitchen has declared, this order contains:`
@@ -94,6 +120,11 @@ export interface OrderAllergenPanelProps {
   onAcknowledgedChange: (next: boolean) => void
   /** Set by the parent when a submit was refused for want of the acknowledgement. */
   errored?: boolean
+  /**
+   * Which refusal to announce when `errored`. Defaults to "unticked" (ALLERGEN_ACK_ERROR_COPY), so
+   * every pre-31.1-15 caller renders exactly what it did before.
+   */
+  errorKind?: AllergenAckErrorKind
   /** Stable id shared by the alert region and the checkbox's aria-describedby. */
   errorId?: string
   checkboxId?: string
@@ -108,6 +139,7 @@ export function OrderAllergenPanel({
   acknowledged,
   onAcknowledgedChange,
   errored = false,
+  errorKind = "unticked",
   errorId = "allergen-ack-error",
   checkboxId = "allergen-ack",
   checkboxRef,
@@ -212,7 +244,7 @@ export function OrderAllergenPanel({
           trains users to ignore the one announcement that matters. */}
       {errored && (
         <p id={errorId} role="alert" className="mt-2 text-sm font-semibold text-amber-800">
-          {ALLERGEN_ACK_ERROR_COPY}
+          {ALLERGEN_ACK_ERROR_COPY_BY_KIND[errorKind]}
         </p>
       )}
     </section>

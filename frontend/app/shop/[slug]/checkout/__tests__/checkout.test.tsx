@@ -57,6 +57,18 @@ jest.mock("@stripe/react-stripe-js", () => ({
 }))
 
 const mockedGet = publicApiClient.get as jest.Mock
+
+// 31.1-15 (T-31.1-53): the checkout now refuses to submit without the basket's declared allergen
+// set, which it reads from the products endpoint. This harness used to answer EVERY GET with the
+// shop, so the catalogue never resolved — a state in which the server (31.1-03) would refuse the
+// order 422. Serve a catalogue for the basket's lines (declared none) and the shop for everything
+// else. Harness only: no assertion in this file changed.
+const CATALOGUE = { Mains: Array.from({ length: 10 }, (_, i) => ({ id: `p${i}`, allergenMask: 0 })) }
+function mockShop(shop: unknown) {
+  mockedGet.mockImplementation((url: string) =>
+    Promise.resolve({ data: typeof url === "string" && url.endsWith("/products") ? CATALOGUE : shop })
+  )
+}
 const mockedPost = publicApiClient.post as jest.Mock
 
 const SLUG = "jollof-express"
@@ -121,7 +133,7 @@ function renderCheckout() {
 beforeEach(() => {
   mockedGet.mockReset()
   mockedPost.mockReset()
-  mockedGet.mockResolvedValue({ data: SHOP })
+  mockShop(SHOP)
 })
 
 afterEach(() => {
@@ -232,7 +244,7 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
 
   it("disables Place order below the shop's minimum order value with a hint (WR-01)", async () => {
     // Shop advertises a £15.00 minimum; the cart holds £10.00.
-    mockedGet.mockResolvedValue({ data: { ...SHOP, minimumOrderPennies: 1500 } })
+    mockShop({ ...SHOP, minimumOrderPennies: 1500 })
     seedCart(1000)
     renderCheckout()
 
@@ -320,7 +332,7 @@ describe("Checkout page (/shop/[slug]/checkout)", () => {
 describe("How you'll pay disclosure (QA-council FIX-6)", () => {
   it("shows the pay-on-delivery notice BEFORE submit when the shop takes no card payments", async () => {
     seedCart(1000)
-    mockedGet.mockResolvedValue({ data: { ...SHOP, acceptsCardPayments: false } })
+    mockShop({ ...SHOP, acceptsCardPayments: false })
     renderCheckout()
 
     expect(await screen.findByText(/how you.ll pay/i)).toBeTruthy()
@@ -332,7 +344,7 @@ describe("How you'll pay disclosure (QA-council FIX-6)", () => {
 
   it("switches the notice to collection wording when fulfilment is COLLECTION", async () => {
     seedCart(1000)
-    mockedGet.mockResolvedValue({ data: { ...SHOP, acceptsCardPayments: false } })
+    mockShop({ ...SHOP, acceptsCardPayments: false })
     renderCheckout()
 
     await screen.findByText(/how you.ll pay/i)
@@ -343,7 +355,7 @@ describe("How you'll pay disclosure (QA-council FIX-6)", () => {
 
   it("shows the card notice when the shop accepts card payments", async () => {
     seedCart(1000)
-    mockedGet.mockResolvedValue({ data: { ...SHOP, acceptsCardPayments: true } })
+    mockShop({ ...SHOP, acceptsCardPayments: true })
     renderCheckout()
 
     expect(await screen.findByText(/how you.ll pay/i)).toBeTruthy()
@@ -353,7 +365,7 @@ describe("How you'll pay disclosure (QA-council FIX-6)", () => {
 
   it("renders no payment section when the backend does not send the field (old-backend tolerance)", async () => {
     seedCart(1000)
-    mockedGet.mockResolvedValue({ data: SHOP }) // no acceptsCardPayments key
+    mockShop(SHOP) // no acceptsCardPayments key
     renderCheckout()
 
     await screen.findByText("Delivery address")

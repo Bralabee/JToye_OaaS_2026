@@ -45,6 +45,13 @@ export interface GuestOrderFields {
   city: string
   postcode: string
   items: readonly GuestOrderLine[]
+  /**
+   * #784/#785 (D-05): the 14-bit DECLARED allergen union of the basket exactly as the panel showed
+   * it when the customer ticked the box. Optional only so callers that predate it still type-check;
+   * the checkout page refuses to submit without one. `0` is a value (the kitchen declared none of
+   * the 14) and is SIGNED — it is never collapsed into "absent".
+   */
+  acknowledgedAllergenMask?: number | null
 }
 
 /**
@@ -63,6 +70,8 @@ export interface GuestOrderIntent {
   addressCity?: string
   addressPostcode?: string
   items: GuestOrderLine[]
+  /** GuestOrderRequest.acknowledgedAllergenMask (31.1-03). Part of the signed intent. */
+  acknowledgedAllergenMask?: number
 }
 
 /** Normalise the form state into the body the checkout page submits. */
@@ -85,6 +94,8 @@ export function buildGuestOrderIntent(fields: GuestOrderFields): GuestOrderInten
       productId: item.productId,
       quantity: item.quantity,
     })),
+    // `??`, not `||`: a 0 mask is "declared none", a statement the customer acknowledged.
+    acknowledgedAllergenMask: fields.acknowledgedAllergenMask ?? undefined,
   }
 }
 

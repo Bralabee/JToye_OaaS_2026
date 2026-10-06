@@ -13,7 +13,7 @@ import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-
 import { useCart } from "@/components/storefront/cart-provider"
 // The refusal copy lives in the panel, which owns its own `role="alert"` region — the page sets
 // only the errored flag, so there is one source for the legally-operative string.
-import { OrderAllergenPanel } from "@/components/storefront/order-allergen-panel"
+import { OrderAllergenPanel, type AllergenAckErrorKind } from "@/components/storefront/order-allergen-panel"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { describeOrderError } from "@/lib/order-error"
@@ -26,7 +26,13 @@ import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/va
 import publicApiClient from "@/lib/public-api-client"
 // FulfilmentType is the shared two-member union (mirrors the backend enum), not a local re-declaration.
 import { getAllergenNames, type FulfilmentType } from "@/types/api"
-import { PublicShop, PublicProduct } from "@/types/storefront"
+import {
+  ALLERGEN_ACK_STALE_PROBLEM_TYPE,
+  type AllergenAcknowledgementStaleProblem,
+  type GuestOrderConfirmation,
+  type PublicProduct,
+  type PublicShop,
+} from "@/types/storefront"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
@@ -85,6 +91,26 @@ export function basketAllergenNames(
   items: { productId: string }[],
   productIndex: Map<string, PublicProduct> | null
 ): string[] | null {
+  const mask = basketAllergenMask(items, productIndex)
+  return mask === null ? null : getAllergenNames(mask)
+}
+
+/**
+ * The basket's DECLARED allergen union as the 14-bit mask (AllergenCatalog bits 0..13) — the value
+ * the checkout submits as `acknowledgedAllergenMask` (#784/#785, D-05).
+ *
+ * Same NOT RECORDED rule as `basketAllergenNames`, which is derived from this: `null` whenever
+ * ANY line cannot be resolved. The server compares the acknowledgement by EQUALITY with the union it
+ * reads at submit (31.1-03), so a partial union would be refused anyway — but the reason it must be
+ * `null` and never `0` is the customer, not the server: `0` says "the kitchen declared none".
+ *
+ * Declared mask ONLY. `mayContainAllergens` (31.1-14, cross-contact) and the advisory reconciliation
+ * flags are separate statements and are never OR-ed into the acknowledged set.
+ */
+export function basketAllergenMask(
+  items: { productId: string }[],
+  productIndex: Map<string, PublicProduct> | null
+): number | null {
   if (!productIndex || items.length === 0) return null
   let mask = 0
   for (const item of items) {
@@ -92,21 +118,42 @@ export function basketAllergenNames(
     if (!product || typeof product.allergenMask !== "number") return null
     mask |= product.allergenMask
   }
-  return getAllergenNames(mask)
+  return mask
 }
 
-interface OrderConfirmation {
-  orderNumber: string
-  status: string
-  subtotalPennies: number
-  deliveryFeePennies: number
-  vatRate: string
-  vatAmountPennies: number
-  totalAmountPennies: number
-  shopName: string
-  itemCount: number
-  clientSecret: string
-  allergenWarnings: string[]
+/** The current set a stale-acknowledgement 409 carries, or null when it is not one / is malformed. */
+type StaleAllergenSet = { mask: number; names: string[] }
+
+/**
+ * Recognise 31.1-03's 409 `allergen-acknowledgement-stale` and read the CURRENT set from it.
+ *
+ * Branched on the problem TYPE before `describeOrderError`'s generic path: the idempotency 409
+ * (`idempotency-conflict`) is a different problem with a different recovery, and must keep its own.
+ * Returns `{ stale: false }` for anything else; `{ stale: true, current: null }` for a body whose
+ * type matches but whose set cannot be trusted (the panel then keeps what it has and re-fetches).
+ */
+export function readStaleAllergenProblem(
+  err: unknown
+): { stale: false } | { stale: true; current: StaleAllergenSet | null } {
+  const res = (err as { response?: { status?: number; data?: Partial<AllergenAcknowledgementStaleProblem> } })
+    ?.response
+  const data = res?.data
+  const isStale =
+    res?.status === 409 &&
+    !!data &&
+    (data.type === ALLERGEN_ACK_STALE_PROBLEM_TYPE ||
+      (typeof data.type === "string" && data.type.endsWith("/allergen-acknowledgement-stale")))
+  if (!isStale) return { stale: false }
+  const mask = data.currentAllergenMask
+  const names = data.currentAllergens
+  const wellFormed =
+    typeof mask === "number" &&
+    Number.isInteger(mask) &&
+    mask >= 0 &&
+    mask <= 16383 &&
+    Array.isArray(names) &&
+    names.every((n) => typeof n === "string")
+  return { stale: true, current: wellFormed ? { mask, names: [...names] } : null }
 }
 
 /** What `loadStripe` resolves to. Derived from the `/pure` export so no default-entry import is needed for the type. */
@@ -266,32 +313,54 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // D-02: the pre-submit allergen acknowledgement. Held per ORDER INTENT — see the basket-change
   // reset below. NOT pre-checked, and deliberately NOT wired into the submit button's `disabled`.
   const [acknowledged, setAcknowledged] = useState(false)
-  const [ackError, setAckError] = useState(false)
+  // Which refusal the panel's alert region is announcing, or null. "unticked" is the 31-14 gate;
+  // "stale" and "unavailable" are 31.1-15's (#785, T-31.1-53).
+  const [ackError, setAckError] = useState<AllergenAckErrorKind | null>(null)
+  const focusAckCheckbox = () => {
+    if (ackCheckboxRef.current && ackCheckboxRef.current.isConnected) ackCheckboxRef.current.focus()
+  }
 
   // The storefront catalogue, so the panel can state the basket's DECLARED set before the order
   // exists. 31-10's snapshot lives on the ORDER, which by construction is not created yet at this
   // point — its SUMMARY records that this panel's data comes from the basket and that the DTO
   // shapes are the shape to match.
   const [productIndex, setProductIndex] = useState<Map<string, PublicProduct> | null>(null)
+  // One fetch, used on mount and for the two re-fetches below (a NOT RECORDED submit, and after a
+  // stale 409). A failure resolves to null: the panel then reads NOT RECORDED rather than claiming
+  // the kitchen declared nothing.
+  const fetchProductIndex = useCallback(async (): Promise<Map<string, PublicProduct> | null> => {
+    try {
+      const res = await publicApiClient.get(`/public/shops/${slug}/products`)
+      return indexProductsById(res.data)
+    } catch {
+      return null
+    }
+  }, [slug])
   useEffect(() => {
     let cancelled = false
-    publicApiClient
-      .get(`/public/shops/${slug}/products`)
-      .then((res) => {
-        if (!cancelled) setProductIndex(indexProductsById(res.data))
-      })
-      .catch(() => {
-        // Leave the index null: the panel then reads NOT RECORDED rather than claiming the
-        // kitchen declared nothing.
-      })
+    fetchProductIndex().then((index) => {
+      if (!cancelled && index) setProductIndex(index)
+    })
     return () => {
       cancelled = true
     }
-  }, [slug])
+  }, [fetchProductIndex])
+
+  // #785 (D-05): the CURRENT set a stale-acknowledgement 409 carried. While set, it is what the
+  // panel shows and what a re-ticked submit acknowledges — the server is the authority on what it
+  // will accept for this basket. Cleared when the basket changes, or when a re-fetched catalogue
+  // agrees with it. A re-fetch that DISAGREES does not clear it: a further vendor edit would be
+  // refused with a newer 409 carrying the newer set, so the loop converges on the server's view,
+  // whereas dropping back to a client view the server has just refused would loop on the refusal.
+  const [staleOverride, setStaleOverride] = useState<StaleAllergenSet | null>(null)
 
   const declaredAllergenNames = useMemo(
-    () => basketAllergenNames(items, productIndex),
-    [items, productIndex]
+    () => (staleOverride ? staleOverride.names : basketAllergenNames(items, productIndex)),
+    [items, productIndex, staleOverride]
+  )
+  const declaredAllergenMask = useMemo(
+    () => (staleOverride ? staleOverride.mask : basketAllergenMask(items, productIndex)),
+    [items, productIndex, staleOverride]
   )
 
   /**
@@ -306,7 +375,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     setAcknowledged(false)
-    setAckError(false)
+    setAckError(null)
+    setStaleOverride(null)
   }, [basketSignature])
 
   // The body this page will POST, built ONCE from the form state and used for BOTH the request
@@ -325,8 +395,24 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         city,
         postcode,
         items,
+        // #784/#785 (D-05): the set the panel SHOWED. Signed with everything else, so a
+        // re-acknowledged resubmit after a stale 409 rotates the Idempotency-Key and an unchanged
+        // resubmit after a lost reply replays.
+        acknowledgedAllergenMask: declaredAllergenMask,
       }),
-    [customerName, customerEmail, customerPhone, notes, fulfilmentType, address1, address2, city, postcode, items]
+    [
+      customerName,
+      customerEmail,
+      customerPhone,
+      notes,
+      fulfilmentType,
+      address1,
+      address2,
+      city,
+      postcode,
+      items,
+      declaredAllergenMask,
+    ]
   )
   const intentSignature = useMemo(() => guestOrderIntentSignature(orderIntent), [orderIntent])
   // Bind the key to the last SUBMITTED payload, never to intermediate edits. A lost response
@@ -445,13 +531,33 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     // customer is being told off. The button deliberately stays ENABLED (see the note at the
     // submit button) so a touch user gets feedback rather than a dead press.
     if (!acknowledged) {
-      setAckError(true)
-      if (ackCheckboxRef.current && ackCheckboxRef.current.isConnected) {
-        ackCheckboxRef.current.focus()
-      }
+      setAckError("unticked")
+      focusAckCheckbox()
       return
     }
-    setAckError(false)
+
+    // T-31.1-53 — NO SET, NO ORDER. With the catalogue unresolved there is nothing the customer
+    // could have acknowledged, and the server would refuse a missing mask (422) anyway. Never send
+    // a guessed or zero mask: 0 means "the kitchen declared none", which nobody said. Try the
+    // catalogue once more first, so a slow first load does not strand the customer.
+    if (declaredAllergenMask === null) {
+      const fresh = await fetchProductIndex()
+      if (fresh) setProductIndex(fresh)
+      if (basketAllergenMask(items, fresh) === null) {
+        setAckError("unavailable")
+        focusAckCheckbox()
+        return
+      }
+      // A set has arrived — but the customer ticked a panel that said NOT RECORDED. Sending this
+      // set would record an acknowledgement of something they were never shown (D-05's defect), so
+      // show it, untick, and ask for a fresh tick.
+      setAcknowledged(false)
+      setAckError("stale")
+      focusAckCheckbox()
+      return
+    }
+
+    setAckError(null)
     setSubmitting(true)
 
     try {
@@ -471,7 +577,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       // other mutating endpoint speaks; the body field is the storefront's working legacy
       // convention and stays authoritative server-side. Both are sent (additive — nothing
       // displaced), carrying the same value.
-      const res = await publicApiClient.post<OrderConfirmation>(
+      const res = await publicApiClient.post<GuestOrderConfirmation>(
         `/public/shops/${slug}/orders`,
         payload,
         { headers: { "Idempotency-Key": idempotencyKey } }
@@ -519,6 +625,26 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         allergenWarnings: confirmation.allergenWarnings || [],
       })
     } catch (err: unknown) {
+      // #785 (D-05): the set the customer acknowledged is no longer the basket's declared set — a
+      // vendor edit landed after they read the panel. No order exists and the server did not hold
+      // the key. Show the server's current set, untick, announce it in the panel's own alert
+      // region and move focus to the box. The button stays enabled; the 31-14 gate refuses again
+      // until they tick, and the changed mask rotates the key.
+      const stale = readStaleAllergenProblem(err)
+      if (stale.stale) {
+        if (stale.current) setStaleOverride(stale.current)
+        setAcknowledged(false)
+        setAckError("stale")
+        focusAckCheckbox()
+        const basketAtSubmit = items
+        void fetchProductIndex().then((fresh) => {
+          if (!fresh) return
+          setProductIndex(fresh)
+          const freshMask = basketAllergenMask(basketAtSubmit, fresh)
+          setStaleOverride((prev) => (prev && freshMask === prev.mask ? null : prev))
+        })
+        return
+      }
       // #409: this used to read ONLY `response.data.detail` (RFC 7807). The rate
       // limiter answers 429 with `Retry-After` and an `error`/`message` body, so
       // the one actionable sentence the server sent was discarded and the
@@ -618,7 +744,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             // D-02: the acknowledgement is per order intent, and rotating the key above starts a
             // new one. Acknowledging the previous basket must not carry silently into this one.
             setAcknowledged(false)
-            setAckError(false)
+            setAckError(null)
             setPaymentState(null)
           }}
           className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-700 transition-colors mb-4"
@@ -1035,9 +1161,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           acknowledged={acknowledged}
           onAcknowledgedChange={(next) => {
             setAcknowledged(next)
-            if (next) setAckError(false)
+            if (next) setAckError(null)
           }}
-          errored={ackError}
+          errored={ackError !== null}
+          errorKind={ackError ?? undefined}
           errorId="allergen-ack-error"
           checkboxRef={ackCheckboxRef}
         />

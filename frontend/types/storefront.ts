@@ -136,3 +136,58 @@ export interface ShopDetail {
    */
   isOpen: boolean
 }
+
+import type { OrderAllergenFlag } from "@/types/api"
+
+/**
+ * The guest-checkout response (`GuestOrderConfirmation`, core-java storefront/dto). Also what a
+ * same-key replay returns, byte for byte.
+ *
+ * The four allergen fields are 31.1-09's (D-08) and are optional here for old-backend tolerance —
+ * an ABSENT field is read exactly like `null`, "not recorded", and never like `[]`/`0`.
+ *   acknowledgedAllergenMask / acknowledgedAllergens — what the customer ticked to confirm they had
+ *     read (null: no acknowledgement recorded — a vendor-entered or pre-V69 order).
+ *   recordedAllergens — the order-line snapshot union the kitchen works from ([] = declared none).
+ *   recordedAllergenFlags — ADVISORY reconciliation lines, never merged into either set.
+ */
+export interface GuestOrderConfirmation {
+  orderNumber: string
+  status: string
+  subtotalPennies: number
+  deliveryFeePennies: number
+  vatRate: string
+  vatAmountPennies: number
+  totalAmountPennies: number
+  shopName: string
+  itemCount: number
+  clientSecret: string | null
+  allergenWarnings: string[]
+  acknowledgedAllergenMask?: number | null
+  acknowledgedAllergens?: string[] | null
+  recordedAllergens?: string[] | null
+  recordedAllergenFlags?: OrderAllergenFlag[] | null
+}
+
+/** The RFC 7807 `type` URI the stale-acknowledgement 409 carries (31.1-03). */
+export const ALLERGEN_ACK_STALE_PROBLEM_TYPE = "https://jtoye.uk/errors/allergen-acknowledgement-stale"
+
+/**
+ * 409 `allergen-acknowledgement-stale` (31.1-03, GlobalExceptionHandler): the set the customer
+ * acknowledged is not the basket's declared set at submit. Carries the CURRENT set so the checkout
+ * can re-render the panel and ask for a new tick. No order was created and the key was not held.
+ */
+export interface AllergenAcknowledgementStaleProblem {
+  type: string
+  title?: string
+  status?: number
+  detail?: string
+  code: "ALLERGEN_ACKNOWLEDGEMENT_STALE"
+  /** AllergenCatalog bits 0..13 — what the server will accept for this basket now. */
+  currentAllergenMask: number
+  /** The names of currentAllergenMask, in AllergenCatalog bit order. */
+  currentAllergens: string[]
+  /** What the refused submit carried. */
+  acknowledgedAllergenMask: number
+  /** One entry per basket line, in basket order. */
+  lines: Array<{ productId: string; productName: string; allergenMask: number; allergens: string[] }>
+}
