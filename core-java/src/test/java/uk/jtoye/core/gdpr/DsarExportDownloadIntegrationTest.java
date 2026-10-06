@@ -99,7 +99,7 @@ class DsarExportDownloadIntegrationTest {
                 .isEqualTo(document);
         assertThat(first.getResponse().getHeader("Cache-Control"))
                 .as("a personal-data document must never sit in a browser or proxy cache")
-                .contains("no-store");
+                .isEqualTo("no-store");
 
         Map<String, Object> row = exportRow(issued.requestId());
         assertThat(row.get("consumed_at")).as("the row is stamped consumed").isNotNull();

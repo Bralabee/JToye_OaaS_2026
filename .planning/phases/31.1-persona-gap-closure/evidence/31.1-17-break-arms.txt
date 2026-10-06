@@ -1,0 +1,58 @@
+31.1-17 break arms — every arm applied AFTER the change was committed, restored by
+`git checkout HEAD -- <file>` (Java) or `cp` from a scratch backup (frontend), and
+verified restored by sha256 (`sha256sum -c`, all OK).
+
+== Task 1 (committed at bb2a608a) ==
+
+T1-A1  Remove `.cacheControl(CacheControl.noStore())` from DsarExportController.
+       ORIGINAL assertion `.contains("no-store")` DID NOT FAIL: Spring Security's
+       CacheControlHeadersWriter supplies "no-cache, no-store, max-age=0, must-revalidate"
+       on every response that has no Cache-Control of its own, so the property held by a
+       second layer and the assertion could not see the controller's line.
+       STRENGTHENED to `.isEqualTo("no-store")` (the controller's header suppresses the
+       security writer's, so the exact value proves the controller sets it).
+       Re-run (T1-A1b): aValidTokenReturnsTheStoredDocumentOnceAndConsumesIt FAILS
+         [a personal-data document must never sit in a browser or proxy cache]
+         expected: "no-store" but was: "no-cache, no-store, max-age=0, must-revalidate"
+       Real tree: 4/0/0.
+
+T1-A2  Add a GET /dsar/export variant calling consume(token).
+       aGetCannotSpendTheToken FAILS: [there is no GET variant: a link scanner or
+       prefetcher must not be able to spend it] Expecting actual: 200 not to be equal to: 200
+       (other 3 green).
+
+T1-A3  Log the token: log.info("event=dsar_export_downloaded token={}", token).
+       neitherTheTokenNorTheDocumentReachesTheLog FAILS (doesNotContain(token)); the token
+       appears 7 times in the captured output in the report XML.
+
+T1-A4  Disable the expiry predicate: AND (expires_at > ? OR TRUE).
+       usedUnknownAndExpiredTokensAllReceiveTheIdenticalTypedRefusal FAILS:
+       expected: 404 but was: 200 (the expired token was spent).
+
+       (A1 + A3 + A4 were run together: each targets a different arm and each failed alone
+       in its own arm; A2 was run separately after a first combined attempt broke the
+       @PostMapping binding itself — 4/4 failing with 400 — and was discarded as an
+       invalid arm.)
+
+F2  Do not replaceState the fragment away.
+    FAIL: removes the token from the address bar on load (Expected "" for location.hash).
+
+F1  POST the token from the mount effect.
+    FAIL: offers 'Show my data' and sends nothing before it is pressed
+          (Expected number of calls: 0)
+    FAIL: POSTs the token in the body exactly once ... (Expected number of calls: 1)
+    FAIL: shows one friendly message ... (unhandled rejection from the effect's POST)
+
+F3  Save JSON.stringify(doc) instead of the bytes received.
+    FAIL: offers 'Save as file' that saves the same JSON it received (- Expected - 83).
+
+F4  Render record values through dangerouslySetInnerHTML.
+    FAIL: renders export content as text, never as HTML
+          (Received: <img onerror="alert(1)" src="x" />).
+
+F5  Treat a 404 like any other failure.
+    FAIL: shows one friendly message with a route to a new copy
+          (Unable to find heading /this link can't be used/i).
+
+Clean re-run after all Task 1 arms (tracer gate, interactive end-of-phase, automated-only
+verify): DsarExportDownloadIntegrationTest 4/0/0 rc 0; download-page.test.tsx 11/11 rc 0.
