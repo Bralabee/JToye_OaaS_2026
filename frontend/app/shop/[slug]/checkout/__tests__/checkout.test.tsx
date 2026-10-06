@@ -48,7 +48,7 @@ jest.mock("@/lib/order-history", () => ({ saveLocalOrder: jest.fn() }))
 
 // Stripe is never reached (no publishable key in test → stripePromise = null),
 // but the imports must resolve without hitting the network.
-jest.mock("@stripe/stripe-js", () => ({ loadStripe: jest.fn(() => Promise.resolve(null)) }))
+jest.mock("@stripe/stripe-js/pure", () => ({ loadStripe: jest.fn(() => Promise.resolve(null)) }))
 jest.mock("@stripe/react-stripe-js", () => ({
   Elements: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PaymentElement: () => null,

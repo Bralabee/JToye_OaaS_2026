@@ -38,7 +38,7 @@ jest.mock("@/lib/customer-auth", () => ({
   getCustomerSession: jest.fn(() => Promise.resolve(null)),
 }))
 jest.mock("@/lib/order-history", () => ({ saveLocalOrder: jest.fn() }))
-jest.mock("@stripe/stripe-js", () => ({ loadStripe: jest.fn(() => Promise.resolve(null)) }))
+jest.mock("@stripe/stripe-js/pure", () => ({ loadStripe: jest.fn(() => Promise.resolve(null)) }))
 jest.mock("@stripe/react-stripe-js", () => ({
   Elements: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PaymentElement: () => null,

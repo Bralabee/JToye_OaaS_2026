@@ -4,7 +4,11 @@ import { use, useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle, Bike, Store, Banknote } from "lucide-react"
-import { loadStripe } from "@stripe/stripe-js"
+// #793: the `/pure` entry, NEVER the package default. The default entry injects js.stripe.com as
+// a module side effect, so merely importing it put Stripe's script — and its `__stripe_mid` /
+// `__stripe_sid` cookies and m.stripe.network calls — on every cash checkout, which takes no
+// payment online. `/pure` injects nothing until `loadStripe()` is called (see getStripe below).
+import { loadStripe } from "@stripe/stripe-js/pure"
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
 import { useCart } from "@/components/storefront/cart-provider"
 // The refusal copy lives in the panel, which owns its own `role="alert"` region — the page sets
@@ -105,9 +109,8 @@ interface OrderConfirmation {
   allergenWarnings: string[]
 }
 
-const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
-  : null
+/** What `loadStripe` resolves to. Derived from the `/pure` export so no default-entry import is needed for the type. */
+type StripePromise = ReturnType<typeof loadStripe>
 
 /**
  * Inner payment form — rendered inside Stripe Elements context.
@@ -331,6 +334,23 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // a new key to avoid the server's 422 idempotency-payload-mismatch (API-4 / PR #726 M3).
   const lastIntentSignatureRef = useRef<string | null>(null)
 
+  // #793: Stripe is loaded LAZILY, at most once per page, and only for a real card payment —
+  // getStripe() is called solely where a confirmation carrying a clientSecret moves the page to
+  // the payment step. A cash order, and a card-accepting shop's checkout FORM, load nothing.
+  // The ref is the memo (one loadStripe call however many submissions follow a "Back to
+  // details"); the state copy is what render reads, because a ref change does not re-render.
+  // Stripe's advanced fraud signals stay at their default on this card path (owner choice,
+  // 31.1 RESEARCH Pattern 6), so setLoadParameters is deliberately not called.
+  const stripeRef = useRef<StripePromise | null>(null)
+  const [stripePromise, setStripePromise] = useState<StripePromise | null>(null)
+  const getStripe = (): StripePromise | null => {
+    const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    if (!stripeRef.current && publishableKey) {
+      stripeRef.current = loadStripe(publishableKey)
+    }
+    return stripeRef.current
+  }
+
   // Fetch the shop so the fee breakdown can be shown BEFORE payment. Provides
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
   // failure degrades gracefully to a £0 preview (server stays authoritative).
@@ -485,7 +505,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       // Store email for order tracking
       localStorage.setItem(`jtoye-checkout-email-${slug}`, customerEmail.trim())
 
-      // Move to payment step
+      // Move to payment step. This is the ONLY place Stripe is loaded (#793): the order exists
+      // and carries a clientSecret, so this customer is paying by card.
+      setStripePromise(getStripe())
       setPaymentState({
         clientSecret: confirmation.clientSecret,
         orderNumber: confirmation.orderNumber,
