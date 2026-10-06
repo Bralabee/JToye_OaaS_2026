@@ -254,6 +254,58 @@ class ProductMayContainIntegrationTest {
         assertThat(pdfText(boundary.getResponse().getContentAsByteArray())).contains("Use by: 4 October 2026");
     }
 
+    // ------------------------------------------------------------------
+    // D-16 on the storefront: its own line, never merged into the declared set
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("D-16 public: mayContainAllergens lists only the undeclared may-contain bits, in catalogue order; NULL and 0 give []")
+    void publicProduct_carriesUndeclaredMayContainNames() throws Exception {
+        UUID notRecorded = createProduct("SKU-311-14-PUB-NULL-" + UUID.randomUUID(), MILK, null);
+        UUID none = createProduct("SKU-311-14-PUB-ZERO-" + UUID.randomUUID(), MILK, 0);
+        // Built Sesame, Milk, Crustaceans: Milk is declared, the rest come back in bit order.
+        UUID risky = createProduct("SKU-311-14-PUB-SET-" + UUID.randomUUID(), MILK, SESAME | MILK | CRUSTACEANS);
+
+        JsonNode riskyRow = publicProduct(risky);
+        assertThat(riskyRow.has("mayContainAllergens")).as("field present: %s", riskyRow).isTrue();
+        assertThat(names(riskyRow.get("mayContainAllergens"))).containsExactly("Crustaceans", "Sesame");
+        // Never merged: the declared mask on the public row is still Milk alone.
+        assertThat(riskyRow.get("allergenMask").asInt()).isEqualTo(MILK);
+
+        for (UUID id : List.of(notRecorded, none)) {
+            JsonNode row = publicProduct(id);
+            assertThat(row.has("mayContainAllergens")).as("field present (never null): %s", row).isTrue();
+            assertThat(names(row.get("mayContainAllergens"))).as("names for %s", id).isEmpty();
+        }
+        assertThat(storedMayContain(notRecorded)).isNull();
+        assertThat(storedMayContain(none)).isEqualTo(0);
+    }
+
+    /** The public menu (anonymous) row for {@code productId}, searched across every category. */
+    private JsonNode publicProduct(UUID productId) throws Exception {
+        MvcResult menu = mockMvc.perform(get("/api/v1/public/shops/{slug}/products", SHOP_SLUG)
+                .accept(MediaType.APPLICATION_JSON)).andReturn();
+        assertThat(menu.getResponse().getStatus()).as(text(menu)).isEqualTo(200);
+        JsonNode categories = json(menu);
+        List<JsonNode> matches = new java.util.ArrayList<>();
+        for (JsonNode products : categories) {
+            for (JsonNode p : products) {
+                if (productId.toString().equals(p.get("id").asString())) {
+                    matches.add(p);
+                }
+            }
+        }
+        assertThat(matches).as("product %s on the public menu %s", productId, categories).hasSize(1);
+        return matches.get(0);
+    }
+
+    private static List<String> names(JsonNode array) {
+        assertThat(array).as("a JSON array of allergen names").isNotNull();
+        assertThat(array.isArray()).as("an array: %s", array).isTrue();
+        List<String> out = new java.util.ArrayList<>();
+        array.forEach(n -> out.add(n.asString()));
+        return out;
+    }
+
     // ---- requests -----------------------------------------------------------
 
     /** Vendor token: UUID subject, this tenant, catalog read + write, through the real converter. */
