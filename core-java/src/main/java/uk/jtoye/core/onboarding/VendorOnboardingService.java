@@ -19,6 +19,7 @@ import uk.jtoye.core.onboarding.dto.AdminOnboardingDto;
 import uk.jtoye.core.onboarding.dto.GateDto;
 import uk.jtoye.core.onboarding.dto.OnboardingDto;
 import uk.jtoye.core.onboarding.gate.AllergenCompletenessGate;
+import uk.jtoye.core.onboarding.gate.TraderIdentityGate;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.shop.Shop;
@@ -56,6 +57,7 @@ public class VendorOnboardingService {
     private final ShopRepository shopRepository;
     private final GateChainRunner gateChainRunner;
     private final AllergenCompletenessGate allergenCompletenessGate;
+    private final TraderIdentityGate traderIdentityGate;
     private final UserDirectoryRepository userDirectoryRepository;
     private final TransactionTemplate directoryTransaction;
 
@@ -66,6 +68,7 @@ public class VendorOnboardingService {
                                    ShopRepository shopRepository,
                                    GateChainRunner gateChainRunner,
                                    AllergenCompletenessGate allergenCompletenessGate,
+                                   TraderIdentityGate traderIdentityGate,
                                    UserDirectoryRepository userDirectoryRepository,
                                    PlatformTransactionManager transactionManager) {
         this.onboardingRepository = onboardingRepository;
@@ -75,6 +78,7 @@ public class VendorOnboardingService {
         this.shopRepository = shopRepository;
         this.gateChainRunner = gateChainRunner;
         this.allergenCompletenessGate = allergenCompletenessGate;
+        this.traderIdentityGate = traderIdentityGate;
         this.userDirectoryRepository = userDirectoryRepository;
         this.directoryTransaction = new TransactionTemplate(transactionManager);
         this.directoryTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -179,7 +183,15 @@ public class VendorOnboardingService {
      * effect flips {@code Shop.published=true} via {@link ShopService#setPublished}
      * — the sole authorised writer of {@code published=true} (threat T-18-05-T) —
      * and stamps {@code went_live_at}.
+     *
+     * <p>{@code noRollbackFor} the guard veto (#789): a refused go-live has written
+     * nothing but the two refreshed gate rows (the veto is thrown before any status,
+     * timestamp or publish write), and those rows are what tells the vendor WHY it was
+     * refused. Rolling them back would leave an onboarding approved before the
+     * TRADER_IDENTITY gate existed with no row to show on the onboarding page at all,
+     * so the vendor could not see what to add.
      */
+    @Transactional(noRollbackFor = InvalidStateTransitionException.class)
     public OnboardingDto goLive() {
         UUID tenantId = CurrentTenant.require();
         VendorOnboarding onboarding = requireOnboarding(tenantId);
@@ -457,6 +469,7 @@ public class VendorOnboardingService {
         // calls; their evidence is trusted as recorded).
         if (event == OnboardingEvent.GO_LIVE || event == OnboardingEvent.REINSTATE) {
             refreshAllergenGate(onboarding);
+            refreshTraderIdentityGate(onboarding);
         }
 
         OnboardingState oldState = onboarding.getStatus();
@@ -607,6 +620,39 @@ public class VendorOnboardingService {
                     row.setCheckedAt(OffsetDateTime.now());
                     gateRepository.save(row);
                 });
+    }
+
+    /**
+     * #789 / D-12: materialise-or-refresh the TRADER_IDENTITY gate row before the
+     * GO_LIVE/REINSTATE guard reads it. Never {@code ifPresent}-only (RESEARCH Pitfall 7):
+     * {@link GateChainRunner#materialise} runs only at submit, so an onboarding submitted
+     * before this gate existed has NO row, and an absent row must neither pass vacuously nor
+     * strand the vendor once the details exist. Evaluated whatever the stored status — a
+     * WAIVED row is replaced by the facts, because the statutory seller details have no
+     * manual override (the guard also requires PASSED explicitly). The details are tenant
+     * and shop data that can change between approval and go-live, so a stored PASSED row is
+     * never trusted either (the WR-03 TOCTOU, as for the allergen gate).
+     */
+    private void refreshTraderIdentityGate(VendorOnboarding onboarding) {
+        VendorOnboardingGate row = gateRepository
+                .findByOnboardingIdAndGateType(onboarding.getId(), GateType.TRADER_IDENTITY)
+                .orElseGet(() -> {
+                    VendorOnboardingGate created = new VendorOnboardingGate();
+                    created.setTenantId(onboarding.getTenantId());
+                    created.setOnboardingId(onboarding.getId());
+                    created.setGateType(GateType.TRADER_IDENTITY);
+                    created.setMandatory(traderIdentityGate.mandatory(onboarding.getModel()));
+                    log.info("Materialising TRADER_IDENTITY gate for onboarding {} at go-live (submitted before the gate existed)",
+                            onboarding.getId());
+                    return created;
+                });
+        GateResult result = traderIdentityGate.evaluate(onboarding);
+        row.setStatus(result.status());
+        row.setEvidence(result.evidence());
+        row.setExternalRef(result.externalRef());
+        row.setReason(result.reason());
+        row.setCheckedAt(OffsetDateTime.now());
+        gateRepository.save(row);
     }
 
     /**
