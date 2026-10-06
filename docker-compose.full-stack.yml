@@ -291,6 +291,11 @@ services:
       # names the key. verify-env.sh requires both before the stack ever comes up.
       DB_MIGRATION_USER: ${DB_MIGRATION_USER}
       DB_MIGRATION_PASSWORD: ${DB_MIGRATION_PASSWORD:?DB_MIGRATION_PASSWORD must be set}
+      # 31.1-07 / D-19: the key the DSAR subject address is encrypted under (AES-256-GCM).
+      # core-java refuses to start without a valid 64-hex-character key, so the guard below
+      # stops compose BEFORE a container is created rather than leaving a crash-looping one.
+      # It comes from .env only, never a literal here; verify-env.sh checks its format.
+      DSAR_ENCRYPTION_KEY: ${DSAR_ENCRYPTION_KEY:?DSAR_ENCRYPTION_KEY must be set in .env - generate one with openssl rand -hex 32}
       # JWKS is fetched from the INTERNAL Keycloak host (reachable in-network)…
       KC_ISSUER_URI: http://keycloak:8080/realms/jtoye-dev
       # …but tokens are stamped with the PUBLIC issuer (KC_HOSTNAME=localhost:8085),
