@@ -56,3 +56,22 @@ export const productSchema = z.object({
 })
 
 export type ProductFormData = z.infer<typeof productSchema>
+
+/**
+ * D-16 (31.1-14): the "may contain" (cross-contact) mask, the same 14-bit FSA layout as the
+ * declared allergenMask and the server's CreateProductRequest @Min(0) @Max(16383).
+ */
+export const MAY_CONTAIN_MASK_MAX = 16383
+
+/**
+ * The may-contain value the form submits. `null` is "not recorded" and is NOT the same as 0
+ * ("the vendor recorded no cross-contact risk"); the schema keeps both. It is held in page
+ * state (checkboxes), not a registered field, so it is parsed at submit rather than by the
+ * form resolver.
+ */
+export const mayContainMaskSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(MAY_CONTAIN_MASK_MAX)
+  .nullable()

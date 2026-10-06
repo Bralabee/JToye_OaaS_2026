@@ -54,6 +54,7 @@ import {
 import {
   INGREDIENTS_EMPHASIS_HELP_COPY,
   KEEP_AS_IS_COPY,
+  MAY_CONTAIN_HELP_COPY,
   NO_ALLERGENS_DECLARED_COPY,
   tickAllergenCopy,
   undeclaredIngredientCopy,
@@ -63,7 +64,12 @@ import {
 
 // The form schema lives in its own module so it can be unit-tested — a Next
 // App Router page.tsx may not export non-route symbols (A11Y-8 / A11Y-11).
-import { productSchema, toPricePennies, type ProductFormData } from "./product-form-schema"
+import {
+  mayContainMaskSchema,
+  productSchema,
+  toPricePennies,
+  type ProductFormData,
+} from "./product-form-schema"
 
 function AiSuggestionRow({ label, value, onAccept }: { label: string; value: string; onAccept: () => void }) {
   return (
@@ -115,6 +121,10 @@ export default function ProductsPage() {
   // to tick the named allergen or keep the declaration as it is. Nothing here is persisted.
   const [allergenWarnings, setAllergenWarnings] = useState<ProductAllergenWarning[]>([])
   const allergenWarningRef = useRef<HTMLDivElement>(null)
+  // D-16 (#861): "may contain" (cross-contact), its own mask. null = not recorded (an untouched
+  // fieldset stays null), 0 = the vendor recorded no risk. Never derived from allergenMask and
+  // never written into it.
+  const [mayContainMask, setMayContainMask] = useState<number | null>(null)
   const [available, setAvailable] = useState(true)
   const [featured, setFeatured] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -261,6 +271,7 @@ export default function ProductsPage() {
     setEditingProduct(null)
     reset({ sku: "", title: "", ingredientsText: "", pricePounds: "" })
     setAllergenMask(0)
+    setMayContainMask(null)
     setAvailable(true)
     setFeatured(false)
     // D-08: outside the All-shops context a create is a single-shop write —
@@ -280,6 +291,7 @@ export default function ProductsPage() {
     setValue("ingredientsText", product.ingredientsText)
     setValue("pricePounds", ((product.pricePennies || 0) / 100).toFixed(2))
     setAllergenMask(product.allergenMask)
+    setMayContainMask(product.mayContainMask ?? null)
     setAvailable(product.available ?? true)
     setFeatured(product.featured ?? false)
     setSelectedShopId(product.shopId || "")
@@ -301,6 +313,7 @@ export default function ProductsPage() {
     setDialogOpen(false)
     reset()
     setAllergenMask(0)
+    setMayContainMask(null)
   }
 
   // D-09: move focus to the warning when a save returns one, so a keyboard or screen-reader
@@ -316,6 +329,12 @@ export default function ProductsPage() {
 
   const toggleAllergenBit = (bit: number) => {
     setAllergenMask(toggleAllergen(allergenMask, bit))
+  }
+
+  // D-16: the first tick turns "not recorded" into a recorded mask; unticking the last box
+  // leaves 0 (recorded: no risk), not null.
+  const toggleMayContainBit = (bit: number) => {
+    setMayContainMask(toggleAllergen(mayContainMask ?? 0, bit))
   }
 
   /**
@@ -341,6 +360,8 @@ export default function ProductsPage() {
         title: data.title,
         ingredientsText: data.ingredientsText,
         allergenMask: mask,
+        // D-16: sent as held — null stays null (not recorded), 0 stays 0.
+        mayContainMask: mayContainMaskSchema.parse(mayContainMask),
         pricePennies: toPricePennies(data.pricePounds),
         available,
         featured,
@@ -1109,6 +1130,34 @@ export default function ProductsPage() {
                       className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                     />
                     <span className="text-sm font-medium">{allergen.name}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            {/* D-16 (#861): cross-contact, recorded apart from the declaration and shown to
+                customers as its own "May contain" line. Visually distinct (dashed, neutral) so
+                it never reads as a second copy of the declared set. */}
+            <fieldset className="space-y-3" aria-describedby="may-contain-help">
+              <legend className="text-sm font-medium leading-none">
+                May contain (cross-contact)
+              </legend>
+              <p id="may-contain-help" className="text-sm text-slate-600">
+                {MAY_CONTAIN_HELP_COPY}
+              </p>
+              <div className="grid grid-cols-2 gap-3 rounded-lg border border-dashed border-slate-300 p-4">
+                {ALLERGENS.map((allergen) => (
+                  <label
+                    key={allergen.bit}
+                    className="flex items-center gap-3 cursor-pointer rounded-md p-2 hover:bg-slate-50 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={hasAllergen(mayContainMask ?? 0, allergen.bit)}
+                      onChange={() => toggleMayContainBit(allergen.bit)}
+                      className="h-4 w-4 rounded border-gray-300 text-slate-700 focus:ring-slate-500"
+                    />
+                    <span className="text-sm">{allergen.name}</span>
                   </label>
                 ))}
               </div>
