@@ -21,7 +21,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.AccountDeletionResult;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -51,6 +54,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -110,10 +114,15 @@ class DsarGuestErasureRlsIntegrationTest {
     @PersistenceContext private EntityManager entityManager;
 
     @MockitoSpyBean private DsarVerificationMailer mailer;
+    @Autowired private DsarCipher cipher;
+
+    /** 31.1-11 (D-03): the account step answers "no account"; DsarAccountDeletionIntegrationTest owns it. */
+    @MockitoBean private CustomerAccountDeletionService accountDeletion;
 
     @BeforeEach
     void setUp() {
         TenantContext.clear();
+        when(accountDeletion.deleteCustomerAccount(anyString())).thenReturn(AccountDeletionResult.NONE_FOUND);
         // The worker claims every VERIFIED request in the table; start each arm from an empty queue.
         jdbc.update("DELETE FROM dsar_request");
         // Only a superuser may run ALTER ROLE, so this happens exactly once per container.
@@ -495,11 +504,17 @@ class DsarGuestErasureRlsIntegrationTest {
         return id;
     }
 
-    /** A VERIFIED ERASURE row for a digest, as the verify endpoint leaves it — no intake rate limit applies. */
+    /**
+     * A VERIFIED ERASURE row for a digest, as the verify endpoint leaves it — no intake rate limit applies.
+     * Since V70 that includes the encrypted address (31.1-11: the account step decrypts it; it is mocked in
+     * this class, so the plaintext only has to be a well-formed address, and matching stays by digest).
+     */
     private UUID insertVerifiedErasure(String subjectDigest) {
         UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO dsar_request (id, subject_email_sha256, request_type, status, verified_at) "
-                + "VALUES (?, ?, 'ERASURE', 'VERIFIED', NOW())", id, subjectDigest);
+        byte[] ciphertext = cipher.encrypt(DsarCipher.Purpose.SUBJECT_ADDRESS, id, "subject@example.test");
+        jdbc.update("INSERT INTO dsar_request (id, subject_email_sha256, request_type, status, verified_at, "
+                + "subject_email_ciphertext) VALUES (?, ?, 'ERASURE', 'VERIFIED', NOW(), ?)",
+                id, subjectDigest, ciphertext);
         return id;
     }
 

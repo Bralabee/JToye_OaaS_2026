@@ -45,6 +45,14 @@ public class KeycloakAdminProperties {
      */
     private List<String> realms = new ArrayList<>(List.of("jtoye-dev"));
 
+    /**
+     * 31.1-11 (D-03): the realm that holds CUSTOMER sign-in accounts (ADR-0005), and the ONLY realm
+     * DSAR account deletion ever touches. Deliberately a separate key from {@link #realms}: that list
+     * is the vendor sweep for tenant offboarding, and T-kc-04 keeps it vendor-only. A customer
+     * deletion that walked {@code realms} could delete a vendor user who shares the address.
+     */
+    private String customerRealm = "jtoye-customers";
+
     /** master-realm admin username (admin-cli password grant). */
     private String username = "admin";
 
@@ -59,6 +67,9 @@ public class KeycloakAdminProperties {
 
     public List<String> getRealms() { return realms; }
     public void setRealms(List<String> realms) { this.realms = realms; }
+
+    public String getCustomerRealm() { return customerRealm; }
+    public void setCustomerRealm(String customerRealm) { this.customerRealm = customerRealm; }
 
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
@@ -85,6 +96,7 @@ public class KeycloakAdminProperties {
         return "KeycloakAdminProperties(enabled=" + enabled
                 + ", baseUrl=" + baseUrl
                 + ", realms=" + realms
+                + ", customerRealm=" + customerRealm
                 + ", username=" + username
                 + ", password=" + mask(password) + ")";
     }

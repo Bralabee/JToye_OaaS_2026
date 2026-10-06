@@ -12,7 +12,10 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.AccountDeletionResult;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -54,6 +57,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -138,8 +142,16 @@ class DsarFanoutIntegrationTest {
     @MockitoSpyBean private DsarVerificationMailer mailer;
     @MockitoSpyBean private GdprService gdprService;
 
+    /**
+     * 31.1-11 (D-03): a request now completes only once the subject's sign-in account is deleted or
+     * proven absent. This class is about the fan-out, so the account step answers "no account";
+     * DsarAccountDeletionIntegrationTest owns that step.
+     */
+    @MockitoBean private CustomerAccountDeletionService accountDeletion;
+
     @BeforeEach
     void downgradeRole() {
+        when(accountDeletion.deleteCustomerAccount(anyString())).thenReturn(AccountDeletionResult.NONE_FOUND);
         jdbc.update("DELETE FROM dsar_request");
         // Idempotent: only a superuser may run ALTER ROLE, so this must happen exactly once.
         if (DOWNGRADED.compareAndSet(false, true)) {

@@ -8,7 +8,10 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.AccountDeletionResult;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -100,8 +104,12 @@ class DsarVerificationIntegrationTest {
     /** Spied to capture the READABLE token, which is never persisted and so has no other source. */
     @MockitoSpyBean private DsarVerificationMailer mailer;
 
+    /** 31.1-11 (D-03): the account step answers "no account"; DsarAccountDeletionIntegrationTest owns it. */
+    @MockitoBean private CustomerAccountDeletionService accountDeletion;
+
     @BeforeEach
     void clean() {
+        when(accountDeletion.deleteCustomerAccount(anyString())).thenReturn(AccountDeletionResult.NONE_FOUND);
         jdbc.update("DELETE FROM dsar_request");
     }
 

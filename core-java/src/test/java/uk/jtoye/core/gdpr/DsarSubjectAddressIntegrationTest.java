@@ -20,7 +20,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.AccountDeletionResult;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -43,6 +46,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -93,10 +97,14 @@ class DsarSubjectAddressIntegrationTest {
     @MockitoSpyBean private DsarVerificationMailer mailer;
     @MockitoSpyBean private GdprService gdprService;
 
+    /** 31.1-11 (D-03): the account step answers "no account"; DsarAccountDeletionIntegrationTest owns it. */
+    @MockitoBean private CustomerAccountDeletionService accountDeletion;
+
     @BeforeEach
     void clean() {
         jdbc.update("DELETE FROM dsar_request");
         reset(mailer, gdprService);
+        when(accountDeletion.deleteCustomerAccount(anyString())).thenReturn(AccountDeletionResult.NONE_FOUND);
     }
 
     // ---- The test key itself ------------------------------------------------------------------

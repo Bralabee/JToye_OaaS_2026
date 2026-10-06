@@ -12,6 +12,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.SystemPrincipal;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.AccountDeletionResult;
 
 import java.util.List;
 import java.util.Map;
@@ -111,10 +113,12 @@ public class DsarFanoutWorker {
                     ORDER BY received_at
                     FOR UPDATE SKIP LOCKED
                     LIMIT ?)
-            RETURNING id, subject_email_sha256, process_attempts
+            RETURNING id, subject_email_sha256, process_attempts, subject_email_ciphertext
             """;
 
     private final GdprService gdprService;
+    private final DsarCipher dsarCipher;
+    private final CustomerAccountDeletionService accountDeletionService;
     private final JdbcTemplate jdbcTemplate;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
@@ -131,10 +135,14 @@ public class DsarFanoutWorker {
     private int maxProcessAttempts;
 
     public DsarFanoutWorker(GdprService gdprService,
+                            DsarCipher dsarCipher,
+                            CustomerAccountDeletionService accountDeletionService,
                             JdbcTemplate jdbcTemplate,
                             EntityManager entityManager,
                             PlatformTransactionManager transactionManager) {
         this.gdprService = gdprService;
+        this.dsarCipher = dsarCipher;
+        this.accountDeletionService = accountDeletionService;
         this.jdbcTemplate = jdbcTemplate;
         this.entityManager = entityManager;
         // Built here rather than annotating a method: see hazard 2 in the class javadoc.
@@ -166,11 +174,13 @@ public class DsarFanoutWorker {
             UUID requestId = (UUID) request.get("id");
             String subjectDigest = (String) request.get("subject_email_sha256");
             int attempts = ((Number) request.get("process_attempts")).intValue();
-            executeOne(requestId, subjectDigest, attempts, tenantIds);
+            byte[] ciphertext = (byte[]) request.get("subject_email_ciphertext");
+            executeOne(requestId, subjectDigest, ciphertext, attempts, tenantIds);
         }
     }
 
-    private void executeOne(UUID requestId, String subjectDigest, int attempts, List<UUID> tenantIds) {
+    private void executeOne(UUID requestId, String subjectDigest, byte[] ciphertext, int attempts,
+                            List<UUID> tenantIds) {
         int tenantsErased = 0;
         int tenantsFailed = 0;
 
@@ -190,11 +200,39 @@ public class DsarFanoutWorker {
             }
         }
 
-        if (tenantsFailed == 0) {
-            complete(requestId, tenantsErased, tenantIds.size());
+        if (tenantsFailed > 0) {
+            release(requestId, tenantsErased, tenantsFailed, attempts);
             return;
         }
-        release(requestId, tenantsErased, tenantsFailed, attempts);
+
+        // D-03: every tenant's erasure has COMMITTED (each ran in its own transaction above). Only now
+        // is the sign-in account deleted, so a Keycloak failure can never roll an erasure back.
+        AccountDeletionResult account = deleteSubjectAccount(requestId, ciphertext);
+        if (account == AccountDeletionResult.DELETED || account == AccountDeletionResult.NONE_FOUND) {
+            complete(requestId, tenantsErased, tenantIds.size(), account);
+            return;
+        }
+        release(requestId, tenantsErased, 0, attempts);
+    }
+
+    /**
+     * Decrypt the verified address (D-19) and delete the subject's customer-realm account. Never
+     * throws: anything unexpected is an unconfirmed deletion, not a reason to abandon the sweep.
+     */
+    private AccountDeletionResult deleteSubjectAccount(UUID requestId, byte[] ciphertext) {
+        if (ciphertext == null) {
+            log.error("event=dsar_account_deletion_failed request={} reason=no_subject_address", requestId);
+            return AccountDeletionResult.FAILED;
+        }
+        try {
+            String address = dsarCipher.decrypt(DsarCipher.Purpose.SUBJECT_ADDRESS, requestId, ciphertext);
+            AccountDeletionResult result = accountDeletionService.deleteCustomerAccount(address);
+            return result == null ? AccountDeletionResult.FAILED : result;
+        } catch (RuntimeException e) {
+            log.error("event=dsar_account_deletion_failed request={} error={}", requestId,
+                    e.getClass().getName());
+            return AccountDeletionResult.FAILED;
+        }
     }
 
     /**
@@ -231,19 +269,23 @@ public class DsarFanoutWorker {
         }
     }
 
-    private void complete(UUID requestId, int tenantsErased, int tenantsScanned) {
+    private void complete(UUID requestId, int tenantsErased, int tenantsScanned,
+                          AccountDeletionResult account) {
         transactionTemplate.executeWithoutResult(status ->
                 jdbcTemplate.update(
                         // D-19 / V70: the encrypted address is destroyed in the SAME statement that
                         // makes the row terminal — the CHECK refuses a COMPLETED row that keeps it.
+                        // D-03 / V72: the account outcome is recorded in that same statement.
                         "UPDATE dsar_request SET status = 'COMPLETED', completed_at = NOW(), "
-                                + "last_error = NULL, subject_email_ciphertext = NULL WHERE id = ?",
-                        requestId));
+                                + "last_error = NULL, subject_email_ciphertext = NULL, "
+                                + "account_deletion_status = ?, "
+                                + "account_deletion_attempts = account_deletion_attempts + 1 WHERE id = ?",
+                        account.name(), requestId));
         // A request from somebody no tenant holds is SATISFIED, not stuck — tenantsErased may
         // legitimately be zero. The count is recorded in the log and nowhere the subject can read
         // it (T-31-09-05).
-        log.info("event=dsar_fanout_completed request={} tenantsErased={} tenantsScanned={}",
-                requestId, tenantsErased, tenantsScanned);
+        log.info("event=dsar_fanout_completed request={} tenantsErased={} tenantsScanned={} account={}",
+                requestId, tenantsErased, tenantsScanned, account);
     }
 
     /**
