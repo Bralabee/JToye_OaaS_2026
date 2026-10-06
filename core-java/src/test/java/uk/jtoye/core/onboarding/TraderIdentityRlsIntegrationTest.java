@@ -92,6 +92,7 @@ class TraderIdentityRlsIntegrationTest {
     private static final String PATH = "/api/v1/trader-identity";
     private static final String SHOP_ACCESS_DENIED = "https://jtoye.uk/errors/shop-access-denied";
     private static final String NOT_FOUND = "https://jtoye.uk/errors/not-found";
+    private static final String VALIDATION = "https://jtoye.uk/errors/validation";
     private static final String NO_IDENTITY_DETAIL = "No trader identity is on file for this tenant";
 
     @Autowired private MockMvc mockMvc;
@@ -258,10 +259,14 @@ class TraderIdentityRlsIntegrationTest {
                 .as("POSITIVE CONTROL: an INSERT stamped with the session's own tenant is accepted")
                 .isEqualTo(1);
 
+        // The foreign INSERT targets a tenant with NO identity yet, so UNIQUE(tenant_id) cannot be
+        // what refuses it: measured with WITH CHECK opened to true, an INSERT stamped with B (which
+        // already has a row) failed 23505 instead, which only the SQLSTATE assertion caught.
+        UUID d = seedTenant();
         SQLException refusal = this.<SQLException>inTenant(a, conn -> refusalOf(conn, insertSql(),
-                UUID.randomUUID().toString(), b.toString()));
+                UUID.randomUUID().toString(), d.toString()));
         assertThat((Throwable) refusal)
-                .as("an INSERT stamped with B under A's GUC must be REFUSED by the database")
+                .as("an INSERT stamped with another tenant under A's GUC must be REFUSED by the database")
                 .isNotNull();
         assertThat(refusal.getSQLState()).as("SQLSTATE (message: %s)", refusal.getMessage())
                 .isEqualTo("42501");
@@ -334,6 +339,159 @@ class TraderIdentityRlsIntegrationTest {
                 .isNotNull();
         assertThat(refusal.getSQLState()).as("SQLSTATE (message: %s)", refusal.getMessage())
                 .isEqualTo("42501");
+    }
+
+    // ---- 7..11. Field boundaries (PGC-789 boundary) and adjacency (PGC-789 adjacency) ---------------
+
+    @Test
+    @DisplayName("legalName: 0 and blank refused, 1 and 255 accepted, 256 refused, 255 inside padding accepted and stored stripped")
+    void legalNameBoundaries() throws Exception {
+        UUID tenant = seedTenant();
+        UUID admin = seedGroupAdmin(tenant);
+        String max = "L".repeat(255);
+
+        expectFieldError(admin, tenant, body("", "COMPANY", "1 Street", null, "London", "E1 6AN", null), "legalName");
+        expectFieldError(admin, tenant, body("     ", "COMPANY", "1 Street", null, "London", "E1 6AN", null), "legalName");
+        expectFieldError(admin, tenant, body(max + "L", "COMPANY", "1 Street", null, "London", "E1 6AN", null), "legalName");
+        assertThat(identityCount(tenant)).as("no refused PUT wrote a row").isZero();
+
+        expectSaved(admin, tenant, body("A", "SOLE_TRADER", "1 Street", null, "London", "E1 6AN", null))
+                .andExpect(jsonPath("$.legalName").value("A"));
+        expectSaved(admin, tenant, body(max, "COMPANY", "1 Street", null, "London", "E1 6AN", null))
+                .andExpect(jsonPath("$.legalName").value(max));
+        expectSaved(admin, tenant, body("  " + max + "  ", "COMPANY", "1 Street", null, "London", "E1 6AN", null))
+                .andExpect(jsonPath("$.legalName").value(max));
+        assertThat(this.<String>inTenant(tenant, c -> queryString(c,
+                "SELECT legal_name FROM trader_identity WHERE tenant_id = ?::uuid", tenant.toString())))
+                .as("the stored name is the stripped value, at the 255 limit")
+                .hasSize(255);
+    }
+
+    @Test
+    @DisplayName("addressPostcode: normalised to upper case with one space; malformed, short, long and blank refused")
+    void postcodeBoundaries() throws Exception {
+        UUID tenant = seedTenant();
+        UUID admin = seedGroupAdmin(tenant);
+
+        expectFieldError(admin, tenant, body("P Ltd", "COMPANY", "1 Street", null, "London", "NOTAPOSTCODE", null), "addressPostcode");
+        expectFieldError(admin, tenant, body("P Ltd", "COMPANY", "1 Street", null, "London", "M1 1A", null), "addressPostcode");
+        expectFieldError(admin, tenant, body("P Ltd", "COMPANY", "1 Street", null, "London", "SW1A 1AAA", null), "addressPostcode");
+        expectFieldError(admin, tenant, body("P Ltd", "COMPANY", "1 Street", null, "London", "", null), "addressPostcode");
+        assertThat(identityCount(tenant)).as("no refused PUT wrote a row").isZero();
+
+        expectSaved(admin, tenant, body("P Ltd", "COMPANY", "1 Street", null, "London", "sw1a1aa", null))
+                .andExpect(jsonPath("$.addressPostcode").value("SW1A 1AA"));
+        expectSaved(admin, tenant, body("P Ltd", "COMPANY", "1 Street", null, "London", "  sw1a   1aa ", null))
+                .andExpect(jsonPath("$.addressPostcode").value("SW1A 1AA"));
+        expectSaved(admin, tenant, body("P Ltd", "COMPANY", "1 Street", null, "Manchester", "m11ae", null))
+                .andExpect(jsonPath("$.addressPostcode").value("M1 1AE"));
+        assertThat(this.<String>inTenant(tenant, c -> queryString(c,
+                "SELECT address_postcode FROM trader_identity WHERE tenant_id = ?::uuid", tenant.toString())))
+                .as("the stored postcode is the canonical form")
+                .isEqualTo("M1 1AE");
+    }
+
+    @Test
+    @DisplayName("vatNumber: absent or GB + 9 or 12 digits accepted (normalised); 8, 10, 13 digits and a non-GB prefix refused")
+    void vatNumberBoundaries() throws Exception {
+        UUID tenant = seedTenant();
+        UUID admin = seedGroupAdmin(tenant);
+
+        for (String bad : new String[] {"GB12345678", "GB1234567890", "GB1234567890123", "FR123456789", "123456789"}) {
+            expectFieldError(admin, tenant, body("V Ltd", "COMPANY", "1 Street", null, "London", "E1 6AN", bad), "vatNumber");
+        }
+        assertThat(identityCount(tenant)).as("no refused PUT wrote a row").isZero();
+
+        expectSaved(admin, tenant, body("V Ltd", "COMPANY", "1 Street", null, "London", "E1 6AN", "GB123456789"))
+                .andExpect(jsonPath("$.vatNumber").value("GB123456789"));
+        expectSaved(admin, tenant, body("V Ltd", "COMPANY", "1 Street", null, "London", "E1 6AN", "GB123456789012"))
+                .andExpect(jsonPath("$.vatNumber").value("GB123456789012"));
+        expectSaved(admin, tenant, body("V Ltd", "COMPANY", "1 Street", null, "London", "E1 6AN", "gb 123 4567 89"))
+                .andExpect(jsonPath("$.vatNumber").value("GB123456789"));
+        expectSaved(admin, tenant, body("V Ltd", "COMPANY", "1 Street", null, "London", "E1 6AN", ""))
+                .andExpect(jsonPath("$.vatNumber").value(org.hamcrest.Matchers.nullValue()));
+        expectSaved(admin, tenant, body("V Ltd", "COMPANY", "1 Street", null, "London", "E1 6AN", null))
+                .andExpect(jsonPath("$.vatNumber").value(org.hamcrest.Matchers.nullValue()));
+        assertThat(this.<String>inTenant(tenant, c -> queryString(c,
+                "SELECT coalesce(vat_number, '<null>') FROM trader_identity WHERE tenant_id = ?::uuid",
+                tenant.toString())))
+                .as("an absent VAT number is stored as NULL, never an empty string")
+                .isEqualTo("<null>");
+    }
+
+    @Test
+    @DisplayName("A tenant with three shops enters the entity once; a manager of each shop reads the same row; no shop-level copy exists")
+    void threeShopsResolveToOneEntity() throws Exception {
+        UUID tenant = seedTenant();
+        UUID admin = seedGroupAdmin(tenant);
+        UUID[] shops = {seedShop(tenant), seedShop(tenant), seedShop(tenant)};
+        String id = adminPut(admin, tenant, "Three Kitchens Ltd");
+
+        for (UUID shop : shops) {
+            UUID manager = seedGrant(tenant, shop, "SHOP_MANAGER");
+            mockMvc.perform(get(PATH).with(vendorJwt(manager, tenant)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(id))
+                    .andExpect(jsonPath("$.legalName").value("Three Kitchens Ltd"));
+        }
+        assertThat(identityCount(tenant)).as("one entity for the whole tenant").isEqualTo(1L);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' "
+                        + "AND table_name = 'shops' AND column_name IN ('legal_name','vat_number','entity_type')",
+                Long.class))
+                .as("no shop-level copy of the legal entity exists in the schema")
+                .isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' "
+                        + "AND table_name = 'trader_identity' AND column_name = 'legal_name'",
+                Long.class))
+                .as("POSITIVE CONTROL: the same information_schema query does find the column where it lives")
+                .isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("PUT twice with the same body: same row id, version advanced, still one row")
+    void putIsIdempotentByTenant() throws Exception {
+        UUID tenant = seedTenant();
+        UUID admin = seedGroupAdmin(tenant);
+        String payload = body("Twice Ltd", "PARTNERSHIP", "2 Street", "Floor 1", "York", "YO1 7HH", "GB123456789");
+
+        String first = expectSaved(admin, tenant, payload).andReturn().getResponse().getContentAsString();
+        String second = expectSaved(admin, tenant, payload).andReturn().getResponse().getContentAsString();
+
+        assertThat((String) JsonPath.read(second, "$.id")).isEqualTo(JsonPath.read(first, "$.id"));
+        assertThat(((Number) JsonPath.read(second, "$.version")).longValue())
+                .as("the second save is a new revision of the same row")
+                .isEqualTo(((Number) JsonPath.read(first, "$.version")).longValue() + 1);
+        for (String field : new String[] {"legalName", "entityType", "addressLine1", "addressLine2",
+                "addressCity", "addressPostcode", "vatNumber"}) {
+            assertThat((Object) JsonPath.read(second, "$." + field)).as(field)
+                    .isEqualTo(JsonPath.read(first, "$." + field));
+        }
+        assertThat(identityCount(tenant)).isEqualTo(1L);
+    }
+
+    private void expectFieldError(UUID admin, UUID tenant, String payload, String field) throws Exception {
+        mockMvc.perform(put(PATH).with(vendorJwt(admin, tenant))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.type").value(VALIDATION))
+                .andExpect(jsonPath("$.errors." + field).isNotEmpty());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions expectSaved(UUID admin, UUID tenant, String payload)
+            throws Exception {
+        return mockMvc.perform(put(PATH).with(vendorJwt(admin, tenant))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk());
+    }
+
+    private long identityCount(UUID tenant) {
+        return this.<Long>inTenant(tenant, c -> queryLong(c,
+                "SELECT count(*) FROM trader_identity WHERE tenant_id = ?::uuid", tenant.toString()));
     }
 
     // ---- helpers ---------------------------------------------------------------------------------
