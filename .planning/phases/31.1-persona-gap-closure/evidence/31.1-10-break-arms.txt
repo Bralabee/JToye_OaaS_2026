@@ -97,3 +97,41 @@ DONE
 ## OpenAPI snapshot
 First regeneration with handlers named get()/put(): structural diff showed CHANGED /paths//api/v1/admin/tenants/{tenantId}/get/operationId get_1 -> get_2 and /paths//api/v1/webhooks/{id}/get/operationId get -> get_1 (springdoc de-duplicates operationIds by method name).
 After renaming to getTraderIdentity()/upsertTraderIdentity(): 217 insertions, 0 deletions; ADDED /paths//api/v1/trader-identity, /components/schemas/TraderIdentityDto, /components/schemas/UpdateTraderIdentityRequest; tags +{'Trader identity'}, no existing tag entry changed.
+
+## Task 3 (jest, trader-identity-form.test.tsx; arms run on 7caa9bfc)
+== ARM clean-before rc=0
+Tests:       7 passed, 7 total
+== ARM K-aria-required-on-everything rc=1
+  ● TraderIdentityForm (#789) › renders the heading, the explanation and the six fields; required is programmatic
+Tests:       1 failed, 6 passed, 7 total
+== ARM L-no-role-alert rc=1
+  ● TraderIdentityForm (#789) › renders the server's postcode error under the field: role=alert, aria-invalid, aria-describedby, focus
+  ● TraderIdentityForm (#789) › refuses a malformed postcode in the browser before any PUT
+Tests:       2 failed, 5 passed, 7 total
+== ARM M-no-focus-on-server-error rc=1
+  ● TraderIdentityForm (#789) › renders the server's postcode error under the field: role=alert, aria-invalid, aria-describedby, focus
+Tests:       1 failed, 6 passed, 7 total
+== ARM N-no-reread-after-save rc=1
+  ● TraderIdentityForm (#789) › a successful PUT shows a saved confirmation and re-reads the identity
+Tests:       1 failed, 6 passed, 7 total
+== ARM O-error-not-described rc=1
+  ● TraderIdentityForm (#789) › renders the server's postcode error under the field: role=alert, aria-invalid, aria-describedby, focus
+Tests:       1 failed, 6 passed, 7 total
+== ARM Q-404-treated-as-error rc=1
+  ● TraderIdentityForm (#789) › GET 404 renders an empty form, not an error
+Tests:       1 failed, 6 passed, 7 total
+== ARM R-not-mounted rc=1
+  ● TraderIdentityForm (#789) › is mounted on the onboarding page
+Tests:       1 failed, 6 passed, 7 total
+restore form: yes
+restore page: yes
+git diff clean: yes
+== ARM clean-after rc=0
+Tests:       7 passed, 7 total
+DONE
+
+## Task 3 build fail direction
+ARM: 'const TYPE_ARM: number = "not a number"' in trader-identity-form.tsx -> npm run build rc=1, 'Running TypeScript ...' then trader-identity-form.tsx(24,7): error TS2322. Restored by sha; clean build rc=0 with 'Running TypeScript ... Finished TypeScript in 3.7s'.
+
+## Plan verify vacuity
+npm test -- --runTestsByPath <test> app/dashboard/onboarding ran 1 suite, not 2: --runTestsByPath takes exact file paths, a directory matches nothing. Re-run naming app/dashboard/onboarding/__tests__/page.test.tsx: 2 suites, 60/60.
