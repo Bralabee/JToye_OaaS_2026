@@ -150,6 +150,10 @@ class DatabaseConfigurationValidatorOwnershipTest {
         // opt-out only: the probe stays ON in every runtime (D-08) and is proven by
         // StorageStartupValidatorIntegrationTest.
         p.put("storage.blob.validate-on-startup", "false");
+        // 31.1-07 (D-19): the default profile does not read application-test.yml, and DsarCipher
+        // refuses to start without a key. A per-run random one, resolved by Spring from the
+        // command-line value — never a literal.
+        p.put("jtoye.gdpr.dsar.encryption-key", "${random.value}${random.value}");
         return p.entrySet().stream()
                 .map(e -> "--" + e.getKey() + "=" + e.getValue())
                 .toArray(String[]::new);

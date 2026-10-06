@@ -66,7 +66,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @Testcontainers
 @ActiveProfiles("dev")
-@TestPropertySource(properties = "storage.blob.validate-on-startup=false")
+// 31.1-07 (D-19): a dev-profile context never reads the test profile, so it carries its own per-run
+// random DSAR key (never a literal); without one DsarCipher refuses to start the context.
+@TestPropertySource(properties = {"storage.blob.validate-on-startup=false",
+        "jtoye.gdpr.dsar.encryption-key=${random.value}${random.value}"})
 @Tag("testcontainers")
 @uk.jtoye.core.testsupport.AsSystemHarness
 class CacheFormatIsolationIntegrationTest {
