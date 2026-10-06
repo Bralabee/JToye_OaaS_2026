@@ -2986,6 +2986,36 @@
         },
         "type" : "object"
       },
+      "ProductAllergenWarning" : {
+        "description" : "Advisory warning: the ingredients text emphasises (in CAPITALS or **bold** markup) an allergen that the declared allergenMask does not include. The save still succeeds and the declared mask is stored as sent; the warning is recomputed on every read.",
+        "properties" : {
+          "allergen" : {
+            "description" : "Allergen name",
+            "example" : "Milk",
+            "type" : "string"
+          },
+          "allergenBit" : {
+            "description" : "UK FSA allergen bit, 0..13",
+            "example" : 6,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "code" : {
+            "description" : "Stable machine-readable warning code",
+            "enum" : [
+              "UNDECLARED_INGREDIENT_ALLERGEN"
+            ],
+            "example" : "UNDECLARED_INGREDIENT_ALLERGEN",
+            "type" : "string"
+          },
+          "message" : {
+            "description" : "Human-readable explanation naming the allergen",
+            "example" : "The ingredients name Milk, but it is not ticked as an allergen. Tick it, or check the ingredients.",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "ProductDto" : {
         "properties" : {
           "additionalImageUrls" : {
@@ -3001,6 +3031,12 @@
           "allergenSpans" : {
             "items" : {
               "$ref" : "#/components/schemas/AllergenSpan"
+            },
+            "type" : "array"
+          },
+          "allergenWarnings" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ProductAllergenWarning"
             },
             "type" : "array"
           },
@@ -3243,6 +3279,12 @@
           },
           "title" : {
             "type" : "string"
+          },
+          "undeclaredIngredientAllergens" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
           },
           "vatRate" : {
             "type" : "string"

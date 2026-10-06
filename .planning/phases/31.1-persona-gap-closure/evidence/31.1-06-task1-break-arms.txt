@@ -1,0 +1,17 @@
+31.1-06 Task 1 break arms (committed state 3e8ea4ee; restores verified by sha256)
+
+ARM A (prohibition, test tier): ProductService.createProduct builds the response DTO, then ORs
+the flagged bits into the entity's allergen_mask and saves again (token ARM-A-31.1-06).
+  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests uk.jtoye.core.product.ProductSaveAllergenWarningIntegrationTest
+  rc=1  tests=4 failures=2 errors=0
+  FAILED #787: POST ... stored allergen_mask stays 0
+    [products.allergen_mask after a warning-returning save] expected: 0 but was: 64
+  FAILED Pitfall 11: GET by id ... derived on read
+    [GET by id warning count: []] expected: 1 but was: 0
+  restore: sha256 5a159a61e206743e105e531707a48b2c8451bd42f39aeaced89adb52caf07710 OK; ARM token count 0; git status clean
+CLOSING CLEAN: same command rc=0 tests=4 failures=0 errors=0 (timestamp 2026-10-06T09:55:05Z)
+
+IngredientMarkupParser unchanged:
+  git diff --stat 73381c65..HEAD -- core-java/src/main/java/uk/jtoye/core/product/IngredientMarkupParser.java -> rc 0, 0 bytes
+  control (the file's own creating commit 95e6b627~1..95e6b627): 1 file changed, 96 insertions(+)
+  control (same range, OrderAllergenAggregator.java): 1 file changed, 87 insertions(+), 14 deletions(-)
