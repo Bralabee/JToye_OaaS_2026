@@ -4,6 +4,7 @@ import com.stripe.exception.StripeException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.core.PropertyReferenceException;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -25,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
 import uk.jtoye.core.exception.AllergenAcknowledgementStaleException;
+import uk.jtoye.core.exception.DsarExportUnavailableException;
 import uk.jtoye.core.exception.DsarRateLimitExceededException;
 import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
@@ -779,6 +781,26 @@ public class GlobalExceptionHandler {
         problem.setProperty("acknowledgedAllergenMask", ex.getAcknowledgedMask());
         problem.setProperty("lines", ex.getLines());
         return problem;
+    }
+
+    /**
+     * Phase 31.1 #778 (D-01, 31.1-17) — an Article 15 export download token could not be spent.
+     * 404 with ONE body for every cause (never issued, expired, purged, already used): the detail is
+     * a constant and the exception carries no reason, so no two refusals can differ by a byte and
+     * the endpoint cannot be used to learn whether a token ever existed (T-31.1-62). Its own type,
+     * so a client can branch on it without parsing prose. no-store like the success response.
+     */
+    @ExceptionHandler(DsarExportUnavailableException.class)
+    public ResponseEntity<ProblemDetail> handleDsarExportUnavailable(DsarExportUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+                "This download link has already been used, has expired, or was not recognised. "
+                        + "You can request a new copy.");
+        problem.setTitle("Data export unavailable");
+        problem.setType(URI.create("https://jtoye.uk/errors/dsar-export-unavailable"));
+        problem.setProperty("code", "DSAR_EXPORT_UNAVAILABLE");
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .cacheControl(CacheControl.noStore())
+                .body(problem);
     }
 
     @ExceptionHandler(Exception.class)
