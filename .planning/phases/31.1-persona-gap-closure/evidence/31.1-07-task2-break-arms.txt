@@ -1,0 +1,42 @@
+# 31.1-07 Task 2 break arms (2026-10-06T11:23:43Z), on committed HEAD 98206d3c
+# each arm: cp backup -> anchored single replace (exactly one anchor hit, else VOID) -> run -> cp restore -> sha256 compare
+# first pass (B1/B2 VOID: multi-line anchors counted per line by grep -cF, so the arm refused to run; re-run below with single-line anchors)
+CLEAN-BEFORE: []
+ARM B1-sweep-ignores-expiry: anchor not found exactly once (VOID)
+ARM B2-sweep-keeps-ciphertext: anchor not found exactly once (VOID)
+ARM B3-failed-keeps-ciphertext: rc=1; tests="7" skipped="0" failures="1" errors="0"; RESTORED
+    DsarSubjectAddressIntegrationTest > anExhaustedRequestIsParkedFailedAndDestroysTheCiphertext() FAILED
+        org.springframework.dao.DataIntegrityViolationException at DsarSubjectAddressIntegrationTest.java:169
+    FAILURE: Build failed with an exception.
+ARM B4-check-removed: rc=1; tests="7" skipped="0" failures="1" errors="0"; RESTORED
+    DsarSubjectAddressIntegrationTest > theDatabaseRefusesATerminalRowThatStillHoldsTheAddress() FAILED
+        java.lang.AssertionError at DsarSubjectAddressIntegrationTest.java:209
+    FAILURE: Build failed with an exception.
+ARM B5-yaml-default-not-empty: rc=1; tests="7" skipped="0" failures="1" errors="0"; RESTORED
+    DsarSubjectAddressIntegrationTest > theApplicationRefusesToStartWithoutAKeyAndNamesThePropertyNotTheValue() FAILED
+        java.lang.AssertionError at DsarSubjectAddressIntegrationTest.java:236
+    FAILURE: Build failed with an exception.
+ARM B6-manifest-period-drift: rc=1; ; RESTORED
+    FAIL: [R-14] top-level 'dsar_unconfirmed_request_hours' = 167 but the row publishes 168 — the manifest disagrees with itself
+ARM B7-manifest-row-value-drift: rc=1; ; RESTORED
+    FAIL: [R-14] published 167 hours (= 601200s) but core-java/src/main/resources/application.yml holds 168 hours (= 604800s) for 'verification-ttl-hours'
+ARM B8-consumer-token-gone: rc=1; ; RESTORED
+    FAIL: [R-14] core-java/src/main/java/uk/jtoye/core/gdpr/DsarIntakeService.java does not contain 'jtoye.gdpr.dsar.no-such-key' — NOTHING READS the published period. This is exactly the shape of the dead key that motivated this gate.
+ARM B9-page-publishes-167: rc=1; ; RESTORED
+    FAIL: frontend/app/legal/retention/page.tsx [R-14 data request email]: claims '167', retention says '168'
+    FAILED: claim(s) disagree with their source of truth (see above). Fix the doc, or the source, never the gate.
+ARM B10-page-drops-r14-category: rc=1; ; RESTORED
+    FAIL components/legal/__tests__/retention-table.a11y.test.tsx
+CLEAN-AFTER: []
+
+# second pass, B1/B2 with single-line anchors
+CLEAN-BEFORE: []
+ARM B1-sweep-ignores-expiry: rc=1; tests="7" skipped="0" failures="1" errors="0"; RESTORED
+    DsarSubjectAddressIntegrationTest > anUnverifiedRequestPastItsExpiryIsSweptToExpiredAndDestroysTheCiphertext() FAILED
+        org.opentest4j.AssertionFailedError at DsarSubjectAddressIntegrationTest.java:198
+    FAILURE: Build failed with an exception.
+ARM B2-sweep-keeps-ciphertext: rc=1; tests="7" skipped="0" failures="1" errors="0"; RESTORED
+    DsarSubjectAddressIntegrationTest > anUnverifiedRequestPastItsExpiryIsSweptToExpiredAndDestroysTheCiphertext() FAILED
+        org.springframework.dao.DataIntegrityViolationException at DsarSubjectAddressIntegrationTest.java:184
+    FAILURE: Build failed with an exception.
+CLEAN-AFTER: []
