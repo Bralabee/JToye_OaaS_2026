@@ -37,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 /**
  * Phase 31.1 plan 03 (#784 P0, #785 P0; decisions D-05, D-06, D-07): the allergen acknowledgement
@@ -88,6 +89,9 @@ class GuestOrderAllergenAckIntegrationTest {
     private static final int GLUTEN = 1;       // bit 0
     private static final int FISH = 1 << 3;    // bit 3
     private static final int PEANUTS = 1 << 4; // bit 4
+    private static final int MILK = 1 << 6;    // bit 6
+
+    @Autowired PublicStorefrontService publicStorefrontService;
 
     private UUID shopId;
 
@@ -198,6 +202,248 @@ class GuestOrderAllergenAckIntegrationTest {
         assertThat(row.get("allergen_ack_mask")).as("not recorded, never 0").isNull();
         assertThat(readAckAt(email)).isNull();
         assertThat(row.get("placed_via")).isEqualTo("VENDOR");
+    }
+
+    // ------------------------------------------------------------------
+    // #785 / D-05: the persona race. The customer reads the panel, the vendor adds Milk to one
+    // product, the customer submits what they read. The server refuses, names the set as it is
+    // NOW (bit order) and attributes it per basket line (basket order). The reservation rolls
+    // back, so re-acknowledging under the SAME key succeeds and records the new set.
+    // ------------------------------------------------------------------
+    @Test
+    @DisplayName("Issue 785: a vendor edit between render and submit is refused 409 allergen-acknowledgement-stale with the current set per line; re-acknowledging under the same key succeeds")
+    void vendorEditBetweenRenderAndSubmit_isRefusedStale_thenReacknowledgedUnderTheSameKey() throws Exception {
+        UUID satay = seedProduct("SKU-31103-RACE-A", "Satay", PEANUTS);
+        UUID fishPie = seedProduct("SKU-31103-RACE-B", "Fish Pie", GLUTEN | FISH);
+        // Basket order is deliberately NOT bit order: lines must follow the basket.
+        List<Map<String, Object>> basket = List.of(line(satay, 1), line(fishPie, 1));
+        int shown = renderedMask(List.of(satay, fishPie));
+        assertThat(shown).isEqualTo(GLUTEN | FISH | PEANUTS);
+
+        vendorSetsAllergenMask(fishPie, "Fish Pie", GLUTEN | FISH | MILK);
+
+        String key = "ack-race-" + UUID.randomUUID();
+        String email = "race-" + UUID.randomUUID() + "@example.com";
+        MvcResult refused = perform(post(ordersUrl()).header("Idempotency-Key", key), body(email, basket, shown));
+        JsonNode problem = assertProblem(refused, 409, "https://jtoye.uk/errors/allergen-acknowledgement-stale",
+                "ALLERGEN_ACKNOWLEDGEMENT_STALE");
+        String text = responseText(refused);
+        assertThat(problem.path("title").asString()).as(text).isEqualTo("Allergen information changed");
+        assertThat(problem.path("currentAllergenMask").asInt()).as(text).isEqualTo(GLUTEN | FISH | PEANUTS | MILK);
+        assertThat(problem.path("acknowledgedAllergenMask").asInt()).as(text).isEqualTo(shown);
+        assertThat(texts(problem.path("currentAllergens")))
+                .as("AllergenCatalog bit order: Gluten(0), Fish(3), Peanuts(4), Milk(6)")
+                .containsExactly("Gluten", "Fish", "Peanuts", "Milk");
+        JsonNode lines = problem.path("lines");
+        assertThat(lines.size()).as(text).isEqualTo(2);
+        assertThat(lines.get(0).path("productId").asString()).as("basket order, line 1").isEqualTo(satay.toString());
+        assertThat(lines.get(0).path("productName").asString()).isEqualTo("Satay");
+        assertThat(lines.get(0).path("allergenMask").asInt()).isEqualTo(PEANUTS);
+        assertThat(texts(lines.get(0).path("allergens"))).containsExactly("Peanuts");
+        assertThat(lines.get(1).path("productId").asString()).as("basket order, line 2").isEqualTo(fishPie.toString());
+        assertThat(lines.get(1).path("productName").asString()).isEqualTo("Fish Pie");
+        assertThat(lines.get(1).path("allergenMask").asInt()).isEqualTo(GLUTEN | FISH | MILK);
+        assertThat(texts(lines.get(1).path("allergens"))).containsExactly("Gluten", "Fish", "Milk");
+
+        assertThat(countOrdersByEmail(email)).as("nothing recorded for the stale acknowledgement").isZero();
+        assertThat(countReservationsForKey(key)).as("T-31.1-10: the refused submit left no reservation").isZero();
+
+        // The customer reads the panel again and ticks again; the client resubmits under the same key.
+        int reShown = renderedMask(List.of(satay, fishPie));
+        assertThat(reShown).isEqualTo(problem.path("currentAllergenMask").asInt());
+        MvcResult accepted = perform(post(ordersUrl()).header("Idempotency-Key", key), body(email, basket, reShown));
+        assertThat(accepted.getResponse().getStatus()).as(responseText(accepted)).isEqualTo(201);
+        Map<String, Object> row = orderRowByEmail(email);
+        assertThat(row.get("allergen_ack_mask")).isEqualTo(reShown);
+        assertThat(snapshotUnion((UUID) row.get("id"))).isEqualTo(reShown);
+    }
+
+    @Test
+    @DisplayName("Issue 785 adjacency: an acknowledgement missing one current bit is refused 409")
+    void acknowledgementMissingOneBit_isRefusedStale() throws Exception {
+        UUID fishPie = seedProduct("SKU-31103-ADJ-MISSING", "Fish Pie", GLUTEN | FISH);
+        String email = "adj-missing-" + UUID.randomUUID() + "@example.com";
+
+        MvcResult refused = perform(post(ordersUrl()), body(email, List.of(line(fishPie, 1)), GLUTEN));
+        JsonNode problem = assertProblem(refused, 409, "https://jtoye.uk/errors/allergen-acknowledgement-stale",
+                "ALLERGEN_ACKNOWLEDGEMENT_STALE");
+        assertThat(problem.path("currentAllergenMask").asInt()).isEqualTo(GLUTEN | FISH);
+        assertThat(countOrdersByEmail(email)).isZero();
+    }
+
+    @Test
+    @DisplayName("Issue 785 adjacency: an acknowledgement carrying a bit the vendor removed after render is refused 409 (equality, not containment)")
+    void acknowledgementCarryingARemovedBit_isRefusedStale() throws Exception {
+        UUID fishPie = seedProduct("SKU-31103-ADJ-REMOVED", "Fish Pie", GLUTEN | FISH);
+        int shown = renderedMask(List.of(fishPie));
+        assertThat(shown).isEqualTo(GLUTEN | FISH);
+        vendorSetsAllergenMask(fishPie, "Fish Pie", GLUTEN);
+        String email = "adj-removed-" + UUID.randomUUID() + "@example.com";
+
+        MvcResult refused = perform(post(ordersUrl()), body(email, List.of(line(fishPie, 1)), shown));
+        JsonNode problem = assertProblem(refused, 409, "https://jtoye.uk/errors/allergen-acknowledgement-stale",
+                "ALLERGEN_ACKNOWLEDGEMENT_STALE");
+        assertThat(problem.path("currentAllergenMask").asInt()).isEqualTo(GLUTEN);
+        assertThat(texts(problem.path("currentAllergens"))).containsExactly("Gluten");
+        assertThat(countOrdersByEmail(email)).as("the platform never records a set the customer was not shown").isZero();
+    }
+
+    @Test
+    @DisplayName("Issue 785 empty: a basket declaring none of the 14 accepts acknowledgement 0 and records 0, not NULL")
+    void emptyDeclaredBasket_acceptsZero_andRecordsZero() throws Exception {
+        UUID rice = seedProduct("SKU-31103-ZERO", "Plain Rice", 0);
+        int shown = renderedMask(List.of(rice));
+        assertThat(shown).isZero();
+        String email = "zero-" + UUID.randomUUID() + "@example.com";
+
+        MvcResult created = perform(post(ordersUrl()), body(email, List.of(line(rice, 2)), shown));
+        assertThat(created.getResponse().getStatus()).as(responseText(created)).isEqualTo(201);
+        Map<String, Object> row = orderRowByEmail(email);
+        assertThat(row.get("allergen_ack_mask")).as("0 is recorded as 0, a different statement from NULL").isEqualTo(0);
+        assertThat(readAckAt(email)).isNotNull();
+        assertThat(row.get("placed_via")).isEqualTo("STOREFRONT");
+    }
+
+    @Test
+    @DisplayName("T-31.1-11: an acknowledgement outside 0..16383 is a 400 validation error naming the field; 16383 itself is in range")
+    void outOfRangeAcknowledgement_isA400ValidationError() throws Exception {
+        UUID rice = seedProduct("SKU-31103-RANGE", "Plain Rice", 0);
+        String email = "range-" + UUID.randomUUID() + "@example.com";
+
+        for (int outOfRange : new int[] {-1, 16384}) {
+            MvcResult refused = perform(post(ordersUrl()), body(email, List.of(line(rice, 1)), outOfRange));
+            String text = responseText(refused);
+            assertThat(refused.getResponse().getStatus()).as(text).isEqualTo(400);
+            JsonNode problem = jsonMapper.readTree(refused.getResponse().getContentAsString());
+            assertThat(problem.path("type").asString()).as(text).isEqualTo("https://jtoye.uk/errors/validation");
+            assertThat(problem.path("errors").has("acknowledgedAllergenMask")).as(text).isTrue();
+        }
+        // The upper bound is inclusive: 16383 passes validation and reaches the equality check.
+        MvcResult max = perform(post(ordersUrl()), body(email, List.of(line(rice, 1)), 16383));
+        assertProblem(max, 409, "https://jtoye.uk/errors/allergen-acknowledgement-stale", "ALLERGEN_ACKNOWLEDGEMENT_STALE");
+        assertThat(countOrdersByEmail(email)).isZero();
+    }
+
+    @Test
+    @DisplayName("Issue 784 idempotency: same key + same acknowledged body replays the original order; same key + different acknowledgement is 422 idempotency-payload-mismatch")
+    void idempotency_replaysTheSameAcknowledgement_andRefusesADifferentOne() throws Exception {
+        UUID fishPie = seedProduct("SKU-31103-IDEM", "Fish Pie", GLUTEN | FISH);
+        int shown = renderedMask(List.of(fishPie));
+        String key = "ack-idem-" + UUID.randomUUID();
+        String email = "idem-" + UUID.randomUUID() + "@example.com";
+        Map<String, Object> request = body(email, List.of(line(fishPie, 1)), shown);
+
+        MvcResult first = perform(post(ordersUrl()).header("Idempotency-Key", key), request);
+        assertThat(first.getResponse().getStatus()).as(responseText(first)).isEqualTo(201);
+        OffsetDateTime firstAckAt = readAckAt(email);
+        MvcResult replay = perform(post(ordersUrl()).header("Idempotency-Key", key), request);
+        assertThat(replay.getResponse().getStatus()).as(responseText(replay)).isEqualTo(201);
+        assertThat(jsonMapper.readTree(replay.getResponse().getContentAsString()).path("orderNumber").asString())
+                .isEqualTo(jsonMapper.readTree(first.getResponse().getContentAsString()).path("orderNumber").asString());
+        assertThat(countOrdersByEmail(email)).as("the replay recorded nothing new").isEqualTo(1);
+        assertThat(readAckAt(email)).as("the replay did not re-stamp the acknowledgement").isEqualTo(firstAckAt);
+
+        MvcResult mismatch = perform(post(ordersUrl()).header("Idempotency-Key", key),
+                body(email, List.of(line(fishPie, 1)), shown | MILK));
+        String text = responseText(mismatch);
+        assertThat(mismatch.getResponse().getStatus()).as(text).isEqualTo(422);
+        assertThat(jsonMapper.readTree(mismatch.getResponse().getContentAsString()).path("type").asString())
+                .as(text).isEqualTo("https://jtoye.uk/errors/idempotency-payload-mismatch");
+        assertThat(countOrdersByEmail(email)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Issue 784 concurrency: concurrent submits of one acknowledged intent produce exactly one order")
+    void concurrentSubmitsOfOneIntent_produceOneOrder() throws Exception {
+        UUID fishPie = seedProduct("SKU-31103-RACE-SAME", "Fish Pie", GLUTEN | FISH);
+        int shown = renderedMask(List.of(fishPie));
+        String key = "ack-concurrent-" + UUID.randomUUID();
+        String email = "concurrent-" + UUID.randomUUID() + "@example.com";
+        int racers = 4;
+        java.util.concurrent.CountDownLatch gate = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(racers);
+        try {
+            List<java.util.concurrent.Future<Object>> futures = new java.util.ArrayList<>();
+            for (int i = 0; i < racers; i++) {
+                futures.add(pool.submit(() -> {
+                    TenantContext.clear();
+                    try {
+                        gate.await();
+                        return publicStorefrontService.createGuestOrder(SHOP_SLUG, guestRequest(email, fishPie, shown), key);
+                    } catch (Throwable t) {
+                        return t;
+                    } finally {
+                        TenantContext.clear();
+                    }
+                }));
+            }
+            gate.countDown();
+            List<String> orderNumbers = new java.util.ArrayList<>();
+            List<Throwable> unexpected = new java.util.ArrayList<>();
+            for (java.util.concurrent.Future<Object> f : futures) {
+                Object result = f.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                if (result instanceof uk.jtoye.core.storefront.dto.GuestOrderConfirmation c) {
+                    orderNumbers.add(c.getOrderNumber());
+                } else if (!(result instanceof uk.jtoye.core.exception.IdempotencyConflictException)) {
+                    unexpected.add((Throwable) result);
+                }
+            }
+            assertThat(unexpected).as("losers are replays or the typed in-flight 409 only").isEmpty();
+            assertThat(orderNumbers).isNotEmpty();
+            assertThat(orderNumbers).containsOnly(orderNumbers.get(0));
+            assertThat(countOrdersByEmail(email)).as("one intent, one order").isEqualTo(1);
+            assertThat(orderRowByEmail(email).get("allergen_ack_mask")).isEqualTo(shown);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    // ---- Request builders for the service-level arm ----
+
+    private static uk.jtoye.core.storefront.dto.GuestOrderRequest guestRequest(String email, UUID productId, int ack) {
+        uk.jtoye.core.storefront.dto.GuestOrderItemRequest item = new uk.jtoye.core.storefront.dto.GuestOrderItemRequest();
+        item.setProductId(productId);
+        item.setQuantity(1);
+        uk.jtoye.core.storefront.dto.GuestOrderRequest request = new uk.jtoye.core.storefront.dto.GuestOrderRequest();
+        request.setCustomerName("Allergen Ack Buyer");
+        request.setCustomerEmail(email);
+        request.setCustomerPhone("+447700900311");
+        request.setFulfilmentType("COLLECTION");
+        request.setItems(List.of(item));
+        request.setAcknowledgedAllergenMask(ack);
+        return request;
+    }
+
+    /** The vendor's real edit path: PUT /api/v1/products/{id} with a catalog-write token. */
+    private void vendorSetsAllergenMask(UUID productId, String title, int allergenMask) throws Exception {
+        Map<String, Object> update = new LinkedHashMap<>();
+        update.put("sku", "SKU-31103-EDITED-" + productId);
+        update.put("title", title);
+        update.put("ingredientsText", "see label");
+        update.put("allergenMask", allergenMask);
+        update.put("pricePennies", 1000);
+        update.put("vatRate", "STANDARD");
+        update.put("available", true);
+        update.put("shopId", shopId);
+        update.put("quantityInStock", 100);
+        MvcResult edited = mockMvc.perform(put("/api/v1/products/" + productId)
+                        .with(jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
+                                        .claim("tenant_id", TENANT_ID.toString()))
+                                .authorities(new SimpleGrantedAuthority("ROLE_admin"),
+                                        new SimpleGrantedAuthority("SCOPE_catalog:write")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonMapper.writeValueAsString(update)))
+                .andReturn();
+        assertThat(edited.getResponse().getStatus()).as(responseText(edited)).isEqualTo(200);
+        Integer stored = inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT allergen_mask FROM products WHERE id = ?", Integer.class, productId));
+        assertThat(stored).as("the vendor edit landed").isEqualTo(allergenMask);
+    }
+
+    private static List<String> texts(JsonNode array) {
+        List<String> values = new java.util.ArrayList<>();
+        array.forEach(node -> values.add(node.asString()));
+        return values;
     }
 
     // ---- HTTP helpers ----
