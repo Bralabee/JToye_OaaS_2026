@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
 import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
+import uk.jtoye.core.exception.AllergenAcknowledgementStaleException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -35,6 +36,7 @@ import uk.jtoye.core.order.PaymentStatus;
 import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.payment.PaymentIntentResult;
 import uk.jtoye.core.payment.PaymentService;
+import uk.jtoye.core.product.AllergenCatalog;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
@@ -918,6 +920,8 @@ public class PublicStorefrontService {
         // after this transaction, never between the comparison and the snapshot.
         // products.allergen_mask is NOT NULL DEFAULT 0 (Product.java), so there is no null branch.
         int currentAllergenMask = 0;
+        // Per-line attribution for the stale 409, in basket order, from the same reads.
+        List<AllergenAcknowledgementStaleException.StaleLine> allergenLines = new ArrayList<>();
 
         for (GuestOrderItemRequest itemReq : request.getItems()) {
             Product product = productRepository.findById(itemReq.getProductId())
@@ -968,6 +972,9 @@ public class PublicStorefrontService {
             OrderAllergenSnapshot.capture(item, product.getTitle(),
                     product.getAllergenMask(), product.getIngredientsText());
             currentAllergenMask |= product.getAllergenMask();
+            allergenLines.add(new AllergenAcknowledgementStaleException.StaleLine(product.getId(),
+                    product.getTitle(), product.getAllergenMask(),
+                    AllergenCatalog.namesFor(product.getAllergenMask())));
             order.addItem(item);
             lineRates.add(new VatCalculator.LineRate(
                     item.getTotalPricePennies(), product.getVatRate()));
@@ -979,6 +986,14 @@ public class PublicStorefrontService {
         Integer acknowledgedAllergenMask = request.getAcknowledgedAllergenMask();
         if (acknowledgedAllergenMask == null) {
             throw new AllergenAcknowledgementRequiredException();
+        }
+        // EQUALITY, not containment: an acknowledgement that holds a bit the basket no longer
+        // declares is also a set the customer was not shown. Only the DECLARED mask is compared;
+        // advisory reconciliation flags are shown at checkout but are not acknowledged (31.1-03
+        // flagged assumption, RESEARCH Open Question 7).
+        if (acknowledgedAllergenMask != currentAllergenMask) {
+            throw new AllergenAcknowledgementStaleException(currentAllergenMask,
+                    AllergenCatalog.namesFor(currentAllergenMask), acknowledgedAllergenMask, allergenLines);
         }
         // D-06: what the customer acknowledged, when, and through which channel.
         order.setAllergenAckMask(acknowledgedAllergenMask);

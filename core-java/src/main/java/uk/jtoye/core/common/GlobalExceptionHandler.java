@@ -24,6 +24,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
+import uk.jtoye.core.exception.AllergenAcknowledgementStaleException;
 import uk.jtoye.core.exception.DsarRateLimitExceededException;
 import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
@@ -740,6 +741,27 @@ public class GlobalExceptionHandler {
         problem.setTitle("Allergen acknowledgement required");
         problem.setType(URI.create("https://jtoye.uk/errors/allergen-acknowledgement-required"));
         problem.setProperty("code", "ALLERGEN_ACKNOWLEDGEMENT_REQUIRED");
+        return problem;
+    }
+
+    /**
+     * Phase 31.1 #785 (D-05) — the acknowledged allergen set differs from the set the server reads
+     * for the basket at submit (a vendor edit landed after the customer read the panel). 409, with a
+     * type distinct from {@code idempotency-conflict}, carrying the CURRENT set so the checkout can
+     * re-render the panel and ask for a new tick: {@code currentAllergenMask},
+     * {@code currentAllergens} (AllergenCatalog bit order), {@code acknowledgedAllergenMask} and
+     * {@code lines} (basket order: productId, productName, allergenMask, allergens).
+     */
+    @ExceptionHandler(AllergenAcknowledgementStaleException.class)
+    public ProblemDetail handleAllergenAcknowledgementStale(AllergenAcknowledgementStaleException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Allergen information changed");
+        problem.setType(URI.create("https://jtoye.uk/errors/allergen-acknowledgement-stale"));
+        problem.setProperty("code", "ALLERGEN_ACKNOWLEDGEMENT_STALE");
+        problem.setProperty("currentAllergenMask", ex.getCurrentMask());
+        problem.setProperty("currentAllergens", ex.getCurrentAllergens());
+        problem.setProperty("acknowledgedAllergenMask", ex.getAcknowledgedMask());
+        problem.setProperty("lines", ex.getLines());
         return problem;
     }
 

@@ -74,9 +74,9 @@ public class GuestOrderRequest {
      *
      * <p>Nullable at the DTO so an old client's body still binds, but REQUIRED by the service: a
      * storefront order without it is refused 422 {@code allergen-acknowledgement-required}, and one
-     * that differs from the set the server reads for the basket at submit is refused 409
-     * {@code allergen-acknowledgement-stale}. It is not health data: it describes the products, not
-     * the customer.
+     * that differs from the set the server reads for the basket at submit is refused with the
+     * stale-acknowledgement 409 ({@code AllergenAcknowledgementStaleException}). It is not health
+     * data: it describes the products, not the customer.
      *
      * <p>{@code NON_NULL}: the idempotency fingerprint ({@code IdempotencyJson}, frozen at the
      * Boot 3.5 bytes by {@code IdempotencyFingerprintGoldenTest}) serialises this DTO. Absent when
@@ -88,9 +88,9 @@ public class GuestOrderRequest {
     @Min(value = 0, message = "acknowledgedAllergenMask must be between 0 and 16383")
     @Max(value = 16383, message = "acknowledgedAllergenMask must be between 0 and 16383")
     @Schema(description = "The 14-bit allergen set (AllergenCatalog bits 0..13) shown to the customer and "
-            + "acknowledged at checkout. Required for a storefront order: missing is refused 422 "
-            + "allergen-acknowledgement-required; different from the basket's current declared set is "
-            + "refused 409 allergen-acknowledgement-stale, which carries the current set.")
+            + "acknowledged at checkout. Required for a storefront order: missing is refused 422 with code "
+            + "ALLERGEN_ACKNOWLEDGEMENT_REQUIRED; different from the basket's current declared set is "
+            + "refused 409 with code ALLERGEN_ACKNOWLEDGEMENT_STALE, carrying the current set.")
     private Integer acknowledgedAllergenMask;
 
     public String getCustomerName() { return customerName; }
