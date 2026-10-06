@@ -4537,6 +4537,63 @@
         },
         "type" : "object"
       },
+      "TraderIdentityDto" : {
+        "properties" : {
+          "addressCity" : {
+            "type" : "string"
+          },
+          "addressLine1" : {
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "addressPostcode" : {
+            "type" : "string"
+          },
+          "companyNumber" : {
+            "description" : "Companies House number from the onboarding record; never stored twice",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "entityType" : {
+            "enum" : [
+              "COMPANY",
+              "SOLE_TRADER",
+              "PARTNERSHIP"
+            ],
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "legalName" : {
+            "type" : "string"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "vatNumber" : {
+            "description" : "GB VAT number; null when no VAT registration is declared",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "version" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "UnsubscribeRequest" : {
         "properties" : {
           "category" : {
@@ -4630,6 +4687,64 @@
             "type" : "string"
           }
         },
+        "type" : "object"
+      },
+      "UpdateTraderIdentityRequest" : {
+        "description" : "The statutory trader details",
+        "properties" : {
+          "addressCity" : {
+            "maxLength" : 120,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "addressLine1" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "addressPostcode" : {
+            "minLength" : 1,
+            "pattern" : "^[A-Za-z]{1,2}[0-9][A-Za-z0-9]?\\s{0,4}[0-9][A-Za-z]{2}$",
+            "type" : "string"
+          },
+          "entityType" : {
+            "enum" : [
+              "COMPANY",
+              "SOLE_TRADER",
+              "PARTNERSHIP"
+            ],
+            "type" : "string"
+          },
+          "legalName" : {
+            "description" : "The company's registered name, or a sole trader's own name",
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "vatNumber" : {
+            "description" : "GB followed by 9 or 12 digits; omit or leave empty when not VAT-registered",
+            "pattern" : "^[Gg][Bb](\\s?[0-9]){9}((\\s?[0-9]){3})?$",
+            "type" : [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required" : [
+          "addressCity",
+          "addressLine1",
+          "addressPostcode",
+          "entityType",
+          "legalName"
+        ],
         "type" : "object"
       },
       "VatBreakdown" : {
@@ -11042,6 +11157,104 @@
         ]
       }
     },
+    "/api/v1/trader-identity" : {
+      "get" : {
+        "description" : "Returns the caller tenant's legal entity: legal name, entity type, geographic address, VAT number, and the company number read from the onboarding record.",
+        "operationId" : "getTraderIdentity",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TraderIdentityDto"
+                }
+              }
+            },
+            "description" : "Trader identity found"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No trader identity is on file for this tenant (RFC 7807)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Get the trader identity",
+        "tags" : [
+          "Trader identity"
+        ]
+      },
+      "put" : {
+        "description" : "Upserts the caller tenant's legal entity. GROUP_ADMIN only. Idempotent: the same body twice leaves one identity with the same values. The postcode is stored upper-case with one space; the VAT number upper-case with no spaces.",
+        "operationId" : "upsertTraderIdentity",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UpdateTraderIdentityRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TraderIdentityDto"
+                }
+              }
+            },
+            "description" : "Trader identity saved"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Field validation failed; errors names each field (RFC 7807)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller is not a tenant-wide GROUP_ADMIN (RFC 7807 shop-access-denied)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Create or replace the trader identity",
+        "tags" : [
+          "Trader identity"
+        ]
+      }
+    },
     "/api/v1/webhooks" : {
       "get" : {
         "description" : "Returns this tenant's webhook subscriptions. Never includes the signing secret.",
@@ -12310,6 +12523,10 @@
     {
       "description" : "Platform-admin tenant lifecycle: create, suspend, reactivate, offboard, Stripe Connect linkage",
       "name" : "Tenant Admin"
+    },
+    {
+      "description" : "The tenant's legal entity shown to customers (CCR 2013 Sch 2, E-Commerce Regs 2002 reg 6)",
+      "name" : "Trader identity"
     },
     {
       "description" : "Webhook delivery log + manual replay (COMMS-05)",

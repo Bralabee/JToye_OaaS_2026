@@ -22,6 +22,10 @@ import uk.jtoye.core.onboarding.dto.UpdateTraderIdentityRequest;
  * controller; {@link TraderIdentityService} resolves the tenant server-side and gates the write.
  * Served at {@code /api/v1/trader-identity} (this package is in {@code WebConfig.API_V1_PACKAGES}).
  *
+ * <p>Method names are unique on purpose: springdoc derives operationIds from them and de-duplicates
+ * clashes by suffixing, so a handler named {@code get} renumbered two EXISTING operations
+ * ({@code get} to {@code get_1}, {@code get_1} to {@code get_2}) in the regenerated snapshot.
+ *
  * <p>PUT, not POST: the resource is one-per-tenant and the write is a full replacement, so
  * repeating it is idempotent by construction and needs no Idempotency-Key.
  */
@@ -46,7 +50,7 @@ public class TraderIdentityController {
             @ApiResponse(responseCode = "200", description = "Trader identity found"),
             @ApiResponse(responseCode = "404", description = "No trader identity is on file for this tenant (RFC 7807)")
     })
-    public ResponseEntity<TraderIdentityDto> get() {
+    public ResponseEntity<TraderIdentityDto> getTraderIdentity() {
         return traderIdentityService.get()
                 .map(ResponseEntity::ok)
                 .orElseThrow(() -> new ResourceNotFoundException(TraderIdentityService.NO_IDENTITY_DETAIL));
@@ -62,7 +66,7 @@ public class TraderIdentityController {
             @ApiResponse(responseCode = "400", description = "Field validation failed; errors names each field (RFC 7807)"),
             @ApiResponse(responseCode = "403", description = "Caller is not a tenant-wide GROUP_ADMIN (RFC 7807 shop-access-denied)")
     })
-    public ResponseEntity<TraderIdentityDto> put(
+    public ResponseEntity<TraderIdentityDto> upsertTraderIdentity(
             @Parameter(description = "The statutory trader details") @Valid @RequestBody UpdateTraderIdentityRequest request) {
         return ResponseEntity.ok(traderIdentityService.upsert(request));
     }

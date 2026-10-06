@@ -1,0 +1,99 @@
+# 31.1-10 break arms (TraderIdentityRlsIntegrationTest / RlsContractTest)
+# Each arm: edit one file, run cleanIntegrationTest integrationTest, restore with cp from a scratch backup,
+# verify restore by sha256 and git diff --quiet. Bracketed clean-before / clean-after.
+# Task 1 arms run on 8c77cf66 (GREEN committed first). Task 2 arms run on feeb3b1e.
+
+## Task 1
+== ARM clean-before rc=0
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="6" skipped="0" failures="0" errors="0"
+<testsuite name="uk.jtoye.core.security.RlsContractTest" tests="7" skipped="0" failures="0" errors="0"
+== ARM A-no-group-admin-gate rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="6" skipped="0" failures="1" errors="0"
+  <testcase name="STAFF PUT is 403 shop-access-denied and writes nothing; STAFF GET is 200" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.036">
+    <failure message="java.lang.AssertionError: Status expected:&lt;403&gt; but was:&lt;200&gt;" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;403&gt; but was:&lt;200&gt;
+== ARM B-tenant-policy-true rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="6" skipped="0" failures="1" errors="0"
+  <testcase name="NOSUPERUSER under A's GUC: A's row visible, B's hidden, UPDATE of B matches 0, INSERT as B refused 42501" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.753">
+    <failure message="org.opentest4j.AssertionFailedError: [A's session cannot see B's row] &#10;expected: 0L&#10; but was: 1L" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: [A's session cannot see B's row] 
+== ARM C-aud-not-forced rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="6" skipped="0" failures="1" errors="0"
+  <testcase name="Each save writes trader_identity_aud; A reads its audit rows, B reads none; a foreign-tenant audit INSERT is refused" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.07">
+    <failure message="org.opentest4j.AssertionFailedError: [B cannot read A's audit trail] &#10;expected: 0L&#10; but was: 2L" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: [B cannot read A's audit trail] 
+<testsuite name="uk.jtoye.core.security.RlsContractTest" tests="7" skipped="0" failures="1" errors="0"
+  <testcase name="everyPublicTableHasRlsAndForce()" classname="uk.jtoye.core.security.RlsContractTest" time="0.026">
+    <failure message="org.opentest4j.AssertionFailedError: [FORCE ROW LEVEL SECURITY missing on public.trader_identity_aud — table-owner / superuser would bypass tenant isolation. Add `ALTER TABLE trader_identity_aud FORCE ROW LEVEL SECURITY` to the migration that creates the table.] &#10;expected: 
+== ARM D-aud-insert-true rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="6" skipped="0" failures="1" errors="0"
+  <testcase name="Each save writes trader_identity_aud; A reads its audit rows, B reads none; a foreign-tenant audit INSERT is refused" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.073">
+    <failure message="java.lang.AssertionError: [an audit row stamped with B under A's GUC must be refused] &#10;Expecting actual not to be null" type="java.lang.AssertionError">java.lang.AssertionError: [an audit row stamped with B under A's GUC must be refused] 
+restore svc ok: yes
+restore mig ok: yes
+git diff clean: yes
+== ARM clean-after rc=0
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="6" skipped="0" failures="0" errors="0"
+<testsuite name="uk.jtoye.core.security.RlsContractTest" tests="7" skipped="0" failures="0" errors="0"
+DONE
+== ARM B2-with-check-true rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="6" skipped="0" failures="1" errors="0"
+  <testcase name="NOSUPERUSER under A's GUC: A's row visible, B's hidden, UPDATE of B matches 0, INSERT as B refused 42501" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.77">
+    <failure message="org.opentest4j.AssertionFailedError: [SQLSTATE (message: ERROR: duplicate key value violates unique constraint &quot;trader_identity_tenant_id_key&quot;)] &#10;expected: &quot;42501&quot;&#10; but was: &quot;23505&quot;" type="org.opentest4j.AssertionFailedError">org.opentest4j
+restore mig ok: yes
+git diff clean: yes
+
+## Task 2
+== ARM clean-before rc=0
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="11" skipped="0" failures="0" errors="0"
+== ARM E-legalName-size-256 rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="11" skipped="0" failures="1" errors="0"
+  <testcase name="legalName: 0 and blank refused, 1 and 255 accepted, 256 refused, 255 inside padding accepted and stored stripped" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.743">
+    <failure message="java.lang.AssertionError: Status expected:&lt;400&gt; but was:&lt;409&gt;" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;400&gt; but was:&lt;409&gt;
+== ARM F-legalName-not-stripped-before-validation rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="11" skipped="0" failures="1" errors="0"
+  <testcase name="legalName: 0 and blank refused, 1 and 255 accepted, 256 refused, 255 inside padding accepted and stored stripped" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.835">
+    <failure message="java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;400&gt;" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;400&gt;
+== ARM G-postcode-no-space rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="11" skipped="0" failures="2" errors="0"
+  <testcase name="addressPostcode: normalised to upper case with one space; malformed, short, long and blank refused" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.049">
+    <failure message="java.lang.AssertionError: JSON path &quot;$.addressPostcode&quot; expected:&lt;SW1A 1AA&gt; but was:&lt;SW1A1AA&gt;" type="java.lang.AssertionError">java.lang.AssertionError: JSON path &quot;$.addressPostcode&quot; expected:&lt;SW1A 1AA&gt; but was:&lt;SW1A1AA&gt;
+--
+  <testcase name="GROUP_ADMIN PUT saves the legal entity, GET reads the same values, the row carries the caller's tenant" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.02">
+    <failure message="java.lang.AssertionError: JSON path &quot;$.addressPostcode&quot; expected:&lt;B1 1AA&gt; but was:&lt;B11AA&gt;" type="java.lang.AssertionError">java.lang.AssertionError: JSON path &quot;$.addressPostcode&quot; expected:&lt;B1 1AA&gt; but was:&lt;B11AA&gt;
+== ARM H-vat-9-to-12-any rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="11" skipped="0" failures="1" errors="0"
+  <testcase name="vatNumber: absent or GB + 9 or 12 digits accepted (normalised); 8, 10, 13 digits and a non-GB prefix refused" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.04">
+    <failure message="java.lang.AssertionError: Status expected:&lt;400&gt; but was:&lt;200&gt;" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;400&gt; but was:&lt;200&gt;
+== ARM I-always-insert rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="11" skipped="0" failures="6" errors="0"
+  <testcase name="legalName: 0 and blank refused, 1 and 255 accepted, 256 refused, 255 inside padding accepted and stored stripped" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.824">
+    <failure message="java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;
+--
+  <testcase name="vatNumber: absent or GB + 9 or 12 digits accepted (normalised); 8, 10, 13 digits and a non-GB prefix refused" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.061">
+    <failure message="java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;
+  <testcase name="addressPostcode: normalised to upper case with one space; malformed, short, long and blank refused" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.05">
+    <failure message="java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;
+  <testcase name="Each save writes trader_identity_aud; A reads its audit rows, B reads none; a foreign-tenant audit INSERT is refused" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.035">
+    <failure message="java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;
+  <testcase name="PUT twice with the same body: same row id, version advanced, still one row" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.032">
+    <failure message="java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;
+--
+  <testcase name="API under A (even with B in X-Tenant-Id) reads and writes A's row only; B's row is unchanged" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.052">
+    <failure message="java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;" type="java.lang.AssertionError">java.lang.AssertionError: Status expected:&lt;200&gt; but was:&lt;409&gt;
+== ARM J-absent-vat-stored-empty rc=1
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="11" skipped="0" failures="2" errors="0"
+  <testcase name="vatNumber: absent or GB + 9 or 12 digits accepted (normalised); 8, 10, 13 digits and a non-GB prefix refused" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.091">
+    <failure message="java.lang.AssertionError: JSON path &quot;$.vatNumber&quot; expected:&lt;GB123456789&gt; but was:&lt;gb 123 4567 89&gt;" type="java.lang.AssertionError">java.lang.AssertionError: JSON path &quot;$.vatNumber&quot; expected:&lt;GB123456789&gt; but was:&lt;gb 123 4567 89&gt;
+--
+  <testcase name="GROUP_ADMIN PUT saves the legal entity, GET reads the same values, the row carries the caller's tenant" classname="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" time="0.02">
+    <failure message="java.lang.AssertionError: Expected no value at JSON path &quot;$.vatNumber&quot; but found: ''" type="java.lang.AssertionError">java.lang.AssertionError: Expected no value at JSON path &quot;$.vatNumber&quot; but found: ''
+restore UpdateTraderIdentityRequest.java: yes
+restore TraderIdentityFields.java: yes
+restore TraderIdentityService.java: yes
+restore V71__trader_identity.sql: yes
+git diff clean: yes
+== ARM clean-after rc=0
+<testsuite name="uk.jtoye.core.onboarding.TraderIdentityRlsIntegrationTest" tests="11" skipped="0" failures="0" errors="0"
+DONE
+
+## OpenAPI snapshot
+First regeneration with handlers named get()/put(): structural diff showed CHANGED /paths//api/v1/admin/tenants/{tenantId}/get/operationId get_1 -> get_2 and /paths//api/v1/webhooks/{id}/get/operationId get -> get_1 (springdoc de-duplicates operationIds by method name).
+After renaming to getTraderIdentity()/upsertTraderIdentity(): 217 insertions, 0 deletions; ADDED /paths//api/v1/trader-identity, /components/schemas/TraderIdentityDto, /components/schemas/UpdateTraderIdentityRequest; tags +{'Trader identity'}, no existing tag entry changed.
