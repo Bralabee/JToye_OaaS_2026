@@ -135,8 +135,9 @@ describe("D-16: the separate 'May contain' checkboxes", () => {
   })
 
   it("editing a product whose mayContainMask is absent (not recorded) also saves null", async () => {
-    const { mayContainMask: _omit, ...withoutField } = { ...product, mayContainMask: undefined }
-    await openEditOf(withoutField)
+    // The base fixture carries no mayContainMask key at all (a pre-V74 response shape).
+    expect("mayContainMask" in product).toBe(false)
+    await openEditOf(product)
     fireEvent.click(screen.getByRole("button", { name: /update product/i }))
 
     await waitFor(() => expect(mockedApiClient.put).toHaveBeenCalledTimes(1))

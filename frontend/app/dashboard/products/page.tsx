@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -100,6 +100,53 @@ function warningAllergenName(warning: ProductAllergenWarning): string {
   return ALLERGENS.find((a) => a.bit === warning.allergenBit)?.name ?? warning.allergen
 }
 
+/**
+ * D-17: today's date in the UK, ISO-shaped (en-CA formats as YYYY-MM-DD), whatever zone the
+ * browser is in. A label printed at 00:30 BST is dated the UK day, not the UTC one; the server
+ * judges "future" on the same Europe/London date (31.1-14 ClockConfig).
+ */
+function ukTodayIso(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
+}
+
+function blobText(blob: Blob): Promise<string> {
+  if (typeof blob.text === "function") return blob.text()
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(blob)
+  })
+}
+
+/**
+ * The status and RFC 7807 detail of a failed request. A blob request (the label PDF) delivers
+ * its error body as a Blob too, so the problem JSON is read out of it.
+ */
+async function readProblem(error: unknown): Promise<{ status?: number; detail?: string }> {
+  const response = (error as { response?: { status?: number; data?: unknown } } | null)?.response
+  if (!response) return {}
+  let body: unknown = response.data
+  if (typeof Blob !== "undefined" && body instanceof Blob) {
+    try {
+      body = JSON.parse(await blobText(body))
+    } catch {
+      body = undefined
+    }
+  }
+  const detail = (body as { detail?: unknown } | undefined)?.detail
+  return { status: response.status, detail: typeof detail === "string" ? detail : undefined }
+}
+
+const LABEL_DATE_REQUIRED_COPY = "Enter the date the food was made."
+const LABEL_DATE_FUTURE_COPY = "The production date cannot be in the future."
+const LABEL_DATE_REFUSED_COPY = "This production date cannot be used for a label."
+
 /** The allergens a product's ingredients name but its declaration omits, once each. */
 function undeclaredAllergenNames(warnings: ProductAllergenWarning[] | null | undefined): string[] {
   return Array.from(new Set((warnings ?? []).map(warningAllergenName)))
@@ -126,6 +173,13 @@ export default function ProductsPage() {
   // never written into it.
   const [mayContainMask, setMayContainMask] = useState<number | null>(null)
   const [available, setAvailable] = useState(true)
+  // D-17 (#861): the label dialog. The production date is asked for every time; nothing is
+  // remembered between labels (no batch record, CONTEXT deferred).
+  const [labelProduct, setLabelProduct] = useState<Product | null>(null)
+  const [labelDate, setLabelDate] = useState("")
+  const [labelMaxDate, setLabelMaxDate] = useState("")
+  const [labelError, setLabelError] = useState<string | null>(null)
+  const [labelDownloading, setLabelDownloading] = useState(false)
   const [featured, setFeatured] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestions | null>(null)
@@ -434,6 +488,59 @@ export default function ProductsPage() {
     closeFormAfterSave()
   }
 
+  const openLabelDialog = (product: Product) => {
+    const today = ukTodayIso()
+    setLabelDate(today)
+    setLabelMaxDate(today)
+    setLabelError(null)
+    setLabelProduct(product)
+  }
+
+  const closeLabelDialog = () => {
+    setLabelProduct(null)
+    setLabelError(null)
+  }
+
+  const downloadLabel = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!labelProduct) return
+    if (!labelDate) {
+      setLabelError(LABEL_DATE_REQUIRED_COPY)
+      return
+    }
+    // ISO dates compare correctly as strings.
+    if (labelDate > labelMaxDate) {
+      setLabelError(LABEL_DATE_FUTURE_COPY)
+      return
+    }
+    setLabelError(null)
+    setLabelDownloading(true)
+    try {
+      const res = await apiClient.get(
+        `/api/v1/products/${labelProduct.id}/label?productionDate=${encodeURIComponent(labelDate)}`,
+        { responseType: "blob" }
+      )
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `label-${labelProduct.sku}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+      closeLabelDialog()
+    } catch (error: unknown) {
+      const problem = await readProblem(error)
+      if (problem.status === 422) {
+        // 31.1-14: errors/invalid-production-date, field productionDate — a future date, or
+        // one whose use-by has already passed. Said under the field it is about.
+        setLabelError(problem.detail ?? LABEL_DATE_REFUSED_COPY)
+      } else {
+        toast({ variant: "destructive", title: "Error", description: "Failed to download label" })
+      }
+    } finally {
+      setLabelDownloading(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!deletingProduct) return
 
@@ -684,19 +791,7 @@ export default function ProductsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={async () => {
-                                try {
-                                  const res = await apiClient.get(`/api/v1/products/${product.id}/label`, { responseType: "blob" })
-                                  const url = URL.createObjectURL(res.data)
-                                  const a = document.createElement("a")
-                                  a.href = url
-                                  a.download = `label-${product.sku}.pdf`
-                                  a.click()
-                                  URL.revokeObjectURL(url)
-                                } catch {
-                                  toast({ variant: "destructive", title: "Error", description: "Failed to download label" })
-                                }
-                              }}
+                              onClick={() => openLabelDialog(product)}
                               className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                               title="Download allergen label"
                               aria-label={`Download allergen label for ${product.title}`}
@@ -1180,6 +1275,60 @@ export default function ProductsPage() {
                   : editingProduct
                   ? "Update Product"
                   : "Create Product"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* D-17 (#861): the production-date dialog in front of every label download */}
+      <Dialog
+        open={labelProduct !== null}
+        onOpenChange={(open) => {
+          if (!open) closeLabelDialog()
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Print allergen label</DialogTitle>
+            <DialogDescription>
+              {labelProduct?.title}: the use-by date on the label is counted from the day the
+              food was made.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={downloadLabel} noValidate className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="label-production-date">Production date</Label>
+              <Input
+                id="label-production-date"
+                type="date"
+                value={labelDate}
+                max={labelMaxDate}
+                required
+                onChange={(e) => {
+                  setLabelDate(e.target.value)
+                  setLabelError(null)
+                }}
+                aria-invalid={labelError ? "true" : undefined}
+                aria-describedby={labelError ? "label-production-date-error" : undefined}
+              />
+              {labelError && (
+                <p id="label-production-date-error" className="text-sm text-red-600">
+                  {labelError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeLabelDialog}
+                disabled={labelDownloading}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={labelDownloading}>
+                {labelDownloading ? "Preparing label..." : "Download label"}
               </Button>
             </DialogFooter>
           </form>
