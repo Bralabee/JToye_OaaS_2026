@@ -81,6 +81,7 @@ class DsarExportDownloadIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired JsonMapper jsonMapper;
     @Autowired DsarAccessExportService exportService;
+    @Autowired DsarExportPurgeJob purgeJob;
 
     @BeforeEach
     void setUp() {
@@ -300,15 +301,9 @@ class DsarExportDownloadIntegrationTest {
                 .andReturn();
     }
 
-    @Autowired org.springframework.context.ApplicationContext context;
-
     /** Run the purge sweep by hand (no scheduled trigger fires in this context). */
-    int runPurge() throws Exception {
-        assertThat(context.containsBean("dsarExportPurgeJob"))
-                .as("a DsarExportPurgeJob bean destroys exports nobody downloaded")
-                .isTrue();
-        Object job = context.getBean("dsarExportPurgeJob");
-        return (Integer) job.getClass().getMethod("purgeExpiredExports").invoke(job);
+    int runPurge() {
+        return purgeJob.purgeExpiredExports();
     }
 
     Map<String, Object> exportRow(UUID requestId) {

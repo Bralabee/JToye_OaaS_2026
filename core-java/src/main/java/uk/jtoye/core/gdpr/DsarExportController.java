@@ -8,7 +8,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
-import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -78,9 +77,8 @@ public class DsarExportController {
             @ApiResponse(responseCode = "404",
                     description = "The link has been used, has expired or was not recognised "
                             + "(type https://jtoye.uk/errors/dsar-export-unavailable, code "
-                            + "DSAR_EXPORT_UNAVAILABLE). One body for every cause.",
-                    content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
-                            schema = @Schema(implementation = ProblemDetail.class)))
+                            + "DSAR_EXPORT_UNAVAILABLE). One body for every cause. The RFC 7807 "
+                            + "body is declared by ProblemDetailResponseCustomizer, as for every error.")
     })
     public ResponseEntity<String> download(@RequestBody ExportRequest body) {
         String document = downloadService.consume(body == null ? null : body.token());

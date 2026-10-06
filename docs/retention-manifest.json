@@ -9,6 +9,7 @@
   "media_quarantine_hours": 72,
   "customer_refresh_cookie_days": 30,
   "dsar_unconfirmed_request_hours": 168,
+  "dsar_access_export_hours": 168,
 
   "rows": [
     {
@@ -242,6 +243,28 @@
         }
       },
       "note": "Held only as AES-256-GCM ciphertext, with the key outside the database (V70, decision D-19). Three mechanisms drop it, each proven by DsarSubjectAddressIntegrationTest: DsarFanoutWorker NULLs it in the same statement that marks a request COMPLETED or FAILED; DsarRequestExpirySweep moves an unconfirmed request whose verification window has passed (stamped at intake by DsarIntakeService from the key named here) to EXPIRED and NULLs it in the same statement; and the database CHECK ck_dsar_request_ciphertext_terminal refuses any closed request that still holds it. The published number is the window for an unconfirmed request only; the sweep runs every 15 minutes (jtoye.gdpr.dsar.expiry-sweep-interval-ms), so such a request is expired within 15 minutes of the window closing. A confirmed request has no fixed number: the address is held until the request is answered, within the statutory response period. Measured 2026-10-06 (31.1-07)."
+    },
+    {
+      "id": "R-15",
+      "category": "A copy of your data prepared for you",
+      "detail": "When you ask for a copy of your data, the copy we prepare for you: what every shop on J'Toye holds about you, gathered into one file. We hold it only in encrypted form, behind a single-use link emailed to you, and delete it as soon as you download it.",
+      "period_value": 168,
+      "period_unit": "hours",
+      "period_display": "Until you download it, or 168 hours if you never do",
+      "lawful_basis": "Legal obligation (UK GDPR Art. 6(1)(c)) - Article 15 requires us to give you a copy of your personal data, and keeping it until you collect it is part of giving it to you.",
+      "enforcement": "Automated",
+      "claim_key": "dsar_access_export_hours",
+      "enforced_by": {
+        "path": "core-java/src/main/resources/application.yml",
+        "key": "export-link-ttl-hours",
+        "kind": "yaml-env-default",
+        "unit": "hours",
+        "consumer": {
+          "path": "core-java/src/main/java/uk/jtoye/core/gdpr/DsarAccessExportService.java",
+          "must_contain": "jtoye.gdpr.dsar.export-link-ttl-hours"
+        }
+      },
+      "note": "Held only as AES-256-GCM ciphertext behind the SHA-256 of a single-use token (V75, decision D-01). DsarAccessExportService stamps the link's expiry from the key named here when it stores the copy. Two mechanisms destroy it, each proven by DsarExportDownloadIntegrationTest: DsarExportDownloadService NULLs the copy in the same statement that hands it over, so it can be downloaded once; and DsarExportPurgeJob NULLs every copy whose link lapsed unused and stamps purged_at. The database CHECK ck_dsar_access_export_consumed_payload refuses a downloaded copy that still holds its payload. The purge runs every hour (jtoye.gdpr.dsar.export-purge-interval-ms), so an uncollected copy is destroyed within an hour of its link expiring. A request that cannot be completed deletes its copy outright (31.1-16). Measured 2026-10-06 (31.1-17)."
     }
   ],
 

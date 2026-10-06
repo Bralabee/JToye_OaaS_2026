@@ -1334,6 +1334,15 @@
         },
         "type" : "object"
       },
+      "ExportRequest" : {
+        "description" : "The single-use token from the emailed download link.",
+        "properties" : {
+          "token" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "FilterRegistration" : {
         "properties" : {
           "className" : {
@@ -9759,6 +9768,49 @@
           }
         },
         "summary" : "Lodge a data-subject request",
+        "tags" : [
+          "Data Subject Requests"
+        ]
+      }
+    },
+    "/api/v1/public/gdpr/dsar/export" : {
+      "post" : {
+        "description" : "Spends the single-use token from the link emailed when a data-subject access request was fulfilled, and returns the export document (format jtoye-dsar-export/1) exactly once. The payload is destroyed in the same statement that marks it used. The token must be sent in a JSON body; there is no GET variant, so a link prefetcher cannot spend it. Unknown, expired and already-used tokens all receive the same 404. Not idempotent-replayable by design: a repeat is always refused.",
+        "operationId" : "download",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "The jtoye-dsar-export/1 document.",
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "The export document, once. Sent with Cache-Control: no-store."
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The link has been used, has expired or was not recognised (type https://jtoye.uk/errors/dsar-export-unavailable, code DSAR_EXPORT_UNAVAILABLE). One body for every cause. The RFC 7807 body is declared by ProblemDetailResponseCustomizer, as for every error."
+          }
+        },
+        "summary" : "Download the copy of your data (single use)",
         "tags" : [
           "Data Subject Requests"
         ]

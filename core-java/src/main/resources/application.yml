@@ -241,6 +241,12 @@ jtoye:
       # attacker-supplied Host header would hand a live bearer token for a personal-data document to
       # whoever supplied it.
       export-download-base-url: ${DSAR_EXPORT_DOWNLOAD_BASE_URL:http://localhost:3000/data-request/download}
+      # 31.1-17 (D-01, retention row R-15): how often DsarExportPurgeJob destroys the payload of every
+      # Article 15 export whose link lapsed without being used. Hourly: the published promise is that
+      # the copy is gone when the link (export-link-ttl-hours) expires, so it may outlive that by at
+      # most this interval; the sweep is one UPDATE over a table that is almost always empty. The
+      # @Scheduled annotation carries the same inline default, so absence never disables it.
+      export-purge-interval-ms: ${DSAR_EXPORT_PURGE_INTERVAL_MS:3600000}
       # 31.1-07 (D-19): the AES-256-GCM key for the subject's address, which dsar_request holds
       # ENCRYPTED from intake until a terminal state (V70). A SECRET, unlike every key above: 64
       # hexadecimal characters (32 bytes), generated with `openssl rand -hex 32`, supplied only by
