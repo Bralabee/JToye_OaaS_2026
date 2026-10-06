@@ -1,0 +1,23 @@
+# 31.1-18 Task 1 break arms (run on committed GREEN 79d1bffc; each restored from HEAD and verified by sha256)
+# Script: arms1.sh (scratchpad). Suites: recorded-allergen-set, order-tracking-allergens, track.
+
+== clean (before arms)
+Tests:       38 passed, 38 total
+== clean under TZ=America/New_York
+Tests:       38 passed, 38 total
+A1-page-time-zone-removed: rc=1 Tests:       1 failed, 7 passed, 8 total restored=ok
+A2-note-time-zone-removed: rc=1 Tests:       2 failed, 15 passed, 17 total restored=ok
+A3-vendor-merged-into-not-recorded: rc=1 Tests:       5 failed, 33 passed, 38 total restored=ok
+A4-list-entry-overwrites-full-record: rc=1 Tests:       1 failed, 12 passed, 13 total restored=ok
+A5-list-null-rendered-as-not-recorded: rc=1 Tests:       1 failed, 12 passed, 13 total restored=ok
+A6-flag-merged-into-recorded: rc=1 Tests:       2 failed, 23 passed, 25 total restored=ok
+A7-page-drops-placedVia: rc=1 Tests:       1 failed, 7 passed, 8 total restored=ok
+A8-note-text-default-read: rc=1 Tests:       2 failed, 23 passed, 25 total restored=ok
+== clean (after arms)
+Tests:       38 passed, 38 total
+?? ../.planning/milestone.lock
+
+# A1 control on the host zone (Europe/London, BST): the same mutation with NO TZ override -> 'Tests: 8 passed, 8 total'.
+# So the UK-time assertion is vacuous on a London host and only fires under a non-UK TZ; it is recorded and run that way.
+
+# Planned <automated> (verbatim from repo root): rc=0, 4 suites, 47 tests.
