@@ -170,6 +170,16 @@ public class KeycloakAdminClient {
         }
     }
 
+    /** 31.1-11 RED skeleton. */
+    public List<CustomerRealmUser> findUsersByEmail(String realm, String email, String token) {
+        throw new UnsupportedOperationException("31.1-11 RED skeleton");
+    }
+
+    /** 31.1-11 RED skeleton. */
+    public boolean deleteUser(String realm, String userId, String token) {
+        throw new UnsupportedOperationException("31.1-11 RED skeleton");
+    }
+
     /** Revokes the user's active sessions ({@code POST .../users/{id}/logout}). */
     public void logoutUser(String realm, String userId, String token) {
         try {
