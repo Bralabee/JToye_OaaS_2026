@@ -1,0 +1,109 @@
+38-01 Jackson 2 golden capture: evidence (all output below is real, captured by the executor)
+Branch phase-37-spring-boot-4-1, worktree JToye_OaaS_2026-phase37. Host JDK: openjdk version "25.0.4.1" 2026-08-18
+
+=== CAPTURE_SHA
+e12177e1aac382bfa3c50f89a32d55091068d203
+$ git log -1 --format='%H %s' e12177e1aac382bfa3c50f89a32d55091068d203
+e12177e1aac382bfa3c50f89a32d55091068d203 feat(38-01): capture every Jackson-2 family from the Boot 3.5 serializers
+
+=== dependencyInsight (./gradlew -q :core-java:dependencyInsight --dependency com.fasterxml.jackson.core:jackson-databind --configuration runtimeClasspath; rc=0)
+com.fasterxml.jackson.core:jackson-databind:2.21.7
+  Variant runtimeElements:
+    | Attribute Name                 | Provided     | Requested    |
+    |--------------------------------|--------------|--------------|
+    | org.gradle.status              | release      |              |
+    | org.gradle.category            | library      | library      |
+    | org.gradle.dependency.bundling | external     | external     |
+    | org.gradle.libraryelements     | jar          | jar          |
+    | org.gradle.usage               | java-runtime | java-runtime |
+    | org.gradle.jvm.environment     |              | standard-jvm |
+    | org.gradle.jvm.version         |              | 25           |
+   Selection reasons:
+      - Selected by rule
+      - By constraint
+
+com.fasterxml.jackson.core:jackson-databind:2.21.7
+Boot version, core-java/build.gradle.kts line 2: id("org.springframework.boot") version "3.5.16"
+Other serializer libraries (gradle dependencies --configuration runtimeClasspath): spring-amqp 3.2.12, spring-data-redis 3.5.13, spring-web 6.2.19, jackson-datatype-jsr310 2.21.7
+
+=== Task 1 RED-first: GoldenFixturesIntegrityTest before any capture (rc=1)
+> Task :core-java:cleanTest UP-TO-DATE
+> Task :core-java:test FAILED
+GoldenFixturesIntegrityTest > every idempotency request hash is the sha256 of its request fixture's UTF-8 bytes FAILED
+GoldenFixturesIntegrityTest > every MANIFEST.tsv row matches its fixture by sha256 and length, and every fixture is listed exactly once FAILED
+2 tests completed, 2 failed
+BUILD FAILED in 31s
+tests="2" skipped="0" failures="2" errors="0"
+message="org.opentest4j.AssertionFailedError: [src/test/resources/jackson2-golden/idempotency/request-hashes.tsv is missing]  Expecting value to be true but was false"
+message="java.lang.AssertionError: [no MANIFEST.tsv found under src/test/resources/jackson2-golden (working dir /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37/core-java) — the golden fixtures are missing]  Expecting actual not to be empty"
+gsd check tdd-red-evidence: RED_EVIDENCE_OK (target_test_failed, 2 failing)
+
+=== Task 1 generator gate CLOSED (no JTOYE_GOLDEN_CAPTURE): skipped, nothing written (rc=0)
+TEST-...Jackson2GoldenCaptureTest.xml: tests="1" skipped="1" failures="0" errors="0"; ls jackson2-golden -> No such file or directory
+
+=== Task 1 tracer GREEN after capture (rc=0): tests="2" skipped="0" failures="0" errors="0"; MANIFEST rows=2
+orders.create recorded=7c58d68554bfba6bc3aa38dbd7d990aee4813d1f4051b35b0c43a22176a3ed9e = sha256sum of orders.create.request.json (fail dir: MANIFEST.tsv sum 4408895618... differs)
+
+=== Task 1 byte-flip arm (clean -> arm -> clean), committed first at 8964ad1b
+before: 7c58d68554bfba6bc3aa38dbd7d990aee4813d1f4051b35b0c43a22176a3ed9e
+armed (London -> london): 41a2137f62f45be65bd255cabbad78c26cc1fc3f71d6098e9c7fcd288fbe8741
+arm run rc=1:
+2 tests completed, 2 failed
+BUILD FAILED in 7s
+tests="2" skipped="0" failures="2" errors="0"
+message="java.lang.AssertionError: [idempotency request hashes]  Expecting empty but was: ["orders.create: sha256(orders.create.request.json) is 41a2137f62f45be65bd255cabbad78c26cc1fc3f71d6098e9c7fcd288fbe8741, request-hashes.tsv records 7c58d68554bfba6bc3aa38dbd7d990aee4813d1f4051b35b0c43a22176a3ed9e"]"
+message="java.lang.AssertionError: [golden fixture integrity]  Expecting empty but was: ["idempotency/orders.create.request.json sha256 is 41a2137f62f45be65bd255cabbad78c26cc1fc3f71d6098e9c7fcd288fbe8741, manifest says 7c58d68554bfba6bc3aa38dbd7d990aee4813d1f4051b35b0c43a22176a3ed9e"]"
+restore: git checkout -- orders.create.request.json -> 7c58d68554bfba6bc3aa38dbd7d990aee4813d1f4051b35b0c43a22176a3ed9e (= MANIFEST row)
+clean-again rc=0: tests="2" skipped="0" failures="0" errors="0"
+
+=== Task 1 acceptance: Jackson-free grep
+first run matched the Javadoc sentence that states the rule (rc=0); reworded in 0d3b5a2b; now:
+rc=1
+positive control at e12177e1aac382bfa3c50f89a32d55091068d203 (generator): e12177e1aac382bfa3c50f89a32d55091068d203:core-java/src/test/java/uk/jtoye/core/boot4/Jackson2GoldenCaptureTest.java:1
+
+=== Task 2 RED (family / hash-row / factory checks before the full capture; rc=1)
+GoldenFixturesIntegrityTest > every family holds exactly its expected fixtures (idempotency 7+1, responses 9, outbox 6, amqp 6+6, cache 3) FAILED
+GoldenFixturesIntegrityTest > GoldenSamples exposes every factory, and each yields an equal, fresh object on every call FAILED
+GoldenFixturesIntegrityTest > request-hashes.tsv holds exactly one row per idempotency endpoint id FAILED
+5 tests completed, 3 failed
+> Task :core-java:test FAILED
+BUILD FAILED in 15s
+tests="5" skipped="0" failures="3" errors="0"
+message="java.lang.AssertionError: [the fixture set under src/test/resources/jackson2-golden]  Expecting actual:   ["idempotency/orders.create.request.json", "idempotency/request-hashes.tsv"] to contain exactly in any order:   ["amqp/OrderStateChangeEvent.body",     "amqp/OrderStateChangeEvent.headers.tsv",     "amqp/OrderStateChangeEvent-offset.body",     "amqp/OrderStateChangeEvent-offset.header
+message="java.lang.AssertionError: [public no-arg factories on GoldenSamples]  Expecting actual:   ["createOrderRequest"] to contain exactly in any order:   ["createOrderRequest",     "createCustomerRequest",     "mediaUploadRequest",     "redriveRequest",     "replayRequest",     "guestCheckoutIdentity",     "guestOrderRequest",     "orderDto",     "customerDto",     "mediaAcceptDto",     "webhoo
+message="java.lang.AssertionError:  Expecting actual:   ["orders.create"] to contain exactly in any order:   ["orders.create",     "customers.create",     "media.upload",     "media.reprocess",     "webhooks.replay",     "storefront.guest-order",     "storefront.guest-order.legacy"] but could not find the following elements:   ["customers.create",     "media.upload",     "media.reprocess",     "we
+gsd check tdd-red-evidence: RED_EVIDENCE_OK
+
+=== Task 2 determinism: two consecutive capture runs (JTOYE_GOLDEN_CAPTURE=true, each rc=0, tests=1 skipped=0)
+run A: a46ac5deedbd7ad4e79a6a00504fc95a0c766024b76988c581cb1c27df27405f  core-java/src/test/resources/jackson2-golden/MANIFEST.tsv
+run B: a46ac5deedbd7ad4e79a6a00504fc95a0c766024b76988c581cb1c27df27405f  core-java/src/test/resources/jackson2-golden/MANIFEST.tsv
+diff -r tree-A tree-B: no output, rc=0 (TREES BYTE-IDENTICAL)
+fail direction: one byte changed in a copy of tree-B -> diff -rq reports cache/shops-ShopDto.bin differ, rc=1
+
+=== Task 2 acceptance
+request-hashes rows: 7 (fail dir on the 3-column MANIFEST: 0)
+MANIFEST rows: 38 (fail dir, tracer-era MANIFEST at 8964ad1b: 2)
+__TypeId__ rows in amqp/OrderStateChangeEvent.headers.tsv: 1, value uk.jtoye.core.order.OrderStateChangeEvent (fail dir on the .body: 0)
+reflection in core-java/src/main: rc=1 (positive control: GoldenSamples.java has 4 matching lines)
+
+=== Task 2 extra integrity arms at e12177e1 (clean -> unlisted file + deleted file + tampered hash row -> clean)
+arms rc=1:
+tests="5" skipped="0" failures="3" errors="0"
+amqp/Unlisted.body is listed by 0 manifest rows
+cache/shops-ShopDto.bin is listed by src/test/resources/jackson2-golden/MANIFEST.tsv but does not exist
+media.upload: sha256(media.upload.request.json) is b4df822fb79324c0b73b5f2070d3cc398c3d0a23d42d2db6de769386b58aa865, request-hashes.tsv records 0000000000000000000000000000000000000000000000000000000000000000
+restore: rm Unlisted.body; git checkout shops-ShopDto.bin request-hashes.tsv; sha256sum -c over all 38 MANIFEST rows: ALL VERIFY; golden status lines 0
+clean-again rc=0: tests="5" skipped="0" failures="0" errors="0"
+
+=== Task 3 generator retired
+fail direction (generator present, earlier run): TEST-uk.jtoye.core.boot4.Jackson2GoldenCaptureTest.xml existed with tests=1 skipped=1
+final run ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.*' --no-daemon (rc=0):
+> Task :core-java:cleanTest
+> Task :core-java:test
+BUILD SUCCESSFUL in 8s
+boot4 result XMLs: TEST-uk.jtoye.core.boot4.GoldenFixturesIntegrityTest.xml 
+GoldenFixturesIntegrityTest: tests="5" skipped="0" failures="0" errors="0"
+stale Jackson2GoldenCapture*.class under build-local/classes: none (positive control: 1 GoldenSamples.class)
+gate-open run after removal (JTOYE_GOLDEN_CAPTURE=true, boot4.*): rc=0, jackson2-golden unchanged
+MANIFEST.tsv at e12177e1aac382bfa3c50f89a32d55091068d203: a46ac5deedbd7ad4e79a6a00504fc95a0c766024b76988c581cb1c27df27405f
+MANIFEST.tsv working tree: a46ac5deedbd7ad4e79a6a00504fc95a0c766024b76988c581cb1c27df27405f

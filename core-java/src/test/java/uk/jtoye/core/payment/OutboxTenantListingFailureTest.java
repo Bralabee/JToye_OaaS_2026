@@ -1,6 +1,5 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
@@ -10,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.PlatformTransactionManager;
+import uk.jtoye.core.testsupport.BootJsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -55,7 +55,7 @@ class OutboxTenantListingFailureTest {
         return new PaymentEventOutboxFlusher(
                 mock(PaymentEventOutboxRepository.class),
                 rabbitTemplate,
-                new ObjectMapper(),
+                BootJsonMapper.get(),
                 entityManager,
                 mock(PlatformTransactionManager.class),
                 meterRegistryProvider,
@@ -107,7 +107,7 @@ class OutboxTenantListingFailureTest {
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
 
         PaymentEventOutboxFlusher flusher = new PaymentEventOutboxFlusher(
-                mock(PaymentEventOutboxRepository.class), rabbitTemplate, new ObjectMapper(),
+                mock(PaymentEventOutboxRepository.class), rabbitTemplate, BootJsonMapper.get(),
                 entityManager, mock(PlatformTransactionManager.class), meterRegistryProvider,
                 5000L, 300000L);
 

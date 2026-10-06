@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.ActiveProfiles;
@@ -50,7 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  * <p><strong>Profile:</strong> {@code dev} (a known profile — the {@code ActiveProfileValidator}
  * fail-fasts on unknown profiles, and {@code dev} is NOT {@code test}, so the real
  * {@code RateLimitConfig} ProxyManager bean loads). The Testcontainers bootstrap role is a
- * SUPERUSER, so the {@code DatabaseConfigurationValidator} is neutralised via {@code @MockBean}
+ * SUPERUSER, so the {@code DatabaseConfigurationValidator} is neutralised via {@code @MockitoBean}
  * (this test proves rate limiting, not RLS isolation, and never opens a tenant DB transaction).
  */
 @SpringBootTest
@@ -117,7 +117,7 @@ class PublicRateLimitIntegrationTest {
     // The DatabaseConfigurationValidator (@Profile("!test")) fail-fasts on a SUPERUSER DB user;
     // the Testcontainers bootstrap role IS a superuser and we deliberately keep it (this test
     // proves rate limiting, not RLS). Neutralise the validator so the dev-profile context boots.
-    @MockBean
+    @MockitoBean
     private DatabaseConfigurationValidator databaseConfigurationValidator;
 
     @AfterEach

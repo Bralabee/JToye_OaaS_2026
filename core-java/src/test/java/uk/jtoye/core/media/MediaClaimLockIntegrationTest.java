@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -73,7 +73,7 @@ class MediaClaimLockIntegrationTest {
     @Autowired private MediaAssetRepository mediaAssetRepository;
     @Autowired private MediaProperties mediaProperties;
     @Autowired private JdbcTemplate jdbc;
-    @SpyBean private StorageService storageService;
+    @MockitoSpyBean private StorageService storageService;
 
     private UUID tenant;
     private long originalClaimTimeout;

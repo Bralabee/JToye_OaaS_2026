@@ -1,0 +1,292 @@
+38-04 evidence: full suites on Boot 4.1.1, module liveness probes, state machine on Framework 7
+=================================================================================================
+
+PLAN_BASE  = c7d1a473461918eb792eb0d7f1f833eba351c9e0 (HEAD before this plan's first commit)
+Branch     = phase-37-spring-boot-4-1
+JDK        = OpenJDK 25.0.4.1 (Ubuntu build; no Temurin on this host, as in the spike)
+Results    = core-java/build-local/test-results/{test,integrationTest} (NOT core-java/build/)
+
+-------------------------------------------------------------------------------------------------
+1. Task 1 (tracer): both suites in full on Boot 4.1.1
+-------------------------------------------------------------------------------------------------
+
+Command (rc captured on the same line, output in a scratch log):
+  ./gradlew :core-java:cleanTest :core-java:cleanIntegrationTest :core-java:test \
+            :core-java:integrationTest --continue --no-daemon ; rc=$?
+Run start marker: 2026-10-05T00:50:14Z
+rc=1  (BUILD FAILED in 22m 39s; both tasks executed, the reds below are the cause)
+UP-TO-DATE check: `grep UP-TO-DATE log | grep -E ':(test|integrationTest) '` printed nothing.
+  (compileJava / compileTestJava were UP-TO-DATE, which is correct: cleanTest and cleanIntegrationTest
+   delete the results, not the classes, so both test tasks re-executed. Gradle's own summary lines:
+   "1337 tests completed, 2 failed, 1 skipped" and "750 tests completed, 5 failed, 1 skipped".)
+
+Freshness (only XML newer than the run start counts):
+  unit             170 TEST-*.xml, 170 newer than the run-start marker
+  integrationTest  151 TEST-*.xml, 151 newer than the run-start marker
+  fail direction:  the same find against a marker touched AFTER the run -> unit=0 it=0
+                   (the filter can return 0, so 170/151 is a real freshness reading)
+
+Counts (awk over the <testsuite> attributes of every TEST-*.xml):
+
+  suite            tests  failures  errors  skipped   baseline (spike 38-SPIKE.md s2)   + added by 38-01/38-02
+  unit `test`      1337      2        0       1       1330 / 0 / 1 skip                 +7 (GoldenFixturesIntegrityTest 5,
+                                                                                            RequestBodyConstraintEnforcementTest 2)
+  integrationTest   750      5        0       1        745 / 0 / 6 skip (CI)            +5 (JsonbColumnsReadBackIntegrationTest 3,
+                                                                                            two *_boot35Baseline methods in
+                                                                                            UnauthenticatedProblemDetailIntegrationTest)
+
+  1330 + 7 = 1337 and 745 + 5 = 750: no test was lost on the Boot-4 tree.
+  Skips: unit 1 = ProductLabelGoldenFileTest.captureGoldenOnce() (a capture switch, skipped by design);
+         integration 1 = FinancialSummaryGoldenFileTest.captureGoldenOnce() (same).
+         CI's 5 extra integration skips are Mailhog assumptions; Mailhog was reachable here, so those
+         5 ran and passed (the spike recorded the same environment difference).
+
+Flyway, read out of the integration XML system-out:
+  144 contexts log "Successfully applied 67 migrations"; 1 each logs 52, 56 and 66
+  (FreshChainMigrationIntegrationTest's targeted-version chains). 67 = the number of V*.sql files.
+
+Expected-red ledger. Category (a) = a named expected red in this plan's must_haves; (b) = a file owned
+by another wave-3 plan; (c) = Boot-4 fallout this plan owns. Every failing class in BOTH XML dirs:
+
+  dir   class                                                   cat  owner  failing method / first failure message
+  unit  security.ProblemDetailAuthenticationEntryPointTest      (a)  38-06  missingBearerReturnsProblemDocumentAndKeepsTheChallenge():
+                                                                              expected: <Bearer> but was: <Bearer resource_metadata="http://localhost/.well-known/oauth-protected-resource">
+  unit  tenant.keycloak.KeycloakAdminClientTest                 (a)  38-07  setUserEnabled_putsFullRep_withEnabledFalse_andBearer():
+                                                                              No value at JSON path "$.enabled"
+  IT    integration.OpenApiSnapshotTest                         (a)  38-14  apiDocsMatchCommittedSnapshot():
+                                                                              The OpenAPI spec served by /v3/api-docs no longer matches the reviewed snapshot at docs/api/openapi-snapshot.json ...
+  IT    security.UnauthenticatedProblemDetailIntegrationTest    (a)  38-06  4 methods:
+                                                                              missingBearerReturnsRfc7807ProblemDocument(): WWW-Authenticate expected:<Bearer> but was:<Bearer resource_metadata="http://localhost/.well-known/oauth-protected-resource">
+                                                                              garbageBearerReturnsRfc7807ProblemDocument(): expected a string starting with "Bearer error=\"invalid_token\"" and not containing "resource_metadata"
+                                                                              wellKnownProtectedResourceUnauthenticated_boot35Baseline(): Status expected:<401> but was:<200>
+                                                                              wellKnownProtectedResourceAuthenticated_boot35Baseline(): Status expected:<404> but was:<200>
+
+  JsonbColumnsReadBackIntegrationTest (named "-> 38-10 if red"): GREEN, 3/3. Not in the ledger.
+  Category (b): empty.  Category (c): empty. No fix was needed in this plan.
+
+  The red-method total equals the expected-red methods: unit 2 (= failures 2), integration 5 (= failures 5).
+
+  Notes on the (a) reds, for their owners:
+  - The two *_boot35Baseline methods go red because Spring Security 7.1 serves
+    /.well-known/oauth-protected-resource with 200 (D-05's premise, measured on this tree). 38-06 suppresses
+    it and updates both baseline methods deliberately (38-02 SUMMARY: anonymous was 401 on 3.5, not 404).
+  - The two challenge methods go red on the RFC 9728 resource_metadata parameter: D-04, owner 38-06.
+
+  Tracer feedback gate (interactive, end-of-phase, automated-only verify): the Task 1 verify was re-run
+  after commit d276c553:
+    ./gradlew :core-java:cleanTest :core-java:test --continue --no-daemon ; rc=1
+    "1338 tests completed, 2 failed, 1 skipped"; awk: tests=1338 failures=2; failing classes =
+    ProblemDetailAuthenticationEntryPointTest, KeycloakAdminClientTest (both in the ledger).
+    1338 = the 1337 above + 1 test from the untracked Task-3 derivation scaffold (StatemachineSecurityAccessTest,
+    which printed the production classpath for jdeps; see section 3). Verified; expanded to Tasks 2 and 3.
+
+-------------------------------------------------------------------------------------------------
+2. Task 2: Boot4ModuleLivenessIntegrationTest and its arms
+-------------------------------------------------------------------------------------------------
+
+Test committed at ffa1babc BEFORE any arm ran (5 tests: Flyway applied set == V*.sql set; Brave Tracer +
+Zipkin BytesMessageSender; PrometheusMeterRegistry; RestClient.Builder + RestTemplateBuilder +
+WebClient.Builder; both StateMachineFactory beans).
+
+Green, real tree:
+  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest \
+     --tests 'uk.jtoye.core.boot4.Boot4ModuleLivenessIntegrationTest' --tests 'uk.jtoye.core.security.RlsContractTest' --no-daemon
+  rc=0, ":core-java:integrationTest" executed (not UP-TO-DATE)
+  TEST-uk.jtoye.core.boot4.Boot4ModuleLivenessIntegrationTest.xml  tests=5 failures=0 errors=0
+  TEST-uk.jtoye.core.security.RlsContractTest.xml                  tests=7 failures=0 errors=0
+
+Arm protocol (scratch script arm.sh, identical for every arm):
+  git show HEAD:core-java/build.gradle.kts > $SCRATCH/committed.kts ; rc=0
+  refuse to start if core-java/build.gradle.kts is dirty
+  append ONE temporary configurations.named("testRuntimeClasspath") { exclude(...) } block
+  rm -rf core-java/build-local/test-results/integrationTest      (stale XML cannot be read)
+  run, copy the XML aside, then: git checkout -- core-java/build.gradle.kts
+  sha256sum core-java/build.gradle.kts $SCRATCH/committed.kts -> must print two equal sums
+  committed blob sha256 = d9cb6f429e91f4756749e6af667cca66f6d3646465081e55431a4c386328833d
+
+Arm A: exclude org.springframework.boot:spring-boot-flyway  (liveness + RlsContractTest)
+  rc=1  "12 tests completed, 5 failed"
+  Boot4ModuleLivenessIntegrationTest  5 tests, 1 failure:
+    flywayAppliedEveryVersionedMigration: [Flyway applied 0 of the 67 V*.sql migrations on the classpath.
+      0 means the Flyway auto-configuration never ran: spring-boot-flyway (spring-boot-starter-flyway) is
+      missing, and with it every RLS policy]  expected: 67  but was: 0
+  RlsContractTest  7 tests, 4 failures (the spike measured 4/7), non-vacuity controls firing:
+    dsarRequestHasNoTenantDimension: [NON-VACUITY CONTROL: the catalog walk found NO columns on public.dsar_request ...]
+    everyRlsEnabledTableHasAtLeastOnePolicy: [NON-VACUITY DENOMINATOR: this sweep observed only 0 non-exempt table(s) ...]
+    img01_mediaTablesAreForced: EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+    auditW0_05_targetTablesAreForced: EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+  "Successfully applied" lines in both XML: 0
+  restore: rc=0; sha256 d9cb6f42...833d == d9cb6f42...833d -> RESTORE VERIFIED; TEMPORARY marker count 0
+  closing clean run: rc=0; liveness 5/0, RlsContractTest 7/0; "Successfully applied 67 migrations" 1 per class
+
+Arm B: exclude spring-boot-zipkin AND spring-boot-micrometer-tracing-brave  (liveness)
+  rc=1  "5 tests completed, 1 failed"
+    braveTracerAndZipkinSenderExist: [the Tracer must be the Brave bridge, not a no-op:
+      spring-boot-micrometer-tracing-brave]  Expecting actual: "io.micrometer.tracing.Tracer$1" to contain: "Brave"
+  FINDING: with the Brave module gone, a Tracer bean STILL EXISTS. It is Micrometer's no-op Tracer.NOOP
+  (io.micrometer.tracing.Tracer$1). A probe that only checked "a Tracer bean is present" would have passed
+  this arm. The class-name assertion is the load-bearing one.
+  restore: rc=0; sha256 equal -> RESTORE VERIFIED; marker count 0
+
+Arm B2 (added; not in the plan): exclude spring-boot-zipkin only  (liveness)
+  Why: in arm B the Brave assertion fails first, so the sender assertion was never reached. B2 shows
+  that the sender assertion can fail on its own.
+  rc=1  "5 tests completed, 1 failed"
+    braveTracerAndZipkinSenderExist: [no zipkin2.reporter.BytesMessageSender bean: spring-boot-zipkin is
+      missing, so no span is ever exported]  Expecting actual not to be null
+  (The Brave Tracer still passed here; only export is gone, which is exactly the silent case.)
+  restore: rc=0; sha256 equal -> RESTORE VERIFIED; marker count 0
+
+Arm C: exclude spring-boot-restclient  (liveness)
+  rc=1  "5 tests completed, 5 failed"
+  RECORDED OUTCOME: the CONTEXT failed, not the builder probe. Root cause in every failure:
+    java.lang.NoClassDefFoundError: org/springframework/boot/restclient/RestTemplateBuilder
+    <- IllegalStateException: Failed to introspect Class [uk.jtoye.core.security.SecurityConfig]
+  The first method reports "Failed to load ApplicationContext"; the other 4 report "ApplicationContext
+  failure threshold (1) exceeded". So a missing restclient module is LOUD today, because main code
+  (SecurityConfig, CustomerJwtVerifier, KeycloakAdminClient) injects the builders. The probe stays as
+  the guard for the day that injection goes away.
+  restore: rc=0; sha256 equal -> RESTORE VERIFIED; marker count 0
+
+Closing clean run after arms B, B2 and C (git status: build.gradle.kts unmodified):
+  rc=0; Boot4ModuleLivenessIntegrationTest 5/0 failures; RlsContractTest 7/0; 67 migrations applied in each.
+
+-------------------------------------------------------------------------------------------------
+3. Task 3: spring-statemachine 4.0.2 on Framework 7 (D-03)
+-------------------------------------------------------------------------------------------------
+
+3a. The security.access reference list, derived by jdeps
+
+  Production classpath: StatemachineSecurityAccessTest (untracked derivation scaffold) printed
+  System.getProperty("jtoye.productionRuntimeClasspath") once during the tracer re-verify run; the value
+  was read out of its TEST-*.xml system-out (265 entries, including spring-statemachine-core-4.0.2.jar and
+  spring-security-access-7.1.1.jar). The print was removed before the test was committed (340ea66f;
+  `grep -c 'System.out' StatemachineSecurityAccessTest.java` = 0).
+
+  Command:
+    jdeps --multi-release 25 -verbose:class -cp "$PRODUCTION_RUNTIME_CLASSPATH" \
+          ~/.gradle/caches/.../spring-statemachine-core-4.0.2.jar ; rc=0 (3642 lines)
+    ... | grep 'org.springframework.security.access'     -> 37 lines, 0 "not found"
+
+  Raw output (the 37 lines):
+  org.springframework.statemachine.config.AbstractStateMachineFactory -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.config.builders.StateMachineConfigurationBuilder -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.config.configurers.DefaultSecurityConfigurer -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.config.configurers.SecurityConfigurer -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.config.model.ConfigurationData -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.DefaultEventSecurityExpressionHandler -> org.springframework.security.access.PermissionEvaluator spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultEventSecurityExpressionHandler -> org.springframework.security.access.expression.AbstractSecurityExpressionHandler spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultEventSecurityExpressionHandler -> org.springframework.security.access.expression.SecurityExpressionOperations spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultEventSecurityExpressionHandler -> org.springframework.security.access.hierarchicalroles.RoleHierarchy spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultTransitionSecurityExpressionHandler -> org.springframework.security.access.PermissionEvaluator spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultTransitionSecurityExpressionHandler -> org.springframework.security.access.expression.AbstractSecurityExpressionHandler spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultTransitionSecurityExpressionHandler -> org.springframework.security.access.expression.SecurityExpressionOperations spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.DefaultTransitionSecurityExpressionHandler -> org.springframework.security.access.hierarchicalroles.RoleHierarchy spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.EventExpressionConfigAttribute -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.EventExpressionVoter -> org.springframework.security.access.AccessDecisionVoter spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.EventExpressionVoter -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.EventExpressionVoter -> org.springframework.security.access.expression.ExpressionUtils spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.EventExpressionVoter -> org.springframework.security.access.expression.SecurityExpressionHandler spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.EventSecurityExpressionRoot -> org.springframework.security.access.expression.SecurityExpressionRoot spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.EventVoter -> org.springframework.security.access.AccessDecisionVoter spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.EventVoter -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.AccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.SecurityConfig spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.vote.AbstractAccessDecisionManager spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.vote.AffirmativeBased spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.vote.ConsensusBased spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.vote.RoleVoter spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.StateMachineSecurityInterceptor -> org.springframework.security.access.vote.UnanimousBased spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.TransitionExpressionConfigAttribute -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.TransitionExpressionVoter -> org.springframework.security.access.AccessDecisionVoter spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.TransitionExpressionVoter -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.TransitionExpressionVoter -> org.springframework.security.access.expression.ExpressionUtils spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.TransitionExpressionVoter -> org.springframework.security.access.expression.SecurityExpressionHandler spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.TransitionSecurityExpressionRoot -> org.springframework.security.access.expression.SecurityExpressionRoot spring-security-core-7.1.1.jar
+  org.springframework.statemachine.security.TransitionVoter -> org.springframework.security.access.AccessDecisionVoter spring-security-access-7.1.1.jar
+  org.springframework.statemachine.security.TransitionVoter -> org.springframework.security.access.ConfigAttribute spring-security-access-7.1.1.jar
+
+  Counts:
+    reference lines                                  37  (23 resolve to spring-security-access-7.1.1.jar, 14 to spring-security-core-7.1.1.jar)
+    distinct referenced classes (awk '{print $3}' | sort -u)   16  (9 in spring-security-access, 7 in spring-security-core)
+    constants in StatemachineSecurityAccessTest.REFERENCED     16  (grep of quoted org.springframework.security.access.* lines)
+    -> the constant count equals the DISTINCT-class count. The plan's "their count equals the number of
+       constants" is read as distinct classes; a constant per reference LINE would duplicate names (37 != 16).
+  Spike comparison: 38-SPIKE.md s4 said "24 classes". This run finds 16 distinct classes in 37 reference
+  lines (23 of them to the access jar). The spike's own command was not recorded, so its 24 cannot be
+  reproduced; this plan's command and full output are above.
+  Without -cp the same jdeps reports all 37 as "not found", so the 0 "not found" with the production
+  classpath is a real resolution, not an empty scan.
+
+3b. StatemachineSecurityAccessTest
+
+  Green:  ./gradlew :core-java:cleanTest :core-java:test --tests '*StateMachine*' \
+             --tests 'uk.jtoye.core.boot4.StatemachineSecurityAccessTest' --no-daemon ; rc=0
+          StatemachineSecurityAccessTest 2/0, VendorOnboardingStateMachineServiceTest 13/0,
+          OrderStateMachineGuardVetoTest 4/0, OrderStateMachineServiceTest 11/0  -> summed 30 (>= 29), 0 fail
+
+  Arm "access" (bracketed with arm.sh after commit 340ea66f):
+    configurations.named("runtimeClasspath") { exclude(group = "org.springframework.security", module = "spring-security-access") }
+    rc=1 "2 tests completed, 1 failed"
+    positive control (StateMachine loads from the production loader): PASSED under the arm
+    everyReferencedSecurityAccessClassLoads: [spring-statemachine-core 4.0.2 references these
+      org.springframework.security.access classes, which are absent from the production runtime classpath;
+      Security 7 ships them in org.springframework.security:spring-security-access (D-03)]
+      Expecting empty but was: {AccessDecisionManager, AccessDecisionVoter, ConfigAttribute, SecurityConfig,
+      vote.AbstractAccessDecisionManager, vote.AffirmativeBased, vote.ConsensusBased, vote.RoleVoter,
+      vote.UnanimousBased} = ClassNotFoundException each   (exactly the 9 the access jar provides)
+    restore: rc=0; sha256 d9cb6f42...833d == committed blob -> RESTORE VERIFIED; marker count 0
+
+  Arm "noprop" (added; not in the plan): tasks.test { jvmArgumentProviders.clear() }
+    Why: to show the fail-closed branch is real, not just written.
+    rc=1; StatemachineSecurityAccessTest.initializationError: [-Djtoye.productionRuntimeClasspath is set by
+      core-java/build.gradle.kts tasks.test; run this class through Gradle] Expecting not blank but was: null
+    restore: rc=0; sha256 equal -> RESTORE VERIFIED; marker count 0
+
+3c. Transitions: the spike's two break arms (scratch srcarm.sh; same bracket on the main source file:
+    committed blob via git show, one literal replacement with anchor count 1, run '*StateMachine*',
+    git checkout, sha256 equal, anchor count back to 1)
+
+  Arm SM-A: OrderStateMachineConfig  .target(OrderStatus.COMPLETED) -> .target(OrderStatus.CANCELLED)
+            (the READY + COMPLETE transition)
+    rc=1 "28 tests completed, 1 failed" (compileJava re-ran)
+    OrderStateMachineServiceTest."Should allow valid state transitions through happy path":
+      expected: <COMPLETED> but was: <CANCELLED>
+    restore: sha256 726a8c74...b75d == committed -> RESTORE VERIFIED
+
+  Arm SM-B: VendorOnboardingStateMachineConfig approveGuard
+            return !mandatory.isEmpty() && mandatory.stream().allMatch(this::passedOrWaived);  ->  return true;
+    rc=1 "28 tests completed, 1 failed"
+    VendorOnboardingStateMachineServiceTest."APPROVE guard rejects when a mandatory gate is still PENDING":
+      Expected uk.jtoye.core.exception.InvalidStateTransitionException to be thrown, but nothing was thrown.
+    restore: sha256 8d9c5748...84b9 == committed -> RESTORE VERIFIED
+
+  Closing clean run (git status: only the orchestrator's .planning/milestone.lock untracked):
+    ./gradlew :core-java:cleanTest :core-java:test --tests '*StateMachine*' --tests 'uk.jtoye.core.boot4.StatemachineSecurityAccessTest'
+    rc=0, compileJava re-ran on the restored sources; 28/28 state-machine + 2/2 = 30, 0 failures
+
+  Transition-driving integration classes:
+    ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests '*OrderControllerIntegrationTest' \
+       --tests '*MoneyPathExecutionIntegrationTest' --tests '*RefundWebhookHandlingIntegrationTest' \
+       --tests '*VendorOnboardingEndToEndIntegrationTest' --no-daemon ; rc=0 (2m 8s)
+    OrderControllerIntegrationTest 7/0, MoneyPathExecutionIntegrationTest 4/0,
+    RefundWebhookHandlingIntegrationTest 7/0, VendorOnboardingEndToEndIntegrationTest 2/0
+    Transition actions logged by the library (from the XML system-out):
+      Order confirmed x4, Order preparation started x3, Order marked as ready x3, Order completed x3,
+      Order submitted for processing x1; Onboarding submitted; entering VERIFYING x2,
+      Onboarding approved x1 (the GUARDED APPROVE), Onboarding going live x1 (the guarded GO_LIVE)
+
+  Linkage-error scan (NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|AbstractMethodError):
+    closing unit run:   gradle log 0, XML 0
+    integration run:    gradle log 0, XML 0
+    fail direction:     the same scan over the "access" arm XML = 2 (ClassNotFoundException in the
+                        failure message and stack), so the scan can fire.
+
+3d. D-03 risk record
+  spring-statemachine has no Framework-7 release: 4.0.2 (built for Spring 6 / Security 6) runs here on
+  Spring Framework 7.0.9 and Security 7.1.1, a framework line it was not built for. It is proven by tests
+  that can fail (28 machine tests, 4 transition-driving integration classes, two break arms, a linkage
+  scan at 0, and the security.access test above). Replacing it with an EnumMap transition table
+  (~60-80 LOC per machine, with the existing tests as the spec) stays a SEPARATE, NON-BLOCKING decision
+  under D-03. 38-16 writes this into ADR-0006 and CONCERNS.md; this plan does not.

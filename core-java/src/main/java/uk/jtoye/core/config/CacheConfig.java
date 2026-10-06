@@ -1,11 +1,5 @@
 package uk.jtoye.core.config;
 
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
-import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.CacheManager;
@@ -15,12 +9,15 @@ import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.data.redis.cache.CacheKeyPrefix;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
+import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import tools.jackson.databind.jsontype.PolymorphicTypeValidator;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -33,7 +30,8 @@ import java.util.Map;
  * Features:
  * - Tenant-aware caching with TenantAwareCacheKeyGenerator
  * - Per-cache TTL configuration (products: 10min, shops: 15min)
- * - JSON serialization for cache values
+ * - JSON serialization for cache values (Jackson 3, allowlisted polymorphic typing)
+ * - Versioned cache keys ({@code v4:{region}::...}, see CACHE_KEY_FORMAT_VERSION)
  * - Disabled for test profile to maintain test isolation
  * 
  * Cache Strategy:
@@ -66,12 +64,74 @@ public class CacheConfig implements CachingConfigurer {
     }
 
     /**
+     * The cache value FORMAT version, carried in every cache key as {@code v4:{region}::…}
+     * (Phase 38, 38-09).
+     *
+     * <p><b>Why.</b> The Spring Boot 4 move put the cache value serializer on Jackson 3, whose typing
+     * scheme writes different bytes: every value a Boot-3.5 pod cached under {@code {region}::…} is
+     * unreadable by a Boot-4 pod (measured on the three 38-01 golden values). Read under the old key,
+     * each would be a GET error that {@link RedisCacheErrorHandler} swallows and counts in
+     * {@code jtoye.cache.errors} on every request; and during a rolling deploy a Boot-3.5 pod would
+     * equally fail on what a Boot-4 pod wrote. With the version in the key the two formats never meet:
+     * a Boot-4 pod neither reads nor overwrites an old entry.
+     *
+     * <p><b>No flush for FORMAT reasons.</b> Old entries are never read by a Boot-4 pod and expire by
+     * their region TTL (shopMembership 5 min, products 10 min, shops 15 min; the 10-minute default for
+     * any other region). {@code CacheFormatIsolationIntegrationTest} proves it on a real Redis.
+     *
+     * <p><b>But evictions do not cross generations by themselves (Phase 38 review WR-01).</b> Because
+     * the two generations use different keys, an eviction made by one never reached the other's entry:
+     * during a rolling deploy (or after a rollback) a revoke or edit handled by one generation left the
+     * other generation serving its cached value until the TTL, including a {@code shopMembership}
+     * grant. Two measures close it, and neither is complete on its own:
+     * <ul>
+     *   <li><b>Dual eviction (code, transitional).</b> {@link TenantCacheEvictor} also deletes the
+     *       Boot-3.5 key ({@link #legacyBoot35CacheKey}) whenever it evicts. That covers a write handled
+     *       by a Boot-4 pod: Boot-3.5 pods still running during the roll-forward, and Boot-3.5 pods after
+     *       a rollback, no longer read an entry a Boot-4 write should have removed.</li>
+     *   <li><b>Post-rollout cleanup (operator).</b> A Boot-3.5 pod cannot be taught to evict a
+     *       {@code v4:} key, so a write it handles during the overlap leaves the Boot-4 entry for that
+     *       entity stale until its TTL. Once every pod runs Boot 4, delete the {@code v4:*} keys (SCAN +
+     *       UNLINK, never KEYS or FLUSHALL); the same step after a re-roll-forward removes {@code v4:}
+     *       entries written before a rollback that the 3.5 pods never evicted. ADR-0006 "Deploy notes"
+     *       and "Rollback notes" carry the procedure and the bound.</li>
+     * </ul>
+     *
+     * <p><b>Standing procedure.</b> Any future change to the cache value FORMAT (serializer, typing
+     * scheme, or a DTO change that old bytes cannot be read into) bumps this constant in the same
+     * change. It sits on the default configuration, so every region, including one added later,
+     * inherits it.
+     */
+    static final String CACHE_KEY_FORMAT_VERSION = "v4";
+
+    /**
+     * TRANSITIONAL (Phase 38 review WR-01): the Redis key a Boot-3.5 pod used for {@code key} in region
+     * {@code cacheName}, so {@link TenantCacheEvictor} can delete it alongside the {@code v4:} key.
+     *
+     * <p>Boot 3.5's cache manager was built from {@code RedisCacheConfiguration.defaultCacheConfig()}
+     * with no {@code computePrefixWith}, i.e. Spring Data Redis's {@link CacheKeyPrefix#simple()}
+     * ({@code {cacheName}::}), and string keys. This calls that same library function rather than
+     * hand-writing a second key format; {@code CacheFormatIsolationIntegrationTest} pins the result
+     * against the key the 38-01 golden Boot-3.5 entry lives under.
+     *
+     * <p><b>Removal condition.</b> Delete this method and its one caller in the first release after the
+     * Boot-4 rollout is complete: no Boot-3.5 pod can exist any more (no rollback to a 3.5 image is
+     * still on the table) and the longest region TTL (15 minutes) has elapsed since the last 3.5 pod
+     * stopped. Until then it is load-bearing.
+     */
+    static String legacyBoot35CacheKey(String cacheName, String key) {
+        return CacheKeyPrefix.simple().compute(cacheName) + key;
+    }
+
+    /**
      * Configure Redis Cache Manager with per-cache TTL settings.
      */
     @Bean
     public CacheManager cacheManager(RedisConnectionFactory connectionFactory) {
-        // Default cache configuration (fallback)
+        // Default cache configuration (fallback). Every region derives from it, so every region
+        // inherits the versioned key prefix (see CACHE_KEY_FORMAT_VERSION).
         RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
+                .computePrefixWith(cacheName -> CACHE_KEY_FORMAT_VERSION + ":" + cacheName + "::")
                 .entryTtl(Duration.ofMinutes(10))  // Default TTL: 10 minutes
                 .serializeKeysWith(
                         RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer())
@@ -106,45 +166,60 @@ public class CacheConfig implements CachingConfigurer {
     }
 
     /**
-     * QA-council 20260902-134741 SEC-4 (adjudication A6): the class-name prefixes the cache value
-     * serializer may INSTANTIATE from a stored type id ({@code @class} on objects, the
-     * {@code ["<class>", value]} wrapper on scalars and collections). Every other type id is refused
-     * at deserialization with an {@code InvalidTypeIdException}.
+     * QA-council 20260902-134741 SEC-4 (adjudication A6), re-derived for Jackson 3 in Phase 38
+     * (38-09, 2026-10-05): the class-name prefixes the cache value serializer may INSTANTIATE from a
+     * stored type id ({@code @class} on objects, the {@code ["<class>", value]} wrapper on
+     * collections and non-final scalars). Every other type id is refused at deserialization with a
+     * {@code tools.jackson.databind.exc.InvalidTypeIdException}, which Spring wraps in its
+     * {@code SerializationException}.
      *
-     * <p><b>Why an allowlist.</b> {@code new ObjectMapper().getPolymorphicTypeValidator()} is
-     * {@code LaissezFaireSubTypeValidator}, so the previous
-     * {@code activateDefaultTyping(<laissez-faire>, EVERYTHING, PROPERTY)} would instantiate ANY class
-     * a stored entry named, with only Jackson's internal gadget denylist in the way — measured on the
-     * running artifact: {@code java.net.URI} and {@code java.util.TreeMap} both instantiated from a
-     * hand-written type id. Jackson's guidance since 2.10 is an explicit
-     * {@code BasicPolymorphicTypeValidator}; the denylist still applies underneath it.
+     * <p><b>Why an allowlist.</b> Jackson's default validator for polymorphic typing is the permissive
+     * one, which would instantiate ANY class a stored entry named, with only Jackson's internal gadget
+     * denylist in the way — measured on the running artifact before SEC-4: {@code java.net.URI} and
+     * {@code java.util.TreeMap} both instantiated from a hand-written type id. Jackson's guidance is an
+     * explicit {@code BasicPolymorphicTypeValidator}; the denylist still applies underneath it.
      *
-     * <p><b>Why these five, and why {@code java.lang.} is not optional.</b> Derived from the LIVE
-     * cache bytes, not from reading the DTOs. Under {@code DefaultTyping.EVERYTHING} a {@code Long}
-     * field is written as {@code ["java.lang.Long", 899]} — {@code Integer}, {@code Boolean},
-     * {@code Double} and {@code String} are Jackson "natural" types and carry no id, {@code Long} is
-     * not — and both cached DTOs carry one ({@code ProductDto.pricePennies},
-     * {@code ShopDto.minimumOrderPennies}). Omit that prefix and every cache READ fails, and fails
-     * INVISIBLY: {@link RedisCacheErrorHandler#handleCacheGetError} WARN-logs and swallows GET errors,
-     * so the symptom is a permanent silent cache miss rather than a 500. After any change here:
-     * rebuild, then confirm {@code jtoye.cache.errors} stays 0 under a read-after-write of the
-     * products / shops / shopMembership regions.
+     * <p><b>Derived from the LIVE Jackson-3 bytes, not from reading the DTOs.</b> Spring Data Redis 4's
+     * {@link GenericJacksonJsonRedisSerializer} types values by its own NON_FINAL rule (Jackson 3
+     * removed the "type everything" mode the Jackson-2 cache used): a non-final value carries an id,
+     * while final JDK types ({@code Long}, {@code UUID}, {@code OffsetDateTime}, {@code String}),
+     * primitives and enums are written bare. Serializing the 38-01 golden ProductDto, ShopDto and
+     * Membership samples (production collection runtime types) plus a BigDecimal value and a
+     * BigDecimal member wrote exactly these ids (evidence/38-09-cache.txt):
+     * <ul>
+     *   <li>{@code uk.jtoye.}: {@code core.product.dto.ProductDto}, {@code core.product.AllergenSpan},
+     *       {@code core.media.MediaAssetDto}, {@code core.shop.dto.ShopDto},
+     *       {@code core.security.access.Membership} — the cached values and their nested records.</li>
+     *   <li>{@code java.util.}: {@code ArrayList} (MapStruct copies), {@code ImmutableCollections$ListN}
+     *       ({@code Stream.toList()} media), {@code LinkedHashMap} (opening hours),
+     *       {@code ImmutableCollections$Map1} / {@code $MapN} ({@code Map.copyOf} / {@code Map.of()}
+     *       shop grants).</li>
+     *   <li>{@code java.math.}: {@code BigDecimal}, top-level and as a member. No cached DTO carries
+     *       one today; it stays because a {@code BigDecimal} is not final and is therefore stored WITH
+     *       an id, so a money-precise field added to any cached DTO would otherwise fail every READ
+     *       (PR #726 review).</li>
+     * </ul>
+     * {@code java.lang.} and {@code java.time.} carried the Jackson-2 {@code Long} and
+     * {@code OffsetDateTime} wrappers; under Jackson 3 neither is written, so both were DROPPED and an
+     * id under either is now refused. {@code CacheSerializerTypeAllowlistTest} pins the exact id set and
+     * ties it to this list in both directions: a missing prefix fails the round-trips, and a prefix
+     * with no observed id fails too.
      *
-     * <p><b>Subtype matchers only — never {@code allowIfBaseType}.</b> Under {@code EVERYTHING} the
-     * nominal base of a top-level value is {@code java.lang.Object}, and an ALLOWED base type makes
-     * Jackson swap in the laissez-faire validator for every subtype of it
-     * ({@code StdTypeResolverBuilder.verifyBaseTypeValidity}), so {@code allowIfBaseType("java.lang.")}
-     * would silently re-open exactly the hole this closes. {@code CacheSerializerTypeAllowlistTest}
-     * holds the round-trip arm (first) and the refusal arm.
+     * <p>Omit a needed prefix and every cache READ fails INVISIBLY:
+     * {@link RedisCacheErrorHandler#handleCacheGetError} WARN-logs and swallows GET errors, so the
+     * symptom is a permanent silent cache miss rather than a 500. After any change here: rebuild, then
+     * confirm {@code jtoye.cache.errors} stays 0 under a read-after-write of the products / shops /
+     * shopMembership regions.
+     *
+     * <p><b>Subtype matchers only — never a base-type matcher.</b> The nominal base of a top-level
+     * cached value is {@code java.lang.Object}, and an ALLOWED base type makes Jackson hand every
+     * subtype of it to the permissive validator, so a base-type rule naming {@code java.lang.} would
+     * silently re-open exactly the hole this closes. This rule is unchanged by the Jackson-3 move.
      */
     static final List<String> CACHE_TYPE_ID_PREFIXES = List.of(
-            "uk.jtoye.",   // ProductDto, ShopDto, Membership, ShopRole, VatRate, AllergenSpan, MediaAssetDto
-            "java.util.",  // UUID, ArrayList / List.of, LinkedHashMap / Map.copyOf (ImmutableCollections$*)
-            "java.time.",  // OffsetDateTime
-            "java.lang.",  // Long — see above
-            "java.math."   // BigDecimal / BigInteger (PR #726 review): like Long, NOT a Jackson natural
-                           // type, so it is stored WITH an id and a money-precise field added to any
-                           // cached DTO would otherwise fail every READ — silently, per the note above
+            "uk.jtoye.",   // ProductDto, ShopDto, Membership, AllergenSpan, MediaAssetDto
+            "java.util.",  // ArrayList, LinkedHashMap, ImmutableCollections$ListN / $Map1 / $MapN
+            "java.math."   // BigDecimal: not final, so stored WITH an id (PR #726 review)
     );
 
     static PolymorphicTypeValidator cacheTypeValidator() {
@@ -156,36 +231,26 @@ public class CacheConfig implements CachingConfigurer {
     }
 
     /**
-     * QA-council BE-01: build the Redis value serializer with JSR-310 support.
+     * The Redis value serializer: Spring Data Redis 4's Jackson-3
+     * {@link GenericJacksonJsonRedisSerializer} with polymorphic typing gated by
+     * {@link #cacheTypeValidator()} (SEC-4), so cached values deserialize back to their concrete type.
      *
-     * <p>The default {@code new GenericJackson2JsonRedisSerializer()} uses an
-     * ObjectMapper with no {@link JavaTimeModule}, so caching any DTO that carries
-     * a {@code java.time} type (e.g. {@code ShopDto}/{@code ProductDto.createdAt}
-     * is an {@code OffsetDateTime}) threw on the cache write — turning the
-     * {@code @Cacheable getShopById}/{@code getProductById} calls into HTTP 500.
+     * <p>No {@code customize(...)}: Jackson 3 handles {@code java.time} natively and writes ISO-8601
+     * text by default (measured: {@code "createdAt":"2026-10-04T13:34:56.123456789+01:00"}), which is
+     * what QA-council BE-01 needed the Jackson-2 time module for.
      *
-     * <p>We register the JavaTimeModule (ISO-8601, not epoch arrays) and keep the
-     * serializer's polymorphic default typing so cached values still deserialize
-     * back to their concrete type (stores {@code @class}), now gated by
-     * {@link #cacheTypeValidator()} (SEC-4). NOTE: flush the Redis
-     * "shops"/"products"/"shopMembership" caches on deploy — any entries written by
-     * the old serializer are format-incompatible.
+     * <p>Entries written by the Jackson-2 serializer before Phase 38 are format-incompatible (measured:
+     * all three 38-01 golden cache values fail to read). They are made unreachable by the versioned key
+     * prefix ({@link #CACHE_KEY_FORMAT_VERSION}), not by a deploy-time flush.
      *
-     * <p>Static and public so the serializer tests exercise THIS mapper rather than a
-     * hand-kept mirror of it: the previous mirror in {@code MembershipSerializerRoundTripTest}
-     * would have stayed green over a validator change that killed the cache.
+     * <p>Static and public so the serializer tests exercise THIS serializer rather than a hand-kept
+     * mirror of it: the previous mirror in {@code MembershipSerializerRoundTripTest} would have stayed
+     * green over a validator change that killed the cache.
      */
-    public static ObjectMapper cacheObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        mapper.activateDefaultTyping(cacheTypeValidator(),
-                ObjectMapper.DefaultTyping.EVERYTHING, JsonTypeInfo.As.PROPERTY);
-        return mapper;
-    }
-
-    public static GenericJackson2JsonRedisSerializer jsonRedisSerializer() {
-        return new GenericJackson2JsonRedisSerializer(cacheObjectMapper());
+    public static GenericJacksonJsonRedisSerializer jsonRedisSerializer() {
+        return GenericJacksonJsonRedisSerializer.builder()
+                .enableDefaultTyping(cacheTypeValidator())
+                .build();
     }
 
     /**

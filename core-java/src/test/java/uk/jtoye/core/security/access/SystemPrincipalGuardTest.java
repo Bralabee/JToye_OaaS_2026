@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.http.ProblemDetail;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -118,7 +118,7 @@ class SystemPrincipalGuardTest {
     @Autowired private ProductMediaRepository productMediaRepository;
     @Autowired private JdbcTemplate jdbc;
     @PersistenceContext private EntityManager em;
-    @SpyBean private StorageService storageService;
+    @MockitoSpyBean private StorageService storageService;
 
     private UUID tenant;
 

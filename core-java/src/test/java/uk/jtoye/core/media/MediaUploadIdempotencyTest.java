@@ -6,9 +6,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
@@ -51,7 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p>Driven through MockMvc so the {@code Idempotency-Key} header branch is exercised
  * end-to-end. NOT {@code @Transactional}: each accept commits so the replay observes the
- * committed reservation. {@link StorageService} is a {@code @SpyBean} (no live object store).
+ * committed reservation. {@link StorageService} is a {@code @MockitoSpyBean} (no live object store).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -73,7 +73,7 @@ class MediaUploadIdempotencyTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
-    @SpyBean private StorageService storageService;
+    @MockitoSpyBean private StorageService storageService;
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000241");
     private UUID productId;

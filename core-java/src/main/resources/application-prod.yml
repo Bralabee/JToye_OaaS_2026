@@ -64,17 +64,19 @@ spring:
     # Proven inherited by FreshChainMigrationIntegrationTest.
 
 server:
-  error:
-    include-message: never  # Security: Don't expose error details
-    include-binding-errors: never
-    include-stacktrace: never
-    include-exception: false
   shutdown: graceful
   compression:
     enabled: true
     min-response-size: 1024
   http2:
     enabled: true
+
+# 38-11 (Boot 4): was server.error.*, which Boot 4 silently ignores. Values unchanged.
+spring.web.error:
+  include-message: never  # Security: Don't expose error details
+  include-binding-errors: never
+  include-stacktrace: never
+  include-exception: false
 
 spring.lifecycle:
   timeout-per-shutdown-phase: 30s
@@ -96,9 +98,14 @@ logging:
       {"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","logger":"%logger{36}","message":"%replace(%replace(%msg){'\"','\\\"'}){'\n','\\n'}","thread":"%thread","traceId":"%X{traceId:-}","spanId":"%X{spanId:-}"}%n
   file:
     name: ${LOG_PATH:/var/log/jtoye}/application.log
-    max-size: 10MB
-    max-history: 30
-    total-size-cap: 1GB
+  # 38-11 (Boot 4): rotation moved from logging.file.max-size/max-history/total-size-cap,
+  # which Boot 4 silently ignores (the 30-day / 1GB retention would revert to the 7-day,
+  # uncapped default).
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 30
+      total-size-cap: 1GB
 
 management:
   # issue #98 [P2-7] item 4: serve ALL actuator endpoints (incl. prometheus) on a

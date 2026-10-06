@@ -1,15 +1,15 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -55,15 +55,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * to end, with no admin-approve crutch masking the gap (HIGH-1). The two external
  * HTTP clients are stubbed green so the fully-automatic path is deterministic:
  * <ul>
- *   <li>{@code @MockBean FhrsClient} → one FHRS establishment rated 5 (≥ the
+ *   <li>{@code @MockitoBean FhrsClient} → one FHRS establishment rated 5 (≥ the
  *       config min-rating 2) → FOOD_HYGIENE_RATING PASSED;</li>
- *   <li>{@code @MockBean CompaniesHouseClient} → an {@code active} company profile
+ *   <li>{@code @MockitoBean CompaniesHouseClient} → an {@code active} company profile
  *       → BUSINESS_VERIFIED PASSED;</li>
  *   <li>a seeded, fully-labelled product (V41 durability/shelf-life/ingredients)
  *       → ALLERGEN_DATA_COMPLETE PASSED for real (no stub).</li>
  * </ul>
  *
- * <p>{@code @SpyBean OnboardingProperties} toggles {@code isAutoApprove()} per test
+ * <p>{@code @MockitoSpyBean OnboardingProperties} toggles {@code isAutoApprove()} per test
  * on a single container. The class is intentionally NOT {@code @Transactional}: the
  * {@code @Async @Transactional} recompute runs on a separate thread/connection, so
  * the onboarding + gate rows MUST be committed to be visible to it. Each test uses
@@ -90,12 +90,12 @@ class VendorOnboardingEndToEndIntegrationTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
 
-    @MockBean private FhrsClient fhrsClient;
-    @MockBean private CompaniesHouseClient companiesHouseClient;
-    @SpyBean private OnboardingProperties onboardingProperties;
+    @MockitoBean private FhrsClient fhrsClient;
+    @MockitoBean private CompaniesHouseClient companiesHouseClient;
+    @MockitoSpyBean private OnboardingProperties onboardingProperties;
 
     private UUID tenantId;
     private UUID shopId;
@@ -189,7 +189,7 @@ class VendorOnboardingEndToEndIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("DRAFT"))
                 .andReturn().getResponse().getContentAsString();
-        UUID onboardingId = UUID.fromString(objectMapper.readTree(created).get("id").asText());
+        UUID onboardingId = UUID.fromString(objectMapper.readTree(created).get("id").asString());
 
         mockMvc.perform(post("/api/v1/onboarding/submit")
                         .header("X-Tenant-Id", tenantId.toString()))
@@ -212,13 +212,13 @@ class VendorOnboardingEndToEndIntegrationTest {
         JsonNode last = null;
         while (System.currentTimeMillis() < deadline) {
             last = getMe();
-            if (expected.name().equals(last.get("status").asText())) {
+            if (expected.name().equals(last.get("status").asString())) {
                 return last;
             }
             Thread.sleep(100);
         }
         fail("Timed out awaiting status " + expected + "; last status="
-                + (last == null ? "n/a" : last.get("status").asText()));
+                + (last == null ? "n/a" : last.get("status").asString()));
         return null;
     }
 
@@ -237,7 +237,7 @@ class VendorOnboardingEndToEndIntegrationTest {
      */
     private void assertAllThreeGatesPassed(JsonNode me) {
         Map<String, String> byType = new HashMap<>();
-        me.get("gates").forEach(g -> byType.put(g.get("gateType").asText(), g.get("status").asText()));
+        me.get("gates").forEach(g -> byType.put(g.get("gateType").asString(), g.get("status").asString()));
         assertThat(byType).containsOnlyKeys(
                 GateType.BUSINESS_VERIFIED.name(),
                 GateType.FOOD_HYGIENE_RATING.name(),

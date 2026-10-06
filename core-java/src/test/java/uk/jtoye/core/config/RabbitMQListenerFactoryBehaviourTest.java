@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
-import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.retry.interceptor.RetryOperationsInterceptor;
@@ -47,7 +47,7 @@ class RabbitMQListenerFactoryBehaviourTest {
         return new ApplicationContextRunner()
                 .withUserConfiguration(RabbitMQConfig.class)
                 .withBean(ConnectionFactory.class, () -> mock(ConnectionFactory.class))
-                .withBean(MessageConverter.class, Jackson2JsonMessageConverter::new)
+                .withBean(MessageConverter.class, JacksonJsonMessageConverter::new)
                 .withBean(MeterRegistry.class, SimpleMeterRegistry::new);
     }
 

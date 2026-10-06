@@ -56,9 +56,10 @@ public class RateLimitConfig {
      * ({@link #redisCommandTimeout}, sourced from {@code spring.data.redis.timeout})
      * replaces Lettuce's 60s default. Without it, a Redis outage made every
      * rate-limited request hang ~60s before the {@code RateLimitInterceptor} could
-     * fail open. Applied both on the {@link RedisURI} (belt) and via
-     * {@link RedisClient#setDefaultTimeout(Duration)} (braces) so the bounded
-     * timeout holds regardless of which command path Lettuce takes.
+     * fail open. Applied on the {@link RedisURI} via {@code withTimeout}: the
+     * connection opened from that URI takes its command timeout from it. (Until
+     * Boot 4 it was also set via {@code RedisClient.setDefaultTimeout}, which
+     * Lettuce 7 removed; the URI timeout is the same Duration and stays.)
      *
      * @return LettuceBasedProxyManager configured for tenant-aware rate limiting
      */
@@ -81,8 +82,9 @@ public class RateLimitConfig {
         RedisURI redisUri = uriBuilder.build();
 
         // Create Redis client
+        // Command timeout = redisCommandTimeout, carried by RedisURI.withTimeout above (Lettuce 7
+        // removed RedisClient.setDefaultTimeout; the bounded timeout of issue #86 still applies).
         RedisClient redisClient = RedisClient.create(redisUri);
-        redisClient.setDefaultTimeout(redisCommandTimeout);
 
         // Create connection with String keys and byte array values
         RedisCodec<String, byte[]> codec = RedisCodec.of(StringCodec.UTF8, ByteArrayCodec.INSTANCE);

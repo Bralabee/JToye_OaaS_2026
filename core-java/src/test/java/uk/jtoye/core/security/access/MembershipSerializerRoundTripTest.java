@@ -1,7 +1,7 @@
 package uk.jtoye.core.security.access;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.RedisSerializer;
 import uk.jtoye.core.config.CacheConfig;
 
 import java.util.LinkedHashMap;
@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MembershipSerializerRoundTripTest {
 
     /** The production serializer, not a mirror — see the class Javadoc. */
-    private GenericJackson2JsonRedisSerializer serializer() {
+    private RedisSerializer<Object> serializer() {
         return CacheConfig.jsonRedisSerializer();
     }
 
@@ -42,7 +42,7 @@ class MembershipSerializerRoundTripTest {
         // A scoped user with an operator-provenance shape: not a group admin.
         Membership original = new Membership(false, false, Map.copyOf(perShop));
 
-        GenericJackson2JsonRedisSerializer serializer = serializer();
+        RedisSerializer<Object> serializer = serializer();
         Object back = serializer.deserialize(serializer.serialize(original));
 
         assertThat(back)
@@ -63,7 +63,7 @@ class MembershipSerializerRoundTripTest {
         // The Task-2 fields must survive too — a JIT-sourced GROUP_ADMIN with no per-shop grants.
         Membership original = new Membership(true, true, Map.of());
 
-        GenericJackson2JsonRedisSerializer serializer = serializer();
+        RedisSerializer<Object> serializer = serializer();
         Membership restored = (Membership) serializer.deserialize(serializer.serialize(original));
 
         assertThat(restored.isGroupAdmin()).as("groupAdmin flag survives").isTrue();
@@ -75,7 +75,7 @@ class MembershipSerializerRoundTripTest {
     void operatorGroupAdminMembershipRoundTrips() {
         Membership original = new Membership(true, false, Map.of());
 
-        GenericJackson2JsonRedisSerializer serializer = serializer();
+        RedisSerializer<Object> serializer = serializer();
         Membership restored = (Membership) serializer.deserialize(serializer.serialize(original));
 
         assertThat(restored.isGroupAdmin()).isTrue();

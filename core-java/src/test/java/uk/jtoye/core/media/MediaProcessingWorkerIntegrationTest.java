@@ -10,7 +10,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * IMG-02 worker-side proof over real Postgres + the real {@link MediaNormalizer}
- * (Scrimage/cwebp) — {@link StorageService} is a {@code @SpyBean} so the quarantine read is stubbed
+ * (Scrimage/cwebp) — {@link StorageService} is a {@code @MockitoSpyBean} so the quarantine read is stubbed
  * and the derivative write is captured without a live object store.
  *
  * <p>Proves the async worker: pins the tenant GUC (visible + updatable under a
@@ -74,7 +74,7 @@ class MediaProcessingWorkerIntegrationTest {
     @Autowired private ProductMediaRepository productMediaRepository;
     @Autowired private JdbcTemplate jdbc;
     @PersistenceContext private EntityManager em;
-    @SpyBean private StorageService storageService;
+    @MockitoSpyBean private StorageService storageService;
 
     private UUID tenant;
 

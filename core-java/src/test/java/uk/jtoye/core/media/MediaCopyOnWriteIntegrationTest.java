@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * exercise the CoW/ref-count MECHANICS, not tenant isolation — that wall is proven
  * separately under the NOSUPERUSER downgrade in
  * {@code MediaAssetRlsPolicyIntegrationTest}. {@link StorageService} is a
- * {@code @SpyBean} so the physical delete is asserted without a live object store (its real
+ * {@code @MockitoSpyBean} so the physical delete is asserted without a live object store (its real
  * {@code urlForKey} still runs for the dual-read check).
  */
 @SpringBootTest
@@ -63,7 +63,7 @@ class MediaCopyOnWriteIntegrationTest {
     @Autowired private MediaAssetService mediaAssetService;
     @Autowired private JdbcTemplate jdbc;
     @PersistenceContext private EntityManager em;
-    @SpyBean private StorageService storageService;
+    @MockitoSpyBean private StorageService storageService;
 
     private UUID tenant;
 

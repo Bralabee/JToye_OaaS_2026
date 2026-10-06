@@ -1,13 +1,13 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -61,7 +61,7 @@ class OnboardingStallOutboxIntegrationTest {
     }
 
     @Autowired private JdbcTemplate jdbc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private GateChainRunner gateChainRunner;
     @Autowired private VendorOnboardingRepository onboardingRepository;
     @Autowired private VendorOnboardingGateRepository gateRepository;
@@ -69,8 +69,8 @@ class OnboardingStallOutboxIntegrationTest {
     // Mocked only so the FHRS / Companies House gate beans construct cleanly and
     // no real network call is ever possible; the seeded terminal gate rows mean
     // neither client is invoked by the recompute.
-    @MockBean private FhrsClient fhrsClient;
-    @MockBean private CompaniesHouseClient companiesHouseClient;
+    @MockitoBean private FhrsClient fhrsClient;
+    @MockitoBean private CompaniesHouseClient companiesHouseClient;
 
     private UUID tenantId;
     private UUID shopId;
@@ -128,11 +128,11 @@ class OnboardingStallOutboxIntegrationTest {
                         + "WHERE exchange = 'onboarding.events' AND tenant_id = ? ORDER BY created_at DESC LIMIT 1",
                 String.class, tenantId);
         JsonNode json = objectMapper.readTree(payload);
-        assertThat(json.get("tenantId").asText()).isEqualTo(tenantId.toString());
-        assertThat(json.get("shopId").asText()).isEqualTo(shopId.toString());
-        assertThat(json.get("onboardingId").asText()).isEqualTo(onboardingId.toString());
-        assertThat(json.get("status").asText()).isEqualTo("VERIFYING");
-        assertThat(json.get("reason").asText()).isEqualTo("One or more checks need a manual review");
+        assertThat(json.get("tenantId").asString()).isEqualTo(tenantId.toString());
+        assertThat(json.get("shopId").asString()).isEqualTo(shopId.toString());
+        assertThat(json.get("onboardingId").asString()).isEqualTo(onboardingId.toString());
+        assertThat(json.get("status").asString()).isEqualTo("VERIFYING");
+        assertThat(json.get("reason").asString()).isEqualTo("One or more checks need a manual review");
 
         // No leakage: an unrelated tenant has no such row.
         UUID otherTenant = UUID.randomUUID();

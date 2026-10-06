@@ -1,13 +1,13 @@
 package uk.jtoye.core.gdpr;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.gdpr.dto.DsarIntakeRequest;
@@ -105,7 +105,7 @@ public class DsarIntakeService {
             + " ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING";
 
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
     private final DsarVerificationMailer verificationMailer;
 
     /**
@@ -115,10 +115,10 @@ public class DsarIntakeService {
     @Value("${jtoye.gdpr.dsar.verification-ttl-hours:168}")
     private long verificationTtlHours;
 
-    public DsarIntakeService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+    public DsarIntakeService(JdbcTemplate jdbcTemplate, JsonMapper jsonMapper,
                              DsarVerificationMailer verificationMailer) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
+        this.jsonMapper = jsonMapper;
         this.verificationMailer = verificationMailer;
     }
 
@@ -265,16 +265,16 @@ public class DsarIntakeService {
 
     private String serialize(DsarIntakeAck ack) {
         try {
-            return objectMapper.writeValueAsString(ack);
-        } catch (JsonProcessingException e) {
+            return jsonMapper.writeValueAsString(ack);
+        } catch (JacksonException e) { // unchecked in Jackson 3; kept so the failure message is unchanged
             throw new IllegalStateException("Failed to serialize the DSAR acknowledgement", e);
         }
     }
 
     private DsarIntakeAck deserialize(String json) {
         try {
-            return objectMapper.readValue(json, DsarIntakeAck.class);
-        } catch (JsonProcessingException e) {
+            return jsonMapper.readValue(json, DsarIntakeAck.class);
+        } catch (JacksonException e) { // unchecked in Jackson 3; kept so the failure message is unchanged
             throw new IllegalStateException("Failed to deserialize the stored DSAR acknowledgement", e);
         }
     }

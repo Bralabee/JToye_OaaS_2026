@@ -4,30 +4,198 @@ milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
 current_phase: 29
 current_phase_name: Deployable Staging, With Its Own Monitoring
-status: paused
-stopped_at: "Phase 36 COMPLETE 18/18 and MERGED as PR #763 (squash commit c5d16ff6, 2026-09-29 22:14 UTC; post-merge CI/CD run 36638381316 green incl. all four image builds; the first scheduled nightly on main, 36658969040, green — 319 of 325 Playwright tests ran and passed, 6 skipped, 0 failed, restore drill PASS); required Operational Contracts red on every branch since 2026-09-30 (14 expired terminal-state deferrals) until PR #768 merges; Phase 29 stays PAUSED on owner actions (staging DNS + 3 operator secrets); next open defect is #764 (GDPR erasure: missing reviews UPDATE policy AND a cross-tenant review lookup — both, never the policy alone)"
-last_updated: "2026-09-30T15:25:22.386Z"
-last_activity: 2026-09-30
-last_activity_desc: "Phase 36 merged (PR #763) and its post-merge CI + first scheduled nightly on main read green by content; STATE advanced past shipping"
-state_head: f93412d13ca76d3182a2c0eea75e0cd302e7cd77
+status: planning
+stopped_at: "Phase 38 shipped as PR #898 (re-verified 14/14 after review fixes WR-01/WR-02; SECURITY threats_open 0 at ASVS L2; regression unit 1495/0 + integration 772/0; runtime rebuilt, freshness 4/4); next: D3 review series on #898, then merge — Phase 31.1 waits on that merge (D-21)"
+last_updated: "2026-10-06T00:30:00.000Z"
+last_activity: 2026-10-06
+state_head: 51baa44cf3829342eb9acdcabf50c28198ba1f14
 progress:
-  total_phases: 17
-  completed_phases: 12
-  total_plans: 137
-  completed_plans: 137
-  percent: 71
+  total_phases: 19
+  completed_phases: 13
+  total_plans: 156
+  completed_plans: 156
+  percent: 72
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-14)
+See: .planning/PROJECT.md (updated 2026-10-05)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** between phases — Phase 36 (Azure Blob Storage Throughout) is complete and merged as PR #763 (`c5d16ff6`). First PR #768 (14 terminal-state deferrals expired 2026-09-30 and red the required Operational Contracts check on every branch); then issue #764 (GDPR erasure fails for any customer with a review; needs V67 AND a tenant-scoped review lookup). Phase 29 plans 29-11 onward are no longer blocked by Phase 36, but stay paused on the owner's staging DNS and the 3 remaining operator secrets (`36-PHASE29-HANDOFF.md`).
+**Current focus:** Phase 38 (Spring Boot 4.1) is complete and verified, but not yet shipped: `/gsd-secure-phase 38`, then `/gsd-ship 38`. After that, the owner-set planning order is 31.1, then 37 (GSD's numeric next is Phase 29).
 
 ## Current Position
+
+Phase: 29 — Deployable Staging, With Its Own Monitoring
+- **Phase 38 (Spring Boot 4.1) COMPLETE 2026-10-05:** 19/19 plans, `38-VERIFICATION.md` passed 14/14 (BOOT4-01..14), code review 0 critical / 2 warning / 4 info (`38-REVIEW.md`, disposition in `38-REVIEW-DISPOSITION.md`). Not yet shipped: `/gsd-secure-phase 38` then `/gsd-ship 38` remain. Phase 29 is GSD's numeric next; the owner-set planning order in HANDOFF.md is 31.1 then 37.
+- The bullets below are Phase 38's execution history, kept for the record.
+- 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
+- Owner decisions are D-01..D-05; D-05 (suppress `/.well-known/oauth-protected-resource` with a 404) was ruled 2026-10-04.
+- The plan-checker passed on iteration 1; the smart-zone size warning was accepted. Decision coverage is 5/5.
+- Owner checkpoints during execution: 38-05 (Jackson 3 defaults vs restore, decided after the measured diff), 38-17 (who drives the shared compose stack), 38-18 (push).
+- 38-01 DONE 2026-10-05: the Boot 3.5.16 production serializers wrote 38 Jackson-2 golden fixtures to `core-java/src/test/resources/jackson2-golden/`:
+  - 7 idempotency fingerprints with their stored hashes;
+  - 9 response and wire bodies;
+  - 6 outbox rows;
+  - 6 AMQP bodies with their headers;
+  - 3 Redis cache values.
+- The capture commit is `e12177e1`. The generator was deleted at `93b913ce` and survives only at that commit.
+- `GoldenFixturesIntegrityTest` imports nothing from Jackson and is permanent. Every fail direction is recorded in `evidence/38-01-golden-capture.txt`.
+- Measured for 38-08: AMQP bodies carry dates as epoch decimals and lose the offset.
+- BOOT4-06/07/08 stay open: they are shared with later plans.
+- 38-02 DONE 2026-10-05, on the unchanged Boot 3.5.16 tree:
+  - `RequestBodyConstraintEnforcementTest` (untagged) is the structural oracle for 38-14: 55 required request-body fields across 20 DTOs, each behind `@Valid` and rejecting null. The rows are in `evidence/38-02-request-body-constraints-boot35.tsv`.
+  - One real request without `customerEmail` returns 400 `errors/validation` naming the field.
+  - `JsonbColumnsReadBackIntegrationTest` reads back the Jackson-2-era stored text of `shops.opening_hours`, `products.allergen_spans` and `vendor_onboarding_gate.evidence`. The capture commit is `f548d6c8`, and the capture method has been deleted. The `jsonb` family was added to `GoldenFixturesIntegrityTest`, which now covers 41 fixtures.
+  - The 401 challenge is asserted exactly: `Bearer`, or `Bearer error="invalid_token"…` with no `resource_metadata`.
+- Measured for 38-06: D-05's "404 matches Boot 3.5" is half-true. Anonymous callers get **401** today and only authenticated callers get 404, so the locked 404 changes the anonymous answer. The `*_boot35Baseline` methods must be updated there.
+- Carried red: `docs-freshness.sh` (309 Java test files and 4195 invocations, against 306 and 4183 recorded), red since 38-01. The phase docs plan (BOOT4-14) regenerates it once.
+- 38-03 DONE 2026-10-05: core-java on Boot 4.1.1 with explicit starters; 67 migrations applied, RlsContractTest 7/7; both version gates' interim red owned by 38-16.
+- 38-04 DONE 2026-10-05: the full suites on Boot 4.1.1 give unit 1337/2 and integration 750/5. Every red is owned:
+  - ProblemDetailAuthenticationEntryPointTest and UnauthenticatedProblemDetailIntegrationTest (4 methods) go to 38-06;
+  - KeycloakAdminClientTest goes to 38-07;
+  - OpenApiSnapshotTest goes to 38-14;
+  - JsonbColumnsReadBackIntegrationTest is green.
+- `Boot4ModuleLivenessIntegrationTest` and `StatemachineSecurityAccessTest` are permanent. Each is shown failing in `evidence/38-04-suite-and-liveness.txt`:
+  - without the Flyway module, 0 of 67 migrations apply;
+  - without the Brave module, a no-op Tracer is caught;
+  - without restclient, the context fails;
+  - without spring-security-access, its 9 classes fail to load.
+- `completed_plans` was 139 after 38-02; 38-03's STATE commit did not advance it. It now reads 141 (38-01..38-04).
+- 38-05 DONE 2026-10-05: the owner chose **jackson3-defaults** (exact words "jackson3-defaults (Recommended)"). Boot's JsonMapper keeps Jackson 3's defaults, and no `spring.jackson` key exists.
+  - `Jackson3WireContractTest` (12 tests, permanent) locks the contract: all 15 fixtures are tree-equal; only OrderDto, ProductDto, ShopDto and ProblemDetail-401 are raw-unequal (alphabetical order); records are byte-identical (outbox, webhook envelope). The trailing-token 400 `errors/unreadable-request` is asserted on the real HTTP path.
+  - Four arms turned it red (fixture-copy value, sort=false, trailing=false, use-jackson2-defaults=true), each restored by content. `Jackson3AcceptanceProbeTest` is deleted.
+  - Carried: ADR-0006 (38-16) and the PR body (38-18/ship) must name the two contract changes: alphabetical key order on class-based responses, and the trailing-token 400. For 38-07: Boot's mapper rejects trailing content, so ImageAnalysisService needs its own reader.
+- 38-06 DONE 2026-10-05: D-04 and D-05 are both in place.
+  - D-04: 401s carry the plain `Bearer` challenge again, with `resource_metadata` stripped by an auth-param parser in a response wrapper, and Boot's Jackson-3 body.
+  - D-05: the owner refined it at a decision checkpoint (exact words "anon-401-parity (Recommended)"). `ProtectedResourceMetadataSuppressionFilter` is not a bean and sits after CorsFilter, ahead of Security 7.1's metadata filter. It answers `GET /.well-known/oauth-protected-resource/**` as follows:
+    - no credentials: the standard 401, the same status, headers and bytes as any protected route;
+    - credentials present: the 404 not-found document, the same as an unmapped path.
+  - With the registration removed (arm R), the path returns 200 with the false `tls_client_certificate_bound_access_tokens: true`.
+  - Recorded residual: a well-formed invalid or expired bearer gets 404 on that path, where 3.5 gave `401 invalid_token`. A test pins it.
+  - CONTEXT D-05 and BOOT4-09 now state both answers.
+  - Unit suite: 1385 tests; the only red is KeycloakAdminClientTest (38-07).
+  - Carried, must change: 38-17's live probe expects 404 for an anonymous curl, but the answer is now 401 (404 only with a bearer). 38-16's ADR-0006 and 38-18's PR body must name the residual.
+- 38-07 DONE 2026-10-05: the spike's Keycloak defect is closed and guarded by content.
+  - KeycloakAdminClient and KeycloakDeprovisionService are on `tools.jackson`. The disable PUT now carries the searched user representation with only `enabled:false`. `KeycloakAdminClientTest` asserts the whole parsed body and checks the JsonNode-as-bean keys first. A Jackson-2 node sent through the same Jackson-3 RestClient turns it red on `nodeType`.
+  - RateLimitInterceptor, ImageAnalysisService and WebhookFanoutListener inject Boot's Jackson-3 `JsonMapper`; DemoImageManifest builds a local one. None of the six main files imports Jackson-2 databind/core.
+  - ImageAnalysisService reads the model text with its own `ObjectReader` (trailing tokens and unknown properties tolerated). The tests run with Boot's mapper and with a strict one, and their expectations are the measured Jackson-2 baseline.
+  - The 429 stays flat: Boot's JacksonAutoConfiguration carries the ProblemDetail mixin. The new `WebhookFanoutListenerEnvelopeTest` finds the delivered envelope tree- and byte-equal (bar the id) to the 38-01 fixture.
+  - The two catches that the import-only migration would silently lose are kept as `JacksonException` catches, and RED proved each one is needed: the webhook serialize skip and the manifest's `IllegalStateException`.
+  - Unit suite: 1403 tests, 0 failures. The 38-04 ledger's 38-07 red is closed.
+  - Carried: 38-17 owes the live offboard read-back. 38-19's sweep must cover `TenantLifecycleAdminIntegrationTest`, which still autowires the Jackson-2 ObjectMapper. `uk.jtoye.core.testsupport.BootJsonMapper` is available to later plans.
+- 38-08 DONE 2026-10-05: the messaging path is on Jackson 3 and the state in flight at deploy time survives it, in both directions.
+  - `RabbitMQConfig.jsonMessageConverter()` is `new JacksonJsonMessageConverter(TRUSTED_PAYLOAD_PACKAGES)`. The trusted block is byte-identical to the plan base. The converter's own default mapper reads the Boot-3.5 epoch-decimal dates to the nanosecond (RESEARCH A2 = yes), so no drain or flush step is needed.
+  - The four outbox publishers, MediaAssetService and both outbox flushers inject Boot's Jackson-3 `JsonMapper`. Every `JsonProcessingException` fallback is restored verbatim as a `JacksonException` catch, and each is pinned by a test that the compiler-minimal swap turned red. The flushers' poison catch stays ahead of `catch (Exception)`.
+  - `AmqpJackson2CompatibilityTest` and `OutboxPayloadCompatibilityTest` (DELIBERATE-JACKSON2) cover all six payloads, both persisted forms and both deploy directions (24 cases), plus a truncated-row poison case per payload. Media is proven through its typed consumer's inferred type; its `__TypeId__` alone is still refused.
+  - `AmqpTypeIdDispatchIntegrationTest`: a raw Boot-3.5 PaymentEvent message on a real RabbitMQ 4.3.4 broker reaches the matching class-level `@RabbitHandler`. Arms A (payment untrusted), B (`__TypeId__` java.net.URI) and C (truncated row) each went red; restores were verified by sha256.
+  - Unit suite: 1444 tests, 0 failures, 1 skipped. BOOT4-06 is complete; BOOT4-04 stays open.
+  - Carried: 38-19's sweep must cover `OrderEventFanoutTopologyIntegrationTest` (consumes with `Jackson2JsonMessageConverter`), `PaymentEventOutboxReliabilityIntegrationTest` and `OnboardingStallOutboxIntegrationTest` (both autowire the Jackson-2 ObjectMapper). 38-12's test allowlist names the two DELIBERATE-JACKSON2 classes.
+- 38-09 DONE 2026-10-05: the Redis cache is on Jackson 3 with SEC-4 intact, and Boot-3.5 cache entries are unreachable by key.
+  - `CacheConfig.jsonRedisSerializer()` is `GenericJacksonJsonRedisSerializer.builder().enableDefaultTyping(cacheTypeValidator()).build()`. The validator is a `tools.jackson` `BasicPolymorphicTypeValidator` with subtype matchers only.
+  - The allowlist was re-derived from the bytes the new serializer writes. Its NON_FINAL typing writes Long, UUID, OffsetDateTime and enums bare, so `java.lang.` and `java.time.` were dropped. `java.math.` stays on the measured BigDecimal value and member, so the prefixes are `uk.jtoye.`, `java.util.` and `java.math.`. Tests pin the exact id set and tie it to the prefix list in both directions; arms dropping `java.math.` or `java.util.` went red.
+  - All three Boot-3.5 cache values are unreadable by the new serializer (`MismatchedInputException`), so `CACHE_KEY_FORMAT_VERSION = "v4"` keys every region `v4:{region}::` from the default configuration. Old entries are never read and expire by TTL (at most 15 min). No deploy flush is needed.
+  - `CacheFormatIsolationIntegrationTest` plants the golden Boot-3.5 ShopDto bytes under the old key on a real Redis. It asserts that the DB name is served, the v4 read-after-write hits, the old entry is untouched and `jtoye.cache.errors` stays 0. With the prefix removed the counter goes from 0 to 1.
+  - Unit suite: 1453 tests, 0 failures, 1 skipped. BOOT4-07 and BOOT4-04 stay open (shared with 38-17, and with 38-10, 38-12 and 38-19).
+  - Carried: 38-17 must check `jtoye.cache.errors == 0` with `v4:` keys on the rebuilt runtime. ADR-0006 (38-16) and the PR body (38-18) must say that the cache needs no flush step and that the allowlist narrowed. A stale key format sits in `docs/AI_CONTEXT.md:256` (38-16 docs pass; see deferred-items.md).
+- 38-10 DONE 2026-10-05: idempotency continuity across the deploy is proven, and the persisted format no longer follows the app-wide mapper.
+  - `IdempotencyJson` (package-private) owns `request_hash` and `response_body`. Its mapper is `JsonMapper.builderWithJackson2Defaults()` minus dates/durations as timestamps, FAIL_ON_UNKNOWN_PROPERTIES and DEFAULT_VIEW_INCLUSION (Boot 3.5's settings), and nothing else. `IdempotencyService` injects no mapper.
+  - `IdempotencyFingerprintGoldenTest` (13): all 7 golden hashes and all 4 stored response types match byte for byte, both ways. `IdempotencyLegacyHashReplayIntegrationTest`: a Boot-3.5 orders.create row replays its 201 under `rls_test_role` with the work never run; the tenant-B control sees 0 rows under the role and gets a fresh reservation.
+  - Arm P (plain Jackson-3 mapper): 4 golden rows red and the replay red with the 422. Measured: plain Jackson 3 sorts CLASS properties but keeps RECORDS in order, so only orders.create, both guest-order fingerprints and the OrderDto body would have broken.
+  - `DsarIntakeService` injects Boot's Jackson-3 `JsonMapper`; the golden Boot-3.5 ack replays unchanged. `JsonbColumnsReadBackIntegrationTest` green 3/3, so no `HibernateJsonFormatConfig`.
+  - Unit suite: 1468 tests, 0 failures, 1 skipped. BOOT4-08 complete; BOOT4-04 stays open (38-12, 38-19).
+  - Carried: ADR-0006 (38-16) and the PR body (38-18) can say idempotency needs no deploy step and the persisted format is frozen (future change = dual-hash window). For 38-12: the three files carry no `com.fasterxml.jackson` import; the new tests import only `tools.jackson`.
+- 38-11 DONE 2026-10-05: no Boot configuration key or autoconfigure exclude in core-java is silently ignored any more, and CI now fails if one comes back.
+  - The 18 keys are renamed with unchanged values. `server.error.include-*` became `spring.web.error.*` (base, staging, prod). `management.zipkin.tracing.endpoint` became `management.tracing.export.zipkin.endpoint`, so `ZIPKIN_ENDPOINT` drives Zipkin again. `logging.file.max-size|max-history|total-size-cap` became `logging.logback.rollingpolicy.*` (prod 30/1GB/10MB, staging 15/500MB/10MB). Staging's Boot-2 prometheus key was deleted; base's key applies.
+  - The 13 Boot-3 excludes are renamed to Boot-4 FQCNs: 1 Rabbit and 2 Redis in the two `application-test.yml` files, plus 10 literals in five security tests. The Redis exclusion takes effect again in every "test"-profile context. Unit suite 1485/0/1 skipped; integration 768 with only the 38-14-owned `OpenApiSnapshotTest` red.
+  - `ConfigKeyContractTest` reads metadata from the production classpath only. It fails on an unknown key, a deprecated key at any level, or an exclude missing from `AutoConfiguration.imports`, and it VOIDs on zero input. `RenamedConfigKeysBindingTest` binds each renamed key per profile and asserts it is bound first.
+  - `scripts/check-boot-config-keys.sh` (0/1/2) is the LAST step of the ci-cd.yaml test job: its cleanTest/--rerun would otherwise replace the uploaded unit results and JaCoCo data. Arms A-F gave 1,1,2,2,1,1. HANDOFF EXPECT is 47. BOOT4-11 complete.
+  - Carried: 38-16 metrics must count 17 new Java tests in 2 new files. 38-17 should read `spring.web.error` and `management.tracing.export.zipkin` out of the rebuilt jar. The 38-18 PR body should name the restored Zipkin endpoint, log retention and error detail. `check-handoff-contract` H-3 (HANDOFF behind origin/main) was already red at the plan base.
+- 38-19 DONE 2026-10-05: removing the bridge in 38-12 breaks no test context. This was measured batch by batch with the INTERIM-JACKSON2-BRIDGE line removed, and each restore was verified by sha256 against the HEAD blob.
+  - Tracer: with the bridge line removed, the unmigrated `ShopControllerIntegrationTest` was RED 6/6 on its own `objectMapper` field, and the context itself started (no main bean needs the bridge). Migrated, it was GREEN.
+  - All 24 bean injectors now inject Boot's Jackson-3 `JsonMapper`: the plan's 23 plus the 38-07 residual `TenantLifecycleAdminIntegrationTest`. Batch A is 11 classes / 92 tests; batch B is 13 / 62. Both are green with the bridge on and off.
+  - `GuestCheckoutIdempotencyIntegrationTest`'s planted legacy hash went red under Boot's alphabetical mapper. It now uses IdempotencyJson's frozen Boot-3.5 recipe (golden-pinned for that body); assertions are kept and production is untouched.
+  - Batch C: nine local mappers are on `JsonMapper.builder()`. Both golden-file tests are migrated, with the comparison green and the golden untouched; a perturbation arm turned each red. OpenApiSnapshotTest gets only a DELIBERATE-JACKSON2 line.
+  - Five Spring-adapter Jackson-2 users moved to the Jackson-3 adapters. The plan's grep could not see them and the bridge removal would not have caught them: OrderEventFanoutTopology, the two Rabbit factory tests, and GlobalExceptionHandlerRequestShape and OptimisticLock (now on `BootJsonMapper`; a bare-mapper arm is red on `$.property`/`$.code`).
+  - The closed DELIBERATE-JACKSON2-LIST has 3 files: AmqpJackson2CompatibilityTest, OutboxPayloadCompatibilityTest and OpenApiSnapshotTest. Verify 6 gives base == head for all 39 changed test files. Unit suite 1485/0/1 skipped (= the wave-4 gate). BOOT4-02/04 stay open (38-12 and later).
+  - Carried, for 38-12: JacksonLineContractTest's test scan must ALSO match package-qualified Spring `Jackson2*`/`MappingJackson2*`/`GenericJackson2*` adapters, because the narrow `com.fasterxml.jackson.{databind,core,datatype}` grep misses AmqpJackson2CompatibilityTest. The allowlist constant is the three list paths verbatim (evidence/38-19-test-jackson3-sweep.txt).
+- 38-12 DONE 2026-10-05: the INTERIM-JACKSON2-BRIDGE line is gone, and the Jackson line's end state is guarded by a permanent test.
+  - RED came first, on the classpath alone: `JacksonLineContractTest` 5/1 failing on `spring-boot-jackson2-4.1.1.jar` (RED_EVIDENCE_OK). The main, config and test scans were already green, so there was no residual of 38-06..38-10 or 38-19. GREEN after the line was deleted: 5/5, `compileJava` clean, runtimeClasspath `forbidden=0` (1 at the plan base).
+  - The test reads `-Djtoye.productionRuntimeClasspath`, main code, every `application*` config file (relaxed keys, all four `preferred-json-mapper` keys, any `jackson2` segment) and the test tree. Its pattern is any `com.fasterxml.jackson` package except annotation, OR a package-qualified Spring `Jackson2*`/`MappingJackson2*`/`GenericJackson2*` adapter. The test side must equal the closed 3-file `DELIBERATE_JACKSON2_LIST`, each file with its reason.
+  - `Boot4ModuleLivenessIntegrationTest` gained a 6th test: Boot's Jackson-3 `JsonMapper` exists, no Jackson-2 `ObjectMapper` bean exists, and the only Jackson-2-typed beans are Spring Data's inert `GeoModule`/`PageModule`, held as a closed set. Spring Data registers them because Jackson 2 stays on the classpath transitively; their Jackson-3 counterparts are live (measured).
+  - Arms A (bridge; the context check red on `jackson2ObjectMapper`), B (main import), C (converter switch), D (adapter import in a test, which the plan's narrow grep cannot see), D2 (FQCN adapter) and E (reason line removed) each went red naming the offender. Restores were sha256-equal and the closing run green.
+  - End-state suites: unit 1490/0/1 skipped, integration 769/1 (OpenApiSnapshotTest, 38-14)/1 skipped, from fresh XML, `missing_jackson_bean=0`. The deltas are this plan's +5 unit and +1 integration tests. The served OpenAPI spec is byte-identical with the bridge on and off. BOOT4-04 is complete; BOOT4-02 stays open (38-13).
+  - Carried: 38-16 metrics: +1 Java test file (5 tests) and +1 method in Boot4ModuleLivenessIntegrationTest. 38-17: the rebuilt jar must carry no `BOOT-INF/lib/spring-boot-jackson2-*.jar`. 38-14: if OpenApiSnapshotTest's normalizer leaves Jackson 2, its path must come off `DELIBERATE_JACKSON2_LIST` (the contract test turns red until it does).
+- 38-13 DONE 2026-10-05: D-02 measured against a classic baseline. On the end-state commit the explicit starters activate 130 auto-configurations and a throwaway classic swap activates 133.
+  - Classic-only 3, all INTENDED: GsonAutoConfiguration (Gson is only transitive via stripe-java and unused in main), IntegrationMetricsAutoConfiguration (an empty unconditional class; Spring Integration is on no classpath), Jackson2AutoConfiguration (D-01). Explicit-only 0. No starter added; the build file is unchanged.
+  - `AutoConfigurationCensusIntegrationTest` (@Tag testcontainers, 2 tests) asserts 21 must-have auto-configurations by name and writes the set to `$JTOYE_CENSUS_OUT`. It clears the test profile's Data Redis exclusion and stands in for CacheConfig's `@Profile("!test")` `@EnableCaching`, or those modules are invisible in both arms.
+  - The classic swap ADDS the classic pair, as the spike did. The literal "replace" was measured not to compile: classic carries modules, not tomcat/lettuce/rabbit/mail/validator/websocket.
+  - Zipkin arm: Brave, Zipkin and Zipkin-with-Brave disappear, NoopTracerAutoConfiguration appears, and the must-have test names all three. Restores were sha256-verified; the closing census was 2/0 and liveness 6/0.
+  - Carried: 38-16 metrics: +1 Java test file (2 integration tests). ADR-0006 may cite explicit 130 vs classic 133 with 3 intended classic-only entries. BOOT4-02 is complete.
+- 38-14 DONE 2026-10-05: the OpenAPI snapshot is regenerated on springdoc 3.1.1 by `updateOpenApiSnapshot` (`f5d537df`, sha256 `60c52aa1…`) and accepted with per-field evidence (`evidence/38-14-openapi.md`).
+  - OpenApiSnapshotTest was red on the old snapshot and is green on the new one, from fresh XML. The test file is unchanged and stays on `DELIBERATE_JACKSON2_LIST`; the allowlist is untouched.
+  - 18 newly required fields across 11 request DTOs all join to the 38-02 Boot-3.5 inventory (awk rc=0). Doctored pairs are UNMATCHED with rc=1. The relation is exact: all 43 inventory pairs are required in the new snapshot, and the 18 new ones are the `@NotBlank`/`@NotEmpty` pairs springdoc 2.8.6 did not document.
+  - The remaining 192 leaves are classified:
+    - introspection schemas behind the `GET /` redirect, which serves no body;
+    - the HttpStatus enum, which is a Spring Framework 7 change (javap: it equals spring-web 6.2.19 and 7.0.9 respectively), not springdoc's;
+    - `format: email` on 5 `@Email` fields;
+    - `exclusiveMinimum: 0` from an existing `@Positive` on `CreateRefundRequest.amountPennies`, the entry the spike did not list, with enforcement measured by a throwaway probe;
+    - `MyAccessDto.grantedShopIds` nullable (explicit `@Schema(nullable = true)`, Java type unchanged).
+  - `openapi-gate.sh` with checksum-verified oasdiff 1.23.0 is rc 0 on the new snapshot and rc 1 on the old one (58 changes, every one mapped to a class). Edge contract gate rc 0 (a doctored-required arm went red), edge-go rc 0, mcp-server ci/build/test rc 0 with 61 tests.
+  - Full integration suite: 771/0/1 skipped. The phase ledger has no red left. BOOT4-13 is complete.
+  - Carried: 38-16 owns the stale mcp-server comments (deferred-items.md) and may cite the contract summary in ADR-0006; no test counts changed. 38-17 must run `check-openapi-snapshot-fresh.sh` against the rebuilt runtime. 38-18's PR body should point reviewers to the classified table in the 38-14 evidence, not the raw oasdiff list.
+- 38-15 DONE 2026-10-05: the CVE floors are proven on the Boot-4 lines, and the image gate was run locally before any push (`evidence/38-15-cve-floors.txt`).
+  - Trivy 0.70.0 with the CI image-gate flags ran on one cache (DB UpdatedAt 2026-10-05 13:07 UTC). The Boot-4 branch image is rc=0, and origin/main's image (03022f21, as last fetched, not re-fetched) is rc=0. No bump was needed.
+  - app.jar holds spring-boot-4.1.1 and no 3.5 or jackson2-bridge jar. Trivy's inventory read 246 nested jar packages; a clean row is not an empty read.
+  - dependencyInsight was identical before, after the arms and after the edit: tomcat 11.0.26, amqp-client 5.34.0, databind 2.22.3 and 3.1.7, netty-codec-http 4.2.17.Final with no pin.
+  - Arms, each restored by sha256:
+    - near-miss `jackson3-bom.version`: 3.1.5, 5 HIGH;
+    - near-miss `tomcat-version`: 11.0.24, 3 CRITICAL;
+    - amqp pin removed: 5.30.0, 4 HIGH;
+    - near-miss `jackson2-bom.version`: 2.21.5, 5 HIGH (added; the plan's arms did not cover the Jackson-2 floor);
+    - a tomcat 11.0.24 image: the gate exits 1, naming CVE-2026-65182, -65905 and -68525.
+  - Tomcat 11.0.25 passes the gate. 11.0.26 is held for the advisory-only CVE-2026-76183 and -86350, which Trivy does not carry. CVE-2026-91777 is confirmed on Jackson 3 and cleared by 3.1.7 (closes RESEARCH A3).
+  - The build-file change is comment-only: one dated Boot-4 paragraph per pin, with the history kept. The three scan images are removed; the compose image is untouched.
+  - BOOT4-12 is NOT yet marked complete: `requirements.ready-ids` is 0/1, because 38-18 (the CI image gate on push) also declares it.
+  - Carried: 38-16 may cite this evidence for BOOT4-12 and ADR-0006 (Tomcat on the advisory, not the gate). 38-18's PR body: the local gate was rc=0 on DB 2026-10-05; the post-merge gate may see a newer DB. Cosmetic, out of scope: the core-java Dockerfile LABEL still says "Spring Boot 3 backend".
+- 38-16 DONE 2026-10-05: the version gates follow the Boot 4.1.1 plugin, the docs describe the Boot-4 tree, ADR-0006 records the migration, and the metrics are regenerated (`evidence/38-16-docs.txt`).
+  - Horizons `spring-boot` row: 4.1.1, cycle 4.1, EOL 2027-07-31, #706 exemption deleted. check-doc-versions reads `resilience4j-spring-boot4`. Both gates went from 38-03's rc 2 to rc 0.
+  - Arms: a stale SpringDoc claim rc=1; a citation one line off rc=1; a half-bumped `core-java/build.gradle.kts:2` rc=2 (H-5 spring-boot); a stale Spring Boot claim rc=1; an unresolvable coordinate rc=2. An added H-2 `eol_date` arm (rc=1) proved the endoflife.date fetch read spring-boot/4.1 online. Every restore was verified by sha256.
+  - CLAUDE.md / AGENTS.md (outside ORGOS; block sha256 unchanged) / STACK.md now give versions read from the resolved classpath: Spring Boot 4.1.1, Framework 7.0.9, SpringDoc 3.1.1, JUnit Jupiter 6, Tomcat 11.0.26, netty 4.2.17 with no pin, Jackson 3 (Jackson 2 transitive-only), the explicit starters, Hibernate 7, Flyway 12, Security 7.1, AMQP 4.1, Spring Data 2026.0, Lettuce 7. The core-java image label now says "Spring Boot 4 backend".
+  - check-doc-citations: the 6 failures were all phase-caused (the pre-phase base 767f5658 is rc=0) and are re-pointed by content; 46/46 verified. Both deferred doc items are closed: the AI_CONTEXT cache-key format and the two mcp-server snapshot comments.
+  - ADR-0006 covers D-01..D-05, with D-05 as refined; the "jackson3-defaults" verdict; the contract changes (key order, trailing 400, `/.well-known` 401/404 plus the residual, ISO broker dates, OpenAPI, restored config keys); Deploy notes (no flush, no drain, idempotency replay, image gate pre-run); Rollback notes; and the statemachine risk with EnumMap as a separate decision. One Flyway 11/12 rollback item is recorded UNVERIFIED. CONCERNS.md has a statemachine entry, and its Boot 3.5 horizons row is closed.
+  - docs-freshness is green again (red since 38-01): Java 2005 -> 2108 methods, 306 -> 325 files, total 4183 -> 4286, cross-checked by git-grep at 767f5658 and HEAD. check-doc-metrics 37/37.
+  - Static sweep: 42 gates, 32 rc=0. All 10 non-zero gates give the same rc on the plan base:
+    - 6 environment VOIDs;
+    - check-alert-metrics: no order placed since the core-java restart;
+    - check-openapi-snapshot-fresh: red on the pre-rebuild container by 38-14's design (rc=0 at pre-phase), 38-17's;
+    - check-branch-behind-base: 4 behind origin/main, 38-18's;
+    - check-handoff-contract: the H-3 red already on the not-owned-by-phase-38 list.
+  - Requirements: BOOT4-10 is marked complete. BOOT4-01 and BOOT4-14 are blocked on 38-17 and 38-18.
+  - Carried for 38-17: expect 401/404 on `/.well-known`; re-run openapi-snapshot-fresh and alert-metrics on the rebuilt stack (NoOrdersCreated needs one order after the restart). For 38-18: the PR body names ADR-0006's contract-change list; merge from base first.
+- 38-17 DONE 2026-10-05: the shared compose stack runs the Boot-4 branch, proven by content (`evidence/38-17-runtime.txt`).
+  - Owner (Task 1, exact words): "takeover-from-worktree (Recommended)" and "Stay on Boot-4". The stack stays on the branch; main is not rebuilt.
+  - The branch was 4 behind origin/main; merged at `25566e2c`. Conflicts kept the Boot-4 claims and took Next.js 16.3.7. Behind-base now 0, and doc gates green.
+  - All four built services were rebuilt with `--no-deps --force-recreate` from the worktree (COMPOSE_PROJECT_NAME + COMPOSE_ENV_FILES; a positive control by rows and config-hash came first). Freshness PASS 4/0; a stopped edge-go gives VOID rc 2.
+  - The jar lists `spring-boot-4.1.1.jar` and no 3.5 or jackson2 jar. All six `application*.yml` are sha256-equal to the branch.
+  - Live probes: anonymous 401 `Bearer`, credentialed `/.well-known` 404, garbage token without `resource_metadata`. `check-openapi-snapshot-fresh` PASS.
+  - Live Keycloak offboard: the user reads `enabled:false` with id, username and tenant_id intact and no garbage keys; the control user stays enabled; the stamp is set. KC24 strips `tenant_id` on admin-API create, so partialImport was used. `KC_ADMIN_ENABLED` is restored to false.
+  - Tracing: a traceId on request lines. Cache: v4: keys, `jtoye.cache.errors` 0, and a corrupted-entry arm drove it to 1. Two orders were placed; `check-alert-metrics` PASS.
+  - Gate sweep: 47 gates, 39 rc 0, 6 environment VOIDs as in 38-16, 2 worktree VOIDs re-run with the main .env.
+  - Requirements: BOOT4-05/07/09 are marked complete. BOOT4-14 is blocked on 38-18.
+  - `total_plans` was 155, one short of 137 + 19 since 38-19 was added. It is corrected to 156 BY HAND; completed is 155.
+  - Throwaway tenant `eda9d895-c55c-4f71-8eb0-35591fad1acb` stays OFFBOARDED by design.
+- 38-18 DONE 2026-10-05: every CI-only proof of the phase ran on the pushed branch and was read to its outcome (`evidence/38-18-ci-and-nightly.txt`).
+  - Owner (Task 1, exact words): "push-and-dispatch (Recommended)". One push landed, a fast-forward 767f5658..acee00c5, after 0 behind origin/main was confirmed. There was no force and no --no-verify, and no PR was opened.
+  - The first push was REFUSED by pre-push P-3 gitleaks on 3 false positives: `golden-guest-key-0001` in the byte-guarded 38-01 fixtures, and a class name in 38-05-SUMMARY prose. acee00c5 adds an exact content allowlist, a fingerprint and an inline allow. The squash simulation is real rc 0, changed key rc 1, inline removed rc 1. It was measured on 8.30.1 only; CI pins 8.27.2.
+  - CI/CD 37348823924: success, every job read. On Temurin 25.0.4+1, unit is 1490/0/1 and integration 771/0/6 (1 @Disabled + 5 MailHog assumptions, unchanged from main). OpenAPI gate OK; ops contracts 25/25; check-boot-config-keys PASS. The core-java Trivy gate (v0.70.0) reads 0 in the OS and 0 in app.jar.
+  - Nightly 37348829067 (dispatch, headSha == HEAD): the Boot-4 stack built and was healthy. report.json reads 325 executed, 319 passed, 0 failed, 6 skipped, and the skip budget is PASS 6/6. The OpenAPI-vs-running, URL, Content-Type, cart-identity and restore-drill gates all PASS.
+  - Requirements: BOOT4-01, BOOT4-12 and BOOT4-14 are marked complete (ready-ids 3/3). All 14 BOOT4 requirements are now checked.
+  - The ship checklist is in evidence §7: Closes #706, supersedes #739, a changelog heading with the PR number, a squash merge, the D3 review series, the contract notes, a watch on the PR's gitleaks 8.27.2 job, and no attribution.
+  - The close-out docs commits after acee00c5 are local; the ship step pushes them.
+- Next: phase 38 verification, then /gsd-ship per evidence/38-18 §7. STATE is still hand-edited: `state.record-session` and `state.update-progress` were not run.
 
 Phase: 36 (Azure Blob Storage Throughout) — **COMPLETE 18/18, MERGED as PR #763** (squash commit `c5d16ff6`, 2026-09-29 22:14 UTC; re-verified passed 6/6 after the 6 review fixes; UAT approved; SECURITY threats_open 0; D3 review series ended on round 2 with 0 admissible). Post-merge, read 2026-09-30: CI/CD run 36638381316 success — every test job plus all four image builds (core-java, edge-go, frontend, pg-backup; pg-backup's `:15-blob` published only after its Trivy gate, digest = the scanned image); the first SCHEDULED nightly on `main` (run 36658969040) success with 319 of 325 Playwright tests run and passed (0 failed, 6 skipped, budget 6) and the restore drill PASS (arm A 0, arm B 23 = live 23) — the five scheduled nightlies before it (09-25..09-29) were red on #683's cause. Then Phase 29 (Deployable Staging) — PAUSED at 9/16, body on branch `phase-29-research`, blocked on the owner (staging DNS + 3 operator secrets per 36-PHASE29-HANDOFF.md).
 Wave 7 DONE 2026-09-29: 36-17 metrics regenerated once from source (4042 -> 4130 logical invocations: Java +68/+8 files, Go +14/+2, Jest +5, Playwright +1/+1, MCP 0) and every quoted count reconciled; docs-freshness, check-doc-metrics and the jest/playwright/vitest count oracles green. 36-PHASE29-HANDOFF.md: operator secrets 7 -> 3 (counted from phase-29-research staging-secrets.sh, 23 -> 19 required), Phase 29 must add --enable-workload-identity, 35-file conflict map, 20 Phase-29 lines the residue gate will reject (rewrite, never widen). BLOB-09 and BLOB-10 complete; BLOB-02/04/06 partial. phase-29-research untouched at ebee67fe.
@@ -563,7 +731,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Ready to execute
+Status: Ready to plan
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -574,9 +742,9 @@ Status: Ready to execute
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-09-30 - Completed quick task 260930-l63: Fix #771, erasure deletes only a review's own order-path photos not referenced by the catalogue; foreign photo URLs refused at creation (400). Previously: 2026-09-30 - Completed quick task 260930-bvp: Fix #764 GDPR erasure for customers with reviews (V67). Previously: 2026-09-30 — Phase 36 merged as PR #763 (`c5d16ff6`); post-merge CI/CD and the first scheduled nightly on `main` read green by content. Previously: 2026-09-29 — Phase 36 re-verified and marked complete. Previously: 2026-09-29 - Completed quick task 260929-i9c: jackson-bom 2.21.6 pin clears CVE-2026-68497 from the core-java image.
+Last activity: 2026-10-05
 
-Progress: [████████░░] 75%
+Progress: [███████░░░] 72%
 
 ## Milestone v2.3 Phase Map
 
@@ -625,6 +793,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | 26 | **9/9** | ~9h05m | ~61min |
 | 28 | 11 | - | - |
 | 36 | 18 | - | - |
+| 38 | 19 | - | - |
 
 *Updated after each plan completion*
 | Phase 24 P01 | ~20min | 3 tasks | 10 files |
@@ -674,12 +843,35 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 26 P08 | ~2h05m | 3 tasks | 6 files |
 | Phase 26 P09 | ~1h35m | 3 tasks | 7 files |
 | Phase 33 P06 | 2h | 3 tasks | 12 files |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 38 P03 | 14 min | 2 tasks | 108 files |
+| Phase 38 P04 | 39 min | 3 tasks | 3 files |
+| Phase 38 P05 | 27 min | 3 tasks | 3 files |
+| Phase 38 P06 | 43 min | 2 tasks | 9 files |
+| Phase 38 P07 | 27 min | 2 tasks | 17 files |
+| Phase 38 P08 | 30 min | 3 tasks | 20 files |
+| Phase 38 P09 | 21 min | 2 tasks | 5 files |
+| Phase 38 P10 | 21 min | 2 tasks | 7 files |
+| Phase 38 P11 | 53 min | 3 tasks | 16 files |
+| Phase 38 P19 | 45 min | 3 tasks | 40 files |
+| Phase 38 P12 | 47 min | 2 tasks | 4 files |
+| Phase 38 P13 | 14 min | 2 tasks | 4 files |
+| Phase 38 P14 | 40 min | 2 tasks | 3 files |
+| Phase 38 P15 | 13 min | 2 tasks | 2 files |
+| Phase 38 P16 | 20 min | 3 tasks | 21 files |
+| Phase 38 P17 | 21 min | 3 tasks | 5 files |
+| Phase 38 P18 | 58 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
 ### Roadmap Evolution
 
 - **Phase 37 added (2026-10-04): Real-world operations readiness.** Added by owner request after two passes of persona user-testing (15 personas, epic #880, PR #881). It holds the 87 of 123 findings clusters that fitted no existing phase, grouped as 37-A to 37-G: kitchen ops, multi-site/staff/finance, checkout integrity, abuse resistance, integrator surface, accessibility, and catalogue correctness. It carries 9 of the 16 P0s; the others are DSAR (#777, #778), the allergen acknowledgement (#784, #785) and #787 and #789 (Phase 31 gap-closure) and #788 (Phase 33). Phase 31's 17 clusters need a 31.1 gap-closure plan. `phase.add` derived 38 because a sibling worktree had the unmerged Spring Boot branch checked out, and that branch already held Phase 37 (the tool scans worktrees, not branches). The persona phase was set to 37 by hand, because epic #880, 75 further issue bodies and the disposition document already name it, and the Spring Boot phase was renumbered to 38 by owner ruling (2026-10-04); its roadmap bullet on `main` reserves 38. Not yet planned: next is `/gsd-plan-phase 37`.
+
+- **Phase 38 added (2026-10-01, renumbered from 37 on 2026-10-04 because Phase 37 went to the persona-testing findings, #881): Spring Boot 4.1 Migration** (#706, unblocks #739). A throwaway spike first established that the move is feasible on 4.1.1: unit 1330/2 fail, integration 745/1 fail, Flyway proven to run, and spring-statemachine 4.0.2 working on Framework 7. Owner decisions taken the same day: Jackson 3 now, explicit starters, keep statemachine, keep plain Bearer. See `38-CONTEXT.md`. Not yet planned: next is `/gsd-plan-phase 38`.
 
 - **Phase 36 added (2026-09-28): Azure Blob Storage Throughout** — owner ruling after the 2026-09-28 state analysis: object storage moves to Azure Blob (staging/prod) with Azurite locally and in the nightly; MinIO and the never-provisioned AWS S3 target are retired. Forced by MinIO withdrawing its community images (quay.io 401 since ~2026-09-24, the cause of #683 and of the blocked local restart). Blocks Phase 29 plans 29-11 onward. Not yet planned: next is `/gsd-plan-phase 36`.
 
@@ -701,6 +893,10 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
+
+- [Phase 38 D-01]: Jackson 3 throughout core-java; Jackson 2 survives only as a BOM floor (2.22.3) for transitive users. Idempotency hashing uses the frozen `IdempotencyJson` mapper, which must not be edited without a dual-hash window.
+- [Phase 38 D-02]: Explicit per-module Boot 4 starters, never `spring-boot-starter-classic`; module liveness tests fail by name if a module disappears.
+- [Phase 38 D-05]: `/.well-known/oauth-protected-resource` is suppressed (401 without credentials, 404 with them); RFC 9728 metadata stays out of scope.
 
 - [v2.3 Scope]: Vendor Ops + AI interleaved, thinnest/highest-pain first — onboarding (zero-migration) leads, then vendor-scoped access, image architecture, AI track, infra. Locked by user 2026-07-14; do not re-litigate.
 - [v2.3 Roadmap]: MOBL-01 folded into Phase 22 — the responsive nav pairs with the shop-context switcher (same dashboard-nav surface).
@@ -803,6 +999,63 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: 33-06: check-openapi-snapshot-fresh.sh asserts SUBSUMPTION (committed is a sub-tree of live) because compose runs the dev profile while the snapshot is generated under test; an equality gate would be permanently red on a correct tree
 - [Phase ?]: 33-06: a runtime gate is WIRED into e2e-nightly.yml rather than declared exempt — check-gate-enforcement short-circuits on refs > 0 before reading the exemption table, so an entry would be both unnecessary and untrue
 - [Phase ?]: 33-06: ShopWithDistance carries id + slug + distanceKm, not the DTO's fields — shops.opening_hours is jsonb and a second shop-mapping path would drift, silently costing the located results their opening hours
+- [Phase 38]: 38-01: the jackson2-golden fixtures are an ORACLE captured at e12177e1 (Boot 3.5.16, jackson-databind 2.21.7). Later plans compare against them and never re-capture them on a Boot-4 tree.
+- [Phase 38]: 38-01: the membership golden sample carries ONE grant. A Map.copyOf with two or more entries iterates in a per-JVM random order, so its cache bytes are not reproducible.
+- [Phase 38]: 38-01: fixture families are asserted by exact file name rather than count, so a misnamed capture fails too.
+- [Phase 38]: 38-03: The Boot-3 pin jackson-bom.version=2.21.7 re-points the Jackson 3 BOM under Boot 4 to a nonexistent artifact, so every managed version vanishes; re-keyed to jackson-2-bom.version 2.22.3 plus jackson-bom.version 3.1.7 (T-38-08 observed live)
+- [Phase 38]: 38-03: spring-boot-starter-webclient declared alongside webflux under D-02's declare-what-you-use rule
+- [Phase 38]: 38-03: check-dependency-horizons.sh needs python3+PyYAML, which this host provides only inside a conda env; run under an existing env, no gate variable set
+- [Phase 38]: 38-04: no Boot-4 fallout needed fixing (1330+7 unit, 745+5 integration; reds are only the named expected ones); no main or build change
+- [Phase 38]: 38-04: the Tracer liveness probe asserts the Brave class name, because without the Brave module a no-op Tracer$1 bean still exists and a presence-only check passes
+- [Phase 38]: 38-04: a missing spring-boot-restclient fails context startup (RestTemplateBuilder via SecurityConfig), so it is loud today; the probe guards the day that injection goes away
+- [Phase 38]: 38-04: statemachine-core 4.0.2 references 16 distinct security.access classes (37 jdeps lines; 9 from spring-security-access); the spike's "24" was not reproducible
+- [Phase 38]: 38-05: the owner chose jackson3-defaults ("jackson3-defaults (Recommended)", 2026-10-05). Boot's JsonMapper keeps Jackson 3's defaults, with no spring.jackson key and no preferred-json-mapper
+- [Phase 38]: 38-05: two contract changes are accepted: alphabetical key order on class-based responses (OrderDto/ProductDto/ShopDto/ProblemDetail), and a trailing token after a request body returning 400 errors/unreadable-request. ADR-0006 and the PR body must name both
+- [Phase 38]: 38-05: records keep their exact bytes (6 outbox payloads, the webhook envelope that is the HMAC input, record responses); Jackson3WireContractTest asserts it permanently
+- [Phase 38]: 38-06: the owner chose anon-401-parity for D-05 ("anon-401-parity (Recommended)", 2026-10-05): /.well-known/oauth-protected-resource[/**] answers the standard plain-Bearer 401 without credentials and the 404 not-found document with them; no corrected metadata, and the false claim is unreachable
+- [Phase 38]: 38-06: recorded residual: the suppression answers before authentication, so a well-formed invalid or expired bearer gets 404 on that path (3.5 gave 401 invalid_token); ADR-0006 and the PR body must name it, and 38-17's live probe must expect 401 for an anonymous caller
+- [Phase 38]: 38-06: the suppression filter is anchored after CorsFilter, because addFilterBefore(OAuth2ProtectedResourceMetadataFilter) is refused at build ("does not have a registered order"); it rebuilds the framework's own matcher (GET + /**)
+- [Phase 38]: 38-07: the Keycloak disable PUT is asserted as the whole searched representation with only enabled flipped, and the JsonNode-as-bean keys are checked first; the Jackson-2-node arm reproduces the spike's garbage body
+- [Phase 38]: 38-07: ImageAnalysisService's leniency is its own ObjectReader (FAIL_ON_TRAILING_TOKENS and FAIL_ON_UNKNOWN_PROPERTIES off), proven against Boot's mapper and a strict one; Boot's JsonMapper keeps the 38-05 defaults
+- [Phase 38]: 38-07: catches the compiler no longer demands (checked -> unchecked JacksonException) are kept on purpose and pinned by tests (WebhookFanoutListener serialize skip, DemoImageManifest IllegalStateException)
+- [Phase 38]: 38-08: the AMQP converter uses Spring AMQP 4's own default mapper; it reads the Boot-3.5 epoch-decimal dates (A2 = yes), so in-flight messages and outbox rows need no drain step
+- [Phase 38]: 38-08: media's in-flight messages are proven through the inferred type its typed listener sets; uk.jtoye.core.media stays untrusted and its __TypeId__ alone is refused
+- [Phase 38]: 38-08: each outbox flusher's JacksonException poison catch stays ahead of catch (Exception); Spring AMQP 4 wraps its own Jackson failures, so only readValue reaches it
+- [Phase 38]: 38-09: the cache allowlist follows the ids the Jackson-3 serializer actually writes (NON_FINAL typing): uk.jtoye., java.util., java.math.; java.lang. and java.time. dropped and now refused; a test ties prefixes to observed ids in both directions
+- [Phase 38]: 38-09: Boot-3.5 cache entries are made unreachable by a v4: key prefix (CACHE_KEY_FORMAT_VERSION) on the default cache configuration, not by a deploy flush; bump the constant on any future cache-format change
+- [Phase 38]: 38-09: no customize() on the cache serializer: Jackson 3 writes ISO-8601 dates natively
+- [Phase 38]: 38-10: the idempotency store's JSON format is frozen in IdempotencyJson (builderWithJackson2Defaults + Boot 3.5's four mapper settings, nothing more); never edit it in place, a format change needs a dual-hash window
+- [Phase 38]: 38-10: continuity comes from the hash matching; the legacyRequestBody seam is untouched
+- [Phase 38]: 38-10: HibernateJsonFormatConfig not created; the jsonb read-back is green on Boot 4 / Hibernate 7
+- [Phase 38]: 38-11: the config-key gate fails on deprecated keys at ANY level, not only level=error, because all 18 Boot-4-unbound keys are still in the 4.1.1 metadata
+- [Phase 38]: 38-11: staging's management.metrics.export.prometheus.enabled was deleted, not renamed (Boot-2 name, dead since 3.0; base's key applies)
+- [Phase 38]: 38-11: check-boot-config-keys is the last step of the ci-cd.yaml test job, after both uploads, because its cleanTest/--rerun replaces the unit results and JaCoCo test.exec
+- [Phase 38]: 38-11: config-binding proofs assert BindResult.isBound() before the value; several Boot-3.5 values equal Boot's defaults
+- [Phase 38]: 38-19: a test that plants data a Boot-3.5 pod wrote (the guest legacy request_hash) uses the frozen Boot-3.5 recipe (IdempotencyJson's), never Boot's app-wide Jackson-3 mapper
+- [Phase 38]: 38-19: both golden-file tests migrated (comparison green, golden untouched); neither is on the DELIBERATE-JACKSON2 list
+- [Phase 38]: 38-19: Spring-adapter Jackson-2 users in tests are migrated, not allowlisted; the closed DELIBERATE-JACKSON2-LIST is 3 files
+- [Phase 38]: 38-19: 38-12's contract-test scan must include package-qualified Spring Jackson-2 adapters, or a regression through them passes unseen
+- [Phase 38]: 38-12: JacksonLineContractTest scans main and test code with one pattern (any com.fasterxml.jackson package but annotation, or a package-qualified Spring Jackson-2 adapter); test-side users must equal the closed DELIBERATE_JACKSON2_LIST
+- [Phase 38]: 38-12: Spring Data's Jackson-2 GeoModule/PageModule beans stay registered (Jackson 2 is transitively on the classpath) and are inert; held as a closed set in the context check, not suppressed
+- [Phase 38]: 38-12: no residual; the bridge removal needed no main-code change
+- [Phase 38]: 38-13: the classic comparison ADDS spring-boot-starter-classic/-test-classic to the explicit build (the spike's route); a literal replacement drops every technology library and cannot compile
+- [Phase 38]: 38-13: all 3 classic-only auto-configurations are intended (Gson, an empty Spring Integration metrics class, Jackson 2); no starter added
+- [Phase 38]: 38-13: the census context undoes the test profile's Redis exclusion and @Profile("!test") caching, and asserts no auto-configuration is excluded
+- [Phase 38]: 38-14: springdoc 3.1.1's contract is accepted through the documented route (the regenerated snapshot in the same PR, no gate exception or config change); every item is proven to document behaviour the server already had, so it was not an owner decision
+- [Phase 38]: 38-14: the HttpStatus enum change in the snapshot is Spring Framework 7's (javap against spring-web 6.2.19 and 7.0.9), not springdoc's
+- [Phase 38]: 38-14: OpenApiSnapshotTest and JacksonLineContractTest's allowlist are untouched; the Jackson-2 normalizer reads springdoc 3.1.1 output
+- [Phase 38]: 38-15: no CVE bump needed: branch and main images both pass the Trivy 0.70.0 gate locally on DB 2026-10-05 13:07 UTC
+- [Phase 38]: 38-15: Tomcat stays 11.0.26 on the Tomcat advisory (CVE-2026-76183/-86350), not on the gate, which 11.0.25 already passes; the pin comment says so
+- [Phase 38]: 38-15: CVE-2026-91777 is on the Jackson-3 line and fixed in 3.1.7 (RESEARCH A3 closed); both Jackson keys proven load-bearing by near-miss arms
+- [Phase 38]: 38-16: /.well-known is documented per the owner's 38-06 ruling (401 without credentials, 404 with them, invalid-token 404 residual), superseding the plan text "is 404"
+- [Phase 38]: 38-16: dated verified records (docs/architecture/ARCHITECTURE.md, PRD.md, SYSTEM_DESIGN_V2 §1, CHANGELOG, HANDOFF, docs/analysis etc.) stay history; .planning/PROJECT.md is ungated and was already stale
+- [Phase 38]: 38-16: check-openapi-snapshot-fresh is red on the pre-rebuild container by 38-14's design (rc=0 at pre-phase 767f5658), not pre-phase; 38-17 clears it on the rebuilt stack
+- [Phase 38]: 38-17: owner chose takeover-from-worktree and Stay on Boot-4; the compose stack runs the branch and main is not rebuilt
+- [Phase 38]: 38-17: origin/main merged at 25566e2c (plan: merge when behind); rebuild scoped to the 4 built services with --no-deps --force-recreate so non-built services keep main-checkout binds
+- [Phase 38]: 38-17: /.well-known verified per the 38-06 ruling (anonymous 401, credentialed 404); throwaway Keycloak users via partialImport because KC24 strips the unmanaged tenant_id on admin-API create
+- [Phase 38]: 38-18: owner chose push-and-dispatch; one fast-forward push (acee00c5), no PR; CI/CD and the nightly read to their jobs and report
+- [Phase 38]: 38-18: pre-push gitleaks false positives fixed at the cause with a content allowlist anchored to exactly golden-guest-key-0001 (fixtures are byte-guarded; covers the squash commit), plus a fingerprint and an inline allow for one prose line
+- [Phase 38]: 38-18: CI integration's 6 skips are 1 @Disabled + 5 MailHog assumptions unchanged from origin/main, so they are explained rather than absorbed
 
 ### Pending Todos
 
@@ -812,6 +1065,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ### Blockers/Concerns
 
+- **[Phase 38] Two open code-review warnings (`38-REVIEW.md`, disposition `open`):** WR-01, during a rolling deploy or rollback a cache eviction removes only the evicting pod's key generation (`v4:` vs Boot-3.5 keys), so `shopMembership` can stay stale up to 5 min and products/shops 10-15 min on the other generation's pods. ADR-0006 says "no flush needed" without naming that window; decide before the first staging/prod rollout. WR-02, `IdempotencyJson` does not enable `DETECT_PARAMETER_NAMES` (Boot 3.5 did); latent for current adopters, and cheapest to fix before ship.
 - **✅ RESOLVED by 23-16 (2026-07-21): full `:core-java:integrationTest` is now GREEN (331 tests, 0 failed).** The 13 failures across 7 legacy classes were migrated to the production UUID-subject JWT auth shape (test-only; zero main-source change → 23-08's fail-closed boundary preserved, not relaxed). Decision taken: migrate the legacy tests (not relax the gate). Historical context retained below. **🛑 (was) 23-15 PHASE-GATE BLOCKED (2026-07-21): full `:core-java:integrationTest` was RED — 13 failures the phase record never disclosed.** 7 legacy test classes failed `expected 200/201/400 but was 403`: `ShopControllerIntegrationTest` (3), `LocationHeaderContractTest` (4), `ScopedCatalogAccessIntegrationTest` (2), `SecurityHeadersIntegrationTest` (1), `ProductSearchFtsIntegrationTest` (1), `OnboardingGoLiveIntegrationTest` (1), `TenantLifecycleAdminIntegrationTest` (1). **Root cause:** 23-08's CR-03 fail-closed change now DENIES authenticated non-JWT principals — `ShopAccessService.requireVendorUserId()` throws a typed 403 when `auth.getPrincipal()` is not a `Jwt`, and `isInternalCaller()` bypasses only `auth == null`. The 19 pre-existing `@WithMockUser` integration tests (non-JWT `UsernamePasswordAuthenticationToken`) were never migrated to the UUID-subject `.jwt()` pattern the new access suites use. **Deterministic** — `ShopControllerIntegrationTest` fails 3/6 in isolation, identical to the full run (not parallelism). The gap wave only ran scoped `--tests` runs, so the full task was never green; the STATE claim "only OpenApiSnapshotTest is red" was inaccurate. 23-15 Task 2 (count reconcile) + Task 3 (VSA-02/VSA-04 completion) were HELD per anti-false-green while the suite was red. **Decision taken + executed as 23-16:** migrate the 7 legacy classes to UUID-subject JWTs (test-only) — the gate stands. Both HELD tasks are now UNBLOCKED on a green suite: 23-15 Task 1 (OpenAPI snapshot regen) is DONE + green (commit `adc1c58`), and 23-16 (commits `20ece8a`/`edb4b63`) made the full `integrationTest` task green, so 23-15 Tasks 2-3 (docs-freshness/metrics schema 56→57 + planning-record reconcile + VSA-02/VSA-04 closure) may now resume.
 - **RULE 0 — one runtime at a time on local**: compose and the minikube `jtoye` cluster share one dev Postgres. Never run compose `core-java`/`edge-go` AND cluster core/edge writers at once. Compose is canonical; cluster is STOPPED at handoff.
 - **Rebuild-all rule**: after ANY code change, rebuild ALL containers before E2E/QA. Cluster core is a pre-V51 image tag — re-tag + `minikube image load` fresh images before any k8s redeploy.
@@ -872,9 +1126,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-09-30
-Stopped at: Phase 36 merged (PR #763) and its post-merge runs read green; next is issue #764 (V67). Phase 29 PAUSED on owner actions.
-Resume file: HANDOFF.md (2026-09-30 delta) + .planning/phases/36-azure-blob-storage-throughout/36-PHASE29-HANDOFF.md
+Last session: 2026-10-05T19:51:19.160Z
+Stopped at: Phase 38 complete (verified 14/14, review 0/2/4), not yet shipped. Next: /gsd-secure-phase 38, then /gsd-ship 38; then plan Phase 31.1 per the owner order
+Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
 

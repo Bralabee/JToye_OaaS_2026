@@ -1,0 +1,1 @@
+{"@class":"uk.jtoye.core.security.access.Membership","isGroupAdmin":false,"groupAdminFromJit":false,"perShopRole":{"@class":"java.util.ImmutableCollections$Map1","38010000-0000-4000-8000-00000000a002":["uk.jtoye.core.security.access.ShopRole","SHOP_MANAGER"]}}

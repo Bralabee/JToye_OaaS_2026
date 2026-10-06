@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -47,7 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Runs as the Testcontainers superuser (RLS bypassed) — CoW/dedup MECHANICS, not tenant
  * isolation. No {@code Authentication} on the thread, so the accept's VSA-02 shop gate takes the
  * internal-caller bypass (the shop gate is proven separately). {@link StorageService} is a
- * {@code @SpyBean} (no live object store).
+ * {@code @MockitoSpyBean} (no live object store).
  */
 @SpringBootTest
 @Testcontainers
@@ -76,7 +76,7 @@ class MediaDedupAttachIntegrationTest {
     @Autowired private MediaEventOutboxRepository mediaEventOutboxRepository;
     @Autowired private JdbcTemplate jdbc;
     @PersistenceContext private EntityManager em;
-    @SpyBean private StorageService storageService;
+    @MockitoSpyBean private StorageService storageService;
 
     private UUID tenant;
 
