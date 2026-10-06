@@ -1,0 +1,30 @@
+== Arm F: a forbidden phrase added in a comment of lib/allergen-copy.ts
+rc=1
+  ● no phrase the platform cannot stand behind appears anywhere in the module › absent: allergen[-\s]free
+Tests:       1 failed, 12 passed, 13 total
+== Arm F2: 'safe for you' added to an exported string
+rc=1
+  ● no phrase the platform cannot stand behind appears anywhere in the module › absent: safe for you
+Tests:       1 failed, 12 passed, 13 total
+== Arm T: the warning arriving auto-ticks the declaration (T-31.1-69)
+rc=1
+  ● #787 vendor side: the save-time warning (D-09) › the Milk box is ticked by the explicit action, never by the warning arriving
+Tests:       1 failed, 8 passed, 9 total
+== Arm L: the list keeps the bare old label
+rc=1
+  ● Products Page › should display "No allergens declared" when allergenMask is 0
+  ● Pitfall 11: the vendor list never says 'No allergens' for the persona's dish (D-18) › an empty mask with no warning reads 'No allergens declared'; the bare old label is gone
+Tests:       2 failed, 21 passed, 23 total
+== Arm K: 'Keep as it is' saves again
+rc=0
+Tests:       9 passed, 9 total
+RESTORE OK by sha256
+== closing clean run
+rc=0
+Tests:       41 passed, 41 total
+== Arm K (first form, recorded above, stayed GREEN: the injected re-save started after reset() emptied the form, so zod refused it and nothing was sent -- the arm, not the assertion, was vacuous)
+== Arm K2: 'Keep as it is' re-saves the product (awaited) before closing
+rc=1
+  ● #787 vendor side: the save-time warning (D-09) › 'Keep as it is' closes without saving again
+Tests:       1 failed, 8 passed, 9 total
+RESTORE OK by sha256 (page.tsx)
