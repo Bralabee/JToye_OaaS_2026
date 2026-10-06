@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: "31.1"
 current_phase_name: Persona gap closure
 status: executing
-stopped_at: "Completed 31.1-01-PLAN.md (D-21 gate passed: Boot 4.1.1 on the branch, five guarding suites 45/0/0; evidence/31.1-01-baseline.md; V68..V75 reserved); next: 31.1-02..05 (wave 2)"
-last_updated: "2026-10-06T07:53:32.739Z"
+stopped_at: "Completed 31.1-02-PLAN.md (#777 guest-subject DSAR erasure: V68 + shared anonymisation core; DsarGuestErasureRlsIntegrationTest 8/0/0 under NOSUPERUSER, RED tenantsErased=0 -> GREEN tenantsErased=2); next: 31.1-03..05 (wave 2)"
+last_updated: "2026-10-06T08:17:10.457Z"
 last_activity: 2026-10-06
-state_head: c722d6f5bf809d8eb5baaedac7fa016a0feca2ca
+state_head: f6df6ec60dbe2df3f88d8a98a0e760507bd0981d
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 185
-  completed_plans: 156
+  completed_plans: 157
   percent: 65
-last_activity_desc: 31.1-01 complete (Boot 4 baseline recorded, V68..V75 reserved)
+last_activity_desc: 31.1-02 complete (#777 guest-subject DSAR erasure, V68)
 ---
 
 # Project State
@@ -31,6 +31,7 @@ last_activity_desc: 31.1-01 complete (Boot 4 baseline recorded, V68..V75 reserve
 
 Phase: 31.1 (Persona gap closure) — EXECUTING
 - 31.1-01 DONE 2026-10-06: D-21 gate passed on origin/main itself (Boot 4.1.1); merge 2f0bcc41 verified, code tree byte-identical to origin/main; KeycloakAdminClientTest 5, DsarFanout 11, DsarVerification 8, GuestCheckoutIdempotency 13, OrderAllergenSnapshot 8, all 0 failures/errors. `evidence/31.1-01-baseline.md` is the Boot 4 interface record (JsonMapper, golden-contract additive-field rule, A1 measured on a replica, MockitoBean idioms, V68..V75 reservation, stack provenance). Requirements stay open: shared with later plans (ready-ids 0/5).
+- 31.1-02 DONE 2026-10-06: #777 closed at the service. V68 (erasure_records.subject_customer_id nullable, no backfill); GdprService.matchSubjectInTenant + one private anonymisation core behind eraseCustomerData and eraseSubjectByDigest (returns records written, so tenantsErased counts real erasures); tenant-predicated order finder + DISTINCT email projections; unpredicated unpaged finder deleted. DsarGuestErasureRlsIntegrationTest 8/0/0 (RED tenantsErased=0 with all PII present), GdprErasure 4, GdprErasureReviewRls 7, DsarFanout 11, RlsContract 7, GdprServiceTest 16, full unit 1495/0/0. Break arms 1 and 3 red, 2 green under RLS as predicted. PGC-777 stays open (shared with 31.1-07/-11).
 - **Phase 38 (Spring Boot 4.1) COMPLETE 2026-10-05, MERGED as PR #898:** 19/19 plans, `38-VERIFICATION.md` passed 14/14 (BOOT4-01..14), code review 0 critical / 2 warning / 4 info (`38-REVIEW.md`, disposition in `38-REVIEW-DISPOSITION.md`). Not yet shipped: `/gsd-secure-phase 38` then `/gsd-ship 38` remain. Phase 29 is GSD's numeric next; the owner-set planning order in HANDOFF.md is 31.1 then 37.
 - The bullets below are Phase 38's execution history, kept for the record.
 - 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
@@ -867,6 +868,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P17 | 21 min | 3 tasks | 5 files |
 | Phase 38 P18 | 58 min | 2 tasks | 4 files |
 | Phase 31.1 P01 | 8 min | 2 tasks | 1 files |
+| Phase 31.1 P02 | 20 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1063,6 +1065,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: 31.1-01: V68..V75 reserved for 31.1 in wave order (V68 erasure_records, V69 orders ack, V70 dsar_request address, V71 trader_identity, V72 dsar_request account deletion, V73 orders allergy note, V74 products may-contain, V75 dsar_access_export); absent on all 19 refs, V67 control on 10; other branches start at V76
 - [Phase 31.1]: 31.1-01: Jackson3WireContractTest and IdempotencyFingerprintGoldenTest have no additive-field mechanism; a null new DTO field reds them. Fingerprint fields must be @JsonInclude(NON_NULL) (measured on an IdempotencyJson replica; in-tree proof owed by 31.1-03); response fields use NON_NULL or a declared additive set in the TEST; jackson2-golden/** is never edited
 - [Phase 31.1]: 31.1-01: shared compose stack left as the 38-17 owner handover (phase37 worktree, Boot 4.1.1 in app.jar); freshness from this checkout rc 1 by commit time (core-java, mcp-server); 31.1-30 rebuilds all four built services from the 31.1 branch
+- [Phase 31.1]: 31.1-02: DSAR erasure of a customers-row subject folds the subject's other stored spellings into that customer's erasure, so each tenant gets exactly one erasure_records row; the guest pass (NULL subject_customer_id, DSAR digest) runs only when no customers row matched and records only when an order or review changed
+- [Phase 31.1]: 31.1-02: customer-path erasure records keep sha256Hex(raw email) while guest records carry the normalised DsarSubjectDigest; not unified (would reinterpret historic rows), recorded as an observation for a later dual-hash decision
 
 ### Pending Todos
 
@@ -1133,8 +1137,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-05T19:51:19.160Z
-Stopped at: Completed 31.1-01-PLAN.md; next 31.1-02..05
+Last session: 2026-10-06T08:18:00Z
+Stopped at: Completed 31.1-02-PLAN.md; next 31.1-03..05
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
