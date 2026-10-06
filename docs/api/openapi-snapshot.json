@@ -761,6 +761,14 @@
             "minLength" : 1,
             "type" : "string"
           },
+          "mayContainMask" : {
+            "description" : "\"May contain\" (cross-contact) allergens as a bitmask in the same 14-bit layout as allergenMask. Printed on the PPDS label as its own 'May contain' line and never merged into allergenMask. Omit when not recorded; 0 means no cross-contact risk declared. On an edit, omitting it keeps the stored value.",
+            "example" : 1024,
+            "format" : "int32",
+            "maximum" : 16383,
+            "minimum" : 0,
+            "type" : "integer"
+          },
           "preparationTimeMinutes" : {
             "description" : "Estimated preparation time in minutes",
             "example" : 15,
@@ -3181,6 +3189,10 @@
           "ingredientsText" : {
             "type" : "string"
           },
+          "mayContainMask" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
           "media" : {
             "items" : {
               "$ref" : "#/components/schemas/MediaAssetDto"
@@ -3416,6 +3428,12 @@
           },
           "ingredientsText" : {
             "type" : "string"
+          },
+          "mayContainAllergens" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
           },
           "preparationTimeMinutes" : {
             "format" : "int32",
@@ -9296,7 +9314,7 @@
     },
     "/api/v1/products/{id}/label" : {
       "get" : {
-        "description" : "Returns a PDF allergen label for the product",
+        "description" : "Returns a PPDS (Natasha's Law) allergen label PDF for the product. The label prints the production date and a use-by / best-before date counted from it (production date + the product's shelf life), and a separate 'May contain' line for cross-contact allergens that are not already declared. Dates are printed en-GB, e.g. '5 October 2026'.",
         "operationId" : "generateLabel",
         "parameters" : [
           {
@@ -9305,6 +9323,17 @@
             "required" : true,
             "schema" : {
               "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "The date the food was produced (ISO yyyy-MM-dd). Use-by / best-before is counted from it. Defaults to today in Europe/London. Must not be after today, and must not give a durability date that has already passed.",
+            "example" : "2026-10-03",
+            "in" : "query",
+            "name" : "productionDate",
+            "required" : false,
+            "schema" : {
+              "format" : "date",
               "type" : "string"
             }
           }
@@ -9319,7 +9348,47 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "The label PDF (attachment label-{id}.pdf)"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or an invalid one"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The caller holds no STAFF grant on the product's shop (errors/shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Product not found"
+          },
+          "422" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The product lacks required label data (errors/incomplete-label-data), or productionDate is after today (UK time) or gives a durability date that has already passed (errors/invalid-production-date, field productionDate)"
           }
         },
         "security" : [

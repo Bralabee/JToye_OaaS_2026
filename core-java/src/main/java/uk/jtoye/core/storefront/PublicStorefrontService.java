@@ -38,6 +38,7 @@ import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.payment.PaymentIntentResult;
 import uk.jtoye.core.payment.PaymentService;
 import uk.jtoye.core.product.AllergenCatalog;
+import uk.jtoye.core.product.MayContainAllergens;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.security.TenantContext;
@@ -1421,6 +1422,11 @@ public class PublicStorefrontService {
             undeclared.add(flag.allergenName());
         }
         dto.setUndeclaredIngredientAllergens(undeclared);
+
+        // #861 (D-16): cross-contact risk as its own list, by the same rule the PPDS label prints
+        // (only bits not already declared, bit order). Never merged into allergenMask above.
+        dto.setMayContainAllergens(
+                MayContainAllergens.undeclaredNames(product.getMayContainMask(), product.getAllergenMask()));
 
         return dto;
     }

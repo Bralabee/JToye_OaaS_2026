@@ -103,6 +103,9 @@ class CacheSerializerTypeAllowlistTest {
         p.setTitle("Jollof Rice");
         p.setIngredientsText("Rice, tomatoes, peppers, groundnut oil");
         p.setAllergenMask(0b0000_0000_0010_0000);
+        // 31.1-14 (#861): the may-contain mask (NON_NULL Integer). Set, so the round trip proves
+        // a cached by-id product keeps the vendor's cross-contact statement.
+        p.setMayContainMask(1 << 10);
         p.setPricePennies(899L);                 // Long
         p.setVatRate(VatRate.ZERO);              // enum
         p.setCreatedAt(CREATED_AT);              // OffsetDateTime

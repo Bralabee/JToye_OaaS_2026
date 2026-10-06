@@ -45,6 +45,17 @@ public class PublicProductDto {
      * allergens", and must never merge it into the declared set.
      */
     private List<String> undeclaredIngredientAllergens;
+    /**
+     * #861 (D-16): the "may contain" (cross-contact) allergen names the vendor recorded that are
+     * NOT already in the declared {@code allergenMask}, in {@code AllergenCatalog} bit order.
+     * Empty (never null) when the vendor recorded none, has not recorded any, or every one is
+     * already declared.
+     *
+     * <p>Computed by {@code MayContainAllergens}, the same rule the PPDS label prints. A storefront
+     * surface must render a non-empty list as its own "May contain" line, separate from the
+     * declared allergens, and must never merge it into the declared set.
+     */
+    private List<String> mayContainAllergens;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -76,4 +87,6 @@ public class PublicProductDto {
     public void setImageUrls(List<String> imageUrls) { this.imageUrls = imageUrls; }
     public List<String> getUndeclaredIngredientAllergens() { return undeclaredIngredientAllergens; }
     public void setUndeclaredIngredientAllergens(List<String> undeclaredIngredientAllergens) { this.undeclaredIngredientAllergens = undeclaredIngredientAllergens; }
+    public List<String> getMayContainAllergens() { return mayContainAllergens; }
+    public void setMayContainAllergens(List<String> mayContainAllergens) { this.mayContainAllergens = mayContainAllergens; }
 }
