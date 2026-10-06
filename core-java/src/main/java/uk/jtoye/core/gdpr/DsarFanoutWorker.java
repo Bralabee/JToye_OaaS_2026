@@ -234,8 +234,10 @@ public class DsarFanoutWorker {
     private void complete(UUID requestId, int tenantsErased, int tenantsScanned) {
         transactionTemplate.executeWithoutResult(status ->
                 jdbcTemplate.update(
+                        // D-19 / V70: the encrypted address is destroyed in the SAME statement that
+                        // makes the row terminal — the CHECK refuses a COMPLETED row that keeps it.
                         "UPDATE dsar_request SET status = 'COMPLETED', completed_at = NOW(), "
-                                + "last_error = NULL WHERE id = ?",
+                                + "last_error = NULL, subject_email_ciphertext = NULL WHERE id = ?",
                         requestId));
         // A request from somebody no tenant holds is SATISFIED, not stuck — tenantsErased may
         // legitimately be zero. The count is recorded in the log and nowhere the subject can read
@@ -262,7 +264,8 @@ public class DsarFanoutWorker {
             if (exhausted) {
                 jdbcTemplate.update(
                         "UPDATE dsar_request SET status = 'FAILED', completed_at = NOW(), "
-                                + "last_error = ? WHERE id = ?", error, requestId);
+                                + "last_error = ?, subject_email_ciphertext = NULL WHERE id = ?",
+                        error, requestId);
             } else {
                 jdbcTemplate.update(
                         "UPDATE dsar_request SET status = 'VERIFIED', claimed_at = NULL, "

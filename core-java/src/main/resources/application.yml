@@ -230,6 +230,13 @@ jtoye:
       # request: a link built from an attacker-supplied Host header would redirect a live,
       # single-use bearer token to a collector of their choosing.
       verify-base-url: ${DSAR_VERIFY_BASE_URL:http://localhost:8080/api/v1/public/gdpr/dsar/verify}
+      # 31.1-07 (D-19): the AES-256-GCM key for the subject's address, which dsar_request holds
+      # ENCRYPTED from intake until a terminal state (V70). A SECRET, unlike every key above: 64
+      # hexadecimal characters (32 bytes), generated with `openssl rand -hex 32`, supplied only by
+      # the environment. The default is deliberately EMPTY so an absent key fails fast at startup
+      # (DsarCipher refuses to construct, naming this property and never the value) instead of
+      # silently encrypting under something guessable. Never commit a value here.
+      encryption-key: ${DSAR_ENCRYPTION_KEY:}
       # QA-council cluster S1 (SEC-1): DsarIntakeRateLimiter's three independent axes. The
       # pre-existing IP-keyed bucket (requests-per-hour / max-tracked-clients — deliberately left
       # undocumented here to match its own prior convention) is keyed on the client-controllable

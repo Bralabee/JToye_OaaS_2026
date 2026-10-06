@@ -128,6 +128,16 @@ public class DsarRequest {
     @Column(name = "last_error")
     private String lastError;
 
+    /**
+     * The subject's address as AES-256-GCM ciphertext ({@link DsarCipher}), so the worker can reach
+     * the subject (D-19, V70 — amending the "no readable address" rule above, narrowly). Never the
+     * readable form, and NULL in every terminal state: the V70 CHECK
+     * {@code ck_dsar_request_ciphertext_terminal} refuses a COMPLETED, FAILED or EXPIRED row that
+     * still holds it.
+     */
+    @Column(name = "subject_email_ciphertext")
+    private byte[] subjectEmailCiphertext;
+
     /** JPA no-arg constructor. */
     protected DsarRequest() {
     }
@@ -258,5 +268,13 @@ public class DsarRequest {
 
     public void setLastError(String lastError) {
         this.lastError = lastError;
+    }
+
+    public byte[] getSubjectEmailCiphertext() {
+        return subjectEmailCiphertext;
+    }
+
+    public void setSubjectEmailCiphertext(byte[] subjectEmailCiphertext) {
+        this.subjectEmailCiphertext = subjectEmailCiphertext;
     }
 }

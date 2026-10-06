@@ -37,6 +37,9 @@ class DsarAckCompatibilityTest {
     private static final Path FIXTURE =
             Path.of("src", "test", "resources", "jackson2-golden", "responses", "DsarIntakeAck.json");
 
+    /** Zero-based position of response_body in DsarIntakeService.INSERT_SQL's bind list. */
+    private static final int RESPONSE_BODY_BIND = 9;
+
     private static final DsarIntakeRequest REQUEST =
             new DsarIntakeRequest("subject@example.test", DsarRequest.RequestType.ACCESS);
 
@@ -65,14 +68,26 @@ class DsarAckCompatibilityTest {
 
         assertThat(jdbc.updates).as("one reserve insert").hasSize(1);
         Object[] args = jdbc.updates.get(0);
-        assertThat(args[args.length - 1])
+        // response_body is the 10th bind of INSERT_SQL. 31.1-07 (V70) appended
+        // subject_email_ciphertext after it, so the position is named rather than "the last one".
+        assertThat(args).as("INSERT_SQL binds, V70 included").hasSize(11);
+        assertThat(args[10]).as("subject_email_ciphertext is bytes, never the readable address")
+                .isInstanceOf(byte[].class);
+        assertThat(args[RESPONSE_BODY_BIND])
                 .as("response_body as stored vs the Boot-3.5 bytes")
                 .isEqualTo(Files.readString(FIXTURE, StandardCharsets.UTF_8));
     }
 
     /** The service on Boot's Jackson-3 mapper, the bean the application injects. */
     private static DsarIntakeService service(JdbcTemplate jdbc) {
-        return new DsarIntakeService(jdbc, BootJsonMapper.get(), new NoMail());
+        return new DsarIntakeService(jdbc, BootJsonMapper.get(), new NoMail(), new DsarCipher(randomHexKey()));
+    }
+
+    /** A per-run random key: no literal key exists anywhere in the test tree (D-19). */
+    private static String randomHexKey() {
+        byte[] key = new byte[32];
+        new java.security.SecureRandom().nextBytes(key);
+        return java.util.HexFormat.of().formatHex(key);
     }
 
     /** A JdbcTemplate that answers the two statements the intake issues, and records them. */
