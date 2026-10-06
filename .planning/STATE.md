@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: "31.1"
 current_phase_name: Persona gap closure
 status: executing
-stopped_at: "Phase 38 (Spring Boot 4.1) MERGED to main as PR #898 (ca7e0fa4), changelog PR #899 (4b454bfe); origin/main merged into phase-31.1-persona-gap-closure 2026-10-06, satisfying owner ruling D-21; next: /gsd-execute-phase 31.1, first plan 31.1-01 (re-check Boot 4.1 on origin/main, reserve V68..V75)"
-last_updated: "2026-10-06T07:43:12.084Z"
+stopped_at: "Completed 31.1-01-PLAN.md (D-21 gate passed: Boot 4.1.1 on the branch, five guarding suites 45/0/0; evidence/31.1-01-baseline.md; V68..V75 reserved); next: 31.1-02..05 (wave 2)"
+last_updated: "2026-10-06T07:53:32.739Z"
 last_activity: 2026-10-06
-state_head: 2f0bcc41eef767c4769491fae02990ae0cfacb17
+state_head: c722d6f5bf809d8eb5baaedac7fa016a0feca2ca
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 185
   completed_plans: 156
   percent: 65
-last_activity_desc: merged origin/main (Phase 38 + changelog) into the 31.1 branch; Phase 31.1 execution starting
+last_activity_desc: 31.1-01 complete (Boot 4 baseline recorded, V68..V75 reserved)
 ---
 
 # Project State
@@ -30,6 +30,7 @@ last_activity_desc: merged origin/main (Phase 38 + changelog) into the 31.1 bran
 ## Current Position
 
 Phase: 31.1 (Persona gap closure) — EXECUTING
+- 31.1-01 DONE 2026-10-06: D-21 gate passed on origin/main itself (Boot 4.1.1); merge 2f0bcc41 verified, code tree byte-identical to origin/main; KeycloakAdminClientTest 5, DsarFanout 11, DsarVerification 8, GuestCheckoutIdempotency 13, OrderAllergenSnapshot 8, all 0 failures/errors. `evidence/31.1-01-baseline.md` is the Boot 4 interface record (JsonMapper, golden-contract additive-field rule, A1 measured on a replica, MockitoBean idioms, V68..V75 reservation, stack provenance). Requirements stay open: shared with later plans (ready-ids 0/5).
 - **Phase 38 (Spring Boot 4.1) COMPLETE 2026-10-05, MERGED as PR #898:** 19/19 plans, `38-VERIFICATION.md` passed 14/14 (BOOT4-01..14), code review 0 critical / 2 warning / 4 info (`38-REVIEW.md`, disposition in `38-REVIEW-DISPOSITION.md`). Not yet shipped: `/gsd-secure-phase 38` then `/gsd-ship 38` remain. Phase 29 is GSD's numeric next; the owner-set planning order in HANDOFF.md is 31.1 then 37.
 - The bullets below are Phase 38's execution history, kept for the record.
 - 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
@@ -865,6 +866,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 38 P16 | 20 min | 3 tasks | 21 files |
 | Phase 38 P17 | 21 min | 3 tasks | 5 files |
 | Phase 38 P18 | 58 min | 2 tasks | 4 files |
+| Phase 31.1 P01 | 8 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1058,6 +1060,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 38]: 38-18: owner chose push-and-dispatch; one fast-forward push (acee00c5), no PR; CI/CD and the nightly read to their jobs and report
 - [Phase 38]: 38-18: pre-push gitleaks false positives fixed at the cause with a content allowlist anchored to exactly golden-guest-key-0001 (fixtures are byte-guarded; covers the squash commit), plus a fingerprint and an inline allow for one prose line
 - [Phase 38]: 38-18: CI integration's 6 skips are 1 @Disabled + 5 MailHog assumptions unchanged from origin/main, so they are explained rather than absorbed
+- [Phase 31.1]: 31.1-01: V68..V75 reserved for 31.1 in wave order (V68 erasure_records, V69 orders ack, V70 dsar_request address, V71 trader_identity, V72 dsar_request account deletion, V73 orders allergy note, V74 products may-contain, V75 dsar_access_export); absent on all 19 refs, V67 control on 10; other branches start at V76
+- [Phase 31.1]: 31.1-01: Jackson3WireContractTest and IdempotencyFingerprintGoldenTest have no additive-field mechanism; a null new DTO field reds them. Fingerprint fields must be @JsonInclude(NON_NULL) (measured on an IdempotencyJson replica; in-tree proof owed by 31.1-03); response fields use NON_NULL or a declared additive set in the TEST; jackson2-golden/** is never edited
+- [Phase 31.1]: 31.1-01: shared compose stack left as the 38-17 owner handover (phase37 worktree, Boot 4.1.1 in app.jar); freshness from this checkout rc 1 by commit time (core-java, mcp-server); 31.1-30 rebuilds all four built services from the 31.1 branch
 
 ### Pending Todos
 
@@ -1129,7 +1134,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 ## Session Continuity
 
 Last session: 2026-10-05T19:51:19.160Z
-Stopped at: Phase 38 complete (verified 14/14, review 0/2/4), not yet shipped. Next: /gsd-secure-phase 38, then /gsd-ship 38; then plan Phase 31.1 per the owner order
+Stopped at: Completed 31.1-01-PLAN.md; next 31.1-02..05
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
