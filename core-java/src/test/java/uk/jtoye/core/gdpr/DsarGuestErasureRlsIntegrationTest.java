@@ -149,9 +149,12 @@ class DsarGuestErasureRlsIntegrationTest {
         String storedA1 = local + "@example.test";
         String storedA2 = "  " + local.toLowerCase(java.util.Locale.ROOT) + "@EXAMPLE.test ";
         String lodgedAs = local.toUpperCase(java.util.Locale.ROOT) + "@example.TEST";
+        // The review carries a spelling NO order carries, so only the review projection can reach it.
+        String storedReview = local + "@Example.Test";
         String digest = DsarSubjectDigest.of(storedA1);
         assertThat(DsarSubjectDigest.of(storedA2)).as("PRECONDITION: the spellings share one digest").isEqualTo(digest);
         assertThat(DsarSubjectDigest.of(lodgedAs)).as("PRECONDITION: the lodged spelling shares it").isEqualTo(digest);
+        assertThat(DsarSubjectDigest.of(storedReview)).as("PRECONDITION: the review spelling shares it").isEqualTo(digest);
 
         UUID a = seedTenant();
         UUID b = seedTenant();
@@ -165,7 +168,9 @@ class DsarGuestErasureRlsIntegrationTest {
         seedItemAndLedger(a, orderA1, productA);
         seedItemAndLedger(a, orderA2, productA);
         seedItemAndLedger(b, orderB, productB);
-        UUID reviewA = seedReview(a, shopA, orderA1, storedA1, "Grace Persona", "lovely jollof");
+        UUID reviewA = seedReview(a, shopA, orderA1, storedReview, "Grace Persona", "lovely jollof");
+        assertThat(countUnder(a, "SELECT COUNT(*) FROM orders WHERE customer_email = ?", storedReview))
+                .as("PRECONDITION: no order carries the review's spelling").isZero();
 
         assertThat(countUnder(a, "SELECT COUNT(*) FROM customers")).as("PRECONDITION: no customers row in A").isZero();
         assertThat(countUnder(b, "SELECT COUNT(*) FROM customers")).as("PRECONDITION: no customers row in B").isZero();
