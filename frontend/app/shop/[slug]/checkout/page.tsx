@@ -32,6 +32,7 @@ import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
 import { buildGuestOrderIntent, guestOrderIntentSignature } from "@/lib/checkout-idempotency"
 import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/vat"
 import publicApiClient from "@/lib/public-api-client"
+import { basketAllergenAttribution, basketAllergenFlags, indexProductsById } from "@/lib/basket-allergens"
 // FulfilmentType is the shared two-member union (mirrors the backend enum), not a local re-declaration.
 import { getAllergenNames, type FulfilmentType, type OrderAllergenFlag } from "@/types/api"
 import {
@@ -57,32 +58,8 @@ export function isValidUkPostcode(value: string): boolean {
   return UK_POSTCODE_REGEX.test(value.trim().toUpperCase())
 }
 
-/**
- * Index the storefront's product catalogue by id, defensively.
- *
- * Returns `null` — meaning NOT RECORDED, never "nothing declared" — when the payload is missing,
- * malformed, or yields no usable product. That distinction is the whole point: an allergen panel
- * that says "the kitchen declared none of the 14" because a fetch failed is stating something the
- * kitchen never said, and that is the direction that injures someone.
- */
-export function indexProductsById(data: unknown): Map<string, PublicProduct> | null {
-  if (!data || typeof data !== "object") return null
-  const index = new Map<string, PublicProduct>()
-  for (const group of Object.values(data as Record<string, unknown>)) {
-    if (!Array.isArray(group)) continue
-    for (const candidate of group) {
-      if (
-        candidate &&
-        typeof candidate === "object" &&
-        typeof (candidate as PublicProduct).id === "string" &&
-        typeof (candidate as PublicProduct).allergenMask === "number"
-      ) {
-        index.set((candidate as PublicProduct).id, candidate as PublicProduct)
-      }
-    }
-  }
-  return index.size > 0 ? index : null
-}
+// `indexProductsById` (the catalogue -> id index, NOT RECORDED on a bad payload) lives in
+// lib/basket-allergens.ts since 31.1-23, so the basket page and the cart drawer share its gate.
 
 /**
  * The basket's DECLARED allergen union, in words.
@@ -392,6 +369,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     () => (staleOverride ? staleOverride.mask : basketAllergenMask(items, productIndex)),
     [items, productIndex, staleOverride]
   )
+  // #860 (31.1-23, D-18): which dish brings which declared allergen, and each line's D-09 flags.
+  // DISPLAY ONLY: neither feeds `declaredAllergenMask`, the intent or its signature, so the body
+  // this page submits is unchanged for the same basket. The panel withholds the attribution when it
+  // disagrees with the set it states (a stale 409's server set).
+  const allergenAttribution = useMemo(() => basketAllergenAttribution(items, productIndex), [items, productIndex])
+  const allergenFlags = useMemo(() => basketAllergenFlags(items, productIndex), [items, productIndex])
 
   /**
    * A stable signature of the BASKET. Changing the basket produces a different one, which resets
@@ -1231,15 +1214,16 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             summary, not collapsed, not behind a disclosure.
 
             `declaredAllergenNames` is null (NOT RECORDED) whenever the basket cannot be fully
-            resolved. `allergenFlags` is null rather than []: the advisory reconciliation flags are
-            computed by the SERVER (OrderAllergenAggregator, 31-04) against a ~150-term synonym
-            list, and re-implementing that heuristic in TypeScript would create a second, ungated
-            copy of a safety rule. Passing [] here would assert "nothing flagged", which this
-            surface cannot substantiate. See 31-14-SUMMARY.md. */}
+            resolved. `allergenFlags` are each line's `undeclaredIngredientAllergens`, the
+            reconciliation the SERVER computed per product (31.1-06) — this page renders them and
+            never re-implements the heuristic in TypeScript (31-14-SUMMARY.md). They are null, not
+            [], whenever the basket is NOT RECORDED. `allergenAttribution` (#860) says which dish
+            carries each declared allergen, beneath the chips. */}
         <OrderAllergenPanel
           vendorName={shop?.name ?? "this kitchen"}
           allergenNames={declaredAllergenNames}
-          allergenFlags={null}
+          allergenFlags={allergenFlags}
+          allergenAttribution={allergenAttribution}
           acknowledged={acknowledged}
           onAcknowledgedChange={(next) => {
             setAcknowledged(next)

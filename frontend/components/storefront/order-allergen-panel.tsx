@@ -5,6 +5,8 @@ import { AlertTriangle, AlertCircle } from "lucide-react"
 
 import { Checkbox } from "@/components/ui/checkbox"
 import type { OrderAllergenFlag } from "@/types/api"
+import { ALLERGEN_ATTRIBUTION_INTRO_COPY, allergenAttributionCopy } from "@/lib/allergen-copy"
+import { attributionAgreesWith, type AllergenAttribution } from "@/lib/basket-allergens"
 
 /**
  * S3 — the pre-submit allergen set and its acknowledgement (Phase 31-14, LGL-03 / D-01..D-03).
@@ -135,6 +137,14 @@ export interface OrderAllergenPanelProps {
   allergenNames: string[] | null
   /** Advisory only. Never OR-ed into `allergenNames`. */
   allergenFlags: OrderAllergenFlag[] | null
+  /**
+   * #860 (31.1-23, D-18): which dish carries each declared allergen, computed by the caller with
+   * `basketAllergenAttribution` (lib/basket-allergens.ts). Said BENEATH the declared set, never in
+   * place of it, and only when it names exactly the set `allergenNames` states: after a stale 409
+   * the panel states the server's newer set, and an attribution that disagrees with it is withheld
+   * rather than shown beside a contradiction. Optional: every earlier caller renders as before.
+   */
+  allergenAttribution?: AllergenAttribution[] | null
   acknowledged: boolean
   onAcknowledgedChange: (next: boolean) => void
   /** Set by the parent when a submit was refused for want of the acknowledgement. */
@@ -155,6 +165,7 @@ export function OrderAllergenPanel({
   vendorName,
   allergenNames,
   allergenFlags,
+  allergenAttribution = null,
   acknowledged,
   onAcknowledgedChange,
   errored = false,
@@ -180,6 +191,9 @@ export function OrderAllergenPanel({
       : ALLERGEN_PANEL_HEADING_COPY
 
   const flags = allergenFlags ?? []
+  const attribution =
+    declared && attributionAgreesWith(allergenAttribution, allergenNames) ? allergenAttribution : null
+  const attributionIntroId = `${checkboxId}-attribution-intro`
 
   return (
     <section
@@ -208,6 +222,24 @@ export function OrderAllergenPanel({
               </li>
             ))}
           </ul>
+          {attribution && (
+            <div className="mt-3">
+              <p id={attributionIntroId} className="text-sm text-amber-700">
+                {ALLERGEN_ATTRIBUTION_INTRO_COPY}
+              </p>
+              <ul
+                data-testid="allergen-attribution"
+                aria-labelledby={attributionIntroId}
+                className="mt-1 space-y-0.5 text-sm text-amber-800"
+              >
+                {attribution.map((entry) => (
+                  <li key={entry.allergen} data-testid="allergen-attribution-line">
+                    {allergenAttributionCopy(entry.allergen, entry.dishes)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
 

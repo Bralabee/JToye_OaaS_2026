@@ -152,11 +152,9 @@ export const CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY = "Customer allergen confir
 // ---------------------------------------------------------------------------------------------
 
 /** The line above the per-allergen attribution in the checkout panel. */
-export const ALLERGEN_ATTRIBUTION_INTRO_COPY = ""
+export const ALLERGEN_ATTRIBUTION_INTRO_COPY = "Which dishes contain them:"
 
 /** "Milk — Jollof Rice, Puff Puff": one declared allergen and the dishes, in basket order, that declare it. */
 export function allergenAttributionCopy(allergen: string, dishes: readonly string[]): string {
-  void allergen
-  void dishes
-  return ""
+  return `${allergen} — ${dishes.join(", ")}`
 }
