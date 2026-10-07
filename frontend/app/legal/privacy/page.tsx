@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { getCompanyInfo, resolveControllerContact } from "@/lib/company"
 import { PolicyPage, PolicySection } from "@/components/legal/policy-page"
+import { ACCOUNT_HREF, EMAIL_SCOPE_STATEMENT, NO_MARKETING_STATEMENT } from "@/lib/email-scope-copy"
 
 export const metadata: Metadata = {
   title: "Privacy notice — J'Toye",
@@ -57,13 +58,14 @@ const SECTIONS = [
   "What we collect and why",
   "Allergen and dietary information",
   "How long we keep it",
+  "Emails",
   "Your rights, and how to exercise them",
   "Complaints",
   "Changes to this notice",
 ] as const
 
-const LAST_UPDATED = "16 August 2026"
-const VERSION = "1.0"
+const LAST_UPDATED = "7 October 2026"
+const VERSION = "1.1"
 
 const LINK =
   "font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -345,6 +347,31 @@ export default function PrivacyNoticePage() {
         </p>
       </PolicySection>
 
+      {/*
+        #871 (D-04, 31.1-26). The heading is "Emails" because the anchor is derived from it
+        (sectionId) and /unsubscribe links to /legal/privacy#emails. The two statements come from
+        lib/email-scope-copy.ts, which /unsubscribe renders too, so the pages cannot disagree.
+        No consent control here or anywhere: no marketing is sent, so there is nothing to consent to.
+      */}
+      <PolicySection heading="Emails">
+        <p>
+          {EMAIL_SCOPE_STATEMENT} {NO_MARKETING_STATEMENT}
+        </p>
+        <p>
+          Order emails are sent through J&apos;Toye in the name of the shop you
+          ordered from. Data request emails come from J&apos;Toye: the link to
+          confirm a request, the link to collect a copy of your data, and a note
+          when an erasure has been carried out.
+        </p>
+        <p>
+          To get a copy of your data or delete your account, use{" "}
+          <Link href={ACCOUNT_HREF} className={LINK}>
+            My account
+          </Link>{" "}
+          if you have a J&apos;Toye account, or the routes in the next section.
+        </p>
+      </PolicySection>
+
       <PolicySection heading="Your rights, and how to exercise them">
         <p>Under UK data protection law you have the right to:</p>
         <ul className="list-disc space-y-2 pl-6">
@@ -477,6 +504,9 @@ export default function PrivacyNoticePage() {
           raise the version number and say what changed, rather than editing the
           text silently. Small corrections that do not change its meaning may be
           made without a version change.
+        </p>
+        <p>
+          Version 1.1 (7 October 2026) added the section on the emails we send.
         </p>
       </PolicySection>
     </PolicyPage>

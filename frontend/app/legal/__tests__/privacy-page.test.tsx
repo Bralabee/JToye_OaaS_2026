@@ -424,7 +424,7 @@ describe("privacy notice — metadata", () => {
  */
 describe("privacy notice — the emails we send (#871)", () => {
   it("pins the shared statements by content, so a blank constant cannot pass", () => {
-    expect(EMAIL_SCOPE_STATEMENT).toMatch(/only emails you about your orders and about data requests you make/i)
+    expect(EMAIL_SCOPE_STATEMENT).toMatch(/only emails you about your orders, about data requests you make, and about your sign-in account when you ask/i)
     expect(NO_MARKETING_STATEMENT).toMatch(/do not send marketing/i)
     expect(EMAILS_SECTION_HREF).toBe("/legal/privacy#emails")
     expect(ACCOUNT_HREF).toBe("/shop/account")
