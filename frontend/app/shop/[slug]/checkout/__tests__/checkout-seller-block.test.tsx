@@ -233,7 +233,8 @@ describe("#789: the seller block is in front of the customer BEFORE they place t
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
     const body = JSON.stringify(mockedPost.mock.calls[0][1])
     expect(body).not.toMatch(/seller|legalName|Mama Ade Foods Ltd|01234567/)
-    expect(Object.keys(mockedPost.mock.calls[0][1] as object).sort()).toEqual(
+    // the keys that reach the wire (JSON drops the undefined allergyNote/notes of an empty form)
+    expect(Object.keys(JSON.parse(body)).sort()).toEqual(
       ["acknowledgedAllergenMask", "customerEmail", "customerName", "customerPhone", "fulfilmentType", "idempotencyKey", "items"].sort()
     )
   })

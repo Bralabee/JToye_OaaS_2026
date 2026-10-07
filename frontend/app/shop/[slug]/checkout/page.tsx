@@ -22,6 +22,7 @@ import {
   type AllergenAckErrorKind,
 } from "@/components/storefront/order-allergen-panel"
 import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
+import { SellerBlock } from "@/components/storefront/seller-block"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { describeOrderError } from "@/lib/order-error"
@@ -738,6 +739,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           </div>
         )}
 
+        {/* #789 (31.1-24, D-13): who the customer bought from, on the confirmation they are left
+            with, before they navigate away. `shop` is null only if its fetch failed, and a failed
+            fetch is not "the seller has not provided their details", so nothing renders then. */}
+        {shop && <SellerBlock seller={shop.seller} className="mb-6" />}
+
         <Link
           href={`/shop/${slug}/orders/${codConfirmation.orderNumber}`}
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-oxblood py-3.5 text-sm font-bold text-white hover:bg-oxblood-700 active:scale-[0.98] transition-all shadow-lg"
@@ -852,6 +858,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </p>
           </div>
         )}
+
+        {/* #789 (31.1-24, D-13): the seller, the platform statement and the no-cancellation
+            information, before the card is taken. */}
+        {shop && <SellerBlock seller={shop.seller} className="mb-4" />}
 
         <Elements
           stripe={stripePromise}
@@ -1208,6 +1218,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             )}
           </div>
         )}
+
+        {/* #789 (31.1-24, D-13): who the customer is buying from, that J'Toye is the platform and not
+            the seller, and that freshly prepared food has no 14-day right to cancel (CCR 2013
+            Sch 2(o), reg 28(1)(c)) — pre-contract information, so it is here, inside the form and
+            above Place order. Placed ABOVE the allergen panel so that panel stays the last thing
+            read before committing (D-02 below). Rendered only once the shop has loaded: a failed
+            fetch is not "the seller has not provided their details". Display only — nothing in
+            it is submitted. */}
+        {shop && <SellerBlock seller={shop.seller} />}
 
         {/* D-02 — the pre-submit allergen block. Deliberately the LAST thing read before
             committing: after "How you'll pay", immediately above the submit run. Not in the order
