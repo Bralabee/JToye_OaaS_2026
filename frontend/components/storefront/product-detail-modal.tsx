@@ -1,17 +1,18 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useId } from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import {
   X, ChevronLeft, ChevronRight, Star, Timer,
-  AlertTriangle, Flame, Leaf, ShoppingBag, Plus, Minus
+  AlertTriangle, AlertCircle, Flame, Leaf, ShoppingBag, Plus, Minus
 } from "lucide-react"
 import { SafeImage } from "@/components/ui/safe-image"
 import { AspectFrame } from "@/components/ui/aspect-frame"
 import { IngredientText } from "@/components/ui/ingredient-text"
 import { Badge } from "@/components/ui/badge"
 import { PublicProduct } from "@/types/storefront"
-import { ALLERGENS, hasAllergen } from "@/types/api"
+import { productAllergenStatement } from "@/lib/product-allergens"
+import { CONTAINS_LABEL_COPY } from "@/lib/allergen-copy"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
@@ -65,7 +66,9 @@ export function ProductDetailModal({
   }, [images.length])
 
   const outOfStock = product.inStock === false
-  const allergenList = ALLERGENS.filter((a) => hasAllergen(product.allergenMask, a.bit))
+  const allergens = productAllergenStatement(product)
+  const allergenHeadingId = useId()
+  const containsLabelId = useId()
   const dietaryTags = product.dietaryTags
     ?.split(",")
     .map((t) => t.trim())
@@ -237,6 +240,59 @@ export function ProductDetailModal({
               </span>
             </div>
 
+            {/* Allergens (#817, #787, #861; D-09, D-16, D-18) — FIRST under the title, in EVERY
+                state. It used to sit after the description and the ingredients, and was not
+                rendered at all for an empty declaration, so the persona's MILK dish (nothing
+                declared, MILK in the ingredients) opened with no allergen statement anywhere and a
+                200%-zoom reader on a phone had to scroll to reach the box when there was one.
+                Here it is the first thing under the dish name, above the quantity and Add controls
+                in the footer, and it says one of: the declared list, "No allergens declared", or
+                the D-09 ingredients line — with "May contain" as its own line beneath the declared
+                set. The three statements are never merged (Phase 31 D-03, 31.1 D-09/D-16).
+                A <section> named by its heading, so it is a landmark a screen reader can jump to;
+                the declared set is a list NAMED "Contains", not a row of anonymous chips.
+                Boundary amber-600 per the 31 UI-SPEC (non-text contrast 3:1). */}
+            <section
+              aria-labelledby={allergenHeadingId}
+              className="rounded-lg bg-amber-50 border border-amber-600 p-3 space-y-2"
+            >
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle aria-hidden="true" className="h-4 w-4 text-amber-700" />
+                <h3 id={allergenHeadingId} className="text-sm font-semibold text-amber-800">
+                  Allergen Information
+                </h3>
+              </div>
+              {allergens.declared.length > 0 && (
+                <div>
+                  <p id={containsLabelId} className="text-xs font-semibold text-amber-800 mb-1">
+                    {CONTAINS_LABEL_COPY}
+                  </p>
+                  <ul aria-labelledby={containsLabelId} className="flex flex-wrap gap-2">
+                    {allergens.declared.map((name) => (
+                      <li
+                        key={name}
+                        className="inline-flex items-center gap-1 bg-white rounded-md border border-amber-600 px-2 py-1 text-xs font-semibold text-amber-800"
+                      >
+                        {name}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {allergens.noneDeclaredLine && (
+                <p className="text-sm text-slate-700">{allergens.noneDeclaredLine}</p>
+              )}
+              {allergens.mayContainLine && (
+                <p className="text-sm font-medium text-amber-800">{allergens.mayContainLine}</p>
+              )}
+              {allergens.undeclaredLine && (
+                <p className="flex items-start gap-1.5 text-sm font-semibold text-amber-800">
+                  <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  {allergens.undeclaredLine}
+                </p>
+              )}
+            </section>
+
             {/* Dietary tags */}
             {dietaryTags.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -282,28 +338,6 @@ export function ProductDetailModal({
                   text={product.ingredientsText}
                   className="block text-sm text-slate-600 leading-relaxed"
                 />
-              </div>
-            )}
-
-            {/* Allergens */}
-            {allergenList.length > 0 && (
-              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-700" />
-                  <h3 className="text-sm font-semibold text-amber-800">
-                    Allergen Information
-                  </h3>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {allergenList.map((a) => (
-                    <span
-                      key={a.bit}
-                      className="inline-flex items-center gap-1 bg-white rounded-md border border-amber-200 px-2 py-1 text-xs font-medium text-amber-700"
-                    >
-                      {a.name}
-                    </span>
-                  ))}
-                </div>
               </div>
             )}
           </div>
