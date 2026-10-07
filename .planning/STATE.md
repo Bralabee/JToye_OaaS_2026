@@ -2,34 +2,34 @@
 gsd_state_version: "1.0"
 milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
-current_phase: "31.1"
-current_phase_name: Persona gap closure
-status: executing
-stopped_at: "Completed 31.1-30-PLAN.md (the live run: owner go-ahead 08:41 BST, RED 36/86 on the pre-31.1 runtime, full rebuild with freshness 4/4 and V68..V75, GREEN 85/85, live D-01 download-once and D-03 erasure + Keycloak deletion, dispositions 15 closable + 2 referenced; owner verdict 13:39 BST: approved). Phase 31.1 plans 30/30 complete; next: /gsd-verify-work 31.1, /gsd-secure-phase 31.1, /gsd-ship 31.1"
-last_updated: "2026-10-07T12:45:00.000Z"
+current_phase: "37"
+current_phase_name: Real-world operations readiness
+status: planning
+stopped_at: "Phase 31.1 complete (UAT 182/182 owner-ruled, SECURITY 102/102 closed at ASVS L2, VALIDATION nyquist_compliant). Next per the owner's planning order: Phase 37 (GSD's numeric next is Phase 29, paused on its own branch). Not yet shipped: /gsd-ship 31.1"
+last_updated: "2026-10-07T15:16:33.398Z"
 last_activity: 2026-10-07
-state_head: 2179256f
+last_activity_desc: Phase 31.1 verified, secured, validated and marked complete 2026-10-07; next /gsd-ship 31.1, then plan Phase 37
+state_head: 65201ac6380d12626a0aae760d76d355d0c02f66
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 185
   completed_plans: 185
-  percent: 65
-last_activity_desc: 31.1-30 complete (live run RED->rebuild->GREEN 85/85, D-01/D-03 live, dispositions; owner approved the surfaces, emails and legal wording). Phase 31.1 execution complete 30/30; verify, secure, ship next
+  percent: 72
 ---
 
 # Project State
 
 ## Project Reference
 
-**Current focus:** Phase 31.1 — Persona gap closure
+See: .planning/PROJECT.md (updated 2026-10-07)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 38 (Spring Boot 4.1) is complete and verified, but not yet shipped: `/gsd-secure-phase 38`, then `/gsd-ship 38`. After that, the owner-set planning order is 31.1, then 37 (GSD's numeric next is Phase 29).
+**Current focus:** Phase 31.1 (Persona gap closure) is complete, verified, secured and validated (2026-10-07) but not yet shipped: `/gsd-ship 31.1`. After that, the owner-set planning order continues with Phase 37 (Real-world operations readiness; no CONTEXT.md yet → `/gsd-discuss-phase 37`). GSD's numeric next is Phase 29, which is paused on its own branch and is NOT the next phase.
 
 ## Current Position
 
-Phase: 31.1 (Persona gap closure) — EXECUTING
+Phase: 29 — Deployable Staging, With Its Own Monitoring
 - 31.1-01 DONE 2026-10-06: D-21 gate passed on origin/main itself (Boot 4.1.1); merge 2f0bcc41 verified, code tree byte-identical to origin/main; KeycloakAdminClientTest 5, DsarFanout 11, DsarVerification 8, GuestCheckoutIdempotency 13, OrderAllergenSnapshot 8, all 0 failures/errors. `evidence/31.1-01-baseline.md` is the Boot 4 interface record (JsonMapper, golden-contract additive-field rule, A1 measured on a replica, MockitoBean idioms, V68..V75 reservation, stack provenance). Requirements stay open: shared with later plans (ready-ids 0/5).
 - 31.1-02 DONE 2026-10-06: #777 closed at the service. V68 (erasure_records.subject_customer_id nullable, no backfill); GdprService.matchSubjectInTenant + one private anonymisation core behind eraseCustomerData and eraseSubjectByDigest (returns records written, so tenantsErased counts real erasures); tenant-predicated order finder + DISTINCT email projections; unpredicated unpaged finder deleted. DsarGuestErasureRlsIntegrationTest 8/0/0 (RED tenantsErased=0 with all PII present), GdprErasure 4, GdprErasureReviewRls 7, DsarFanout 11, RlsContract 7, GdprServiceTest 16, full unit 1495/0/0. Break arms 1 and 3 red, 2 green under RLS as predicted. PGC-777 stays open (shared with 31.1-07/-11).
 - 31.1-03 DONE 2026-10-06: #784/#785 closed at the server. V69 (orders + orders_aud allergen_ack_mask, allergen_ack_at, placed_via; nullable, no backfill, no default; CHECKs on orders). GuestOrderRequest.acknowledgedAllergenMask (@Min 0 @Max 16383, NON_NULL). Missing -> 422 allergen-acknowledgement-required; differs from the union read in the V63 snapshot loop -> 409 allergen-acknowledgement-stale with currentAllergenMask/currentAllergens (bit order)/lines (basket order); both roll the reservation back. Vendor/API/MCP orders: placed_via VENDOR, ack NULL. GuestOrderAllergenAckIntegrationTest 10/0/0 (RED: missing-ack 201; stale arms 201). Containment break arm red on the removed-bit arm. A1 in-tree confirmed: without NON_NULL the two storefront.guest-order* golden rows red; with it IdempotencyFingerprintGoldenTest 15/0/0, jackson2-golden untouched. Six callers + seed-order-metric.sh send the CURRENT mask (GuestOrderAcknowledgements); OpenAPI snapshot +1 field. Full unit 1495/0/0, full integration 790/0/0. Owed: seed-order-metric.sh live run + fail direction (31.1-30); 31.1-15 must send the mask before 31.1-30's rebuild. PGC-784/785 stay open (shared).
@@ -762,7 +762,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Executing Phase 31.1
+Status: Ready to plan
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -773,9 +773,9 @@ Status: Executing Phase 31.1
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-07
+Last activity: 2026-10-07 — Phase 31.1 complete, transitioned to Phase 29
 
-Progress: [███████░░░] 65%
+Progress: [███████░░░] 72%
 
 ## Milestone v2.3 Phase Map
 
@@ -808,7 +808,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 
 **Velocity (v2.3):**
 
-- Total plans completed: 55 (phase 23) + 12 (phases 21-22) = 29
+- Total plans completed: 117 (phase 23) + 12 (phases 21-22) = 29
 - Average duration: ~15m
 - Total execution time: ~0.25 hours
 
@@ -825,6 +825,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | 28 | 11 | - | - |
 | 36 | 18 | - | - |
 | 38 | 19 | - | - |
+| 31.1 | 30 | - | - |
 
 *Updated after each plan completion*
 | Phase 24 P01 | ~20min | 3 tasks | 10 files |
@@ -1170,6 +1171,11 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: 31.1-29: a jest table is an array-literal const passed straight to it.each — never a .map() call or a for-loop around it( — so docs-freshness (static counter) and check-test-count-oracle (runner) count the same thing; earlier 'docs-freshness red by drift' notes were a VOID
 - [Phase 31.1]: 31.1-29: python-dependent gates (check-doc-citations YAML half, check-terminal-states) run inside the jtoye-ops conda env locally; a bare python3 is refused by the machine shim, and check-doc-citations then prints VOID yet exits 0 (deferred item)
 
+- [Phase 31.1]: verify-work 2026-10-07: UAT 182/182. The 8 items this machine could not verify (cold start from an empty volume, sealed dsar-credentials on the clusters, the two oasdiff CI gates, the refused go-live click-through, keycloak.admin.enabled in the overlays, adviser review of the cancellation wording) were ruled confirmed by the owner; each row's note says so and keeps the blocked reason as the remaining operator step
+- [Phase 31.1]: secure-phase 2026-10-07: 102/102 register threats closed at ASVS L2 by three gsd-security-auditor lanes (plans 01-10 / 11-20 / 21-30); residuals T-31.1-03, -71, -18 logged as accepted risks in 31.1-SECURITY.md; review items CR-02 (two pooled connections per public shop read) and WR-03 (may-contain-only dish reads "No allergens declared") stay unregistered and open in 31.1-REVIEW.md
+- [Phase 31.1]: validate-phase 2026-10-07: 17/17 PGC requirements green on the current tree (ITs 0 failures after the newest core-java commit, jest 426/426, Playwright 85/85 live + 77/77 UAT re-run); nyquist_compliant true
+- [Phase 31.1]: transition 2026-10-07: `phase.complete` advanced STATE to Phase 29 (GSD's numeric next); corrected by hand to Phase 37 per the owner's planning order (31.1 → 37). A legacy `status: verified` on 23-VERIFICATION.md (outside the current closed set) had blocked phase.complete and progress.bar for every phase and was set to `passed` (65201ac6)
+
 ### Pending Todos
 
 - **✅ RESOLVED (2026-07-22): docs-freshness reconciled to 1574.** The 23-17 +1 drift (java_test_methods 1064→1065, java_test_files 180→181, total 1573→1574, schema 57) is reconciled — `docs/metrics.json` reads total 1574 and `scripts/docs-freshness.sh` check mode exits 0 (`docs-freshness OK: metrics match source (total logical invocations: 1574)`, confirmed during validate-phase 23). The CI gate is green.
@@ -1178,6 +1184,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ### Blockers/Concerns
 
+- **[Phase 31.1] Pre-rollout operator steps (31.1-USER-SETUP.md), confirmed OUTSTANDING by the owner at UAT 2026-10-07:** a sealed `dsar-credentials/encryption-key` per cluster (core-java pods hold at CreateContainerConfigError without it, by design); `keycloak.admin.enabled: "true"` in `k8s/staging` and `k8s/production` configmap-patch (both still inherit the base `"false"`, so a verified DSAR erasure there parks FAILED without Keycloak account deletion); USER-SETUP does not list `FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE` (set as a repository variable 2026-10-07, read back byte-equal — an unset value silently omits the registered office from a CI-built frontend); the oasdiff openapi-compat gate runs only in CI on the phase PR (not installed locally); the CCR 2013 reg 28(1)(c) cancellation wording awaits adviser review (the owner's sign-off is product, not legal advice).
 - **[Phase 38] Two open code-review warnings (`38-REVIEW.md`, disposition `open`):** WR-01, during a rolling deploy or rollback a cache eviction removes only the evicting pod's key generation (`v4:` vs Boot-3.5 keys), so `shopMembership` can stay stale up to 5 min and products/shops 10-15 min on the other generation's pods. ADR-0006 says "no flush needed" without naming that window; decide before the first staging/prod rollout. WR-02, `IdempotencyJson` does not enable `DETECT_PARAMETER_NAMES` (Boot 3.5 did); latent for current adopters, and cheapest to fix before ship.
 - **✅ RESOLVED by 23-16 (2026-07-21): full `:core-java:integrationTest` is now GREEN (331 tests, 0 failed).** The 13 failures across 7 legacy classes were migrated to the production UUID-subject JWT auth shape (test-only; zero main-source change → 23-08's fail-closed boundary preserved, not relaxed). Decision taken: migrate the legacy tests (not relax the gate). Historical context retained below. **🛑 (was) 23-15 PHASE-GATE BLOCKED (2026-07-21): full `:core-java:integrationTest` was RED — 13 failures the phase record never disclosed.** 7 legacy test classes failed `expected 200/201/400 but was 403`: `ShopControllerIntegrationTest` (3), `LocationHeaderContractTest` (4), `ScopedCatalogAccessIntegrationTest` (2), `SecurityHeadersIntegrationTest` (1), `ProductSearchFtsIntegrationTest` (1), `OnboardingGoLiveIntegrationTest` (1), `TenantLifecycleAdminIntegrationTest` (1). **Root cause:** 23-08's CR-03 fail-closed change now DENIES authenticated non-JWT principals — `ShopAccessService.requireVendorUserId()` throws a typed 403 when `auth.getPrincipal()` is not a `Jwt`, and `isInternalCaller()` bypasses only `auth == null`. The 19 pre-existing `@WithMockUser` integration tests (non-JWT `UsernamePasswordAuthenticationToken`) were never migrated to the UUID-subject `.jwt()` pattern the new access suites use. **Deterministic** — `ShopControllerIntegrationTest` fails 3/6 in isolation, identical to the full run (not parallelism). The gap wave only ran scoped `--tests` runs, so the full task was never green; the STATE claim "only OpenApiSnapshotTest is red" was inaccurate. 23-15 Task 2 (count reconcile) + Task 3 (VSA-02/VSA-04 completion) were HELD per anti-false-green while the suite was red. **Decision taken + executed as 23-16:** migrate the 7 legacy classes to UUID-subject JWTs (test-only) — the gate stands. Both HELD tasks are now UNBLOCKED on a green suite: 23-15 Task 1 (OpenAPI snapshot regen) is DONE + green (commit `adc1c58`), and 23-16 (commits `20ece8a`/`edb4b63`) made the full `integrationTest` task green, so 23-15 Tasks 2-3 (docs-freshness/metrics schema 56→57 + planning-record reconcile + VSA-02/VSA-04 closure) may now resume.
 - **RULE 0 — one runtime at a time on local**: compose and the minikube `jtoye` cluster share one dev Postgres. Never run compose `core-java`/`edge-go` AND cluster core/edge writers at once. Compose is canonical; cluster is STOPPED at handoff.
@@ -1239,8 +1246,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-07T09:42:00Z
-Stopped at: Completed 31.1-29-PLAN.md; next 31.1-30
+Last session: 2026-10-07T15:20:00Z
+Stopped at: Phase 31.1 complete (verified, secured, validated); not yet shipped — next `/gsd-ship 31.1`, then `/gsd-discuss-phase 37`
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.

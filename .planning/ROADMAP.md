@@ -53,7 +53,7 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [ ] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today
 - [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock
 - [x] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice (completed 2026-08-17)
-- [ ] **Phase 31.1: Persona gap closure (INSERTED)** — The 17 persona-testing clusters (epic #880) on completed Phase 31: DSAR fulfilment, the allergen acknowledgement and display chain, seller identity, and privacy/cookie/accessibility statement truthfulness; 6 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request)
+- [x] **Phase 31.1: Persona gap closure (INSERTED)** — The 17 persona-testing clusters (epic #880) on completed Phase 31: DSAR fulfilment, the allergen acknowledgement and display chain, seller identity, and privacy/cookie/accessibility statement truthfulness; 6 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request) (completed 2026-10-07)
 - [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
 - [ ] **Phase 37: Real-world operations readiness** — The 87 persona-testing clusters with no other home (epic #880): kitchen ops, staff scoping, checkout integrity, abuse resistance, integrator surface, accessibility, catalogue correctness; 9 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request)
 - [x] **Phase 38: Spring Boot 4.1 Migration** — core-java moves from Spring Boot 3.5.16 to 4.1.x, proven by test, gate and live runtime (#706; opened 2026-10-01 as Phase 37, renumbered 2026-10-04) (completed 2026-10-05)
@@ -736,7 +736,7 @@ Plans:
   6. The cookie, privacy and accessibility statements match the site: no Stripe code on a cash checkout, every stored key disclosed and personal keys cleared on sign-out, emails described truthfully, and the accessibility statement targeting WCAG 2.2 AA over the full order journey (PGC-793, PGC-840, PGC-871, PGC-878).
   7. 31.1 executes on the Boot 4.1 / Jackson 3 tree: Phase 38 is merged into this branch before any 31.1 code, the Keycloak deletion path is re-proved on it, and Phase 38's Jackson-3 goldens are extended rather than its Jackson-2 captures (D-21).
 
-**Plans:** 30/30 plans executed (16 waves)
+**Plans:** 30/30 plans complete (16 waves)
 
 *Wave depth (re-derived 2026-10-05).* The waves come from true data dependencies plus file overlap, applied in plan order. They are not padding:
 - The eight plans that edit `docs/api/openapi-snapshot.json` run one per wave. Together with the frontend chain 14 → 19 → 21 → 23 and the tail 24 → 25 → 27 → 28 → 29 → 30, they set the depth.
