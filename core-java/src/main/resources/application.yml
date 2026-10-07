@@ -161,6 +161,19 @@ spring:
 # NOT used because this project supplies a custom JwtDecoder bean — that
 # property only applies to Spring's auto-configured decoder.
 jtoye:
+  # The PLATFORM operator's own identity, printed in the footer of every customer order email
+  # (31.1-25, D-13/D-14). J'Toye is the ordering platform, never the seller: the seller is the
+  # shop's legal entity, named in the body. Company 16471464 (ACTIVE) — never the dissolved
+  # namesake 13434105. These mirror frontend/lib/company.ts.
+  platform:
+    legal-name: "J'Toye Digital Ltd"
+    company-number: "16471464"
+    registration-jurisdiction: "England & Wales"
+    # D-14: taken from the public Companies House record and confirmed by the owner (31.1-27).
+    # EMPTY DEFAULT ON PURPOSE: with no value the footer omits the line, it never prints a blank
+    # "Registered office:" (Pitfall 13 — 31.1-27 sets it in every runtime, beside the frontend's
+    # NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE).
+    registered-office: ${COMPANY_REGISTERED_OFFICE:}
   shop:
     # Slugs a vendor may NOT claim, because the storefront serves a STATIC route at
     # /shop/<segment> and Next.js resolves a static segment BEFORE the dynamic

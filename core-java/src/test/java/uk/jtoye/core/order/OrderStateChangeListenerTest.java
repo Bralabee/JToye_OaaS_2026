@@ -14,7 +14,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import uk.jtoye.core.config.BusinessMetricsService;
+import uk.jtoye.core.notification.CustomerEmailContext;
 import uk.jtoye.core.notification.EmailNotificationService;
+import uk.jtoye.core.onboarding.TraderIdentityService;
+import uk.jtoye.core.shop.ShopRepository;
 
 import jakarta.persistence.EntityManager;
 import org.hibernate.Session;
@@ -25,6 +28,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,6 +59,12 @@ class OrderStateChangeListenerTest {
     @Mock
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    @Mock
+    private ShopRepository shopRepository;
+
+    @Mock
+    private TraderIdentityService traderIdentityService;
+
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(entityManager.unwrap(Session.class)).thenReturn(hibernateSession);
@@ -68,7 +78,8 @@ class OrderStateChangeListenerTest {
         lenient().when(jdbcTemplate.update(anyString(), any(), any(), any())).thenReturn(1);
         // #92: SSE broadcasting moved to OrderSseFanoutListener (per-instance
         // fan-out queue); this competing-consumer listener no longer touches SSE.
-        listener = new OrderStateChangeListener(orderRepository, emailService, entityManager, metrics, simpMessagingTemplate, jdbcTemplate);
+        listener = new OrderStateChangeListener(orderRepository, emailService, entityManager, metrics, simpMessagingTemplate, jdbcTemplate,
+                shopRepository, traderIdentityService);
         listenerLogger = (Logger) LoggerFactory.getLogger(OrderStateChangeListener.class);
         logAppender = new ListAppender<>();
         logAppender.start();
@@ -116,7 +127,7 @@ class OrderStateChangeListenerTest {
                 .anyMatch(e -> e.getLevel() == Level.INFO
                         && e.getFormattedMessage().contains("COMPLETED"));
 
-        verify(emailService).sendOrderCompletedNotification(event, "test@example.com");
+        verify(emailService).sendOrderCompletedNotification(eq(event), eq("test@example.com"), any(CustomerEmailContext.class));
     }
 
     @Test
@@ -138,7 +149,7 @@ class OrderStateChangeListenerTest {
                 .anyMatch(e -> e.getLevel() == Level.INFO
                         && e.getFormattedMessage().contains("CANCELLED"));
 
-        verify(emailService).sendOrderCancelledNotification(event, "cancel@example.com");
+        verify(emailService).sendOrderCancelledNotification(eq(event), eq("cancel@example.com"), any(CustomerEmailContext.class));
     }
 
     @Test
@@ -216,7 +227,7 @@ class OrderStateChangeListenerTest {
         listener.handleOrderStateChange(event);
 
         // Email pipeline should still execute despite WebSocket failure
-        verify(emailService).sendOrderConfirmed(event, "fail@example.com");
+        verify(emailService).sendOrderConfirmed(eq(event), eq("fail@example.com"), any(CustomerEmailContext.class));
     }
 
     @Test

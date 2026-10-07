@@ -9,12 +9,14 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.MailSendException;
-import org.springframework.mail.SimpleMailMessage;
+import jakarta.mail.Message;
+import jakarta.mail.internet.MimeMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderStateChangeEvent;
 import uk.jtoye.core.order.OrderStatus;
+import uk.jtoye.core.testsupport.SentMail;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -34,7 +36,7 @@ class EmailNotificationServiceTest {
     private JavaMailSender mailSender;
 
     @Captor
-    private ArgumentCaptor<SimpleMailMessage> messageCaptor;
+    private ArgumentCaptor<MimeMessage> messageCaptor;
 
     private EmailNotificationService service;
 
@@ -48,6 +50,24 @@ class EmailNotificationServiceTest {
         ReflectionTestUtils.setField(service, "fromAddress", FROM_ADDRESS);
         ReflectionTestUtils.setField(service, "emailEnabled", true);
         ReflectionTestUtils.setField(service, "trackingBaseUrl", TRACKING_BASE_URL);
+        lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
+    }
+
+    /** The message as its recipient receives it. */
+    private record Sent(MimeMessage parsed) {
+        String getText() { return SentMail.text(parsed); }
+        String getSubject() { return SentMail.subject(parsed); }
+        String getFrom() { return SentMail.from(parsed).getAddress(); }
+        String[] getTo() { return SentMail.recipients(parsed, Message.RecipientType.TO).toArray(String[]::new); }
+    }
+
+    private Sent sent() {
+        verify(mailSender).send(messageCaptor.capture());
+        return new Sent(SentMail.reparse(messageCaptor.getValue()));
+    }
+
+    private static CustomerEmailContext ctx(FulfilmentType type) {
+        return CustomerEmailContext.unknownShop(type);
     }
 
     private OrderStateChangeEvent createTestEvent(String orderNumber,
@@ -74,10 +94,9 @@ class EmailNotificationServiceTest {
     void testSendOrderConfirmation() {
         OrderStateChangeEvent event = createTestEvent();
 
-        service.sendOrderConfirmation(event, RECIPIENT);
+        service.sendOrderConfirmation(event, RECIPIENT, ctx(null));
 
-        verify(mailSender).send(messageCaptor.capture());
-        SimpleMailMessage msg = messageCaptor.getValue();
+        Sent msg = sent();
 
         assertEquals(FROM_ADDRESS, msg.getFrom());
         assertArrayEquals(new String[]{RECIPIENT}, msg.getTo());
@@ -93,10 +112,9 @@ class EmailNotificationServiceTest {
     void testSendOrderConfirmed() {
         OrderStateChangeEvent event = createTestEvent();
 
-        service.sendOrderConfirmed(event, RECIPIENT);
+        service.sendOrderConfirmed(event, RECIPIENT, ctx(null));
 
-        verify(mailSender).send(messageCaptor.capture());
-        SimpleMailMessage msg = messageCaptor.getValue();
+        Sent msg = sent();
 
         assertEquals("Order ORD-100 \u2014 Confirmed", msg.getSubject());
         assertTrue(msg.getText().contains("has been confirmed"));
@@ -111,10 +129,9 @@ class EmailNotificationServiceTest {
         OrderStateChangeEvent event = createTestEvent("ORD-200",
                 OrderStatus.CONFIRMED, OrderStatus.PREPARING);
 
-        service.sendOrderPreparing(event, RECIPIENT);
+        service.sendOrderPreparing(event, RECIPIENT, ctx(null));
 
-        verify(mailSender).send(messageCaptor.capture());
-        SimpleMailMessage msg = messageCaptor.getValue();
+        Sent msg = sent();
 
         assertEquals("Order ORD-200 \u2014 Being Prepared", msg.getSubject());
         assertTrue(msg.getText().contains("now being prepared"));
@@ -128,10 +145,9 @@ class EmailNotificationServiceTest {
         OrderStateChangeEvent event = createTestEvent("ORD-300",
                 OrderStatus.PREPARING, OrderStatus.READY);
 
-        service.sendOrderReady(event, RECIPIENT, FulfilmentType.COLLECTION);
+        service.sendOrderReady(event, RECIPIENT, ctx(FulfilmentType.COLLECTION));
 
-        verify(mailSender).send(messageCaptor.capture());
-        SimpleMailMessage msg = messageCaptor.getValue();
+        Sent msg = sent();
 
         assertEquals("Order ORD-300 \u2014 Ready!", msg.getSubject());
         assertTrue(msg.getText().contains("ready for collection"));
@@ -143,10 +159,9 @@ class EmailNotificationServiceTest {
         OrderStateChangeEvent event = createTestEvent("ORD-301",
                 OrderStatus.PREPARING, OrderStatus.READY);
 
-        service.sendOrderReady(event, RECIPIENT, FulfilmentType.DELIVERY);
+        service.sendOrderReady(event, RECIPIENT, ctx(FulfilmentType.DELIVERY));
 
-        verify(mailSender).send(messageCaptor.capture());
-        SimpleMailMessage msg = messageCaptor.getValue();
+        Sent msg = sent();
 
         assertEquals("Order ORD-301 \u2014 Ready!", msg.getSubject());
         assertTrue(msg.getText().contains("deliver it to the address on your order"));
@@ -172,13 +187,12 @@ class EmailNotificationServiceTest {
         OrderStateChangeEvent event = createTestEvent("ORD-302",
                 OrderStatus.PREPARING, OrderStatus.READY);
 
-        service.sendOrderReady(event, RECIPIENT, null);
+        service.sendOrderReady(event, RECIPIENT, ctx(null));
 
-        verify(mailSender).send(messageCaptor.capture());
-        SimpleMailMessage msg = messageCaptor.getValue();
+        Sent msg = sent();
 
         assertFalse(msg.getText().toLowerCase().contains("collect"));
-        assertTrue(msg.getText().contains("we'll deliver it"));
+        assertTrue(msg.getText().contains("will deliver it to the address on your order"));
     }
 
     // --- Order completed ---
@@ -189,10 +203,9 @@ class EmailNotificationServiceTest {
         OrderStateChangeEvent event = createTestEvent("ORD-400",
                 OrderStatus.READY, OrderStatus.COMPLETED);
 
-        service.sendOrderCompletedNotification(event, RECIPIENT);
+        service.sendOrderCompletedNotification(event, RECIPIENT, ctx(null));
 
-        verify(mailSender).send(messageCaptor.capture());
-        SimpleMailMessage msg = messageCaptor.getValue();
+        Sent msg = sent();
 
         assertEquals("Order ORD-400 \u2014 Completed", msg.getSubject());
         assertTrue(msg.getText().contains("has been completed"));
@@ -206,10 +219,9 @@ class EmailNotificationServiceTest {
         OrderStateChangeEvent event = createTestEvent("ORD-500",
                 OrderStatus.PREPARING, OrderStatus.CANCELLED);
 
-        service.sendOrderCancelledNotification(event, RECIPIENT);
+        service.sendOrderCancelledNotification(event, RECIPIENT, ctx(null));
 
-        verify(mailSender).send(messageCaptor.capture());
-        SimpleMailMessage msg = messageCaptor.getValue();
+        Sent msg = sent();
 
         assertEquals("Order ORD-500 \u2014 Cancelled", msg.getSubject());
         assertTrue(msg.getText().contains("has been cancelled"));
@@ -223,7 +235,7 @@ class EmailNotificationServiceTest {
     void testSkipsWhenDisabled() {
         ReflectionTestUtils.setField(service, "emailEnabled", false);
 
-        service.sendOrderConfirmation(createTestEvent(), RECIPIENT);
+        service.sendOrderConfirmation(createTestEvent(), RECIPIENT, ctx(null));
 
         verifyNoInteractions(mailSender);
     }
@@ -231,7 +243,7 @@ class EmailNotificationServiceTest {
     @Test
     @DisplayName("sendNotification - Skips sending when recipient email is null")
     void testSkipsWhenEmailNull() {
-        service.sendOrderConfirmation(createTestEvent(), null);
+        service.sendOrderConfirmation(createTestEvent(), null, ctx(null));
 
         verifyNoInteractions(mailSender);
     }
@@ -239,7 +251,7 @@ class EmailNotificationServiceTest {
     @Test
     @DisplayName("sendNotification - Skips sending when recipient email is blank")
     void testSkipsWhenEmailBlank() {
-        service.sendOrderConfirmation(createTestEvent(), "   ");
+        service.sendOrderConfirmation(createTestEvent(), "   ", ctx(null));
 
         verifyNoInteractions(mailSender);
     }
@@ -250,11 +262,11 @@ class EmailNotificationServiceTest {
     @DisplayName("send - Handles MailException gracefully without propagating")
     void testHandlesMailException() {
         doThrow(new MailSendException("SMTP down"))
-                .when(mailSender).send(any(SimpleMailMessage.class));
+                .when(mailSender).send(any(MimeMessage.class));
 
         assertDoesNotThrow(() ->
-                service.sendOrderConfirmation(createTestEvent(), RECIPIENT));
+                service.sendOrderConfirmation(createTestEvent(), RECIPIENT, ctx(null)));
 
-        verify(mailSender).send(any(SimpleMailMessage.class));
+        verify(mailSender).send(any(MimeMessage.class));
     }
 }
