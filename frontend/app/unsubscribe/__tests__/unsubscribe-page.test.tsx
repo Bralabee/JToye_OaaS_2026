@@ -21,6 +21,12 @@ import UnsubscribePage, { metadata } from "../page"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { useSearchParams } from "next/navigation"
+import {
+  ACCOUNT_HREF,
+  EMAILS_SECTION_HREF,
+  EMAIL_SCOPE_STATEMENT,
+  NO_MARKETING_STATEMENT,
+} from "@/lib/email-scope-copy"
 
 jest.mock("@/lib/public-api-client")
 const mockedPublicApiClient = publicApiClient as jest.Mocked<typeof publicApiClient>
@@ -185,5 +191,85 @@ describe("Public unsubscribe page — PublicShell wrap (FEB-6)", () => {
 
     const skip = screen.getByRole("link", { name: /skip to main content/i })
     expect(skip.getAttribute("href")).toBe("#main")
+  })
+})
+
+/**
+ * #871 (D-04, 31.1-26): /unsubscribe told the reader to "contact the vendor" — whose contact details
+ * were never published anywhere they could find. Every state now says what J'Toye actually emails
+ * and links to two real routes: the privacy notice's email section and My account.
+ *
+ * EVERY STATE, including the malformed-link dead end and the loading state, because a reader can
+ * stop at any of them. The no-params arm renders through the PAGE (PublicShell included), so the
+ * old phrase cannot hide in the shell either.
+ */
+describe("Public unsubscribe page — says what J'Toye emails, and where to act (#871)", () => {
+  const STATES: Array<{ name: string; setup: () => void; heading: RegExp | null }> = [
+    {
+      name: "loading",
+      setup: () => mockedPublicApiClient.post.mockReturnValue(new Promise(() => {})),
+      heading: /updating your preferences/i,
+    },
+    {
+      name: "unsubscribed",
+      setup: () => mockedPublicApiClient.post.mockResolvedValue({ data: { status: "unsubscribed" } }),
+      heading: /you're unsubscribed/i,
+    },
+    {
+      name: "already_unsubscribed",
+      setup: () => mockedPublicApiClient.post.mockResolvedValue({ data: { status: "already_unsubscribed" } }),
+      heading: /you're already unsubscribed/i,
+    },
+    {
+      name: "invalid",
+      setup: () => mockedPublicApiClient.post.mockResolvedValue({ data: { status: "invalid" } }),
+      heading: /this link isn't valid/i,
+    },
+    {
+      name: "api failure",
+      setup: () => mockedPublicApiClient.post.mockRejectedValue(new Error("network")),
+      heading: /this link isn't valid/i,
+    },
+  ]
+
+  it("pins the shared statements by content, so a blank constant cannot pass", () => {
+    expect(EMAIL_SCOPE_STATEMENT).toMatch(/only emails you about your orders and about data requests you make/i)
+    expect(NO_MARKETING_STATEMENT).toMatch(/do not send marketing/i)
+    expect(EMAILS_SECTION_HREF).toBe("/legal/privacy#emails")
+    expect(ACCOUNT_HREF).toBe("/shop/account")
+  })
+
+  for (const state of STATES) {
+    it(`${state.name}: no "contact the vendor", the scope stated, and both real routes linked`, async () => {
+      state.setup()
+      const { container } = render(<UnsubscribeContent />)
+      if (state.heading) await screen.findByRole("heading", { name: state.heading })
+      const text = container.textContent ?? ""
+      expect(text).not.toMatch(/contact the vendor/i)
+      expect(text).toContain(EMAIL_SCOPE_STATEMENT)
+      expect(text).toContain(NO_MARKETING_STATEMENT)
+      const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+      expect(hrefs).toEqual(expect.arrayContaining([EMAILS_SECTION_HREF, ACCOUNT_HREF]))
+      expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
+    })
+  }
+
+  it("malformed link through the page shell: same statement and routes, no old phrase", async () => {
+    mockedSession.mockResolvedValue(null)
+    setSearchParams({})
+    const { container } = render(<UnsubscribePage />)
+    await screen.findByRole("heading", { name: /this link isn't valid/i })
+    const main = container.querySelector("main") as HTMLElement
+    expect(main.textContent).not.toMatch(/contact the vendor/i)
+    expect(main.textContent).toContain(EMAIL_SCOPE_STATEMENT)
+    const hrefs = Array.from(main.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(hrefs).toEqual(expect.arrayContaining([EMAILS_SECTION_HREF, ACCOUNT_HREF]))
+  })
+
+  it("a link naming the MARKETING category does not describe the platform as sending marketing", async () => {
+    mockedPublicApiClient.post.mockResolvedValue({ data: { status: "unsubscribed" } })
+    const { container } = render(<UnsubscribeContent />)
+    await screen.findByRole("heading", { name: /you're unsubscribed/i })
+    expect(container.textContent).not.toMatch(/more marketing emails|out of marketing emails|opt[- ]in/i)
   })
 })
