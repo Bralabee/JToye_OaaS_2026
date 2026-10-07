@@ -236,3 +236,15 @@ describe("KitchenTicket — the allergy note (31.1-22, #812, D-15)", () => {
     expect(container.innerHTML).toBe(before)
   })
 })
+
+describe("KitchenTicket — UK time on the stamps (31.1-22, P2-CHA-18)", () => {
+  it("stamps the order time in London time, whatever zone the kitchen device is set to", () => {
+    // 23:10Z on 3 Oct 2026 is 00:10 on 4 Oct in London (BST). On a London host this passes
+    // either way; it is falsified by running the suite under TZ=America/New_York.
+    const { container } = render(
+      <KitchenTicket order={{ ...order, createdAt: "2026-10-03T23:10:25Z" }} shopName="Peckham" printedAt={PRINTED_AT} />
+    )
+    const meta = container.querySelector(".kds-ticket__meta") as HTMLElement
+    expect(within(meta).getByText("04 Oct, 00:10")).toBeInTheDocument()
+  })
+})

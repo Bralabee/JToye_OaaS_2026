@@ -330,3 +330,29 @@ describe("OrderDetailPanel", () => {
     })
   })
 })
+
+/**
+ * 31.1-22 (#861, D-17; Pitfall 17; goods P2-CHA-18): every date on the vendor order record is
+ * en-GB, in Europe/London. Was date-fns "PPpp" — en-US, device zone: "Oct 3, 2026, 11:10:25 PM".
+ * 23:10Z on 3 Oct 2026 is 00:10 on 4 Oct in London (BST). Falsified under TZ=America/New_York.
+ */
+describe("OrderDetailPanel — UK dates (31.1-22)", () => {
+  it("states when the order was created as '4 October 2026, 00:10'", () => {
+    render(<OrderDetailPanel order={makeOrder({ createdAt: "2026-10-03T23:10:25Z" })} />)
+    expect(screen.getByText("Created 4 October 2026, 00:10")).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Oct 3, 2026|\d (AM|PM)\b/)
+  })
+
+  it("dates each refund in UK time too", () => {
+    render(
+      <OrderDetailPanel
+        order={makeOrder({
+          createdAt: "2026-10-03T12:00:00Z",
+          refunds: [makeRefund({ requestedAt: "2026-12-03T23:10:25Z" })],
+        })}
+      />
+    )
+    expect(screen.getByText("3 December 2026, 23:10")).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/Dec 3, 2026|\d (AM|PM)\b/)
+  })
+})
