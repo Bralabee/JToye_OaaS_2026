@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 12
+open_count: 13
 waived_count: 0
 fixed_count: 1
-total_count: 13
-last_updated: 2026-10-07T02:03:55.293Z
+total_count: 14
+last_updated: 2026-10-07T03:00:22.755Z
 ---
 
 # Broken Windows Ledger
@@ -28,6 +28,7 @@ last_updated: 2026-10-07T02:03:55.293Z
 | 11 | 31.1 | unrun-verify | frontend/e2e/kitchen-allergy-note.spec.ts |  | 31.1-22 kitchen allergy note browser spec (4 tests: board note + 44px button + ack round trip, order detail UK dates + channel line) written, type-checked and listed; not run, the live stack rebuild and click-through are owed to 31.1-30 | open |  | 2026-10-07T00:42:00.356Z |  |
 | 12 | 31.1 | unrun-verify | frontend/e2e/seller-identity.spec.ts |  | 31.1-24 #789 seller-identity spec listed only (3 tests); live RED (pre-rebuild runtime) and GREEN runs owed to 31.1-30; its Mailhog half stays red until 31.1-25 ships the email seller block | open |  | 2026-10-07T02:03:55.160Z |  |
 | 13 | 31.1 | unrun-verify | scripts/openapi-gate.sh |  | 31.1-24: oasdiff compat gate not run locally (oasdiff not installed); OpenApiSnapshotTest red on the old snapshot, green on the regenerated one (additive: 49 insertions, 0 deletions) | open |  | 2026-10-07T02:03:55.293Z |  |
+| 14 | 31.1 | unrun-verify | core-java/src/main/java/uk/jtoye/core/notification/EmailNotificationService.java |  | 31.1-25 #789/#785 order emails proven by MimeMessage content tests (unit + Testcontainers, mocked sender) and by OrderNotificationListenerIntegrationTest landing one Confirmed email in the local Mailhog from its own test context; the compose-stack Mailhog capture (rebuilt core-java, seller-identity.spec.ts email half) is owed to 31.1-30 | open |  | 2026-10-07T03:00:22.755Z |  |
 
 ````json
 [
@@ -197,6 +198,19 @@ last_updated: 2026-10-07T02:03:55.293Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-07T02:03:55.293Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 14,
+    "kind": "unrun-verify",
+    "phase": "31.1",
+    "file": "core-java/src/main/java/uk/jtoye/core/notification/EmailNotificationService.java",
+    "line": null,
+    "description": "31.1-25 #789/#785 order emails proven by MimeMessage content tests (unit + Testcontainers, mocked sender) and by OrderNotificationListenerIntegrationTest landing one Confirmed email in the local Mailhog from its own test context; the compose-stack Mailhog capture (rebuilt core-java, seller-identity.spec.ts email half) is owed to 31.1-30",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-07T03:00:22.755Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
