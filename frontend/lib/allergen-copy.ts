@@ -118,13 +118,29 @@ export const ALLERGY_NOTE_ACK_FORBIDDEN_COPY =
 export const ALLERGY_NOTE_ACK_FAILED_COPY =
   "Not marked as read: the request did not go through. Try again."
 
-// 31.1-22 (D-07): how the order was placed, and what the customer confirmed, said to the VENDOR.
-// RED skeleton: wrong values so the tests fail on assertions.
-export function customerConfirmedAllergensCopy(_names: readonly string[], _when: string | null): string {
-  return ""
+// ---------------------------------------------------------------------------------------------
+// 31.1-22 (D-07, #784): how the order was placed and what the customer confirmed, said to the
+// VENDOR. The customer-facing form of the same four states lives in recorded-allergen-set.tsx
+// (acknowledgementStatement); the vendor surface maps the SAME four kinds to these sentences, so
+// the two can differ in voice but never in which state an order is in.
+// ---------------------------------------------------------------------------------------------
+
+function withWhen(sentence: string, when: string | null): string {
+  return when ? `${sentence} — ${when}` : sentence
 }
-export function customerConfirmedNoneCopy(_when: string | null): string {
-  return ""
+
+/** A storefront order: the names the customer ticked, and when the server accepted them (UK time). */
+export function customerConfirmedAllergensCopy(names: readonly string[], when: string | null): string {
+  return withWhen(`Customer confirmed allergens: ${names.join(", ")}`, when)
 }
-export const VENDOR_PLACED_ORDER_COPY = ""
-export const CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY = ""
+
+/** A storefront order whose basket declared none of the 14: a confirmation, not an absence. */
+export function customerConfirmedNoneCopy(when: string | null): string {
+  return withWhen("Customer confirmed the order declared none of the 14 regulated allergens", when)
+}
+
+/** D-07: the shop keyed the order in, so there was nothing for a customer to confirm. */
+export const VENDOR_PLACED_ORDER_COPY = "Placed by the shop — no customer allergen confirmation recorded"
+
+/** An order from before confirmations were recorded (D-06): no claim either way. */
+export const CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY = "Customer allergen confirmation: not recorded"
