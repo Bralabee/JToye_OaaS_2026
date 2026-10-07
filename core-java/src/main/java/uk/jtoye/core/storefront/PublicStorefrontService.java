@@ -41,6 +41,7 @@ import uk.jtoye.core.product.AllergenCatalog;
 import uk.jtoye.core.product.MayContainAllergens;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
+import uk.jtoye.core.onboarding.TraderIdentityService;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopAnnouncementRepository;
@@ -133,6 +134,9 @@ public class PublicStorefrontService {
      * {@link #requireUsableRadius}.
      */
     private final OrderNumberGenerator orderNumberGenerator;
+
+    /** The seller block's tenant-pinned read (#789, 31.1-24); used by {@link #getShopBySlug} only. */
+    private final TraderIdentityService traderIdentityService;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -144,6 +148,7 @@ public class PublicStorefrontService {
                                    IdempotencyService idempotencyService,
                                    PostcodeGeocoder postcodeGeocoder,
                                    OrderNumberGenerator orderNumberGenerator,
+                                   TraderIdentityService traderIdentityService,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -160,6 +165,7 @@ public class PublicStorefrontService {
         // private copy of OrderService's — two definitions of a customer-visible identifier,
         // and neither had a fault-injection seam.
         this.orderNumberGenerator = orderNumberGenerator;
+        this.traderIdentityService = traderIdentityService;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -535,13 +541,21 @@ public class PublicStorefrontService {
     }
 
     /**
-     * Get a single published shop by slug.
+     * Get a single published shop by slug, with the seller who sells through it (#789, 31.1-24).
+     *
+     * <p>The seller is attached HERE and only here: the shop has already passed the published-only
+     * lookup (an unpublished shop is a 404 before any legal entity is read, T-31.1-83), and the
+     * list/near/search endpoints, which share {@link #toPublicShopDto}, stay one query per page.
+     * {@link TraderIdentityService#findPublicSeller} pins the SHOP's tenant in its own transaction
+     * and never touches {@code TenantContext} on this request thread.
      */
     public PublicShopDto getShopBySlug(String slug) {
         log.debug("Fetching published shop: {}", slug);
         Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
-        return toPublicShopDto(shop);
+        PublicShopDto dto = toPublicShopDto(shop);
+        dto.setSeller(traderIdentityService.findPublicSeller(shop.getTenantId(), shop));
+        return dto;
     }
 
     /**

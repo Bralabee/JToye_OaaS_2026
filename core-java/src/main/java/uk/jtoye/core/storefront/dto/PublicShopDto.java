@@ -1,5 +1,7 @@
 package uk.jtoye.core.storefront.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.Map;
 
 public class PublicShopDto {
@@ -49,6 +51,24 @@ public class PublicShopDto {
      */
     private Double distanceKm;
 
+    /**
+     * Who the customer is buying from (#789, 31.1-24, D-10/D-11/D-20): the tenant's legal entity
+     * from {@code trader_identity} plus this shop's own email and phone.
+     *
+     * <p><b>Set ONLY by {@code GET /shops/{slug}}.</b> The list, near and search endpoints map
+     * through the same {@code toPublicShopDto} and leave it null, so a page of shops costs no
+     * per-row lookup (no N+1). The seller is shown where a purchase is about to happen (the shop
+     * page, checkout and the confirmation), not on a discovery card.
+     *
+     * <p>{@code NON_NULL}, deliberately: absent when not set (every list entry) and when the trader
+     * has not provided their details. That keeps the field off the wire wherever it is not
+     * meaningful and leaves every existing payload byte-identical (the Phase 38 rule for an
+     * additive field on a public DTO). The storefront renders absence as "the seller has not
+     * provided their legal details yet", never as an empty block.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private SellerIdentityDto seller;
+
     public String getSlug() { return slug; }
     public void setSlug(String slug) { this.slug = slug; }
     public String getName() { return name; }
@@ -85,4 +105,6 @@ public class PublicShopDto {
     public void setAcceptsCardPayments(boolean acceptsCardPayments) { this.acceptsCardPayments = acceptsCardPayments; }
     public Double getDistanceKm() { return distanceKm; }
     public void setDistanceKm(Double distanceKm) { this.distanceKm = distanceKm; }
+    public SellerIdentityDto getSeller() { return seller; }
+    public void setSeller(SellerIdentityDto seller) { this.seller = seller; }
 }

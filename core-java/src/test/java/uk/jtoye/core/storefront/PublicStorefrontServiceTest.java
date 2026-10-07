@@ -71,6 +71,8 @@ class PublicStorefrontServiceTest {
     @Mock private ShopAnnouncementRepository announcementRepository;
     @Mock private PostcodeGeocoder postcodeGeocoder;
     @Mock private IdempotencyService idempotencyService;
+    // 31.1-24: the seller block's tenant-pinned read; returns null (no seller) unless an arm stubs it.
+    @Mock private uk.jtoye.core.onboarding.TraderIdentityService traderIdentityService;
 
     private PublicStorefrontService service;
 
@@ -93,7 +95,7 @@ class PublicStorefrontServiceTest {
         // this unit test exercises the same ceiling behaviour the running service has.
         // 33-08: postcodeGeocoder drives the THIRD search tier and is reached only when both text
         // tiers return empty, so most arms in this file never touch it.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), 5.0, 50.0);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, 5.0, 50.0);
 
         // Cluster E (API-3/API-4/INT-15): a keyed guest order is routed through the V50 store's
         // credential-safe variant. This unit test has no database, so the mock simply runs the
@@ -1375,7 +1377,7 @@ class PublicStorefrontServiceTest {
             return new PublicStorefrontService(shopRepository, productRepository, orderRepository,
                     eventPublisher, entityManager, paymentService, promotionRepository,
                     announcementRepository, idempotencyService, postcodeGeocoder,
-                    new OrderNumberGenerator(), defaultRadiusKm, maxRadiusKm);
+                    new OrderNumberGenerator(), traderIdentityService, defaultRadiusKm, maxRadiusKm);
         }
 
         @Test
