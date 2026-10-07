@@ -81,7 +81,7 @@
 
 **Infrastructure:**
 - com.rabbitmq:amqp-client — pinned to 5.34.0 via the `rabbit-amqp-client.version` Gradle extra property (NOT a direct dependency; see extensive in-file rationale) to close the four HIGH CVEs Trivy names on Boot 4.1.1's managed 5.30.0 (CVE-2026-63337, CVE-2026-69219, CVE-2026-69220, CVE-2026-75516; measured in 38-15). The key is unchanged from Boot 3.5.
-- Resilience4j 2.4.0 (`resilience4j-spring-boot4`, the Boot-4 artifact) — circuit breakers for Stripe, FHRS, Companies House, email, AI, webhook egress (config in `core-java/src/main/resources/application.yml:749-800`, `resilience4j:` at 749).
+- Resilience4j 2.4.0 (`resilience4j-spring-boot4`, the Boot-4 artifact) — circuit breakers for Stripe, FHRS, Companies House, email, AI, webhook egress (config in `core-java/src/main/resources/application.yml:806-857`, `resilience4j:` at 806).
 - Bucket4j 8.10.1 (`bucket4j-core`, `bucket4j-redis`) — Redis-backed token-bucket rate limiting.
 - Micrometer Prometheus + Micrometer Tracing (Brave/Zipkin bridge, via `spring-boot-starter-zipkin`) — metrics + distributed tracing. Boot 4 reads the Zipkin endpoint from `management.tracing.export.zipkin.endpoint` (renamed in 38-11; `ZIPKIN_ENDPOINT` drives it again).
 - com.sksamuel.scrimage 4.6.8 (`scrimage-core`, `scrimage-webp`) + TwelveMonkeys ImageIO 3.15.2 (`imageio-webp`, `imageio-core`) — image decode/resize/WebP transcode pipeline (Phase 24 media pipeline); scrimage-webp's bundled `cwebp` is glibc-linked and does NOT run on the Alpine (musl) runtime image, so the Dockerfile installs `libwebp-tools` and points the JVM at `/usr/bin` via `-Dcom.sksamuel.scrimage.webp.binary.dir`.

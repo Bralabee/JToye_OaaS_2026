@@ -11,7 +11,7 @@ This document distinguishes **LOCAL-DEV** integrations (run as compose container
   - SDK/Client: `com.stripe:stripe-java:33.4.2` (server); `@stripe/react-stripe-js` 6.12.0 + `@stripe/stripe-js` 9.17.0 (browser Elements)
   - Client classes: `core-java/src/main/java/uk/jtoye/core/payment/StripeConnectService.java`, `StripeRefundClient.java`, `StripeProperties.java`
   - Auth: `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` (both default empty — feature is inert without them)
-  - Circuit breaker: `resilience4j.circuitbreaker.instances.stripe` (`core-java/src/main/resources/application.yml:752-757` — `sliding-window-size` 10, `failure-rate-threshold` 50)
+  - Circuit breaker: `resilience4j.circuitbreaker.instances.stripe` (`core-java/src/main/resources/application.yml:809-814` — `sliding-window-size` 10, `failure-rate-threshold` 50)
   - Config: `stripe.currency` (default `gbp`), `stripe.platform-fee-bps` (basis points, default 0), `stripe.connect.country` (default `GB`)
   - **LOCAL-DEV and STAGING/PROD identical mechanism** — Stripe is a real external API in every environment; only the key differs (test vs live).
 
