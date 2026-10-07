@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 13
+open_count: 14
 waived_count: 0
 fixed_count: 1
-total_count: 14
-last_updated: 2026-10-07T03:00:22.755Z
+total_count: 15
+last_updated: 2026-10-07T03:21:29.218Z
 ---
 
 # Broken Windows Ledger
@@ -29,6 +29,7 @@ last_updated: 2026-10-07T03:00:22.755Z
 | 12 | 31.1 | unrun-verify | frontend/e2e/seller-identity.spec.ts |  | 31.1-24 #789 seller-identity spec listed only (3 tests); live RED (pre-rebuild runtime) and GREEN runs owed to 31.1-30; its Mailhog half stays red until 31.1-25 ships the email seller block | open |  | 2026-10-07T02:03:55.160Z |  |
 | 13 | 31.1 | unrun-verify | scripts/openapi-gate.sh |  | 31.1-24: oasdiff compat gate not run locally (oasdiff not installed); OpenApiSnapshotTest red on the old snapshot, green on the regenerated one (additive: 49 insertions, 0 deletions) | open |  | 2026-10-07T02:03:55.293Z |  |
 | 14 | 31.1 | unrun-verify | core-java/src/main/java/uk/jtoye/core/notification/EmailNotificationService.java |  | 31.1-25 #789/#785 order emails proven by MimeMessage content tests (unit + Testcontainers, mocked sender) and by OrderNotificationListenerIntegrationTest landing one Confirmed email in the local Mailhog from its own test context; the compose-stack Mailhog capture (rebuilt core-java, seller-identity.spec.ts email half) is owed to 31.1-30 | open |  | 2026-10-07T03:00:22.755Z |  |
+| 15 | 31.1 | unrun-verify | frontend/e2e/customer-account.spec.ts |  | 31.1-26 #838 customer-account spec listed only (3 tests: served-HTML wall on mobile+desktop, @desktop-only signed-in click-through lodging ACCESS+ERASURE with one Mailhog email each); live RED (pre-rebuild runtime has no /shop/account) and GREEN owed to 31.1-30 | open |  | 2026-10-07T03:21:29.218Z |  |
 
 ````json
 [
@@ -211,6 +212,19 @@ last_updated: 2026-10-07T03:00:22.755Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-07T03:00:22.755Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 15,
+    "kind": "unrun-verify",
+    "phase": "31.1",
+    "file": "frontend/e2e/customer-account.spec.ts",
+    "line": null,
+    "description": "31.1-26 #838 customer-account spec listed only (3 tests: served-HTML wall on mobile+desktop, @desktop-only signed-in click-through lodging ACCESS+ERASURE with one Mailhog email each); live RED (pre-rebuild runtime has no /shop/account) and GREEN owed to 31.1-30",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-07T03:21:29.218Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
