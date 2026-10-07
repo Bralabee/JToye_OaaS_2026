@@ -17,6 +17,7 @@
  *
  * publicApiClient is mocked; the backend half is DsarExportDownloadIntegrationTest.
  */
+import { StrictMode } from "react"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import DownloadPage, { metadata } from "../download/page"
 import { DownloadClient } from "../download/download-client"
@@ -233,5 +234,24 @@ describe("an unavailable link", () => {
     expect(await screen.findByRole("heading", { name: /this link can't be used/i })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /show my data/i })).toBeNull()
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(0))
+  })
+})
+
+describe("under React Strict Mode (next dev double-runs mount effects)", () => {
+  // Strict Mode mounts, unmounts and re-mounts, so the read-once effect runs
+  // twice. The first run strips the fragment; the second must not then
+  // overwrite the token it already holds with null, or a valid link reads as
+  // unavailable on `next dev` (the start-dev.sh hybrid runtime).
+  it("keeps the token read on the first run and spends it on the press", async () => {
+    mockedPost.mockResolvedValue({ status: 200, data: DOCUMENT_TEXT })
+    render(
+      <StrictMode>
+        <DownloadClient />
+      </StrictMode>
+    )
+    fireEvent.click(await screen.findByRole("button", { name: /show my data/i }))
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
+    expect(mockedPost.mock.calls[0][1]).toEqual({ token: TOKEN })
+    expect(window.location.hash).toBe("")
   })
 })

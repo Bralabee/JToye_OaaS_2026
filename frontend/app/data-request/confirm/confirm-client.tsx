@@ -81,7 +81,10 @@ export function ConfirmClient() {
         window.location.pathname + window.location.search
       )
     }
-    tokenRef.current = token && token.trim() ? token.trim() : null
+    // Only a token actually read may replace the held one: under Strict Mode
+    // (next dev) this effect runs twice, and the second run sees the fragment
+    // the first run already stripped.
+    if (token && token.trim()) tokenRef.current = token.trim()
     // The fragment exists only in the browser, so which state to show can only be
     // decided after mount. No request is made here.
     setPhase(tokenRef.current ? { kind: "ready" } : { kind: "answered", outcome: "invalid" })

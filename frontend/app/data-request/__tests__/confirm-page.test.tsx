@@ -21,6 +21,7 @@
  *
  * publicApiClient is mocked; the backend half is DsarVerificationIntegrationTest.
  */
+import { StrictMode } from "react"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import ConfirmPage, { metadata } from "../confirm/page"
 import { ConfirmClient, CONFIRM_COPY } from "../confirm/confirm-client"
@@ -203,5 +204,25 @@ describe("a failure that is not an answer", () => {
     expect(await screen.findByRole("heading", { name: CONFIRM_COPY.verified.heading })).toBeInTheDocument()
     expect(mockedPost).toHaveBeenCalledTimes(2)
     expect(mockedPost.mock.calls[1][1]).toEqual({ token: TOKEN })
+  })
+})
+
+describe("under React Strict Mode (next dev double-runs mount effects)", () => {
+  // Strict Mode mounts, unmounts and re-mounts, so the read-once effect runs
+  // twice. The first run strips the fragment; the second must not then
+  // overwrite the token it already holds with null, or a valid link reads as
+  // "This link can't be used" on `next dev` (the start-dev.sh hybrid runtime).
+  it("keeps the token read on the first run and spends it on the press", async () => {
+    respond("verified")
+    render(
+      <StrictMode>
+        <ConfirmClient />
+      </StrictMode>
+    )
+    await press()
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
+    expect(mockedPost).toHaveBeenCalledWith(VERIFY_PATH, { token: TOKEN })
+    expect(await screen.findByRole("heading", { name: CONFIRM_COPY.verified.heading })).toBeInTheDocument()
+    expect(window.location.hash).toBe("")
   })
 })
