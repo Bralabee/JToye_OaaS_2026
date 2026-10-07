@@ -57,10 +57,13 @@ document is a defect, not a variant. The number is held in code at
 `frontend/lib/company.ts:33` as `DEFAULT_COMPANY_NUMBER`, alongside a comment recording the
 dissolved namesake so the next reader does not have to rediscover it.
 
-**Open item — the registered office is not recorded in this repository.** `getCompanyInfo()` returns
-an empty string for it unless `NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE` is supplied as a build
-argument, and no default exists in code. An Article 26 arrangement and a privacy notice both need a
-postal address for the controller. **The owner must supply it**; it is not invented here.
+**Registered office.** Crispins Manor Farm Lane, Michelmersh, Romsey, England, SO51 0NT — the
+registered office on the Companies House record for company 16471464, confirmed by the owner on
+2026-10-07 (decision D-14, issue #794). `getCompanyInfo()` still holds no default for it in code:
+it reaches the published notice through the `NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE` build argument,
+set in every runtime from one documented source (`.env.example`) and pinned across them by
+`RegisteredOfficeParityTest`. If the register changes, the owner confirms the new address before
+it is published.
 
 **The vendor's identity is captured but optional.** `vendor_onboarding.company_number` exists and is
 verified against Companies House by the `BUSINESS_VERIFIED` gate, but the field is deliberately

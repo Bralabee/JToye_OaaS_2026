@@ -95,9 +95,8 @@ export default function PrivacyNoticePage() {
           Guarded on the resolver, with the heading INSIDE the guard. A term
           rendered above an empty value is simultaneously a broken page and a UK
           GDPR Art. 13 failure, and it gets triaged as the first. The registered
-          office is deliberately unconfigured at the time of writing, so this
-          block genuinely exercises its own fallback in production rather than
-          only in a test.
+          office is set in every runtime since 31.1-27 (D-14, #794); a build
+          that lacks it still omits the line rather than printing a blank.
         */}
         {contact.anyRoute ? (
           <>
