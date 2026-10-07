@@ -239,20 +239,20 @@ describe("Public unsubscribe page — says what J'Toye emails, and where to act 
     expect(ACCOUNT_HREF).toBe("/shop/account")
   })
 
-  for (const state of STATES) {
-    it(`${state.name}: no "contact the vendor", the scope stated, and both real routes linked`, async () => {
-      state.setup()
-      const { container } = render(<UnsubscribeContent />)
-      if (state.heading) await screen.findByRole("heading", { name: state.heading })
-      const text = container.textContent ?? ""
-      expect(text).not.toMatch(/contact the vendor/i)
-      expect(text).toContain(EMAIL_SCOPE_STATEMENT)
-      expect(text).toContain(NO_MARKETING_STATEMENT)
-      const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
-      expect(hrefs).toEqual(expect.arrayContaining([EMAILS_SECTION_HREF, ACCOUNT_HREF]))
-      expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
-    })
-  }
+  // it.each, not a for-loop around it(): scripts/docs-freshness.sh counts declaration sites and
+  // refuses a loop-declared head (one site, N executed tests); an it.each table counts as its rows.
+  it.each(STATES)('$name: no "contact the vendor", the scope stated, and both real routes linked', async (state) => {
+    state.setup()
+    const { container } = render(<UnsubscribeContent />)
+    if (state.heading) await screen.findByRole("heading", { name: state.heading })
+    const text = container.textContent ?? ""
+    expect(text).not.toMatch(/contact the vendor/i)
+    expect(text).toContain(EMAIL_SCOPE_STATEMENT)
+    expect(text).toContain(NO_MARKETING_STATEMENT)
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(hrefs).toEqual(expect.arrayContaining([EMAILS_SECTION_HREF, ACCOUNT_HREF]))
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
+  })
 
   it("malformed link through the page shell: same statement and routes, no old phrase", async () => {
     mockedSession.mockResolvedValue(null)
