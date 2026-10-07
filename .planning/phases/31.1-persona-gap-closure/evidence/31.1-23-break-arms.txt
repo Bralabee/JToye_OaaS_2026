@@ -1,0 +1,30 @@
+# 31.1-23 Task 1 break arms (committed GREEN ec3adb12; restore = cp from scratch backup, verified by sha256)
+== CLEAN before
+Tests:       25 passed, 25 total
+== ARM BODY_LEAK: attribution added to the POST body
+  ● #860: attribution changes nothing the checkout SUBMITS › posts a body byte-identical to the pre-attribution checkout for the same basket
+Tests:       1 failed, 24 passed, 25 total
+== ARM MASK_CHANGED: acknowledged mask OR 1
+  ● #860: attribution changes nothing the checkout SUBMITS › posts a body byte-identical to the pre-attribution checkout for the same basket
+Tests:       1 failed, 24 passed, 25 total
+== ARM NO_AGREE: panel skips the agreement check
+  ● #860: attribution never contradicts the set the panel states › after a stale 409 shows the server's newer set, the client's attribution is withdrawn
+Tests:       1 failed, 24 passed, 25 total
+== ARM PARTIAL: an unresolved line is skipped
+  ● basketAllergenAttribution › NOT RECORDED: any line missing from the catalogue makes the whole attribution null
+  ● basketAllergenFlags › NOT RECORDED propagates to the flags too
+Tests:       2 failed, 23 passed, 25 total
+== ARM ORDER: dishes sorted alphabetically
+  ● basketAllergenAttribution › ordering: dishes follow the BASKET order, not the catalogue's
+Tests:       1 failed, 24 passed, 25 total
+== ARM DECLARED_ONLY: undeclared names attributed
+  ● #860: the checkout attributes each declared allergen to its dish › a flagged line's D-09 name is its own advisory Check line, never a declared chip
+  ● basketAllergenAttribution › declared only: an undeclared-ingredient or may-contain name is never attributed
+Tests:       2 failed, 23 passed, 25 total
+== ARM FLAGS_DROPPED: page passes no flags
+  ● #860: the checkout attributes each declared allergen to its dish › a flagged line's D-09 name is its own advisory Check line, never a declared chip
+Tests:       1 failed, 24 passed, 25 total
+== restore by sha256: before=[2b959facd98c30304a049a37d2d73f905d359f8729d99f0101641458df2ee855 b4a114d7eb41f6046459f7c62a16e15721a3272bad4b3d0e51f6c55c47fc4d6f d5c353f9be9a7819a84e78ff102046d52d75b7f2856fb2064e9225beb1a41ef3 ] after=[2b959facd98c30304a049a37d2d73f905d359f8729d99f0101641458df2ee855 b4a114d7eb41f6046459f7c62a16e15721a3272bad4b3d0e51f6c55c47fc4d6f d5c353f9be9a7819a84e78ff102046d52d75b7f2856fb2064e9225beb1a41ef3 ] MATCH
+== CLEAN after
+Tests:       25 passed, 25 total
+== git status (frontend)

@@ -158,3 +158,13 @@ export const ALLERGEN_ATTRIBUTION_INTRO_COPY = "Which dishes contain them:"
 export function allergenAttributionCopy(allergen: string, dishes: readonly string[]): string {
   return `${allergen} — ${dishes.join(", ")}`
 }
+
+/**
+ * #860 (31.1-23): a basket line whose allergens cannot be stated — the catalogue did not load, or
+ * no longer lists the dish. NOT RECORDED, and never "No allergens declared": that would put a
+ * declaration in the vendor's mouth that nobody made.
+ */
+export const BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY = ""
+
+/** #860 (31.1-23): shown on a basket line while the catalogue is loading, in the space the line will take. */
+export const BASKET_LINE_ALLERGENS_LOADING_COPY = ""

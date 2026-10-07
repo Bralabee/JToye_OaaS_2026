@@ -37,6 +37,8 @@ import {
   CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY,
   ALLERGEN_ATTRIBUTION_INTRO_COPY,
   allergenAttributionCopy,
+  BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
+  BASKET_LINE_ALLERGENS_LOADING_COPY,
 } from "@/lib/allergen-copy"
 
 const MODULE_PATH = path.join(__dirname, "..", "allergen-copy.ts")
@@ -173,6 +175,13 @@ describe("D-18 / #860 (31.1-23): which dish carries which allergen", () => {
   it("'Milk — Jollof Rice, Puff Puff': the allergen, an em dash, the dishes in the order given", () => {
     expect(allergenAttributionCopy("Milk", ["Jollof Rice", "Puff Puff"])).toBe("Milk — Jollof Rice, Puff Puff")
     expect(allergenAttributionCopy("Eggs", ["Puff Puff"])).toBe("Eggs — Puff Puff")
+  })
+
+  it("a basket line that cannot be stated says so, and never 'No allergens declared'", () => {
+    expect(BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY).toBe(
+      "Allergen information not available – check with the shop"
+    )
+    expect(BASKET_LINE_ALLERGENS_LOADING_COPY).toBe("Checking allergen information…")
   })
 })
 
