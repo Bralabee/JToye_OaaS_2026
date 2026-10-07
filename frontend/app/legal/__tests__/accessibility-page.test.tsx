@@ -104,6 +104,16 @@ describe("accessibility statement page — the claim", () => {
     expect(text).toContain(`level ${STATEMENT.level}`)
   })
 
+  it("claims against WCAG 2.2, the standard the axe gate tests, and never the superseded 2.1 (#878)", () => {
+    const { main } = renderPage()
+    const text = main.textContent ?? ""
+    expect(text).toContain("partially conformant with WCAG 2.2 level AA")
+    // The absence that can fail: a stale "2.1" anywhere on the page, prose included.
+    expect(text).not.toContain("WCAG 2.1")
+    expect(String(metadata.description ?? "")).toContain("WCAG 2.2")
+    expect(String(metadata.description ?? "")).not.toContain("WCAG 2.1")
+  })
+
   it("does not name the dissolved company anywhere on the page", () => {
     const { main } = renderPage()
     const text = main.textContent ?? ""
@@ -121,6 +131,25 @@ describe("accessibility statement page — scope", () => {
     for (const route of STATEMENT.inScopeRoutes) {
       expect(text).toContain(route.path)
     }
+  })
+
+  it("lists every declared surface once, in declared order — basket, confirmation, order page and /track included (#878)", () => {
+    const { main } = renderPage()
+    const heading = within(main).getByRole("heading", { level: 2, name: "Scope of this statement" })
+    const section = heading.closest("section")
+    if (!section) throw new Error("VOID: the scope heading is not inside a section")
+    const items = Array.from(section.querySelector("ul")?.querySelectorAll(":scope > li") ?? []).map(
+      (li) => (li.textContent ?? "").replace(/\s+/g, " ").trim()
+    )
+    // Rendered from the constant, so the expectation is derived from it too —
+    // and the four surfaces #878 added are asserted by name so that removing
+    // one from BOTH the data and the page still fails here.
+    expect(items).toEqual(STATEMENT.inScopeRoutes.map((r) => `${r.path} — ${r.label}`))
+    const text = items.join("\n")
+    for (const path of ["/shop/[slug]/cart", "/shop/[slug]/orders/[orderNumber]", "/track"]) {
+      expect(items.filter((i) => i.startsWith(`${path} — `))).toHaveLength(1)
+    }
+    expect(text).toMatch(/order confirmation/i)
   })
 
   it("names the excluded vendor dashboard explicitly", () => {
@@ -175,6 +204,26 @@ describe("accessibility statement page — the exception list", () => {
     expect(main.textContent ?? "").not.toContain(
       "Registered office address not published"
     )
+  })
+
+  it("no longer says there is no skip link, because there is one (#878, measured on seven surfaces)", () => {
+    // Measured 2026-10-07 on the built tree: the first Tab on /, /shop,
+    // /shop/signin, /track, a storefront, its basket and its seeded checkout
+    // lands on "Skip to main content" (href #main, which resolves to <main>).
+    // An exception saying otherwise would publish a defect the site no longer has.
+    const { main } = renderPage()
+    expect(main.querySelectorAll("[data-exception-id]").length).toBeGreaterThan(0) // control
+    expect(STATEMENT.exceptions.map((e) => e.id)).not.toContain("storefront-no-skip-link")
+    expect(main.querySelector('[data-exception-id="storefront-no-skip-link"]')).toBeNull()
+    expect((main.textContent ?? "").toLowerCase()).not.toContain("skip to content")
+  })
+
+  it("still lists the checkout address fields marked required only visually, because they still are", () => {
+    // Measured 2026-10-07: #address1, #city and #postcode carry neither
+    // `required` nor `aria-required`, while #name, #email and #phone are
+    // `required`. Kept, not bulk-deleted with the skip-link entry.
+    const { main } = renderPage()
+    expect(main.querySelector('[data-exception-id="required-fields-marked-visually-only"]')).not.toBeNull()
   })
 
   it("gives a reader the registered office as a postal contact route when it is configured", () => {

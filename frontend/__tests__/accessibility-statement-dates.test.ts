@@ -58,7 +58,7 @@ describe("accessibility statement — the constant parsed at all", () => {
       throw new Error("VOID: the accessibility statement constant did not load")
     }
     expect(S.claim).toBe("partial")
-    expect(S.standard).toBe("WCAG 2.1")
+    expect(S.standard).toBe("WCAG 2.2")
     expect(S.level).toBe("AA")
 
     expect(S.inScopeRoutes.length).toBeGreaterThan(0)
@@ -72,6 +72,83 @@ describe("accessibility statement — the constant parsed at all", () => {
     expect(paths).toContain("/legal/accessibility")
   })
 
+  it("covers the basket, the order confirmation, the per-shop order page and /track (#878 UXT-114)", () => {
+    // These four are where the screen-reader persona's worst problems were, and
+    // the statement used to stop at checkout. Each is asserted by its own entry,
+    // so dropping one names which.
+    const paths = S.inScopeRoutes.map((r) => r.path)
+    expect(paths).toContain("/shop/[slug]/cart")
+    expect(paths).toContain("/shop/[slug]/orders/[orderNumber]")
+    expect(paths).toContain("/track")
+    // The cash confirmation is a STATE of the checkout URL, not a route of its
+    // own, so it is identified by its label rather than by a path.
+    const confirmation = S.inScopeRoutes.filter((r) => /order confirmation/i.test(r.label))
+    expect(confirmation.map((r) => r.path)).toEqual(["/shop/[slug]/checkout"])
+  })
+
+  it("names one standard throughout — the one the axe gate tests — and never the superseded one", () => {
+    // The statement and its gate move together (e2e/public-a11y.spec.ts carries
+    // wcag22aa). A stale "WCAG 2.1" left in any field would tell a reader two
+    // different things about what was tested.
+    expect(S.standard).toBe("WCAG 2.2")
+    expect(JSON.stringify(S)).not.toContain("WCAG 2.1")
+    // CONTROL: the serialisation is the real statement and does name the
+    // standard it claims, so the absence above cannot pass over an empty value.
+    expect(JSON.stringify(S)).toContain("WCAG 2.2")
+  })
+})
+
+/**
+ * A duplicate is how a list like this goes wrong quietly: a copied entry renders
+ * twice and reads as two things, or two entries share an anchor id and the deep
+ * link lands on the wrong one. The helper below is the instrument, and the first
+ * test proves it can fail before the real lists are judged with it.
+ */
+function duplicates(values: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const dupes = new Set<string>()
+  for (const v of values) {
+    if (seen.has(v)) dupes.add(v)
+    seen.add(v)
+  }
+  return [...dupes]
+}
+
+describe("accessibility statement — every entry appears exactly once", () => {
+  it("INSTRUMENT: the duplicate finder reports a duplicate when there is one", () => {
+    expect(duplicates(["a", "b", "a"])).toEqual(["a"])
+    expect(duplicates(["a", "b"])).toEqual([])
+  })
+
+  it("lists every exception id once", () => {
+    expect(S.exceptions.length).toBeGreaterThan(0) // control
+    expect(duplicates(S.exceptions.map((e) => e.id))).toEqual([])
+  })
+
+  it("lists every in-scope surface once — by its label, and by its path and label together", () => {
+    // A path alone may legitimately repeat: the dish panel and the cash order
+    // confirmation are STATES of a URL that is also listed for its main page.
+    // What must never repeat is the surface itself, so the label is unique and
+    // so is the (path, label) pair.
+    expect(S.inScopeRoutes.length).toBeGreaterThan(0) // control
+    expect(duplicates(S.inScopeRoutes.map((r) => r.label))).toEqual([])
+    expect(duplicates(S.inScopeRoutes.map((r) => `${r.path} | ${r.label}`))).toEqual([])
+  })
+
+  it("lists each route once inside an exception", () => {
+    const repeated = S.exceptions.filter((e) => duplicates(e.routes).length > 0).map((e) => e.id)
+    expect(repeated).toEqual([])
+  })
+
+  it("only names routes the statement declares — in scope, or the excluded dashboard", () => {
+    // A typo in an exception's route would publish a page that does not exist.
+    const declared = new Set([...S.inScopeRoutes.map((r) => r.path), "/dashboard"])
+    const unknown = S.exceptions.flatMap((e) => e.routes.filter((r) => !declared.has(r)).map((r) => `${e.id}: ${r}`))
+    expect(unknown).toEqual([])
+  })
+})
+
+describe("accessibility statement — the date parser", () => {
   it("VOIDs rather than skips on a date it cannot parse", () => {
     // Proves the instrument fails loudly on bad input rather than passing over
     // it. Without this, `isoToUtc` returning NaN would make every comparison
