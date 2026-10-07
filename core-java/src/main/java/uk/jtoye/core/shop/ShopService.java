@@ -52,8 +52,12 @@ public class ShopService {
      * exists under {@code frontend/app/shop/} today.
      *
      * <p>Compared case-insensitively after trimming — see {@link #assertSlugNotReserved}.
+     *
+     * <p>{@code account} (31.1-26, #838) is the signed-in customer's data-rights page. It must be in
+     * this default AND in application.yml; ShopReservedSlugAccountTest reads both, and also walks
+     * {@code frontend/app/shop/} so a new static route that is not reserved here turns it red.
      */
-    @Value("${jtoye.shop.reserved-slugs:auth,orders,signin}")
+    @Value("${jtoye.shop.reserved-slugs:account,auth,orders,signin}")
     private Set<String> reservedSlugs;
 
     // WR-03 (phase-33 code review): the bounding box a CLIENT-SUPPLIED fallback

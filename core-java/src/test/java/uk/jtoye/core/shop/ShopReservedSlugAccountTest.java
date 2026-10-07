@@ -215,7 +215,7 @@ class ShopReservedSlugAccountTest {
         try {
             String expr = ShopService.class.getDeclaredField("reservedSlugs")
                     .getAnnotation(org.springframework.beans.factory.annotation.Value.class).value();
-            // "${jtoye.shop.reserved-slugs:auth,orders,signin}" -> "auth,orders,signin"
+            // "${jtoye.shop.reserved-slugs:account,auth,orders,signin}" -> "account,auth,orders,signin"
             return expr.substring(expr.indexOf(':') + 1, expr.lastIndexOf('}'));
         } catch (NoSuchFieldException e) {
             throw new IllegalStateException("ShopService.reservedSlugs is gone", e);

@@ -183,11 +183,14 @@ jtoye:
     # This is configuration rather than a constant because the list is a function of
     # the frontend route table (frontend/app/shop/*/), which changes as routes are
     # added. Keep it in step with that directory — 'auth' and 'orders' have been
-    # static since Phase 18; 'signin' is the customer sign-in page.
+    # static since Phase 18; 'signin' is the customer sign-in page; 'account' is the
+    # signed-in customer's data-rights page (31.1-26, #838). ShopReservedSlugAccountTest
+    # walks frontend/app/shop/ and fails if a static segment is missing here or from
+    # the ShopService default.
     #
     # Only an EXPLICITLY supplied slug can collide: ShopService appends a random
     # 8-character suffix to any slug it generates itself.
-    reserved-slugs: ${SHOP_RESERVED_SLUGS:auth,orders,signin}
+    reserved-slugs: ${SHOP_RESERVED_SLUGS:account,auth,orders,signin}
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:
