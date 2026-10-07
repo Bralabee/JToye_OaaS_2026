@@ -263,7 +263,20 @@ export interface Order {
   deliveryFeePennies?: number | null
   createdAt: string
   updatedAt: string
+  // Phase 31.1 D-06/D-07 (V69, 31.1-09) and D-15 (V73, 31.1-13). OrderDto writes these NON_NULL
+  // (its bytes are golden), so on the LIST an absent field means NOT RECORDED / no note / not yet
+  // acknowledged. Never coalesce an absent ack mask to 0: 0 is "acknowledged a declared-none basket".
+  allergenAckMask?: number | null
+  allergenAckAt?: string | null
+  placedVia?: OrderPlacedVia | null
+  allergyNote?: string | null
+  allergyNoteAcknowledgedAt?: string | null
+  /** The authenticated principal that acknowledged the note (a Keycloak subject id), never a display name. */
+  allergyNoteAcknowledgedBy?: string | null
 }
+
+/** Which channel placed an order (31.1-09): the customer at the storefront, or the shop itself (D-07). */
+export type OrderPlacedVia = "STOREFRONT" | "VENDOR"
 
 export interface OrderItem {
   id: string
@@ -349,6 +362,19 @@ export interface OrderDetail {
   allergenMask?: number | null
   allergenNames?: string[] | null
   allergenFlags?: OrderAllergenFlag[] | null
+  // Phase 31.1 D-06/D-07 (31.1-09): what the CUSTOMER acknowledged at checkout, and who placed the
+  // order. A different fact from the recorded set above. null = NOT RECORDED (a vendor-placed order,
+  // or one from before V69); `acknowledgedAllergenNames: []` = acknowledged a declared-none basket.
+  allergenAckMask?: number | null
+  allergenAckAt?: string | null
+  placedVia?: OrderPlacedVia | null
+  acknowledgedAllergenNames?: string[] | null
+  // Phase 31.1 D-15 (#812, V73, 31.1-13): the customer's allergy note, separate from `notes`
+  // (delivery), and the shop's acknowledgement of it. First acknowledgement stands.
+  allergyNote?: string | null
+  allergyNoteAcknowledgedAt?: string | null
+  /** The authenticated principal that acknowledged the note (a Keycloak subject id), never a display name. */
+  allergyNoteAcknowledgedBy?: string | null
 }
 
 export interface CreateOrderRequest {

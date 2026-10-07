@@ -83,19 +83,37 @@ export function mayContainCopy(names: readonly string[]): string | null {
   return names.length === 0 ? null : `May contain: ${names.join(", ")}`
 }
 
+
 // ---------------------------------------------------------------------------------------------
 // 31.1-22 (#812, D-15): the customer's allergy note on the kitchen board, the printed ticket and
-// the vendor order detail, and the shop's acknowledgement of it.
-// RED skeleton: every name is exported with a wrong value so the tests fail on assertions.
+// the vendor order detail, and the shop's acknowledgement of it. The note is the CUSTOMER's words;
+// these phrases only frame it and say whether someone in the shop has marked it as read.
 // ---------------------------------------------------------------------------------------------
 
-export const ALLERGY_NOTE_LABEL_COPY = ""
-export const ALLERGY_NOTE_ACK_BUTTON_COPY = ""
-export const ALLERGY_NOTE_NOT_READ_PRINT_COPY = ""
-export const ALLERGY_NOTE_READER_YOU_COPY = ""
-export const ALLERGY_NOTE_READER_STAFF_COPY = ""
-export function allergyNoteReadCopy(_who: string | null, _time: string): string {
-  return ""
+/** The block's label. Uppercase in the string itself, like ALLERGENS on the banner beside it. */
+export const ALLERGY_NOTE_LABEL_COPY = "ALLERGY NOTE"
+
+/** The action. It records that a person read the note, so it says exactly that. */
+export const ALLERGY_NOTE_ACK_BUTTON_COPY = "Mark allergy note as read"
+
+/** The printed ticket's line before anyone has marked the note read (paper carries no button). */
+export const ALLERGY_NOTE_NOT_READ_PRINT_COPY = "NOT YET MARKED AS READ"
+
+/** Who read it, when the viewer is the account that did. */
+export const ALLERGY_NOTE_READER_YOU_COPY = "you"
+
+/** Who read it, when it was another account: the stored id is never printed. */
+export const ALLERGY_NOTE_READER_STAFF_COPY = "a member of staff"
+
+/** "Read by kim at 18:05"; "Read at 18:05" when nobody can be named. `time` is UK time. */
+export function allergyNoteReadCopy(who: string | null, time: string): string {
+  return who ? `Read by ${who} at ${time}` : `Read at ${time}`
 }
-export const ALLERGY_NOTE_ACK_FORBIDDEN_COPY = ""
-export const ALLERGY_NOTE_ACK_FAILED_COPY = ""
+
+/** The server refused (403): this account cannot act on the order's shop. */
+export const ALLERGY_NOTE_ACK_FORBIDDEN_COPY =
+  "Not marked as read: your account cannot act on this shop's orders."
+
+/** Anything else: the acknowledgement was not recorded, so the note is still unread. */
+export const ALLERGY_NOTE_ACK_FAILED_COPY =
+  "Not marked as read: the request did not go through. Try again."

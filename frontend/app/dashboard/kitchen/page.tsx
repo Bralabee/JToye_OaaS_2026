@@ -29,6 +29,10 @@ import { useKitchenPrint } from "@/components/dashboard/kitchen/use-kitchen-prin
 import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
 import { ItemAllergenBadge } from "@/components/dashboard/kitchen/item-allergen-badge"
 import {
+  AllergyNoteBlock,
+  type AllergyNoteAcknowledgement,
+} from "@/components/dashboard/kitchen/allergy-note-block"
+import {
   Card,
   CardContent,
   CardHeader,
@@ -559,6 +563,28 @@ export default function KitchenPage() {
     }
   }
 
+  // --- 31.1-22: the allergy note was marked read ---
+  //
+  // Merge the SERVER's who/when into the board's copy of the order (never the click time), so
+  // the print sheet and any later render agree with the card. The next board read replaces the
+  // entry wholesale anyway; this only closes the gap until then.
+  const handleAllergyNoteAcknowledged = useCallback(
+    (orderId: string, ack: AllergyNoteAcknowledgement) => {
+      setOrdersMap((prev) => {
+        const existing = prev.get(orderId)
+        if (!existing) return prev
+        const next = new Map(prev)
+        next.set(orderId, {
+          ...existing,
+          allergyNoteAcknowledgedAt: ack.acknowledgedAt,
+          allergyNoteAcknowledgedBy: ack.acknowledgedBy,
+        })
+        return next
+      })
+    },
+    []
+  )
+
   // --- Sorted orders (newest first) ---
 
   const sortedOrders = Array.from(ordersMap.values()).sort(
@@ -923,6 +949,21 @@ export default function KitchenPage() {
                       <OrderAllergenBanner
                         allergenNames={order.allergenNames}
                         allergenFlags={order.allergenFlags}
+                      />
+
+                      {/* 31.1-22 (#812, D-15): the customer's allergy note, directly under the
+                          allergen banner and still inside the header, so it is read before the
+                          customer name and the items. Renders nothing for an order without a
+                          note. Marking it read updates this board's copy of the order from the
+                          server's 200, so a re-print says who read it. No STOMP frame announces
+                          an acknowledgement (31.1-13); other screens learn it on their next read. */}
+                      <AllergyNoteBlock
+                        orderId={order.id}
+                        orderLabel={order.orderNumber || `#${order.id.substring(0, 6)}`}
+                        note={order.allergyNote}
+                        acknowledgedAt={order.allergyNoteAcknowledgedAt}
+                        acknowledgedBy={order.allergyNoteAcknowledgedBy}
+                        onAcknowledged={(ack) => handleAllergyNoteAcknowledged(order.id, ack)}
                       />
                     </CardHeader>
                     <CardContent className="space-y-3">
