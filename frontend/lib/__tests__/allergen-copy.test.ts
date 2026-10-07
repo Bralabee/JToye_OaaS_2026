@@ -192,7 +192,9 @@ describe("no phrase the platform cannot stand behind appears anywhere in the mod
     expect(source).toContain("NO_ALLERGENS_DECLARED_COPY")
   })
 
-  it.each(FORBIDDEN.map((re) => [re.source, re] as const))("absent: %s", (_name, re) => {
+  // The table is FORBIDDEN itself, not FORBIDDEN.map(...): scripts/docs-freshness.sh resolves an
+  // .each table only when it is an array literal declared in this file, and refuses a call.
+  it.each(FORBIDDEN)("absent: %p", (re) => {
     expect(source).not.toMatch(re)
   })
 })
