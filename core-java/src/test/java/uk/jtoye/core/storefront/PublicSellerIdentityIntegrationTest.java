@@ -23,6 +23,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import uk.jtoye.core.onboarding.TraderIdentityService;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
@@ -33,10 +35,14 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -94,6 +100,16 @@ class PublicSellerIdentityIntegrationTest {
     private static final AtomicBoolean DOWNGRADED = new AtomicBoolean(false);
     private static final String SHOP_PATH = "/api/v1/public/shops/";
 
+    /**
+     * Spied so the request thread's {@link TenantContext} can be read the MOMENT the seller read
+     * returns. Reading it after {@code mockMvc.perform} is vacuous: the security filter chain clears
+     * TenantContext in a {@code finally} at the end of every request, so a leak inside the request
+     * is already wiped by then (measured: a deliberate {@code TenantContext.set} with no clear left
+     * that after-request assertion green).
+     */
+    @MockitoSpyBean private TraderIdentityService traderIdentityService;
+    private final AtomicReference<Optional<UUID>> contextAfterSellerRead = new AtomicReference<>();
+
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PlatformTransactionManager txManager;
@@ -102,6 +118,12 @@ class PublicSellerIdentityIntegrationTest {
     @BeforeEach
     void setUp() {
         TenantContext.clear();
+        contextAfterSellerRead.set(null);
+        doAnswer(invocation -> {
+            Object seller = invocation.callRealMethod();
+            contextAfterSellerRead.set(TenantContext.get());
+            return seller;
+        }).when(traderIdentityService).findPublicSeller(any(), any());
         // Only a superuser may run ALTER ROLE, so this must happen exactly once per container.
         if (DOWNGRADED.compareAndSet(false, true)) {
             assertThat(postgres.getUsername())
@@ -154,9 +176,13 @@ class PublicSellerIdentityIntegrationTest {
                 .andExpect(jsonPath("$.seller.tenantId").doesNotExist())
                 .andExpect(jsonPath("$.seller.version").doesNotExist());
 
-        assertThat(TenantContext.get())
+        assertThat(contextAfterSellerRead.get())
+                .as("non-vacuity: the seller read ran on this request and was observed")
+                .isNotNull();
+        assertThat(contextAfterSellerRead.get())
                 .as("T-31.1-82: the seller read pins the tenant transaction-locally and never leaves "
-                        + "TenantContext set on the request thread")
+                        + "TenantContext set on the request thread (observed the moment it returns, "
+                        + "before any filter could clear it)")
                 .isEmpty();
     }
 
@@ -243,7 +269,8 @@ class PublicSellerIdentityIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slug").value(slug))
                 .andExpect(jsonPath("$.seller").doesNotExist());
-        assertThat(TenantContext.get()).isEmpty();
+        assertThat(contextAfterSellerRead.get()).as("non-vacuity").isNotNull();
+        assertThat(contextAfterSellerRead.get()).isEmpty();
     }
 
     // ---- 4. Company number only for a company ---------------------------------------------------
