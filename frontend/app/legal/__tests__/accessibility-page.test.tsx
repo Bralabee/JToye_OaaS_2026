@@ -157,14 +157,32 @@ describe("accessibility statement page — the exception list", () => {
     expect(dueCount).toBe(STATEMENT.exceptions.length)
   })
 
-  it("carries the registered-office exception with its company number", () => {
+  it("no longer lists the registered office as unpublished, because it is published (#794, D-14)", () => {
+    // The registered office from the Companies House record for 16471464 is now
+    // set in every runtime (31.1-27), so an exception saying it is NOT published
+    // would be a false statement on the page a regulator reads.
     const { main } = renderPage()
-    const entry = main.querySelector(
-      '[data-exception-id="registered-office-not-published"]'
+    // CONTROL: the list itself rendered, so the absences below cannot pass over
+    // an empty page.
+    expect(main.querySelectorAll("[data-exception-id]").length).toBeGreaterThan(0)
+
+    expect(STATEMENT.exceptions.map((e) => e.id)).not.toContain(
+      "registered-office-not-published"
     )
-    expect(entry).not.toBeNull()
-    expect(entry?.textContent).toContain("16471464")
-    expect(entry?.textContent).not.toContain("13434105")
+    expect(
+      main.querySelector('[data-exception-id="registered-office-not-published"]')
+    ).toBeNull()
+    expect(main.textContent ?? "").not.toContain(
+      "Registered office address not published"
+    )
+  })
+
+  it("gives a reader the registered office as a postal contact route when it is configured", () => {
+    process.env[OFFICE_VAR] = "1 Example Street, Exampletown, EX1 1EX"
+    const { main } = renderPage()
+    expect(main.textContent ?? "").toContain(
+      "Write to us at 1 Example Street, Exampletown, EX1 1EX."
+    )
   })
 })
 
