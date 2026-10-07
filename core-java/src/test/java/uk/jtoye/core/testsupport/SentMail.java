@@ -42,10 +42,13 @@ public final class SentMail {
         }
     }
 
-    /** The plain-text body of a re-parsed single-part message. */
+    /**
+     * The plain-text body of a re-parsed single-part message, with the wire's CRLF line endings
+     * (RFC 5322 canonical form) normalised to LF so a test can assert whole lines.
+     */
     public static String text(MimeMessage parsed) {
         try {
-            return (String) parsed.getContent();
+            return ((String) parsed.getContent()).replace("\r\n", "\n");
         } catch (Exception e) {
             throw new IllegalStateException("message has no plain-text body", e);
         }

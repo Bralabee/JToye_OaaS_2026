@@ -194,6 +194,60 @@ class CustomerEmailSellerIntegrationTest {
                 .doesNotContain(ALLERGY_NOTE);
     }
 
+    // ---- Task 2: the vendor-placed, no-email and cross-tenant arms --------------------------------
+
+    @Test
+    @DisplayName("D-07 + no shop email: a vendor-placed order states no confirmation was recorded, and with "
+            + "no shop email there is no Reply-To header")
+    void vendorPlacedOrderWithoutShopEmail() throws Exception {
+        Fixture f = seedStorefrontOrder(null, "VENDOR", null);
+
+        listener.handleOrderStateChange(event(f, OrderStatus.DRAFT, OrderStatus.PENDING));
+
+        MimeMessage msg = reparse((MimeMessage) awaitSingleSend());
+        assertThat(msg.getHeader("Reply-To")).as("no shop email -> no Reply-To header").isNull();
+        assertThat(((InternetAddress) msg.getFrom()[0]).getPersonal()).isEqualTo(SHOP_NAME + " via J'Toye");
+        String body = (String) msg.getContent();
+        assertThat(body)
+                .contains("This order was placed by the shop for you, so no allergen confirmation was recorded.")
+                .contains("Recorded on your order: Gluten, Milk")
+                .doesNotContain("You confirmed you had read:")
+                .doesNotContain("Email: ")
+                .contains("Seller: Mama Ade Foods Ltd (Registered company)");
+    }
+
+    @Test
+    @DisplayName("T-31.1-87: another tenant's legal identity never appears in this tenant's email "
+            + "(the other row proven to exist under its own tenant)")
+    void anotherTenantsSellerNeverAppears() throws Exception {
+        UUID other = UUID.randomUUID();
+        jdbc.update("INSERT INTO tenants (id, name) VALUES (?, ?)", other, "789-email-other-" + other);
+        inTenant(other, c -> executeUpdate(c,
+                "INSERT INTO trader_identity (id, tenant_id, legal_name, entity_type, address_line1, "
+                        + "address_city, address_postcode) VALUES (?::uuid, ?::uuid, 'Bravo Secret Trading Ltd', "
+                        + "'SOLE_TRADER', '2 Bravo Road', 'York', 'YO1 7HH')",
+                UUID.randomUUID().toString(), other.toString()));
+        Long otherRows = inTenant(other, c -> {
+            try (PreparedStatement ps = c.prepareStatement("SELECT count(*) FROM trader_identity");
+                 java.sql.ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
+        });
+        assertThat(otherRows).as("non-vacuity: the other tenant's identity exists").isEqualTo(1L);
+
+        Fixture f = seedStorefrontOrder(SHOP_EMAIL, "STOREFRONT", 65);
+        listener.handleOrderStateChange(event(f, OrderStatus.PENDING, OrderStatus.CONFIRMED));
+
+        MimeMessage msg = reparse((MimeMessage) awaitSingleSend());
+        String body = (String) msg.getContent();
+        assertThat(body).contains("Seller: Mama Ade Foods Ltd").doesNotContain("Bravo");
+        assertThat(msg.getSubject()).isEqualTo("Order " + f.orderNumber + " — Confirmed");
+        assertThat(body).as("only the order-received email carries the cancellation statement and record")
+                .doesNotContain(CANCELLATION)
+                .doesNotContain("Recorded on your order");
+    }
+
     // ---- helpers ------------------------------------------------------------------------------
 
     record Fixture(UUID tenantId, UUID shopId, UUID orderId, String orderNumber) {
