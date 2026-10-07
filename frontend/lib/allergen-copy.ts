@@ -15,6 +15,17 @@
 /** D-18: a declaration with none of the 14 regulated allergens. */
 export const NO_ALLERGENS_DECLARED_COPY = "No allergens declared"
 
+/** D-18: the label of the declared set where it is shown as a list (the dish modal). */
+export const CONTAINS_LABEL_COPY = ""
+
+/**
+ * D-18, storefront: the declared allergens in words ("Contains: Gluten, Milk").
+ * Returns null for an empty declaration; the caller then states NO_ALLERGENS_DECLARED_COPY.
+ */
+export function containsCopy(_names: readonly string[]): string | null {
+  return null
+}
+
 /**
  * Pitfall 6: the server's reconciliation (31.1-06) reads CAPITALS and **double asterisks** as
  * emphasis. The form says so, because the persona typed "butter (MILK)" with no guidance.

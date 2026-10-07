@@ -82,6 +82,20 @@ export interface PublicProduct {
   preparationTimeMinutes: number | null
   featured: boolean
   inStock: boolean
+  /**
+   * 31.1-06 (#787, D-09): allergen NAMES the ingredients text emphasises (CAPITALS or `**…**`)
+   * that the declared `allergenMask` omits, in catalogue bit order. An ADVISORY reconciliation
+   * result, rendered as its own "Ingredients name: MILK – check with the shop" line and never
+   * merged into the declared set. Optional for old-backend tolerance: absent reads as "nothing
+   * computed", and the card then states only the declaration.
+   */
+  undeclaredIngredientAllergens?: string[] | null
+  /**
+   * 31.1-14 (#861, D-16): "may contain" (cross-contact) allergen NAMES the vendor recorded that are
+   * NOT already declared, in catalogue bit order. Its own "May contain: Sesame" line; never merged
+   * into the declared set. The server sends [] for none; optional for old-backend tolerance.
+   */
+  mayContainAllergens?: string[] | null
 }
 
 export type ProductsByCategory = Record<string, PublicProduct[]>

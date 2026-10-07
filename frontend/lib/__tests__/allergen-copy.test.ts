@@ -12,10 +12,12 @@
 import { readFileSync } from "fs"
 import path from "path"
 import {
+  CONTAINS_LABEL_COPY,
   NO_ALLERGENS_DECLARED_COPY,
   INGREDIENTS_EMPHASIS_HELP_COPY,
   MAY_CONTAIN_HELP_COPY,
   KEEP_AS_IS_COPY,
+  containsCopy,
   mayContainCopy,
   tickAllergenCopy,
   undeclaredIngredientCopy,
@@ -64,6 +66,18 @@ describe("D-09: the undeclared-ingredient wording names the allergen as the vend
 describe("D-18: an empty declaration says what was declared, not what the food contains", () => {
   it("NO_ALLERGENS_DECLARED_COPY is 'No allergens declared'", () => {
     expect(NO_ALLERGENS_DECLARED_COPY).toBe("No allergens declared")
+  })
+})
+
+describe("D-18: the declared set in words, on the menu card and the dish modal (31.1-21)", () => {
+  it("'Contains: Gluten, Milk' in the order given, null for an empty declaration", () => {
+    expect(containsCopy(["Gluten", "Milk"])).toBe("Contains: Gluten, Milk")
+    expect(containsCopy(["Milk"])).toBe("Contains: Milk")
+    expect(containsCopy([])).toBeNull()
+  })
+
+  it("the list label is 'Contains'", () => {
+    expect(CONTAINS_LABEL_COPY).toBe("Contains")
   })
 })
 
