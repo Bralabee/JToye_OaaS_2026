@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: "31.1"
 current_phase_name: Persona gap closure
 status: executing
-stopped_at: "Completed 31.1-20-PLAN.md (#839: the DSAR verification email links to {web origin}/data-request/confirm#token=…, never the API and never a query string; the page clears the fragment, POSTs only on Confirm my request, and shows confirmed / already confirmed / invalid from the status, never JSON; compose, application.yml, k8s base/staging/production/local and both goldens point both DSAR links at their own web origin, pinned by DsarLinkConfigContractTest; e2e/dsar-verify-link.spec.ts live run owed to 31.1-30); next: 31.1-21"
-last_updated: "2026-10-07T00:06:59.116Z"
+stopped_at: "Completed 31.1-21-PLAN.md (#817/#787/#861 storefront: every menu card names its allergens in words above the price/Add row — Contains: Gluten, Milk / No allergens declared / Ingredients name: MILK – check with the shop — and the Add button's aria-describedby carries the line; the dish modal leads with a named Allergen Information region in every state with a Contains list, a separate May contain line and the D-09 line; lib/product-allergens.ts is the one rule; e2e 200%-zoom and fixture-product blocks listed, live run owed to 31.1-30); next: 31.1-22"
+last_updated: "2026-10-07T00:22:00.000Z"
 last_activity: 2026-10-07
-state_head: 3a0d2864edf080bc0ab3645d91c9edaa534f863c
+state_head: 2d2febed077e4ae5fa1635746291562c8cbaef75
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 185
-  completed_plans: 176
+  completed_plans: 177
   percent: 65
-last_activity_desc: 31.1-20 complete (DSAR confirm link opens /data-request/confirm on every runtime's web origin, confirms on a press, contract test pins every runtime)
+last_activity_desc: 31.1-21 complete (menu cards name allergens in words before Add via aria-describedby; dish modal leads with Contains / May contain / the D-09 line)
 ---
 
 # Project State
@@ -50,6 +50,7 @@ Phase: 31.1 (Persona gap closure) — EXECUTING
 - 31.1-18 DONE 2026-10-07: #785 / #812 customer side (D-07, D-08, D-15), frontend only. RecordedAllergenSet gains placedVia (VENDOR -> "This order was placed by the shop for you, so no allergen confirmation was recorded."), allergyNoteProvided/allergyNoteAcknowledgedAt/shopName ("Your allergy note was sent to {shop}." + "Read by the shop at HH:MM" in Europe/London, date added when not today there, or "not marked as read yet"; never the note text), recorded undefined = NOT LOADED with an on-tap load; acknowledgementStatement(acknowledged, placedVia) is the one four-way mapping. Rendered on /shop/{slug}/orders/{n} and /track from the number + email tracking response; on /track a signed-in history-list entry (recorded null by design) reads "not loaded with your order list" with "Show what the kitchen recorded" (number + email, tap only; the #458 no-auto-lookup test unchanged) and a full response is never overwritten by a later list entry. My Orders: per-row "Allergens you confirmed: ..." strip + "Full allergen record" link (sibling of the card link, name carries the order number), zero per-row requests; per-shop status time and My Orders date now pass timeZone Europe/London (P2-CHA-18). RED x2 RED_EVIDENCE_OK; arms A1-A8, B1-B7 + B4b red (B4 VOID: syntax), London-time arms fire only under TZ=America/New_York (vacuous on this London host, recorded). Full jest 182/1998, lint 0 errors, build green. lib/customer-orders.ts type-only extend (deviation). Owed to 31.1-30: browser click-through + 390/768/1280 screenshots. PGC-785/-812/-784 shared with later plans.
 - 31.1-19 DONE 2026-10-07: #787 / #861 vendor side (D-09, D-16, D-17, D-18; Pitfalls 6 and 11), frontend only. lib/allergen-copy.ts is the one source of the allergen phrases (undeclaredIngredientCopy "Ingredients name: MILK – check with the shop", vendor "– not ticked", NO_ALLERGENS_DECLARED_COPY, mayContainCopy, null when nothing to say; source scanned for allergen-free / safe for you / no allergens present). Products page: a save returning allergenWarnings keeps the dialog open on the SAVED product (create becomes edit) with a focused role=alert, "Tick Milk" = PUT the same id with the bit set (saveProduct(data, nextMask), never read back from state), "Keep as it is" closes and sends nothing; the list shows the not-ticked line beside declared badges and "No allergens declared" for an empty mask (page.test.tsx assertion that pinned the bare "No allergens" updated, Rule 1); ingredients helper (CAPITALS / **double asterisks**) is aria-describedby, yielding to the error id while one shows (A11Y-7 single-id contract). Declared allergens are now a fieldset "Allergens"; a separate "May contain (cross-contact)" fieldset holds its own mayContainMask state: untouched = null on create and edit, 0 stays 0, mayContainMaskSchema mirrors @Max(16383). Label button (same accessible name) opens a production-date dialog: default and max = Intl en-CA Europe/London (23:30Z -> next UK day), GET /label?productionDate=, client refuses future/empty, 422 read out of the blob body and shown under the field, no download. RED_EVIDENCE_OK x3; break arms F, F2, T, L, K2, M, Z, D, S, UTC, P, 422, FUT all red (first Arm K vacuous, recorded); build arm TS2322 red. Full jest 185/2035, lint 0 errors / 31 warnings, build green. Browser click-through owed to 31.1-30; stack not rebuilt.
 - 31.1-20 DONE 2026-10-07: #839 / D-04 closed in the checkout. DsarVerificationMailer emails {verify-base-url}#token=<token> (was ?token= against the API: localhost:8080 on compose, where nothing listens; the API host in k8s, which answers a click with raw JSON); in-code default http://localhost:3000/data-request/confirm; GET companion kept for links already sent. /data-request/confirm (PublicShell, noindex, STATIC in ssr-routes.conf, link-graph allowlisted) mirrors 31.1-17: fragment read once and cleared, token in a ref, POST {token} only on 'Confirm my request'; copy from status via exported CONFIRM_COPY (verified / already confirmed / invalid with Make a new request + privacy notice); unknown status = invalid; empty/absent token = invalid, no request; 5xx keeps the token for a retry. Compose states DSAR_VERIFY_BASE_URL + DSAR_EXPORT_DOWNLOAD_BASE_URL on :3000; k8s verify base on app.olajay.co.uk / app-staging.olajay.co.uk / app.jtoye.local (download base already done by 31.1-16); goldens regenerated (1 line each); env-contract, render-invariants, golden check rc 0. DsarLinkConfigContractTest (8 runtimes incl. goldens, fail-closed) 10/0/0 (RED 6/10), DsarVerificationMailerTest 6/0/0 (RED 4/6), confirm-page.test.tsx 14/14 (RED 14/14), RED_EVIDENCE_OK x3; 15 break arms red, sha-restored (first F2 spelling vacuous, recorded). Full unit 1559/0/0, full integration 877/0/0, jest 186/2049, build green, lint 0 errors / 31 warnings. e2e/dsar-verify-link.spec.ts listed (2 tests); its live RED/GREEN is owed to 31.1-30 (WINDOWS unrun-verify); shared stack NOT rebuilt.
+- 31.1-21 DONE 2026-10-07: #817 / #787 / #861 storefront half closed in jest. Card: the triangle+count badge (read as "Halal Spicy £8.50 2") replaced by a wrapping line above the price/Add row in every state — Contains: Gluten, Milk (catalogue order, shared ALLERGENS table) / No allergens declared (only when nothing declared AND nothing flagged) / Ingredients name: MILK – check with the shop (D-09; a flag for a declared bit adds nothing) — referenced by the Add button's aria-describedby (useId per render, featured-rail copy distinct), Add name unchanged (A11Y-4). Modal: a <section> named Allergen Information directly under the title (above description, ingredients, Add/stepper) in every state, list named Contains, May contain: Sesame its own line, D-09 line separate, amber-600 boundary (31 UI-SPEC). lib/product-allergens.ts is the one rule; allergen-copy gained containsCopy/CONTAINS_LABEL_COPY; PublicProduct gained undeclaredIngredientAllergens?/mayContainAllergens?. RED_EVIDENCE_OK x2 (14/38, 8/20); 14 break arms red (one VOID re-run), sha-restored; full jest 187/2072, lint 0 errors / 31 warnings, build green. e2e/storefront-dish-modal-a11y.spec.ts +2 tests (200% zoom = 195x422 CSS viewport, not deviceScaleFactor; three statements on fixture SKU E2E-31121-DISH-ALLERGENS, hidden again and read back — no demo dish edited because a NULL may-contain cannot be restored via the API) listed 20; live run owed to 31.1-30. No Java, no migration. PGC-817/787/861 stay open (shared).
 - **Phase 38 (Spring Boot 4.1) COMPLETE 2026-10-05, MERGED as PR #898:** 19/19 plans, `38-VERIFICATION.md` passed 14/14 (BOOT4-01..14), code review 0 critical / 2 warning / 4 info (`38-REVIEW.md`, disposition in `38-REVIEW-DISPOSITION.md`). Not yet shipped: `/gsd-secure-phase 38` then `/gsd-ship 38` remain. Phase 29 is GSD's numeric next; the owner-set planning order in HANDOFF.md is 31.1 then 37.
 - The bullets below are Phase 38's execution history, kept for the record.
 - 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
@@ -899,6 +900,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P14 | 50 min | 3 tasks | 25 files |
 | Phase 31.1 P15 | 17 min | 3 tasks | 18 files |
 | Phase 31.1 P20 | 42min | 3 tasks | 22 files |
+| Phase 31.1 P21 | 11 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -1134,6 +1136,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: 31.1-19: lib/allergen-copy.ts is the single source of the allergen phrases for vendor and storefront (31.1-21 imports undeclaredIngredientCopy/mayContainCopy); an untouched may-contain fieldset sends null, never 0
 - [Phase 31.1]: 31.1-20: the DSAR verification link is {web origin}/data-request/confirm#token=…; the page spends the token only on an explicit press (a mail scanner cannot confirm an erasure) and chooses copy from the API status, an unknown status reading as invalid
 - [Phase 31.1]: 31.1-20: each runtime's DSAR link bases share the origin of its unsubscribe/tracking links; DsarLinkConfigContractTest enforces it over application.yml, compose, the k8s base/overlays and the rendered goldens
+- [Phase 31.1]: 31.1-21: lib/product-allergens.ts productAllergenStatement is the single rule for which allergen statements a storefront surface prints (declared / No allergens declared only when nothing declared and nothing flagged / D-09 line / may-contain); 31.1-22's basket and checkout lines reuse it
+- [Phase 31.1]: 31.1-21: the card shows declared + D-09 lines and wraps rather than truncates; may-contain is shown in the dish modal as its own line beneath the Contains list; the modal section sits directly under the title so it is reached without scrolling at 200% zoom
 
 ### Pending Todos
 
@@ -1204,8 +1208,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-07T00:10:00Z
-Stopped at: Completed 31.1-20-PLAN.md; next 31.1-21
+Last session: 2026-10-07T00:22:00Z
+Stopped at: Completed 31.1-21-PLAN.md; next 31.1-22
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
