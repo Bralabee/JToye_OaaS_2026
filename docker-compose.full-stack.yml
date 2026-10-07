@@ -371,6 +371,11 @@ services:
       # DsarLinkConfigContractTest; .env may override both.
       DSAR_VERIFY_BASE_URL: ${DSAR_VERIFY_BASE_URL:-http://localhost:3000/data-request/confirm}
       DSAR_EXPORT_DOWNLOAD_BASE_URL: ${DSAR_EXPORT_DOWNLOAD_BASE_URL:-http://localhost:3000/data-request/download}
+      # D-14 (phase 31.1 plan 27, #794): the platform's registered office, printed in the
+      # footer of every order email (31.1-25). Read from NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE
+      # — the variable that also feeds the frontend build arg below — never from a name of its
+      # own, so the email and the legal pages show one value. RegisteredOfficeParityTest.
+      COMPANY_REGISTERED_OFFICE: "${NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE:-Crispins Manor Farm Lane, Michelmersh, Romsey, England, SO51 0NT}"
       # Object storage (Phase 36, D-02 local path): the Azurite emulator below. The
       # connection string names NO key: UseDevelopmentStorage=true makes the Azure SDK
       # supply Microsoft's published emulator key itself, and DevelopmentStorageProxyUri
@@ -498,12 +503,14 @@ services:
         # `next build`, so a runtime value arrives far too late and the page ships
         # with an empty string baked in.
         #
-        # The two differ on purpose. The registered office has NO dev default: the
-        # owner declined to publish an address for now, and a plausible-looking fake
-        # on a legal page is worse than an absent one, because the omission is
-        # visible and a fabrication is not. resolveControllerContact() drops the
-        # block while it is empty, so the page stays honest either way.
-        NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE: ${NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE:-}
+        # The registered office (D-14, ruled 2026-10-05; phase 31.1 plan 27, #794) is
+        # the one on the public Companies House record for company 16471464, J'TOYE
+        # DIGITAL LTD, confirmed by the owner on 2026-10-07. It replaces the phase 31
+        # decision to leave it unpublished. The SAME variable, with the SAME default,
+        # feeds core-java's COMPANY_REGISTERED_OFFICE above (the order-email footer),
+        # so the legal pages and the email cannot drift; RegisteredOfficeParityTest
+        # pins both expressions and the value. Never a different or invented address.
+        NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE: "${NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE:-Crispins Manor Farm Lane, Michelmersh, Romsey, England, SO51 0NT}"
         # The data-protection contact DOES get a default, matching the support pair
         # above: it is a dedicated address rather than the shared support queue,
         # because a data-subject request carries a one-month statutory clock.

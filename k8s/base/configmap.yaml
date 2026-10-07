@@ -336,6 +336,16 @@ data:
   # laptop every link would be dead and the statutory reply silently undelivered.
   gdpr.dsar.export-download-base-url: "https://app.olajay.co.uk/data-request/download"
 
+  # --- D-14 platform registered office (phase 31.1 plan 27, #794) -------------
+  # The registered office on the public Companies House record for company
+  # 16471464 (J'TOYE DIGITAL LTD, ACTIVE), confirmed by the owner 2026-10-07.
+  # core-java prints it in the footer of every order email (31.1-25) via
+  # COMPANY_REGISTERED_OFFICE. The frontend (the legal pages) inlines the same
+  # string at BUILD time: scripts/k8s-local-up.sh from .env / the compose default,
+  # CI from the repository variable FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE. One legal
+  # entity, so one value for every overlay. Pinned by RegisteredOfficeParityTest.
+  platform.registered-office: "Crispins Manor Farm Lane, Michelmersh, Romsey, England, SO51 0NT"
+
   # --- D-19 Stripe Connect return origins (production-affecting) -------------
   # Same defect class: a vendor completing Stripe Connect onboarding was
   # redirected to a loopback dev origin instead of the platform, stranding the

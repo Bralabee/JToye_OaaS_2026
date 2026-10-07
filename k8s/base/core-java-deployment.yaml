@@ -483,6 +483,15 @@ spec:
             configMapKeyRef:
               name: app-config
               key: gdpr.dsar.export-download-base-url
+        # D-14 (phase 31.1 plan 27, #794): the platform's registered office for
+        # the order-email footer. Its application.yml default is EMPTY (the line
+        # is omitted), so without this entry every cluster email would silently
+        # drop it while the legal pages print it.
+        - name: COMPANY_REGISTERED_OFFICE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: platform.registered-office
         # REQUIRED Secret (dsar-credentials), phase 31.1 plan 07 decision D-19
         # (not the Phase 26 D-19 above). The AES-256-GCM key the DSAR subject
         # address is encrypted under: 64 hexadecimal characters, generated per

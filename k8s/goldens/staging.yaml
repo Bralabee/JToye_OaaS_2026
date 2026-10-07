@@ -76,6 +76,8 @@ data:
   payment.outbox.backoff.cap.ms: "300000"
   payment.outbox.flush.interval.ms: "5000"
   payment.outbox.resurrect.interval.ms: "300000"
+  platform.registered-office: Crispins Manor Farm Lane, Michelmersh, Romsey, England,
+    SO51 0NT
   rabbit.default.concurrency: "1"
   rabbit.default.prefetch: "250"
   rabbit.media.concurrency: "1"
@@ -539,6 +541,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: gdpr.dsar.export-download-base-url
+              name: app-config
+        - name: COMPANY_REGISTERED_OFFICE
+          valueFrom:
+            configMapKeyRef:
+              key: platform.registered-office
               name: app-config
         - name: DSAR_ENCRYPTION_KEY
           valueFrom:
