@@ -23,6 +23,14 @@ import {
   undeclaredIngredientCopy,
   undeclaredIngredientVendorCopy,
   vendorSaveWarningCopy,
+  ALLERGY_NOTE_LABEL_COPY,
+  ALLERGY_NOTE_ACK_BUTTON_COPY,
+  ALLERGY_NOTE_NOT_READ_PRINT_COPY,
+  ALLERGY_NOTE_READER_YOU_COPY,
+  ALLERGY_NOTE_READER_STAFF_COPY,
+  ALLERGY_NOTE_ACK_FORBIDDEN_COPY,
+  ALLERGY_NOTE_ACK_FAILED_COPY,
+  allergyNoteReadCopy,
 } from "@/lib/allergen-copy"
 
 const MODULE_PATH = path.join(__dirname, "..", "allergen-copy.ts")
@@ -99,6 +107,35 @@ describe("Pitfall 6: the ingredients helper text teaches the two emphasis forms 
   it("mentions CAPITALS and **double asterisks**", () => {
     expect(INGREDIENTS_EMPHASIS_HELP_COPY).toContain("CAPITALS")
     expect(INGREDIENTS_EMPHASIS_HELP_COPY).toContain("**double asterisks**")
+  })
+})
+
+describe("D-15 (31.1-22): the allergy note the kitchen must mark as read", () => {
+  it("the label is uppercase in the string itself, not only in a stylesheet", () => {
+    expect(ALLERGY_NOTE_LABEL_COPY).toBe("ALLERGY NOTE")
+    expect(ALLERGY_NOTE_NOT_READ_PRINT_COPY).toBe("NOT YET MARKED AS READ")
+  })
+
+  it("the action says what pressing it records", () => {
+    expect(ALLERGY_NOTE_ACK_BUTTON_COPY).toBe("Mark allergy note as read")
+  })
+
+  it("'Read by kim at 18:05', and 'Read at 18:05' when nobody can be named", () => {
+    expect(allergyNoteReadCopy("kim", "18:05")).toBe("Read by kim at 18:05")
+    expect(allergyNoteReadCopy(ALLERGY_NOTE_READER_YOU_COPY, "18:05")).toBe("Read by you at 18:05")
+    expect(allergyNoteReadCopy(ALLERGY_NOTE_READER_STAFF_COPY, "18:05 on 4 Oct")).toBe(
+      "Read by a member of staff at 18:05 on 4 Oct"
+    )
+    expect(allergyNoteReadCopy(null, "18:05")).toBe("Read at 18:05")
+  })
+
+  it("a refusal and a failure each say the note is NOT marked as read", () => {
+    expect(ALLERGY_NOTE_ACK_FORBIDDEN_COPY).toBe(
+      "Not marked as read: your account cannot act on this shop's orders."
+    )
+    expect(ALLERGY_NOTE_ACK_FAILED_COPY).toBe(
+      "Not marked as read: the request did not go through. Try again."
+    )
   })
 })
 

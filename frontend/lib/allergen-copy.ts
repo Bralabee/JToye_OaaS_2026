@@ -82,3 +82,20 @@ export function tickAllergenCopy(name: string): string {
 export function mayContainCopy(names: readonly string[]): string | null {
   return names.length === 0 ? null : `May contain: ${names.join(", ")}`
 }
+
+// ---------------------------------------------------------------------------------------------
+// 31.1-22 (#812, D-15): the customer's allergy note on the kitchen board, the printed ticket and
+// the vendor order detail, and the shop's acknowledgement of it.
+// RED skeleton: every name is exported with a wrong value so the tests fail on assertions.
+// ---------------------------------------------------------------------------------------------
+
+export const ALLERGY_NOTE_LABEL_COPY = ""
+export const ALLERGY_NOTE_ACK_BUTTON_COPY = ""
+export const ALLERGY_NOTE_NOT_READ_PRINT_COPY = ""
+export const ALLERGY_NOTE_READER_YOU_COPY = ""
+export const ALLERGY_NOTE_READER_STAFF_COPY = ""
+export function allergyNoteReadCopy(_who: string | null, _time: string): string {
+  return ""
+}
+export const ALLERGY_NOTE_ACK_FORBIDDEN_COPY = ""
+export const ALLERGY_NOTE_ACK_FAILED_COPY = ""

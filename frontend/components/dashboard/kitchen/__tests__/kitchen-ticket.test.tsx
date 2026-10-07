@@ -127,3 +127,112 @@ describe("KitchenTicket", () => {
     expect(container.querySelector(".kds-ticket__foot")).toHaveTextContent(/^Printed \d{2} \w{3}, \d{2}:\d{2}$/)
   })
 })
+
+/**
+ * 31.1-22 (#812, D-15): the customer's allergy note on the PRINTED ticket.
+ *
+ * The note is its own field since 31.1-13 (V73), apart from the delivery notes. On paper it
+ * must be read before the items, in the two things monochrome carries (a border and uppercase
+ * words), and it must say whether anyone in the shop has marked it as read: a torn-off ticket
+ * has no board left to ask. Nothing on paper is pressable, so the ticket carries the STATE of
+ * the acknowledgement and never a control.
+ */
+describe("KitchenTicket — the allergy note (31.1-22, #812, D-15)", () => {
+  const NOTE = "My son has a peanut allergy. Please no satay sauce."
+  const withNote: OrderDetail = {
+    ...order,
+    allergyNote: NOTE,
+    allergyNoteAcknowledgedAt: null,
+    allergyNoteAcknowledgedBy: null,
+  }
+
+  it("prints an ALLERGY NOTE block with the note text, ABOVE the items", () => {
+    const { container } = render(
+      <KitchenTicket order={withNote} shopName="Peckham" printedAt={PRINTED_AT} />
+    )
+    const block = container.querySelector(".kds-ticket__allergy-note")
+    expect(block).not.toBeNull()
+    expect(block).toHaveTextContent("ALLERGY NOTE")
+    expect(block).toHaveTextContent(NOTE)
+    const items = container.querySelector(".kds-ticket__items") as HTMLElement
+    expect(
+      (block as HTMLElement).compareDocumentPosition(items) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it("keeps the NOTES line to the delivery notes — the allergy note is never merged into it", () => {
+    const { container } = render(
+      <KitchenTicket order={withNote} shopName="Peckham" printedAt={PRINTED_AT} />
+    )
+    const notes = container.querySelector(".kds-ticket__notes")
+    expect(notes).toHaveTextContent("No scotch bonnet")
+    expect(notes).not.toHaveTextContent("peanut")
+  })
+
+  it("renders a note carrying markup as inert text (T-31.1-76)", () => {
+    const hostile = '<script>window.__pwned = 1</script><img src=x onerror="alert(1)">'
+    const { container } = render(
+      <KitchenTicket order={{ ...withNote, allergyNote: hostile }} shopName="Peckham" printedAt={PRINTED_AT} />
+    )
+    expect(container.querySelector("script")).toBeNull()
+    expect(container.querySelector("img")).toBeNull()
+    expect(container.querySelector(".kds-ticket__allergy-note")).toHaveTextContent(hostile)
+  })
+
+  it("prints that nobody has marked the note as read yet", () => {
+    const { container } = render(
+      <KitchenTicket order={withNote} shopName="Peckham" printedAt={PRINTED_AT} />
+    )
+    expect(container.querySelector(".kds-ticket__allergy-note")).toHaveTextContent(
+      "NOT YET MARKED AS READ"
+    )
+  })
+
+  it("prints who marked it as read and when, in UK time, once it has been", () => {
+    const { container } = render(
+      <KitchenTicket
+        order={{
+          ...withNote,
+          // 17:05Z on 3 Oct 2026 is 18:05 in London (BST).
+          allergyNoteAcknowledgedAt: "2026-10-03T17:05:00Z",
+          allergyNoteAcknowledgedBy: "kim",
+        }}
+        shopName="Peckham"
+        printedAt={PRINTED_AT}
+      />
+    )
+    const block = container.querySelector(".kds-ticket__allergy-note")
+    expect(block).toHaveTextContent(/Read by kim at 18:05/)
+    expect(block).not.toHaveTextContent("NOT YET MARKED AS READ")
+  })
+
+  it("never prints the raw account id of whoever read it", () => {
+    const sub = "0f6c2a1e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
+    const { container } = render(
+      <KitchenTicket
+        order={{ ...withNote, allergyNoteAcknowledgedAt: "2026-10-03T17:05:00Z", allergyNoteAcknowledgedBy: sub }}
+        shopName="Peckham"
+        printedAt={PRINTED_AT}
+      />
+    )
+    const block = container.querySelector(".kds-ticket__allergy-note")
+    expect(block).toHaveTextContent(/Read by a member of staff at 18:05/)
+    expect(block).not.toHaveTextContent(sub)
+  })
+
+  it("carries no control on paper", () => {
+    render(<KitchenTicket order={withNote} shopName="Peckham" printedAt={PRINTED_AT} />)
+    expect(screen.queryByRole("button")).toBeNull()
+  })
+
+  it("a ticket with no allergy note prints exactly as before", () => {
+    const before = render(
+      <KitchenTicket order={order} shopName="Peckham" printedAt={PRINTED_AT} />
+    ).container.innerHTML
+    const { container } = render(
+      <KitchenTicket order={{ ...order, allergyNote: null }} shopName="Peckham" printedAt={PRINTED_AT} />
+    )
+    expect(container.querySelector(".kds-ticket__allergy-note")).toBeNull()
+    expect(container.innerHTML).toBe(before)
+  })
+})
