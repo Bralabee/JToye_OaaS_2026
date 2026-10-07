@@ -82,7 +82,7 @@ function telHref(phone: string): string {
 function Field({ term, children }: { term: string; children: React.ReactNode }) {
   return (
     <div className="grid gap-0.5 sm:grid-cols-[9rem_1fr] sm:gap-4">
-      <dt className="text-slate-500">{term}</dt>
+      <dt className="text-slate-600">{term}</dt>
       <dd className="min-w-0 text-slate-900 [overflow-wrap:anywhere]">{children}</dd>
     </div>
   )
@@ -96,7 +96,7 @@ export function SellerBlock({ seller, id = "seller-details-heading", className }
       className={cn("rounded-xl border border-cream-100 bg-white p-4 shadow-sm", className)}
     >
       <h2 id={id} className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-        <Store aria-hidden="true" className="h-4 w-4 text-slate-500" />
+        <Store aria-hidden="true" className="h-4 w-4 text-slate-600" />
         {SELLER_BLOCK_HEADING_COPY}
       </h2>
 
