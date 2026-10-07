@@ -16,14 +16,14 @@
 export const NO_ALLERGENS_DECLARED_COPY = "No allergens declared"
 
 /** D-18: the label of the declared set where it is shown as a list (the dish modal). */
-export const CONTAINS_LABEL_COPY = ""
+export const CONTAINS_LABEL_COPY = "Contains"
 
 /**
- * D-18, storefront: the declared allergens in words ("Contains: Gluten, Milk").
+ * D-18, storefront: the declared allergens in words ("Contains: Gluten, Milk"), never a count.
  * Returns null for an empty declaration; the caller then states NO_ALLERGENS_DECLARED_COPY.
  */
-export function containsCopy(_names: readonly string[]): string | null {
-  return null
+export function containsCopy(names: readonly string[]): string | null {
+  return names.length === 0 ? null : `${CONTAINS_LABEL_COPY}: ${names.join(", ")}`
 }
 
 /**
