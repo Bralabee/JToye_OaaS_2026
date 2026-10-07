@@ -31,6 +31,10 @@ import {
   ALLERGY_NOTE_ACK_FORBIDDEN_COPY,
   ALLERGY_NOTE_ACK_FAILED_COPY,
   allergyNoteReadCopy,
+  customerConfirmedAllergensCopy,
+  customerConfirmedNoneCopy,
+  VENDOR_PLACED_ORDER_COPY,
+  CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY,
 } from "@/lib/allergen-copy"
 
 const MODULE_PATH = path.join(__dirname, "..", "allergen-copy.ts")
@@ -136,6 +140,26 @@ describe("D-15 (31.1-22): the allergy note the kitchen must mark as read", () =>
     expect(ALLERGY_NOTE_ACK_FAILED_COPY).toBe(
       "Not marked as read: the request did not go through. Try again."
     )
+  })
+})
+
+describe("D-07 (31.1-22): how the order was placed, said to the vendor", () => {
+  it("the confirmed set, with when, in the order the server gave", () => {
+    expect(customerConfirmedAllergensCopy(["Gluten", "Milk"], "3 October 2026, 18:02")).toBe(
+      "Customer confirmed allergens: Gluten, Milk — 3 October 2026, 18:02"
+    )
+    expect(customerConfirmedAllergensCopy(["Milk"], null)).toBe("Customer confirmed allergens: Milk")
+  })
+
+  it("a confirmation of a declared-none basket is a statement, not an absence", () => {
+    expect(customerConfirmedNoneCopy("3 October 2026, 18:02")).toBe(
+      "Customer confirmed the order declared none of the 14 regulated allergens — 3 October 2026, 18:02"
+    )
+  })
+
+  it("vendor-placed and not-recorded are different sentences", () => {
+    expect(VENDOR_PLACED_ORDER_COPY).toBe("Placed by the shop — no customer allergen confirmation recorded")
+    expect(CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY).toBe("Customer allergen confirmation: not recorded")
   })
 })
 

@@ -11,12 +11,19 @@
  *     paymentReference, and remaining are all valid
  */
 
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { OrderDetailPanel } from "../OrderDetailPanel"
 import type { OrderDetail, Refund } from "@/types/api"
 
 // RefundDialog is a child of OrderDetailPanel — stub it so these tests stay
 // focused on the panel's own rendering and visibility logic.
+// 31.1-22: the allergy note block posts its acknowledgement through the dashboard client.
+const mockPost = jest.fn()
+jest.mock("@/lib/api-client", () => ({
+  __esModule: true,
+  default: { post: (...args: unknown[]) => mockPost(...args) },
+}))
+
 jest.mock("../RefundDialog", () => ({
   RefundDialog: ({ open }: { open: boolean }) =>
     open ? <div data-testid="refund-dialog-stub" /> : null,
@@ -354,5 +361,124 @@ describe("OrderDetailPanel — UK dates (31.1-22)", () => {
     )
     expect(screen.getByText("3 December 2026, 23:10")).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(/Dec 3, 2026|\d (AM|PM)\b/)
+  })
+})
+
+/**
+ * 31.1-22 (D-07, #784): the vendor can tell an order the CUSTOMER confirmed allergens for from one
+ * the SHOP keyed in, and from one placed before confirmations were recorded. Three states, three
+ * different sentences: a vendor-placed order must never read like a customer who confirmed nothing,
+ * and a pre-acknowledgement order must never read like either.
+ */
+describe("OrderDetailPanel — how the order was placed (31.1-22, D-07)", () => {
+  // 17:02Z on 3 Oct 2026 is 18:02 in London (BST).
+  const STOREFRONT = {
+    placedVia: "STOREFRONT" as const,
+    allergenAckMask: 0b1000010,
+    allergenAckAt: "2026-10-03T17:02:00Z",
+    acknowledgedAllergenNames: ["Gluten", "Milk"],
+  }
+
+  const channelLine = () => screen.getByTestId("order-allergen-confirmation")
+
+  it("storefront: 'Customer confirmed allergens: Gluten, Milk — 3 October 2026, 18:02'", () => {
+    render(<OrderDetailPanel order={makeOrder(STOREFRONT)} />)
+    expect(channelLine()).toHaveTextContent(
+      "Customer confirmed allergens: Gluten, Milk — 3 October 2026, 18:02"
+    )
+  })
+
+  it("storefront, declared none: a confirmation of none, never 'not recorded'", () => {
+    render(
+      <OrderDetailPanel
+        order={makeOrder({ ...STOREFRONT, allergenAckMask: 0, acknowledgedAllergenNames: [] })}
+      />
+    )
+    expect(channelLine()).toHaveTextContent(
+      "Customer confirmed the order declared none of the 14 regulated allergens — 3 October 2026, 18:02"
+    )
+  })
+
+  it("vendor-placed: 'Placed by the shop — no customer allergen confirmation recorded'", () => {
+    render(
+      <OrderDetailPanel
+        order={makeOrder({ placedVia: "VENDOR", allergenAckMask: null, allergenAckAt: null, acknowledgedAllergenNames: null })}
+      />
+    )
+    expect(channelLine()).toHaveTextContent("Placed by the shop — no customer allergen confirmation recorded")
+  })
+
+  it("pre-acknowledgement: 'not recorded', with or without a channel", () => {
+    const { unmount } = render(<OrderDetailPanel order={makeOrder({})} />)
+    expect(channelLine()).toHaveTextContent("Customer allergen confirmation: not recorded")
+    unmount()
+    render(
+      <OrderDetailPanel order={makeOrder({ placedVia: "STOREFRONT", acknowledgedAllergenNames: null })} />
+    )
+    expect(channelLine()).toHaveTextContent("Customer allergen confirmation: not recorded")
+  })
+
+  it("the three channel states say three different things", () => {
+    const texts = [
+      makeOrder(STOREFRONT),
+      makeOrder({ placedVia: "VENDOR" }),
+      makeOrder({}),
+    ].map((order) => {
+      const { unmount } = render(<OrderDetailPanel order={order} />)
+      const t = channelLine().textContent
+      unmount()
+      return t
+    })
+    expect(new Set(texts).size).toBe(3)
+  })
+
+  it("sits above the customer block", () => {
+    render(<OrderDetailPanel order={makeOrder(STOREFRONT)} />)
+    const customerLabel = screen.getByText("Customer")
+    expect(
+      channelLine().compareDocumentPosition(customerLabel) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+})
+
+describe("OrderDetailPanel — the allergy note (31.1-22, #812, D-15)", () => {
+  const NOTE = "My son has a peanut allergy. Please no satay sauce."
+
+  beforeEach(() => mockPost.mockReset())
+
+  it("shows the note above the delivery notes, never merged into them", () => {
+    render(<OrderDetailPanel order={makeOrder({ allergyNote: NOTE })} />)
+    const block = screen.getByTestId("allergy-note")
+    expect(block).toHaveTextContent("ALLERGY NOTE")
+    expect(block).toHaveTextContent(NOTE)
+    const notes = screen.getByText("No nuts please")
+    expect(block.compareDocumentPosition(notes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(notes.parentElement).not.toHaveTextContent("peanut")
+  })
+
+  it("marks it read from the order detail, showing the server's who and when", async () => {
+    mockPost.mockResolvedValue({
+      data: { allergyNoteAcknowledgedAt: "2026-10-03T17:05:00Z", allergyNoteAcknowledgedBy: "kim" },
+    })
+    render(<OrderDetailPanel order={makeOrder({ allergyNote: NOTE })} />)
+    const block = screen.getByTestId("allergy-note")
+    fireEvent.click(within(block).getByRole("button", { name: /^Mark allergy note as read/ }))
+    expect(await within(block).findByTestId("allergy-note-read")).toHaveTextContent(/Read by kim at 18:05/)
+    expect(mockPost).toHaveBeenCalledWith("/api/v1/orders/order-abc-123/allergy-note/acknowledgement")
+  })
+
+  it("an already-read note shows who and when, with no button", () => {
+    render(
+      <OrderDetailPanel
+        order={makeOrder({ allergyNote: NOTE, allergyNoteAcknowledgedAt: "2026-10-03T17:05:00Z", allergyNoteAcknowledgedBy: "kim" })}
+      />
+    )
+    expect(screen.getByTestId("allergy-note-read")).toHaveTextContent(/Read by kim at 18:05/)
+    expect(screen.queryByRole("button", { name: /allergy note/i })).toBeNull()
+  })
+
+  it("an order without a note shows no block", () => {
+    render(<OrderDetailPanel order={makeOrder()} />)
+    expect(screen.queryByTestId("allergy-note")).toBeNull()
   })
 })

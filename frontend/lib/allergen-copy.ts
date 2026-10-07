@@ -117,3 +117,14 @@ export const ALLERGY_NOTE_ACK_FORBIDDEN_COPY =
 /** Anything else: the acknowledgement was not recorded, so the note is still unread. */
 export const ALLERGY_NOTE_ACK_FAILED_COPY =
   "Not marked as read: the request did not go through. Try again."
+
+// 31.1-22 (D-07): how the order was placed, and what the customer confirmed, said to the VENDOR.
+// RED skeleton: wrong values so the tests fail on assertions.
+export function customerConfirmedAllergensCopy(_names: readonly string[], _when: string | null): string {
+  return ""
+}
+export function customerConfirmedNoneCopy(_when: string | null): string {
+  return ""
+}
+export const VENDOR_PLACED_ORDER_COPY = ""
+export const CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY = ""
