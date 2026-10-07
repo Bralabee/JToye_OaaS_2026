@@ -8,6 +8,7 @@ import {
   allergenFlagCopy,
 } from "@/components/storefront/order-allergen-panel"
 import type { OrderAllergenFlag } from "@/types/api"
+import { formatUkClockTime } from "@/lib/uk-datetime"
 
 /**
  * "What was recorded on your order" (Phase 31.1-15, D-08; Phase 31 D-03).
@@ -80,23 +81,16 @@ export const MY_ORDERS_ACK_HEADING_COPY = "Allergens you confirmed:"
 /** My Orders: the per-row link to the tracking page, where the full record is shown. */
 export const MY_ORDERS_FULL_RECORD_LINK_COPY = "Full allergen record"
 
-const LONDON = "Europe/London"
-const LONDON_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: LONDON, hour: "2-digit", minute: "2-digit" })
-const LONDON_DAY_KEY = new Intl.DateTimeFormat("en-CA", { timeZone: LONDON, year: "numeric", month: "2-digit", day: "2-digit" })
-const LONDON_SHORT_DATE = new Intl.DateTimeFormat("en-GB", { timeZone: LONDON, day: "numeric", month: "short" })
-
 /**
  * When the shop read the note, en-GB in Europe/London: "18:05", or "18:05 on 4 Oct" when that is
  * not today IN LONDON. The zone is explicit, never the browser's: a customer abroad, or a device
  * left on another zone, must read the same UK time the shop saw (goods P2-CHA-18).
+ *
+ * 31.1-22: the rule now lives in lib/uk-datetime.ts (formatUkClockTime), so the vendor's kitchen
+ * board and this page say the same time by construction, not by two copies agreeing.
  */
 export function formatAllergyNoteReadAt(iso: string, now: Date = new Date()): string {
-  const at = new Date(iso)
-  if (Number.isNaN(at.getTime())) return ""
-  const time = LONDON_TIME.format(at)
-  return LONDON_DAY_KEY.format(at) === LONDON_DAY_KEY.format(now)
-    ? time
-    : `${time} on ${LONDON_SHORT_DATE.format(at)}`
+  return formatUkClockTime(iso, now)
 }
 
 /**

@@ -16,7 +16,7 @@ import {
   describeAllergyNoteReader,
   subjectOfAccessToken,
 } from "@/lib/allergy-note-api"
-import { formatAllergyNoteReadAt } from "@/components/storefront/recorded-allergen-set"
+import { formatUkClockTime } from "@/lib/uk-datetime"
 
 /**
  * The customer's allergy note, and the act of marking it read (31.1-22; #812, D-15).
@@ -139,7 +139,7 @@ export function AllergyNoteBlock({
           className="mt-2 flex items-center gap-1.5 text-base font-semibold"
         >
           <CheckCircle2 aria-hidden="true" className="h-5 w-5 flex-shrink-0" />
-          {allergyNoteReadCopy(reader, formatAllergyNoteReadAt(ack.acknowledgedAt))}
+          {allergyNoteReadCopy(reader, formatUkClockTime(ack.acknowledgedAt))}
         </p>
       ) : (
         <Button

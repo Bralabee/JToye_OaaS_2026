@@ -7,7 +7,7 @@ import {
   allergyNoteReadCopy,
 } from "@/lib/allergen-copy"
 import { describeAllergyNoteReader } from "@/lib/allergy-note-api"
-import { formatAllergyNoteReadAt } from "@/components/storefront/recorded-allergen-set"
+import { formatUkClockTime } from "@/lib/uk-datetime"
 
 /**
  * A printable kitchen ticket (#105).
@@ -36,7 +36,10 @@ import { formatAllergyNoteReadAt } from "@/components/storefront/recorded-allerg
  * this needing to change.
  */
 
+// 31.1-22 (P2-CHA-18): London time, never the device zone — a kitchen tablet left on another
+// zone must stamp the time the customer was told. Same convention as lib/uk-datetime.ts.
 const dtf = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/London",
   hour12: false,
   hour: "2-digit",
   minute: "2-digit",
@@ -157,7 +160,7 @@ export function KitchenTicket({
               ? allergyNoteReadCopy(
                   // No viewer on paper: the reader is named only when the record holds a name.
                   describeAllergyNoteReader(order.allergyNoteAcknowledgedBy, null),
-                  formatAllergyNoteReadAt(order.allergyNoteAcknowledgedAt)
+                  formatUkClockTime(order.allergyNoteAcknowledgedAt)
                 )
               : ALLERGY_NOTE_NOT_READ_PRINT_COPY}
           </p>

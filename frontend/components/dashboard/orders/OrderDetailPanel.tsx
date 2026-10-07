@@ -1,7 +1,6 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { format } from "date-fns"
 import {
   ShoppingCart,
   Clock,
@@ -26,6 +25,7 @@ import { RefundDialog } from "./RefundDialog"
 import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
 import { ItemAllergenBadge } from "@/components/dashboard/kitchen/item-allergen-badge"
 import type { OrderDetail, OrderStatus, Refund } from "@/types/api"
+import { formatUkDateTime } from "@/lib/uk-datetime"
 
 /**
  * OrderDetailPanel
@@ -142,7 +142,7 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
             <span>{order.orderNumber || order.id.substring(0, 8)}</span>
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Created {format(new Date(order.createdAt), "PPpp")}
+            Created {formatUkDateTime(order.createdAt)}
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -347,7 +347,7 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
                       {refund.status}
                     </span>
                     <p className="text-xs text-slate-500">
-                      {format(new Date(refund.requestedAt), "PPp")}
+                      {formatUkDateTime(refund.requestedAt)}
                     </p>
                     {refund.failureReason && (
                       <p className="text-xs text-red-600">
