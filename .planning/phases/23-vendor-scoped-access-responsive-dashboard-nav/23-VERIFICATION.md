@@ -1,7 +1,7 @@
 ---
 phase: 23-vendor-scoped-access-responsive-dashboard-nav
 verified: 2026-07-22T20:57:00Z
-status: verified
+status: passed
 score: 5/5 roadmap success criteria verified — the sole human-verification item (live 375px + staff click-through) was executed live 2026-07-22 and PASSED (see Human-Verification Resolution below)
 overrides_applied: 0
 human_verification_resolved: 2026-07-22
@@ -39,7 +39,6 @@ human_verification:
 >   has logged in) and remains covered by `StaffManagementIntegrationTest` 19/19 +
 >   `ShopAccessFailClosedIntegrationTest` 7/7; owner accepted this disposition 2026-07-22.
 > Full evidence: `23-HUMAN-UAT.md` (status: complete, 2 passed, 0 issues).
-
 
 **Phase Goal:** A vendor group can scope staff to individual shops — a shop manager only touches their shop while RLS stays the tenant wall — and the dashboard nav (carrying the shop-context switcher) works on a phone. Incremental Betterment: every existing tenant user is backfilled to GROUP_ADMIN so day-one behaviour is identical.
 **Verified:** 2026-07-21
