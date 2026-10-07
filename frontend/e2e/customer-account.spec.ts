@@ -86,7 +86,13 @@ async function registerCustomer(page: Page): Promise<string> {
   await page.fill("input#lastName", `Rights${rand}`)
   await page.locator('input[type="submit"]').click()
 
-  await page.waitForURL(/\/shop(\/|$|\?)/, { timeout: 25_000 })
+  // The callback URL (/shop/auth/callback?code=...) also matches /shop/, so a bare /shop pattern
+  // resolves BEFORE the code exchange finishes, and the goto below aborts it (31.1-30: the old
+  // helper lost that race on the live stack). Wait until the callback page has replaced itself.
+  await page.waitForURL(
+    (url) => /^\/shop(\/|$)/.test(url.pathname) && !url.pathname.startsWith("/shop/auth/callback"),
+    { timeout: 25_000 }
+  )
   await page.goto("/shop")
   await page.waitForLoadState("domcontentloaded")
   // PRESENCE CONTROL: StorefrontNav's signed-in control.

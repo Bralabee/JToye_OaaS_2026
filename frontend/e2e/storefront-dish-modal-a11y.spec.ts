@@ -371,6 +371,11 @@ test.describe("Dish modal allergen section (31.1-21)", () => {
   test("at 200% zoom on a 390x844 phone the allergen heading is visible without scrolling", async ({ page }) => {
     // 200% zoom = half the CSS viewport (see the block comment above for why not deviceScaleFactor).
     await page.setViewportSize({ width: 195, height: 422 })
+    // At 195x422 the fixed cookie notice covers the first trigger and intercepts the click on the
+    // non-touch desktop project (31.1-30: 60 s timeout on the live stack). Acknowledge it first, with
+    // the key/version lib/consent.ts reads (COOKIE_NOTICE_ACK_KEY / COOKIE_POLICY_VERSION); the
+    // measurement is about the dialog, not the notice.
+    await page.addInitScript(() => window.localStorage.setItem("jtoye-cookie-notice-ack", "2026-08-16"))
     await page.goto(`/shop/${SHOP_SLUG}`)
     const trigger = firstTrigger(page)
     await expect(trigger).toBeAttached({ timeout: 30_000 })
