@@ -48,7 +48,7 @@ function toValues(identity: TraderIdentity): TraderIdentityFormValues {
  * from. GET loads it (404 = nothing on file yet, an empty form, not an error); PUT saves it
  * (GROUP_ADMIN only, server-side). Field errors from either the zod mirror or the server are
  * rendered under their field in a role="alert", the input is aria-invalid + aria-describedby,
- * and focus moves to the first one (the products-form A11Y-7 and checkout S3 conventions).
+ * and focus moves to the first one (the products-form A11Y-7 and checkout allergen-panel conventions).
  * A save is confirmed in a persistent polite live region, then the identity is RE-READ so the
  * fields show what was stored (the server canonicalises postcode and VAT number).
  */
