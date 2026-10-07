@@ -804,7 +804,7 @@ Plans:
 - [x] 31.1-29-PLAN.md — metrics, prose counts and the V68-V75 schema record; full suite and static gates
 
 **Wave 16**
-- [ ] 31.1-30-PLAN.md — stack-ownership checkpoint, RED on the old runtime, full rebuild + parity, GREEN, live D-01/D-03, issue dispositions, human review
+- [x] 31.1-30-PLAN.md — stack-ownership checkpoint, RED on the old runtime, full rebuild + parity, GREEN, live D-01/D-03, issue dispositions, human review
 
 ### Phase 32: Production Cutover + First Tenant
 
