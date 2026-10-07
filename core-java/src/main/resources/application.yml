@@ -236,6 +236,12 @@ jtoye:
       # permanently broken tenant would re-claim the same request forever, and the failure would
       # stay invisible; with one it becomes a loud, countable state.
       max-process-attempts: ${DSAR_MAX_PROCESS_ATTEMPTS:5}
+      # How long a claim holds a request before another sweep may take it back. The claim commits
+      # on its own, so a sweep that dies mid-run (a pod restart, a DB error) leaves the row
+      # IN_PROGRESS; past the lease the next sweep reclaims it, and a request reclaimed past
+      # max-process-attempts is parked FAILED. One hour: it must outlast the longest live sweep,
+      # because reclaiming a request a live sweep still holds runs it twice.
+      claim-lease-ms: ${DSAR_CLAIM_LEASE_MS:3600000}
       # How long a subject has to confirm control of the address. Seven days: long enough to
       # survive a weekend and a spam folder, short enough that a live bearer token is not left
       # lying in a mailbox indefinitely. Read by DsarIntakeService when stamping the expiry, and

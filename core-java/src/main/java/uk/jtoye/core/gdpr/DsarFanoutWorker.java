@@ -134,6 +134,12 @@ public class DsarFanoutWorker {
      * <p>{@code process_attempts} is incremented here, on the claim — mirroring
      * {@code media_asset.process_attempts} (V60), which exists so a sweep can tell "never attempted"
      * from "attempted and stalled" instead of guessing from age.
+     *
+     * <p>An {@code IN_PROGRESS} row whose claim is older than {@code claim-lease-ms} is claimable
+     * again. The claim commits on its own, so a sweep that dies before completing or releasing (a pod
+     * restart, a DB error in {@code complete}/{@code release}, an exception escaping the loop) leaves
+     * the row claimed. Without the lease nothing ever returned it: the subject's request was neither
+     * fulfilled nor failed, and the V70 rule never cleared the address it holds (#901 review).
      */
     private static final String CLAIM_SQL = """
             UPDATE dsar_request
@@ -143,7 +149,9 @@ public class DsarFanoutWorker {
              WHERE id IN (
                    SELECT id
                      FROM dsar_request
-                    WHERE status = 'VERIFIED'
+                    WHERE (status = 'VERIFIED'
+                           OR (status = 'IN_PROGRESS'
+                               AND claimed_at < NOW() - (? * INTERVAL '1 millisecond')))
                       AND completed_at IS NULL
                     ORDER BY received_at
                     FOR UPDATE SKIP LOCKED
@@ -171,6 +179,14 @@ public class DsarFanoutWorker {
      */
     @Value("${jtoye.gdpr.dsar.max-process-attempts:5}")
     private int maxProcessAttempts;
+
+    /**
+     * How long a claim protects its row from other sweeps. It must outlast the longest live sweep,
+     * because reclaiming a request a live sweep still holds runs it twice: harmless for an erasure,
+     * and for an access request the second export replaces the first, killing a link already sent.
+     */
+    @Value("${jtoye.gdpr.dsar.claim-lease-ms:3600000}")
+    private long claimLeaseMs;
 
     public DsarFanoutWorker(GdprService gdprService,
                             DsarCipher dsarCipher,
@@ -219,7 +235,12 @@ public class DsarFanoutWorker {
             int attempts = ((Number) request.get("process_attempts")).intValue();
             byte[] ciphertext = (byte[]) request.get("subject_email_ciphertext");
             String requestType = (String) request.get("request_type");
-            if ("ACCESS".equals(requestType)) {
+            if (attempts > maxProcessAttempts) {
+                // Only a reclaim gets here: every attempt that finishes parks the row FAILED at the
+                // cap. A request that keeps killing the sweep claiming it would otherwise be
+                // reclaimed forever.
+                parkStranded(requestId, attempts);
+            } else if ("ACCESS".equals(requestType)) {
                 executeAccess(requestId, subjectDigest, ciphertext, attempts, tenantIds);
             } else {
                 executeOne(requestId, subjectDigest, ciphertext, attempts, tenantIds);
@@ -574,9 +595,28 @@ public class DsarFanoutWorker {
         }
     }
 
+    /**
+     * A request reclaimed past {@code max-process-attempts}: every earlier claim belonged to a sweep
+     * that died without finishing. Parked FAILED like an exhausted release: the address is dropped
+     * (V70) and any export prepared for an access link is deleted with it.
+     */
+    private void parkStranded(UUID requestId, int attempts) {
+        String error = "claimed " + attempts + " times by sweeps that never finished; attempt cap "
+                + maxProcessAttempts;
+        transactionTemplate.executeWithoutResult(status -> {
+            jdbcTemplate.update("DELETE FROM dsar_access_export WHERE dsar_request_id = ?", requestId);
+            jdbcTemplate.update(
+                    "UPDATE dsar_request SET status = 'FAILED', completed_at = NOW(), "
+                            + "last_error = ?, subject_email_ciphertext = NULL WHERE id = ?",
+                    error, requestId);
+        });
+        log.error("event=dsar_stranded_exhausted request={} {} — this request will NOT be retried again "
+                + "and a data subject's statutory right is unsatisfied", requestId, error);
+    }
+
     private List<Map<String, Object>> claim() {
         return transactionTemplate.execute(status ->
-                jdbcTemplate.queryForList(CLAIM_SQL, claimBatchSize));
+                jdbcTemplate.queryForList(CLAIM_SQL, claimLeaseMs, claimBatchSize));
     }
 
     @SuppressWarnings("unchecked")
