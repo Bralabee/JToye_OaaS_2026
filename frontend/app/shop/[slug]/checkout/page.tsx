@@ -703,7 +703,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             ) : (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-600">Delivery</span>
-                <span className="text-emerald-600 font-medium">Free</span>
+                <span className="text-emerald-700 font-medium">Free</span>
               </div>
             )}
             {codConfirmation.vatAmountPennies > 0 && (
@@ -821,7 +821,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             {paymentState.deliveryFeePennies === 0 && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-600">Delivery</span>
-                <span className="text-emerald-600 font-medium">Free</span>
+                <span className="text-emerald-700 font-medium">Free</span>
               </div>
             )}
             {paymentState.vatAmountPennies > 0 && (
@@ -1169,7 +1169,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-600">Delivery</span>
               {deliveryIsFree ? (
-                <span className="text-emerald-600 font-semibold">Free</span>
+                <span className="text-emerald-700 font-semibold">Free</span>
               ) : (
                 <span className="text-slate-900">{formatPrice(deliveryFeePennies)}</span>
               )}

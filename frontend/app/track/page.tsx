@@ -463,7 +463,7 @@ function TrackOrderContent() {
                   )}
                   {formatPrice(order.totalAmountPennies)}
                 </p>
-                <p className="mt-1 font-mono text-xs text-slate-300">{order.orderNumber}</p>
+                <p className="mt-1 font-mono text-xs text-slate-600">{order.orderNumber}</p>
               </div>
               {isCancelled ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
@@ -519,7 +519,7 @@ function TrackOrderContent() {
                       >
                         <step.icon className="h-3.5 w-3.5" />
                       </m.div>
-                      <p className={`mt-1 text-xs font-medium ${isComplete ? "text-slate-700" : "text-slate-400"}`}>
+                      <p className={`mt-1 text-xs font-medium ${isComplete ? "text-slate-900" : "text-slate-600"}`}>
                         {step.label}
                       </p>
                     </div>
@@ -536,7 +536,7 @@ function TrackOrderContent() {
                   transition={{ duration: 0.5, ease: "easeOut" }}
                 />
               </div>
-              <p className="mt-2 text-center text-xs text-slate-400">
+              <p className="mt-2 text-center text-xs text-slate-600">
                 <span className="inline-flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
                   Auto-refreshing
