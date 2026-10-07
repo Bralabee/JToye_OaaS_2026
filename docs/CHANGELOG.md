@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 31.1: Persona gap closure (#901) — 2026-10-07
+
+Gap closure for the 17 persona-testing clusters of Phase 31 (epic #880), thirty plans on the
+Boot 4.1 / Jackson 3 tree. Eight migrations, V68 to V75, every one nullable with no backfill and
+no default (the V63 rule). Owner rulings D-01 to D-22 are in `31.1-CONTEXT.md`.
+
+- **Data-subject requests are carried out.** A verified ERASURE anonymises a storefront guest's
+  order PII and review authorship in every tenant holding the address (V68), deletes the
+  customer-realm sign-in account after commit and completes only once that is confirmed or
+  recorded outstanding (V72). A verified ACCESS request assembles one encrypted, single-use,
+  seven-day export across every tenant and emails a link, never the data (V75, download page).
+  The subject's address is held only AES-256-GCM-encrypted from `DSAR_ENCRYPTION_KEY` and dropped
+  at every terminal state (V70); core-java refuses to start without the key. The verification
+  link opens a friendly page on every runtime, and a signed-in customer has an account page
+  offering "Download my data" and "Delete my account".
+- **The allergen evidence chain is server-enforced.** A guest order without an acknowledged
+  allergen mask is refused 422; one whose mask no longer matches the basket is refused with a
+  typed 409 carrying the current set; the accepted mask, time and channel are recorded on the
+  order (V69) and shown back on the confirmation, the email, tracking and My Orders. Vendor,
+  API and MCP orders are marked as placed by the shop. A product whose ingredients emphasise an
+  undeclared allergen saves with a typed warning and is never rendered as "No allergens";
+  "may contain" is its own mask and label line (V74) and use-by is computed from a production
+  date; checkout has a dedicated allergy note with a recorded vendor acknowledgement on the
+  kitchen ticket (V73); menu cards name allergens before Add and the basket attributes them per
+  line.
+- **Seller and platform identity.** Every storefront, the checkout and the durable confirmation
+  show the seller's legal name, geographic address and email (V71 `trader_identity`, tenant
+  level, FORCE RLS); a new onboarding gate stops a shop going live without them; order emails
+  come from the shop via J'Toye. The platform's registered office (Companies House 16471464,
+  owner-confirmed) is published on the legal pages in every runtime.
+- **Statements match the site.** A cash checkout loads no Stripe code and sets no Stripe cookie;
+  every browser storage key is listed in the cookie policy and personal keys are cleared on
+  sign-out; the privacy notice describes the emails the platform actually sends; the
+  accessibility statement targets WCAG 2.2 AA over the full order journey.
+- **Proof.** Every criterion was shown RED on the pre-31.1 runtime and GREEN on the rebuilt one
+  with parity read from inside the running jar; UAT 182/182; 102/102 threats closed at ASVS L2.
+  Test inventory 4292 → 4863 logical invocations. Closes #777, #778, #784, #785, #787, #789,
+  #793, #794, #812, #817, #838, #839, #840, #860 and #861; #871 and #878 stay open.
+
 ### Phase 38: core-java on Spring Boot 4.1.1, Jackson 3 throughout (#898) — 2026-10-06
 
 - **Spring Boot 3.5.16 → 4.1.1 (Spring Framework 7.0.9), on explicit per-module starters.** Boot 3.5's
