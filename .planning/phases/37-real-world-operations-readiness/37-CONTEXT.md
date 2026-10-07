@@ -117,7 +117,19 @@ Do not plan a criterion for a cluster that moved to 37.x.
   - Each action records who did it and when.
   - The Developers page lists every credential with its scopes, shops and last-used time.
 
+### Owner rulings after research (2026-10-07)
+Answers to `37-RESEARCH.md` § Open Questions, given at the plan-phase research checkpoint.
+- **D-25:** **Shops whose hours are empty or unparseable when D-15 deploys become "legacy always open".** The migration marks them, and their storefront and checkout behave exactly as before deploy. The vendor is told to set structured hours. "Empty or unparseable = CLOSED" (D-15) applies to every shop created or edited after deploy, and to any shop whose vendor saves hours. This is how D-15 avoids silently changing a shop's behaviour.
+- **D-26:** **The invitee's password is collected on our own accept page (D-07).** The invite link opens a J'Toye accept page. core-java creates the Keycloak user through `KeycloakAdminClient` with that password and the declared admin-only `tenant_id` attribute, writes the OPERATOR grant, and then signs the user in. The password is never logged or stored by core-java.
+- **D-27:** **The per-IP cash-order cap (D-18) uses a keyed hash stored on the order.** It is an HMAC of the client IP from D-19, under a key from config, never the raw IP. Counts are a query. Because a pseudonymous identifier then lives with the order, it falls under retention and Article 17 erasure: the erasure path nulls it, and its retention is declared.
+
 ### Claude's Discretion
+- The remaining research open questions take the researcher's recommendation unless the planner finds evidence against it. The planner must record which one it applied:
+  - expected prices are REQUIRED on checkout submit, with a typed 422 when missing (Q4);
+  - void is new columns, not a new `VOIDED` status (Q6);
+  - a credential cannot hold a grant above the issuer's own and cannot mint credentials (Q7);
+  - VAT for non-registered traders (Q2) needs legal confirmation, so do not change ledger VAT computation in this phase, and fix only the display (UXT-046/047);
+  - the three out-of-scope success-criteria clauses (Q8) are dropped per D-01.
 - How each remaining in-scope cluster is fixed, where the discussion did not settle a design choice: UXT-016 (partial update / PATCH semantics), UXT-017/#727 (sync requires a shop), UXT-026, UXT-027, UXT-029, UXT-037, UXT-038, UXT-040, UXT-044, UXT-046/047 (VAT-rate choice and registration status), UXT-023, UXT-028, and the 37-F fixes. Each must be shown to FAIL on the pre-fix tree, and must keep the 40 entries in `goods-to-preserve.md`.
 - The exact config keys and default values for the D-18 caps and D-20 limits.
 - Invite expiry and link lifetime (D-07).
