@@ -368,7 +368,11 @@ async function allergenHeadingPlacement(page: Page) {
 }
 
 test.describe("Dish modal allergen section (31.1-21)", () => {
-  test("at 200% zoom on a 390x844 phone the allergen heading is visible without scrolling", async ({ page }) => {
+  // @desktop-only: the emulation needs a layout viewport that STAYS 195 CSS px. Under the mobile
+  // project's isMobile emulation Chromium widens the layout viewport to the page's minimum content
+  // width, so the control below read innerWidth 281 there (31.1-30) and the condition could not be
+  // emulated at all. The desktop project holds 195 px, which is the condition this test claims.
+  test("@desktop-only at 200% zoom on a 390x844 phone the allergen heading is visible without scrolling", async ({ page }) => {
     // 200% zoom = half the CSS viewport (see the block comment above for why not deviceScaleFactor).
     await page.setViewportSize({ width: 195, height: 422 })
     // At 195x422 the fixed cookie notice covers the first trigger and intercepts the click on the
@@ -383,6 +387,15 @@ test.describe("Dish modal allergen section (31.1-21)", () => {
     await trigger.click()
     await expect(page.getByRole("dialog")).toBeVisible()
 
+    // The probe can run before the dialog's content has rendered (31.1-30: mobile read found=false
+    // while the final snapshot showed the heading), so wait for the heading to exist first. A dialog
+    // with no allergen heading at all still fails here, on the poll's own timeout.
+    await expect
+      .poll(async () => (await allergenHeadingPlacement(page)).found, {
+        message: "no 'Allergen Information' heading in the dialog (empty declarations rendered none pre-fix)",
+        timeout: 5_000,
+      })
+      .toBe(true)
     const placement = await allergenHeadingPlacement(page)
     // Control: the emulation took (the layout viewport really is 195 CSS px wide).
     expect(placement.found ? placement.innerWidth : -1, "the zoom emulation did not apply").toBe(195)

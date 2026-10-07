@@ -100,7 +100,12 @@ test.describe("31.1-22 — the allergy note on the kitchen board and the order d
     await expect(button).toBeVisible()
     const box = await button.boundingBox()
     expect(box, "the button has no layout box").not.toBeNull()
-    expect((box as { height: number }).height).toBeGreaterThanOrEqual(44)
+    // The card enters with a scale animation (0.92 -> 1), so a box read during it is short
+    // (31.1-30 measured 43.3 on the mobile project). Poll until it settles; a button that is
+    // really under 44px still fails when the poll times out.
+    await expect
+      .poll(async () => (await button.boundingBox())?.height ?? 0, { timeout: 5_000 })
+      .toBeGreaterThanOrEqual(44)
 
     await button.click()
     await expect(note.getByText(/Read by kim at 18:05/)).toBeVisible()

@@ -156,6 +156,11 @@ test.describe("DSAR verification link (#839)", () => {
     }
 
     // 6. The same link again: already confirmed, distinct from confirmed and from invalid.
+    // Leave the page first. The page cleared the fragment, so goto(link) from here differs only
+    // by #token= and Chromium treats it as a same-document fragment navigation: nothing reloads
+    // (31.1-30 timed out waiting for the button on the confirmed page). Opening the email link
+    // again is a fresh load for a person, and about:blank makes it one here.
+    await page.goto("about:blank")
     await page.goto(link, { waitUntil: "domcontentloaded" })
     await page.getByRole("button", { name: /confirm my request/i }).click()
     await expect(page.getByRole("heading", { name: /already confirmed/i })).toBeVisible({

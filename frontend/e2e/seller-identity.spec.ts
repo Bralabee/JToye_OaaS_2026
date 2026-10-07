@@ -76,6 +76,18 @@ function asText(html: string): string {
   return html.replace(/&#x27;/g, "'").replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/&quot;/g, '"')
 }
 
+/**
+ * Scroll a region into view, retrying if hydration swaps the element between resolve and scroll
+ * (31.1-30: "Element is not attached to the DOM" on the shop page, both projects). Only the
+ * scroll is retried; the content assertions that follow are unchanged and still fail on a page
+ * without the block.
+ */
+async function scrollIntoViewSettled(locator: ReturnType<Page["getByRole"]>) {
+  await expect(async () => {
+    await locator.scrollIntoViewIfNeeded({ timeout: 2_000 })
+  }).toPass({ timeout: 15_000 })
+}
+
 async function screenshots(page: Page, testInfo: TestInfo, name: string) {
   for (const width of [390, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 })
@@ -166,7 +178,7 @@ test.describe("#789 seller identity before purchase and on the confirmation", ()
     // The shop page, as a customer sees it.
     await page.goto(`/shop/${SHOP_SLUG}`)
     const shopBlock = page.getByRole("region", { name: BLOCK_HEADING })
-    await shopBlock.scrollIntoViewIfNeeded()
+    await scrollIntoViewSettled(shopBlock)
     await expect(shopBlock).toContainText(seller.legalName)
     await screenshots(page, testInfo, "seller-shop-page")
     await page.setViewportSize({ width: 1280, height: 900 })
@@ -199,7 +211,7 @@ test.describe("#789 seller identity before purchase and on the confirmation", ()
       await placeOrder.elementHandle()
     )
     expect(precedes, "the seller block must come before Place order").toBe(true)
-    await checkoutBlock.scrollIntoViewIfNeeded()
+    await scrollIntoViewSettled(checkoutBlock)
     await screenshots(page, testInfo, "seller-checkout")
     await page.setViewportSize({ width: 1280, height: 900 })
 
@@ -225,7 +237,7 @@ test.describe("#789 seller identity before purchase and on the confirmation", ()
     await expect(confirmationBlock).toContainText(seller.legalName)
     await expect(confirmationBlock).toContainText(PLATFORM_STATEMENT)
     await expect(confirmationBlock).toContainText(CANCELLATION_FRAGMENT)
-    await confirmationBlock.scrollIntoViewIfNeeded()
+    await scrollIntoViewSettled(confirmationBlock)
     await screenshots(page, testInfo, "seller-confirmation")
 
     // THE DURABLE MEDIUM: the confirmation email (implemented by 31.1-25; this is its acceptance).
