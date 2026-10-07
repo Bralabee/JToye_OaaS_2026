@@ -238,12 +238,21 @@ describe(".env.example declares the controller contact by VALUE, not by presence
     expect(raw).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
   })
 
-  it("resolves the registered office to genuinely EMPTY, not to a comment", () => {
+  it("resolves the registered office to a quoted address, never to a comment", () => {
     const raw = rawEnvValue(readEnvExample(), "NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE")
-    // The owner declined to publish an address. "Declined" must mean the empty
-    // string — an explanatory comment parked on the assignment line would make
-    // this variable CONFIGURED, and the notice would publish that comment.
-    expect(raw).toBe("")
+    // Phase 31 left this EMPTY because the owner had declined to publish an
+    // address. D-14 (31.1-27, #794) reversed that: it now carries the
+    // registered office from the Companies House record for 16471464,
+    // confirmed by the owner — the exact string is pinned across every runtime
+    // by RegisteredOfficeParityTest. What this test still guards is the SHAPE
+    // the consumers read: the whole right-hand side is one double-quoted value
+    // (it has spaces, and scripts `set -a; . .env`), with no `#` anywhere, so
+    // no comment parked on the line can become part of a published address.
+    expect(raw).toMatch(/^"[^"#]+"$/)
+    const value = (raw ?? "").slice(1, -1)
+    expect(value.trim()).toBe(value)
+    expect(value.length).toBeGreaterThan(10)
+    expect(value).not.toContain("13434105")
   })
 
   it("BREAK DIRECTION: the parser catches the comment-as-value shape", () => {

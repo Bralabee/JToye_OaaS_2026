@@ -1,0 +1,252 @@
+38-12 evidence: the Jackson line at its end state (D-01, D-02; BOOT4-02, BOOT4-04)
+=====================================================================================
+
+PLAN_BASE=31f8a36e4921de6e7385809129b889fe2ecb3a7c   (HEAD at plan start, 2026-10-05T13:59:18Z; working tree clean
+apart from the orchestrator's untracked .planning/milestone.lock)
+
+## Baseline scans at PLAN_BASE (before any edit)
+
+main, com.fasterxml.jackson.<any package but annotation>:   git grep -n -P 'com\.fasterxml\.jackson\.(?!annotation\b)[a-z]' -- core-java/src/main/java
+  rc=1 (no line)
+main, com.fasterxml.jackson.annotation imports (positive control):   rc=0 files=6
+main, package-qualified Spring Jackson2*/MappingJackson2*/GenericJackson2* adapter:   rc=1 (no line)
+config, 'preferred-json-mapper|jackson2' over core-java/src/{main,test}/resources:   rc=0, ONE line, and it is not config:
+  core-java/src/test/resources/jackson2-golden/README.md:100 (a sha256sum note naming the golden directory)
+  the 7 application*.yml files (6 main, 1 test) carry neither the switch nor a jackson2 key.
+test, com.fasterxml.jackson.<any package but annotation>:   rc=0, 2 files
+  OutboxPayloadCompatibilityTest.java (3 lines), OpenApiSnapshotTest.java (8 lines)
+test, package-qualified Spring Jackson-2 adapter:   rc=0, 2 files
+  AmqpJackson2CompatibilityTest.java, OutboxPayloadCompatibilityTest.java
+test, union = 3 files = the 38-19 DELIBERATE-JACKSON2-LIST; DELIBERATE-JACKSON2 marker count 1 in each.
+
+runtimeClasspath (plan verify 2) at PLAN_BASE:
+  ./gradlew -q :core-java:dependencies --configuration runtimeClasspath   rc=0
+  forbidden=1:  +--- org.springframework.boot:spring-boot-jackson2 -> 4.1.1     (the INTERIM-JACKSON2-BRIDGE line)
+  transitive Jackson 2 present: com.fasterxml.jackson.core:jackson-databind -> 2.22.3 (springdoc/swagger-core and others)
+
+Boot 4.1.1 metadata, read out of the jars (which keys the config scan must know):
+  spring.http.converters.preferred-json-mapper (spring-boot-http-converter), spring.http.codecs.preferred-json-mapper
+  (spring-boot-http-codec), spring.websocket.messaging.preferred-json-mapper, spring.graphql.rsocket.preferred-json-mapper;
+  spring.jackson2.* (spring-boot-jackson2, the only top-level segment it declares); management.endpoints.jackson2.isolated-object-mapper
+  (actuator). spring.jackson.use-jackson2-defaults is a JACKSON-3 key; Jackson3WireContractTest (38-05) already owns it, so the
+  config scan does not flag it (its control row proves that).
+
+## The contract test (Task 1, RED)
+
+core-java/src/test/java/uk/jtoye/core/boot4/JacksonLineContractTest.java, unit, untagged, 5 tests:
+  productionClasspathCarriesNoForbiddenModule   jar names on -Djtoye.productionRuntimeClasspath (already set by tasks.test since 36-06):
+      no name starting spring-boot-jackson2 | spring-boot-starter-jackson2 | spring-boot-starter-classic |
+      spring-boot-autoconfigure-classic | spring-boot-grpc | spring-boot-starter-grpc   (the plan's 4 literals + 2 starter spellings);
+      positive controls spring-boot-4.x.jar AND jackson-databind-2.x.jar listed; property absent -> fails closed.
+  mainCodeHasNoJackson2Use                      every src/main/java line vs JACKSON2_USE; positive control >= 1 annotation import.
+  configurationSetsNoJackson2Switch             every application*.{yml,yaml,properties} under src/{main,test}/resources, loaded by
+                                                Boot's own property-source loaders; relaxed key form; positive controls: application.yml
+                                                and test application-test.yml scanned, spring.application.name read.
+  configCheckCanFail                            in-memory control: 4 forbidden spellings flagged, 2 legal Jackson-3 keys not.
+  testCodeJackson2UsersAreExactlyTheAllowlist   test files matching JACKSON2_USE == DELIBERATE_JACKSON2_LIST (3 paths, verbatim from
+                                                38-19's DELIBERATE-JACKSON2-LIST lines), each with a 'DELIBERATE-JACKSON2: <reason>' line.
+  JACKSON2_USE = com\.fasterxml\.jackson\.(?!annotation\b)[a-z]
+               | org\.springframework\.[a-z0-9.]+\.(?:Jackson2|MappingJackson2|GenericJackson2)[A-Za-z]*
+    (the plan's databind/core/datatype/module, widened to every com.fasterxml.jackson package but annotation, PLUS 38-19's
+     package-qualified Spring-adapter half, carried to 38-12 by the orchestrator; digits allowed in the package part.)
+  The contract file names no Jackson-2 package or adapter by its qualified name, so it cannot match its own scan:
+    own pattern over the file: rc=1; plan's narrow grep (com.fasterxml.jackson.databind / .core) over it: rc=1;
+    positive control, same grep -P over AmqpJackson2CompatibilityTest.java: rc=0 count=1.
+
+Added beside it (deviation, Rule 2): Boot4ModuleLivenessIntegrationTest.jackson3MapperExistsAndNoJackson2MapperBean, the
+context-level form of the plan's first truth ("no Jackson-2 ObjectMapper bean exists in the application context"), which no
+static scan can show. It walks every bean definition's type and superclasses (getType(name, false): nothing initialised):
+  positive control: Boot's tools.jackson JsonMapper bean exists and the walk finds beans in tools.jackson.databind;
+  assertion: no bean whose type or superclass is in the Jackson-2 databind package (derived from the annotation package,
+  so the file names no Jackson-2 databind type and stays off the list).
+
+RED run 1 (unit), bridge line present (2026-10-05T14:04:21Z):
+  ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.JacksonLineContractTest' --no-daemon   rc=1
+  > Task :core-java:cleanTest  > Task :core-java:compileTestJava  > Task :core-java:test FAILED   "5 tests completed, 1 failed"
+  TEST-uk.jtoye.core.boot4.JacksonLineContractTest.xml (written 15:04:22 local): tests=5 failures=1 errors=0 skipped=0
+  the ONLY failure: productionClasspathCarriesNoForbiddenModule
+    "Expecting empty but was: ["spring-boot-jackson2-4.1.1.jar"]"
+  main, config and test scans GREEN at this point -> no residual of 38-06..38-10 or 38-19.
+  gsd_run check tdd-red-evidence (record: command, exitCode 1, the XML, targetTest JacksonLineContractTest):
+    verdict RED_EVIDENCE_OK, reason target_test_failed, tests 5 / pass 4 / fail 1.
+
+RED run 2 (integration), bridge line present (2026-10-05T14:04:41Z):
+  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.boot4.Boot4ModuleLivenessIntegrationTest' --no-daemon   rc=1
+  "6 tests completed, 1 failed"; TEST-...Boot4ModuleLivenessIntegrationTest.xml (15:05:05 local) tests=6 failures=1
+  the ONLY failure: jackson3MapperExistsAndNoJackson2MapperBean, listing the bridge's beans:
+    jackson2ParameterNamesModule : com.fasterxml.jackson.module.paramnames.ParameterNamesModule
+    jackson2ObjectMapper : com.fasterxml.jackson.databind.ObjectMapper
+    jackson2JsonMixinModule : org.springframework.boot.jackson2.JsonMixinModule
+    jackson2JsonComponentModule : org.springframework.boot.jackson2.JsonComponentModule
+    jacksonGeoModule : org.springframework.data.geo.GeoModule
+    pageModule : org.springframework.data.web.config.SpringDataJacksonConfiguration$PageModule
+  (the last two are Spring Data's Jackson-2 modules; whether they outlive the bridge is read after GREEN below.)
+
+## GREEN (Task 1): the INTERIM-JACKSON2-BRIDGE line deleted from core-java/build.gradle.kts
+
+diff: 2 deletions (the bridge line and the blank line after it); nothing else in the build file changed.
+
+  ./gradlew :core-java:cleanTest :core-java:compileTestJava :core-java:test --tests 'uk.jtoye.core.boot4.JacksonLineContractTest' --no-daemon   rc=0
+  > Task :core-java:compileJava (ran: main compiles without spring-boot-jackson2)  > Task :core-java:compileTestJava  > Task :core-java:test
+  TEST-uk.jtoye.core.boot4.JacksonLineContractTest.xml (15:06:26 local): tests=5 failures=0 errors=0 skipped=0
+
+Context check, bridge-off, FIRST run (14:06:39Z) rc=1, 6 tests / 1 failure, and it was a real finding:
+  the bridge's 4 beans were gone (jackson2ObjectMapper, jackson2ParameterNamesModule, jackson2JsonMixinModule,
+  jackson2JsonComponentModule), but 2 Jackson-2-typed beans remained:
+    jacksonGeoModule : org.springframework.data.geo.GeoModule
+    pageModule : org.springframework.data.web.config.SpringDataJacksonConfiguration$PageModule
+  Cause (read from spring-data-commons-4.1.1.jar): Spring Data registers BOTH SpringDataJacksonConfiguration (Jackson 2) and
+  SpringDataJackson3Configuration whenever each Jackson line is on the classpath; Jackson 2 stays transitively (springdoc's
+  swagger-core, Azure SDK, Stripe), so the Jackson-2 pair is registered. They are Module beans, not mappers: with no Jackson-2
+  ObjectMapper (and no Jackson-2 mapper builder) nothing registers them anywhere, so they are inert.
+  Measured beside them (a throwaway arm inverting the positive control, restored by sha256 e8fe160f... == the kept copy):
+    jacksonMixinModule, jsonComponentModule, jsonMapperBuilder, jacksonJsonMapper : tools.jackson.databind.json.JsonMapper,
+    jackson3GeoModule : org.springframework.data.geo.GeoJacksonModule, jackson3pageModule : SpringDataJackson3Configuration$PageModule
+  -> Spring Data's Jackson-3 counterparts are live on Boot's mapper.
+  Resolution (no main change, no suppression of Spring Data config): the check now asserts (1) NO bean is a Jackson-2
+  ObjectMapper (the plan's truth, exactly), and (2) the Jackson-2-typed beans are EXACTLY {jacksonGeoModule, pageModule}, a
+  closed set like the test allowlist: the bridge coming back adds 4 names and fails it; Spring Data dropping its pair fails it
+  too, so the set shrinks with the tree.
+Context check, bridge-off, final form (14:08:38Z):
+  ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.boot4.Boot4ModuleLivenessIntegrationTest' --no-daemon   rc=0
+  TEST-...Boot4ModuleLivenessIntegrationTest.xml (15:09:01 local): tests=6 failures=0 errors=0 skipped=0
+  (its fail direction in this final form is arm A below.)
+
+Plan verify 2 (runtimeClasspath), bridge-off:
+  ./gradlew -q :core-java:dependencies --configuration runtimeClasspath   rc=0 (769 lines)
+  forbidden=0     fail direction: the same awk over the PLAN_BASE capture -> forbidden=1
+  com.fasterxml.jackson.core:jackson-databind lines = 5 (transitive Jackson 2 stays, as expected)
+
+Acceptance criteria:
+  AC1  git grep -n 'INTERIM-JACKSON2-BRIDGE' -- core-java/build.gradle.kts                  rc=1 (no line)
+       fail direction, same grep on HEAD 738cd0ea (bridge committed): core-java/build.gradle.kts:283, rc=0
+  AC2  git grep -n -e 'import com.fasterxml.jackson.databind' -e '...core' -e '...datatype' -- core-java/src/main/java   rc=1
+       positive control git grep -c 'import com.fasterxml.jackson.annotation' -- core-java/src/main/java   rc=0, 6 files:
+         dev/DemoImageManifest 2, onboarding/client/CompanyProfile 2, FhrsClient 1, FhrsEstablishment 2, shop/dto/CreateShopRequest 1, sync/dto/SyncItem 1
+       fail direction, same grep at c7d1a473 (end of 38-03, before 38-06 migrated main): rc=0, 35 lines
+
+## Arms (Task 1), bracketed: clean -> A, B, C, D, D2, E -> clean, on committed a2b52b22
+
+Script: scratch arms-3812.sh. Each arm edits ONE committed file, runs
+  ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.JacksonLineContractTest' --no-daemon
+  reads the fresh XML, restores with git checkout HEAD -- <file> and compares sha256 of the restored file with the HEAD blob.
+  Arm A also runs the context check (integrationTest, Boot4ModuleLivenessIntegrationTest) in its final form.
+
+HEAD=a2b52b22bb08478046701e5ec6cd692814a9d3d0
+[clean-open] gradle rc=0; BUILD SUCCESSFUL in 8s 
+[clean-open] xml 2026-10-05 15:10:34: tests="5" skipped="0" failures="0" errors="0"
+[A] arm line: 282:    implementation("org.springframework.boot:spring-boot-jackson2") // ARM-A
+[A] gradle rc=1; 5 tests completed, 1 failed BUILD FAILED in 23s 
+[A] xml 2026-10-05 15:10:58: tests="5" skipped="0" failures="1" errors="0"
+    FAILED: no Jackson-2, classic or gRPC auto-configuration module is on the production runtime classpath
+      java.lang.AssertionError: [forbidden module jar(s) on the production runtime classpath. A spring-boot-jackson2 jar means a Jackson-2 ObjectMapper bean and converters beside Boot's Jackson-3 JsonMapper (D-01: the INTERIM-JACKSON2-BRIDGE line was removed by 38-12, do not re-add it); a classic or gRPC jar breaks CSRF-enabled filter chains (D-02)]  | Expecting empty but was: ["spring-boot-jackson2-4.1.1.jar"]
+[A-it] gradle rc=1; xml 2026-10-05 15:11:30: tests="6" skipped="0" failures="1" errors="0"
+    FAILED: Boot's Jackson-3 JsonMapper exists and no Jackson-2 mapper bean does (module spring-boot-jackson; D-01, 38-12)
+      java.lang.AssertionError: [a Jackson-2 ObjectMapper bean is back beside Boot's Jackson-3 JsonMapper: the application has two JSON behaviours again. 38-12 removed the INTERIM-JACKSON2-BRIDGE line (spring-boot-jackson2); JacksonLineContractTest names the module jar that brought it]  | Expecting empty but was: ["jackson2ObjectMapper : com.fasterxml.jackson.databind.ObjectMapper"]
+    restore core-java/build.gradle.kts sha256 56ab71db5566d4b427b4674b68063239a965d7239e32fb0471c982f135984e1c == HEAD blob
+[B] arm line: 4:import com.fasterxml.jackson.databind.ObjectMapper;
+[B] gradle rc=1; 5 tests completed, 1 failed BUILD FAILED in 19s 
+[B] xml 2026-10-05 15:11:49: tests="5" skipped="0" failures="1" errors="0"
+    FAILED: main code uses no Jackson 2 (annotations excepted), and the scan read the tree
+      java.lang.AssertionError: [main code must be on Jackson 3 (tools.jackson; D-01, BOOT4-04). Inject Boot's tools.jackson.databind.json.JsonMapper bean instead of each use listed here]  | Expecting empty but was: {"core-java/src/main/java/uk/jtoye/core/sync/dto/SyncItem.java"=["4: import com.fasterxml.jackson.databind.ObjectMapper;"]}
+    restore core-java/src/main/java/uk/jtoye/core/sync/dto/SyncItem.java sha256 07f69737eaa3226082b3436fe13e12c565297446778fba8723eb4853a84a6831 == HEAD blob
+[C] arm tail: --- spring:   http:     converters:       preferred-json-mapper: jackson2 
+[C] gradle rc=1; 5 tests completed, 1 failed BUILD FAILED in 9s 
+[C] xml 2026-10-05 15:11:59: tests="5" skipped="0" failures="1" errors="0"
+    FAILED: no application config sets the Jackson-2 converter switch or a jackson2 key, and the scan read it
+      java.lang.AssertionError: [D-01: do not set the deprecated Jackson-2 converter switch or any jackson2 key; the application runs on Boot's Jackson-3 JsonMapper only]  | Expecting empty but was: ["core-java/src/main/resources/application.yml: spring.http.converters.preferred-json-mapper=jackson2"]
+    restore core-java/src/main/resources/application.yml sha256 fd725d4fa1f5d016f94304738e95e15442bcbda6d690078ddc79ee6bebea576b == HEAD blob
+[D] arm line: 10:import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+[D] the plan's narrow grep over the armed file: rc=1 (it cannot see the adapter)
+[D] gradle rc=1; 5 tests completed, 1 failed BUILD FAILED in 10s 
+[D] xml 2026-10-05 15:12:09: tests="5" skipped="0" failures="1" errors="0"
+    FAILED: the test files on Jackson 2 are exactly the closed DELIBERATE-JACKSON2 list, each with its reason
+      java.lang.AssertionError: [test file(s) on Jackson 2 outside the closed DELIBERATE-JACKSON2 list (38-19). Move them to Boot's tools.jackson JsonMapper or the Jackson-3 Spring adapters; the list is not widened to make a test pass]  | Expecting empty but was: {"core-java/src/test/java/uk/jtoye/core/config/RabbitMQConfigMessageConverterTest.java"=["10: import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;"]}
+    restore core-java/src/test/java/uk/jtoye/core/config/RabbitMQConfigMessageConverterTest.java sha256 7c041f8c1f98838b0b07de8fd44d1facbff125a8c8831f0ddb96546fb2daae79 == HEAD blob
+[D2] arm line: 47:    private final Object armD2 = new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter();
+[D2] gradle rc=1; 5 tests completed, 1 failed BUILD FAILED in 9s 
+[D2] xml 2026-10-05 15:12:19: tests="5" skipped="0" failures="1" errors="0"
+    FAILED: the test files on Jackson 2 are exactly the closed DELIBERATE-JACKSON2 list, each with its reason
+      java.lang.AssertionError: [test file(s) on Jackson 2 outside the closed DELIBERATE-JACKSON2 list (38-19). Move them to Boot's tools.jackson JsonMapper or the Jackson-3 Spring adapters; the list is not widened to make a test pass]  | Expecting empty but was: {"core-java/src/test/java/uk/jtoye/core/config/RabbitMQConfigMessageConverterTest.java"=["47: private final Object armD2 = new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter();"]}
+    restore core-java/src/test/java/uk/jtoye/core/config/RabbitMQConfigMessageConverterTest.java sha256 7c041f8c1f98838b0b07de8fd44d1facbff125a8c8831f0ddb96546fb2daae79 == HEAD blob
+[E] marker lines left: 0
+[E] gradle rc=1; 5 tests completed, 1 failed BUILD FAILED in 9s 
+[E] xml 2026-10-05 15:12:28: tests="5" skipped="0" failures="1" errors="0"
+    FAILED: the test files on Jackson 2 are exactly the closed DELIBERATE-JACKSON2 list, each with its reason
+      java.lang.AssertionError: [each listed file carries a 'DELIBERATE-JACKSON2: <reason>' line]  | Expecting TreeSet: |   ["core-java/src/test/java/uk/jtoye/core/boot4/AmqpJackson2CompatibilityTest.java", |     "core-java/src/test/java/uk/jtoye/core/boot4/JacksonLineContractTest.java", |     "core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java"] | to contain: |   ["core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java", |     "core-java/src/test/java/uk/jtoye/core/boot4/AmqpJackson2CompatibilityTest.java", |     "core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java"] | but could not find the following element(s): |   ["core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java"] | 
+    restore core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java sha256 ff035bdec08eb6ecea3aff7ab02b800cd31a08dfa4c657a16ff18de9075b1a78 == HEAD blob
+[clean-close] gradle rc=0; BUILD SUCCESSFUL in 9s 
+[clean-close] xml 2026-10-05 15:12:38: tests="5" skipped="0" failures="0" errors="0"
+
+Every arm is red on exactly one test, naming the offender; every restore equals the HEAD blob; the closing run is green.
+Arm D is the orchestrator-carried obligation (38-19 -> 38-12): a Spring Jackson-2 adapter re-introduced into a non-listed test
+file turns the widened scan red, while the plan's narrow grep over the same armed file prints nothing (rc=1).
+Arm E: in the red message, JacksonLineContractTest itself appears in the set of files carrying a reason line, because its
+Javadoc documents the marker; that set is only checked with containsAll, so the extra name cannot pass or fail anything.
+
+## Tracer feedback gate (Task 1 -> Task 2)
+
+Interactive run (workflow.auto_advance=false, _auto_chain_active=false), human_verify_mode=end-of-phase, tracer verify is
+automated-only -> row 3: re-run the verify after the commits, no checkpoint. The arms' closing run on committed a2b52b22/e2941b6e
+(contract test 5/5 green, fresh XML 15:12:38 local) and verify 2 (forbidden=0) are that re-run. Expanded to Task 2.
+
+## Task 2: both full suites on the end-state (bridge-free) tree
+
+HEAD e2941b6e8b254cd100f8aeeb28497a5fcb4ee70d, started 2026-10-05T14:13:01Z, finished 14:41:35Z:
+  ./gradlew :core-java:cleanTest :core-java:cleanIntegrationTest :core-java:test :core-java:integrationTest --continue --no-daemon
+  rc=1   (expected: the one owned red below)   "BUILD FAILED in 28m 34s"
+  > Task :core-java:cleanTest  > Task :core-java:cleanIntegrationTest  > Task :core-java:test  > Task :core-java:integrationTest
+  (both test tasks EXECUTED, neither UP-TO-DATE)
+Totals read from the fresh XML (all written after the start: unit 15:14:19 local, integration 15:41:35 local):
+  test             181 files  tests=1490  failures=0  errors=0  skipped=1
+  integrationTest  155 files  tests=769   failures=1  errors=0  skipped=1
+  the only failing class in either directory: uk.jtoye.core.integration.OpenApiSnapshotTest (owner 38-14)
+    apiDocsMatchCommittedSnapshot(): "The OpenAPI spec served by /v3/api-docs no longer matches the reviewed snapshot ..."
+    (the same red as the 38-04 ledger and the wave-4 gate)
+
+Against the earlier figures:
+                         unit (tests/failures/skipped)   integration (tests/failures)
+  38-04 ledger (Boot 4)  1337 / 2 / 1                    750 / 5   (2 + 5 reds, all owned and since closed except OpenApiSnapshotTest)
+  wave-4 gate c2c64e78   1485 / 0 / 1                    768 / 1   (OpenApiSnapshotTest)
+  38-19 end 31f8a36e     1485 / 0 / 1                    (per batch, bridge-off: A 92, B 62, C unit 37 / IT 21, residuals 19 + 1)
+  38-12 end state        1490 / 0 / 1                    769 / 1   (OpenApiSnapshotTest)
+  delta unit +5 = JacksonLineContractTest's 5 tests; delta integration +1 = Boot4ModuleLivenessIntegrationTest
+  .jackson3MapperExistsAndNoJackson2MapperBean. Nothing else added, lost or newly red. Every class in 38-19's batches ran
+  in this bridge-free run and none is failing, so the batch-by-batch bridge-off result holds for the whole tree at once.
+
+Plan verify 2 (contexts failing for want of a Jackson-2 bean):
+  awk '/No qualifying bean/ && /jackson/{n++} END{print "missing_jackson_bean="n+0}' <both XML dirs>   -> missing_jackson_bean=0
+  broader form (No qualifying bean | UnsatisfiedDependency | Unsatisfied dependency) AND (ObjectMapper | jackson) -> n=0
+  fail direction of the awk: fed 38-19's tracer failure text ("No qualifying bean of type '...databind.ObjectMapper'")
+    -> missing_jackson_bean=1
+  Residuals: NONE. No main class and no test class needed the bridge; no main-code change was made in this plan.
+
+OpenAPI, measured for 38-14 (bridge removal does not move the 38-14 diff):
+  the served spec written by this run (build-local/openapi/openapi-current.json, 15:19:36 local), copied aside;
+  then a bracketed arm re-added the bridge line and ran ./gradlew :core-java:generateOpenApiSpec --rerun   rc=0 (fresh file 15:42:57)
+  bridge-off sha256 60c52aa16c74e502bc5c174d477b44f257b466dc8717709894d8bfd1e9d4c96a
+  bridge-on  sha256 60c52aa16c74e502bc5c174d477b44f257b466dc8717709894d8bfd1e9d4c96a   -> byte-IDENTICAL
+  build file restored from HEAD, sha256 56ab71db... == HEAD blob. diff snapshot vs current: 530 lines (38-14's to regenerate).
+
+Plan verify 3 (test side, read independently of the contract test):
+  out=$(git grep -l -e 'com.fasterxml.jackson.databind' -e 'com.fasterxml.jackson.core' -- core-java/src/test/java); rc=0
+    core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java   deliberate=1 (awk)
+    core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java         deliberate=1 (awk)
+  both are in the allowlist constant. The narrow grep cannot see AmqpJackson2CompatibilityTest (adapter only), so the list is
+  also read with the contract's widened pattern (git grep -P, the same regex): rc=0, 3 files, each deliberate=1:
+    AmqpJackson2CompatibilityTest, OutboxPayloadCompatibilityTest, OpenApiSnapshotTest
+  diff (widened scan) vs (the 3 constant lines in JacksonLineContractTest.java): EQUAL
+  fail direction: the same widened scan at c2c64e78 (38-19's base) vs the constant: diff rc=1, 41 files.
+
+The allowlist with reasons (the DELIBERATE_JACKSON2_LIST constant; reasons verbatim from 38-19's DELIBERATE-JACKSON2-LIST):
+  core-java/src/test/java/uk/jtoye/core/boot4/AmqpJackson2CompatibilityTest.java | emulates Boot-3.5 pods during a rolling deploy:
+    a Boot-3.5 Jackson2JsonMessageConverter reads every message the Boot-4 converter writes (38-08)
+  core-java/src/test/java/uk/jtoye/core/boot4/OutboxPayloadCompatibilityTest.java | emulates Boot-3.5 pods during a rolling deploy:
+    a mapper built like Boot 3.5's reads the outbox rows Boot 4 writes (38-08)
+  core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java | byte-stable normalizer of springdoc's swagger-core
+    (Jackson-2) output; its writer decides the committed snapshot's bytes, and 38-14 regenerates that snapshot
+
+No golden or snapshot changed:
+  git diff --name-only 31f8a36e..HEAD -- docs/api core-java/src/test/resources; echo rc=$?   -> no name, rc=0
+  NOTE: git diff --name-only exits 0 whether or not it prints names, so the criterion's "rc=0" cannot fail; the falsifiable
+  form is the NAME COUNT. Fail direction: the same command over 38-01's capture commit (e12177e1^..e12177e1) -> 38 names, rc=0.

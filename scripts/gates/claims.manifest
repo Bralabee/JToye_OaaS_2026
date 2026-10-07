@@ -88,9 +88,11 @@ rule	gradle	-	frontend/package-lock.json	lock packages[""]	jq:.packages[""].vers
 # inside the manifest enforced_by block where 31-06 owns the conversion, and it must
 # never reach a rule here - an un-converted comparison would silently never match.
 #
-# ONLY FOUR OF THE TWELVE ROWS ARE GATED HERE, and that is a statement of coverage
-# rather than an omission: exactly four rows carry a claim_key because exactly four
-# publish an integer. The other eight publish prose ("Kept indefinitely"), which an
+# ONLY SIX OF THE FOURTEEN ROWS ARE GATED HERE, and that is a statement of coverage
+# rather than an omission: exactly six rows carry a claim_key because exactly six
+# publish an integer (R-14 and R-15 inside a sentence: "..., or 168 hours if you never confirm it",
+# so its rule reads the integer in front of " hours" wherever it sits after the anchor).
+# The other eight publish prose ("Kept indefinitely"), which an
 # int-comparing engine cannot hold. They are gated instead by the field-by-field
 # comparison against the manifest in retention-table.a11y.test.tsx.
 source	retention	json	docs/retention-manifest.json	int
@@ -98,3 +100,5 @@ rule	retention	draft_order_hours	frontend/app/legal/retention/page.tsx	R-1 aband
 rule	retention	webhook_delivery_days	frontend/app/legal/retention/page.tsx	R-2 webhook delivery records	PERIOD_WEBHOOK_DELIVERY_RECORDS = "\K[0-9]+(?= days")
 rule	retention	media_quarantine_hours	frontend/app/legal/retention/page.tsx	R-3 quarantined image uploads	PERIOD_QUARANTINED_IMAGE_UPLOADS = "\K[0-9]+(?= hours")
 rule	retention	customer_refresh_cookie_days	frontend/app/legal/retention/page.tsx	R-4 customer sign-in cookies	PERIOD_CUSTOMER_SIGN_IN_COOKIES = "\K[0-9]+(?= days")
+rule	retention	dsar_unconfirmed_request_hours	frontend/app/legal/retention/page.tsx	R-14 data request email	PERIOD_DATA_REQUEST_EMAIL = "[^"]*?\K[0-9]+(?= hours)
+rule	retention	dsar_access_export_hours	frontend/app/legal/retention/page.tsx	R-15 prepared copy of your data	PERIOD_PREPARED_DATA_COPY = "[^"]*?\K[0-9]+(?= hours)

@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -51,7 +51,7 @@ import static org.mockito.Mockito.when;
  * exercised end-to-end. {@code Webhook.constructEvent} is stubbed via
  * {@link MockedStatic} (mockito-inline) so we can post a synthetic
  * {@code payment_intent.succeeded} event without holding a real Stripe
- * webhook secret. RabbitMQ collaborators are {@link MockBean}-replaced so
+ * webhook secret. RabbitMQ collaborators are {@link MockitoBean}-replaced so
  * the test can assert exactly-once publish semantics without standing up a
  * broker.
  */
@@ -83,7 +83,7 @@ class StripeWebhookIdempotencyIntegrationTest {
         // RabbitMQ stubs — OrderEventPublisher has a compile-time RabbitTemplate
         // dependency. Listener auto-startup is disabled and host points at a
         // dead port so context boots without a live broker. We additionally
-        // @MockBean OrderEventPublisher + PaymentEventPublisher so no Rabbit
+        // @MockitoBean OrderEventPublisher + PaymentEventPublisher so no Rabbit
         // calls are issued during tests.
         registry.add("spring.rabbitmq.host", () -> "localhost");
         registry.add("spring.rabbitmq.port", () -> "0");
@@ -98,8 +98,8 @@ class StripeWebhookIdempotencyIntegrationTest {
     @Autowired private OrderRepository orderRepository;
     @Autowired private ShopRepository shopRepository;
 
-    @MockBean private OrderEventPublisher orderEventPublisher;
-    @MockBean private PaymentEventPublisher paymentEventPublisher;
+    @MockitoBean private OrderEventPublisher orderEventPublisher;
+    @MockitoBean private PaymentEventPublisher paymentEventPublisher;
 
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000a04");
 

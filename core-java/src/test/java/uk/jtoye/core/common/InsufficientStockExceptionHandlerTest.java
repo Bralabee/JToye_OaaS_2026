@@ -1,9 +1,9 @@
 package uk.jtoye.core.common;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,8 +33,8 @@ class InsufficientStockExceptionHandlerTest {
         // ProblemDetail returned from @ExceptionHandler serializes to JSON as an
         // object (not a String). Boot's default auto-config provides this, but
         // standaloneSetup deliberately omits it — plug it back in for the test.
-        MappingJackson2HttpMessageConverter jackson =
-                new MappingJackson2HttpMessageConverter(new ObjectMapper());
+        JacksonJsonHttpMessageConverter jackson =
+                new JacksonJsonHttpMessageConverter(JsonMapper.builder().build());
         mockMvc = MockMvcBuilders.standaloneSetup(new ThrowingController())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setMessageConverters(jackson)

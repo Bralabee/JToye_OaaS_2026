@@ -1,0 +1,1992 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+index 23c68b01..628a0440 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -1,5 +1,5 @@
+ plugins {
+-    id("org.springframework.boot") version "3.5.16" apply false
++    id("org.springframework.boot") version "4.1.1" apply false
+     id("io.spring.dependency-management") version "1.1.7" apply false
+     java
+ }
+diff --git a/core-java/build.gradle.kts b/core-java/build.gradle.kts
+index 74c570f7..3b3749de 100644
+--- a/core-java/build.gradle.kts
++++ b/core-java/build.gradle.kts
+@@ -1,5 +1,5 @@
+ plugins {
+-    id("org.springframework.boot") version "3.5.16"
++    id("org.springframework.boot") version "4.1.1"
+     id("io.spring.dependency-management") version "1.1.7"
+     java
+     // Plan 34-09 (TRUTH-02, #110). CORE Gradle plugin: no version coordinate, no
+@@ -51,12 +51,14 @@ layout.buildDirectory.set(file("build-local"))
+ // be an unrequested jump. 4.1.138.Final was also deliberately not taken: it turns
+ // on HTTP/2 header-value validation by default, which is a behaviour change with
+ // its own blast radius and its own decision.
+-extra["netty.version"] = "4.1.137.Final"
++// SPIKE: Boot 4.1.1 manages netty 4.2.17.Final (paired with 4.1.137 per GHSA patched_versions) -- pin removed
++// extra["netty.version"] = "4.1.137.Final"
+ 
+ // Override Tomcat version managed by Spring Boot 3.5.16 (10.1.55) to remediate
+ // critical authorization/authentication bypass CVEs in 10.1.57 and earlier.
+ // Keep within the same 10.1.x line to minimize behavioral risk.
+-extra["tomcat.version"] = "10.1.59"
++// SPIKE: 10.1.59 fixes == 11.0.25 fixes; Boot 4.1.1 manages 11.0.24
++extra["tomcat.version"] = "11.0.25"
+ 
+ // Override com.rabbitmq:amqp-client transitive dependency from
+ // spring-boot-starter-amqp to patch 6 HIGH/MEDIUM severity CVEs discovered by
+@@ -145,17 +147,18 @@ extra["rabbit-amqp-client.version"] = "5.34.0"
+ // WHEN TO DELETE IT: once Boot's own BOM manages Jackson 2 at or above 2.21.6; a pin left
+ // behind a newer Boot holds Jackson BELOW Boot's version. Under Boot 4 (#706) this key names
+ // the Jackson 3 BOM and Jackson 2 moves to `jackson-2-bom.version`: re-key, do not delete.
+-extra["jackson-bom.version"] = "2.21.6"
++extra["jackson-2-bom.version"] = "2.21.6"
+ 
+ dependencies {
+     implementation("org.springframework.boot:spring-boot-starter-web")
+     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+-    implementation("org.springframework.boot:spring-boot-starter-aop")
++    implementation("org.springframework.boot:spring-boot-starter-aspectj")
++    implementation("org.springframework.boot:spring-boot-starter-classic")
+     implementation("org.springframework.boot:spring-boot-starter-security")
+     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+     implementation("org.springframework.boot:spring-boot-starter-validation")
+     implementation("org.springframework.boot:spring-boot-starter-actuator")
+-    implementation("org.springframework.retry:spring-retry")
++    implementation("org.springframework.retry:spring-retry:2.0.13")
+     implementation("org.springframework.statemachine:spring-statemachine-starter:4.0.2")
+ 
+     // Redis caching dependencies
+@@ -219,7 +222,7 @@ dependencies {
+     implementation("io.zipkin.reporter2:zipkin-reporter-brave")
+ 
+     // Resilience4j circuit breaker
+-    implementation("io.github.resilience4j:resilience4j-spring-boot3:2.4.0")
++    implementation("io.github.resilience4j:resilience4j-spring-boot4:2.4.0")
+ 
+     // Stripe payment processing
+     implementation("com.stripe:stripe-java:33.4.2")
+@@ -241,7 +244,7 @@ dependencies {
+     implementation("org.flywaydb:flyway-core")
+     implementation("org.flywaydb:flyway-database-postgresql")
+     implementation("org.postgresql:postgresql:42.7.13")
+-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6")
++    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1")
+ 
+     // Lombok for boilerplate reduction
+     compileOnly("org.projectlombok:lombok")
+@@ -253,7 +256,7 @@ dependencies {
+     // Lombok-MapStruct binding to ensure Lombok runs BEFORE MapStruct
+     annotationProcessor("org.projectlombok:lombok-mapstruct-binding:0.2.0")
+ 
+-    testImplementation("org.springframework.boot:spring-boot-starter-test")
++    testImplementation("org.springframework.boot:spring-boot-starter-test-classic")
+     testImplementation("org.springframework.security:spring-security-test")
+     testImplementation("org.testcontainers:testcontainers:1.21.4")
+     testImplementation("org.testcontainers:postgresql:1.21.4")
+@@ -262,6 +265,7 @@ dependencies {
+     // Phase 36: org.testcontainers.azure.AzuriteContainer for the real-Blob storage tests
+     testImplementation("org.testcontainers:azure:1.21.4")
+     testImplementation("org.testcontainers:junit-jupiter:1.21.4")
++    testImplementation("org.springframework.boot:spring-boot-configuration-metadata") // SPIKE probe
+     testImplementation("com.h2database:h2") // for lightweight unit tests
+ }
+ 
+@@ -550,3 +554,13 @@ tasks.register<Test>("updateOpenApiSnapshot") {
+     group = "documentation"
+     configureOpenApiSnapshotRun("update")
+ }
++
++// SPIKE: spring-boot-starter-classic ships the spring-boot-grpc-* autoconfigure modules with
++// their spring-grpc dependencies EXCLUDED. spring-boot-grpc-server registers
++// GrpcDisableCsrfHttpConfigurer as a default AbstractHttpConfigurer (META-INF/spring.factories),
++// which resolves org.springframework.grpc.server.service.GrpcServiceDiscoverer whenever a
++// filter chain keeps CSRF enabled -> NoClassDefFoundError. We do not use gRPC.
++configurations.all {
++    exclude(group = "org.springframework.boot", module = "spring-boot-grpc-server")
++    exclude(group = "org.springframework.boot", module = "spring-boot-grpc-client")
++}
+diff --git a/core-java/src/main/java/uk/jtoye/core/common/GlobalExceptionHandler.java b/core-java/src/main/java/uk/jtoye/core/common/GlobalExceptionHandler.java
+index af1fd484..7cd0469c 100644
+--- a/core-java/src/main/java/uk/jtoye/core/common/GlobalExceptionHandler.java
++++ b/core-java/src/main/java/uk/jtoye/core/common/GlobalExceptionHandler.java
+@@ -3,7 +3,7 @@ package uk.jtoye.core.common;
+ import com.stripe.exception.StripeException;
+ import org.springframework.dao.DataIntegrityViolationException;
+ import org.springframework.dao.OptimisticLockingFailureException;
+-import org.springframework.data.mapping.PropertyReferenceException;
++import org.springframework.data.core.PropertyReferenceException;
+ import org.springframework.http.HttpHeaders;
+ import org.springframework.http.HttpStatus;
+ import org.springframework.http.ProblemDetail;
+diff --git a/core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java b/core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java
+index 290b9fb0..4576669c 100644
+--- a/core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java
++++ b/core-java/src/main/java/uk/jtoye/core/config/RabbitMQConfig.java
+@@ -8,7 +8,7 @@ import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+ import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+ import org.springframework.amqp.support.converter.MessageConverter;
+ import org.springframework.beans.factory.ObjectProvider;
+-import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
++import org.springframework.boot.amqp.autoconfigure.SimpleRabbitListenerContainerFactoryConfigurer;
+ import org.springframework.boot.context.properties.EnableConfigurationProperties;
+ import org.springframework.context.annotation.Bean;
+ import org.springframework.context.annotation.Configuration;
+diff --git a/core-java/src/main/java/uk/jtoye/core/config/RateLimitConfig.java b/core-java/src/main/java/uk/jtoye/core/config/RateLimitConfig.java
+index 98cb8f30..7657f896 100644
+--- a/core-java/src/main/java/uk/jtoye/core/config/RateLimitConfig.java
++++ b/core-java/src/main/java/uk/jtoye/core/config/RateLimitConfig.java
+@@ -82,7 +82,7 @@ public class RateLimitConfig {
+ 
+         // Create Redis client
+         RedisClient redisClient = RedisClient.create(redisUri);
+-        redisClient.setDefaultTimeout(redisCommandTimeout);
++        // SPIKE: Lettuce 7 removed RedisClient.setDefaultTimeout; RedisURI.withTimeout above carries it
+ 
+         // Create connection with String keys and byte array values
+         RedisCodec<String, byte[]> codec = RedisCodec.of(StringCodec.UTF8, ByteArrayCodec.INSTANCE);
+diff --git a/core-java/src/main/java/uk/jtoye/core/media/MediaPendingReaper.java b/core-java/src/main/java/uk/jtoye/core/media/MediaPendingReaper.java
+index 4c92e264..06f2db6e 100644
+--- a/core-java/src/main/java/uk/jtoye/core/media/MediaPendingReaper.java
++++ b/core-java/src/main/java/uk/jtoye/core/media/MediaPendingReaper.java
+@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
+ import org.springframework.amqp.core.AmqpAdmin;
+ import org.springframework.amqp.core.QueueInformation;
+ import org.springframework.amqp.rabbit.listener.AbstractMessageListenerContainer;
+-import org.springframework.amqp.rabbit.listener.MessageListenerContainer;
++import org.springframework.amqp.core.MessageListenerContainer;
+ import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
+ import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
+ import org.springframework.beans.factory.ObjectProvider;
+diff --git a/core-java/src/main/java/uk/jtoye/core/security/CustomerJwtVerifier.java b/core-java/src/main/java/uk/jtoye/core/security/CustomerJwtVerifier.java
+index 44c07103..02b78508 100644
+--- a/core-java/src/main/java/uk/jtoye/core/security/CustomerJwtVerifier.java
++++ b/core-java/src/main/java/uk/jtoye/core/security/CustomerJwtVerifier.java
+@@ -4,7 +4,7 @@ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.beans.factory.annotation.Value;
+-import org.springframework.boot.web.client.RestTemplateBuilder;
++import org.springframework.boot.restclient.RestTemplateBuilder;
+ import org.springframework.http.HttpStatus;
+ import org.springframework.http.client.SimpleClientHttpRequestFactory;
+ import org.springframework.security.oauth2.jwt.Jwt;
+diff --git a/core-java/src/main/java/uk/jtoye/core/security/SecurityConfig.java b/core-java/src/main/java/uk/jtoye/core/security/SecurityConfig.java
+index b6d14ac9..1c38ff8b 100644
+--- a/core-java/src/main/java/uk/jtoye/core/security/SecurityConfig.java
++++ b/core-java/src/main/java/uk/jtoye/core/security/SecurityConfig.java
+@@ -2,7 +2,7 @@ package uk.jtoye.core.security;
+ 
+ import org.springframework.beans.factory.ObjectProvider;
+ import org.springframework.beans.factory.annotation.Value;
+-import org.springframework.boot.web.client.RestTemplateBuilder;
++import org.springframework.boot.restclient.RestTemplateBuilder;
+ import org.springframework.context.annotation.Bean;
+ import org.springframework.context.annotation.Configuration;
+ import org.springframework.core.env.Environment;
+diff --git a/core-java/src/test/java/uk/jtoye/core/common/GlobalExceptionHandlerRequestShapeTest.java b/core-java/src/test/java/uk/jtoye/core/common/GlobalExceptionHandlerRequestShapeTest.java
+index f75ef6d7..0a31818a 100644
+--- a/core-java/src/test/java/uk/jtoye/core/common/GlobalExceptionHandlerRequestShapeTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/common/GlobalExceptionHandlerRequestShapeTest.java
+@@ -2,8 +2,8 @@ package uk.jtoye.core.common;
+ 
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+-import org.springframework.data.mapping.PropertyPath;
+-import org.springframework.data.util.TypeInformation;
++import org.springframework.data.core.PropertyPath;
++import org.springframework.data.core.TypeInformation;
+ import org.springframework.http.HttpMethod;
+ import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+ import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
+  *   <li><b>L2</b> — a missing required {@code @RequestHeader} (e.g. the absent
+  *       {@code Stripe-Signature} on the payments webhook) must map to 400, not 500.</li>
+  *   <li><b>API-7</b> (QA council 20260902-134741) — a malformed {@code ?sort=} value makes
+- *       Spring Data raise {@link org.springframework.data.mapping.PropertyReferenceException};
++ *       Spring Data raise {@link org.springframework.data.core.PropertyReferenceException};
+  *       client-supplied input must map to 400, not the catch-all 500.</li>
+  * </ul>
+  *
+@@ -78,7 +78,7 @@ class GlobalExceptionHandlerRequestShapeTest {
+     /**
+      * API-7 (QA council 20260902-134741). {@code GET /api/v1/products?sort=;DROP} returned
+      * <b>500 errors/internal</b> live: no handler matched
+-     * {@link org.springframework.data.mapping.PropertyReferenceException}, so client input
++     * {@link org.springframework.data.core.PropertyReferenceException}, so client input
+      * reached {@code handleGenericException}. A 5xx from a well-formed request the client
+      * simply got wrong pollutes the error budget and tells the caller nothing actionable.
+      *
+@@ -133,7 +133,7 @@ class GlobalExceptionHandlerRequestShapeTest {
+     static class ThrowingController {
+         @GetMapping("/unmapped-resource")
+         public String throwNoResource() throws NoResourceFoundException {
+-            throw new NoResourceFoundException(HttpMethod.GET, "/unmapped-resource");
++            throw new NoResourceFoundException(HttpMethod.GET, "/unmapped-resource", "unmapped-resource");
+         }
+ 
+         @GetMapping("/needs-header")
+diff --git a/core-java/src/test/java/uk/jtoye/core/common/IntegrityViolationDiscriminationIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/common/IntegrityViolationDiscriminationIntegrationTest.java
+index 296ac7ce..e62a6287 100644
+--- a/core-java/src/test/java/uk/jtoye/core/common/IntegrityViolationDiscriminationIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/common/IntegrityViolationDiscriminationIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.dao.DataIntegrityViolationException;
+ import org.springframework.http.HttpStatus;
+ import org.springframework.http.ProblemDetail;
+@@ -72,7 +72,7 @@ class IntegrityViolationDiscriminationIntegrationTest {
+     // ProductService.deleteProduct gates on SHOP_MANAGER; this test is about integrity-error
+     // translation, not shop authorization, so the gate is a no-op here (proven elsewhere), same
+     // pattern as ProductImageDeleteIntegrationTest.
+-    @MockBean private ShopAccessService shopAccessService;
++    @MockitoBean private ShopAccessService shopAccessService;
+ 
+     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/config/MediaListenerConcurrencyIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/config/MediaListenerConcurrencyIntegrationTest.java
+index e770d34e..b9789ce5 100644
+--- a/core-java/src/test/java/uk/jtoye/core/config/MediaListenerConcurrencyIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/config/MediaListenerConcurrencyIntegrationTest.java
+@@ -12,7 +12,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
+ import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
+ import org.springframework.beans.factory.ObjectProvider;
+ import org.springframework.test.util.ReflectionTestUtils;
+-import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
++import org.springframework.boot.amqp.autoconfigure.SimpleRabbitListenerContainerFactoryConfigurer;
+ import org.testcontainers.containers.RabbitMQContainer;
+ import org.testcontainers.junit.jupiter.Container;
+ import org.testcontainers.junit.jupiter.Testcontainers;
+diff --git a/core-java/src/test/java/uk/jtoye/core/config/RabbitListenerContainerFactoryTest.java b/core-java/src/test/java/uk/jtoye/core/config/RabbitListenerContainerFactoryTest.java
+index fc716598..4a4a453f 100644
+--- a/core-java/src/test/java/uk/jtoye/core/config/RabbitListenerContainerFactoryTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/config/RabbitListenerContainerFactoryTest.java
+@@ -14,7 +14,7 @@ import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+ import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
+ import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+ import org.springframework.amqp.support.converter.MessageConverter;
+-import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
++import org.springframework.boot.amqp.autoconfigure.SimpleRabbitListenerContainerFactoryConfigurer;
+ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+ import org.springframework.retry.interceptor.RetryOperationsInterceptor;
+ import org.springframework.test.util.ReflectionTestUtils;
+diff --git a/core-java/src/test/java/uk/jtoye/core/config/TenantHeaderAbsentDocumentTest.java b/core-java/src/test/java/uk/jtoye/core/config/TenantHeaderAbsentDocumentTest.java
+index d35e4999..3fd66c39 100644
+--- a/core-java/src/test/java/uk/jtoye/core/config/TenantHeaderAbsentDocumentTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/config/TenantHeaderAbsentDocumentTest.java
+@@ -9,7 +9,7 @@ import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.context.ApplicationContextInitializer;
+ import org.springframework.context.ConfigurableApplicationContext;
+diff --git a/core-java/src/test/java/uk/jtoye/core/gdpr/DsarFanoutIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/gdpr/DsarFanoutIntegrationTest.java
+index c05685ef..03776ca8 100644
+--- a/core-java/src/test/java/uk/jtoye/core/gdpr/DsarFanoutIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/gdpr/DsarFanoutIntegrationTest.java
+@@ -10,9 +10,9 @@ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.mockito.ArgumentCaptor;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -135,8 +135,8 @@ class DsarFanoutIntegrationTest {
+     @Autowired private PlatformTransactionManager txManager;
+     @PersistenceContext private EntityManager entityManager;
+ 
+-    @SpyBean private DsarVerificationMailer mailer;
+-    @SpyBean private GdprService gdprService;
++    @MockitoSpyBean private DsarVerificationMailer mailer;
++    @MockitoSpyBean private GdprService gdprService;
+ 
+     @BeforeEach
+     void downgradeRole() {
+diff --git a/core-java/src/test/java/uk/jtoye/core/gdpr/DsarIntakeIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/gdpr/DsarIntakeIntegrationTest.java
+index c180f725..56306554 100644
+--- a/core-java/src/test/java/uk/jtoye/core/gdpr/DsarIntakeIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/gdpr/DsarIntakeIntegrationTest.java
+@@ -5,9 +5,9 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+@@ -99,7 +99,7 @@ class DsarIntakeIntegrationTest {
+      * puts the prior value back in a {@code finally}, so after the call the thread looks identical
+      * whether or not it declared system authority mid-flight.
+      */
+-    @SpyBean private DsarIntakeService dsarIntakeService;
++    @MockitoSpyBean private DsarIntakeService dsarIntakeService;
+ 
+     @BeforeEach
+     void clean() {
+diff --git a/core-java/src/test/java/uk/jtoye/core/gdpr/DsarSubjectAndGlobalRateLimitIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/gdpr/DsarSubjectAndGlobalRateLimitIntegrationTest.java
+index b46108c4..2822a381 100644
+--- a/core-java/src/test/java/uk/jtoye/core/gdpr/DsarSubjectAndGlobalRateLimitIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/gdpr/DsarSubjectAndGlobalRateLimitIntegrationTest.java
+@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.api.TestMethodOrder;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/gdpr/DsarVerificationIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/gdpr/DsarVerificationIntegrationTest.java
+index f26dc1bd..734355b1 100644
+--- a/core-java/src/test/java/uk/jtoye/core/gdpr/DsarVerificationIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/gdpr/DsarVerificationIntegrationTest.java
+@@ -6,9 +6,9 @@ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.mockito.ArgumentCaptor;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -98,7 +98,7 @@ class DsarVerificationIntegrationTest {
+     @Autowired private PlatformTransactionManager txManager;
+ 
+     /** Spied to capture the READABLE token, which is never persisted and so has no other source. */
+-    @SpyBean private DsarVerificationMailer mailer;
++    @MockitoSpyBean private DsarVerificationMailer mailer;
+ 
+     @BeforeEach
+     void clean() {
+diff --git a/core-java/src/test/java/uk/jtoye/core/gdpr/GdprControllerTest.java b/core-java/src/test/java/uk/jtoye/core/gdpr/GdprControllerTest.java
+index 88dc3925..bbf843fb 100644
+--- a/core-java/src/test/java/uk/jtoye/core/gdpr/GdprControllerTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/gdpr/GdprControllerTest.java
+@@ -4,8 +4,8 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.mockito.ArgumentCaptor;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.test.web.servlet.MockMvc;
+diff --git a/core-java/src/test/java/uk/jtoye/core/integration/CustomerControllerIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/integration/CustomerControllerIntegrationTest.java
+index 9099df90..69cf53ec 100644
+--- a/core-java/src/test/java/uk/jtoye/core/integration/CustomerControllerIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/integration/CustomerControllerIntegrationTest.java
+@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/integration/FinancialTransactionControllerIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/integration/FinancialTransactionControllerIntegrationTest.java
+index 657972b3..850e5dd5 100644
+--- a/core-java/src/test/java/uk/jtoye/core/integration/FinancialTransactionControllerIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/integration/FinancialTransactionControllerIntegrationTest.java
+@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/integration/FreshChainMigrationIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/integration/FreshChainMigrationIntegrationTest.java
+index 7f59b477..17ca1365 100644
+--- a/core-java/src/test/java/uk/jtoye/core/integration/FreshChainMigrationIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/integration/FreshChainMigrationIntegrationTest.java
+@@ -9,8 +9,8 @@ import org.flywaydb.core.api.output.MigrateResult;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.boot.autoconfigure.AutoConfigurations;
+-import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration;
+-import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
++import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
++import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
+ import org.springframework.boot.env.YamlPropertySourceLoader;
+ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+ import org.springframework.core.env.ConfigurableEnvironment;
+diff --git a/core-java/src/test/java/uk/jtoye/core/integration/LocationHeaderContractTest.java b/core-java/src/test/java/uk/jtoye/core/integration/LocationHeaderContractTest.java
+index a34a321b..866277e2 100644
+--- a/core-java/src/test/java/uk/jtoye/core/integration/LocationHeaderContractTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/integration/LocationHeaderContractTest.java
+@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.HttpHeaders;
+ import org.springframework.http.MediaType;
+diff --git a/core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java b/core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java
+index ed2e5f35..f237a238 100644
+--- a/core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/integration/OpenApiSnapshotTest.java
+@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
+ import com.fasterxml.jackson.databind.node.ObjectNode;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+diff --git a/core-java/src/test/java/uk/jtoye/core/integration/ShopControllerIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/integration/ShopControllerIntegrationTest.java
+index f21c4b85..72a45951 100644
+--- a/core-java/src/test/java/uk/jtoye/core/integration/ShopControllerIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/integration/ShopControllerIntegrationTest.java
+@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/integration/TypedNotFoundBodyIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/integration/TypedNotFoundBodyIntegrationTest.java
+index 2d7c40cf..6f33caf6 100644
+--- a/core-java/src/test/java/uk/jtoye/core/integration/TypedNotFoundBodyIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/integration/TypedNotFoundBodyIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/integration/VanishedRowStatusIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/integration/VanishedRowStatusIntegrationTest.java
+index 520e6799..966feff1 100644
+--- a/core-java/src/test/java/uk/jtoye/core/integration/VanishedRowStatusIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/integration/VanishedRowStatusIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/CowSafetyIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/media/CowSafetyIntegrationTest.java
+index ab4ddee1..d33093f1 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/CowSafetyIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/CowSafetyIntegrationTest.java
+@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -74,7 +74,7 @@ class CowSafetyIntegrationTest {
+     @Autowired private ProductMediaRepository productMediaRepository;
+     @Autowired private JdbcTemplate jdbc;
+     @PersistenceContext private EntityManager em;
+-    @SpyBean private StorageService storageService;
++    @MockitoSpyBean private StorageService storageService;
+ 
+     private UUID tenant;
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/GateStrictnessTest.java b/core-java/src/test/java/uk/jtoye/core/media/GateStrictnessTest.java
+index 39098fce..6766bdad 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/GateStrictnessTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/GateStrictnessTest.java
+@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -78,8 +78,8 @@ class GateStrictnessTest {
+     @Autowired private MediaProperties mediaProperties;
+     @Autowired private JdbcTemplate jdbc;
+     @PersistenceContext private EntityManager em;
+-    @SpyBean private StorageService storageService;
+-    @MockBean private ImageAnalysisService imageAnalysisService;
++    @MockitoSpyBean private StorageService storageService;
++    @MockitoBean private ImageAnalysisService imageAnalysisService;
+ 
+     private UUID tenant;
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaClaimLockIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaClaimLockIntegrationTest.java
+index 544f3c49..f7a41373 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaClaimLockIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaClaimLockIntegrationTest.java
+@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -73,7 +73,7 @@ class MediaClaimLockIntegrationTest {
+     @Autowired private MediaAssetRepository mediaAssetRepository;
+     @Autowired private MediaProperties mediaProperties;
+     @Autowired private JdbcTemplate jdbc;
+-    @SpyBean private StorageService storageService;
++    @MockitoSpyBean private StorageService storageService;
+ 
+     private UUID tenant;
+     private long originalClaimTimeout;
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaCopyOnWriteIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaCopyOnWriteIntegrationTest.java
+index d96ebc2e..b8588a41 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaCopyOnWriteIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaCopyOnWriteIntegrationTest.java
+@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.dao.DataIntegrityViolationException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+@@ -63,7 +63,7 @@ class MediaCopyOnWriteIntegrationTest {
+     @Autowired private MediaAssetService mediaAssetService;
+     @Autowired private JdbcTemplate jdbc;
+     @PersistenceContext private EntityManager em;
+-    @SpyBean private StorageService storageService;
++    @MockitoSpyBean private StorageService storageService;
+ 
+     private UUID tenant;
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaDedupAttachIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaDedupAttachIntegrationTest.java
+index 60c1eff8..4bbcf367 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaDedupAttachIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaDedupAttachIntegrationTest.java
+@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -76,7 +76,7 @@ class MediaDedupAttachIntegrationTest {
+     @Autowired private MediaEventOutboxRepository mediaEventOutboxRepository;
+     @Autowired private JdbcTemplate jdbc;
+     @PersistenceContext private EntityManager em;
+-    @SpyBean private StorageService storageService;
++    @MockitoSpyBean private StorageService storageService;
+ 
+     private UUID tenant;
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaDurabilityIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaDurabilityIntegrationTest.java
+index b4b29011..a432ee88 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaDurabilityIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaDurabilityIntegrationTest.java
+@@ -77,7 +77,7 @@ class MediaDurabilityIntegrationTest {
+     @Autowired private MediaProperties mediaProperties;
+     @Autowired private MediaProcessingWorker worker;
+     @Autowired private MediaAssetService mediaAssetService;
+-    @org.springframework.boot.test.mock.mockito.SpyBean private uk.jtoye.core.storage.StorageService storageService;
++    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean private uk.jtoye.core.storage.StorageService storageService;
+ 
+     private UUID tenant;
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaPendingReaperTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaPendingReaperTest.java
+index 34f0e957..470bbaba 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaPendingReaperTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaPendingReaperTest.java
+@@ -16,7 +16,7 @@ import org.mockito.quality.Strictness;
+ import org.springframework.amqp.AmqpConnectException;
+ import org.springframework.amqp.core.AmqpAdmin;
+ import org.springframework.amqp.core.QueueInformation;
+-import org.springframework.amqp.rabbit.listener.MessageListenerContainer;
++import org.springframework.amqp.core.MessageListenerContainer;
+ import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
+ import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
+ import org.springframework.beans.factory.ObjectProvider;
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaProcessingWorkerIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaProcessingWorkerIntegrationTest.java
+index 0f4e9297..82b22f38 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaProcessingWorkerIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaProcessingWorkerIntegrationTest.java
+@@ -10,7 +10,7 @@ import org.mockito.ArgumentCaptor;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -74,7 +74,7 @@ class MediaProcessingWorkerIntegrationTest {
+     @Autowired private ProductMediaRepository productMediaRepository;
+     @Autowired private JdbcTemplate jdbc;
+     @PersistenceContext private EntityManager em;
+-    @SpyBean private StorageService storageService;
++    @MockitoSpyBean private StorageService storageService;
+ 
+     private UUID tenant;
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaRedriveControllerTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaRedriveControllerTest.java
+index ca775d2c..0db42038 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaRedriveControllerTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaRedriveControllerTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.datasource.DriverManagerDataSource;
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaSweepTenantScopeIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaSweepTenantScopeIntegrationTest.java
+index 9771fdca..36706ea4 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaSweepTenantScopeIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaSweepTenantScopeIntegrationTest.java
+@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.datasource.DriverManagerDataSource;
+@@ -135,7 +135,7 @@ class MediaSweepTenantScopeIntegrationTest {
+ 
+     @Autowired private MediaQuarantineRetentionSweep sweep;
+     @Autowired private javax.sql.DataSource dataSource;
+-    @SpyBean private StorageService storageService;
++    @MockitoSpyBean private StorageService storageService;
+ 
+     /** Superuser template — the app datasource is RLS-bound and cannot seed another tenant's row. */
+     private JdbcTemplate su;
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaTenantIsolationUnderConcurrencyIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaTenantIsolationUnderConcurrencyIntegrationTest.java
+index a26543e6..f80206b4 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaTenantIsolationUnderConcurrencyIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaTenantIsolationUnderConcurrencyIntegrationTest.java
+@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -136,7 +136,7 @@ class MediaTenantIsolationUnderConcurrencyIntegrationTest {
+ 
+     @Autowired private MediaProcessingWorker worker;
+     @Autowired private JdbcTemplate jdbc;
+-    @SpyBean private StorageService storageService;
++    @MockitoSpyBean private StorageService storageService;
+ 
+     private UUID tenantA;
+     private UUID tenantB;
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaUploadControllerTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaUploadControllerTest.java
+index da8c7bd8..ba08633f 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaUploadControllerTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaUploadControllerTest.java
+@@ -7,9 +7,9 @@ import org.mockito.ArgumentMatchers;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.beans.factory.annotation.Qualifier;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.mock.web.MockMultipartFile;
+ import org.springframework.test.context.ActiveProfiles;
+@@ -75,7 +75,7 @@ class MediaUploadControllerTest {
+     @Autowired private MockMvc mockMvc;
+     @Autowired private JdbcTemplate jdbc;
+     @Autowired @Qualifier("requestMappingHandlerMapping") private RequestMappingHandlerMapping handlerMapping;
+-    @SpyBean private StorageService storageService;
++    @MockitoSpyBean private StorageService storageService;
+ 
+     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000240");
+     private UUID productId;
+diff --git a/core-java/src/test/java/uk/jtoye/core/media/MediaUploadIdempotencyTest.java b/core-java/src/test/java/uk/jtoye/core/media/MediaUploadIdempotencyTest.java
+index 4074f7dc..94921db6 100644
+--- a/core-java/src/test/java/uk/jtoye/core/media/MediaUploadIdempotencyTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/media/MediaUploadIdempotencyTest.java
+@@ -6,9 +6,9 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.ArgumentMatchers;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.mock.web.MockMultipartFile;
+ import org.springframework.test.context.ActiveProfiles;
+@@ -73,7 +73,7 @@ class MediaUploadIdempotencyTest {
+ 
+     @Autowired private MockMvc mockMvc;
+     @Autowired private JdbcTemplate jdbc;
+-    @SpyBean private StorageService storageService;
++    @MockitoSpyBean private StorageService storageService;
+ 
+     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000241");
+     private UUID productId;
+diff --git a/core-java/src/test/java/uk/jtoye/core/notification/consent/PublicUnsubscribeControllerIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/notification/consent/PublicUnsubscribeControllerIntegrationTest.java
+index 3a9aa166..21ae76fb 100644
+--- a/core-java/src/test/java/uk/jtoye/core/notification/consent/PublicUnsubscribeControllerIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/notification/consent/PublicUnsubscribeControllerIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/notification/dispatch/UnsubscribeLinkReachesControllerIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/notification/dispatch/UnsubscribeLinkReachesControllerIntegrationTest.java
+index a5f517bd..6a57af52 100644
+--- a/core-java/src/test/java/uk/jtoye/core/notification/dispatch/UnsubscribeLinkReachesControllerIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/notification/dispatch/UnsubscribeLinkReachesControllerIntegrationTest.java
+@@ -5,7 +5,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingAdminQueueIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingAdminQueueIntegrationTest.java
+index 9d50abf2..50a16bbb 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingAdminQueueIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingAdminQueueIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCompanyNumberUpdateIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCompanyNumberUpdateIntegrationTest.java
+index d99db5b2..e798f6bf 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCompanyNumberUpdateIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCompanyNumberUpdateIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCompanyNumberValidationIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCompanyNumberValidationIntegrationTest.java
+index d51cad1a..dc9e1562 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCompanyNumberValidationIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCompanyNumberValidationIntegrationTest.java
+@@ -5,7 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCreateCrossTenantIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCreateCrossTenantIntegrationTest.java
+index d96d56ce..639b635f 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCreateCrossTenantIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingCreateCrossTenantIntegrationTest.java
+@@ -5,7 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingGateResolveIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingGateResolveIntegrationTest.java
+index dbcc6dc3..aaff833b 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingGateResolveIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingGateResolveIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingGoLiveIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingGoLiveIntegrationTest.java
+index 6e03eccf..b6f42be1 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingGoLiveIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingGoLiveIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingResubmitIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingResubmitIntegrationTest.java
+index 45d015f6..fb79616e 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingResubmitIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingResubmitIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingReviewQueueIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingReviewQueueIntegrationTest.java
+index d8db2d08..9dbbb9e9 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingReviewQueueIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingReviewQueueIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingStallOutboxIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingStallOutboxIntegrationTest.java
+index c7aa568f..01fa9d42 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingStallOutboxIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingStallOutboxIntegrationTest.java
+@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -69,8 +69,8 @@ class OnboardingStallOutboxIntegrationTest {
+     // Mocked only so the FHRS / Companies House gate beans construct cleanly and
+     // no real network call is ever possible; the seeded terminal gate rows mean
+     // neither client is invoked by the recompute.
+-    @MockBean private FhrsClient fhrsClient;
+-    @MockBean private CompaniesHouseClient companiesHouseClient;
++    @MockitoBean private FhrsClient fhrsClient;
++    @MockitoBean private CompaniesHouseClient companiesHouseClient;
+ 
+     private UUID tenantId;
+     private UUID shopId;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingSubmitIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingSubmitIntegrationTest.java
+index 3c9b0537..bb722cba 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingSubmitIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingSubmitIntegrationTest.java
+@@ -6,9 +6,9 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.security.test.context.support.WithMockUser;
+@@ -87,8 +87,8 @@ class OnboardingSubmitIntegrationTest {
+     // the network: FHRS returns no match (MANUAL_REVIEW), Companies House fails
+     // closed (MANUAL_REVIEW). Either alone keeps a mandatory gate un-passed so the
+     // recompute leaves the onboarding in VERIFYING.
+-    @MockBean private FhrsClient fhrsClient;
+-    @MockBean private CompaniesHouseClient companiesHouseClient;
++    @MockitoBean private FhrsClient fhrsClient;
++    @MockitoBean private CompaniesHouseClient companiesHouseClient;
+ 
+     private UUID tenantId;
+     private UUID shopId;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingSubmitterResolverIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingSubmitterResolverIntegrationTest.java
+index 4b86def8..f6cc9769 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingSubmitterResolverIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingSubmitterResolverIntegrationTest.java
+@@ -6,9 +6,9 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+@@ -91,8 +91,8 @@ class OnboardingSubmitterResolverIntegrationTest {
+     @Autowired private PlatformTransactionManager transactionManager;
+     @Autowired private OnboardingSubmitterResolver resolver;
+ 
+-    @MockBean private FhrsClient fhrsClient;
+-    @MockBean private CompaniesHouseClient companiesHouseClient;
++    @MockitoBean private FhrsClient fhrsClient;
++    @MockitoBean private CompaniesHouseClient companiesHouseClient;
+ 
+     private UUID tenantA;
+     private UUID tenantB;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingWithdrawIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingWithdrawIntegrationTest.java
+index 71a00c77..99532610 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingWithdrawIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/OnboardingWithdrawIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.security.test.context.support.WithMockUser;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/VendorOnboardingEndToEndIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/VendorOnboardingEndToEndIntegrationTest.java
+index ef69da64..1c53b830 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/VendorOnboardingEndToEndIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/VendorOnboardingEndToEndIntegrationTest.java
+@@ -6,10 +6,10 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.security.test.context.support.WithMockUser;
+@@ -93,9 +93,9 @@ class VendorOnboardingEndToEndIntegrationTest {
+     @Autowired private ObjectMapper objectMapper;
+     @Autowired private JdbcTemplate jdbc;
+ 
+-    @MockBean private FhrsClient fhrsClient;
+-    @MockBean private CompaniesHouseClient companiesHouseClient;
+-    @SpyBean private OnboardingProperties onboardingProperties;
++    @MockitoBean private FhrsClient fhrsClient;
++    @MockitoBean private CompaniesHouseClient companiesHouseClient;
++    @MockitoSpyBean private OnboardingProperties onboardingProperties;
+ 
+     private UUID tenantId;
+     private UUID shopId;
+diff --git a/core-java/src/test/java/uk/jtoye/core/onboarding/VendorOnboardingStateMachineServiceTest.java b/core-java/src/test/java/uk/jtoye/core/onboarding/VendorOnboardingStateMachineServiceTest.java
+index dc64b13c..942bbc9e 100644
+--- a/core-java/src/test/java/uk/jtoye/core/onboarding/VendorOnboardingStateMachineServiceTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/onboarding/VendorOnboardingStateMachineServiceTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.test.context.ActiveProfiles;
+ import uk.jtoye.core.exception.InvalidStateTransitionException;
+ 
+@@ -37,7 +37,7 @@ class VendorOnboardingStateMachineServiceTest {
+     @Autowired
+     private VendorOnboardingStateMachineService stateMachineService;
+ 
+-    @MockBean
++    @MockitoBean
+     private VendorOnboardingGateRepository gateRepository;
+ 
+     private VendorOnboardingGate gate(GateType type, GateStatus status, boolean mandatory) {
+diff --git a/core-java/src/test/java/uk/jtoye/core/order/OrderControllerPaginationTest.java b/core-java/src/test/java/uk/jtoye/core/order/OrderControllerPaginationTest.java
+index 4f0d8bc9..7556d974 100644
+--- a/core-java/src/test/java/uk/jtoye/core/order/OrderControllerPaginationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/order/OrderControllerPaginationTest.java
+@@ -4,8 +4,8 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.mockito.ArgumentCaptor;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.PageImpl;
+diff --git a/core-java/src/test/java/uk/jtoye/core/order/OrderControllerShopFilterTest.java b/core-java/src/test/java/uk/jtoye/core/order/OrderControllerShopFilterTest.java
+index f14301bb..80b52b19 100644
+--- a/core-java/src/test/java/uk/jtoye/core/order/OrderControllerShopFilterTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/order/OrderControllerShopFilterTest.java
+@@ -4,8 +4,8 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.mockito.ArgumentCaptor;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.PageImpl;
+diff --git a/core-java/src/test/java/uk/jtoye/core/order/OrderStateChangeListenerIdempotencyIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/order/OrderStateChangeListenerIdempotencyIntegrationTest.java
+index f01a0783..b6e72e26 100644
+--- a/core-java/src/test/java/uk/jtoye/core/order/OrderStateChangeListenerIdempotencyIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/order/OrderStateChangeListenerIdempotencyIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.messaging.simp.SimpMessagingTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+@@ -85,9 +85,9 @@ class OrderStateChangeListenerIdempotencyIntegrationTest {
+     @Autowired private JdbcTemplate jdbcTemplate;
+     @Autowired private PlatformTransactionManager transactionManager;
+ 
+-    @MockBean private EmailNotificationService emailService;
+-    @MockBean private BusinessMetricsService metrics;
+-    @MockBean private SimpMessagingTemplate simpMessagingTemplate;
++    @MockitoBean private EmailNotificationService emailService;
++    @MockitoBean private BusinessMetricsService metrics;
++    @MockitoBean private SimpMessagingTemplate simpMessagingTemplate;
+ 
+     private TransactionTemplate txTemplate;
+     private UUID shopId;
+diff --git a/core-java/src/test/java/uk/jtoye/core/payment/PaymentControllerTest.java b/core-java/src/test/java/uk/jtoye/core/payment/PaymentControllerTest.java
+index ba9da736..9c29f77b 100644
+--- a/core-java/src/test/java/uk/jtoye/core/payment/PaymentControllerTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/payment/PaymentControllerTest.java
+@@ -2,8 +2,8 @@ package uk.jtoye.core.payment;
+ 
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.test.web.servlet.MockMvc;
+diff --git a/core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxFlusherCrossTenantIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxFlusherCrossTenantIntegrationTest.java
+index 1d23ad5f..7c2fca7f 100644
+--- a/core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxFlusherCrossTenantIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxFlusherCrossTenantIntegrationTest.java
+@@ -9,7 +9,7 @@ import org.springframework.amqp.AmqpException;
+ import org.springframework.amqp.rabbit.core.RabbitTemplate;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+@@ -103,7 +103,7 @@ class PaymentEventOutboxFlusherCrossTenantIntegrationTest {
+     @Autowired private ObjectMapper objectMapper;
+     @Autowired private PlatformTransactionManager transactionManager;
+ 
+-    @MockBean private RabbitTemplate rabbitTemplate;
++    @MockitoBean private RabbitTemplate rabbitTemplate;
+ 
+     private TransactionTemplate txTemplate;
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxReliabilityIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxReliabilityIntegrationTest.java
+index 9b69a243..37931e6d 100644
+--- a/core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxReliabilityIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/payment/PaymentEventOutboxReliabilityIntegrationTest.java
+@@ -9,7 +9,7 @@ import org.springframework.amqp.AmqpException;
+ import org.springframework.amqp.rabbit.core.RabbitTemplate;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.context.ApplicationContext;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -119,7 +119,7 @@ class PaymentEventOutboxReliabilityIntegrationTest {
+     @Autowired private PlatformTransactionManager transactionManager;
+     @Autowired private ApplicationContext applicationContext;
+ 
+-    @MockBean private RabbitTemplate rabbitTemplate;
++    @MockitoBean private RabbitTemplate rabbitTemplate;
+ 
+     @BeforeEach
+     void seed() {
+diff --git a/core-java/src/test/java/uk/jtoye/core/payment/RefundControllerIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/payment/RefundControllerIntegrationTest.java
+index 3fd056e9..a868d6ce 100644
+--- a/core-java/src/test/java/uk/jtoye/core/payment/RefundControllerIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/payment/RefundControllerIntegrationTest.java
+@@ -6,8 +6,8 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.http.MediaType;
+ import org.springframework.test.context.bean.override.mockito.MockitoBean;
+diff --git a/core-java/src/test/java/uk/jtoye/core/payment/RefundRepositoryTest.java b/core-java/src/test/java/uk/jtoye/core/payment/RefundRepositoryTest.java
+index 26fa7227..45b338c7 100644
+--- a/core-java/src/test/java/uk/jtoye/core/payment/RefundRepositoryTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/payment/RefundRepositoryTest.java
+@@ -4,7 +4,7 @@ import jakarta.persistence.EntityManager;
+ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
++import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+ import org.springframework.dao.DataIntegrityViolationException;
+ import org.springframework.test.context.ActiveProfiles;
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/payment/RefundWebhookHandlingIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/payment/RefundWebhookHandlingIntegrationTest.java
+index c9dd1472..1546f600 100644
+--- a/core-java/src/test/java/uk/jtoye/core/payment/RefundWebhookHandlingIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/payment/RefundWebhookHandlingIntegrationTest.java
+@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.MockedStatic;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -91,8 +91,8 @@ class RefundWebhookHandlingIntegrationTest {
+     @Autowired private ShopRepository shopRepository;
+ 
+     // Replace AMQP collaborators so no broker is needed.
+-    @MockBean private OrderEventPublisher orderEventPublisher;
+-    @MockBean private PaymentEventPublisher paymentEventPublisher;
++    @MockitoBean private OrderEventPublisher orderEventPublisher;
++    @MockitoBean private PaymentEventPublisher paymentEventPublisher;
+     // RefundEventPublisher writes to payment_event_outbox in the caller tx;
+     // exercise it directly so we can assert outbox row counts.
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/payment/StripeWebhookIdempotencyIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/payment/StripeWebhookIdempotencyIntegrationTest.java
+index 02034d6b..54e2c2cc 100644
+--- a/core-java/src/test/java/uk/jtoye/core/payment/StripeWebhookIdempotencyIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/payment/StripeWebhookIdempotencyIntegrationTest.java
+@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.MockedStatic;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -98,8 +98,8 @@ class StripeWebhookIdempotencyIntegrationTest {
+     @Autowired private OrderRepository orderRepository;
+     @Autowired private ShopRepository shopRepository;
+ 
+-    @MockBean private OrderEventPublisher orderEventPublisher;
+-    @MockBean private PaymentEventPublisher paymentEventPublisher;
++    @MockitoBean private OrderEventPublisher orderEventPublisher;
++    @MockitoBean private PaymentEventPublisher paymentEventPublisher;
+ 
+     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000a04");
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/product/ProductControllerShopFilterTest.java b/core-java/src/test/java/uk/jtoye/core/product/ProductControllerShopFilterTest.java
+index eb023d8e..356f28aa 100644
+--- a/core-java/src/test/java/uk/jtoye/core/product/ProductControllerShopFilterTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/product/ProductControllerShopFilterTest.java
+@@ -3,8 +3,8 @@ package uk.jtoye.core.product;
+ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.PageImpl;
+diff --git a/core-java/src/test/java/uk/jtoye/core/product/ProductImageDeleteIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/product/ProductImageDeleteIntegrationTest.java
+index 9de0aaa9..23273e6d 100644
+--- a/core-java/src/test/java/uk/jtoye/core/product/ProductImageDeleteIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/product/ProductImageDeleteIntegrationTest.java
+@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -70,8 +70,8 @@ class ProductImageDeleteIntegrationTest {
+     @Autowired private ProductMediaRepository productMediaRepository;
+     @Autowired private JdbcTemplate jdbc;
+     @PersistenceContext private EntityManager em;
+-    @SpyBean private StorageService storageService;
+-    @MockBean private ShopAccessService shopAccessService;
++    @MockitoSpyBean private StorageService storageService;
++    @MockitoBean private ShopAccessService shopAccessService;
+ 
+     private UUID tenant;
+     private int seq;
+diff --git a/core-java/src/test/java/uk/jtoye/core/product/ProductPartialUpdateIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/product/ProductPartialUpdateIntegrationTest.java
+index cd81a5e0..2f7cf34d 100644
+--- a/core-java/src/test/java/uk/jtoye/core/product/ProductPartialUpdateIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/product/ProductPartialUpdateIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -72,7 +72,7 @@ class ProductPartialUpdateIntegrationTest {
+ 
+     // Authorization is not under test here (proven elsewhere) — same pattern as
+     // ProductImageDeleteIntegrationTest.
+-    @MockBean private ShopAccessService shopAccessService;
++    @MockitoBean private ShopAccessService shopAccessService;
+ 
+     private UUID tenant;
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/product/ProductSearchFtsIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/product/ProductSearchFtsIntegrationTest.java
+index a836b8a8..f27a53f6 100644
+--- a/core-java/src/test/java/uk/jtoye/core/product/ProductSearchFtsIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/product/ProductSearchFtsIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.AfterEach;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.PageRequest;
+diff --git a/core-java/src/test/java/uk/jtoye/core/resilience/RedisFaultInjectionIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/resilience/RedisFaultInjectionIntegrationTest.java
+index f1512d36..3ab7e9be 100644
+--- a/core-java/src/test/java/uk/jtoye/core/resilience/RedisFaultInjectionIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/resilience/RedisFaultInjectionIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.mock.web.MockHttpServletRequest;
+ import org.springframework.mock.web.MockHttpServletResponse;
+@@ -134,7 +134,7 @@ class RedisFaultInjectionIntegrationTest {
+     // keeps it (it proves resilience, not RLS isolation). Every other integration
+     // test dodges the validator via @ActiveProfiles("test"), but we need a non-test
+     // profile for CacheConfig to load — so neutralise the validator here instead.
+-    @MockBean private DatabaseConfigurationValidator databaseConfigurationValidator;
++    @MockitoBean private DatabaseConfigurationValidator databaseConfigurationValidator;
+ 
+     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-0000000086f1");
+     private UUID shopId;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/CrossTenantSpoofIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/security/CrossTenantSpoofIntegrationTest.java
+index 6d82aa7a..5ffb4cbd 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/CrossTenantSpoofIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/CrossTenantSpoofIntegrationTest.java
+@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.api.extension.ExtendWith;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.boot.test.system.CapturedOutput;
+ import org.springframework.boot.test.system.OutputCaptureExtension;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/JwtIssuerDecouplingTest.java b/core-java/src/test/java/uk/jtoye/core/security/JwtIssuerDecouplingTest.java
+index a8a54f2a..9f15c6a2 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/JwtIssuerDecouplingTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/JwtIssuerDecouplingTest.java
+@@ -1,7 +1,7 @@
+ package uk.jtoye.core.security;
+ 
+ import org.junit.jupiter.api.Test;
+-import org.springframework.boot.web.client.RestTemplateBuilder;
++import org.springframework.boot.restclient.RestTemplateBuilder;
+ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+ import org.springframework.security.oauth2.jwt.Jwt;
+ import org.springframework.security.oauth2.jwt.JwtDecoder;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/ManagementPortMetricsIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/security/ManagementPortMetricsIntegrationTest.java
+index 617ed01b..fa306fd2 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/ManagementPortMetricsIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/ManagementPortMetricsIntegrationTest.java
+@@ -5,7 +5,8 @@ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.web.client.TestRestTemplate;
++import org.springframework.boot.resttestclient.TestRestTemplate;
++import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
+ import org.springframework.boot.test.web.server.LocalServerPort;
+ import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+@@ -42,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
+         "management.endpoint.health.probes.enabled=true"
+ })
+ @ActiveProfiles("test")
++@AutoConfigureTestRestTemplate
+ class ManagementPortMetricsIntegrationTest {
+ 
+     @LocalServerPort
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/OpenApiDevProfileGatingTest.java b/core-java/src/test/java/uk/jtoye/core/security/OpenApiDevProfileGatingTest.java
+index a4a4b475..bc7f179f 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/OpenApiDevProfileGatingTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/OpenApiDevProfileGatingTest.java
+@@ -3,7 +3,7 @@ package uk.jtoye.core.security;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.core.env.Environment;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/OpenApiProdProfileGatingTest.java b/core-java/src/test/java/uk/jtoye/core/security/OpenApiProdProfileGatingTest.java
+index a134d376..21a4e213 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/OpenApiProdProfileGatingTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/OpenApiProdProfileGatingTest.java
+@@ -2,7 +2,7 @@ package uk.jtoye.core.security;
+ 
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/PublicRateLimitIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/security/PublicRateLimitIntegrationTest.java
+index ec2e4c6c..11b27dcb 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/PublicRateLimitIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/PublicRateLimitIntegrationTest.java
+@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.mock.web.MockHttpServletRequest;
+ import org.springframework.mock.web.MockHttpServletResponse;
+ import org.springframework.test.context.ActiveProfiles;
+@@ -117,7 +117,7 @@ class PublicRateLimitIntegrationTest {
+     // The DatabaseConfigurationValidator (@Profile("!test")) fail-fasts on a SUPERUSER DB user;
+     // the Testcontainers bootstrap role IS a superuser and we deliberately keep it (this test
+     // proves rate limiting, not RLS). Neutralise the validator so the dev-profile context boots.
+-    @MockBean
++    @MockitoBean
+     private DatabaseConfigurationValidator databaseConfigurationValidator;
+ 
+     @AfterEach
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/RateLimitIntegrationTest.java.disabled b/core-java/src/test/java/uk/jtoye/core/security/RateLimitIntegrationTest.java.disabled
+index b9d46f90..f9151034 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/RateLimitIntegrationTest.java.disabled
++++ b/core-java/src/test/java/uk/jtoye/core/security/RateLimitIntegrationTest.java.disabled
+@@ -3,7 +3,7 @@ package uk.jtoye.core.security;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/RoleBasedAccessIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/security/RoleBasedAccessIntegrationTest.java
+index 98247611..2653e8b1 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/RoleBasedAccessIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/RoleBasedAccessIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/ScopedCatalogAccessIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/security/ScopedCatalogAccessIntegrationTest.java
+index bdcb8942..ecb86a44 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/ScopedCatalogAccessIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/ScopedCatalogAccessIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/ScopedWriteAccessIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/security/ScopedWriteAccessIntegrationTest.java
+index 8cc85863..3ea8e9d3 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/ScopedWriteAccessIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/ScopedWriteAccessIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersDevProfileTest.java b/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersDevProfileTest.java
+index 9b226c78..0adcc68f 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersDevProfileTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersDevProfileTest.java
+@@ -2,7 +2,7 @@ package uk.jtoye.core.security;
+ 
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.security.test.context.support.WithMockUser;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersIntegrationTest.java
+index 9b61c9fb..2285aacf 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersIntegrationTest.java
+@@ -2,7 +2,7 @@ package uk.jtoye.core.security;
+ 
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.security.core.authority.SimpleGrantedAuthority;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersProdProfileTest.java b/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersProdProfileTest.java
+index 6e9f6747..02d7341c 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersProdProfileTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/SecurityHeadersProdProfileTest.java
+@@ -3,7 +3,7 @@ package uk.jtoye.core.security;
+ import org.hamcrest.Matchers;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.security.test.context.support.WithMockUser;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/StagingActuatorPortIsolationTest.java b/core-java/src/test/java/uk/jtoye/core/security/StagingActuatorPortIsolationTest.java
+index 7290f6ed..20ee4c8e 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/StagingActuatorPortIsolationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/StagingActuatorPortIsolationTest.java
+@@ -2,7 +2,7 @@ package uk.jtoye.core.security;
+ 
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/UnauthenticatedProblemDetailIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/security/UnauthenticatedProblemDetailIntegrationTest.java
+index 6816af2b..24087a1a 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/UnauthenticatedProblemDetailIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/UnauthenticatedProblemDetailIntegrationTest.java
+@@ -2,7 +2,7 @@ package uk.jtoye.core.security;
+ 
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+diff --git a/core-java/src/test/java/uk/jtoye/core/security/access/SystemPrincipalGuardTest.java b/core-java/src/test/java/uk/jtoye/core/security/access/SystemPrincipalGuardTest.java
+index 51d66856..97f95bb8 100644
+--- a/core-java/src/test/java/uk/jtoye/core/security/access/SystemPrincipalGuardTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/security/access/SystemPrincipalGuardTest.java
+@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
+ import org.mockito.Mockito;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.SpyBean;
++import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+ import org.springframework.http.ProblemDetail;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.security.authentication.AnonymousAuthenticationToken;
+@@ -118,7 +118,7 @@ class SystemPrincipalGuardTest {
+     @Autowired private ProductMediaRepository productMediaRepository;
+     @Autowired private JdbcTemplate jdbc;
+     @PersistenceContext private EntityManager em;
+-    @SpyBean private StorageService storageService;
++    @MockitoSpyBean private StorageService storageService;
+ 
+     private UUID tenant;
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/shop/MarketingControllerShopFilterTest.java b/core-java/src/test/java/uk/jtoye/core/shop/MarketingControllerShopFilterTest.java
+index b02edba8..618d3b83 100644
+--- a/core-java/src/test/java/uk/jtoye/core/shop/MarketingControllerShopFilterTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/shop/MarketingControllerShopFilterTest.java
+@@ -4,8 +4,8 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Nested;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.PageImpl;
+diff --git a/core-java/src/test/java/uk/jtoye/core/shop/MarketingMissingRowStatusIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/shop/MarketingMissingRowStatusIntegrationTest.java
+index f708ddfe..1a312e80 100644
+--- a/core-java/src/test/java/uk/jtoye/core/shop/MarketingMissingRowStatusIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/shop/MarketingMissingRowStatusIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/shop/ShopImageCrossTenantIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/shop/ShopImageCrossTenantIntegrationTest.java
+index 2afc1857..557984b2 100644
+--- a/core-java/src/test/java/uk/jtoye/core/shop/ShopImageCrossTenantIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/shop/ShopImageCrossTenantIntegrationTest.java
+@@ -7,7 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.mock.web.MockMultipartFile;
+ import org.springframework.test.context.ActiveProfiles;
+@@ -83,7 +83,7 @@ class ShopImageCrossTenantIntegrationTest {
+     @PersistenceContext
+     private EntityManager entityManager;
+ 
+-    @MockBean private StorageService storageService;
++    @MockitoBean private StorageService storageService;
+ 
+     private static final UUID TENANT_A = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
+     private static final UUID TENANT_B = UUID.fromString("00000000-0000-0000-0000-0000000000bb");
+diff --git a/core-java/src/test/java/uk/jtoye/core/spike/BootSpikeJacksonProbeTest.java b/core-java/src/test/java/uk/jtoye/core/spike/BootSpikeJacksonProbeTest.java
+new file mode 100644
+index 00000000..64935161
+--- /dev/null
++++ b/core-java/src/test/java/uk/jtoye/core/spike/BootSpikeJacksonProbeTest.java
+@@ -0,0 +1,69 @@
++package uk.jtoye.core.spike;
++
++import com.fasterxml.jackson.databind.node.ObjectNode;
++import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.boot.test.context.SpringBootTest;
++import org.springframework.context.ApplicationContext;
++import org.springframework.http.MediaType;
++import org.springframework.mock.http.client.MockClientHttpRequest;
++import org.springframework.test.context.ActiveProfiles;
++import org.springframework.test.web.client.MockRestServiceServer;
++import org.springframework.web.client.RestClient;
++import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter;
++
++import java.time.Instant;
++import java.util.Map;
++import java.util.concurrent.atomic.AtomicReference;
++
++import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
++import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
++
++/** SPIKE ONLY (Boot 4.1.1 feasibility): prints which Jackson line is live. Never committed upstream. */
++abstract class BootSpikeJacksonProbeBase {
++    @Autowired ApplicationContext ctx;
++    @Autowired RequestMappingHandlerAdapter adapter;
++    @Autowired RestClient.Builder builder;
++
++    @Test
++    void probe() throws Exception {
++        StringBuilder sb = new StringBuilder("\nSPIKE-PROBE " + getClass().getSimpleName() + "\n");
++        for (String n : ctx.getBeanNamesForType(com.fasterxml.jackson.databind.ObjectMapper.class)) {
++            sb.append(" J2 ObjectMapper bean: ").append(n).append(" ").append(ctx.getBean(n).getClass().getName()).append("\n");
++        }
++        for (String n : ctx.getBeanNamesForType(tools.jackson.databind.ObjectMapper.class)) {
++            sb.append(" J3 ObjectMapper bean: ").append(n).append(" ").append(ctx.getBean(n).getClass().getName()).append("\n");
++        }
++        adapter.getMessageConverters().forEach(c -> sb.append(" MVC converter: ").append(c.getClass().getName()).append("\n"));
++
++        RestClient.Builder b = builder.clone();
++        MockRestServiceServer server = MockRestServiceServer.bindTo(b).build();
++        AtomicReference<String> body = new AtomicReference<>();
++        server.expect(requestTo("http://probe/x"))
++              .andExpect(req -> body.set(((MockClientHttpRequest) req).getBodyAsString()))
++              .andRespond(withSuccess());
++        ObjectNode node = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
++        node.put("enabled", false);
++        b.build().put().uri("http://probe/x").contentType(MediaType.APPLICATION_JSON).body(node).retrieve().toBodilessEntity();
++        sb.append(" RestClient wire body for Jackson2 ObjectNode{enabled:false}: ").append(body.get()).append("\n");
++
++        RestClient.Builder b2 = builder.clone();
++        MockRestServiceServer server2 = MockRestServiceServer.bindTo(b2).build();
++        AtomicReference<String> body2 = new AtomicReference<>();
++        server2.expect(requestTo("http://probe/y"))
++              .andExpect(req -> body2.set(((MockClientHttpRequest) req).getBodyAsString()))
++              .andRespond(withSuccess());
++        b2.build().post().uri("http://probe/y").contentType(MediaType.APPLICATION_JSON)
++              .body(Map.of("at", Instant.parse("2026-09-30T12:00:00Z"))).retrieve().toBodilessEntity();
++        sb.append(" RestClient wire body for Map{at:Instant}: ").append(body2.get()).append("\n");
++        System.out.println(sb);
++    }
++}
++
++@SpringBootTest
++@ActiveProfiles("test")
++class BootSpikeJacksonProbeDefaultTest extends BootSpikeJacksonProbeBase {}
++
++@SpringBootTest(properties = "spring.http.converters.preferred-json-mapper=jackson2")
++@ActiveProfiles("test")
++class BootSpikeJacksonProbeJackson2Test extends BootSpikeJacksonProbeBase {}
+diff --git a/core-java/src/test/java/uk/jtoye/core/spike/BootSpikePropertyAuditTest.java b/core-java/src/test/java/uk/jtoye/core/spike/BootSpikePropertyAuditTest.java
+new file mode 100644
+index 00000000..ab265aa4
+--- /dev/null
++++ b/core-java/src/test/java/uk/jtoye/core/spike/BootSpikePropertyAuditTest.java
+@@ -0,0 +1,64 @@
++package uk.jtoye.core.spike;
++
++import org.junit.jupiter.api.Test;
++import org.springframework.boot.configurationmetadata.ConfigurationMetadataProperty;
++import org.springframework.boot.configurationmetadata.ConfigurationMetadataRepository;
++import org.springframework.boot.configurationmetadata.ConfigurationMetadataRepositoryJsonBuilder;
++import org.springframework.boot.env.YamlPropertySourceLoader;
++import org.springframework.core.env.EnumerablePropertySource;
++import org.springframework.core.env.PropertySource;
++import org.springframework.core.io.ClassPathResource;
++import org.springframework.core.io.Resource;
++import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
++
++import java.io.InputStream;
++import java.util.Map;
++import java.util.TreeSet;
++
++/** SPIKE ONLY: static audit of application*.yml keys against Boot 4.1.1 configuration metadata. */
++class BootSpikePropertyAuditTest {
++    @Test
++    void audit() throws Exception {
++        ConfigurationMetadataRepositoryJsonBuilder b = ConfigurationMetadataRepositoryJsonBuilder.create();
++        Resource[] metas = new PathMatchingResourcePatternResolver()
++                .getResources("classpath*:META-INF/spring-configuration-metadata.json");
++        for (Resource r : metas) { try (InputStream in = r.getInputStream()) { b.withJsonResource(in); } }
++        Resource[] extra = new PathMatchingResourcePatternResolver()
++                .getResources("classpath*:META-INF/additional-spring-configuration-metadata.json");
++        for (Resource r : extra) { try (InputStream in = r.getInputStream()) { b.withJsonResource(in); } }
++        ConfigurationMetadataRepository repo = b.build();
++        Map<String, ConfigurationMetadataProperty> all = repo.getAllProperties();
++        StringBuilder sb = new StringBuilder("\nSPIKE-PROPS metadata files=" + metas.length + " properties=" + all.size() + "\n");
++        String[] files = {"application.yml", "application-dev.yml", "application-local.yml",
++                "application-prod.yml", "application-staging.yml", "application-test.yml"};
++        TreeSet<String> deprecated = new TreeSet<>(), unknown = new TreeSet<>();
++        int checked = 0;
++        for (String f : files) {
++            for (PropertySource<?> ps : new YamlPropertySourceLoader().load(f, new ClassPathResource(f))) {
++                for (String key : ((EnumerablePropertySource<?>) ps).getPropertyNames()) {
++                    String k = key.replaceAll("\\[\\d+\\]$", "");
++                    if (!k.matches("^(spring|management|server|logging)\\..*")) continue;
++                    checked++;
++                    ConfigurationMetadataProperty p = all.get(k);
++                    if (p == null) {
++                        // map-typed parents (e.g. spring.jpa.properties.*) are legitimately absent: find a map ancestor
++                        String parent = k; boolean mapParent = false;
++                        while (parent.contains(".")) {
++                            parent = parent.substring(0, parent.lastIndexOf('.'));
++                            ConfigurationMetadataProperty pp = all.get(parent);
++                            if (pp != null && pp.getType() != null && (pp.getType().startsWith("java.util.Map") || pp.getType().startsWith("java.util.List"))) { mapParent = true; break; }
++                        }
++                        if (!mapParent) unknown.add(f + " : " + k);
++                    } else if (p.isDeprecated()) {
++                        deprecated.add(f + " : " + k + " -> replacement=" + p.getDeprecation().getReplacement()
++                                + " level=" + p.getDeprecation().getLevel() + " reason=" + p.getDeprecation().getReason());
++                    }
++                }
++            }
++        }
++        sb.append(" checked keys=").append(checked).append("\n");
++        deprecated.forEach(s -> sb.append(" DEPRECATED ").append(s).append("\n"));
++        unknown.forEach(s -> sb.append(" UNKNOWN ").append(s).append("\n"));
++        System.out.println(sb);
++    }
++}
+diff --git a/core-java/src/test/java/uk/jtoye/core/storefront/GuestCheckoutIdempotencyIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/storefront/GuestCheckoutIdempotencyIntegrationTest.java
+index 4bb46433..ac2da4bc 100644
+--- a/core-java/src/test/java/uk/jtoye/core/storefront/GuestCheckoutIdempotencyIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/storefront/GuestCheckoutIdempotencyIntegrationTest.java
+@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.dao.DataIntegrityViolationException;
+ import org.springframework.http.MediaType;
+diff --git a/core-java/src/test/java/uk/jtoye/core/storefront/PublicApiVersionAliasIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/storefront/PublicApiVersionAliasIntegrationTest.java
+index edb7f8d5..400def65 100644
+--- a/core-java/src/test/java/uk/jtoye/core/storefront/PublicApiVersionAliasIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/storefront/PublicApiVersionAliasIntegrationTest.java
+@@ -3,7 +3,7 @@ package uk.jtoye.core.storefront;
+ import com.fasterxml.jackson.databind.ObjectMapper;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/storefront/PublicOrdersPaginationIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/storefront/PublicOrdersPaginationIntegrationTest.java
+index 839e3806..cca5bbb1 100644
+--- a/core-java/src/test/java/uk/jtoye/core/storefront/PublicOrdersPaginationIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/storefront/PublicOrdersPaginationIntegrationTest.java
+@@ -5,7 +5,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerIdorTest.java b/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerIdorTest.java
+index b9d2e5f1..fbebf9c2 100644
+--- a/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerIdorTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerIdorTest.java
+@@ -2,8 +2,8 @@ package uk.jtoye.core.storefront;
+ 
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.test.web.servlet.MockMvc;
+ import uk.jtoye.core.exception.ResourceNotFoundException;
+diff --git a/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerMyOrdersTest.java b/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerMyOrdersTest.java
+index 891fc67c..37f36e28 100644
+--- a/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerMyOrdersTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerMyOrdersTest.java
+@@ -3,8 +3,8 @@ package uk.jtoye.core.storefront;
+ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.PageImpl;
+diff --git a/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerTest.java b/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerTest.java
+index 80a0056f..f4c0b55c 100644
+--- a/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontControllerTest.java
+@@ -3,8 +3,8 @@ package uk.jtoye.core.storefront;
+ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.data.domain.PageImpl;
+ import org.springframework.data.domain.Pageable;
+ import org.springframework.test.context.bean.override.mockito.MockitoBean;
+diff --git a/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontDistanceIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontDistanceIntegrationTest.java
+index bd609971..5f3e2aab 100644
+--- a/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontDistanceIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontDistanceIntegrationTest.java
+@@ -5,7 +5,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.PageRequest;
+diff --git a/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontPostcodeSearchIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontPostcodeSearchIntegrationTest.java
+index 6066e6a2..1ba77b5e 100644
+--- a/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontPostcodeSearchIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/storefront/PublicStorefrontPostcodeSearchIntegrationTest.java
+@@ -7,7 +7,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/sync/SyncBatchAuthorizationIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/sync/SyncBatchAuthorizationIntegrationTest.java
+index 5dc6e85a..bc8f0624 100644
+--- a/core-java/src/test/java/uk/jtoye/core/sync/SyncBatchAuthorizationIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/sync/SyncBatchAuthorizationIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.AfterEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.security.core.GrantedAuthority;
+diff --git a/core-java/src/test/java/uk/jtoye/core/sync/SyncControllerIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/sync/SyncControllerIntegrationTest.java
+index 0b6d50fa..70d67d56 100644
+--- a/core-java/src/test/java/uk/jtoye/core/sync/SyncControllerIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/sync/SyncControllerIntegrationTest.java
+@@ -2,8 +2,8 @@ package uk.jtoye.core.sync;
+ 
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+ import org.springframework.context.annotation.Import;
+ import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.http.MediaType;
+diff --git a/core-java/src/test/java/uk/jtoye/core/tenant/TenantLifecycleAdminIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/tenant/TenantLifecycleAdminIntegrationTest.java
+index 123c143c..e183d4ae 100644
+--- a/core-java/src/test/java/uk/jtoye/core/tenant/TenantLifecycleAdminIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/tenant/TenantLifecycleAdminIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/tenant/TenantOffboardKeycloakHookIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/tenant/TenantOffboardKeycloakHookIntegrationTest.java
+index 8b42760b..d96271a2 100644
+--- a/core-java/src/test/java/uk/jtoye/core/tenant/TenantOffboardKeycloakHookIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/tenant/TenantOffboardKeycloakHookIntegrationTest.java
+@@ -7,9 +7,9 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+-import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+ import org.springframework.test.context.DynamicPropertyRegistry;
+@@ -91,7 +91,7 @@ class TenantOffboardKeycloakHookIntegrationTest {
+     @Autowired private ObjectMapper objectMapper;
+ 
+     /** Mock the low-level seam; the real KeycloakDeprovisionService orchestrates it. */
+-    @MockBean private KeycloakAdminClient keycloakAdminClient;
++    @MockitoBean private KeycloakAdminClient keycloakAdminClient;
+ 
+     private static final UUID ADMIN_TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
+ 
+diff --git a/core-java/src/test/java/uk/jtoye/core/webhook/WebhookAuthzIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/webhook/WebhookAuthzIntegrationTest.java
+index add30971..fd29333f 100644
+--- a/core-java/src/test/java/uk/jtoye/core/webhook/WebhookAuthzIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/webhook/WebhookAuthzIntegrationTest.java
+@@ -5,7 +5,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;
+diff --git a/core-java/src/test/java/uk/jtoye/core/webhook/WebhookDeliveryLogIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/webhook/WebhookDeliveryLogIntegrationTest.java
+index a7ce17a8..7381d674 100644
+--- a/core-java/src/test/java/uk/jtoye/core/webhook/WebhookDeliveryLogIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/webhook/WebhookDeliveryLogIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.test.context.ActiveProfiles;
+diff --git a/core-java/src/test/java/uk/jtoye/core/webhook/WebhookDeliveryWorkerIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/webhook/WebhookDeliveryWorkerIntegrationTest.java
+index 32a9ba60..00f137bb 100644
+--- a/core-java/src/test/java/uk/jtoye/core/webhook/WebhookDeliveryWorkerIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/webhook/WebhookDeliveryWorkerIntegrationTest.java
+@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.boot.test.context.TestConfiguration;
+ import org.springframework.context.annotation.Bean;
+diff --git a/core-java/src/test/java/uk/jtoye/core/webhook/WebhookSubscriptionControllerIntegrationTest.java b/core-java/src/test/java/uk/jtoye/core/webhook/WebhookSubscriptionControllerIntegrationTest.java
+index d584bc5d..92effe5f 100644
+--- a/core-java/src/test/java/uk/jtoye/core/webhook/WebhookSubscriptionControllerIntegrationTest.java
++++ b/core-java/src/test/java/uk/jtoye/core/webhook/WebhookSubscriptionControllerIntegrationTest.java
+@@ -6,7 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Tag;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.beans.factory.annotation.Autowired;
+-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+ import org.springframework.boot.test.context.SpringBootTest;
+ import org.springframework.http.MediaType;
+ import org.springframework.jdbc.core.JdbcTemplate;

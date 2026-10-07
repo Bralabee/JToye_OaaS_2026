@@ -10,10 +10,57 @@
 // next/navigation is mocked globally (usePathname -> "/"); the drawer only
 // needs a stable pathname so its close-on-navigation effect stays inert here.
 
-import { render, screen, act } from "@testing-library/react"
+import { render, screen, act, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { CartProvider } from "@/components/storefront/cart-provider"
 import { CartDrawer } from "@/components/storefront/cart-drawer"
+import publicApiClient from "@/lib/public-api-client"
+import {
+  BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
+  NO_ALLERGENS_DECLARED_COPY,
+} from "@/lib/allergen-copy"
+
+// #860 (31.1-23): the open drawer reads the live catalogue for each line's allergens; the #860
+// block below serves one.
+jest.mock("@/lib/public-api-client", () => ({
+  __esModule: true,
+  default: { get: jest.fn(), post: jest.fn() },
+}))
+const mockedGet = publicApiClient.get as jest.Mock
+
+const MILK = 1 << 6
+const catalogueProduct = (id: string, title: string, allergenMask: number, extra: object = {}) => ({
+  id,
+  title,
+  description: null,
+  imageUrl: null,
+  imageUrls: [],
+  ingredientsText: "",
+  allergenMask,
+  pricePennies: 850,
+  category: "Mains",
+  dietaryTags: null,
+  preparationTimeMinutes: null,
+  featured: false,
+  inStock: true,
+  ...extra,
+})
+const CATALOGUE = {
+  Mains: [
+    catalogueProduct("p-1", "Jollof Rice", MILK),
+    catalogueProduct("p-2", "Plantain", 0),
+    catalogueProduct("p-3", "Egusi", 0, { undeclaredIngredientAllergens: ["Milk"] }),
+  ],
+}
+const serveCatalogue = (catalogue: unknown) =>
+  mockedGet.mockImplementation((url: string) =>
+    String(url).endsWith("/products")
+      ? Promise.resolve({ data: catalogue })
+      : Promise.reject(new Error(`unexpected GET ${url}`))
+  )
+const productGets = () => mockedGet.mock.calls.filter(([url]) => String(url).endsWith("/products")).length
+const lineAllergenText = () =>
+  screen.queryAllByTestId("basket-line-allergens").map((el) => el.textContent)
 
 const SLUG = "test-shop"
 const KEY = `jtoye-cart-${SLUG}`
@@ -84,6 +131,10 @@ beforeAll(() => {
 describe("CartDrawer", () => {
   beforeEach(() => {
     localStorage.clear()
+    mockedGet.mockReset()
+    // These tests predate #860 and assert nothing about allergens: the catalogue stays pending, so
+    // no state update lands after a test has finished (each line shows the loading copy).
+    mockedGet.mockReturnValue(new Promise(() => {}))
   })
 
   it("renders nothing visible until the open event fires", () => {
@@ -149,5 +200,86 @@ describe("CartDrawer", () => {
     await user.click(screen.getByRole("button", { name: /decrease quantity/i }))
 
     expect(screen.getByText("1")).toBeInTheDocument()
+  })
+})
+
+describe("CartDrawer — each line's own allergens (#860)", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    mockedGet.mockReset()
+    serveCatalogue(CATALOGUE)
+  })
+
+  it("does not fetch the catalogue while closed", () => {
+    seed([item()])
+    renderDrawer()
+    expect(productGets()).toBe(0)
+  })
+
+  it("states each line's declared set, 'No allergens declared', or the D-09 line, from the live catalogue", async () => {
+    seed([
+      item({ productId: "p-1", title: "Jollof Rice" }),
+      item({ productId: "p-2", title: "Plantain" }),
+      item({ productId: "p-3", title: "Egusi" }),
+    ])
+    renderDrawer()
+    openDrawer()
+
+    await waitFor(() =>
+      expect(lineAllergenText()).toEqual([
+        "Contains: Milk",
+        NO_ALLERGENS_DECLARED_COPY,
+        "Ingredients name: MILK – check with the shop",
+      ])
+    )
+    expect(mockedGet).toHaveBeenCalledWith(`/public/shops/${SLUG}/products`)
+  })
+
+  it("a failed catalogue fetch says 'not available' on every line, never 'No allergens declared'", async () => {
+    mockedGet.mockRejectedValue(new Error("upstream down"))
+    seed([item({ productId: "p-1" }), item({ productId: "p-2", title: "Plantain" })])
+    renderDrawer()
+    openDrawer()
+
+    await waitFor(() =>
+      expect(lineAllergenText()).toEqual([
+        BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
+        BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
+      ])
+    )
+    expect(screen.queryByText(NO_ALLERGENS_DECLARED_COPY)).toBeNull()
+  })
+
+  it("re-reads the catalogue each time it opens, so a vendor edit between opens is shown", async () => {
+    seed([item({ productId: "p-1" })])
+    renderDrawer()
+    openDrawer()
+    await waitFor(() => expect(lineAllergenText()).toEqual(["Contains: Milk"]))
+
+    await userEvent.setup().click(screen.getByRole("button", { name: /close basket/i }))
+    serveCatalogue({ Mains: [catalogueProduct("p-1", "Jollof Rice", MILK | 1)] })
+    openDrawer()
+
+    await waitFor(() => expect(lineAllergenText()).toEqual(["Contains: Gluten, Milk"]))
+    expect(productGets()).toBe(2)
+  })
+
+  it("writes nothing to the stored cart: its JSON is byte-identical before and after the lines render", async () => {
+    // Seeded in the provider's own canonical shape (it stamps `owner` on hydration, #459), so any
+    // later difference is a write by the drawer, not the provider's normal stamp.
+    const seeded = JSON.stringify({
+      shopSlug: SLUG,
+      owner: null,
+      items: [item({ productId: "p-1" }), item({ productId: "p-3", title: "Egusi" })],
+    })
+    localStorage.setItem(KEY, seeded)
+    renderDrawer()
+    openDrawer()
+
+    await waitFor(() =>
+      expect(lineAllergenText()).toEqual(["Contains: Milk", "Ingredients name: MILK – check with the shop"])
+    )
+    expect(seeded).not.toBeNull()
+    expect(localStorage.getItem(KEY)).toBe(seeded)
   })
 })

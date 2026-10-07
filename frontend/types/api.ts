@@ -125,8 +125,30 @@ export interface Product {
   dietaryTags: string | null
   shopId: string | null
   quantityInStock: number | null
+  /**
+   * D-09 (31.1-06): the bits this product's EMPHASISED ingredients text names but its declared
+   * mask omits. Advisory, never merged into allergenMask. ABSENT means "not computed" (a cache
+   * entry from before 31.1-06), which is not the same as "no disagreement".
+   */
+  allergenWarnings?: ProductAllergenWarning[]
+  /**
+   * D-16 (31.1-14): the "may contain" (cross-contact) mask, same 14-bit layout as allergenMask,
+   * kept separate from it. Absent/null = not recorded; 0 = the vendor recorded no risk.
+   */
+  mayContainMask?: number | null
   createdAt: string
   updatedAt: string
+}
+
+/** One D-09 save-time warning (core-java ProductAllergenWarning). */
+export interface ProductAllergenWarning {
+  /** "UNDECLARED_INGREDIENT_ALLERGEN" today; typed as string so a new code is not a parse failure. */
+  code: string
+  /** Bit in the 14-bit FSA layout (ALLERGENS below). */
+  allergenBit: number
+  /** Catalogue name for the bit, e.g. "Milk". */
+  allergen: string
+  message: string
 }
 
 export interface CreateProductRequest {
@@ -145,6 +167,8 @@ export interface CreateProductRequest {
   dietaryTags?: string
   shopId?: string
   quantityInStock?: number | null
+  /** D-16: omitted or null on PUT keeps the stored value; 0 is an explicit "no cross-contact risk". */
+  mayContainMask?: number | null
 }
 
 // Order Types
@@ -239,7 +263,20 @@ export interface Order {
   deliveryFeePennies?: number | null
   createdAt: string
   updatedAt: string
+  // Phase 31.1 D-06/D-07 (V69, 31.1-09) and D-15 (V73, 31.1-13). OrderDto writes these NON_NULL
+  // (its bytes are golden), so on the LIST an absent field means NOT RECORDED / no note / not yet
+  // acknowledged. Never coalesce an absent ack mask to 0: 0 is "acknowledged a declared-none basket".
+  allergenAckMask?: number | null
+  allergenAckAt?: string | null
+  placedVia?: OrderPlacedVia | null
+  allergyNote?: string | null
+  allergyNoteAcknowledgedAt?: string | null
+  /** The authenticated principal that acknowledged the note (a Keycloak subject id), never a display name. */
+  allergyNoteAcknowledgedBy?: string | null
 }
+
+/** Which channel placed an order (31.1-09): the customer at the storefront, or the shop itself (D-07). */
+export type OrderPlacedVia = "STOREFRONT" | "VENDOR"
 
 export interface OrderItem {
   id: string
@@ -325,6 +362,19 @@ export interface OrderDetail {
   allergenMask?: number | null
   allergenNames?: string[] | null
   allergenFlags?: OrderAllergenFlag[] | null
+  // Phase 31.1 D-06/D-07 (31.1-09): what the CUSTOMER acknowledged at checkout, and who placed the
+  // order. A different fact from the recorded set above. null = NOT RECORDED (a vendor-placed order,
+  // or one from before V69); `acknowledgedAllergenNames: []` = acknowledged a declared-none basket.
+  allergenAckMask?: number | null
+  allergenAckAt?: string | null
+  placedVia?: OrderPlacedVia | null
+  acknowledgedAllergenNames?: string[] | null
+  // Phase 31.1 D-15 (#812, V73, 31.1-13): the customer's allergy note, separate from `notes`
+  // (delivery), and the shop's acknowledgement of it. First acknowledgement stands.
+  allergyNote?: string | null
+  allergyNoteAcknowledgedAt?: string | null
+  /** The authenticated principal that acknowledged the note (a Keycloak subject id), never a display name. */
+  allergyNoteAcknowledgedBy?: string | null
 }
 
 export interface CreateOrderRequest {
@@ -448,8 +498,8 @@ export type OnboardingState =
   | "REJECTED"
   | "WITHDRAWN"
 
-// INT-6 (QA council 20260902-134741): ALL eight backend constants, in Java declaration
-// order. This union was a hand-maintained 3-of-8 subset; because the pages' copy maps are
+// INT-6 (QA council 20260902-134741): ALL backend constants (nine since 31.1-12 added
+// TRADER_IDENTITY, #789), in Java declaration order. This union was a hand-maintained 3-of-8 subset; because the pages' copy maps are
 // typed Record<GateType, …>, tsc was satisfied and the five missing types rendered as the
 // literal "Check". Parity with GateType.java / GateStatus.java / OnboardingState.java is
 // now enforced by frontend/__tests__/onboarding-enum-parity.test.ts.
@@ -462,6 +512,7 @@ export type GateType =
   | "AGREEMENT_SIGNED"
   | "ALLERGEN_DATA_COMPLETE"
   | "MENU_MINIMUM"
+  | "TRADER_IDENTITY"
 
 export type GateStatus =
   | "PENDING"
@@ -511,6 +562,40 @@ export interface CreateOnboardingRequest {
 // (POST /onboarding/company-number). — 21-01.
 export interface UpdateOnboardingRequest {
   companyNumber?: string
+}
+
+// #789 (31.1-10): the tenant's legal entity, the seller customers buy from
+// (CCR 2013 Sch 2, E-Commerce Regs 2002 reg 6). One per tenant; mirrors the
+// backend TraderIdentityDto (GET/PUT /api/v1/trader-identity). companyNumber is
+// READ from the onboarding record and never sent back. Nullable fields are
+// written as JSON null (this DTO is not a Phase 38 golden), so null means
+// "not declared" (no second address line / not VAT-registered / no onboarding).
+export type TraderEntityType = "COMPANY" | "SOLE_TRADER" | "PARTNERSHIP"
+
+export interface TraderIdentity {
+  id: string
+  legalName: string
+  entityType: TraderEntityType
+  addressLine1: string
+  addressLine2: string | null
+  addressCity: string
+  addressPostcode: string
+  vatNumber: string | null
+  companyNumber: string | null
+  version: number
+  updatedAt: string
+}
+
+// Mirrors the backend UpdateTraderIdentityRequest. No tenantId and no company
+// number: the tenant comes from the session, the number from onboarding.
+export interface UpdateTraderIdentityRequest {
+  legalName: string
+  entityType: TraderEntityType
+  addressLine1: string
+  addressLine2?: string | null
+  addressCity: string
+  addressPostcode: string
+  vatNumber?: string | null
 }
 
 // ONBD-03 admin surface: an admin resolves a stuck gate. Mirrors the backend

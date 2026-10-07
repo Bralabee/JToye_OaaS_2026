@@ -1,7 +1,6 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { format } from "date-fns"
 import {
   ShoppingCart,
   Clock,
@@ -26,6 +25,15 @@ import { RefundDialog } from "./RefundDialog"
 import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
 import { ItemAllergenBadge } from "@/components/dashboard/kitchen/item-allergen-badge"
 import type { OrderDetail, OrderStatus, Refund } from "@/types/api"
+import { formatUkDateTime } from "@/lib/uk-datetime"
+import { AllergyNoteBlock } from "@/components/dashboard/kitchen/allergy-note-block"
+import { acknowledgementStatement } from "@/components/storefront/recorded-allergen-set"
+import {
+  CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY,
+  VENDOR_PLACED_ORDER_COPY,
+  customerConfirmedAllergensCopy,
+  customerConfirmedNoneCopy,
+} from "@/lib/allergen-copy"
 
 /**
  * OrderDetailPanel
@@ -102,6 +110,32 @@ function refundStatusClass(status: Refund["status"]): string {
   return "text-orange-700 font-medium"
 }
 
+/**
+ * 31.1-22 (D-07, #784): how the order was placed and what the customer confirmed, in one sentence
+ * for the vendor. The four states come from acknowledgementStatement — the SAME mapping the
+ * customer's tracking page and My Orders use (31.1-18) — so the vendor and the customer can never
+ * be told different things about which state an order is in; only the voice differs.
+ *
+ *   list         — "Customer confirmed allergens: Gluten, Milk — 3 October 2026, 18:02"
+ *   none         — the customer confirmed a basket that declared none of the 14 (a statement)
+ *   vendor       — "Placed by the shop — no customer allergen confirmation recorded" (D-07)
+ *   not-recorded — an order from before confirmations were recorded; no claim either way
+ */
+function allergenConfirmationLine(order: OrderDetail): string {
+  const when = order.allergenAckAt ? formatUkDateTime(order.allergenAckAt) || null : null
+  const statement = acknowledgementStatement(order.acknowledgedAllergenNames, order.placedVia)
+  switch (statement.kind) {
+    case "list":
+      return customerConfirmedAllergensCopy(statement.names, when)
+    case "none":
+      return customerConfirmedNoneCopy(when)
+    case "vendor":
+      return VENDOR_PLACED_ORDER_COPY
+    default:
+      return CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY
+  }
+}
+
 interface OrderDetailPanelProps {
   order: OrderDetail
   onRefundIssued?: () => void
@@ -142,7 +176,7 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
             <span>{order.orderNumber || order.id.substring(0, 8)}</span>
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Created {format(new Date(order.createdAt), "PPpp")}
+            Created {formatUkDateTime(order.createdAt)}
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -166,6 +200,27 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
         allergenNames={order.allergenNames}
         allergenFlags={order.allergenFlags}
       />
+
+      {/* 31.1-22 (#812, D-15): the customer's allergy note and the act of marking it read —
+          the same block the kitchen board shows, so the two surfaces cannot disagree about
+          whether it was read. Above the customer block, and so above the delivery notes it is
+          never merged into. Renders nothing for an order without a note. */}
+      <AllergyNoteBlock
+        orderId={order.id}
+        orderLabel={order.orderNumber || order.id.substring(0, 8)}
+        note={order.allergyNote}
+        acknowledgedAt={order.allergyNoteAcknowledgedAt}
+        acknowledgedBy={order.allergyNoteAcknowledgedBy}
+      />
+
+      {/* 31.1-22 (D-07): how the order was placed — a customer who confirmed the allergens, the
+          shop keying it in, or an order from before confirmations were recorded. */}
+      <p
+        data-testid="order-allergen-confirmation"
+        className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800"
+      >
+        {allergenConfirmationLine(order)}
+      </p>
 
       {/* Customer block */}
       <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 p-4 sm:grid-cols-2">
@@ -347,7 +402,7 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
                       {refund.status}
                     </span>
                     <p className="text-xs text-slate-500">
-                      {format(new Date(refund.requestedAt), "PPp")}
+                      {formatUkDateTime(refund.requestedAt)}
                     </p>
                     {refund.failureReason && (
                       <p className="text-xs text-red-600">

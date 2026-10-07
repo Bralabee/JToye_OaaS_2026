@@ -1,10 +1,10 @@
 package uk.jtoye.core.order;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 import uk.jtoye.core.payment.PaymentEventOutbox;
 import uk.jtoye.core.payment.PaymentEventOutboxRepository;
@@ -50,10 +50,10 @@ public class OrderEventPublisher {
     static final String EVENT_TYPE = "ORDER_STATE_CHANGED";
 
     private final PaymentEventOutboxRepository outboxRepository;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     public OrderEventPublisher(PaymentEventOutboxRepository outboxRepository,
-                               ObjectMapper objectMapper) {
+                               JsonMapper objectMapper) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
     }
@@ -91,12 +91,14 @@ public class OrderEventPublisher {
         String payloadJson;
         try {
             payloadJson = objectMapper.writeValueAsString(event);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             // Fixed-shape record — serialization failure is a programmer
             // error. DO NOT propagate: throwing would roll back the order
             // state change itself. Persist a poisoned FAILED placeholder so
             // the failure is durable and visible to operators instead of a
             // swallowed log line (the flusher's dead-letter path skips it).
+            // Jackson 3's JacksonException is unchecked, so the compiler no
+            // longer demands this catch; OrderEventPublisherTest keeps it (38-08).
             log.error("Failed to serialize OrderStateChangeEvent for order {}: {} — persisting FAILED placeholder",
                     orderNumber, e.getMessage(), e);
             String placeholder = String.format(

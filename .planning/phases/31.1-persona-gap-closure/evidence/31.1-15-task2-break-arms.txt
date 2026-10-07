@@ -1,0 +1,27 @@
+31.1-15 Task 2 break arms, run 2026-10-06 against commit f369b393
+Suites: components/storefront/__tests__/recorded-allergen-set.test.tsx + app/shop/[slug]/checkout/__tests__/allergy-note.test.tsx (18 tests)
+Method: clean -> arm (scripted string edit; missing anchor = VOID) -> run -> cp restore -> clean again.
+Restore verified BY CONTENT (sha256 prefix vs git show HEAD:<file>).
+
+clean (before): recorded-allergen-set.tsx f434b53f5c446d29 = HEAD; checkout/page.tsx cd01d39af071e0fb = HEAD
+B1 acknowledged null rendered with the declared-none copy  rc=1  2 failed, 16 passed
+   - acknowledged null ... says NOT RECORDED, never 'none'
+   - acknowledged [] ... DIFFERENT copy from null
+B2 reconciliation flags not rendered                        rc=1  2 failed, 16 passed
+   - renders each flag as its own 'Check' line
+   - COD confirmation renders the acknowledged and recorded sets, and the flag as a Check line
+B3 COD confirmation ignores the response's record           rc=1  2 failed, 16 passed
+   - COD confirmation renders the acknowledged and recorded sets ...
+   - renders what the SERVER recorded, not the basket the client computed
+B4 allergyNote dropped from the intent                       rc=1  1 failed, 17 passed
+   - posts the note as allergyNote, trimmed, separately from notes
+B5 a type error in recorded-allergen-set.tsx, then `npm run build`   build_rc=1 "Failed to type check."
+   (proves the plan's build gate type-checks this file; the green build is not a cached no-op)
+B6 the note written to localStorage on change               rc=1  1 failed, 8 passed (allergy-note suite)
+   - never writes the note to browser storage (T-31.1-55)
+restored: R=f434b53f5c446d29 P=cd01d39af071e0fb; git status clean for both files
+clean (after): rc=0 Tests: 18 passed, 18 total
+
+Vacuous-in-RED, recorded: "a blank note is ABSENT" (unit) and "renders no flag line when there are none"
+passed before the implementation existed. Both are negative guards on behaviour that must NOT appear;
+their fail directions are the B4/B6 and B2 arms' neighbours rather than their own arms.

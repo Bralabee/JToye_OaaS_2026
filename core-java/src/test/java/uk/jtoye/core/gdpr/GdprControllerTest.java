@@ -4,8 +4,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -51,7 +51,7 @@ class GdprControllerTest {
                 UUID.randomUUID(), "ORD-001", "COMPLETED",
                 "Jane Doe", "jane@example.com",
                 1500L, 300L, 200L, 2000L,
-                "CARD", "No onions",
+                "CARD", "No onions", "Sesame allergy",
                 OffsetDateTime.parse("2025-05-20T12:00:00Z")
         );
         var reviewExport = new GdprController.ReviewExport(

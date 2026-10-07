@@ -72,6 +72,24 @@ regexes = [
   '''^Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq\/K1SZFPTOtr\/KBHBeksoGMGw\=\=$''',
 ]
 
+# ---- The Boot-3.5 golden fixtures' idempotency key (Phase 38, plan 38-01) ----
+# core-java/src/test/resources/jackson2-golden/idempotency/storefront.guest-order
+# {,.legacy}.request.json carry "idempotencyKey":"golden-guest-key-0001", the
+# client-supplied order de-duplication key of a FIXTURE request, captured by the
+# Boot 3.5.16 serializers (commit e12177e1). It authenticates to nothing. The files
+# are byte-guarded by GoldenFixturesIntegrityTest, so no inline gitleaks:allow can be
+# added, and a commit fingerprint would not cover the squash commit that main's
+# push scan reads. generic-api-key flags it on 8.30.1 (measured 38-18: rc=1, the
+# captured secret is exactly this 21-character value). ONE regex, anchored at both
+# ends: golden-guest-key-0002, or any other value, still fails the scan.
+[[allowlists]]
+description = "Phase 38 Jackson-2 golden fixture idempotency key (a fixture order de-duplication key, not a credential)"
+condition = "OR"
+regexTarget = "secret"
+regexes = [
+  '''^golden-guest-key-0001$''',
+]
+
 # ---- Fingerprint-based allowlists (specific historical false positives) ------
 [[allowlists]]
 description = "curl -u examples in planning docs and smoke test scripts (env var placeholders, not real credentials)"
@@ -81,4 +99,42 @@ commits = [
   "d2834bae09ab74ebfcb9bc0449fb4770e79f8854",
   "3d62ed44899a0394881bd91de7051c1c8fbb1268",
   "76fcf55d756a5b87e7b827f528a8783e662727d6",
+]
+
+# ---- Phase 31.1 fixtures and RED-arm evidence (plan 31.1 ship, 2026-10-07) ---
+# The pre-push range scan (222 commits) flagged 26 generic-api-key hits, every one
+# a value that authenticates to nothing, in four shapes. Each is allowlisted by
+# CONTENT and anchored at both ends (SEC-3 above), never by path, so a real key
+# pasted into the same files still fails the scan. Measured on 8.27.2 (the CI pin)
+# and 8.30.1: the 26 clear; a planted ghp_ PAT, an AWS key and a near-miss of each
+# shape (one character off, a non-UUID tail, an unlisted prefix) still fire.
+#
+# 1. The DsarVerificationMailerTest fixture token: base64("foobar") followed by a
+#    literal alphabet run — read as a URL-safe token by the test and by the
+#    31.1-20 RED evidence that captured it. ONE exact value.
+# 2. Idempotency keys the 31.1-03 / 31.1-09 RED arms sent as `Idempotency-Key:
+#    <prefix>-<uuid>`: a client-supplied order de-duplication key (the Phase 38
+#    golden-fixture argument above). The prefix set is closed; the tail must be a
+#    well-formed lower-case UUID.
+# 3. The DSAR worker's `dsar_access_completed request=<uuid>` log line captured in
+#    31.1-16 RED evidence: a row id, matched on the LINE so a bare UUID elsewhere
+#    (which may be a tenant-scoped identifier) is not blanket-allowed.
+# 4. A plan-evidence FILENAME (`<phase>-<plan>-<slug>.<ext>`) that SUMMARY.md
+#    prose names after `key=`-like punctuation; the extension set is closed.
+[[allowlists]]
+description = "Phase 31.1 test-fixture token and RED-arm idempotency keys (fixtures, not credentials)"
+condition = "OR"
+regexTarget = "secret"
+regexes = [
+  '''^Zm9vYmFy-_0123456789abcdefghijABCDEFGHIJxyz$''',
+  '''^(vendor|ack-missing|ack-idem|ack-race)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$''',
+  '''^[0-9]+(\.[0-9]+)?-[0-9]{2}-[a-z0-9][a-z0-9-]*\.(tsv|json|txt|md|log|csv)$''',
+]
+
+[[allowlists]]
+description = "Phase 31.1 DSAR worker log line captured in RED-arm evidence (a request row id on the line, not a credential)"
+condition = "OR"
+regexTarget = "line"
+regexes = [
+  '''dsar_access_completed request=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b''',
 ]

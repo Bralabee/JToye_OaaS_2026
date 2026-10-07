@@ -1,8 +1,29 @@
-# Handoff: Phase 38 planned (19 plans, ready to execute); runtime current; `main` green
+# Handoff: Phase 38 (Spring Boot 4.1) merged as #898; Phase 31.1 is next; runtime current
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
-**2026-10-04 (night) delta: Phase 38 is planned and ready to execute; the local runtime is current. Resume here.**
+**2026-10-06 delta: Phase 38 (Spring Boot 4.1.1) is merged as #898; Phase 31.1 is next. Resume here.**
+**Where things stand.** Read the current head with `git log -1 origin/main`.
+- **Phase 38 is merged (#898, squash).** It closed #706 and superseded Dependabot #739 (closed). Before the merge:
+  - **Verification:** re-run after the review fixes; 14/14.
+  - **Security:** `38-SECURITY.md` reports `threats_open: 0` at ASVS L2.
+  - **Local full suites:** unit 1495/0, integration 772/0.
+  - **CI:** every required check passed on the merged head.
+  - **Review series:** ended at round 2 with 0 admissible. Round 1's one finding, the asynchronous `RedisCache.evict` under Spring Data Redis 4, is fixed: `TenantCacheEvictor` uses the synchronous `evictIfPresent`, and `TenantCacheEvictorTest` goes red if `evict` returns.
+- **Runtime is current.** core-java was rebuilt from the Phase 38 tree after the review fixes, with owner approval. `scripts/check-runtime-freshness.sh` passes 4/4, and both fixes were read out of the running `/app/app.jar`.
+- **Changelog:** #898 merged without an entry. #899 adds it together with this handoff delta.
+- **Open:**
+  - GitGuardian (not a required check) flags a placeholder JWT in `ProtectedResourceMetadataSuppressionFilterTest`. Only the owner can dismiss it in the dashboard.
+  - Review info items IN-01..IN-03 are recorded in `38-REVIEW-DISPOSITION.md`. IN-04 is this stale handoff, now fixed.
+- **Worktrees:** `../JToye_OaaS_2026-phase37` now carries the #899 branch; the Phase 38 branch is deleted locally and on origin. `../JToye_OaaS_2026-bizalign` and `../JToye_OaaS_2026-phase37-ops` each hold one UNPUSHED planning commit from other sessions. They are surfaced here and were not touched.
+
+**Next, in order:**
+1. In the main checkout (branch `phase-31.1-persona-gap-closure`), merge `origin/main`, then `/gsd-execute-phase 31.1`. Plan 31.1-01 re-checks that Boot 4.1 is on `origin/main` (D-21) and reserves V68..V75.
+2. Then Phase 37 via `/gsd-discuss-phase 37`, the owner's order.
+3. Plan Phase 39 before its first dated horizon row expires on 2026-10-26. An expired row reds the required Operational Contracts check on every branch.
+4. Leave `../oaas-archify-diagrams` and `phase-29-research` alone.
+
+**2026-10-04 (night) delta: Phase 38 is planned and ready to execute; the local runtime is current.** (SUPERSEDED by the 2026-10-06 delta above.)
 **Where things stand.**
 - **Runtime rebuilt and verified.** The owner fast-forwarded the main checkout to `5936c644`. Then `scripts/sync-runtime.sh` rebuilt core-java and frontend, and its freshness gate passes for all 4 services. Inside the running `/app/app.jar`, `jackson-core` and `jackson-databind` are 2.21.7. The frontend is running #888.
 - **Phase 38 (Spring Boot 4.1) is PLANNED** on `phase-37-spring-boot-4-1` (worktree `../JToye_OaaS_2026-phase37`, pushed, head `767f5658`). It merged `main` after #893/#894, and outside `.planning/` it is byte-identical to `main`.
@@ -538,12 +559,13 @@ and memory `project_qa_council_20260902.md`; the procedure lessons went into
 filed except the RabbitMQ horizon (#724, deferred to 2026-11-30 by PR #725) — still unfiled: 2
 Criticals, the top Highs, a docs epic, amendments to #648/#453/#711, and 9 new defects the refuter
 surfaced — and `/qa-remediate 20260902-134741` has not run.
-The gate expectation at "Resume here" is 46 (45 `scripts/check-*.sh` + `scripts/docs-freshness.sh`,
+The gate expectation at "Resume here" is 47 (46 `scripts/check-*.sh` + `scripts/docs-freshness.sh`,
 which is exactly what `check-handoff-contract.sh` H-1 counts) — this line said 41 until 2026-09-04,
 contradicting the EXPECT claim below it in the same file (43 then; 44 since plan 36-08 added
 `scripts/check-backup-restore-drill.sh`, 2026-09-29; 45 since plan 36-12 added
 `scripts/check-media-urls-resolve.sh`, 2026-09-29; 46 since plan 36-16 added
-`scripts/check-no-object-store-residue.sh`, 2026-09-29). H-1 does not read this sentence (no `**`
+`scripts/check-no-object-store-residue.sh`, 2026-09-29; 47 since plan 38-11 added
+`scripts/check-boot-config-keys.sh`, 2026-10-05). H-1 does not read this sentence (no `**`
 marker), which is the semantic rot that gate's own closing NOTE says it cannot detect.
 
 **2026-09-04 delta — the remediation RAN, and this file said it had not.** The block above ends
@@ -679,10 +701,12 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 46 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 47 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
+# 2026-10-05 (phase 38 plan 38-11): 46 -> 47. scripts/check-boot-config-keys.sh runs
+# ConfigKeyContractTest through Gradle (a JDK, ~1 min) and fails on any Boot-4-unbound key.
 # 2026-08-29 actual (phase 34 closeout, plan 34-10): all 40 rc=0 from the MAIN checkout,
 # including check-e2e-skip-budget re-earned at 6 skips / budget 6 on a fresh full-suite
 # run (297 tests, 0 failures), and check-jacoco-coverage at 88.07/71.95/87.55/87.53.

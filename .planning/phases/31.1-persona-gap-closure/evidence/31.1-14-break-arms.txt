@@ -1,0 +1,52 @@
+31.1-14 break arms (each: committed tree, one literal replacement, clean test run, restore from HEAD, sha256 compared)
+
+== Task 1 arm MERGE: Product.setMayContainMask also ORs the mask into allergenMask (the prohibition) ==
+ProductMayContainIntegrationTest under the arm: tests=6 failures=2 errors=0 (gradle rc=1)
+ - D-16 vendorSetsMayContain_storedSeparately: expected: 64 but was: 66 (SQL allergen_mask after PUT mayContainMask 2)
+ - #861 labelForProductionDate: 'May contain: Sesame' missing (Sesame now declared)
+ restore sha 68bfbbcfe37a922021f0ddb4252b63b642123a1f95b7d8d31c044a2cc94e3ae9 == HEAD: RESTORE_OK
+ closing clean run: tests=6 failures=0 errors=0
+
+== Task 2 arm utc-default ==
+ARM utc-default gradle rc=1
+tests="19" failures="3" errors="0" 
+testcase name="#861 BST midnight: at 00:30 BST on 4 October, productionDate 4 October is today (allowed) and 5 October is tom
+failure message="uk.jtoye.core.exception.InvalidProductionDateException: productionDate 4 October 2026 is after today (3 October 2026, UK time): a label cann
+testcase name="#861 concurrency: the default date is read from the clock on EVERY request, so downloads either side of UK mid
+failure message="java.lang.AssertionError:  Expecting actual:   "Yam Pottage 500g  YAM-500    £5.99    Ingredients: Rice, mi
+testcase name="#861 BST midnight: no productionDate at 2026-10-03T23:30Z (00:30 BST on 4 October) is labelled 4 October
+failure message="java.lang.AssertionError:  Expecting actual:   "Yam Pottage 500g  YAM-500    £5.99    Ingredients: Rice, mi
+ARM utc-default restore OK (a92536478c85fb1ded936a71483f47968cf0511ee1b07345289629c2bd6da3e1)
+
+== Task 2 arm keep-declared ==
+ARM keep-declared gradle rc=1
+tests="19" failures="2" errors="0" 
+testcase name="#861 adjacency: a bit in BOTH masks is shown only under the declaration; the stored may-contain mask keeps it
+failure message="java.lang.AssertionError: [Milk is declared, so nothing is left to say]  Expecting empty but was: ["Milk"]
+testcase name="#861 feature case: Milk declared, may-contain Sesame|Milk, produced 2026-10-03, shelf life 2 -> Produced 3 
+failure message="org.opentest4j.AssertionFailedError:  Expecting actual:   ["Milk", "Sesame"] to contain exactly (and in same
+ARM keep-declared restore OK (7fe1180a2ca46673e63dca4fae7a85b96744ba40d0ab0b8c10a84eedc133aa63)
+
+== Task 2 arm short-month ==
+ARM short-month gradle rc=1
+tests="19" failures="9" errors="0" 
+testcase name="#861 BST midnight: at 00:30 BST on 4 October, productionDate 4 October is today (allowed) and 5 October is tom
+failure message="java.lang.AssertionError:  Expecting actual:   "Yam Pottage 500g  YAM-500    £5.99    Ingredients: Rice, mi
+testcase name="generateLabel - the two new #861 lines (May contain, Produced) still fit the 100x60mm label on ONE page
+failure message="java.lang.AssertionError:  Expecting actual:   "Yam Pottage 500g  YAM-500    £5.99    Ingredients: Wheat fl
+testcase name="#861 concurrency: the default date is read from the clock on EVERY request, so downloads either side of UK mid
+failure message="java.lang.AssertionError:  Expecting actual:   "Yam Pottage 500g  YAM-500    £5.99    Ingredients: Rice, mi
+testcase name="#861 BST midnight: no productionDate at 2026-10-03T23:30Z (00:30 BST on 4 October) is labelled 4 October
+failure message="java.lang.AssertionError:  Expecting actual:   "Yam Pottage 500g  YAM-500    £5.99    Ingredients: Rice, mi
+testcase name="#861 encoding: dates are en-GB with the FULL month name ('30 September 2026', never 'Sept' or 'Sep')
+failure message="org.opentest4j.AssertionFailedError:  expected: "Produced: 28 September 2026"  but was: "Produced: 28 Sept 2026"
+testcase name="buildRenderModel - BEST_BEFORE durability wording
+failure message="org.opentest4j.AssertionFailedError:  expected: "Best before: 15 July 2026"  but was: "Best before: 15 Jul 2026"
+testcase name="#861: a productionDate whose use-by (or best-before) is before today is a 422 naming productionDate; a durabil
+failure message="java.lang.AssertionError:  Expecting throwable message:   "productionDate 1 Oct 2026 gives a use-by date of 3 Oct 2026, which h
+testcase name="buildRenderModel - emits an inline emphasised 'milk' run and a fixed durability line
+failure message="org.opentest4j.AssertionFailedError:  expected: "Use by: 8 July 2026"  but was: "Use by: 8 Jul 2026"
+testcase name="#861 feature case: Milk declared, may-contain Sesame|Milk, produced 2026-10-03, shelf life 2 -> Produced 3 
+failure message="org.opentest4j.AssertionFailedError:  expected: "Produced: 3 October 2026"  but was: "Produced: 3 Oct 2026"
+ARM short-month restore OK (a92536478c85fb1ded936a71483f47968cf0511ee1b07345289629c2bd6da3e1)
+

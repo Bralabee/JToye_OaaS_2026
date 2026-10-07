@@ -1,9 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { BellOff, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
+import {
+  ACCOUNT_HREF,
+  EMAILS_SECTION_HREF,
+  EMAIL_SCOPE_STATEMENT,
+  NO_MARKETING_STATEMENT,
+} from "@/lib/email-scope-copy"
 
 /**
  * Public, no-auth one-click unsubscribe confirmation (Surface C, COMMS-03).
@@ -30,13 +37,30 @@ import publicApiClient from "@/lib/public-api-client"
 
 type State = "loading" | "unsubscribed" | "already_unsubscribed" | "invalid"
 
-// Non-PII, human-friendly labels for the four notification categories
-// (NotificationCategory enum, uppercase on the wire). Never the email/token.
+// Non-PII, human-friendly labels for the notification categories (NotificationCategory enum,
+// uppercase on the wire). Never the email/token.
+//
+// MARKETING is deliberately NOT labelled (#871, D-04): the platform sends no marketing —
+// ConsentGate refuses that category without an opt-in no surface records — so a page that said
+// "you won't receive any more marketing emails" would describe a practice that does not exist. A
+// link naming it falls back to the generic "these", like any unknown category.
 const CATEGORY_LABEL: Record<string, string> = {
   ORDERS: "order",
   ONBOARDING: "onboarding",
   FINANCIAL: "financial",
-  MARKETING: "marketing",
+}
+
+/**
+ * The per-state wording (#871). Nothing here sends the reader to "contact the vendor" any more:
+ * that route was never published anywhere the reader could find it. Every state is followed by the
+ * shared email-scope statement and two real routes (see EmailScopeNote below).
+ */
+export const UNSUBSCRIBE_COPY = {
+  unsubscribed: (label: string) => `You won't receive any more ${label} emails from this shop.`,
+  alreadyUnsubscribed: (label: string) =>
+    `You've already opted out of ${label} emails from this shop. No further action needed.`,
+  invalid:
+    "We couldn't verify this unsubscribe link — it may be incomplete or altered. Nothing has been changed.",
 }
 
 export function UnsubscribeContent() {
@@ -122,8 +146,7 @@ export function UnsubscribeContent() {
               You&apos;re unsubscribed
             </h1>
             <p className="mt-2 text-sm text-slate-600">
-              You won&apos;t receive any more {categoryLabel} emails from this
-              vendor. Changed your mind? Contact the vendor to opt back in.
+              {UNSUBSCRIBE_COPY.unsubscribed(categoryLabel)}
             </p>
           </div>
         )}
@@ -137,8 +160,7 @@ export function UnsubscribeContent() {
               You&apos;re already unsubscribed
             </h1>
             <p className="mt-2 text-sm text-slate-600">
-              You&apos;ve already opted out of {categoryLabel} emails from this
-              vendor. No further action needed.
+              {UNSUBSCRIBE_COPY.alreadyUnsubscribed(categoryLabel)}
             </p>
           </div>
         )}
@@ -151,14 +173,42 @@ export function UnsubscribeContent() {
             <h1 className="text-2xl font-semibold leading-tight text-slate-900">
               This link isn&apos;t valid
             </h1>
-            <p className="mt-2 text-sm text-slate-600">
-              We couldn&apos;t verify this unsubscribe link — it may be incomplete
-              or altered. Contact the vendor to update your email preferences.
-            </p>
+            <p className="mt-2 text-sm text-slate-600">{UNSUBSCRIBE_COPY.invalid}</p>
           </div>
         )}
       </div>
+
+      <EmailScopeNote />
     </div>
+  )
+}
+
+/**
+ * Rendered under EVERY state, loading included — a reader can stop at any of them. Two real routes,
+ * both on the platform: the privacy notice's email section, and My account (which itself shows the
+ * sign-in wall to a visitor who is not signed in).
+ */
+function EmailScopeNote() {
+  const link =
+    "font-medium text-slate-700 underline underline-offset-4 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700"
+  return (
+    <section aria-label="About our emails" className="mt-6 text-sm leading-relaxed text-slate-600">
+      <p>
+        {EMAIL_SCOPE_STATEMENT} {NO_MARKETING_STATEMENT}
+      </p>
+      <ul className="mt-3 flex flex-col gap-1">
+        <li>
+          <Link href={EMAILS_SECTION_HREF} className={`inline-flex min-h-11 items-center ${link}`}>
+            What we email you, and why
+          </Link>
+        </li>
+        <li>
+          <Link href={ACCOUNT_HREF} className={`inline-flex min-h-11 items-center ${link}`}>
+            Get a copy of your data or delete your account in My account
+          </Link>
+        </li>
+      </ul>
+    </section>
   )
 }
 

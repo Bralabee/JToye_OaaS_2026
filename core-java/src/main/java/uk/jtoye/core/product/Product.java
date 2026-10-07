@@ -39,6 +39,15 @@ public class Product {
     @Column(name = "allergen_mask", nullable = false)
     private Integer allergenMask = 0;
 
+    /**
+     * #861 (D-16, V74): the "may contain" (cross-contact) allergens, in the same 14-bit layout as
+     * {@link #allergenMask}. Stored exactly as the vendor set it and NEVER merged into the
+     * declared mask, the order snapshot or the checkout acknowledgement. {@code null} means not
+     * recorded; {@code 0} means the vendor declared no cross-contact risk. No default.
+     */
+    @Column(name = "may_contain_mask")
+    private Integer mayContainMask;
+
     @Column(name = "price_pennies", nullable = false)
     private Long pricePennies = 1000L;
 
@@ -128,6 +137,8 @@ public class Product {
     public void setIngredientsText(String ingredientsText) { this.ingredientsText = ingredientsText; }
     public Integer getAllergenMask() { return allergenMask; }
     public void setAllergenMask(Integer allergenMask) { this.allergenMask = allergenMask; }
+    public Integer getMayContainMask() { return mayContainMask; }
+    public void setMayContainMask(Integer mayContainMask) { this.mayContainMask = mayContainMask; }
     public Long getPricePennies() { return pricePennies; }
     public void setPricePennies(Long pricePennies) { this.pricePennies = pricePennies; }
     public VatRate getVatRate() { return vatRate; }

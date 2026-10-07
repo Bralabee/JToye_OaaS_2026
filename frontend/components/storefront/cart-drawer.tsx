@@ -5,7 +5,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { m, AnimatePresence } from "framer-motion"
 import { Minus, Plus, Trash2, ShoppingBag, Store, X } from "lucide-react"
-import { useCart } from "@/components/storefront/cart-provider"
+import { useCart, type CartItem } from "@/components/storefront/cart-provider"
+import { BasketLineAllergens, useCatalogueIndex } from "@/components/storefront/basket-line-allergens"
 import { SafeImage } from "@/components/ui/safe-image"
 import {
   Sheet,
@@ -106,75 +107,9 @@ export function CartDrawer() {
           </div>
         ) : (
           <>
-            {/* Scrollable body */}
-            <div className="flex-1 overflow-y-auto px-4 py-4">
-              <AnimatePresence initial={false}>
-                {items.map((item) => (
-                  <m.div
-                    key={item.productId}
-                    layout
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={springSoft}
-                    className="overflow-hidden"
-                  >
-                    <div className="mb-3 flex items-center gap-3 rounded-xl border border-cream-100 bg-white p-3 shadow-sm">
-                      {/* Branded fallback — never renders a broken <img>. */}
-                      <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg">
-                        <SafeImage
-                          src={item.imageUrl}
-                          alt={item.title}
-                          className="h-full w-full object-cover"
-                          fallbackClassName="h-full w-full bg-cream"
-                          fallbackIcon={<Store className="h-6 w-6 text-slate-300" />}
-                        />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <h3 className="truncate text-sm font-semibold text-slate-900">
-                          {item.title}
-                        </h3>
-                        {item.category && (
-                          <p className="text-xs text-slate-400">{item.category}</p>
-                        )}
-                        <p className="mt-0.5 text-sm font-bold text-slate-900">
-                          {formatPrice(item.pricePennies * item.quantity)}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-0">
-                        <m.button
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => updateQuantity(item.productId, item.quantity - 1)}
-                          aria-label={
-                            item.quantity === 1 ? "Remove item" : "Decrease quantity"
-                          }
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 transition-colors hover:bg-cream"
-                        >
-                          {item.quantity === 1 ? (
-                            <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                          ) : (
-                            <Minus className="h-3.5 w-3.5" />
-                          )}
-                        </m.button>
-                        <span className="min-w-[2rem] text-center text-sm font-bold text-slate-900">
-                          {item.quantity}
-                        </span>
-                        <m.button
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => updateQuantity(item.productId, item.quantity + 1)}
-                          aria-label="Increase quantity"
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 transition-colors hover:bg-cream"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                        </m.button>
-                      </div>
-                    </div>
-                  </m.div>
-                ))}
-              </AnimatePresence>
-            </div>
+            {/* Scrollable body. Its own component so it mounts with the sheet's content: the
+                catalogue is read each time the drawer opens (#860). */}
+            <DrawerItems items={items} slug={shopSlug} updateQuantity={updateQuantity} />
 
             {/* Sticky footer */}
             <div className="flex-shrink-0 space-y-3 border-t border-cream-100 bg-white p-4">
@@ -211,5 +146,94 @@ export function CartDrawer() {
         )}
       </SheetContent>
     </Sheet>
+  )
+}
+
+/**
+ * The drawer's line list. Rendered inside the sheet's content, which Radix mounts only while the
+ * drawer is open, so `useCatalogueIndex` fetches the live catalogue on each open and never runs
+ * while the drawer is closed (#860, 31.1-23). Each line states its own allergens from that
+ * catalogue; nothing is read from or written to the stored cart.
+ */
+function DrawerItems({
+  items,
+  slug,
+  updateQuantity,
+}: {
+  items: CartItem[]
+  slug: string
+  updateQuantity: (productId: string, quantity: number) => void
+}) {
+  const catalogueIndex = useCatalogueIndex(slug)
+  return (
+    <div className="flex-1 overflow-y-auto px-4 py-4">
+      <AnimatePresence initial={false}>
+        {items.map((item) => (
+          <m.div
+            key={item.productId}
+            layout
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={springSoft}
+            className="overflow-hidden"
+          >
+            <div className="mb-3 flex items-center gap-3 rounded-xl border border-cream-100 bg-white p-3 shadow-sm">
+              {/* Branded fallback — never renders a broken <img>. */}
+              <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg">
+                <SafeImage
+                  src={item.imageUrl}
+                  alt={item.title}
+                  className="h-full w-full object-cover"
+                  fallbackClassName="h-full w-full bg-cream"
+                  fallbackIcon={<Store className="h-6 w-6 text-slate-300" />}
+                />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <h3 className="truncate text-sm font-semibold text-slate-900">
+                  {item.title}
+                </h3>
+                {item.category && (
+                  <p className="text-xs text-slate-400">{item.category}</p>
+                )}
+                <BasketLineAllergens productId={item.productId} index={catalogueIndex} />
+                <p className="mt-0.5 text-sm font-bold text-slate-900">
+                  {formatPrice(item.pricePennies * item.quantity)}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-0">
+                <m.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                  aria-label={
+                    item.quantity === 1 ? "Remove item" : "Decrease quantity"
+                  }
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 transition-colors hover:bg-cream"
+                >
+                  {item.quantity === 1 ? (
+                    <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                  ) : (
+                    <Minus className="h-3.5 w-3.5" />
+                  )}
+                </m.button>
+                <span className="min-w-[2rem] text-center text-sm font-bold text-slate-900">
+                  {item.quantity}
+                </span>
+                <m.button
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                  aria-label="Increase quantity"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-cream-100 text-oxblood-600 transition-colors hover:bg-cream"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </m.button>
+              </div>
+            </div>
+          </m.div>
+        ))}
+      </AnimatePresence>
+    </div>
   )
 }

@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -149,6 +149,9 @@ class OnboardingGoLiveIntegrationTest {
         // WR-03: go-live re-evaluates the allergen gate against current products, so the
         // catalogue must be fully labelled for the PASSED row to survive the fresh check.
         seedCompliantProduct();
+        // #789 / 31.1-12: go-live also materialises and evaluates TRADER_IDENTITY, so the
+        // tenant needs its legal entity and the shop an email address.
+        seedSellerDetails();
 
         mockMvc.perform(post("/api/v1/onboarding/go-live")
                         .with(adminJwt())
@@ -331,6 +334,14 @@ class OnboardingGoLiveIntegrationTest {
                         + "VALUES (?, ?, now(), ?, ?, ?, 0, 1000, 0, true, false, ?, 3, 'USE_BY', 0)",
                 UUID.randomUUID(), tenantId, "SKU-" + shopId.toString().substring(0, 8), "Test Product",
                 "Wheat flour, **milk**, sugar", shopId);
+    }
+
+    /** A sole-trader legal entity with an address, and an email on the shop (#789). */
+    private void seedSellerDetails() {
+        jdbc.update("INSERT INTO trader_identity (id, tenant_id, legal_name, entity_type, address_line1, "
+                        + "address_city, address_postcode) VALUES (?, ?, ?, 'SOLE_TRADER', ?, ?, ?)",
+                UUID.randomUUID(), tenantId, "Test Trader", "1 Test Street", "Birmingham", "B5 6DY");
+        jdbc.update("UPDATE shops SET email = ? WHERE id = ?", "kitchen@test-trader.example.com", shopId);
     }
 
     /** A product missing shelf life + durability type — NOT allergen-complete. */

@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.http.ProblemDetail;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -118,7 +118,7 @@ class SystemPrincipalGuardTest {
     @Autowired private ProductMediaRepository productMediaRepository;
     @Autowired private JdbcTemplate jdbc;
     @PersistenceContext private EntityManager em;
-    @SpyBean private StorageService storageService;
+    @MockitoSpyBean private StorageService storageService;
 
     private UUID tenant;
 
@@ -341,13 +341,18 @@ class SystemPrincipalGuardTest {
         // the phase to reach for a declaration. The fan-out worker is deliberately NOT here: it is
         // the background entry point that legitimately declares, and asserting its ABSENCE would
         // invert the rule. The plan's own <verify> block greps that file for the wrap's PRESENCE.
+        // 31.1-17 extends it again with the third public request surface: the Article 15 export
+        // download, which hands a cross-tenant document to an anonymous token holder and must reach
+        // it only through dsar_access_export, never by declaring system authority.
         List<String> intakePath = List.of(
                 "uk/jtoye/core/gdpr/DsarIntakeController.java",
                 "uk/jtoye/core/gdpr/DsarIntakeService.java",
                 "uk/jtoye/core/gdpr/DsarIntakeRateLimiter.java",
                 "uk/jtoye/core/gdpr/DsarVerificationController.java",
                 "uk/jtoye/core/gdpr/DsarVerificationService.java",
-                "uk/jtoye/core/gdpr/DsarVerificationMailer.java");
+                "uk/jtoye/core/gdpr/DsarVerificationMailer.java",
+                "uk/jtoye/core/gdpr/DsarExportController.java",
+                "uk/jtoye/core/gdpr/DsarExportDownloadService.java");
 
         int scanned = 0;
         for (String relative : intakePath) {

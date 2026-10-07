@@ -61,6 +61,11 @@ const SCAN_ROOTS = [
   "app/page.tsx",
   "app/shop",
   "app/auth/signin",
+  // /track joined the published statement's scope in phase 31.1 plan 28
+  // (#878), so the claim's literal colours are watched here too — the
+  // statement says its sub-AA text is "checked automatically so the set cannot
+  // grow", and that sentence was not true of a route this scan did not read.
+  "app/track",
   "components/public",
   "components/storefront",
   "components/marketing",
@@ -258,6 +263,13 @@ const UNASSERTED_SITES: ReadonlySet<string> = new Set([
   "app/shop/shop-discovery-client.tsx::text-cream-100", // 1.18 on white, 1.1 on cream
   "app/shop/shop-discovery-client.tsx::text-slate-300", // 1.48 on white, 1.38 on cream
   "app/shop/shop-discovery-client.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
+  // Registered by phase 31.1 plan 28 when `app/track` joined the scan, BY
+  // MEASUREMENT (the scan reported exactly these three) and published under the
+  // statement's dated `text-contrast-below-minimum` exception, which now names
+  // /track. amber-500 is the loading spinner's icon tint.
+  "app/track/page.tsx::text-amber-500", // 2.15 on white, 2 on cream
+  "app/track/page.tsx::text-slate-300", // 1.48 on white, 1.38 on cream
+  "app/track/page.tsx::text-slate-400", // 2.56 on white, 2.39 on cream
   "components/marketing/business-model-guide.tsx::text-amber-300", // 1.44 on white, 1.34 on cream
   "components/marketing/business-model-guide.tsx::text-slate-300", // 1.48 on white, 1.38 on cream
   "components/marketing/business-model-guide.tsx::text-slate-50", // 1.05 on white, 1.03 on cream

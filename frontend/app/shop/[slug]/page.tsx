@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import { loadShopDetail } from "@/lib/storefront-server"
 import { resolvePublicOrigin } from "@/lib/public-origin"
 import { serialiseJsonLd, shopStructuredData } from "@/lib/structured-data"
+import { SellerBlock } from "@/components/storefront/seller-block"
 import { ShopDetailClient } from "./shop-detail-client"
 
 /**
@@ -171,6 +172,18 @@ export default async function ShopDetailPage({ params }: Props) {
         />
       )}
       <ShopDetailClient slug={slug} initial={initial} />
+      {/* #789 (31.1-24): who the customer is buying from, below the menu. Rendered HERE, in the
+          server component, from the shop this page already loaded (the same cached
+          loadShopDetail generateMetadata uses): it is in the served HTML, costs no fetch, and
+          cannot shift the layout by arriving late. Visible text only — the title, meta, canonical
+          and JSON-LD above are untouched. A `defer` (the server could not read the shop) renders
+          nothing: a load failure is not "the seller has not provided their details". The bottom
+          padding keeps the block clear of the floating cart bar. */}
+      {initial && (
+        <div className="mx-auto max-w-4xl px-4 pb-28 sm:px-6">
+          <SellerBlock seller={initial.shop.seller} />
+        </div>
+      )}
     </>
   )
 }

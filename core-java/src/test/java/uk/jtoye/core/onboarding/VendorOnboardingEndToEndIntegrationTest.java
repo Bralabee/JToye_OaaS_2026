@@ -1,15 +1,15 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -44,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Cross-gate closure proof for the vendor-onboarding first slice, on real
- * Postgres 15 (Testcontainers): a vendor submits, all THREE mandatory automatic
+ * Postgres 15 (Testcontainers): a vendor submits, all FOUR mandatory automatic
  * gates evaluate green, and — with {@code onboarding.auto-approve=true} — the
  * onboarding reaches {@code APPROVED} with <strong>no manual/admin APPROVE call
  * anywhere in the test</strong>, then go-live publishes the shop
@@ -55,15 +55,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * to end, with no admin-approve crutch masking the gap (HIGH-1). The two external
  * HTTP clients are stubbed green so the fully-automatic path is deterministic:
  * <ul>
- *   <li>{@code @MockBean FhrsClient} → one FHRS establishment rated 5 (≥ the
+ *   <li>{@code @MockitoBean FhrsClient} → one FHRS establishment rated 5 (≥ the
  *       config min-rating 2) → FOOD_HYGIENE_RATING PASSED;</li>
- *   <li>{@code @MockBean CompaniesHouseClient} → an {@code active} company profile
+ *   <li>{@code @MockitoBean CompaniesHouseClient} → an {@code active} company profile
  *       → BUSINESS_VERIFIED PASSED;</li>
  *   <li>a seeded, fully-labelled product (V41 durability/shelf-life/ingredients)
- *       → ALLERGEN_DATA_COMPLETE PASSED for real (no stub).</li>
+ *       → ALLERGEN_DATA_COMPLETE PASSED for real (no stub);</li>
+ *   <li>a trader identity (legal name + address, a COMPANY with the onboarding's
+ *       company number) and a shop email → TRADER_IDENTITY PASSED for real (#789,
+ *       31.1-12: no shop goes live without the statutory seller details).</li>
  * </ul>
  *
- * <p>{@code @SpyBean OnboardingProperties} toggles {@code isAutoApprove()} per test
+ * <p>{@code @MockitoSpyBean OnboardingProperties} toggles {@code isAutoApprove()} per test
  * on a single container. The class is intentionally NOT {@code @Transactional}: the
  * {@code @Async @Transactional} recompute runs on a separate thread/connection, so
  * the onboarding + gate rows MUST be committed to be visible to it. Each test uses
@@ -90,12 +93,12 @@ class VendorOnboardingEndToEndIntegrationTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
 
-    @MockBean private FhrsClient fhrsClient;
-    @MockBean private CompaniesHouseClient companiesHouseClient;
-    @SpyBean private OnboardingProperties onboardingProperties;
+    @MockitoBean private FhrsClient fhrsClient;
+    @MockitoBean private CompaniesHouseClient companiesHouseClient;
+    @MockitoSpyBean private OnboardingProperties onboardingProperties;
 
     private UUID tenantId;
     private UUID shopId;
@@ -116,8 +119,14 @@ class VendorOnboardingEndToEndIntegrationTest {
                         + "VALUES (?, ?, now(), ?, ?, ?, 0, 1000, 0, true, false, ?, 3, 'USE_BY', 0)",
                 UUID.randomUUID(), tenantId, "SKU-" + shopId.toString().substring(0, 8), "Test Product",
                 "Wheat flour, **milk**, sugar", shopId);
+        // The statutory seller details (#789, 31.1-12) so the TRADER_IDENTITY gate passes for real:
+        // the tenant's legal entity, and an email address on the shop (a phone is optional).
+        jdbc.update("INSERT INTO trader_identity (id, tenant_id, legal_name, entity_type, address_line1, "
+                        + "address_city, address_postcode) VALUES (?, ?, ?, 'COMPANY', ?, ?, ?)",
+                UUID.randomUUID(), tenantId, "Test Foods Ltd", "1 Test Street", "Birmingham", "B5 6DY");
+        jdbc.update("UPDATE shops SET email = ? WHERE id = ?", "kitchen@test-foods.example.com", shopId);
 
-        // Stub the external clients GREEN so all three gates PASS deterministically.
+        // Stub the external clients GREEN so all four gates PASS deterministically.
         when(fhrsClient.lookup(any(), any()))
                 .thenReturn(List.of(new FhrsEstablishment("123456", "5", "FHRS")));
         when(companiesHouseClient.lookup(any()))
@@ -134,16 +143,16 @@ class VendorOnboardingEndToEndIntegrationTest {
         // CR-01: the ONLY trigger is submit()'s afterCommit kick — there is NO direct
         // runAndRecompute call here. This proves the async gate chain is dispatched
         // after the submit transaction commits (so the worker sees the committed
-        // VERIFYING status + PENDING gate rows), evaluates the three gates green, fires
+        // VERIFYING status + PENDING gate rows), evaluates the four gates green, fires
         // GATES_PASSED and — because auto-approve is ON — APPROVE. No admin/service
         // APPROVE call is made anywhere in this test.
 
         JsonNode approved = awaitStatus(OnboardingState.APPROVED);
         // approvedAt stamped -> the onboarding auto-reached APPROVED with no manual review.
         assertThat(approved.get("approvedAt").isNull()).isFalse();
-        // All three mandatory gate rows materialised on submit and evaluated PASSED
-        // (proves the registry wired all three concrete gate beans).
-        assertAllThreeGatesPassed(approved);
+        // All four mandatory gate rows materialised on submit and evaluated PASSED
+        // (proves the registry wired all four concrete gate beans).
+        assertAllMandatoryGatesPassed(approved);
 
         // Vendor go-live -> LIVE, and the shop is published.
         mockMvc.perform(post("/api/v1/onboarding/go-live")
@@ -168,7 +177,7 @@ class VendorOnboardingEndToEndIntegrationTest {
         JsonNode pending = awaitStatus(OnboardingState.PENDING_APPROVAL);
         // No APPROVE fired -> approvedAt stays null.
         assertThat(pending.get("approvedAt").isNull()).isTrue();
-        assertAllThreeGatesPassed(pending);
+        assertAllMandatoryGatesPassed(pending);
 
         // go-live is only valid from APPROVED; from PENDING_APPROVAL it is an illegal
         // transition -> 400, and the shop stays unpublished.
@@ -189,7 +198,7 @@ class VendorOnboardingEndToEndIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("DRAFT"))
                 .andReturn().getResponse().getContentAsString();
-        UUID onboardingId = UUID.fromString(objectMapper.readTree(created).get("id").asText());
+        UUID onboardingId = UUID.fromString(objectMapper.readTree(created).get("id").asString());
 
         mockMvc.perform(post("/api/v1/onboarding/submit")
                         .header("X-Tenant-Id", tenantId.toString()))
@@ -212,13 +221,13 @@ class VendorOnboardingEndToEndIntegrationTest {
         JsonNode last = null;
         while (System.currentTimeMillis() < deadline) {
             last = getMe();
-            if (expected.name().equals(last.get("status").asText())) {
+            if (expected.name().equals(last.get("status").asString())) {
                 return last;
             }
             Thread.sleep(100);
         }
         fail("Timed out awaiting status " + expected + "; last status="
-                + (last == null ? "n/a" : last.get("status").asText()));
+                + (last == null ? "n/a" : last.get("status").asString()));
         return null;
     }
 
@@ -231,17 +240,18 @@ class VendorOnboardingEndToEndIntegrationTest {
     }
 
     /**
-     * Assert the onboarding carries exactly the three mandatory gate types, each
-     * PASSED — proving all three gate beans (BUSINESS_VERIFIED, FOOD_HYGIENE_RATING,
-     * ALLERGEN_DATA_COMPLETE) were materialised on submit and evaluated green.
+     * Assert the onboarding carries exactly the four mandatory gate types, each
+     * PASSED — proving all four gate beans (BUSINESS_VERIFIED, FOOD_HYGIENE_RATING,
+     * ALLERGEN_DATA_COMPLETE, TRADER_IDENTITY) were materialised on submit and evaluated green.
      */
-    private void assertAllThreeGatesPassed(JsonNode me) {
+    private void assertAllMandatoryGatesPassed(JsonNode me) {
         Map<String, String> byType = new HashMap<>();
-        me.get("gates").forEach(g -> byType.put(g.get("gateType").asText(), g.get("status").asText()));
+        me.get("gates").forEach(g -> byType.put(g.get("gateType").asString(), g.get("status").asString()));
         assertThat(byType).containsOnlyKeys(
                 GateType.BUSINESS_VERIFIED.name(),
                 GateType.FOOD_HYGIENE_RATING.name(),
-                GateType.ALLERGEN_DATA_COMPLETE.name());
+                GateType.ALLERGEN_DATA_COMPLETE.name(),
+                GateType.TRADER_IDENTITY.name());
         assertThat(byType.values()).containsOnly(GateStatus.PASSED.name());
     }
 

@@ -77,7 +77,7 @@ class OrderEventFanoutTopologyIntegrationTest {
         // trusted-packages check; a raw fromMessage() call in this test does, so
         // grant the one package explicitly rather than trust-all.
         MessageConverter consumeConverter =
-                new org.springframework.amqp.support.converter.Jackson2JsonMessageConverter(
+                new org.springframework.amqp.support.converter.JacksonJsonMessageConverter(
                         "uk.jtoye.core.order");
 
         List<CachingConnectionFactory> factories = new ArrayList<>();

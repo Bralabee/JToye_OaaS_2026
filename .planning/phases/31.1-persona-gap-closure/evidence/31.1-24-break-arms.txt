@@ -1,0 +1,99 @@
+# 31.1-24 break arms (2026-10-07). Each arm edits ONE committed file, runs the suite, restores with git checkout, and the closing hashes prove restore by content.
+
+## Java: PublicSellerIdentityIntegrationTest (cleanIntegrationTest integrationTest, NOSUPERUSER Testcontainers), on commit 06a51a35
+== clean (before) ==
+TIS 9c1b3ec4533f419e HEAD 9c1b3ec4533f419e
+PSS dc1dfb3617203b50 HEAD dc1dfb3617203b50
+ARM A (no tenant pin): rc=1 tests="8" skipped="0" failures="5" errors="0"
+    PublicSellerIdentityIntegrationTest > the public shop list carries no seller on its entries (detail only: no per-row lookup) FAILED
+    entityIntegrationTest > a signed-in user of tenant B viewing tenant A's shop sees A's seller: the SHOP's tenant is pinned, never the caller's FAILED
+    PublicSellerIdentityIntegrationTest > tenant B's legal name never appears on tenant A's shop (B's row proven to exist) FAILED
+    an identity carries legalName, entityType, companyNumber, vatNumber, addressLines, email and phone; TenantContext is empty after the request FAILED
+    PublicSellerIdentityIntegrationTest > a sole trader shows no company number even when onboarding holds one; no VAT, no phone -> absent FAILED
+ARM B (repository read instead of EntityManager): rc=1 tests="8" skipped="0" failures="5" errors="0"
+    PublicSellerIdentityIntegrationTest > the public shop list carries no seller on its entries (detail only: no per-row lookup) FAILED
+    entityIntegrationTest > a signed-in user of tenant B viewing tenant A's shop sees A's seller: the SHOP's tenant is pinned, never the caller's FAILED
+    PublicSellerIdentityIntegrationTest > tenant B's legal name never appears on tenant A's shop (B's row proven to exist) FAILED
+    an identity carries legalName, entityType, companyNumber, vatNumber, addressLines, email and phone; TenantContext is empty after the request FAILED
+    PublicSellerIdentityIntegrationTest > a sole trader shows no company number even when onboarding holds one; no VAT, no phone -> absent FAILED
+ARM C (TenantContext.set on the request thread, not cleared): rc=0 tests="8" skipped="0" failures="0" errors="0"
+ARM D (read keyed on the caller's TenantContext): rc=1 tests="8" skipped="0" failures="1" errors="0"
+    entityIntegrationTest > a signed-in user of tenant B viewing tenant A's shop sees A's seller: the SHOP's tenant is pinned, never the caller's FAILED
+ARM E (company number for every entity type): rc=1 tests="8" skipped="0" failures="1" errors="0"
+    PublicSellerIdentityIntegrationTest > a sole trader shows no company number even when onboarding holds one; no VAT, no phone -> absent FAILED
+ARM F (seller on every list entry): rc=1 tests="8" skipped="0" failures="1" errors="0"
+    PublicSellerIdentityIntegrationTest > the public shop list carries no seller on its entries (detail only: no per-row lookup) FAILED
+== clean (after) ==
+TIS 9c1b3ec4533f419e HEAD 9c1b3ec4533f419e
+PSS dc1dfb3617203b50 HEAD dc1dfb3617203b50
+ARM Z (clean tree again): rc=0 tests="8" skipped="0" failures="0" errors="0"
+
+## Java: strengthened TenantContext assertion (commit 9991e877)
+TIS 9c1b3ec4533f419e HEAD 9c1b3ec4533f419e
+ARM 0 (clean, strengthened assertion): rc=0 tests="8" skipped="0" failures="0" errors="0"
+ARM C2 (TenantContext.set on the request thread, not cleared): rc=1 tests="8" skipped="0" failures="2" errors="0"
+    PublicSellerIdentityIntegrationTest > a published shop whose tenant has no identity carries no seller object at all FAILED
+    hop of a tenant with an identity carries legalName, entityType, companyNumber, vatNumber, addressLines, email and phone; TenantContext is empty after the request FAILED
+TIS 9c1b3ec4533f419e HEAD 9c1b3ec4533f419e
+ARM Z (clean again): rc=0 tests="8" skipped="0" failures="0" errors="0"
+
+## Frontend: seller-block.test.tsx (commit ad51fcd2 tree)
+== clean (before) ==
+SB b5fd96cf343e65aa HEAD b5fd96cf343e65aa | PG 78feb80643cc3330 HEAD 78feb80643cc3330
+ARM 0 (clean): rc=0 Tests:       16 passed, 16 total
+ARM G (platform copy paraphrased): rc=1 Tests:       4 failed, 12 passed, 16 total
+    ● SellerBlock: the statutory copy is the contracted wording › states that J'Toye is the platform and not the seller, verbatim
+    ● SellerBlock: a company with every field › carries the platform statement and the cancellation statement
+    ● SellerBlock: a company with every field › puts the fields in ONE fixed order: name, company no., VAT, address, email, phone, platform, cancellation
+    ● shop page (server component): the seller block is in the server output › renders the seller block from the loaded shop, after the menu island
+ARM H (company number label always rendered): rc=1 Tests:       1 failed, 15 passed, 16 total
+    ● SellerBlock: a field the trader does not have is absent, never blank › a sole trader without company number, VAT or phone shows none of those labels
+ARM K (company and VAT order swapped): rc=1 Tests:       2 failed, 14 passed, 16 total
+    ● SellerBlock: a company with every field › labels each field, so a screen reader hears what each value is
+    ● SellerBlock: a company with every field › puts the fields in ONE fixed order: name, company no., VAT, address, email, phone, platform, cancellation
+ARM L (cancellation statement dropped): rc=1 Tests:       5 failed, 11 passed, 16 total
+    ● SellerBlock: a company with every field › carries the platform statement and the cancellation statement
+    ● SellerBlock: a company with every field › puts the fields in ONE fixed order: name, company no., VAT, address, email, phone, platform, cancellation
+    ● SellerBlock: a field the trader does not have is absent, never blank › a sole trader without company number, VAT or phone shows none of those labels
+    ● SellerBlock: no seller details on file › seller null -> the not-provided copy with the platform contact, and no invented field
+    ● SellerBlock: no seller details on file › seller undefined (absent on the wire) -> the not-provided copy with the platform contact, and no invented field
+ARM I (page does not render the block): rc=1 Tests:       2 failed, 14 passed, 16 total
+    ● shop page (server component): the seller block is in the server output › renders the seller block from the loaded shop, after the menu island
+    ● shop page (server component): the seller block is in the server output › a shop whose trader has given no details renders the not-provided copy
+ARM J (block rendered on defer as not-provided): rc=1 Tests:       1 failed, 15 passed, 16 total
+    ● shop page (server component): the seller block is in the server output › a shop the server could not read (defer) renders no seller block — a load failure is not 'not provided'
+== clean (after) ==
+SB b5fd96cf343e65aa HEAD b5fd96cf343e65aa | PG 78feb80643cc3330 HEAD 78feb80643cc3330
+ARM Z (clean again): rc=0 Tests:       16 passed, 16 total
+
+## Frontend: checkout-seller-block.test.tsx (commit 1b61f148)
+== clean (before) ==
+page afa796dd53d89722 HEAD afa796dd53d89722
+ARM 0 (clean): rc=0 Tests:       7 passed, 7 total
+ARM M (form block after Place order): rc=1 Tests:       1 failed, 6 passed, 7 total
+    ● #789: the seller block is in front of the customer BEFORE they place the order › precedes the Place order button, and the allergen panel stays the last thing read before it
+ARM N (form block below the allergen panel): rc=1 Tests:       1 failed, 6 passed, 7 total
+    ● #789: the seller block is in front of the customer BEFORE they place the order › precedes the Place order button, and the allergen panel stays the last thing read before it
+ARM O (form block on a failed fetch): rc=1 Tests:       1 failed, 6 passed, 7 total
+    ● #789: the seller block is in front of the customer BEFORE they place the order › a shop that could not be loaded shows no seller block — a failed fetch is not 'not provided'
+ARM P (seller sent in the submit body): rc=1 Tests:       1 failed, 6 passed, 7 total
+    ● #789: the seller block is in front of the customer BEFORE they place the order › sends nothing: the submit body carries no seller field and none of the seller's details
+ARM Q (no block on the cash confirmation): rc=1 Tests:       1 failed, 6 passed, 7 total
+    ● #789: the seller block is on what the customer is left with afterwards › the cash confirmation names the seller and carries the cancellation statement
+ARM R (no block on the card payment step): rc=1 Tests:       1 failed, 6 passed, 7 total
+    ● #789: the seller block is on what the customer is left with afterwards › the card payment step names the seller before the card form
+== clean (after) ==
+page afa796dd53d89722 HEAD afa796dd53d89722
+ARM Z (clean again): rc=0 Tests:       7 passed, 7 total
+
+## OpenApiSnapshotTest
+FAIL direction: HEAD's pre-regeneration snapshot restored (sha 6d5dff460789583e) -> rc=1 tests=1 failures=1 'The OpenAPI spec served by /v3/api-docs no longer matches the reviewed snapshot'
+PASS direction: regenerated snapshot (sha 7781e77e98e9b1f1) -> rc=0 tests=1 failures=0; diff 49 insertions, 0 deletions
+
+## e2e spec type-check (tsc, the compiler npm run build runs)
+FAIL direction: sellerFromApi returns shop.seller!.legalName -> tsc rc=2 'e2e/seller-identity.spec.ts(71,3): error TS2322: Type 'string' is not assignable to type 'Seller''
+PASS direction: restored (sha ebea3a6145b37cf4 == backup) -> tsc rc=0; playwright --list: Total: 3 tests in 1 file
+
+## contrast-literals gate (caught a real defect in this plan)
+FAIL: seller-block.tsx:85,99 text-slate-500 (#64748b) 4.43:1 on cream -> 1 failed (full jest 193/194 suites)
+PASS: text-slate-600 -> 194/194 suites, 2194/2194 tests (commit d939444f)

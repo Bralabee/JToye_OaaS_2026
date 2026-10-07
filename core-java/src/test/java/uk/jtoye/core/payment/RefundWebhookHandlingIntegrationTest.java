@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -91,8 +91,8 @@ class RefundWebhookHandlingIntegrationTest {
     @Autowired private ShopRepository shopRepository;
 
     // Replace AMQP collaborators so no broker is needed.
-    @MockBean private OrderEventPublisher orderEventPublisher;
-    @MockBean private PaymentEventPublisher paymentEventPublisher;
+    @MockitoBean private OrderEventPublisher orderEventPublisher;
+    @MockitoBean private PaymentEventPublisher paymentEventPublisher;
     // RefundEventPublisher writes to payment_event_outbox in the caller tx;
     // exercise it directly so we can assert outbox row counts.
 

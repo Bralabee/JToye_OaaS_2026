@@ -1,8 +1,5 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,6 +7,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
+import uk.jtoye.core.testsupport.BootJsonMapper;
 
 import java.util.UUID;
 
@@ -32,16 +32,15 @@ class PaymentEventPublisherTest {
 
     @Mock private PaymentEventOutboxRepository outboxRepository;
     private PaymentEventPublisher publisher;
-    private ObjectMapper objectMapper;
+    private JsonMapper objectMapper;
 
     private UUID orderId;
     private UUID tenantId;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper()
-                .registerModule(new JavaTimeModule())
-                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        // 38-08: Boot's Jackson-3 JsonMapper, the bean the publisher is injected with.
+        objectMapper = BootJsonMapper.get();
         publisher = new PaymentEventPublisher(outboxRepository, objectMapper);
         orderId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
@@ -91,5 +90,24 @@ class PaymentEventPublisherTest {
         // guarantee: a successful outbox save is the entire pre-commit path.
         publisher.publishSucceeded(orderId, tenantId, "ORD-789", "pi_def", 100L, "gbp");
         verify(outboxRepository).save(org.mockito.ArgumentMatchers.any(PaymentEventOutbox.class));
+    }
+
+    /**
+     * 38-08: a serialization failure is surfaced as the publisher's own IllegalStateException
+     * ("PaymentEvent serialization failed"), as it was under Jackson 2. Jackson 3's
+     * JacksonException is unchecked, so nothing forces the publisher to catch it any more.
+     */
+    @Test
+    @DisplayName("serialization failure is surfaced as IllegalStateException, and nothing is persisted")
+    void publish_serializationFailure_surfacesIllegalStateException() {
+        JsonMapper broken = org.mockito.Mockito.mock(JsonMapper.class);
+        org.mockito.Mockito.when(broken.writeValueAsString(org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new JacksonException("boom") {});
+        PaymentEventPublisher failing = new PaymentEventPublisher(outboxRepository, broken);
+
+        IllegalStateException e = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> failing.publishSucceeded(orderId, tenantId, "ORD-SF", "pi_sf", 100L, "gbp"));
+        assertEquals("PaymentEvent serialization failed", e.getMessage());
+        org.mockito.Mockito.verifyNoInteractions(outboxRepository);
     }
 }

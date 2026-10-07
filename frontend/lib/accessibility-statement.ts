@@ -100,25 +100,33 @@ export interface AccessibilityStatement {
  * Six months is inside the permitted bound in the safe direction.
  */
 export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
-  standard: "WCAG 2.1",
+  // WCAG 2.2 since phase 31.1 plan 28 (#878, UXT-114). The claim stays
+  // PARTIAL (D-12): moving the target is not moving the claim. The per-PR axe
+  // gate in `e2e/public-a11y.spec.ts` carries the `wcag22aa` tag (axe's
+  // `target-size`, WCAG 2.5.8), so the standard named here is the standard
+  // that gate tests — tags and claim move together, in the same change.
+  standard: "WCAG 2.2",
   level: "AA",
   claim: "partial",
 
-  // Moved 2026-08-15 -> 2026-08-16 by plan 31-18: this is the date the FINAL
-  // audit's evidence was captured, against the built tree, by the axe gate in
-  // `e2e/public-a11y.spec.ts` running over all thirteen declared surfaces on
-  // both viewports. Not the date the file was edited — the distinction is the
-  // whole reason this field is declared rather than written into a sentence.
+  // Moved 2026-08-16 -> 2026-10-07 by phase 31.1 plan 28: the date the axe
+  // evidence was captured against the built tree — every surface in the scope
+  // below, both viewports, with the wcag22aa tag — and every exception was
+  // re-measured rather than copied forward. Per-entry evidence (kept / removed,
+  // and the command that showed it) is in that plan's summary.
   //
-  // WHAT THAT AUDIT CHANGED HERE: nothing but this date. Every one of the seven
-  // exceptions below was re-verified against the tree and every one still holds
-  // (see the plan's summary for the per-entry evidence). One violation WAS found
-  // — amber-700 at 4.41:1 on the policy pages' mobile TOC panel — and it was
-  // fixed rather than published, so it never became an eighth entry.
-  preparedOn: "2026-08-16",
-  lastReviewedOn: "2026-08-16",
-  nextReviewDue: "2027-02-16",
+  // WHAT THAT AUDIT CHANGED HERE: the standard (2.1 -> 2.2); the scope (the
+  // basket, the cash order confirmation, the per-shop order page and /track
+  // added); "storefront-no-skip-link" removed, because the first Tab on every
+  // storefront surface now lands on the skip link; and the contrast entry's
+  // route list re-derived from the literal scan over the widened scope.
+  preparedOn: "2026-10-07",
+  lastReviewedOn: "2026-10-07",
+  nextReviewDue: "2027-04-07",
 
+  // Each entry is one surface. A PATH may repeat — the dish panel and the cash
+  // order confirmation are states of a URL that is also listed for its main
+  // page — but a LABEL never does (asserted by the dates test).
   inScopeRoutes: [
     { path: "/", label: "The J'Toye home page" },
     { path: "/shop", label: "The list of vendors" },
@@ -127,7 +135,18 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
       path: "/shop/[slug]",
       label: "The dish detail panel that opens on a vendor's shop page",
     },
+    { path: "/shop/[slug]/cart", label: "Your basket at a vendor" },
     { path: "/shop/[slug]/checkout", label: "Checkout" },
+    {
+      path: "/shop/[slug]/checkout",
+      label:
+        "The order confirmation shown on the checkout page when you pay on collection or delivery",
+    },
+    {
+      path: "/shop/[slug]/orders/[orderNumber]",
+      label: "The page for one order, where you follow its progress",
+    },
+    { path: "/track", label: "Order tracking by order number and email address" },
     { path: "/shop/signin", label: "Customer sign-in" },
     { path: "/auth/signin", label: "Vendor sign-in" },
     { path: "/legal", label: "Legal and company information" },
@@ -138,7 +157,7 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
     {
       name: "The vendor dashboard, and everything behind a vendor sign-in",
       reason:
-        "The dashboard is the tool vendors use to run their shop. It has not been comprehensively assessed against WCAG 2.1 level AA, so no conformance claim is made about it — but it is no longer unmonitored: key dashboard pages are scanned automatically with axe on every pull request (a blocking check), and every dashboard route is scanned nightly in a report-only pass that surfaces new problems without gating a release. It is named here rather than left unmentioned, because a scope that quietly stops at the sign-in page reads as a claim about everything.",
+        "The dashboard is the tool vendors use to run their shop. It has not been comprehensively assessed against WCAG 2.2 level AA, so no conformance claim is made about it — but it is no longer unmonitored: key dashboard pages are scanned automatically with axe on every pull request (a blocking check), and every dashboard route is scanned nightly in a report-only pass that surfaces new problems without gating a release. It is named here rather than left unmentioned, because a scope that quietly stops at the sign-in page reads as a claim about everything.",
     },
   ],
 
@@ -181,17 +200,13 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
     },
 
     // --- Known, on surfaces we DO claim, and not closed by this work --------
-    {
-      id: "storefront-no-skip-link",
-      title: "No \"skip to content\" link on the vendor and checkout pages",
-      description:
-        "On the shop, vendor, checkout and customer sign-in pages there is no shortcut that jumps past the header straight to the main content. Someone navigating by keyboard has to tab through the header links on every page before reaching what they came for.",
-      reason:
-        "The shortcut was added to the shared public pages but not to the separate shell the shop pages use. The two use different layouts, and only one was changed.",
-      category: "known-defect",
-      routes: ["/shop", "/shop/[slug]", "/shop/[slug]/checkout", "/shop/signin"],
-      remediationBy: "2026-11-16",
-    },
+    // "storefront-no-skip-link" was removed by phase 31.1 plan 28 (#878): the
+    // storefront layout (`app/shop/layout.tsx`) carries the same skip link as
+    // the public shell, and on the built tree the first Tab on /, /shop,
+    // /shop/signin, /track, a storefront, its basket and its seeded checkout
+    // lands on "Skip to main content", whose #main target is the <main>
+    // landmark. The axe gate now asserts that on every surface it scans, so
+    // the defect cannot come back without reddening a PR.
     {
       id: "required-fields-marked-visually-only",
       title: "Some checkout fields are marked required only by a visible asterisk",
@@ -211,26 +226,33 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
       reason:
         "These are enumerated with their measured contrast ratios in the codebase and are checked automatically so the set cannot grow, but the existing entries have not yet been corrected. Changing them touches the visual design of several pages and is being done deliberately rather than in a rush.",
       category: "known-defect",
-      routes: ["/", "/shop/[slug]/checkout", "/auth/signin"],
+      // Re-derived by plan 31.1-28 from the literal contrast scan
+      // (`__tests__/contrast-literals.test.ts`, whose scan now includes
+      // `app/track`): every in-scope route whose own source still carries a
+      // below-AA text colour on a light surface. A clean axe run on these
+      // routes is NOT evidence against the entry — many of those colours only
+      // render in states a page-load scan never enters (error text, empty and
+      // pending states) — which is why 31-18 kept it on a clean run too.
+      routes: [
+        "/",
+        "/shop",
+        "/shop/[slug]",
+        "/shop/[slug]/cart",
+        "/shop/[slug]/checkout",
+        "/shop/[slug]/orders/[orderNumber]",
+        "/track",
+        "/auth/signin",
+      ],
       remediationBy: "2027-02-16",
     },
 
     // --- Published information ---------------------------------------------
-    // The wording below is consumed VERBATIM from the decision that produced it
-    // and is deliberately not re-derived here. It is a published-information
-    // gap, not a WCAG failure, and is categorised as such so this page does not
-    // imply the standard says something it does not.
-    {
-      id: "registered-office-not-published",
-      title: "Registered office address not published",
-      description:
-        "J'Toye Digital Ltd (company number 16471464, registered in England & Wales) does not currently publish its registered office address on this site. UK GDPR Article 13(1)(a)-(b) requires the controller's identity and contact details in a privacy notice; the identity and an electronic contact route are published, the postal address is not. Data-protection enquiries and data-subject requests should be sent to the contact address given in the privacy notice, which is monitored. The registered office remains publicly available from the Companies House register against company number 16471464.",
-      reason:
-        "Status: open. Owner decision recorded during phase 31. Remediation: publish the address, or a service address, at the next review of this statement.",
-      category: "published-information",
-      routes: [],
-      remediationBy: "2027-02-16",
-    },
+    // "registered-office-not-published" was removed by phase 31.1 plan 27
+    // (#794, D-14): the registered office from the Companies House record for
+    // 16471464, confirmed by the owner, is now built into every runtime and
+    // shown on /legal, /legal/privacy and this page. Keeping the entry would
+    // publish a statement that is no longer true. The category stays in the
+    // type for the next published-information gap.
   ],
 } as const
 
@@ -266,5 +288,9 @@ export function formatStatementDate(iso: string): string {
   return `${Number(m[3])} ${month} ${m[1]}`
 }
 
-/** The document version shown under the title. */
-export const ACCESSIBILITY_STATEMENT_VERSION = "1.0"
+/**
+ * The document version shown under the title. 1.1 (phase 31.1 plan 28): the
+ * standard moved to WCAG 2.2, the scope widened and one exception was removed —
+ * a change a reader comparing two copies of this page should be able to see.
+ */
+export const ACCESSIBILITY_STATEMENT_VERSION = "1.1"

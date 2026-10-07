@@ -149,7 +149,7 @@ jobs:
           # kept here so this lane exercises the single-credential fallback path; the local dev
           # .env holds DIFFERING values, so the split path is exercised there. DB_USER itself is
           # NOT in REQUIRED_VARS, so it is never in this loop and keeps .env.example's jtoye_runtime.
-          DERIVED="KC_DB_PASSWORD POSTGRES_EXPORTER_PASSWORD RABBITMQ_PASSWORD KC_SEED_USER_PASSWORD DB_MIGRATION_USER DB_MIGRATION_PASSWORD"
+          DERIVED="KC_DB_PASSWORD POSTGRES_EXPORTER_PASSWORD RABBITMQ_PASSWORD KC_SEED_USER_PASSWORD DB_MIGRATION_USER DB_MIGRATION_PASSWORD DSAR_ENCRYPTION_KEY"
           required=$(bash scripts/verify-env.sh --list-required)
           [ -n "$required" ] || { echo "FATAL: verify-env.sh --list-required produced nothing" >&2; exit 1; }
 
@@ -228,6 +228,15 @@ jobs:
           # result against the policy parsed from the realm file itself.
           seed_pw="Aa1!$(openssl rand -hex 24)"
           echo "KC_SEED_USER_PASSWORD=${seed_pw}" >> .env
+
+          # DSAR_ENCRYPTION_KEY (31.1-07, D-19) is the AES-256-GCM key for the DSAR
+          # subject address, and core-java REFUSES TO START unless it is exactly 64
+          # hexadecimal characters. The generic loop above writes `ci` + 48 hex
+          # characters: 50 characters, two of them not hex, so core-java would die
+          # at boot and take every test with it. It is therefore in DERIVED and
+          # generated here as a real 32-byte key. Like every value in this file it
+          # is never echoed; verify-env.sh checks its format before the build.
+          echo "DSAR_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env
 
           echo "appended $(wc -l < .env) total lines"
 

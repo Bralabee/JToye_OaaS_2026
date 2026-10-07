@@ -1,0 +1,231 @@
+38-07 evidence: request/response-side Jackson users on Jackson 3
+================================================================
+Plan base (ledger): c5aac555f72b09dda74963ffbb802dbc9b69419f
+Host: Ubuntu OpenJDK 25.0.4.1, Gradle 9.7.1 (wrapper), Boot 4.1.1, tools.jackson 3.1.7.
+Every Gradle run below used cleanTest / cleanIntegrationTest, and the log shows that task
+executing. Results were read from core-java/build-local/test-results (never build/).
+No compose service was started, stopped or rebuilt.
+
+Jackson 3.1.7 defaults, measured with jshell against the cached jars (they drive the RED
+predictions below):
+  FAIL_ON_TRAILING_TOKENS=true  FAIL_ON_UNKNOWN_PROPERTIES=false  FAIL_ON_NULL_FOR_PRIMITIVES=true
+  NullNode.asString()="" (Jackson 2 asText() gave "null")  MissingNode.asString()=""
+  readTree("{\"a\":1} tail {x}") -> tools.jackson.core.exc.StreamReadException
+  JacksonException superclass: java.lang.RuntimeException (unchecked)
+
+
+=== TASK 1 (tracer): the Keycloak disable PUT carries a correct body, asserted by content ===
+
+Test: KeycloakAdminClientTest#setUserEnabled_putsTheSearchedRepBack_withOnlyEnabledFlipped_byContent
+  - the user rep comes from the client's own search (GET .../users?q=tenant_id:<uuid>), as in
+    KeycloakDeprovisionService;
+  - the PUT is matched on URI /admin/realms/jtoye-dev/users/<id>, method PUT, Bearer header and
+    Content-Type application/json, and its body is captured verbatim (MockClientHttpRequest);
+  - assertDisableBodyByContent parses the body with a Jackson-3 mapper and requires, in order:
+    no key in {nodeType, array, bigDecimal, containerNode, missingNode, valueNode}; enabled is the
+    boolean false; id, username and attributes.tenant_id (a JSON array) equal the searched rep;
+    the whole body equals the searched rep with only enabled flipped.
+
+--- RED (commit 078029ee, test only; main unchanged)
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.tenant.keycloak.*' --no-daemon
+rc=1, > Task :core-java:cleanTest executed; 9 tests completed, 1 failed
+XML KeycloakAdminClientTest tests="5" failures="1" errors="0"
+  failing: setUserEnabled_putsTheSearchedRepBack_withOnlyEnabledFlipped_byContent
+  message: [PUT body must not be a JsonNode serialized as a bean: <body below>]
+           Expecting [...] not to contain [nodeType, bigDecimal, missingNode, valueNode, array,
+           containerNode] but found [nodeType, bigDecimal, missingNode, valueNode, array, containerNode]
+RED garbage body (what the interim tree PUTs to Keycloak; no enabled, no id, no username):
+  {"array":false,"bigDecimal":false,"bigInteger":false,"binary":false,"boolean":false,"containerNode":true,"double":false,"empty":false,"float":false,"floatingPointNumber":false,"int":false,"integralNumber":false,"long":false,"missingNode":false,"nodeType":"OBJECT","null":false,"number":false,"object":true,"pojo":false,"short":false,"textual":false,"valueNode":false}
+gsd check tdd-red-evidence (target KeycloakAdminClientTest): RED_EVIDENCE_OK (target_test_failed)
+
+--- GREEN (commit d4e24605)
+KeycloakAdminClient injects tools.jackson.databind.json.JsonMapper; JsonNode/ObjectNode are
+tools.jackson; asText() -> asString(); the page loop iterates page.values(); KeycloakDeprovisionService
+takes the tools.jackson ObjectNode; KeycloakDeprovisionServiceTest builds Jackson-3 nodes;
+TenantOffboardKeycloakHookIntegrationTest mocks List<tools.jackson ObjectNode> and reads the 201
+body with Boot's JsonMapper. TenantLifecycleAdminIntegrationTest builds no user representation and
+is unchanged (it is run below).
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.tenant.keycloak.*' --no-daemon
+rc=0, cleanTest + compileJava executed
+  KeycloakAdminClientTest tests="5" failures="0" errors="0"
+  KeycloakDeprovisionServiceTest tests="4" failures="0" errors="0"
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.tenant.TenantOffboardKeycloakHookIntegrationTest' --tests 'uk.jtoye.core.tenant.TenantLifecycleAdminIntegrationTest' --no-daemon
+rc=0, cleanIntegrationTest executed
+  TenantLifecycleAdminIntegrationTest tests="10" failures="0" errors="0"
+  TenantOffboardKeycloakHookIntegrationTest tests="2" failures="0" errors="0"
+
+Catch review (KeycloakAdminClient):
+  obtainAdminToken / searchUsersByTenant: readTree now throws the unchecked JacksonException. Both
+    methods already end in catch (Exception e), which still wraps it in KeycloakAdminException with
+    the unchanged messages ("... could not be parsed ..."). No catch changed behaviour.
+  setUserEnabled / logoutUser: no Jackson call of their own; unchanged.
+  Behaviour note (strictly safer): a token response {"access_token":null} gave asText()="null" on
+    Jackson 2 (a non-blank fake token was returned); asString() gives "" and the client now throws
+    "Keycloak token response had no access_token".
+
+--- Jackson-2-node arm (bracketed; committed first at d4e24605)
+before: KeycloakAdminClientTest.java sha256 b541c706854e94b753432ffea8f92cf814c4dec7a3defd5580393f94eeb0531f
+        (git hash-object 2e0250fa = HEAD blob)
+arm: a temporary test method sends a com.fasterxml ObjectNode (the pre-fix shape: deepCopy of the
+     searched rep, enabled=false) through a RestClient built from a MockRestServiceServer-bound
+     RestClient.builder() (the same Jackson-3 converter set the client uses), captures the body and
+     runs the SAME assertDisableBodyByContent; the real test temporarily printed its body.
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.tenant.keycloak.KeycloakAdminClientTest' --no-daemon
+rc=1; XML tests="6" failures="1"; the only failing case: ARM_jackson2ObjectNode_throughTheJackson3RestClient
+  message: ... not to contain [...] but found [bigDecimal, missingNode, valueNode, array, containerNode, nodeType]
+gsd check tdd-red-evidence on the arm XML: RED_EVIDENCE_OK (target_test_failed)
+ARM body (Jackson-2 node through the Jackson-3 RestClient):
+  {"array":false,"bigDecimal":false,"bigInteger":false,"binary":false,"boolean":false,"containerNode":true,"double":false,"empty":false,"float":false,"floatingPointNumber":false,"int":false,"integralNumber":false,"long":false,"missingNode":false,"nodeType":"OBJECT","null":false,"number":false,"object":true,"pojo":false,"short":false,"textual":false,"valueNode":false}
+GREEN body (same run, the real client):
+  {"id":"472ee7a0-88c0-4d0e-b476-2279326047c5","username":"vendor-owner","enabled":false,"firstName":"Ada","emailVerified":false,"createdTimestamp":1791100000000,"attributes":{"tenant_id":["9d08b194-96f0-406a-8cb8-d9e6bc7ccd05"]}}
+restore: git checkout -- KeycloakAdminClientTest.java
+after:  sha256 b541c706854e94b753432ffea8f92cf814c4dec7a3defd5580393f94eeb0531f (= before),
+        hash-object 2e0250fa = HEAD blob; grep -c 'ARM_|GREEN_PUT_BODY' = 0
+Closing clean run (also the tracer gate's re-run of the full <verify>):
+  unit rc=0, cleanTest executed: KeycloakAdminClientTest 5/0/0, KeycloakDeprovisionServiceTest 4/0/0
+  IT   rc=0, cleanIntegrationTest executed: TenantLifecycleAdminIntegrationTest 10/0/0,
+       TenantOffboardKeycloakHookIntegrationTest 2/0/0
+Tracer gate (interactive, human_verify_mode=end-of-phase, automated-only verify): verified end to
+end, expanding to Task 2.
+
+--- Task 1 acceptance criteria, both directions
+AC1 awk '/nodeType/{n++}' KeycloakAdminClientTest.java: real tree 4; pre-plan blob (c5aac555) 0.
+    (The count also includes comment lines; the arm above is what shows the assertion itself fires.)
+AC2 git grep -n 'com.fasterxml.jackson.databind' -- .../tenant/keycloak (main): real tree prints only
+    rc=1; at c5aac555 it prints 4 import lines, rc=0.
+AC3 RED 078029ee precedes GREEN d4e24605: merge-base --is-ancestor 078029ee d4e24605 rc=0; reversed rc=1.
+AC4 this file holds the RED garbage body, the arm body and the closing green body (enabled:false).
+RED-classifier fail direction: the green XML recorded with exitCode 0 -> INVALID_RED (unexpected_green).
+
+
+=== TASK 2: rate-limit problem body, model-output tolerance, demo manifest, webhook envelope ===
+
+--- Jackson-2 baseline (plan base, before any Task 2 change; a scratch test, never committed)
+The REAL classes on Boot 3.5's Jackson-2 mapper (Jackson2ObjectMapperBuilder.json().build()), the
+model text served by a local HTTP stand-in for Ollama's /api/generate:
+  T1 {"identifiedName":"Jollof Rice","description":"Smoky party rice.","ingredients":"rice, tomato","category":"Mains","dietaryTags":["halal"],"allergenWarnings":[],"cuisineOrigin":"Nigerian","confidence":0.92}\nNote: the {sauce} may contain scotch bonnet.
+     -> present=true name=Jollof Rice conf=0.92 cuisine=Nigerian tags=[halal] allergens=[] desc=Smoky party rice.
+  T2 {"identifiedName":"Jollof Rice","confidence":0.92} Hope this helps!
+     -> present=true name=Jollof Rice conf=0.92 (other members null)
+  T3 {"identifiedName":"Suya","confidence":0.8,"spiceLevel":"hot","nested":{"x":1}}
+     -> present=true name=Suya conf=0.8
+  T4 {"identifiedName":"Moi Moi","cuisineOrigin":"Nigerian","confidence":null}
+     -> present=true name=Moi Moi conf=null cuisine=Nigerian
+  DemoImageManifest.load(): count=21
+     first=ManifestEntry[dish=Beef Suya Wrap, shop=Brixton Village Grill, filename=beef-suya-wrap.jpg, author=Ooreoluwa4578420, license=CC0, licenseUrl=http://creativecommons.org/publicdomain/zero/1.0/deed.en, sourceUrl=https://commons.wikimedia.org/wiki/File:Nigerian_Beef-Suya.jpg]
+     last=ManifestEntry[dish=Suya Platter, shop=Peckham Jollof Co, filename=suya-platter.jpg, author=Bukky658, license=CC BY-SA 4.0, licenseUrl=https://creativecommons.org/licenses/by-sa/4.0, sourceUrl=https://commons.wikimedia.org/wiki/File:Suya_with_pepper_sauce.jpg]
+These values are the expectations of the new ImageAnalysisServiceTest and DemoImageManifestTest cases.
+Why T2 differs from T1: the service keeps text from the first '{' to the LAST '}', so T2's brace-free
+prose is cut before the reader sees it, while T1's "{sauce}" leaves trailing tokens for the reader.
+
+Tests (Boot's mapper = uk.jtoye.core.testsupport.BootJsonMapper: JacksonAutoConfiguration alone in an
+ApplicationContextRunner; core-java/src/main declares no Jackson customizer, module bean or
+spring.jackson key, so this is the bean the application injects):
+  RateLimitInterceptorTest: Boot's real JsonMapper (not a hand-built mapper with the mixin added);
+    exact top-level member sets {type,title,status,detail,retryAfterSeconds,tenantId} (tenant path)
+    and {type,title,status,detail,retryAfterSeconds} (public path); negative control: a mixin-less
+    JsonMapper nests retryAfterSeconds under "properties".
+  ImageAnalysisServiceTest: T1-T4 plus "no object / truncated object is still empty", through
+    analyze() and the local Ollama stand-in, each run with Boot's mapper AND a strict mapper
+    (FAIL_ON_TRAILING_TOKENS, FAIL_ON_UNKNOWN_PROPERTIES, FAIL_ON_NULL_FOR_PRIMITIVES enabled), so the
+    tolerance must come from the service, not from the injected bean.
+  DemoImageManifestTest: first and last entries equal the Jackson-2 load as whole records; a
+    truncated manifest (test resource dev-manifest-38-07/truncated-manifest.json) must fail as the
+    loader's IllegalStateException with a JacksonException cause; a missing one is unchanged.
+  WebhookFanoutListenerEnvelopeTest (new): drives the REAL listener's onOrderState with
+    GoldenSamples.orderStateChangeEvent() and captures the saved PENDING delivery row; the payload
+    (id checked to be the row's eventId, then set to the fixture id) is tree-equal to
+    jackson2-golden/responses/WebhookEventEnvelope.json and also byte-equal to it bar the id; negative
+    control: Boot's mapper rebuilt with WRITE_DATES_AS_TIMESTAMPS delivers a numeric occurredAt and is
+    not tree-equal; a serialize failure (JsonMapper mock throwing InvalidDefinitionException) saves no
+    row and throws nothing.
+
+--- RED (commit e7679332: the tests + the import-only migration of the four classes)
+The four classes inject tools.jackson JsonMapper, with no tolerance override; WebhookFanoutListener is
+the compiler-minimal migration (JacksonException is unchecked, so the serialize try/catch was dropped);
+DemoImageManifest keeps only catch (IOException).
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.security.RateLimitInterceptorTest' --tests 'uk.jtoye.core.ai.ImageAnalysisServiceTest' --tests 'uk.jtoye.core.dev.DemoImageManifestTest' --tests 'uk.jtoye.core.webhook.WebhookFanoutListenerEnvelopeTest' --no-daemon
+rc=1, cleanTest/compileJava/compileTestJava executed; 50 tests completed, 5 failed
+  ImageAnalysisServiceTest tests="20" failures="3":
+    trailing prose with braces [Boot's JsonMapper]  "trailing prose must not lose the analysis ==> expected: <true> but was: <false>"
+    trailing prose with braces [a strict JsonMapper] (same)
+    unknown fields [a strict JsonMapper]  "an unknown field must not lose the analysis ..."
+    logged causes: Unrecognized token 'Note': was expecting (JSON String, Number, Array, Object ...)
+                   Unrecognized property "spiceLevel" (class uk.jtoye.core.ai.ImageAnalysisResult), not marked as ignorable
+  DemoImageManifestTest tests="8" failures="1": unparseable manifest
+    "Expecting actual throwable to be an instance of: java.lang.IllegalStateException but was:
+     tools.jackson.core.exc.StreamReadException: Unexpected end-of-input within/between Object entries"
+  WebhookFanoutListenerEnvelopeTest tests="4" failures="1": serializationFailure_...
+    "Expecting code not to raise a throwable but caught tools.jackson.databind.exc.InvalidDefinitionException"
+  RateLimitInterceptorTest tests="18" failures="0"
+gsd check tdd-red-evidence: ImageAnalysisServiceTest RED_EVIDENCE_OK; DemoImageManifestTest RED_EVIDENCE_OK;
+  WebhookFanoutListenerEnvelopeTest RED_EVIDENCE_OK (all target_test_failed)
+Measured against the plan's prediction:
+  - the null-confidence case did NOT go red: confidence is a boxed Double, so FAIL_ON_NULL_FOR_PRIMITIVES
+    never applies (green even with the strict mapper);
+  - the envelope tree test did NOT go red: the envelope and the order event are records, which Boot's
+    Jackson-3 mapper writes in declaration order with ISO dates, as 38-05 measured; its falsifiability
+    is the permanent timestamps negative control, which is green only because the tree differs;
+  - the 429 flattening did NOT go red: Boot's JacksonAutoConfiguration (JsonProblemDetailsConfiguration)
+    registers the ProblemDetail mixin on the JsonMapper, so the plan's STOP condition did not arise;
+    its falsifiability is the permanent negative control and arm R below.
+
+--- GREEN (commit fee432af)
+  ImageAnalysisService: analysisReader = jsonMapper.readerFor(ImageAnalysisResult.class)
+      .without(FAIL_ON_TRAILING_TOKENS, FAIL_ON_UNKNOWN_PROPERTIES), each commented
+      "Jackson-2 tolerance preserved, 38-07"; parseAnalysisJson reads with it. The injected Boot mapper
+      keeps the 38-05 defaults; the Ollama/Anthropic envelope parses still use it.
+  DemoImageManifest: catch (IOException | JacksonException e) -> the same IllegalStateException.
+  WebhookFanoutListener: try { writeValueAsString } catch (JacksonException e) { log.error(...); return; }
+$ (same unit command) rc=0: ImageAnalysisServiceTest 20/0/0, DemoImageManifestTest 8/0/0,
+  RateLimitInterceptorTest 18/0/0, WebhookFanoutListenerEnvelopeTest 4/0/0
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.security.PublicRateLimitIntegrationTest' --tests 'uk.jtoye.core.webhook.WebhookDeliveryWorkerIntegrationTest' --no-daemon
+rc=0, cleanIntegrationTest executed: PublicRateLimitIntegrationTest 1/0/0, WebhookDeliveryWorkerIntegrationTest 4/0/0
+Full unit suite (cleanTest + test, no filter, before the GREEN commit): rc=0, 174 fresh XML files,
+  tests=1403 failures=0 errors=0 skipped=1 (38-06 ended at 1385 with 1 failure, KeycloakAdminClientTest;
+  +18 = ImageAnalysis 10 invocations, DemoImageManifest 3, RateLimit 1, WebhookFanoutListenerEnvelope 4).
+  The 38-04 ledger's 38-07 red is closed.
+
+Catch review: every former JsonProcessingException (or IOException-covering) catch in the six files
+  KeycloakAdminClient.obtainAdminToken / searchUsersByTenant  catch (Exception) -> unchanged, still KeycloakAdminException
+  RateLimitInterceptor.writeProblem callers (tenant and public)  inside catch (Exception) fail-open -> unchanged
+  ImageAnalysisService.callOllama / callAnthropic / parseAnalysisJson  catch (Exception) -> unchanged
+  DemoImageManifest.load                    catch (IOException) -> catch (IOException | JacksonException)  (RED proved it was needed)
+  WebhookFanoutListener.insertPendingRows   catch (JsonProcessingException) -> catch (JacksonException)  (RED proved it was needed)
+
+--- Arms (bracketed; committed first at fee432af; each restore by git checkout, verified by content)
+ImageAnalysisService.java before: sha256 a3588067ca681fa79e867569a5dccda8964cb95e4c2f75ae29327fa6c280361a (blob ddbaaefd = HEAD)
+Arm T (the plan's): FAIL_ON_TRAILING_TOKENS removed from the reader's without(...)
+  $ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.ai.ImageAnalysisServiceTest' --no-daemon
+  rc=1, tests="20" failures="2": trailing prose with braces [Boot's JsonMapper] and [a strict JsonMapper];
+  logged: Unrecognized token 'Note': was expecting (JSON String, Number, Array, Object or token 'null', ...
+  restored: sha256 a3588067...361a (= before), blob ddbaaefd
+Arm U (extra): FAIL_ON_UNKNOWN_PROPERTIES removed. A first attempt broke compilation (an invalid edit of
+  the arm itself, not a result) and is VOID; redone:
+  rc=1, tests="20" failures="1": unknown fields [a strict JsonMapper];
+  logged: Unrecognized property "spiceLevel" (class uk.jtoye.core.ai.ImageAnalysisResult)
+  restored: sha256 a3588067...361a (= before), blob ddbaaefd
+RateLimitInterceptor.java before: sha256 2a89bf87a45de2bd48f29ed9787f8a6ad44e425221ab7bb8f58b3c53481a478c (blob e6289451 = HEAD)
+Arm R (extra): the 429 written with JsonMapper.builder().build() instead of the injected Boot bean
+  $ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.security.RateLimitInterceptorTest' --no-daemon
+  rc=1, tests="18" failures="3":
+    testRateLimitExceeded_Returns429: "retryAfterSeconds must be a number, not a string ==> expected: <true> but was: <false>"
+    tenantPath429_carriesTenantIdAsATypedMember: "expected: <tenant uuid> but was: <>"
+    testPublicPath_OverLimit_...: "expected: <15> but was: <0>"
+  restored: sha256 2a89bf87...478c (= before), blob e6289451
+Closing clean run (git status: only the orchestrator's milestone.lock untracked):
+  unit rc=0, cleanTest + compileJava executed: ImageAnalysisServiceTest 20/0/0, DemoImageManifestTest 8/0/0,
+    RateLimitInterceptorTest 18/0/0, WebhookFanoutListenerEnvelopeTest 4/0/0
+  IT   rc=0, cleanIntegrationTest executed: PublicRateLimitIntegrationTest 1/0/0, WebhookDeliveryWorkerIntegrationTest 4/0/0
+
+--- Task 2 acceptance criteria, both directions
+AC1 git grep com.fasterxml.jackson.databind|core over the four main files: real tree prints only rc=1;
+    at c5aac555 it prints 7 lines.
+AC2 git grep FAIL_ON_TRAILING_TOKENS ImageAnalysisService.java: real tree 2 lines (rc=0); at c5aac555
+    rc=1. The grep alone would also pass on a comment; arm T is what shows the override is load-bearing.
+AC3 arm T failed on the trailing-text case, was restored (sha256 above) and the closing run is green.
+
+--- Plan-level verification 3: no Jackson-2 databind/core import in the six main files
+git grep -e com.fasterxml.jackson.databind -e com.fasterxml.jackson.core over the six: rc=1 (none);
+at c5aac555: 11 lines. Positive control: the same files still import com.fasterxml.jackson.annotation
+(DemoImageManifest: JsonIgnoreProperties, JsonProperty), which Jackson 3 reads and which is allowed.

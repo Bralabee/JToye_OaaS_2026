@@ -1,0 +1,197 @@
+{
+  "format": "jtoye-dsar-export/1",
+  "generatedAt": "2026-10-06T19:52:11.377799825Z",
+  "requestedFor": "Grace.Full+c402cf43@Example.test",
+  "summary": {
+    "vendorDataHeld": true,
+    "vendorCount": 1,
+    "statement": "The shops listed under \"vendors\" hold personal data linked to this email address. Each section shows who runs the shop, what it holds, and when."
+  },
+  "about": {
+    "purposes": [
+      "To take, prepare, deliver and take payment for the orders you placed with each shop.",
+      "To show your review on the shop's page, when you chose to leave one.",
+      "To send you the order and account messages you are entitled to, and marketing only if you opted in.",
+      "To keep the order and tax records UK law requires each shop to keep.",
+      "To let you sign in and see your orders, when you created a J'Toye account."
+    ],
+    "recipients": "Each shop listed under \"vendors\" received the data in its section: the business named there runs the shop and decides how your order data is used. J'Toye runs the platform the shops use and processes the data on their behalf. Card payments are handled by our payment provider; your card details are never stored by J'Toye or the shops.",
+    "retention": "How long each kind of record is kept is set out in our retention schedule: http://localhost:3000/legal/retention",
+    "rights": [
+      {
+        "right": "rectification",
+        "how": "If anything here is wrong, ask the shop concerned, or us, to correct it. Our privacy notice says how to contact us: http://localhost:3000/legal/privacy"
+      },
+      {
+        "right": "erasure",
+        "how": "You can ask for your personal data to be erased through the same request page you used for this copy, choosing erasure instead of a copy."
+      },
+      {
+        "right": "complaint",
+        "how": "You can complain to the Information Commissioner's Office: https://ico.org.uk/make-a-complaint/"
+      }
+    ],
+    "source": "You provided this data yourself: when you placed orders, left reviews, set your message preferences or created an account. Nothing here was bought from or given to us by anyone else."
+  },
+  "platformAccount": {
+    "status": "FOUND",
+    "note": "You have a J'Toye sign-in account with this email address.",
+    "accounts": [
+      {
+        "username": "grace.persona",
+        "email": "grace.full+c402cf43@example.test",
+        "firstName": "Grace",
+        "lastName": "Persona",
+        "createdAt": "2026-10-04T07:46:40Z"
+      }
+    ]
+  },
+  "vendors": [
+    {
+      "reference": "50e20a40-404b-49f3-a5c4-ce6a0c319059",
+      "recipient": {
+        "legalName": "Mama Ade's Kitchen Ltd",
+        "traderIdentityOnFile": true,
+        "entityType": "COMPANY",
+        "companyNumber": "16471464",
+        "vatNumber": "GB123456789",
+        "address": {
+          "line1": "1 Trading Street",
+          "line2": null,
+          "city": "Birmingham",
+          "postcode": "B2 4QA"
+        },
+        "shops": [
+          "Mama Ade's Peckham"
+        ]
+      },
+      "customerRecords": [
+        {
+          "name": "Grace Customer",
+          "email": "grace.full+c402cf43@example.test",
+          "phone": "07700900111",
+          "allergenRestrictions": [
+            "Peanuts",
+            "Nuts"
+          ],
+          "notes": "prefers collection",
+          "createdAt": "2026-10-06T19:52:10.16556Z",
+          "updatedAt": "2026-10-06T19:52:10.16556Z"
+        }
+      ],
+      "orders": [
+        {
+          "orderNumber": "ORD-87660AEA",
+          "shop": "Mama Ade's Peckham",
+          "status": "COMPLETED",
+          "placedAt": "2026-09-01T12:00:00Z",
+          "fulfilmentType": "DELIVERY",
+          "customerName": "Grace Customer",
+          "customerEmail": null,
+          "customerPhone": "07700900111",
+          "deliveryAddress": {
+            "line1": "14 Persona Road",
+            "line2": "Flat 2",
+            "city": "Birmingham",
+            "postcode": "B1 1AA"
+          },
+          "notes": "ring the bell twice",
+          "allergyNote": null,
+          "allergyNoteReadByShopAt": null,
+          "acknowledgedAllergens": null,
+          "acknowledgedAt": null,
+          "paymentMethod": null,
+          "paymentStatus": "NONE",
+          "totals": {
+            "subtotalPennies": 1000,
+            "vatAmountPennies": 167,
+            "deliveryFeePennies": 250,
+            "totalAmountPennies": 1250
+          },
+          "items": [
+            {
+              "productName": "Egusi Soup d2a4257f",
+              "quantity": 2,
+              "unitPricePennies": 500,
+              "totalPricePennies": 1000
+            }
+          ]
+        },
+        {
+          "orderNumber": "ORD-43557BAF",
+          "shop": "Mama Ade's Peckham",
+          "status": "COMPLETED",
+          "placedAt": "2026-09-02T12:00:00Z",
+          "fulfilmentType": "DELIVERY",
+          "customerName": "Grace Guest",
+          "customerEmail": "Grace.Full+c402cf43@Example.test",
+          "customerPhone": "07700900222",
+          "deliveryAddress": {
+            "line1": "14 Persona Road",
+            "line2": "Flat 2",
+            "city": "Birmingham",
+            "postcode": "B1 1AA"
+          },
+          "notes": "ring the bell twice",
+          "allergyNote": "My child has a severe peanut allergy",
+          "allergyNoteReadByShopAt": "2026-09-02T12:05:00Z",
+          "acknowledgedAllergens": [
+            "Gluten",
+            "Milk"
+          ],
+          "acknowledgedAt": "2026-09-02T11:59:00Z",
+          "paymentMethod": "CASH",
+          "paymentStatus": "NONE",
+          "totals": {
+            "subtotalPennies": 1000,
+            "vatAmountPennies": 167,
+            "deliveryFeePennies": 250,
+            "totalAmountPennies": 1250
+          },
+          "items": [
+            {
+              "productName": "Puff Puff 9e7e65cb",
+              "quantity": 2,
+              "unitPricePennies": 500,
+              "totalPricePennies": 1000
+            }
+          ]
+        }
+      ],
+      "reviews": [
+        {
+          "id": "a1d9896f-b051-4ba5-b868-9ac92c3df141",
+          "shop": "Mama Ade's Peckham",
+          "orderNumber": "ORD-43557BAF",
+          "name": "Grace G.",
+          "email": "Grace.Full+c402cf43@Example.test",
+          "foodRating": 5,
+          "deliveryRating": 4,
+          "comment": "lovely puff puff",
+          "photoUrls": [
+            "https://cdn.example.test/r/1.jpg"
+          ],
+          "createdAt": "2026-10-06T19:52:10.194909Z"
+        }
+      ],
+      "communicationPreferences": {
+        "marketingOptIn": {
+          "optedInAt": "2026-08-01T09:00:00Z"
+        },
+        "unsubscribed": [
+          {
+            "category": "ONBOARDING",
+            "since": "2026-08-02T09:00:00Z"
+          }
+        ]
+      },
+      "staffDirectory": [
+        {
+          "displayName": "Grace (staff)",
+          "email": "Grace.Full+c402cf43@Example.test",
+          "lastSeen": "2026-08-03T09:00:00Z"
+        }
+      ]
+    }
+  ]
+}

@@ -1,10 +1,10 @@
 package uk.jtoye.core.media;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.media.exception.AssetAlreadyActiveException;
@@ -55,7 +55,7 @@ public class MediaAssetService {
     private final ShopAccessService shopAccessService;
     private final StorageService storageService;
     private final MediaProperties mediaProperties;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     public MediaAssetService(MediaAssetRepository mediaAssetRepository,
                              ProductMediaRepository productMediaRepository,
@@ -64,7 +64,7 @@ public class MediaAssetService {
                              ShopAccessService shopAccessService,
                              StorageService storageService,
                              MediaProperties mediaProperties,
-                             ObjectMapper objectMapper) {
+                             JsonMapper objectMapper) {
         this.mediaAssetRepository = mediaAssetRepository;
         this.productMediaRepository = productMediaRepository;
         this.mediaEventOutboxRepository = mediaEventOutboxRepository;
@@ -241,7 +241,9 @@ public class MediaAssetService {
     private String serialize(MediaProcessingEvent event) {
         try {
             return objectMapper.writeValueAsString(event);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
+            // Kept as the IllegalStateException it was under Jackson 2 (38-08): the
+            // caller's transaction rolls back either way, with the same message.
             throw new IllegalStateException("Failed to serialize media processing event", e);
         }
     }

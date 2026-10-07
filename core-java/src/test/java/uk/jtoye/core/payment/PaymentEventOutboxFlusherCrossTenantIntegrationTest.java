@@ -1,6 +1,6 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -9,7 +9,7 @@ import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -70,7 +70,7 @@ import static org.mockito.Mockito.verify;
 @ActiveProfiles("test")
 @Tag("testcontainers")
 // #418: identical shape to PaymentEventOutboxReliabilityIntegrationTest — parked
-// intervals, a shared @MockBean RabbitTemplate, and exact times(2) publish counts.
+// intervals, a shared @MockitoBean RabbitTemplate, and exact times(2) publish counts.
 // Parking the interval never stopped the initialDelay=0 startup pass, so the
 // scheduler could publish these same rows on the same mock. Trigger removed.
 @Import(NoScheduledTriggersTestConfig.class)
@@ -100,10 +100,10 @@ class PaymentEventOutboxFlusherCrossTenantIntegrationTest {
 
     @Autowired private PaymentEventOutboxFlusher flusher;
     @Autowired private JdbcTemplate jdbcTemplate;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private PlatformTransactionManager transactionManager;
 
-    @MockBean private RabbitTemplate rabbitTemplate;
+    @MockitoBean private RabbitTemplate rabbitTemplate;
 
     private TransactionTemplate txTemplate;
 

@@ -53,9 +53,10 @@ Schema at close: **V51**. Test baseline: **1257 logical invocations**. docs-fres
 - [ ] **Phase 29: Deployable Staging, With Its Own Monitoring** — The first runtime of this platform outside a laptop, including the k8s monitoring stack that does not exist today
 - [ ] **Phase 30: The Money Path, Executed** — Refunds and recurring billing proven against Stripe rather than against a mock
 - [x] **Phase 31: Consumer-Safety and Legal Floor** — GDPR hygiene, WCAG 2.1 AA, and the allergen evidence chain's zero-infrastructure slice (completed 2026-08-17)
+- [x] **Phase 31.1: Persona gap closure (INSERTED)** — The 17 persona-testing clusters (epic #880) on completed Phase 31: DSAR fulfilment, the allergen acknowledgement and display chain, seller identity, and privacy/cookie/accessibility statement truthfulness; 6 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request) (completed 2026-10-07)
 - [ ] **Phase 32: Production Cutover + First Tenant** — One real Cohort A operator live and paying
 - [ ] **Phase 37: Real-world operations readiness** — The 87 persona-testing clusters with no other home (epic #880): kitchen ops, staff scoping, checkout integrity, abuse resistance, integrator surface, accessibility, catalogue correctness; 9 of its clusters are P0 and gate Phase 32 (added 2026-10-04 by owner request)
-- [ ] **Phase 38: Spring Boot 4.1 Migration** — core-java moves from Spring Boot 3.5.16 to 4.1.x, proven by test, gate and live runtime (#706; opened 2026-10-01 as Phase 37, renumbered 2026-10-04)
+- [x] **Phase 38: Spring Boot 4.1 Migration** — core-java moves from Spring Boot 3.5.16 to 4.1.x, proven by test, gate and live runtime (#706; opened 2026-10-01 as Phase 37, renumbered 2026-10-04) (completed 2026-10-05)
 - [ ] **Phase 39: Platform runtime upgrades** — Every other runtime onto a supported, latest-stable release: Alpine, RabbitMQ (compose and k8s), the Prometheus/Alertmanager/Grafana/exporter stack, Keycloak 26, PostgreSQL 18, Redis 8 and Tailwind 4; retires the DEFERRED-27 and #724 horizon exemptions before they expire (first dated row 2026-10-26) (added 2026-10-04 by owner request)
 
 ## Phase Details
@@ -356,6 +357,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
 | 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-29 |
 | 37. Real-world operations readiness | v2.3 | 0/? | Not started | — |
+| 38. Spring Boot 4.1 Migration | v2.3 | 19/19 | Complete    | 2026-10-05 |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
 before any successor milestone opened, and `STATE.md` kept the milestone `in-progress` throughout.
@@ -705,6 +707,105 @@ Plans:
 
 **UI hint**: yes (consent banner, policy pages, a11y remediation across the storefront)
 
+### Phase 31.1: Persona gap closure (INSERTED)
+
+**Added 2026-10-04 by owner request.** This is the gap-closure plan for the 17 persona-testing clusters (epic **#880**) that belong to Phase 31, which is complete. The mapping is in `.planning/ISSUE-DISPOSITION.md` § "Phase 31 – Consumer-Safety and Legal Floor (17)". The catalogue is `.planning/ux-persona-test-20261003-pass2/consolidated/CATALOGUE.md`, and `goods-to-preserve.md` beside it lists 40 behaviours the testers valued; every plan here must keep them (Incremental Betterment Doctrine).
+
+**Goal:** What Phase 31 shipped holds up for a real customer:
+- a data-subject request is actually carried out;
+- the allergen set a customer acknowledges is the one recorded and shown back to them;
+- an allergen named in the ingredients is never presented as "No allergens";
+- customers can see who the seller is and how to contact them;
+- the privacy, cookie and accessibility statements match what the site does.
+
+**Requirements**: PGC-777, PGC-778, PGC-838, PGC-839, PGC-871, PGC-784, PGC-785, PGC-787, PGC-812, PGC-817, PGC-860, PGC-861, PGC-789, PGC-794, PGC-793, PGC-840, PGC-878 (one per cluster; P0 6, P1 4, P2 5, P3 2). Grouping kept as a planning aid:
+- **31.1-A Data-subject rights** (5; P0 2): PGC-777 (#777), PGC-778 (#778), PGC-838 (#838), PGC-839 (#839), PGC-871 (#871).
+- **31.1-B Allergen evidence chain** (7; P0 3, P1 2): PGC-784 (#784), PGC-785 (#785), PGC-787 (#787), PGC-812 (#812), PGC-817 (#817), PGC-860 (#860), PGC-861 (#861).
+- **31.1-C Seller and platform identity** (2; P0 1, P1 1): PGC-789 (#789), PGC-794 (#794).
+- **31.1-D Privacy and cookie truthfulness** (2; P1 1): PGC-793 (#793), PGC-840 (#840).
+- **31.1-E Accessibility statement** (1; P3): PGC-878 (#878, UXT-114 only).
+
+**Depends on:** Phase 31 (complete). **Blocks:** Phase 32 (first tenant), through its six P0 clusters: #777 #778 #784 #785 #787 #789.
+
+**Success Criteria** (what must be TRUE). Refined at plan time 2026-10-05 for owner rulings D-19..D-22. Each must be shown to FAIL on the pre-fix tree and PASS after, both directions recorded; every browser criterion is run RED on the pre-rebuild runtime and GREEN on the rebuilt one (31.1-30):
+  1. A verified ERASURE request for a storefront customer — with or without a `customers` row — anonymises that customer's order PII and review authorship in every tenant that holds the address, keeps order and tax records, writes one PII-free erasure record per tenant, deletes the customer-realm sign-in account after commit (D-03; the admin seam is on in compose, D-22), tells the subject, and is marked completed only after the account deletion is confirmed or recorded outstanding and retried (PGC-777).
+  2. A verified ACCESS request produces an encrypted, single-use, 7-day export of the subject's data across every tenant naming each vendor, emails a link to the verified address (no data in the email), and completes only after both; the subject's address is held only AES-256-GCM-encrypted, from a secret key, and dropped at every terminal state (D-19) (PGC-778, PGC-838, PGC-839).
+  3. The allergen set the customer acknowledges at checkout is sent to the server, refused with a typed 409 when it no longer matches, stored on the order with its time, and shown back on the confirmation, the email and the tracking / My Orders pages, with vendor orders marked as placed by the shop (PGC-784, PGC-785, PGC-812).
+  4. A product whose ingredients name a regulated allergen with no matching box ticked saves with a warning and is never shown as "No allergens" on any vendor or storefront surface; cards name allergens before Add and the basket attributes them per item (PGC-787, PGC-817, PGC-860, PGC-861).
+  5. Every storefront shows the seller's legal identity, geographic address and an email address (required, D-20) before purchase and on the durable confirmation, no shop goes live without them, and the platform's registered office (Companies House 16471464, owner-confirmed) is published in every runtime (PGC-789, PGC-794).
+  6. The cookie, privacy and accessibility statements match the site: no Stripe code on a cash checkout, every stored key disclosed and personal keys cleared on sign-out, emails described truthfully, and the accessibility statement targeting WCAG 2.2 AA over the full order journey (PGC-793, PGC-840, PGC-871, PGC-878).
+  7. 31.1 executes on the Boot 4.1 / Jackson 3 tree: Phase 38 is merged into this branch before any 31.1 code, the Keycloak deletion path is re-proved on it, and Phase 38's Jackson-3 goldens are extended rather than its Jackson-2 captures (D-21).
+
+**Plans:** 30/30 plans complete (16 waves)
+
+*Wave depth (re-derived 2026-10-05).* The waves come from true data dependencies plus file overlap, applied in plan order. They are not padding:
+- The eight plans that edit `docs/api/openapi-snapshot.json` run one per wave. Together with the frontend chain 14 → 19 → 21 → 23 and the tail 24 → 25 → 27 → 28 → 29 → 30, they set the depth.
+- Ten plans sit later than their data alone would place them: 06, 07, 09, 10, 11, 13, 14, 22, 24 and 26. Each plan's `<dependency_rationale>` names the shared file that holds it there.
+- 31.1-01 has no fallback. Only the owner unblocks it, by merging Phase 38 into main (D-21).
+
+Plans:
+**Wave 1**
+- [x] 31.1-01-PLAN.md — Phase 38 merge gate (stops unless Boot 4.1 is on origin/main; owner unblocks by merging Phase 38, no Boot 3.5 fallback) + Boot 4 interface baseline and V68..V75 reservation
+
+**Wave 2** *(P0 backbones first)*
+- [x] 31.1-02-PLAN.md — #777 guest-subject erasure in every tenant (V68, NOSUPERUSER proof)
+- [x] 31.1-03-PLAN.md — #784/#785 server-enforced allergen acknowledgement: 422 required, typed 409 stale, mask + time + channel recorded (V69), every caller updated
+- [x] 31.1-04-PLAN.md — #793 Stripe loaded lazily, only for a real card payment
+- [x] 31.1-05-PLAN.md — #840 storage-key registry drives the cookie policy; personal keys cleared on explicit sign-out
+
+**Wave 3**
+- [x] 31.1-06-PLAN.md — #787 save-time reconciliation (capitals as emphasis), typed warning, public flag field
+- [x] 31.1-07-PLAN.md — D-19 subject address encrypted at intake, terminal-state CHECK, EXPIRED sweep (V70)
+
+**Wave 4**
+- [x] 31.1-08-PLAN.md — D-19 key wired into compose, hybrid, nightly and k8s
+- [x] 31.1-09-PLAN.md — #785 acknowledged and recorded sets on confirmation, tracking, history and detail contracts
+
+**Wave 5**
+- [x] 31.1-10-PLAN.md — #789 trader identity record, API and vendor form (V71)
+- [x] 31.1-11-PLAN.md — D-03/D-22 customer account deletion after erasure + completion email (V72)
+
+**Wave 6**
+- [x] 31.1-12-PLAN.md — #789 TRADER_IDENTITY go-live gate (PASSED only) + demo/e2e backfill
+- [x] 31.1-13-PLAN.md — #812 allergy note + recorded vendor acknowledgement (V73)
+
+**Wave 7**
+- [x] 31.1-14-PLAN.md — #861 may-contain mask, production-dated en-GB labels (V74)
+- [x] 31.1-15-PLAN.md — checkout sends the shown set, recovers from 409, shows the recorded set; allergy note field
+- [x] 31.1-16-PLAN.md — #778 ACCESS export assembled across tenants, encrypted, link emailed (V75)
+
+**Wave 8**
+- [x] 31.1-17-PLAN.md — #778 single-use export download endpoint + page + purge
+- [x] 31.1-18-PLAN.md — tracking and My Orders show the recorded set, channel and note-read status
+- [x] 31.1-19-PLAN.md — vendor product form: D-09 warning, may-contain, production-date label dialog
+
+**Wave 9**
+- [x] 31.1-20-PLAN.md — #839 verification link opens a friendly web page on every runtime
+- [x] 31.1-21-PLAN.md — #817 menu cards and dish modal name allergens before Add; D-09 and may-contain lines
+- [x] 31.1-22-PLAN.md — kitchen ticket and vendor order view: allergy note acknowledgement, channel, en-GB dates
+
+**Wave 10**
+- [x] 31.1-23-PLAN.md — #860 basket lines and checkout attribution per item
+
+**Wave 11**
+- [x] 31.1-24-PLAN.md — #789 seller block on the shop page (SSR), at checkout and on the confirmation
+
+**Wave 12**
+- [x] 31.1-25-PLAN.md — customer emails from "Shop via J'Toye", seller block, recorded allergen set
+
+**Wave 13**
+- [x] 31.1-26-PLAN.md — #838 account page (Download my data / Delete my account) + #871 truthful email statements
+- [x] 31.1-27-PLAN.md — #794 registered office, owner-confirmed, in every runtime
+
+**Wave 14**
+- [x] 31.1-28-PLAN.md — #878 accessibility statement: WCAG 2.2 AA partial, widened scope, wcag22aa gate
+
+**Wave 15**
+- [x] 31.1-29-PLAN.md — metrics, prose counts and the V68-V75 schema record; full suite and static gates
+
+**Wave 16**
+- [x] 31.1-30-PLAN.md — stack-ownership checkpoint, RED on the old runtime, full rebuild + parity, GREEN, live D-01/D-03, issue dispositions, human review
+
 ### Phase 32: Production Cutover + First Tenant
 
 **Goal**: One real Cohort A (takeaway) operator is live, in production, and paying.
@@ -883,6 +984,67 @@ NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git workt
 
 Plans:
 - [ ] TBD (run /gsd-plan-phase 37 to break down)
+
+### Phase 38: Spring Boot 4.1 Migration
+
+**Goal:** Move core-java from Spring Boot 3.5.16 to 4.1.x and prove the result green by test, gate and live runtime. Boot 3.5's OSS support ended 2026-06-30 (#706); the move also unblocks springdoc 3.1.1 (#739). Owner decisions D-01..D-04 (2026-10-01) and the spike evidence are in `38-CONTEXT.md` / `38-SPIKE.md`: Jackson 3 throughout, explicit per-module starters, spring-statemachine kept, and 401s kept as plain `Bearer`. Three defects that today's tests do not catch must be closed on the way: KeycloakAdminClient sends a garbage body under Jackson 3; 18 config keys are silently ignored, so it needs a new unknown-key gate; and the netty/Tomcat CVE pins need to move to their Boot-4 lines.
+**Requirements**: BOOT4-01, BOOT4-02, BOOT4-03, BOOT4-04, BOOT4-05, BOOT4-06, BOOT4-07, BOOT4-08, BOOT4-09, BOOT4-10, BOOT4-11, BOOT4-12, BOOT4-13, BOOT4-14 (derived at plan time 2026-10-04 from 38-RESEARCH.md; REQUIREMENTS.md §BOOT4. D-05, added 2026-10-04, is covered by BOOT4-09; no BOOT4-15)
+**Depends on:** Phase 36
+**Plans:** 19/19 plans complete (11 waves). Revised 2026-10-04 after the plan check: the 38-12 test sweep was split out as 38-19, which runs before the bridge removal, and 38-03's doc and doc-gate edits moved to 38-16.
+
+Plans:
+
+**Wave 1** (on the Boot 3.5 tree, before any Boot-4 change)
+
+- [x] 38-01-PLAN.md — Jackson-2 golden fixtures from the production 3.5 serializers (idempotency hashes, responses, outbox, AMQP, cache) with a Jackson-free integrity test
+- [x] 38-02-PLAN.md — Boot 3.5 baselines: structural inventory of enforced request-body constraints, jsonb read-back, exact 401 header and the /.well-known baseline
+
+**Wave 2**
+
+- [x] 38-03-PLAN.md — TRACER: Boot 4.1.1 on explicit starters (D-02), spring-security-access (D-03), Boot-4 CVE pins, 67 migrations applied + RLS green; both version gates' interim red recorded (cleared by 38-16)
+
+**Wave 3**
+
+- [x] 38-04-PLAN.md — Full-suite ledger with owned reds; module liveness probes; Flyway, tracing and restclient arms; statemachine on Framework 7
+- [x] 38-05-PLAN.md — Jackson-3 wire/acceptance diff measured, owner decision on Boot's Jackson defaults, permanent wire contract (checkpoint)
+- [x] 38-06-PLAN.md — D-04 plain Bearer on 401 and D-05 404 suppression of /.well-known/oauth-protected-resource
+- [x] 38-07-PLAN.md — KeycloakAdminClient body by content (the spike's defect) and the request/response Jackson users on Jackson 3
+- [x] 38-08-PLAN.md — AMQP converter and outboxes on Jackson 3; Boot-3.5 messages and outbox rows proven readable both ways
+- [x] 38-09-PLAN.md — Redis cache on GenericJacksonJsonRedisSerializer, allowlist re-derived, v4: key prefix proven on real Redis
+- [x] 38-10-PLAN.md — Frozen idempotency fingerprint (IdempotencyJson), NOSUPERUSER replay of a Boot-3.5 reservation, DSAR and jsonb continuity
+
+**Wave 4**
+
+- [x] 38-11-PLAN.md — The 18 silently ignored keys renamed and bound, Boot-3 excludes renamed, scripts/check-boot-config-keys.sh gate wired into CI
+
+**Wave 5**
+
+- [x] 38-19-PLAN.md — Test-side Jackson-3 sweep in three committed batches (23 bean injectors, 10 local mappers), each proven green with the bridge on and off; closed DELIBERATE-JACKSON2 list
+
+**Wave 6**
+
+- [x] 38-12-PLAN.md — TRACER (end state): interim Jackson-2 bridge removed, JacksonLineContractTest end-state gate, both suites green on the end-state classpath
+
+**Wave 7**
+
+- [x] 38-13-PLAN.md — Classic-vs-explicit auto-configuration census with classified diff and permanent must-have assertions
+- [x] 38-14-PLAN.md — OpenAPI snapshot regenerated after every newly required field is proven enforced on Boot 3.5; gate and consumers green
+
+**Wave 8**
+
+- [x] 38-15-PLAN.md — CVE floors proven by dependencyInsight and near-miss arms; local Trivy 0.70.0 image scan with the CI gate's flags
+
+**Wave 9**
+
+- [x] 38-16-PLAN.md — Version gates follow the plugin (horizons row, doc-versions row, gated claims; moved from 38-03), docs, citations, ADR-0006, statemachine risk record, metrics regenerated once
+
+**Wave 10**
+
+- [x] 38-17-PLAN.md — Runtime parity on the rebuilt stack, jar read-back, live Keycloak offboard, live 401/404, tracing/metrics/cache (checkpoint)
+
+**Wave 11**
+
+- [x] 38-18-PLAN.md — Push, CI/CD on Temurin incl. the image gate, nightly E2E on the branch, ship checklist (#706, #739) (checkpoint)
 
 ### Phase 39: Platform runtime upgrades
 

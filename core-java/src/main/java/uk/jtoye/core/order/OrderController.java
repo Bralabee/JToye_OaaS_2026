@@ -385,4 +385,38 @@ public class OrderController {
         OrderDto order = orderService.cancelOrder(id);
         return ResponseEntity.ok(order);
     }
+
+    /**
+     * Acknowledge the customer's allergy note (Phase 31.1 D-15, #812).
+     * POST /orders/{id}/allergy-note/acknowledgement
+     *
+     * <p>Agent-readiness contract: idempotent by construction, so no Idempotency-Key is needed — the
+     * first acknowledgement is recorded and every repeat returns it unchanged. Errors are typed RFC
+     * 7807. There is deliberately no MCP tool for this: the acknowledgement asserts that a PERSON in
+     * the kitchen read the note, which an agent cannot truthfully assert.
+     */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // same scope as every other order mutation (AI-02)
+    @PostMapping("/{id}/allergy-note/acknowledgement")
+    @Operation(summary = "Acknowledge the allergy note",
+            description = "Records that someone in the shop has read the customer's allergy note: who (the "
+                    + "authenticated user) and when. Requires at least STAFF on the order's shop. Idempotent: the "
+                    + "first acknowledgement stands and every repeat returns it unchanged. The customer's order "
+                    + "tracking shows when the note was read.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Acknowledged, or already acknowledged: the order detail carrying "
+                            + "allergyNoteAcknowledgedAt and allergyNoteAcknowledgedBy of the FIRST acknowledgement"),
+            @ApiResponse(responseCode = "400",
+                    description = "The order has no allergy note to acknowledge (errors/invalid-state-transition)"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid bearer token"),
+            @ApiResponse(responseCode = "403",
+                    description = "Caller lacks the orders:write scope, or lacks at least STAFF on the order's shop "
+                            + "(errors/shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "Order not found"),
+            @ApiResponse(responseCode = "409",
+                    description = "Two first acknowledgements raced on the same order; retry to read the one that won")
+    })
+    public ResponseEntity<OrderDetailDto> acknowledgeAllergyNote(@PathVariable UUID id) {
+        return ResponseEntity.ok(orderService.acknowledgeAllergyNote(id));
+    }
 }

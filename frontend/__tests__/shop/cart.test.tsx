@@ -13,10 +13,14 @@
  */
 
 import { Suspense } from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import CartPage from "@/app/shop/[slug]/cart/page"
 import { CartProvider } from "@/components/storefront/cart-provider"
 import publicApiClient from "@/lib/public-api-client"
+import {
+  BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
+  NO_ALLERGENS_DECLARED_COPY,
+} from "@/lib/allergen-copy"
 
 // The basket page fetches the shop for its server-authoritative delivery fee
 // and minimum — same shape (and same graceful degradation) as checkout.
@@ -366,5 +370,152 @@ describe("Shop cart page — the minimum-order rule (COR-3)", () => {
     expect(
       await screen.findByRole("link", { name: /proceed to checkout/i })
     ).toBeInTheDocument()
+  })
+})
+
+/**
+ * #860 (31.1-23, D-18): each basket line states that dish's own allergens, read from the LIVE
+ * catalogue (`/public/shops/{slug}/products`), never from anything stored in the cart. The cart's
+ * stored JSON carries no allergen data, and rendering the basket must not add any.
+ */
+describe("Shop cart page — each line's own allergens (#860)", () => {
+  const MILK = 1 << 6
+  const catalogueProduct = (id: string, title: string, allergenMask: number, extra: object = {}) => ({
+    id,
+    title,
+    description: null,
+    imageUrl: null,
+    imageUrls: [],
+    ingredientsText: "",
+    allergenMask,
+    pricePennies: 500,
+    category: "Mains",
+    dietaryTags: null,
+    preparationTimeMinutes: null,
+    featured: false,
+    inStock: true,
+    ...extra,
+  })
+  const CATALOGUE = {
+    Mains: [
+      catalogueProduct("p-jollof", "Jollof Rice", MILK),
+      catalogueProduct("p-plantain", "Plantain", 0),
+      catalogueProduct("p-egusi", "Egusi", 0, { undeclaredIngredientAllergens: ["Milk"] }),
+    ],
+  }
+  const storedLine = (productId: string, title: string, extra: object = {}) => ({
+    productId,
+    title,
+    pricePennies: 500,
+    quantity: 1,
+    imageUrl: null,
+    category: "Mains",
+    ...extra,
+  })
+  const serveCatalogue = (catalogue: unknown) =>
+    mockedGet.mockImplementation((url: string) =>
+      String(url).endsWith("/products")
+        ? Promise.resolve({ data: catalogue })
+        : Promise.reject(new Error("shop not stubbed"))
+    )
+  const lineAllergenText = () =>
+    screen.queryAllByTestId("basket-line-allergens").map((el) => el.textContent)
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it("states each line's declared set, 'No allergens declared', or the D-09 line, in basket order", async () => {
+    serveCatalogue(CATALOGUE)
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        shopSlug: SLUG,
+        items: [
+          storedLine("p-jollof", "Jollof Rice"),
+          storedLine("p-plantain", "Plantain"),
+          storedLine("p-egusi", "Egusi"),
+        ],
+      })
+    )
+    renderCart()
+
+    await waitFor(() =>
+      expect(lineAllergenText()).toEqual([
+        "Contains: Milk",
+        NO_ALLERGENS_DECLARED_COPY,
+        "Ingredients name: MILK – check with the shop",
+      ])
+    )
+    expect(mockedGet).toHaveBeenCalledWith(`/public/shops/${SLUG}/products`)
+  })
+
+  it("reads the LIVE catalogue, never an allergen field that found its way into the stored cart", async () => {
+    serveCatalogue(CATALOGUE)
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        shopSlug: SLUG,
+        // A stale copy, as if an older client had stored the mask: Eggs. The vendor now declares Milk.
+        items: [storedLine("p-jollof", "Jollof Rice", { allergenMask: 1 << 2 })],
+      })
+    )
+    renderCart()
+    await waitFor(() => expect(lineAllergenText()).toEqual(["Contains: Milk"]))
+  })
+
+  it("a failed catalogue fetch says 'not available' on every line, never 'No allergens declared'", async () => {
+    mockedGet.mockRejectedValue(new Error("upstream down"))
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        shopSlug: SLUG,
+        items: [storedLine("p-jollof", "Jollof Rice"), storedLine("p-plantain", "Plantain")],
+      })
+    )
+    renderCart()
+
+    await waitFor(() =>
+      expect(lineAllergenText()).toEqual([
+        BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
+        BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY,
+      ])
+    )
+    expect(screen.queryByText(NO_ALLERGENS_DECLARED_COPY)).toBeNull()
+  })
+
+  it("a dish the catalogue no longer lists says 'not available'; the other lines still state theirs", async () => {
+    serveCatalogue(CATALOGUE)
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        shopSlug: SLUG,
+        items: [storedLine("p-withdrawn", "Withdrawn dish"), storedLine("p-jollof", "Jollof Rice")],
+      })
+    )
+    renderCart()
+    await waitFor(() =>
+      expect(lineAllergenText()).toEqual([BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY, "Contains: Milk"])
+    )
+  })
+
+  it("writes nothing to the stored cart: its JSON is byte-identical before and after the lines render", async () => {
+    serveCatalogue(CATALOGUE)
+    // Seeded in the provider's own canonical shape (it stamps `owner` on hydration, #459), so any
+    // later difference is a write by the basket, not the provider's normal stamp.
+    const seeded = JSON.stringify({
+      shopSlug: SLUG,
+      owner: null,
+      items: [storedLine("p-jollof", "Jollof Rice"), storedLine("p-egusi", "Egusi")],
+    })
+    localStorage.setItem(STORAGE_KEY, seeded)
+    renderCart()
+
+    await waitFor(() =>
+      expect(lineAllergenText()).toEqual(["Contains: Milk", "Ingredients name: MILK – check with the shop"])
+    )
+    // Control: the slot is the one the provider reads (a wrong key would compare null to null).
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(seeded)
   })
 })

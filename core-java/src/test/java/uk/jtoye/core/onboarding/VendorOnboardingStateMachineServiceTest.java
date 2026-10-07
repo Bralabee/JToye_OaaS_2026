@@ -4,7 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.ActiveProfiles;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 
@@ -26,7 +26,7 @@ import static org.mockito.Mockito.when;
  *
  * <p>Unlike the Order guards (which inject nothing), the onboarding
  * APPROVE/GO_LIVE/REINSTATE guard beans constructor-inject
- * {@link VendorOnboardingGateRepository}, so we {@link MockBean} it and drive the
+ * {@link VendorOnboardingGateRepository}, so we {@link MockitoBean} it and drive the
  * guard outcome by stubbing {@code findByOnboardingId(...)} per test — otherwise
  * the guard beans in the loaded context would have an unsatisfied dependency (N3).
  */
@@ -37,7 +37,7 @@ class VendorOnboardingStateMachineServiceTest {
     @Autowired
     private VendorOnboardingStateMachineService stateMachineService;
 
-    @MockBean
+    @MockitoBean
     private VendorOnboardingGateRepository gateRepository;
 
     private VendorOnboardingGate gate(GateType type, GateStatus status, boolean mandatory) {
@@ -53,11 +53,15 @@ class VendorOnboardingStateMachineServiceTest {
         return List.of(gate(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true));
     }
 
-    /** All mandatory PASSED plus a PASSED allergen row — satisfies the GO_LIVE/REINSTATE guard. */
+    /**
+     * All mandatory PASSED plus PASSED allergen and trader-identity rows — satisfies the
+     * GO_LIVE/REINSTATE guard (31.1-12 added the explicit TRADER_IDENTITY requirement, #789).
+     */
     private List<VendorOnboardingGate> allMandatoryPassedPlusAllergen() {
         return List.of(
                 gate(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true),
-                gate(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true));
+                gate(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true),
+                gate(GateType.TRADER_IDENTITY, GateStatus.PASSED, true));
     }
 
     @Test
@@ -181,6 +185,27 @@ class VendorOnboardingStateMachineServiceTest {
         when(gateRepository.findByOnboardingId(any(UUID.class))).thenReturn(List.of(
                 gate(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true),
                 gate(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PENDING, true)));
+        assertThrows(InvalidStateTransitionException.class, () ->
+                stateMachineService.sendEvent(UUID.randomUUID(), OnboardingState.APPROVED, OnboardingEvent.GO_LIVE));
+    }
+
+    @Test
+    @DisplayName("GO_LIVE and REINSTATE guards reject a WAIVED or absent TRADER_IDENTITY row (#789)")
+    void goLiveRejectedWhenTraderIdentityWaivedOrAbsent() {
+        // Everything else satisfies the guard; a waiver satisfies APPROVE but never GO_LIVE.
+        when(gateRepository.findByOnboardingId(any(UUID.class))).thenReturn(List.of(
+                gate(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true),
+                gate(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true),
+                gate(GateType.TRADER_IDENTITY, GateStatus.WAIVED, true)));
+        assertThrows(InvalidStateTransitionException.class, () ->
+                stateMachineService.sendEvent(UUID.randomUUID(), OnboardingState.APPROVED, OnboardingEvent.GO_LIVE));
+        assertThrows(InvalidStateTransitionException.class, () ->
+                stateMachineService.sendEvent(UUID.randomUUID(), OnboardingState.SUSPENDED, OnboardingEvent.REINSTATE));
+
+        // No row at all: the shape of an onboarding submitted before the gate existed.
+        when(gateRepository.findByOnboardingId(any(UUID.class))).thenReturn(List.of(
+                gate(GateType.BUSINESS_VERIFIED, GateStatus.PASSED, true),
+                gate(GateType.ALLERGEN_DATA_COMPLETE, GateStatus.PASSED, true)));
         assertThrows(InvalidStateTransitionException.class, () ->
                 stateMachineService.sendEvent(UUID.randomUUID(), OnboardingState.APPROVED, OnboardingEvent.GO_LIVE));
     }

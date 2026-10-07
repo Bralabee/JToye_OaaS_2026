@@ -1,8 +1,5 @@
 package uk.jtoye.core.tenant.keycloak;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -10,8 +7,12 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,7 +24,8 @@ import java.util.UUID;
  * the Java side (the only existing admin caller is the one-shot
  * {@code infra/keycloak/configure-keycloak.sh}, deliberately untouched).
  *
- * <p>Four operations, mapped to the Keycloak 24 admin REST shape:
+ * <p>Six operations, mapped to the Keycloak 24 admin REST shape (the last two added by 31.1-11 for
+ * DSAR customer-account deletion, D-03):
  * <ul>
  *   <li>{@link #obtainAdminToken()} — master-realm {@code admin-cli} password grant.</li>
  *   <li>{@link #searchUsersByTenant} — paginated user search by the
@@ -31,6 +33,8 @@ import java.util.UUID;
  *   <li>{@link #setUserEnabled} — PUT the full user representation back with
  *       {@code enabled} flipped (Keycloak requires the whole rep on update).</li>
  *   <li>{@link #logoutUser} — revoke the user's active sessions.</li>
+ *   <li>{@link #findUsersByEmail} — exact-email user search in one named realm.</li>
+ *   <li>{@link #deleteUser} — delete one user; 404 reports "already gone", not an error.</li>
  * </ul>
  *
  * <p><b>Security (STRIDE T-kc-01):</b> the bearer token and admin password are
@@ -38,6 +42,17 @@ import java.util.UUID;
  * {@link KeycloakAdminException} carrying realm/operation context only — the
  * client never maps to an HTTP status or swallows a failure; the service layer
  * owns the best-effort availability decision.
+ *
+ * <p><b>Jackson 3 throughout (38-07, BOOT4-05):</b> the user representations are
+ * {@code tools.jackson} nodes because Boot 4's RestClient writes request bodies with
+ * the Jackson-3 converter. A Jackson-2 {@code ObjectNode} handed to that converter is
+ * not a tree to it, so it was serialized as a bean
+ * ({@code {"array":false,...,"nodeType":"OBJECT",...}}): Keycloak received no
+ * {@code enabled} field and the offboarded user stayed ENABLED. The by-content test
+ * {@code KeycloakAdminClientTest#setUserEnabled_putsTheSearchedRepBack_withOnlyEnabledFlipped_byContent}
+ * guards it. Parse failures are now the unchecked {@code JacksonException}; the
+ * generic {@code Exception} catches below still turn them into the same
+ * {@link KeycloakAdminException} messages.
  */
 @Component
 public class KeycloakAdminClient {
@@ -49,16 +64,16 @@ public class KeycloakAdminClient {
 
     private final RestClient restClient;
     private final KeycloakAdminProperties properties;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
 
     public KeycloakAdminClient(RestClient.Builder restClientBuilder,
                                KeycloakAdminProperties properties,
-                               ObjectMapper objectMapper) {
+                               JsonMapper jsonMapper) {
         // baseUrl may be empty when the feature is inert — the client is simply
         // never called in that state (the service short-circuits on configured()).
         this.restClient = restClientBuilder.baseUrl(properties.getBaseUrl()).build();
         this.properties = properties;
-        this.objectMapper = objectMapper;
+        this.jsonMapper = jsonMapper;
     }
 
     /**
@@ -78,12 +93,12 @@ public class KeycloakAdminClient {
                     .body(form)
                     .retrieve()
                     .body(String.class);
-            JsonNode node = objectMapper.readTree(body == null ? "{}" : body);
+            JsonNode node = jsonMapper.readTree(body == null ? "{}" : body);
             JsonNode token = node.get("access_token");
-            if (token == null || token.asText().isBlank()) {
+            if (token == null || token.asString().isBlank()) {
                 throw new KeycloakAdminException("Keycloak token response had no access_token");
             }
-            return token.asText();
+            return token.asString();
         } catch (KeycloakAdminException e) {
             throw e;
         } catch (RestClientException e) {
@@ -110,10 +125,10 @@ public class KeycloakAdminClient {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .retrieve()
                         .body(String.class);
-                JsonNode page = objectMapper.readTree(body == null ? "[]" : body);
+                JsonNode page = jsonMapper.readTree(body == null ? "[]" : body);
                 int pageCount = 0;
                 if (page.isArray()) {
-                    for (JsonNode user : page) {
+                    for (JsonNode user : page.values()) {
                         if (user instanceof ObjectNode on) {
                             users.add(on);
                         }
@@ -142,7 +157,7 @@ public class KeycloakAdminClient {
      * is flipped here. Disabling an already-disabled user is a harmless no-op PUT.
      */
     public void setUserEnabled(String realm, ObjectNode userRep, boolean enabled, String token) {
-        String userId = userRep.path("id").asText();
+        String userId = userRep.path("id").asString();
         ObjectNode payload = userRep.deepCopy();
         payload.put("enabled", enabled);
         try {
@@ -157,6 +172,73 @@ public class KeycloakAdminClient {
             throw new KeycloakAdminException(
                     "Keycloak user disable failed for realm=" + realm + " userId=" + userId, e);
         }
+    }
+
+    /**
+     * 31.1-11 (D-03): {@code GET /admin/realms/{realm}/users?email={email}&exact=true}. Without
+     * {@code exact=true} Keycloak matches the email as a SUBSTRING, so this would return every
+     * account whose address merely contains the subject's; with it, only the complete address
+     * matches. The address travels as a URI variable, so {@code @} and {@code +} are
+     * percent-encoded (a raw {@code +} would be read back as a space). Callers still re-check each
+     * returned user's email before acting on it.
+     *
+     * <p>The error message names the realm and never the address: the address is personal data.
+     */
+    public List<CustomerRealmUser> findUsersByEmail(String realm, String email, String token) {
+        try {
+            String body = restClient.get()
+                    .uri("/admin/realms/{realm}/users?email={email}&exact=true", realm, email)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode page = jsonMapper.readTree(body == null ? "[]" : body);
+            List<CustomerRealmUser> users = new ArrayList<>();
+            if (page.isArray()) {
+                for (JsonNode user : page.values()) {
+                    if (user instanceof ObjectNode on) {
+                        users.add(new CustomerRealmUser(
+                                text(on, "id"), text(on, "username"), text(on, "email"),
+                                text(on, "firstName"), text(on, "lastName"),
+                                on.hasNonNull("createdTimestamp") && on.get("createdTimestamp").isNumber()
+                                        ? on.get("createdTimestamp").longValue() : null));
+                    }
+                }
+            }
+            return users;
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak user email search failed for realm=" + realm, e);
+        } catch (Exception e) {
+            throw new KeycloakAdminException(
+                    "Keycloak user email-search response could not be parsed for realm=" + realm, e);
+        }
+    }
+
+    /**
+     * 31.1-11 (D-03): {@code DELETE /admin/realms/{realm}/users/{id}}. Irreversible.
+     *
+     * @return {@code true} when Keycloak deleted the user (2xx); {@code false} when it answered 404,
+     *         i.e. the user is already gone, which is the goal state and not an error
+     * @throws KeycloakAdminException on any other failure, carrying the realm only
+     */
+    public boolean deleteUser(String realm, String userId, String token) {
+        try {
+            restClient.delete()
+                    .uri("/admin/realms/{realm}/users/{id}", realm, userId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .toBodilessEntity();
+            return true;
+        } catch (HttpClientErrorException.NotFound e) {
+            return false;
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak user delete failed for realm=" + realm, e);
+        }
+    }
+
+    /** A string field of a user representation, or {@code null} when absent or JSON null. */
+    private static String text(ObjectNode node, String field) {
+        JsonNode v = node.get(field);
+        return v == null || v.isNull() ? null : v.asString();
     }
 
     /** Revokes the user's active sessions ({@code POST .../users/{id}/logout}). */

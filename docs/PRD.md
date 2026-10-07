@@ -134,8 +134,9 @@ Compliance is not polish here — it is the differentiator vs Flipdish. Each ite
 - **PECR / cookies.** A cookie notice + client-only consent store (no server table by design — a
   pre-identity visitor cannot be keyed in an RLS table); an exhaustive `/legal/cookies` disclosure
   over measured storage keys.
-- **WCAG 2.1 AA — partial.** A conformance statement at `/legal/accessibility` with seven **dated**
-  exceptions (an overdue date reds the build); a per-PR axe gate over 12 public surfaces (+ a deliberate instrument control) on both viewports;
+- **WCAG 2.2 AA — partial.** A conformance statement at `/legal/accessibility` with five **dated**
+  exceptions (an overdue date reds the build); a per-PR axe gate over the 17 surfaces the statement claims (+ two instruments and a
+  statement/gate scope-and-standard coupling test) on both viewports;
   `jsx-a11y` rules all at `error`. The vendor dashboard is deliberately outside the claim.
 
 ---
@@ -217,7 +218,7 @@ if ≥10 pay, ≥70% go live, ≥70% activate a first real order, ≤4 h median 
 
 **Declared today:** the 90-day pilot gates (business); GTM-01/02 (launch); per-phase falsifiable
 engineering criteria; a config-declared throttled-mobile Core-Web-Vitals budget for `/`; the
-gate-enforced test manifest (`docs/metrics.json`, 3185 logical invocations); 37 CI gate scripts.
+gate-enforced test manifest (`docs/metrics.json`, 4863 logical invocations at 31.1-29); 37 CI gate scripts.
 
 **Gaps a future PRD revision must define — none exist in code today:**
 - **No product analytics.** Nothing measures vendor activation, orders per tenant, direct-order

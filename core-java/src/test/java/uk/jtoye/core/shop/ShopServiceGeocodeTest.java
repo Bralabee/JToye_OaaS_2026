@@ -1,6 +1,6 @@
 package uk.jtoye.core.shop;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -109,7 +109,7 @@ class ShopServiceGeocodeTest {
 
             mockMvcWith(shopService).perform(post("/shops")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(new ObjectMapper().writeValueAsString(
+                            .content(JsonMapper.builder().build().writeValueAsString(
                                     request("48 Rye Lane, Peckham, London SE15 5BS", 999.0, -0.07))))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/validation"))
@@ -126,7 +126,7 @@ class ShopServiceGeocodeTest {
 
             mockMvcWith(shopService).perform(post("/shops")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(new ObjectMapper().writeValueAsString(
+                            .content(JsonMapper.builder().build().writeValueAsString(
                                     request("48 Rye Lane, Peckham, London SE15 5BS", 51.47, 999.0))))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.errors.longitude").exists());
@@ -237,7 +237,7 @@ class ShopServiceGeocodeTest {
                     .build()
                     .perform(post("/shops")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(new ObjectMapper().writeValueAsString(
+                            .content(JsonMapper.builder().build().writeValueAsString(
                                     request("12 Bellenden Road, Peckham, London SE15 4QA", 51.47, null))))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/validation"))

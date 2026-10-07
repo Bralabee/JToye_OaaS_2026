@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Phase 31.1: Persona gap closure (#901) — 2026-10-07
+
+Gap closure for the 17 persona-testing clusters of Phase 31 (epic #880), thirty plans on the
+Boot 4.1 / Jackson 3 tree. Eight migrations, V68 to V75, every one nullable with no backfill and
+no default (the V63 rule). Owner rulings D-01 to D-22 are in `31.1-CONTEXT.md`.
+
+- **Data-subject requests are carried out.** A verified ERASURE anonymises a storefront guest's
+  order PII and review authorship in every tenant holding the address (V68), deletes the
+  customer-realm sign-in account after commit and completes only once that is confirmed or
+  recorded outstanding (V72). A verified ACCESS request assembles one encrypted, single-use,
+  seven-day export across every tenant and emails a link, never the data (V75, download page).
+  The subject's address is held only AES-256-GCM-encrypted from `DSAR_ENCRYPTION_KEY` and dropped
+  at every terminal state (V70); core-java refuses to start without the key. The verification
+  link opens a friendly page on every runtime, and a signed-in customer has an account page
+  offering "Download my data" and "Delete my account".
+- **The allergen evidence chain is server-enforced.** A guest order without an acknowledged
+  allergen mask is refused 422; one whose mask no longer matches the basket is refused with a
+  typed 409 carrying the current set; the accepted mask, time and channel are recorded on the
+  order (V69) and shown back on the confirmation, the email, tracking and My Orders. Vendor,
+  API and MCP orders are marked as placed by the shop. A product whose ingredients emphasise an
+  undeclared allergen saves with a typed warning and is never rendered as "No allergens";
+  "may contain" is its own mask and label line (V74) and use-by is computed from a production
+  date; checkout has a dedicated allergy note with a recorded vendor acknowledgement on the
+  kitchen ticket (V73); menu cards name allergens before Add and the basket attributes them per
+  line.
+- **Seller and platform identity.** Every storefront, the checkout and the durable confirmation
+  show the seller's legal name, geographic address and email (V71 `trader_identity`, tenant
+  level, FORCE RLS); a new onboarding gate stops a shop going live without them; order emails
+  come from the shop via J'Toye. The platform's registered office (Companies House 16471464,
+  owner-confirmed) is published on the legal pages in every runtime.
+- **Statements match the site.** A cash checkout loads no Stripe code and sets no Stripe cookie;
+  every browser storage key is listed in the cookie policy and personal keys are cleared on
+  sign-out; the privacy notice describes the emails the platform actually sends; the
+  accessibility statement targets WCAG 2.2 AA over the full order journey.
+- **Proof.** Every criterion was shown RED on the pre-31.1 runtime and GREEN on the rebuilt one
+  with parity read from inside the running jar; UAT 182/182; 102/102 threats closed at ASVS L2.
+  Test inventory 4292 → 4868 logical invocations, counting the regression tests for the two
+  review round 1 findings (a DSAR claim stranded by a dead sweep is now reclaimed after a lease;
+  the confirm and download links survive React Strict Mode). Closes #777, #778, #784, #785, #787, #789,
+  #793, #794, #812, #817, #838, #839, #840, #860 and #861; #871 and #878 stay open.
+
+### Trivy fs gate green again: sharp, source-map-js, MCP SDK and proxy-addr lockfile bumps (#902) — 2026-10-07
+
+- **Four lockfile findings, no code change.** Trivy's fs gate (`CRITICAL,HIGH`, ignore-unfixed)
+  began failing every PR, #901 included, after main's last green scan on 2026-10-06. The
+  advisories had landed in Trivy's daily DB. frontend: `sharp` 0.35.4 → 0.35.5
+  (GHSA-wq5f-xc86-pv6w, librsvg) and `source-map-js` 1.2.1 → 1.2.2 (CVE-2026-93749). mcp-server:
+  `@modelcontextprotocol/sdk` 1.29.0 → 1.32.1 (CVE-2026-104850) and `proxy-addr` 2.0.7 → 2.0.8
+  (CVE-2026-90711, CRITICAL). The change is lockfile-only (`npm update --package-lock-only`)
+  because every target was already inside its declared range or override. In the frontend, 28
+  packages move, all of them the sharp family plus source-map-js. In mcp-server, 2 move.
+- **Proof, both directions.** The Trivy container, run with the gate's flags, reports 4 findings
+  (rc=1) on main's lockfiles and 0 (rc=0) on the branch's. mcp-server: `tsc` passes and vitest
+  61/61. frontend: `next build` passes and jest 1891/1891.
+
+### Phase 38: core-java on Spring Boot 4.1.1, Jackson 3 throughout (#898) — 2026-10-06
+
+- **Spring Boot 3.5.16 → 4.1.1 (Spring Framework 7.0.9), on explicit per-module starters.** Boot 3.5's
+  open-source support ended 2026-06-30 (#706). Owner decisions:
+  - D-01: Jackson 3 throughout, keeping Boot's Jackson-3 defaults after a measured wire diff.
+    Class-based responses are now written alphabetically, and trailing request content is a 400.
+  - D-02: explicit starters, census-checked (130 vs 133 auto-configurations; the 3 classic-only
+    ones are intended absences).
+  - D-03: spring-statemachine kept on Framework 7.
+  - D-04: 401s stay plain `Bearer`.
+  - D-05: Security 7's protected-resource metadata, which falsely claims cert-bound tokens, is
+    suppressed with a 404.
+
+  springdoc moves to 3.1.1, which supersedes Dependabot #739. ADR-0006 records the decisions and the
+  deploy and rollback notes.
+- **No deploy-time drain or flush.** Every byte a Boot-3.5 pod writes is proven readable by Boot 4 against
+  38 golden Jackson-2 fixtures captured from the 3.5 serializers before any change:
+  - idempotency hashes, through a frozen `IdempotencyJson`, so a key reserved on 3.5 replays its
+    201 rather than a 422;
+  - AMQP messages and outbox rows, readable in both directions and on a real broker;
+  - Redis entries, behind a new `v4:` key prefix. An eviction also deletes the Boot-3.5 key during
+    the rolling deploy.
+- **Three defects the old tests could not see, closed.**
+  - KeycloakAdminClient sent a garbage body under Jackson 3, so tenant offboarding would have left
+    users enabled.
+  - 18 config keys were silently ignored, among them the Zipkin endpoint, prod error detail and
+    log retention. A new production-classpath metadata gate now fails CI on any unknown or
+    deprecated key.
+  - The Tomcat and Jackson CVE floors are re-keyed onto their Boot-4 lines, and each is shown to be
+    load-bearing.
+- **Cache evictions are synchronous again** (review round 1). Spring Data Redis 4's `RedisCache.evict`
+  is fire-and-forget by default, so a revoked `shopMembership` grant could be served after the
+  evictor returned. `TenantCacheEvictor` now calls `evictIfPresent`, Boot 3.5's behaviour.
+- **Proof.**
+  - Phase verification passed 14/14, and SECURITY reports `threats_open: 0` at ASVS L2.
+  - Local full suites on the final code: unit 1495/0, integration 772/0.
+  - Every required CI check passed on the merged head.
+  - The local compose runtime was rebuilt, and the freshness gate passes for all 4 services.
+
 ### Issue de-duplication searches by title, so the nightly stops filing duplicates (#885, #892) — 2026-10-04
 
 - **Three de-dup sites now use `gh issue list --state open --search "in:title \"${TITLE}\"" --limit 1000`.**

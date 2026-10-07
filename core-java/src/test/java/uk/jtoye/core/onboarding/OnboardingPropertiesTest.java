@@ -65,7 +65,8 @@ class OnboardingPropertiesTest {
         assertThat(OnboardingState.values()).hasSize(9);
         assertThat(OnboardingEvent.values()).hasSize(10);
         assertThat(OnboardingModel.values()).hasSize(2);
-        assertThat(GateType.values()).hasSize(8);
+        // 9 since 31.1-12 (#789): V71 rewrote the gate_type CHECK to admit TRADER_IDENTITY.
+        assertThat(GateType.values()).hasSize(9);
         assertThat(GateStatus.values()).hasSize(5);
 
         // Spot-check the constant NAMES the V43 CHECK strings + @Enumerated(STRING) rely on.

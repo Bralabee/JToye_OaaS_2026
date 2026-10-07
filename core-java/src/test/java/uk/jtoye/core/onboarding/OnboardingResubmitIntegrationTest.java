@@ -1,12 +1,12 @@
 package uk.jtoye.core.onboarding;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -71,7 +71,7 @@ class OnboardingResubmitIntegrationTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private VendorOnboardingRepository onboardingRepository;
     @Autowired private VendorOnboardingGateRepository gateRepository;
@@ -209,13 +209,13 @@ class OnboardingResubmitIntegrationTest {
         JsonNode last = null;
         while (System.currentTimeMillis() < deadline) {
             last = getMe();
-            if (expected.name().equals(last.get("status").asText())) {
+            if (expected.name().equals(last.get("status").asString())) {
                 return last;
             }
             Thread.sleep(100);
         }
         fail("Timed out awaiting status " + expected + "; last status="
-                + (last == null ? "n/a" : last.get("status").asText()));
+                + (last == null ? "n/a" : last.get("status").asString()));
         return null;
     }
 
@@ -229,7 +229,7 @@ class OnboardingResubmitIntegrationTest {
 
     private Map<String, String> gateStatuses(JsonNode me) {
         Map<String, String> byType = new HashMap<>();
-        me.get("gates").forEach(g -> byType.put(g.get("gateType").asText(), g.get("status").asText()));
+        me.get("gates").forEach(g -> byType.put(g.get("gateType").asString(), g.get("status").asString()));
         return byType;
     }
 }

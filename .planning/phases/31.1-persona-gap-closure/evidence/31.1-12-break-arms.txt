@@ -1,0 +1,132 @@
+31.1-12 break arms — every arm applied to a COMMITTED tree, run, restored with cp from a scratch backup,
+verified by sha256 + git diff --quiet. Each set bracketed by a clean run before and after.
+
+=== Task 1: TraderIdentityGateIntegrationTest (10 arms) — committed at 44475f10
+ARM clean-before rc=0 tests="10" skipped="0" failures="0" errors="0"
+ARM A-guard-accepts-WAIVED rc=1 tests="10" skipped="0" failures="1" errors="0"
+   RED goLiveGuard_refusesWaivedAndAbsentTraderIdentity_acceptsPassed() | java.lang.AssertionError:  Expecting code to raise a throwable.
+   restored: sha 5e422fd2b39ff89a15ddc2ef1cc1e27f947bde3ba0225d9afcfa04637d345326 matches, git diff clean
+ARM B-refresh-ifPresent-only rc=1 tests="10" skipped="0" failures="1" errors="0"
+   RED onboardingApprovedBeforeTheGateExisted_isNeitherPassedVacuouslyNorStuck() | java.lang.AssertionError: Status expected:<400> but was:<500>
+   restored: sha 12bb8ba1f8f46c65920290075c81fb27e9e3d317a0f29a67a29019256a27078e matches, git diff clean
+ARM C-guard-drops-explicit-requirement rc=1 tests="10" skipped="0" failures="1" errors="0"
+   RED goLiveGuard_refusesWaivedAndAbsentTraderIdentity_acceptsPassed() | java.lang.AssertionError:  Expecting code to raise a throwable.
+   restored: sha 5e422fd2b39ff89a15ddc2ef1cc1e27f947bde3ba0225d9afcfa04637d345326 matches, git diff clean
+ARM D-rollback-on-veto rc=1 tests="10" skipped="0" failures="4" errors="0"
+   RED onboardingApprovedBeforeTheGateExisted_isNeitherPassedVacuouslyNorStuck() | org.springframework.dao.EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+   RED noTraderIdentity_goLiveRefused_rowFailedNamingBusinessDetails() | org.opentest4j.AssertionFailedError:  expected: "FAILED"  but was: "PASSED"
+   RED shopWithoutEmail_goLiveRefused_reasonNamesTheShopEmail() | org.opentest4j.AssertionFailedError:  expected: "FAILED"  but was: "PENDING"
+   RED companyWithoutCompanyNumber_goLiveRefused_reasonNamesTheCompanyNumber() | java.lang.AssertionError:  Expecting actual not to be null
+   restored: sha 12bb8ba1f8f46c65920290075c81fb27e9e3d317a0f29a67a29019256a27078e matches, git diff clean
+ARM E-no-email-check rc=1 tests="10" skipped="0" failures="1" errors="0"
+   RED shopWithoutEmail_goLiveRefused_reasonNamesTheShopEmail() | java.lang.AssertionError: Status expected:<400> but was:<200>
+   restored: sha 6d387add715d5302620f2a3916622388f0cbcd317f991ab424e7fc202bf1ce84 matches, git diff clean
+ARM F-no-company-number-check rc=1 tests="10" skipped="0" failures="1" errors="0"
+   RED companyWithoutCompanyNumber_goLiveRefused_reasonNamesTheCompanyNumber() | java.lang.AssertionError: Status expected:<400> but was:<200>
+   restored: sha 6d387add715d5302620f2a3916622388f0cbcd317f991ab424e7fc202bf1ce84 matches, git diff clean
+ARM G-evidence-carries-value rc=1 tests="10" skipped="0" failures="1" errors="0"
+   RED companyWithNumberAndShopEmail_goLivePublishes_evidenceNamesFieldsNotValues() | java.lang.AssertionError:  Expecting actual:   "{"legal_name": "Adebayo Foods Ltd", "shop_email": true, "shop_phone": false, "vat_number": false, "entity_type":
+   restored: sha 6d387add715d5302620f2a3916622388f0cbcd317f991ab424e7fc202bf1ce84 matches, git diff clean
+ARM clean-after rc=0 tests="10" skipped="0" failures="0" errors="0"
+ARM B2-refresh-ifPresent-only rc=1 tests="10" skipped="0" failures="1" errors="0"
+   RED onboardingApprovedBeforeTheGateExisted_isNeitherPassedVacuouslyNorStuck() | org.springframework.dao.EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+   restored: sha 12bb8ba1f8f46c65920290075c81fb27e9e3d317a0f29a67a29019256a27078e matches, git diff clean
+(arm B returned null from orElseGet -> NPE 500: not a faithful ifPresent; superseded by B2, a true
+ ifPresent-only refresh. B2: the first go-live is still REFUSED by the guard's explicit requirement,
+ but no row is materialised, so the vendor sees nothing and is stuck — the in-flight arm goes red.)
+
+=== Task 2: jest (parity + onboarding page) and next build — committed at 3b1241cb
+ARM K-union-lacks-member rc=1 Tests:       1 failed, 60 passed, 61 total
+   restored: sha d576ac4b29de1dcd02c84c48278151fa53224e90203ff2863085b39044ba7cdd matches, git diff clean
+ARM L-no-secondary-link rc=1 Tests:       1 failed, 60 passed, 61 total
+   restored: sha 1ab5778b52bd2d45e83489b447843910cad9be7bfeb0d0f90115fe35e13e0f51 matches, git diff clean
+ARM M-anchor-state-gated rc=1 Tests:       1 failed, 60 passed, 61 total
+   restored: sha 1ab5778b52bd2d45e83489b447843910cad9be7bfeb0d0f90115fe35e13e0f51 matches, git diff clean
+Traceback (most recent call last):
+  File "<string>", line 3, in <module>
+AssertionError: anchor count 2
+ARM N-no-reread-on-400 anchor failed
+ARM O-meta-entry-removed rc=1
+   19:app/dashboard/onboarding/page.tsx(106,7): error TS2741: Property 'TRADER_IDENTITY' is missing in type '{ BUSINESS_VERIFIED: { label: string; icon: LucideIcon; }; FOOD_HYGIENE_RATING: { label: string; icon: LucideIcon; }; FOOD_BUSINESS_REGISTRATION: { label: string; icon: LucideIcon; }; ... 4 more ...; MENU_MINIMUM: { ...; }; }' but required in type 'Record<GateType, { label: string; icon: LucideIcon; }>'.
+   restored: sha 1ab5778b52bd2d45e83489b447843910cad9be7bfeb0d0f90115fe35e13e0f51 matches, git diff clean
+ARM N-no-reread-on-400 rc=1 Tests:       1 failed, 60 passed, 61 total
+   restored: sha 1ab5778b52bd2d45e83489b447843910cad9be7bfeb0d0f90115fe35e13e0f51 matches, git diff clean
+K-union-lacks-member:
+  ● onboarding enum parity: Java <-> TypeScript (INT-6) › GateType: TypeScript declares exactly the Java constants, in the same order
+L-no-secondary-link:
+  ● Onboarding Page — business details gate (TRADER_IDENTITY) › a FAILED TRADER_IDENTITY gate says why and links to the business-details form AND the shop editor
+M-anchor-state-gated:
+  ● Onboarding Page — business details gate (TRADER_IDENTITY) › a FAILED TRADER_IDENTITY gate says why and links to the business-details form AND the shop editor
+N-no-reread-on-400:
+  ● Onboarding Page — business details gate (TRADER_IDENTITY) › a go-live 400 re-reads the onboarding so the gate that refused it is shown
+(arm N's first anchor matched twice and was refused by the runner before any edit; re-run with a unique anchor.)
+clean-after: 3 suites (parity, onboarding page, approvals page) 77/77; next build rc 0, TypeScript run.
+
+=== Task 3a: DemoDataSeederTraderIdentityIntegrationTest (dev profile) — committed at 2a0fc911
+ARM seeder-clean-before rc=0 tests="3" skipped="0" failures="0" errors="0"
+ARM P-no-seller-backfill rc=1 tests="3" skipped="0" failures="3" errors="0"
+   RED theSeederNeverOverwritesSellerDetailsAVendorEntered() | org.springframework.dao.EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+   RED reRunningTheSeederChangesNoSellerDetail() | org.springframework.dao.EmptyResultDataAccessException: Incorrect result size: expected 1, actual 0
+   RED everyPublishedDemoShopHasSellerDetailsAndPassesTheGate() | org.opentest4j.AssertionFailedError: [the demo tenant's trader identity]  expected: 1  but was: 0
+   restored: sha f50f5bd9c69a0925b00de4ae8d258648ea3d3ab4a087a39e961bf94eeec7f280 matches, git diff clean
+ARM Q-email-always-overwritten rc=1 tests="3" skipped="0" failures="1" errors="0"
+   RED theSeederNeverOverwritesSellerDetailsAVendorEntered() | org.opentest4j.AssertionFailedError:  expected: "orders@real-vendor.example.org"  but was: "kitchen@peckham-jollof-co.example.com"
+   restored: sha f50f5bd9c69a0925b00de4ae8d258648ea3d3ab4a087a39e961bf94eeec7f280 matches, git diff clean
+ARM R-identity-always-rewritten rc=1 tests="3" skipped="0" failures="2" errors="0"
+   RED theSeederNeverOverwritesSellerDetailsAVendorEntered() | org.opentest4j.AssertionFailedError:  expected: "A Real Vendor Ltd"  but was: "Mama Ade's Kitchen (demo)"
+   RED reRunningTheSeederChangesNoSellerDetail() | org.opentest4j.AssertionFailedError:  expected:    "Mama Ade's Kitchen (demo)|SOLE_TRADER|48 Rye Lane|Peckham|London|SE15 5BS|1|2026-10-06 16:42:38.995974+01   
+   restored: sha f50f5bd9c69a0925b00de4ae8d258648ea3d3ab4a087a39e961bf94eeec7f280 matches, git diff clean
+ARM S-company-entity-invented rc=1 tests="3" skipped="0" failures="1" errors="0"
+   RED everyPublishedDemoShopHasSellerDetailsAndPassesTheGate() | org.opentest4j.AssertionFailedError:  expected: "SOLE_TRADER"  but was: "COMPANY"
+   restored: sha f50f5bd9c69a0925b00de4ae8d258648ea3d3ab4a087a39e961bf94eeec7f280 matches, git diff clean
+ARM seeder-clean-after rc=0 tests="3" skipped="0" failures="0" errors="0"
+
+=== Task 3b: seed-e2e-fixtures.sh seller block, extracted VERBATIM (sed from the 4b header to its 'done')
+and run as a NOSUPERUSER NOBYPASSRLS role against a THROWAWAY postgres:15 container
+(jtoye-scratch-3112-seller, removed afterwards) carrying FORCE RLS on shops + trader_identity via
+current_tenant_id(). The shared compose stack was not touched (31.1-30 owns its live run).
+== arm 1: first run (pinned)
+  seller    : tenant 00000000-0000-0000-0000-000000000001 — published shops visible under the pin: 3, shops UPDATE affected: 3, identities inserted: 1
+harness: block completed
+rc=0
+Mama Ade's Kitchen (demo)|SOLE_TRADER|48 Rye Lane|Peckham|London|SE15 5BS
+brixton-village-grill|owner@vendor.example.org            <- vendor email kept
+mama-ades-kitchen|kitchen@mama-ades-kitchen.example.com   <- NULL filled
+other|<null>                                              <- other tenant untouched
+peckham-jollof-co|kitchen@peckham-jollof-co.example.com   <- blank '  ' filled
+unsorted-legacy-items|<null>                              <- unpublished untouched
+== arm 2: re-run (idempotent)
+  seller    : ... visible under the pin: 3, shops UPDATE affected: 3, identities inserted: 0
+rc=0
+1|Mama Ade's Kitchen (demo)
+== arm 3: the pin removed (RLS trap) — must VOID
+  seller    : ... visible under the pin: 0, shops UPDATE affected: 0, identities inserted: 0
+VOID: tenant 00000000-0000-0000-0000-000000000001: 0 published shops visible with the tenant pinned — cannot backfill seller details
+rc=2
+== arm 4: pin present but the UPDATE narrowed to blank emails (affected < visible) — must VOID
+  seller    : ... visible under the pin: 3, shops UPDATE affected: 0, identities inserted: 0
+VOID: tenant 00000000-0000-0000-0000-000000000001: shops UPDATE affected 0 of 3 published shops — the RLS-backfill trap
+rc=2
+== verification predicate (seller_incomplete), extracted verbatim
+pass direction:                       seller_incomplete=0
+blank email (' '):                    seller_incomplete=1
+blank city ('   '):                   seller_incomplete=1
+no identity:                          seller_incomplete=1
+blind (NOSUPERUSER, no pin):          seller_incomplete=1   <- a blind read fails closed, never reads as clean
+
+=== Task 3c: acceptance greps, both directions
+--- no Flyway migration carries a legal name (pass direction: expect no output, rc 1)
+rc=1 out=[]
+--- control: the same grep CAN match where the token exists (expect hits, rc 0)
+rc=0
+core-java/src/main/java/uk/jtoye/core/dev/DemoDataSeeder.java:640:     *       curated shop name followed by {@code "(demo)"}, the entity a SOLE_TRADER (so no
+core-java/src/main/java/uk/jtoye/core/dev/DemoDataSeeder.java:658:            identity.setLegalName(entityShop.getName() + " (demo)");
+scripts/seed-e2e-fixtures.sh:323:#     legal name : the shop's name followed by "(demo)", entity SOLE_TRADER (so no company
+--- plan grep: set_config count (counts the comment too)
+rc=0 count=2
+--- strengthened: the pin on an executable (non-comment) line
+rc=0 343:select set_config('app.current_tenant_id', '$seller_tenant', true);
+--- strengthened fail direction: the plan grep stays green with the executable pin deleted (vacuity), the strengthened one goes rc 1
+plan grep on pin-less copy: count=1 (still >= 1 -> cannot fail on the code it guards)
+strengthened on pin-less copy: rc=1
+tracked migrations: 72

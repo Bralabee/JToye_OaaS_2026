@@ -34,6 +34,7 @@ import {
   Loader2,
   MinusCircle,
   ShieldCheck,
+  Store,
   UserCheck,
   UtensilsCrossed,
   Wheat,
@@ -69,6 +70,9 @@ const GATE_META: Record<GateType, { label: string; icon: LucideIcon }> = {
   AGREEMENT_SIGNED: { label: "Agreement signed", icon: FileCheck },
   ALLERGEN_DATA_COMPLETE: { label: "Allergen data", icon: Wheat },
   MENU_MINIMUM: { label: "Menu minimum", icon: ListChecks },
+  // #789 / 31.1-12. A WAIVE here satisfies approval but never go-live: the go-live guard
+  // requires this gate PASSED, and re-checks the real details when the vendor goes live.
+  TRADER_IDENTITY: { label: "Business details", icon: Store },
 }
 
 const GATE_STATUS_META: Record<GateStatus, { label: string; badge: string; icon: LucideIcon }> = {

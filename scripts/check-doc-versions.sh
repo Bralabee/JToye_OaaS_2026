@@ -191,7 +191,11 @@ SPECS=(
 	# Azurite (Phase 36). Matches "Azurite 3.37.0", "Azurite: 3.37.0" and the image form
 	# `azurite:3.37.0`; the version must be three-part, so a port ("azurite:10000") never matches.
 	"Azurite|Azurite:? ?[0-9]+\.[0-9]+\.[0-9]+|$(azurite_version)"
-	"Resilience4j|Resilience4j( Spring Boot 3 Starter)? [0-9]+\.[0-9]+\.[0-9]+|$(g 'io.github.resilience4j:resilience4j-spring-boot3')"
+	# Boot-4 coordinate since Phase 38 (2026-10-05, #706): resilience4j-spring-boot3 left the
+	# build with Boot 3.5, and an unresolvable actual VOIDs the whole gate (measured: rc 2 from
+	# 38-03's first Boot-4 commit until this row moved). The label accepts both starter names so
+	# a dated "(migrated from ...)" mention of the old one is not the only form that parses.
+	"Resilience4j|Resilience4j( Spring Boot [34] Starter)? [0-9]+\.[0-9]+\.[0-9]+|$(g 'io.github.resilience4j:resilience4j-spring-boot4')"
 	"Stripe Java SDK|Stripe Java SDK [0-9]+\.[0-9]+\.[0-9]+|$(g 'com.stripe:stripe-java')"
 	# The media-pipeline rows (2026-09-30, PR #765 review). STACK.md quoted both versions and
 	# no row read them, so dependabot's bump left them stale under a green gate. Each row reads

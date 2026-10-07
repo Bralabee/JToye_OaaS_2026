@@ -1,0 +1,19 @@
+clean-before: 4e4b242b1e6136cac7059af96c466a34311dfaf29f1e22b9443b83b0d0aed2f8  -
+=== ARM N (allergenWarnings without NON_NULL) gradle rc=1
+  boot4.Jackson3WireContractTest tests="12" skipped="0" failures="2" errors="0"
+  config.CacheSerializerTypeAllowlistTest tests="16" skipped="0" failures="0" errors="0"
+Jackson3WireContractTest > records keep their bytes; class-based types are written in alphabetical key order FAILED
+Jackson3WireContractTest > every responses/ and outbox/ fixture is tree-equal to Boot's output; only the accepted ordering differences are raw-unequal FAILED
+<failure message="java.lang.AssertionError: [record byte identity and class-based alphabetical order]  Expecting empty but was: ["responses/ProductDto.json top-level keys [additionalImageUrls, allergenMask, allergenSpans, allergenWarnings, available, category, createdAt, description, dietaryTags, displayOrde
+<failure message="java.lang.AssertionError: [fixtures whose parsed JSON (keys, values, numbers by value) differs from Boot's output]  Expecting empty but was: ["responses/ProductDto.json&#9;false&#9;false&#9;/allergenWarnings expected=&lt;absent&gt; actual=null"]
+  restored: sha OK
+=== ARM W (serializer drops allergenWarnings) gradle rc=1
+  boot4.Jackson3WireContractTest tests="12" skipped="0" failures="0" errors="0"
+  config.CacheSerializerTypeAllowlistTest tests="16" skipped="0" failures="1" errors="0"
+CacheSerializerTypeAllowlistTest > productDtoRoundTripsThroughTheProductionSerializerWithEveryFieldIntact() FAILED
+<failure message="java.lang.AssertionError: [Long, OffsetDateTime, enum, List&lt;String&gt;, List&lt;record&gt; and nested media all survive]  Expecting actual:   uk.jtoye.core.product.dto.ProductDto@6063071d to be equal to:   uk.jtoye.core.product.dto.ProductDto@7e1b9f29 when recursively comparin
+  restored: sha OK
+=== clean-after gradle rc=0
+  boot4.Jackson3WireContractTest tests="12" skipped="0" failures="0" errors="0"
+  config.CacheSerializerTypeAllowlistTest tests="16" skipped="0" failures="0" errors="0"
+core-java/src/main/java/uk/jtoye/core/product/dto/ProductDto.java: OK

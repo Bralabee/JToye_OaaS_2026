@@ -11,12 +11,15 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.mail.SimpleMailMessage;
+import jakarta.mail.internet.MimeMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.notification.EmailNotificationService;
+import uk.jtoye.core.onboarding.TraderIdentityService;
+import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.testsupport.SentMail;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
@@ -40,7 +43,8 @@ import static org.mockito.Mockito.when;
  * dispatched. A test that asserts "{@code sendOrderReady} was called" is green on
  * the broken tree and on the fixed one alike — it cannot fail in the direction
  * that matters. So the only mock below the assertion is {@link JavaMailSender}
- * itself, and every assertion reads the actual {@link SimpleMailMessage} body
+ * itself, and every assertion reads the actual {@link MimeMessage} body,
+ * serialised and parsed back,
  * that would have gone to the SMTP sink. This is the unit-level analogue of
  * reading MailHog: it inspects the message, not the invocation.
  *
@@ -67,8 +71,10 @@ class OrderReadyFulfilmentCopyTest {
     @Mock private SimpMessagingTemplate simpMessagingTemplate;
     @Mock private JdbcTemplate jdbcTemplate;
     @Mock private JavaMailSender mailSender;
+    @Mock private ShopRepository shopRepository;
+    @Mock private TraderIdentityService traderIdentityService;
 
-    @Captor private ArgumentCaptor<SimpleMailMessage> messageCaptor;
+    @Captor private ArgumentCaptor<MimeMessage> messageCaptor;
 
     private OrderStateChangeListener listener;
 
@@ -85,16 +91,18 @@ class OrderReadyFulfilmentCopyTest {
         // Fresh delivery (not a duplicate) so the side-effect pipeline runs.
         lenient().when(jdbcTemplate.update(anyString(), any(), any(), any())).thenReturn(1);
 
+        lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
         EmailNotificationService emailService = new EmailNotificationService(mailSender);
         ReflectionTestUtils.setField(emailService, "fromAddress", "noreply@jtoye.uk");
         ReflectionTestUtils.setField(emailService, "emailEnabled", true);
         ReflectionTestUtils.setField(emailService, "trackingBaseUrl", TRACKING_BASE_URL);
 
         listener = new OrderStateChangeListener(
-                orderRepository, emailService, entityManager, metrics, simpMessagingTemplate, jdbcTemplate);
+                orderRepository, emailService, entityManager, metrics, simpMessagingTemplate, jdbcTemplate,
+                shopRepository, traderIdentityService);
     }
 
-    private SimpleMailMessage readyEmailFor(FulfilmentType fulfilmentType, String orderNumber) {
+    private Sent readyEmailFor(FulfilmentType fulfilmentType, String orderNumber) {
         UUID orderId = UUID.randomUUID();
         OrderStateChangeEvent event = new OrderStateChangeEvent(
                 orderId, UUID.randomUUID(), orderNumber,
@@ -110,13 +118,18 @@ class OrderReadyFulfilmentCopyTest {
         // "Exactly one email per transition" — a branch that sent both copies,
         // or sent nothing, fails here before any body assertion is reached.
         verify(mailSender, times(1)).send(messageCaptor.capture());
-        return messageCaptor.getValue();
+        MimeMessage parsed = SentMail.reparse(messageCaptor.getValue());
+        return new Sent(SentMail.subject(parsed), SentMail.text(parsed));
+    }
+
+    /** The subject and plain-text body as the recipient receives them. */
+    private record Sent(String getSubject, String getText) {
     }
 
     @Test
     @DisplayName("#502: a DELIVERY order reaching READY is NOT told to collect")
     void deliveryOrderReadyDoesNotSayCollection() {
-        SimpleMailMessage msg = readyEmailFor(FulfilmentType.DELIVERY, "ORD-DEL-001");
+        Sent msg = readyEmailFor(FulfilmentType.DELIVERY, "ORD-DEL-001");
 
         assertThat(msg.getText())
                 .as("DELIVERY customer must not be instructed to collect (#502)")
@@ -128,7 +141,7 @@ class OrderReadyFulfilmentCopyTest {
     @Test
     @DisplayName("#502: a DELIVERY order reaching READY is told it will be delivered")
     void deliveryOrderReadySaysDelivery() {
-        SimpleMailMessage msg = readyEmailFor(FulfilmentType.DELIVERY, "ORD-DEL-002");
+        Sent msg = readyEmailFor(FulfilmentType.DELIVERY, "ORD-DEL-002");
 
         assertThat(msg.getText())
                 .as("DELIVERY customer must be told the order comes to them")
@@ -140,7 +153,7 @@ class OrderReadyFulfilmentCopyTest {
     @Test
     @DisplayName("#502 regression guard: a COLLECTION order reaching READY keeps the existing copy")
     void collectionOrderReadyKeepsExistingCopy() {
-        SimpleMailMessage msg = readyEmailFor(FulfilmentType.COLLECTION, "ORD-COL-001");
+        Sent msg = readyEmailFor(FulfilmentType.COLLECTION, "ORD-COL-001");
 
         assertThat(msg.getSubject()).isEqualTo("Order ORD-COL-001 — Ready!");
         assertThat(msg.getText())
@@ -167,7 +180,7 @@ class OrderReadyFulfilmentCopyTest {
     @Test
     @DisplayName("#502: a null fulfilment type falls back to the DELIVERY copy, never collection")
     void nullFulfilmentTypeFallsBackToDelivery() {
-        SimpleMailMessage msg = readyEmailFor(null, "ORD-NUL-001");
+        Sent msg = readyEmailFor(null, "ORD-NUL-001");
 
         assertThat(msg.getText())
                 .doesNotContainIgnoringCase("collect")

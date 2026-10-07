@@ -11,9 +11,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.config.BusinessMetricsService;
 import uk.jtoye.core.config.RabbitMQConfig;
+import uk.jtoye.core.notification.CustomerEmailContext;
 import uk.jtoye.core.notification.EmailNotificationService;
+import uk.jtoye.core.onboarding.TraderIdentityService;
+import uk.jtoye.core.product.AllergenCatalog;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.shop.Shop;
+import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.storefront.dto.SellerIdentityDto;
 import uk.jtoye.core.websocket.StompDestinations;
+
+import java.util.List;
 
 /**
  * Competing-consumer listener on the durable {@code order.state-changes}
@@ -56,19 +64,25 @@ public class OrderStateChangeListener {
     private final BusinessMetricsService metrics;
     private final SimpMessagingTemplate simpMessagingTemplate;
     private final JdbcTemplate jdbcTemplate;
+    private final ShopRepository shopRepository;
+    private final TraderIdentityService traderIdentityService;
 
     public OrderStateChangeListener(OrderRepository orderRepository,
                                      EmailNotificationService emailService,
                                      EntityManager entityManager,
                                      BusinessMetricsService metrics,
                                      SimpMessagingTemplate simpMessagingTemplate,
-                                     JdbcTemplate jdbcTemplate) {
+                                     JdbcTemplate jdbcTemplate,
+                                     ShopRepository shopRepository,
+                                     TraderIdentityService traderIdentityService) {
         this.orderRepository = orderRepository;
         this.emailService = emailService;
         this.entityManager = entityManager;
         this.metrics = metrics;
         this.simpMessagingTemplate = simpMessagingTemplate;
         this.jdbcTemplate = jdbcTemplate;
+        this.shopRepository = shopRepository;
+        this.traderIdentityService = traderIdentityService;
     }
 
     // Not readOnly: the dedup INSERT below must be able to write (FIX-2).
@@ -139,25 +153,84 @@ public class OrderStateChangeListener {
                 return;
             }
 
-            log.info("Sending {} notification for order {} to {}", event.newStatus(), event.orderNumber(), email);
+            // ASVS V7 / T-31.1-88: the order number and status only, never the recipient.
+            log.info("Sending {} notification for order {}", event.newStatus(), event.orderNumber());
 
             switch (event.newStatus()) {
-                case PENDING -> emailService.sendOrderConfirmation(event, email);
-                case CONFIRMED -> emailService.sendOrderConfirmed(event, email);
-                case PREPARING -> emailService.sendOrderPreparing(event, email);
+                case PENDING, CONFIRMED, PREPARING, READY, COMPLETED, CANCELLED -> { }
+                default -> {
+                    log.debug("No email template for status {}", event.newStatus());
+                    return;
+                }
+            }
+
+            // #789/#785 (Pitfall 8): everything the email says about the seller and the order's
+            // allergens is read HERE, while TenantContext and the GUC are pinned to the event's
+            // tenant. The @Async send runs with neither, and a lookup there reads zero rows under
+            // FORCE RLS. The context is an immutable value: nothing is fetched after this point.
+            CustomerEmailContext context = emailContext(event, order);
+
+            switch (event.newStatus()) {
+                case PENDING -> emailService.sendOrderConfirmation(event, email, context);
+                case CONFIRMED -> emailService.sendOrderConfirmed(event, email, context);
+                case PREPARING -> emailService.sendOrderPreparing(event, email, context);
                 // #502: READY copy depends on how the order is fulfilled. The
                 // fulfilment type is read from the Order this method already
-                // loaded rather than added to OrderStateChangeEvent — the event
-                // is a persisted outbox payload, so widening the record would
-                // leave in-flight rows deserializing with a null field and no
-                // way to tell "collection" from "old payload". Passing it as an
-                // argument keeps ONE send per transition by construction: there
-                // is a single call site, and the branch lives inside the send.
-                case READY -> emailService.sendOrderReady(event, email, order.getFulfilmentType());
-                case COMPLETED -> emailService.sendOrderCompletedNotification(event, email);
-                case CANCELLED -> emailService.sendOrderCancelledNotification(event, email);
-                default -> log.debug("No email template for status {}", event.newStatus());
+                // loaded (it travels in the context) rather than added to
+                // OrderStateChangeEvent — the event is a persisted outbox payload,
+                // so widening the record would leave in-flight rows deserializing
+                // with a null field and no way to tell "collection" from "old
+                // payload". ONE send per transition by construction: there is a
+                // single call site, and the branch lives inside the send.
+                case READY -> emailService.sendOrderReady(event, email, context);
+                case COMPLETED -> emailService.sendOrderCompletedNotification(event, email, context);
+                case CANCELLED -> emailService.sendOrderCancelledNotification(event, email, context);
+                default -> { }
             }
         }, () -> log.warn("Order {} not found for email notification", event.orderNumber()));
+    }
+
+    /**
+     * The seller and allergen record for one order, read under the event's tenant.
+     *
+     * <p>The shop is read with an explicit tenant predicate as well as RLS. The seller comes from
+     * {@link TraderIdentityService#findPublicSeller} — the SAME read the public shop page uses
+     * (31.1-24), so the email and the storefront name the seller identically, company number only
+     * for a company. The allergen record is the V63 order-line snapshot (never a live product
+     * join) and the V69 acknowledgement mask.
+     *
+     * <p>A failed seller read must not cost the customer the email: the email then says the seller
+     * has not provided details (the 31.1-24 missing state), which is true of what the platform can
+     * show, rather than not arriving at all.
+     */
+    private CustomerEmailContext emailContext(OrderStateChangeEvent event, Order order) {
+        // Order lines first, while the listener's own session is the active one.
+        OrderAllergenSnapshot.OrderAllergenView view = OrderAllergenSnapshot.viewOf(order.getItems());
+        List<String> acknowledged = order.getAllergenAckMask() == null
+                ? null
+                : AllergenCatalog.namesFor(order.getAllergenAckMask());
+
+        Shop shop = order.getShopId() == null
+                ? null
+                : shopRepository.findByIdAndTenantId(order.getShopId(), event.tenantId()).orElse(null);
+        SellerIdentityDto seller = null;
+        if (shop != null) {
+            try {
+                seller = traderIdentityService.findPublicSeller(event.tenantId(), shop);
+            } catch (RuntimeException e) {
+                log.warn("Seller identity read failed for order {}: {}", event.orderNumber(),
+                        e.getClass().getSimpleName());
+            }
+        }
+
+        return new CustomerEmailContext(
+                shop == null ? null : shop.getName(),
+                shop == null ? null : shop.getEmail(),
+                seller,
+                order.getPlacedVia(),
+                acknowledged,
+                view.declaredNames(),
+                view.flags(),
+                order.getFulfilmentType());
     }
 }

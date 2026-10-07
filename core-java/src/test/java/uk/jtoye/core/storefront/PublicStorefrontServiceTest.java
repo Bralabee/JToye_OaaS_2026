@@ -40,6 +40,7 @@ import uk.jtoye.core.shop.ShopPromotion;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.shop.ShopWithDistance;
 import uk.jtoye.core.storefront.dto.*;
+import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
 
 import java.lang.reflect.Field;
 import java.time.DayOfWeek;
@@ -70,6 +71,8 @@ class PublicStorefrontServiceTest {
     @Mock private ShopAnnouncementRepository announcementRepository;
     @Mock private PostcodeGeocoder postcodeGeocoder;
     @Mock private IdempotencyService idempotencyService;
+    // 31.1-24: the seller block's tenant-pinned read; returns null (no seller) unless an arm stubs it.
+    @Mock private uk.jtoye.core.onboarding.TraderIdentityService traderIdentityService;
 
     private PublicStorefrontService service;
 
@@ -92,7 +95,7 @@ class PublicStorefrontServiceTest {
         // this unit test exercises the same ceiling behaviour the running service has.
         // 33-08: postcodeGeocoder drives the THIRD search tier and is reached only when both text
         // tiers return empty, so most arms in this file never touch it.
-        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), 5.0, 50.0);
+        service = new PublicStorefrontService(shopRepository, productRepository, orderRepository, eventPublisher, entityManager, paymentService, promotionRepository, announcementRepository, idempotencyService, postcodeGeocoder, new OrderNumberGenerator(), traderIdentityService, 5.0, 50.0);
 
         // Cluster E (API-3/API-4/INT-15): a keyed guest order is routed through the V50 store's
         // credential-safe variant. This unit test has no database, so the mock simply runs the
@@ -574,6 +577,8 @@ class PublicStorefrontServiceTest {
         request.setAddressCity("London");
         request.setAddressPostcode("E1 6AN");
         request.setItems(List.of(itemFor(product, 2)));
+        // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
+        request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
         return request;
     }
 
@@ -624,6 +629,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerPhone("07700900001");
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1)));
+        request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
 
         service.createGuestOrder("test-shop-abc12345", request);
 
@@ -668,6 +674,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerPhone("07700900002");
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1)));
+        request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
 
         service.createGuestOrder("test-shop-abc12345", request);
 
@@ -961,6 +968,7 @@ class PublicStorefrontServiceTest {
         request.setCustomerPhone("07700900003");
         request.setFulfilmentType("COLLECTION");
         request.setItems(List.of(itemFor(product, 1))); // 300 < 1000 minimum
+        request.setAcknowledgedAllergenMask(GuestOrderAcknowledgements.currentMask(product));
 
         var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.createGuestOrder("test-shop-abc12345", request));
@@ -1369,7 +1377,7 @@ class PublicStorefrontServiceTest {
             return new PublicStorefrontService(shopRepository, productRepository, orderRepository,
                     eventPublisher, entityManager, paymentService, promotionRepository,
                     announcementRepository, idempotencyService, postcodeGeocoder,
-                    new OrderNumberGenerator(), defaultRadiusKm, maxRadiusKm);
+                    new OrderNumberGenerator(), traderIdentityService, defaultRadiusKm, maxRadiusKm);
         }
 
         @Test

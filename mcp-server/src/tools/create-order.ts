@@ -33,11 +33,11 @@ const CREATE_ORDER_PATH = "/api/v1/orders";
 // either a shape or a Zod object); this one is wrapped in `createOrderSchema` below so it can
 // carry the DELIVERY-requires-address cross-field rule. Field names/types mirror
 // CreateOrderRequest + OrderItemRequest, verified against
-// docs/api/openapi-snapshot.json (D-08). `items` is kept required (.min(1)) to match
-// the runtime @NotEmpty @Valid constraint — the snapshot's `required` array under-
-// reports it (springdoc does not propagate @NotEmpty on a collection to `required`),
-// but a create with no items is a guaranteed 400, so a self-describing schema is the
-// better agent DX. `idempotencyKey` is tool-only (NOT a DTO field) — split to header.
+// docs/api/openapi-snapshot.json (D-08). `items` is required (.min(1)), matching the
+// runtime @NotEmpty @Valid constraint (a create with no items is a 400). Since the
+// snapshot was regenerated on springdoc 3.1.1 (Phase 38, 38-14) its `required` array
+// lists `items` beside `shopId`; on springdoc 2.8 it listed only `shopId`.
+// `idempotencyKey` is tool-only (NOT a DTO field) — split to header.
 export const createOrderInputSchema = {
   shopId: z.string().uuid().describe("Target shop (UUID, required)"),
   customerId: z

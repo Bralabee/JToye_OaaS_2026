@@ -4,7 +4,7 @@ Project: J'Toye OaaS (UK Retail 2026)
 Version: 1.3.0 (Public Storefront, Cart, Checkout, Order Tracking, Image Upload, AI Recognition)
 
 Stack
-- Core: Java 25, Spring Boot 3.5.16, JPA/Hibernate Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, MapStruct 1.6.3, Spring Cache + Redis, Micrometer Tracing (Zipkin), Lombok, Bucket4j 8.10.1 (Rate Limiting)
+- Core: Java 25, Spring Boot 4.1.1 (Spring Framework 7, Jackson 3), JPA/Hibernate 7 Envers, Spring Security, OAuth2 Resource Server (JWT), Spring StateMachine, MapStruct 1.6.3, Spring Cache + Redis, Micrometer Tracing (Zipkin), Lombok, Bucket4j 8.10.1 (Rate Limiting)
 - Edge: Go 1.22, Gin, circuit breakers (gobreaker), rate limiting
 - Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn/ui, NextAuth.js v5, Framer Motion, Jest/React Testing Library
 - Database: PostgreSQL 15 with Row‑Level Security (RLS)
@@ -253,7 +253,7 @@ Redis Caching with Tenant Isolation
   - **Shops**: 15-minute TTL (very stable data, location/contact info rarely changes)
 - **NOT Cached**: Orders, Customers, FinancialTransactions (change too frequently)
 - **Tenant-Aware Keys**: `TenantAwareCacheKeyGenerator` includes tenant ID in every cache key
-  - Format: `products::{tenantId}::{productId}`
+  - Format: `v4:{region}::tenant:{tenantId}:{method}:{params}` (e.g. `v4:products::tenant:<tenantId>:getProductById:<productId>`). The `v4:` format version comes from `CacheConfig.CACHE_KEY_FORMAT_VERSION` (Phase 38), the rest from `TenantAwareCacheKeyGenerator`
   - Prevents cross-tenant data leakage (critical for security)
 - **Cache Annotations**:
   - `@Cacheable(value = "products", keyGenerator = "tenantAwareCacheKeyGenerator")` on `getProductById()`
@@ -279,7 +279,7 @@ Order Number Format Enhancement
 - **Implementation**: `OrderService.generateOrderNumber()` (lines 267-300)
 
 Unit Testing Strategy
-- **Framework**: JUnit 5 + Mockito (no Spring context overhead)
+- **Framework**: JUnit Jupiter 6 + Mockito 5 (no Spring context overhead)
 - **Pattern**: `@ExtendWith(MockitoExtension.class)` for lightweight tests
 - **Test Structure**:
   - `@Mock`: Mock dependencies (repositories, mappers, external services)

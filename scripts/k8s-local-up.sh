@@ -396,6 +396,11 @@ BA_CUSTOMER_KC="${NEXT_PUBLIC_CUSTOMER_KEYCLOAK_URL:-}"
 BA_SUPPORT_EMAIL="${NEXT_PUBLIC_SUPPORT_EMAIL:-$(compose_default NEXT_PUBLIC_SUPPORT_EMAIL)}"
 BA_SUPPORT_URL="${NEXT_PUBLIC_SUPPORT_URL:-$(compose_default NEXT_PUBLIC_SUPPORT_URL)}"
 BA_SLA_DAYS="${NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS:-$(compose_default NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS)}"
+# D-14 (phase 31.1 plan 27, #794): the registered office the legal pages print.
+# Same .env key and same compose default as the compose frontend AND compose
+# core-java, and the same string as the k8s ConfigMap key platform.registered-office
+# that this cluster's core-java reads for the email footer (RegisteredOfficeParityTest).
+BA_REGISTERED_OFFICE="${NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE:-$(compose_default NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE)}"
 
 if [ "$SKIP_BUILD" -eq 1 ]; then
   for ref in "$IMG_CORE" "$IMG_EDGE" "$IMG_FRONT" "$IMG_BACKUP"; do
@@ -415,6 +420,7 @@ else
     --build-arg "NEXT_PUBLIC_SUPPORT_EMAIL=${BA_SUPPORT_EMAIL}" \
     --build-arg "NEXT_PUBLIC_SUPPORT_URL=${BA_SUPPORT_URL}" \
     --build-arg "NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${BA_SLA_DAYS}" \
+    --build-arg "NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${BA_REGISTERED_OFFICE}" \
     "$REPO_ROOT/frontend"
   echo "building ${IMG_BACKUP}"
   docker build -t "$IMG_BACKUP" "$REPO_ROOT/infra/backups"

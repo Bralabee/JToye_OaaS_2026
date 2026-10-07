@@ -4,12 +4,25 @@ import { use, useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, ShoppingBag, Loader2, CreditCard, Lock, CheckCircle, Bike, Store, Banknote } from "lucide-react"
-import { loadStripe } from "@stripe/stripe-js"
+// #793: the `/pure` entry, NEVER the package default. The default entry injects js.stripe.com as
+// a module side effect, so merely importing it put Stripe's script — and its `__stripe_mid` /
+// `__stripe_sid` cookies and m.stripe.network calls — on every cash checkout, which takes no
+// payment online. `/pure` injects nothing until `loadStripe()` is called (see getStripe below).
+import { loadStripe } from "@stripe/stripe-js/pure"
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
 import { useCart } from "@/components/storefront/cart-provider"
 // The refusal copy lives in the panel, which owns its own `role="alert"` region — the page sets
 // only the errored flag, so there is one source for the legally-operative string.
-import { OrderAllergenPanel } from "@/components/storefront/order-allergen-panel"
+import {
+  ALLERGY_NOTE_LABEL_COPY,
+  ALLERGY_NOTE_MAX_LENGTH,
+  OrderAllergenPanel,
+  allergyNoteCountCopy,
+  allergyNoteHelpCopy,
+  type AllergenAckErrorKind,
+} from "@/components/storefront/order-allergen-panel"
+import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
+import { SellerBlock } from "@/components/storefront/seller-block"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { saveLocalOrder } from "@/lib/order-history"
 import { describeOrderError } from "@/lib/order-error"
@@ -20,9 +33,16 @@ import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
 import { buildGuestOrderIntent, guestOrderIntentSignature } from "@/lib/checkout-idempotency"
 import { asVatRate, predominantRate, vatFromGross, vatRateLabel } from "@/lib/vat"
 import publicApiClient from "@/lib/public-api-client"
+import { basketAllergenAttribution, basketAllergenFlags, indexProductsById } from "@/lib/basket-allergens"
 // FulfilmentType is the shared two-member union (mirrors the backend enum), not a local re-declaration.
-import { getAllergenNames, type FulfilmentType } from "@/types/api"
-import { PublicShop, PublicProduct } from "@/types/storefront"
+import { getAllergenNames, type FulfilmentType, type OrderAllergenFlag } from "@/types/api"
+import {
+  ALLERGEN_ACK_STALE_PROBLEM_TYPE,
+  type AllergenAcknowledgementStaleProblem,
+  type GuestOrderConfirmation,
+  type PublicProduct,
+  type PublicShop,
+} from "@/types/storefront"
 
 function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
@@ -39,32 +59,8 @@ export function isValidUkPostcode(value: string): boolean {
   return UK_POSTCODE_REGEX.test(value.trim().toUpperCase())
 }
 
-/**
- * Index the storefront's product catalogue by id, defensively.
- *
- * Returns `null` — meaning NOT RECORDED, never "nothing declared" — when the payload is missing,
- * malformed, or yields no usable product. That distinction is the whole point: an allergen panel
- * that says "the kitchen declared none of the 14" because a fetch failed is stating something the
- * kitchen never said, and that is the direction that injures someone.
- */
-export function indexProductsById(data: unknown): Map<string, PublicProduct> | null {
-  if (!data || typeof data !== "object") return null
-  const index = new Map<string, PublicProduct>()
-  for (const group of Object.values(data as Record<string, unknown>)) {
-    if (!Array.isArray(group)) continue
-    for (const candidate of group) {
-      if (
-        candidate &&
-        typeof candidate === "object" &&
-        typeof (candidate as PublicProduct).id === "string" &&
-        typeof (candidate as PublicProduct).allergenMask === "number"
-      ) {
-        index.set((candidate as PublicProduct).id, candidate as PublicProduct)
-      }
-    }
-  }
-  return index.size > 0 ? index : null
-}
+// `indexProductsById` (the catalogue -> id index, NOT RECORDED on a bad payload) lives in
+// lib/basket-allergens.ts since 31.1-23, so the basket page and the cart drawer share its gate.
 
 /**
  * The basket's DECLARED allergen union, in words.
@@ -81,6 +77,26 @@ export function basketAllergenNames(
   items: { productId: string }[],
   productIndex: Map<string, PublicProduct> | null
 ): string[] | null {
+  const mask = basketAllergenMask(items, productIndex)
+  return mask === null ? null : getAllergenNames(mask)
+}
+
+/**
+ * The basket's DECLARED allergen union as the 14-bit mask (AllergenCatalog bits 0..13) — the value
+ * the checkout submits as `acknowledgedAllergenMask` (#784/#785, D-05).
+ *
+ * Same NOT RECORDED rule as `basketAllergenNames`, which is derived from this: `null` whenever
+ * ANY line cannot be resolved. The server compares the acknowledgement by EQUALITY with the union it
+ * reads at submit (31.1-03), so a partial union would be refused anyway — but the reason it must be
+ * `null` and never `0` is the customer, not the server: `0` says "the kitchen declared none".
+ *
+ * Declared mask ONLY. `mayContainAllergens` (31.1-14, cross-contact) and the advisory reconciliation
+ * flags are separate statements and are never OR-ed into the acknowledged set.
+ */
+export function basketAllergenMask(
+  items: { productId: string }[],
+  productIndex: Map<string, PublicProduct> | null
+): number | null {
   if (!productIndex || items.length === 0) return null
   let mask = 0
   for (const item of items) {
@@ -88,26 +104,65 @@ export function basketAllergenNames(
     if (!product || typeof product.allergenMask !== "number") return null
     mask |= product.allergenMask
   }
-  return getAllergenNames(mask)
+  return mask
 }
 
-interface OrderConfirmation {
-  orderNumber: string
-  status: string
-  subtotalPennies: number
-  deliveryFeePennies: number
-  vatRate: string
-  vatAmountPennies: number
-  totalAmountPennies: number
-  shopName: string
-  itemCount: number
-  clientSecret: string
-  allergenWarnings: string[]
+/** The current set a stale-acknowledgement 409 carries, or null when it is not one / is malformed. */
+type StaleAllergenSet = { mask: number; names: string[] }
+
+/**
+ * Recognise 31.1-03's 409 `allergen-acknowledgement-stale` and read the CURRENT set from it.
+ *
+ * Branched on the problem TYPE before `describeOrderError`'s generic path: the idempotency 409
+ * (`idempotency-conflict`) is a different problem with a different recovery, and must keep its own.
+ * Returns `{ stale: false }` for anything else; `{ stale: true, current: null }` for a body whose
+ * type matches but whose set cannot be trusted (the panel then keeps what it has and re-fetches).
+ */
+export function readStaleAllergenProblem(
+  err: unknown
+): { stale: false } | { stale: true; current: StaleAllergenSet | null } {
+  const res = (err as { response?: { status?: number; data?: Partial<AllergenAcknowledgementStaleProblem> } })
+    ?.response
+  const data = res?.data
+  const isStale =
+    res?.status === 409 &&
+    !!data &&
+    (data.type === ALLERGEN_ACK_STALE_PROBLEM_TYPE ||
+      (typeof data.type === "string" && data.type.endsWith("/allergen-acknowledgement-stale")))
+  if (!isStale) return { stale: false }
+  const mask = data.currentAllergenMask
+  const names = data.currentAllergens
+  const wellFormed =
+    typeof mask === "number" &&
+    Number.isInteger(mask) &&
+    mask >= 0 &&
+    mask <= 16383 &&
+    Array.isArray(names) &&
+    names.every((n) => typeof n === "string")
+  return { stale: true, current: wellFormed ? { mask, names: [...names] } : null }
 }
 
-const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
-  : null
+/**
+ * The recorded allergen set from the confirmation response (31.1-09, D-08), carried into the COD
+ * confirmation and the payment step. An ABSENT field (older backend) is read as `null` — "not
+ * recorded" — never as `[]`.
+ */
+type RecordedAllergens = {
+  acknowledgedAllergens: string[] | null
+  recordedAllergens: string[] | null
+  recordedAllergenFlags: OrderAllergenFlag[] | null
+}
+
+function recordedAllergensOf(confirmation: GuestOrderConfirmation): RecordedAllergens {
+  return {
+    acknowledgedAllergens: confirmation.acknowledgedAllergens ?? null,
+    recordedAllergens: confirmation.recordedAllergens ?? null,
+    recordedAllergenFlags: confirmation.recordedAllergenFlags ?? null,
+  }
+}
+
+/** What `loadStripe` resolves to. Derived from the `/pure` export so no default-entry import is needed for the type. */
+type StripePromise = ReturnType<typeof loadStripe>
 
 /**
  * Inner payment form — rendered inside Stripe Elements context.
@@ -235,6 +290,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   }, [])
   const [customerPhone, setCustomerPhone] = useState("")
   const [notes, setNotes] = useState("")
+  // #812 (D-15): the dedicated allergy note. React state ONLY — never written to browser storage
+  // (T-31.1-55); its one destination is the POST body.
+  const [allergyNote, setAllergyNote] = useState("")
   const idempotencyKeyRef = useRef<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -263,33 +321,61 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   // D-02: the pre-submit allergen acknowledgement. Held per ORDER INTENT — see the basket-change
   // reset below. NOT pre-checked, and deliberately NOT wired into the submit button's `disabled`.
   const [acknowledged, setAcknowledged] = useState(false)
-  const [ackError, setAckError] = useState(false)
+  // Which refusal the panel's alert region is announcing, or null. "unticked" is the 31-14 gate;
+  // "stale" and "unavailable" are 31.1-15's (#785, T-31.1-53).
+  const [ackError, setAckError] = useState<AllergenAckErrorKind | null>(null)
+  const focusAckCheckbox = () => {
+    if (ackCheckboxRef.current && ackCheckboxRef.current.isConnected) ackCheckboxRef.current.focus()
+  }
 
   // The storefront catalogue, so the panel can state the basket's DECLARED set before the order
   // exists. 31-10's snapshot lives on the ORDER, which by construction is not created yet at this
   // point — its SUMMARY records that this panel's data comes from the basket and that the DTO
   // shapes are the shape to match.
   const [productIndex, setProductIndex] = useState<Map<string, PublicProduct> | null>(null)
+  // One fetch, used on mount and for the two re-fetches below (a NOT RECORDED submit, and after a
+  // stale 409). A failure resolves to null: the panel then reads NOT RECORDED rather than claiming
+  // the kitchen declared nothing.
+  const fetchProductIndex = useCallback(async (): Promise<Map<string, PublicProduct> | null> => {
+    try {
+      const res = await publicApiClient.get(`/public/shops/${slug}/products`)
+      return indexProductsById(res.data)
+    } catch {
+      return null
+    }
+  }, [slug])
   useEffect(() => {
     let cancelled = false
-    publicApiClient
-      .get(`/public/shops/${slug}/products`)
-      .then((res) => {
-        if (!cancelled) setProductIndex(indexProductsById(res.data))
-      })
-      .catch(() => {
-        // Leave the index null: the panel then reads NOT RECORDED rather than claiming the
-        // kitchen declared nothing.
-      })
+    fetchProductIndex().then((index) => {
+      if (!cancelled && index) setProductIndex(index)
+    })
     return () => {
       cancelled = true
     }
-  }, [slug])
+  }, [fetchProductIndex])
+
+  // #785 (D-05): the CURRENT set a stale-acknowledgement 409 carried. While set, it is what the
+  // panel shows and what a re-ticked submit acknowledges — the server is the authority on what it
+  // will accept for this basket. Cleared when the basket changes, or when a re-fetched catalogue
+  // agrees with it. A re-fetch that DISAGREES does not clear it: a further vendor edit would be
+  // refused with a newer 409 carrying the newer set, so the loop converges on the server's view,
+  // whereas dropping back to a client view the server has just refused would loop on the refusal.
+  const [staleOverride, setStaleOverride] = useState<StaleAllergenSet | null>(null)
 
   const declaredAllergenNames = useMemo(
-    () => basketAllergenNames(items, productIndex),
-    [items, productIndex]
+    () => (staleOverride ? staleOverride.names : basketAllergenNames(items, productIndex)),
+    [items, productIndex, staleOverride]
   )
+  const declaredAllergenMask = useMemo(
+    () => (staleOverride ? staleOverride.mask : basketAllergenMask(items, productIndex)),
+    [items, productIndex, staleOverride]
+  )
+  // #860 (31.1-23, D-18): which dish brings which declared allergen, and each line's D-09 flags.
+  // DISPLAY ONLY: neither feeds `declaredAllergenMask`, the intent or its signature, so the body
+  // this page submits is unchanged for the same basket. The panel withholds the attribution when it
+  // disagrees with the set it states (a stale 409's server set).
+  const allergenAttribution = useMemo(() => basketAllergenAttribution(items, productIndex), [items, productIndex])
+  const allergenFlags = useMemo(() => basketAllergenFlags(items, productIndex), [items, productIndex])
 
   /**
    * A stable signature of the BASKET. Changing the basket produces a different one, which resets
@@ -303,7 +389,8 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- #709: fetch/refresh-on-change effect; the traced sync loading-state prefix is the loading-UI contract. One extra render accepted
     setAcknowledged(false)
-    setAckError(false)
+    setAckError(null)
+    setStaleOverride(null)
   }, [basketSignature])
 
   // The body this page will POST, built ONCE from the form state and used for BOTH the request
@@ -322,14 +409,49 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         city,
         postcode,
         items,
+        // #784/#785 (D-05): the set the panel SHOWED. Signed with everything else, so a
+        // re-acknowledged resubmit after a stale 409 rotates the Idempotency-Key and an unchanged
+        // resubmit after a lost reply replays.
+        acknowledgedAllergenMask: declaredAllergenMask,
+        allergyNote,
       }),
-    [customerName, customerEmail, customerPhone, notes, fulfilmentType, address1, address2, city, postcode, items]
+    [
+      customerName,
+      customerEmail,
+      customerPhone,
+      notes,
+      fulfilmentType,
+      address1,
+      address2,
+      city,
+      postcode,
+      items,
+      declaredAllergenMask,
+      allergyNote,
+    ]
   )
   const intentSignature = useMemo(() => guestOrderIntentSignature(orderIntent), [orderIntent])
   // Bind the key to the last SUBMITTED payload, never to intermediate edits. A lost response
   // followed by edit -> undo must replay the same order; a genuinely changed submission needs
   // a new key to avoid the server's 422 idempotency-payload-mismatch (API-4 / PR #726 M3).
   const lastIntentSignatureRef = useRef<string | null>(null)
+
+  // #793: Stripe is loaded LAZILY, at most once per page, and only for a real card payment —
+  // getStripe() is called solely where a confirmation carrying a clientSecret moves the page to
+  // the payment step. A cash order, and a card-accepting shop's checkout FORM, load nothing.
+  // The ref is the memo (one loadStripe call however many submissions follow a "Back to
+  // details"); the state copy is what render reads, because a ref change does not re-render.
+  // Stripe's advanced fraud signals stay at their default on this card path (owner choice,
+  // 31.1 RESEARCH Pattern 6), so setLoadParameters is deliberately not called.
+  const stripeRef = useRef<StripePromise | null>(null)
+  const [stripePromise, setStripePromise] = useState<StripePromise | null>(null)
+  const getStripe = (): StripePromise | null => {
+    const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    if (!stripeRef.current && publishableKey) {
+      stripeRef.current = loadStripe(publishableKey)
+    }
+    return stripeRef.current
+  }
 
   // Fetch the shop so the fee breakdown can be shown BEFORE payment. Provides
   // deliveryFeePennies + freeDeliveryThresholdPennies for the client preview;
@@ -360,7 +482,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     vatAmountPennies: number
     totalAmountPennies: number
     allergenWarnings: string[]
-  } | null>(null)
+  } & RecordedAllergens | null>(null)
 
   // COD confirmation — shows full breakdown before redirect. Carries the
   // submitted fulfilment type so the payment instruction reads "Pay on
@@ -374,7 +496,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     vatAmountPennies: number
     totalAmountPennies: number
     allergenWarnings: string[]
-  } | null>(null)
+  } & RecordedAllergens | null>(null)
 
   if (items.length === 0 && !paymentState && !codConfirmation) {
     return (
@@ -425,13 +547,33 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     // customer is being told off. The button deliberately stays ENABLED (see the note at the
     // submit button) so a touch user gets feedback rather than a dead press.
     if (!acknowledged) {
-      setAckError(true)
-      if (ackCheckboxRef.current && ackCheckboxRef.current.isConnected) {
-        ackCheckboxRef.current.focus()
-      }
+      setAckError("unticked")
+      focusAckCheckbox()
       return
     }
-    setAckError(false)
+
+    // T-31.1-53 — NO SET, NO ORDER. With the catalogue unresolved there is nothing the customer
+    // could have acknowledged, and the server would refuse a missing mask (422) anyway. Never send
+    // a guessed or zero mask: 0 means "the kitchen declared none", which nobody said. Try the
+    // catalogue once more first, so a slow first load does not strand the customer.
+    if (declaredAllergenMask === null) {
+      const fresh = await fetchProductIndex()
+      if (fresh) setProductIndex(fresh)
+      if (basketAllergenMask(items, fresh) === null) {
+        setAckError("unavailable")
+        focusAckCheckbox()
+        return
+      }
+      // A set has arrived — but the customer ticked a panel that said NOT RECORDED. Sending this
+      // set would record an acknowledgement of something they were never shown (D-05's defect), so
+      // show it, untick, and ask for a fresh tick.
+      setAcknowledged(false)
+      setAckError("stale")
+      focusAckCheckbox()
+      return
+    }
+
+    setAckError(null)
     setSubmitting(true)
 
     try {
@@ -451,7 +593,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       // other mutating endpoint speaks; the body field is the storefront's working legacy
       // convention and stays authoritative server-side. Both are sent (additive — nothing
       // displaced), carrying the same value.
-      const res = await publicApiClient.post<OrderConfirmation>(
+      const res = await publicApiClient.post<GuestOrderConfirmation>(
         `/public/shops/${slug}/orders`,
         payload,
         { headers: { "Idempotency-Key": idempotencyKey } }
@@ -478,6 +620,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           vatAmountPennies: confirmation.vatAmountPennies,
           totalAmountPennies: confirmation.totalAmountPennies,
           allergenWarnings: confirmation.allergenWarnings || [],
+          ...recordedAllergensOf(confirmation),
         })
         return
       }
@@ -485,7 +628,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
       // Store email for order tracking
       localStorage.setItem(`jtoye-checkout-email-${slug}`, customerEmail.trim())
 
-      // Move to payment step
+      // Move to payment step. This is the ONLY place Stripe is loaded (#793): the order exists
+      // and carries a clientSecret, so this customer is paying by card.
+      setStripePromise(getStripe())
       setPaymentState({
         clientSecret: confirmation.clientSecret,
         orderNumber: confirmation.orderNumber,
@@ -495,8 +640,29 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
         vatAmountPennies: confirmation.vatAmountPennies,
         totalAmountPennies: confirmation.totalAmountPennies,
         allergenWarnings: confirmation.allergenWarnings || [],
+        ...recordedAllergensOf(confirmation),
       })
     } catch (err: unknown) {
+      // #785 (D-05): the set the customer acknowledged is no longer the basket's declared set — a
+      // vendor edit landed after they read the panel. No order exists and the server did not hold
+      // the key. Show the server's current set, untick, announce it in the panel's own alert
+      // region and move focus to the box. The button stays enabled; the 31-14 gate refuses again
+      // until they tick, and the changed mask rotates the key.
+      const stale = readStaleAllergenProblem(err)
+      if (stale.stale) {
+        if (stale.current) setStaleOverride(stale.current)
+        setAcknowledged(false)
+        setAckError("stale")
+        focusAckCheckbox()
+        const basketAtSubmit = items
+        void fetchProductIndex().then((fresh) => {
+          if (!fresh) return
+          setProductIndex(fresh)
+          const freshMask = basketAllergenMask(basketAtSubmit, fresh)
+          setStaleOverride((prev) => (prev && freshMask === prev.mask ? null : prev))
+        })
+        return
+      }
       // #409: this used to read ONLY `response.data.detail` (RFC 7807). The rate
       // limiter answers 429 with `Retry-After` and an `error`/`message` body, so
       // the one actionable sentence the server sent was discarded and the
@@ -537,7 +703,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             ) : (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-600">Delivery</span>
-                <span className="text-emerald-600 font-medium">Free</span>
+                <span className="text-emerald-700 font-medium">Free</span>
               </div>
             )}
             {codConfirmation.vatAmountPennies > 0 && (
@@ -553,6 +719,15 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           </div>
         </div>
 
+        {/* D-08: what the order RECORDS — the set acknowledged and the set the kitchen works from —
+            read from the confirmation response, never from the basket the client computed. */}
+        <RecordedAllergenSet
+          acknowledged={codConfirmation.acknowledgedAllergens}
+          recorded={codConfirmation.recordedAllergens}
+          flags={codConfirmation.recordedAllergenFlags}
+          className="mb-6"
+        />
+
         {codConfirmation.allergenWarnings.length > 0 && (
           <div className="rounded-xl bg-amber-50 border border-amber-600 p-4 mb-6">
             <h3 className="text-sm font-semibold text-amber-800 mb-2">Allergen warnings</h3>
@@ -563,6 +738,11 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </ul>
           </div>
         )}
+
+        {/* #789 (31.1-24, D-13): who the customer bought from, on the confirmation they are left
+            with, before they navigate away. `shop` is null only if its fetch failed, and a failed
+            fetch is not "the seller has not provided their details", so nothing renders then. */}
+        {shop && <SellerBlock seller={shop.seller} className="mb-6" />}
 
         <Link
           href={`/shop/${slug}/orders/${codConfirmation.orderNumber}`}
@@ -596,7 +776,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             // D-02: the acknowledgement is per order intent, and rotating the key above starts a
             // new one. Acknowledging the previous basket must not carry silently into this one.
             setAcknowledged(false)
-            setAckError(false)
+            setAckError(null)
             setPaymentState(null)
           }}
           className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-700 transition-colors mb-4"
@@ -641,7 +821,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             {paymentState.deliveryFeePennies === 0 && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-600">Delivery</span>
-                <span className="text-emerald-600 font-medium">Free</span>
+                <span className="text-emerald-700 font-medium">Free</span>
               </div>
             )}
             {paymentState.vatAmountPennies > 0 && (
@@ -657,6 +837,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           </div>
         </div>
 
+        {/* D-08: the order exists at this step, so its record is shown before the card is taken. */}
+        <RecordedAllergenSet
+          acknowledged={paymentState.acknowledgedAllergens}
+          recorded={paymentState.recordedAllergens}
+          flags={paymentState.recordedAllergenFlags}
+          className="mb-4"
+        />
+
         {paymentState.allergenWarnings.length > 0 && (
           <div className="rounded-xl bg-amber-50 border border-amber-600 p-4 mb-4">
             <h3 className="text-sm font-semibold text-amber-800 mb-2">Allergen warnings</h3>
@@ -670,6 +858,10 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             </p>
           </div>
         )}
+
+        {/* #789 (31.1-24, D-13): the seller, the platform statement and the no-cancellation
+            information, before the card is taken. */}
+        {shop && <SellerBlock seller={shop.seller} className="mb-4" />}
 
         <Elements
           stripe={stripePromise}
@@ -911,10 +1103,41 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               id="notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any special requests or dietary requirements..."
+              placeholder="Any special requests..."
               rows={2}
               className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 resize-none"
             />
+          </div>
+
+          {/* #812 (D-15): the allergy note is its OWN field. It goes to the kitchen ticket and the
+              shop must acknowledge reading it (31.1-13), so it must not be buried in order notes.
+              Optional; no autocomplete token — it collects no autofillable data about the user. */}
+          <div className="space-y-1.5">
+            <label htmlFor="allergy-note" className="block text-xs font-medium text-slate-600">
+              {ALLERGY_NOTE_LABEL_COPY}
+            </label>
+            <textarea
+              id="allergy-note"
+              value={allergyNote}
+              onChange={(e) => setAllergyNote(e.target.value)}
+              maxLength={ALLERGY_NOTE_MAX_LENGTH}
+              rows={2}
+              aria-describedby="allergy-note-help allergy-note-count"
+              className="w-full rounded-lg border border-cream-100 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200 resize-none"
+            />
+            <div className="flex items-start justify-between gap-3">
+              <p id="allergy-note-help" className="text-xs text-slate-600">
+                {allergyNoteHelpCopy(shop?.name ?? "the shop")}
+              </p>
+              <p
+                id="allergy-note-count"
+                data-testid="allergy-note-count"
+                aria-live="polite"
+                className="flex-shrink-0 text-xs tabular-nums text-slate-600"
+              >
+                {allergyNoteCountCopy(allergyNote.length)}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -946,7 +1169,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-600">Delivery</span>
               {deliveryIsFree ? (
-                <span className="text-emerald-600 font-semibold">Free</span>
+                <span className="text-emerald-700 font-semibold">Free</span>
               ) : (
                 <span className="text-slate-900">{formatPrice(deliveryFeePennies)}</span>
               )}
@@ -996,26 +1219,37 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
           </div>
         )}
 
+        {/* #789 (31.1-24, D-13): who the customer is buying from, that J'Toye is the platform and not
+            the seller, and that freshly prepared food has no 14-day right to cancel (CCR 2013
+            Sch 2(o), reg 28(1)(c)) — pre-contract information, so it is here, inside the form and
+            above Place order. Placed ABOVE the allergen panel so that panel stays the last thing
+            read before committing (D-02 below). Rendered only once the shop has loaded: a failed
+            fetch is not "the seller has not provided their details". Display only — nothing in
+            it is submitted. */}
+        {shop && <SellerBlock seller={shop.seller} />}
+
         {/* D-02 — the pre-submit allergen block. Deliberately the LAST thing read before
             committing: after "How you'll pay", immediately above the submit run. Not in the order
             summary, not collapsed, not behind a disclosure.
 
             `declaredAllergenNames` is null (NOT RECORDED) whenever the basket cannot be fully
-            resolved. `allergenFlags` is null rather than []: the advisory reconciliation flags are
-            computed by the SERVER (OrderAllergenAggregator, 31-04) against a ~150-term synonym
-            list, and re-implementing that heuristic in TypeScript would create a second, ungated
-            copy of a safety rule. Passing [] here would assert "nothing flagged", which this
-            surface cannot substantiate. See 31-14-SUMMARY.md. */}
+            resolved. `allergenFlags` are each line's `undeclaredIngredientAllergens`, the
+            reconciliation the SERVER computed per product (31.1-06) — this page renders them and
+            never re-implements the heuristic in TypeScript (31-14-SUMMARY.md). They are null, not
+            [], whenever the basket is NOT RECORDED. `allergenAttribution` (#860) says which dish
+            carries each declared allergen, beneath the chips. */}
         <OrderAllergenPanel
           vendorName={shop?.name ?? "this kitchen"}
           allergenNames={declaredAllergenNames}
-          allergenFlags={null}
+          allergenFlags={allergenFlags}
+          allergenAttribution={allergenAttribution}
           acknowledged={acknowledged}
           onAcknowledgedChange={(next) => {
             setAcknowledged(next)
-            if (next) setAckError(false)
+            if (next) setAckError(null)
           }}
-          errored={ackError}
+          errored={ackError !== null}
+          errorKind={ackError ?? undefined}
           errorId="allergen-ack-error"
           checkboxRef={ackCheckboxRef}
         />

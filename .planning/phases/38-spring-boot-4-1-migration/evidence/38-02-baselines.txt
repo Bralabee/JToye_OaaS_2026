@@ -1,0 +1,244 @@
+38-02 Boot 3.5 baselines: evidence (all output below is real, captured by the executor)
+Branch phase-37-spring-boot-4-1, worktree JToye_OaaS_2026-phase37, tree = Boot 3.5.16.
+Plan base HEAD 2e601289e1fdc25c4da01b6168cfc4d8fb6d70f9. Host JDK: Ubuntu OpenJDK 25.0.4.1 (same caveat as 38-01).
+
+######################################################################################
+## Task 1: RequestBodyConstraintEnforcementTest (structural request-body inventory)
+######################################################################################
+
+=== Vacuity arm (fail direction): PACKAGE_ROOT = "uk.jtoye.nonexistent"
+$ ./gradlew :core-java:cleanTest :core-java:test --tests 'uk.jtoye.core.boot4.RequestBodyConstraintEnforcementTest' --no-daemon
+rc=1
+RequestBodyConstraintEnforcementTest > every required request-body property is behind @Valid and rejects null FAILED
+    java.lang.AssertionError at RequestBodyConstraintEnforcementTest.java:123
+2 tests completed, 1 failed
+BUILD FAILED in 24s
+XML: tests="2" skipped="0" failures="1" errors="0"
+message="java.lang.AssertionError: [request-body constraint inventory under uk.jtoye.nonexistent is empty: the walk found no @RequestBody with a NotNull/NotBlank/NotEmpty property, so it proves nothing]
+Expecting actual not to be empty
+(The second method, the HTTP proof, passed in the same run; only the vacuity assertion failed.)
+
+=== Pass direction: PACKAGE_ROOT = "uk.jtoye.core" (restored from scratch backup, sha256 2ad4cde0...6fea = backup)
+rc=0
+> Task :core-java:cleanTest
+BUILD SUCCESSFUL in 25s
+XML: tests="2" skipped="0" failures="0" errors="0"
+build-local/boot4/request-body-constraints.tsv: 55 rows, 20 distinct DTOs (nested OrderItemRequest and
+GuestOrderItemRequest reached through the cascade, so recursion is exercised).
+
+=== Extra arm A (fail direction of the @Valid assertion): validated forced to false
+rc=1, tests="2" failures="1"
+message="java.lang.AssertionError: [@RequestBody parameters with required constraints but no @Valid/@Validated (their constraints are never run)]
+Expecting empty but was: ["AnnouncementController#create -> POST /api/v1/announcements	CreateAnnouncementRequest	shopId	NotNull",
+    "AnnouncementController#create -> POST /api/v1/announcements	CreateAnnouncementRequest	title	NotBlank",
+    "AnnouncementController#update -> PUT /api/v1/announcements/{id}	CreateAnnouncementRequest	shopId	NotNull", ...
+
+=== Extra arm B (fail direction of the validateValue(null) assertion): Size counted as "required"
+rc=1, tests="2" failures="1"
+message="java.lang.AssertionError: [rows whose property accepts null under the default validation group]
+Expecting empty but was: ["PUT /api/v1/shops/{id}	CreateShopRequest	description	Size",
+    "POST /api/v1/shops	CreateShopRequest	description	Size",
+    "PUT /api/v1/products/{id}	CreateProductRequest	description	Size",
+    "POST /api/v1/public/shops/{slug}/orders,/public/shops/{slug}/orders	GuestOrderRequest	notes	Size", ...
+
+=== HTTP proof, pass direction: POST /public/shops/any-slug/orders, valid except customerEmail omitted
+Recorded verbatim by the test (build-local/boot4/guest-order-missing-email-400.txt):
+status=400
+content-type=application/problem+json
+body={"type":"https://jtoye.uk/errors/validation","title":"Validation Error","status":400,"detail":"Validation failed","instance":"/public/shops/any-slug/orders","errors":{"customerEmail":"Email is required"}}
+
+=== HTTP proof, fail direction (arm C): the same body WITH customerEmail
+rc=1, tests="2" failures="1"
+message="java.lang.AssertionError: Status expected:<400> but was:<500>
+status=500
+content-type=application/problem+json
+body={"type":"https://jtoye.uk/errors/internal","title":"Internal Server Error","status":500,"detail":"An unexpected error occurred","instance":"/public/shops/any-slug/orders"}
+Reading: with the field present the request PASSES Bean Validation and reaches the service, so the 400
+above is caused by the absent field and nothing earlier in the chain (no filter or interceptor answers
+first). The 500 is what the H2 test context does past validation for a non-existent shop; its cause was
+not investigated and it is not part of any claim here.
+
+=== Clean again: restored from scratch backup (sha256 2ad4cde010649fdc7711338b5d3f765716e6843c47889b178348f6b6e2cc6fea
+= backup), re-run rc=0, tests="2" failures="0" errors="0", 400 body identical to the pass direction above.
+
+=== Evidence TSV criteria (pass, then fail direction)
+$ awk -F'\t' '!/^#/ && NF==4{n++} END{print "rows="n+0}' evidence/38-02-request-body-constraints-boot35.tsv
+rows=55                      (fail dir: same awk over /dev/null -> rows=0; over /nonexistent -> "cannot open", rc=2)
+$ awk -F'\t' '$2=="GuestOrderRequest" && $3=="customerEmail"{n++} END{print n+0}' ...
+1                            (fail dir: property customerEmailX -> 0)
+$ awk -F'\t' '$2=="CreateCustomerRequest"{n++} END{print n+0}' ...
+2                            (fail dir: CreateCustomerRequestX -> 0)
+
+######################################################################################
+## Task 2: JsonbColumnsReadBackIntegrationTest (Jackson-2-era jsonb read-back)
+######################################################################################
+
+=== RED (read-back written first, no fixture exists)
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.boot4.JsonbColumnsReadBackIntegrationTest' --no-daemon
+rc=1
+JsonbColumnsReadBackIntegrationTest > vendor_onboarding_gate.evidence: Jackson-2-era stored text reads back to the same nested Map<String,Object> FAILED
+JsonbColumnsReadBackIntegrationTest > shops.opening_hours: Jackson-2-era stored text reads back to the same Map<String,String> FAILED
+JsonbColumnsReadBackIntegrationTest > products.allergen_spans: Jackson-2-era stored text reads back to the same List<AllergenSpan> FAILED
+3 tests completed, 3 failed
+BUILD FAILED in 37s
+XML: tests="3" skipped="0" failures="3" errors="0"
+message="org.opentest4j.AssertionFailedError: [jsonb golden fixture src/test/resources/jackson2-golden/jsonb/shops.opening_hours.json is missing (working dir /home/sanmi/IdeaProjects/JToye_OaaS_2026-phase37/core-java): the Jackson-2-era stored text was never captured]
+Expecting value to be true but was false
+(the same message for products.allergen_spans.json and vendor_onboarding_gate.evidence.json)
+gsd check tdd-red-evidence: RED_EVIDENCE_OK (target_test_failed, 3 failing)
+
+=== Capture (GREEN), once, on the Boot 3.5.16 tree
+$ JTOYE_GOLDEN_CAPTURE=true ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.boot4.JsonbColumnsReadBackIntegrationTest' --no-daemon
+rc=0, > Task :core-java:cleanIntegrationTest (executed), BUILD SUCCESSFUL in 28s
+XML: tests="4" skipped="0" failures="0" errors="0"
+Stored text written (SELECT col::text; Postgres jsonb normalises key order, so only value formats are compared):
+  shops.opening_hours.json              {"monday": "09:00 - 17:00", "saturday": "Closed"}
+  products.allergen_spans.json          [{"end": 5, "start": 0}, {"end": 17, "start": 12}]
+  vendor_onboarding_gate.evidence.json  {"scheme": "FHRS", "sources": ["fsa-api", "manual"], "verified": true, "fhrs_rating": 4, "establishment": {"score": 4.5, "local_authority": "Southwark"}, "establishment_id": "1234567"}
+jsonb/MANIFEST.tsv:
+  products.allergen_spans.json	afbec7c134d60c3920d7c48344e43993f2d6d8d50edf70bcdbe09f43ddabd334	50
+  shops.opening_hours.json	0aa7f422c7ed9f1cd8509e9238ee9c959f41c847ef7040bb24098577ed4cc8a4	49
+  vendor_onboarding_gate.evidence.json	e50ad98a8b7e532a6a08c5029e424c1ea45a0a5942e978b1185257801ee5243a	184
+CAPTURE commit: f548d6c833ccc696d891ba686d8baf4e831e815b (capture method present only there)
+
+=== Read-back without the variable (capture commit): rc=0, tests="4" skipped="1" failures="0" errors="0"
+GoldenFixturesIntegrityTest with the jsonb family: rc=0, tests="5" failures="0" errors="0" (41 fixtures)
+
+=== Capture retired (7ae5799c)
+$ git grep -n 'JTOYE_GOLDEN_CAPTURE' -- core-java/src/test/java/uk/jtoye/core/boot4/JsonbColumnsReadBackIntegrationTest.java; echo rc=$?
+rc=1
+fail dir: the same grep at f548d6c8 -> line 189 @EnabledIfEnvironmentVariable(named = "JTOYE_GOLDEN_CAPTURE", ...), rc=0
+read-back after retirement: rc=0, cleanIntegrationTest executed, tests="3" skipped="0" failures="0" errors="0"
+
+=== Corrupted-span arm (bracketed: clean run above -> arm -> clean again; committed first at 7ae5799c)
+before: afbec7c134d60c3920d7c48344e43993f2d6d8d50edf70bcdbe09f43ddabd334
+armed ("end": 17 -> "end": 18): [{"end": 5, "start": 0}, {"end": 18, "start": 12}]  sha256 896c0bdc79ff3142f058592ba8a81462a8e6d5f0f9f197c8e378dce9ab98b908
+read-back arm rc=1:
+JsonbColumnsReadBackIntegrationTest > products.allergen_spans: Jackson-2-era stored text reads back to the same List<AllergenSpan> FAILED
+3 tests completed, 1 failed
+message="org.opentest4j.AssertionFailedError: [products.allergen_spans read back from products.allergen_spans.json]
+expected: [AllergenSpan[start=0, end=5], AllergenSpan[start=12, end=17]]
+ but was: [AllergenSpan[start=0, end=5], AllergenSpan[start=12, end=18]]
+integrity test on the same armed file rc=1, tests="5" failures="1":
+message="java.lang.AssertionError: [golden fixture integrity] Expecting empty but was: ["products.allergen_spans.json sha256 is 896c0bdc...b908, manifest says afbec7c1...d334"]
+restore: git checkout -- products.allergen_spans.json -> afbec7c134d60c3920d7c48344e43993f2d6d8d50edf70bcdbe09f43ddabd334 (= MANIFEST row)
+
+=== Family arm (why GoldenFixturesIntegrityTest had to gain the jsonb family)
+families.put("jsonb", ...) commented out -> rc=1, tests="5" failures="1":
+message="java.lang.AssertionError: [the fixture set under src/test/resources/jackson2-golden] Expecting actual: ["amqp/MediaProcessingEvent.body", ... (the jsonb files present but not expected)
+restore: git checkout -- GoldenFixturesIntegrityTest.java -> a9decc6f...8ff1 = HEAD blob
+
+=== Clean again
+GoldenFixturesIntegrityTest rc=0, tests="5" failures="0" errors="0"
+JsonbColumnsReadBackIntegrationTest rc=0, cleanIntegrationTest executed, tests="3" skipped="0" failures="0" errors="0"; git status clean
+
+=== MANIFEST criteria (pass, then fail direction)
+$ awk -F'\t' 'NF==3{n++} END{print n+0}' core-java/src/test/resources/jackson2-golden/jsonb/MANIFEST.tsv
+3                      (fail dir: same awk over /dev/null -> 0)
+sha256sum -c over the MANIFEST rows: 3 x OK, rc=0
+fail dir: the same rows with the first hex digit replaced -> 3 x FAILED, "3 computed checksums did NOT match", rc=1
+
+######################################################################################
+## Task 3: UnauthenticatedProblemDetailIntegrationTest (exact 401 challenge, /.well-known baseline)
+######################################################################################
+
+=== Counts (before -> after; plan's awk, then the strict form)
+awk '/header\(\)\.exists\("WWW-Authenticate"\)/'  2 -> 0
+awk '/oauth-protected-resource/'                   0 -> 4   (criterion: 2 or more)
+awk '/@Test/'                                      4 -> 6   (old + 2; note this pattern also matches the
+                                                            @Testcontainers class annotation)
+awk '/^[[:space:]]*@Test[[:space:]]*$/'            3 -> 5   (the real @Test methods: old + 2)
+No other assertion in the class changed: content type, $.type, $.title, $.status and the
+permittedRouteStillAnswersAnonymously control are as before.
+
+=== Measured on Boot 3.5.16 (MockMvc andDo(print()), copied from the JUnit XML system-out)
+--- GET /.well-known/oauth-protected-resource, UNAUTHENTICATED (no Authorization header)
+MockHttpServletRequest:
+      HTTP Method = GET
+      Request URI = /.well-known/oauth-protected-resource
+       Parameters = {}
+          Headers = []
+             Body = null
+    Session Attrs = {SPRING_SECURITY_SAVED_REQUEST=DefaultSavedRequest [http://localhost/.well-known/oauth-protected-resource?continue]}
+Handler:
+             Type = null
+Resolved Exception:
+             Type = null
+MockHttpServletResponse:
+           Status = 401
+    Error message = null
+          Headers = [Vary:"Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers", WWW-Authenticate:"Bearer", Content-Type:"application/problem+json;charset=UTF-8", X-Content-Type-Options:"nosniff", X-XSS-Protection:"0", Cache-Control:"no-cache, no-store, max-age=0, must-revalidate", Pragma:"no-cache", Expires:"0", X-Frame-Options:"DENY", Referrer-Policy:"strict-origin-when-cross-origin"]
+     Content type = application/problem+json;charset=UTF-8
+             Body = {"type":"https://jtoye.uk/errors/unauthorized","title":"Unauthorized","status":401,"detail":"Authentication failed"}
+    Forwarded URL = null
+   Redirected URL = null
+          Cookies = []
+
+--- GET /.well-known/oauth-protected-resource, AUTHENTICATED (spring-security-test jwt(), tenant_id = an ACTIVE tenant row)
+MockHttpServletRequest:
+      HTTP Method = GET
+      Request URI = /.well-known/oauth-protected-resource
+       Parameters = {}
+          Headers = []
+             Body = null
+    Session Attrs = {}
+Handler:
+             Type = org.springframework.web.servlet.resource.ResourceHttpRequestHandler
+Resolved Exception:
+             Type = org.springframework.web.servlet.resource.NoResourceFoundException
+MockHttpServletResponse:
+           Status = 404
+    Error message = null
+          Headers = [Vary:"Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers", Content-Type:"application/problem+json", X-Content-Type-Options:"nosniff", X-XSS-Protection:"0", Cache-Control:"no-cache, no-store, max-age=0, must-revalidate", Pragma:"no-cache", Expires:"0", X-Frame-Options:"DENY", Referrer-Policy:"strict-origin-when-cross-origin"]
+     Content type = application/problem+json
+             Body = {"type":"https://jtoye.uk/errors/not-found","title":"Not Found","status":404,"detail":"Resource not found","instance":"/.well-known/oauth-protected-resource"}
+    Forwarded URL = null
+   Redirected URL = null
+          Cookies = []
+
+=== D-05 premise, as measured
+D-05 (owner, 2026-10-04) says a 404 on this path "matches Boot 3.5 behaviour today". Measured, that
+is HALF-TRUE: Boot 3.5.16 answers 404 errors/not-found only to an AUTHENTICATED caller. An
+UNAUTHENTICATED caller gets 401 errors/unauthorized with WWW-Authenticate: Bearer, because the path
+is unmapped and falls to anyRequest().authenticated(). 38-06 still implements the locked 404 for EVERY
+caller (D-05 is a ruling, not a parity claim), so for an anonymous caller the answer CHANGES from 401
+to 404. This baseline is the record of that change; the two _boot35Baseline methods are expected to
+go red on Boot 4 until 38-06 updates them deliberately.
+
+=== Exact 401 challenge values on Boot 3.5.16
+missing token  -> WWW-Authenticate: Bearer                    (asserted exactly)
+garbage token  -> WWW-Authenticate: Bearer error="invalid_token", error_description="An error occurred while attempting to decode the Jwt: Malformed token", error_uri="https://tools.ietf.org/html/rfc6750#section-3.1"
+                  (asserted: starts with Bearer error="invalid_token" and contains no resource_metadata)
+
+=== Pass direction (measure run, before commit d2459302)
+$ ./gradlew :core-java:cleanIntegrationTest :core-java:integrationTest --tests 'uk.jtoye.core.security.UnauthenticatedProblemDetailIntegrationTest' --no-daemon
+rc=0, > Task :core-java:cleanIntegrationTest (executed), BUILD SUCCESSFUL in 27s
+XML: tests="5" skipped="0" failures="0" errors="0"
+
+=== Fail-direction arms (bracketed: committed at d2459302 -> arms -> restore -> clean again)
+before sha256 8b8f6b241137fc406d43809cd37d71d240a116f812d084a9c7c6c4269dea551a
+arms, one per method:
+  missing token     expected "Bearer"                              -> "Bearer realm"   (the plan's arm)
+  garbage token     not(containsString("resource_metadata"))       -> not(containsString("invalid_token"))
+  well-known anon   isUnauthorized()                               -> isNotFound()     (what D-05 will make it)
+  well-known auth   isNotFound()                                   -> isOk()
+rc=1
+UnauthenticatedProblemDetailIntegrationTest > wellKnownProtectedResourceAuthenticated_boot35Baseline() FAILED
+UnauthenticatedProblemDetailIntegrationTest > garbageBearerReturnsRfc7807ProblemDocument() FAILED
+UnauthenticatedProblemDetailIntegrationTest > wellKnownProtectedResourceUnauthenticated_boot35Baseline() FAILED
+UnauthenticatedProblemDetailIntegrationTest > missingBearerReturnsRfc7807ProblemDocument() FAILED
+5 tests completed, 4 failed
+BUILD FAILED in 27s
+XML: tests="5" failures="4" errors="0"
+message="java.lang.AssertionError: Response header 'WWW-Authenticate' expected:<Bearer realm> but was:<Bearer>
+message="java.lang.AssertionError: Response header 'WWW-Authenticate'
+Expected: (a string starting with "Bearer error=\"invalid_token\"" and not a string containing "invalid_token")
+     but: not a string containing "invalid_token" was "Bearer error=\"invalid_token\", error_description=\"An error occurred while attempting to decode the Jwt: Malformed token\", error_uri=\"https://tools.ietf.org/html/rfc6750#section-3.1\""
+message="java.lang.AssertionError: Status expected:<404> but was:<401>      (well-known, unauthenticated)
+message="java.lang.AssertionError: Status expected:<200> but was:<404>      (well-known, authenticated)
+(permittedRouteStillAnswersAnonymously, unarmed, passed)
+restore: git checkout -- UnauthenticatedProblemDetailIntegrationTest.java -> 8b8f6b24...551a = HEAD blob
+
+=== Clean again
+rc=0, > Task :core-java:cleanIntegrationTest (executed), BUILD SUCCESSFUL in 27s
+XML: tests="5" skipped="0" failures="0" errors="0"; git status clean (only the orchestrator's milestone.lock untracked)

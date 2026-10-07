@@ -1,15 +1,15 @@
 package uk.jtoye.core.tenant;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -88,10 +88,10 @@ class TenantOffboardKeycloakHookIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbcTemplate;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper jsonMapper;
 
     /** Mock the low-level seam; the real KeycloakDeprovisionService orchestrates it. */
-    @MockBean private KeycloakAdminClient keycloakAdminClient;
+    @MockitoBean private KeycloakAdminClient keycloakAdminClient;
 
     private static final UUID ADMIN_TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
@@ -117,8 +117,8 @@ class TenantOffboardKeycloakHookIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(header().exists("Location"))
                 .andReturn();
-        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
-        return UUID.fromString(body.get("id").asText());
+        JsonNode body = jsonMapper.readTree(result.getResponse().getContentAsString());
+        return UUID.fromString(body.get("id").asString());
     }
 
     private Timestamp markerOf(UUID tenantId) {

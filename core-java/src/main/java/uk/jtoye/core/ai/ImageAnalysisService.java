@@ -1,7 +1,5 @@
 package uk.jtoye.core.ai;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
@@ -10,6 +8,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectReader;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Duration;
 import java.util.*;
@@ -29,7 +31,30 @@ public class ImageAnalysisService {
     private static final Logger log = LoggerFactory.getLogger(ImageAnalysisService.class);
 
     private final WebClient aiClient;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
+
+    /**
+     * The reader for the MODEL's text, separate from the injected mapper on purpose (38-07).
+     *
+     * <p>The text is untrusted and loosely shaped: models append prose after the object, add
+     * fields we never asked for, and send {@code null}. On Boot 3.5 the Jackson-2 mapper read
+     * all of that leniently. On Boot 4 the injected bean is Jackson 3, which rejects trailing
+     * content by default, and the 38-05 decision keeps that default for request bodies — so the
+     * leniency cannot come from the bean. It is configured here, feature by feature, and each
+     * feature is one an {@code ImageAnalysisServiceTest} tolerance case turns red without:
+     * <ul>
+     *   <li>{@code FAIL_ON_TRAILING_TOKENS} off — Jackson-2 tolerance preserved, 38-07: prose
+     *       after the object (the extraction below keeps text up to the LAST '}', so a brace in
+     *       that prose leaves trailing tokens for the reader);</li>
+     *   <li>{@code FAIL_ON_UNKNOWN_PROPERTIES} off — Jackson-2 tolerance preserved, 38-07: Boot's
+     *       mapper already ignores unknown fields, but the guarantee must not depend on the
+     *       injected bean's configuration.</li>
+     * </ul>
+     * A {@code null} confidence needs nothing: {@link ImageAnalysisResult#getConfidence()} is a
+     * boxed {@code Double}, so {@code FAIL_ON_NULL_FOR_PRIMITIVES} never applies (measured with a
+     * strict mapper that enables it).
+     */
+    private final ObjectReader analysisReader;
     private final boolean enabled;
     private final String provider;
     private final String model;
@@ -90,9 +115,12 @@ public class ImageAnalysisService {
             @Value("${ai.anthropic.api-key:}") String anthropicApiKey,
             @Value("${ai.anthropic.model:claude-sonnet-4-20250514}") String anthropicModel,
             @Value("${ai.enabled:true}") boolean enabled,
-            ObjectMapper objectMapper) {
+            JsonMapper jsonMapper) {
 
-        this.objectMapper = objectMapper;
+        this.jsonMapper = jsonMapper;
+        this.analysisReader = jsonMapper.readerFor(ImageAnalysisResult.class)
+                .without(DeserializationFeature.FAIL_ON_TRAILING_TOKENS,      // Jackson-2 tolerance preserved, 38-07
+                        DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);  // Jackson-2 tolerance preserved, 38-07
         this.provider = provider;
 
         if ("anthropic".equals(provider)) {
@@ -181,8 +209,8 @@ public class ImageAnalysisService {
 
         // Ollama returns { "response": "...", "done": true, ... }
         try {
-            JsonNode root = objectMapper.readTree(response);
-            return root.path("response").asText("");
+            JsonNode root = jsonMapper.readTree(response);
+            return root.path("response").asString("");
         } catch (Exception e) {
             log.error("Failed to parse Ollama response: {}", e.getMessage());
             return "";
@@ -219,10 +247,10 @@ public class ImageAnalysisService {
 
         // Anthropic returns { "content": [{ "text": "..." }] }
         try {
-            JsonNode root = objectMapper.readTree(response);
+            JsonNode root = jsonMapper.readTree(response);
             JsonNode content = root.path("content");
             if (content.isArray() && !content.isEmpty()) {
-                return content.get(0).path("text").asText("");
+                return content.get(0).path("text").asString("");
             }
         } catch (Exception e) {
             log.error("Failed to parse Anthropic response: {}", e.getMessage());
@@ -250,7 +278,7 @@ public class ImageAnalysisService {
         }
 
         try {
-            ImageAnalysisResult result = objectMapper.readValue(text, ImageAnalysisResult.class);
+            ImageAnalysisResult result = analysisReader.readValue(text);
             log.info("AI identified: '{}' (confidence: {}, cuisine: {}, provider: {})",
                     result.getIdentifiedName(), result.getConfidence(), result.getCuisineOrigin(), provider);
             return Optional.of(result);

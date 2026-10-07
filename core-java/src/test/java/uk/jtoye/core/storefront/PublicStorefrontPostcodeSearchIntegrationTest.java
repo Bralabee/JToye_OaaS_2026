@@ -1,13 +1,13 @@
 package uk.jtoye.core.storefront;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -187,7 +187,7 @@ class PublicStorefrontPostcodeSearchIntegrationTest {
     @Autowired private ShopRepository shopRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
 
     private UUID tenantA;
     private UUID tenantB;
@@ -276,7 +276,7 @@ class PublicStorefrontPostcodeSearchIntegrationTest {
 
     private static List<String> slugsOf(JsonNode page) {
         List<String> slugs = new ArrayList<>();
-        page.path("content").forEach(node -> slugs.add(node.path("slug").asText()));
+        page.path("content").forEach(node -> slugs.add(node.path("slug").asString()));
         return slugs;
     }
 

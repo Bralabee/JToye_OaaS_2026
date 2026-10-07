@@ -1,10 +1,10 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.config.RabbitMQConfig;
 
 import java.time.OffsetDateTime;
@@ -28,10 +28,10 @@ public class RefundEventPublisher {
     private static final String REFUND_ROUTING_KEY = "order.refunded";
 
     private final PaymentEventOutboxRepository outboxRepository;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     public RefundEventPublisher(PaymentEventOutboxRepository outboxRepository,
-                                ObjectMapper objectMapper) {
+                                JsonMapper objectMapper) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
     }
@@ -80,7 +80,9 @@ public class RefundEventPublisher {
         String payloadJson;
         try {
             payloadJson = objectMapper.writeValueAsString(event);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
+            // Jackson 3's JacksonException is unchecked, so the compiler no longer
+            // demands this catch; a unit test keeps it (38-08).
             // WR-05 — DO NOT propagate. Throwing here would roll back the
             // caller's @Transactional including the processed_stripe_events
             // dedup row, and Stripe would retry the same event into the same
@@ -90,7 +92,7 @@ public class RefundEventPublisher {
             //
             // The placeholder payload is a JSON string literal (no
             // ObjectMapper involvement) so this branch cannot itself throw
-            // JsonProcessingException. The flusher's payload-deserialization
+            // JacksonException. The flusher's payload-deserialization
             // catch flips it to FAILED on the next tick (no retry loop).
             log.error("Failed to serialize RefundEvent for refund {}: {} — persisting FAILED placeholder",
                     event.refundId(), e.getMessage(), e);

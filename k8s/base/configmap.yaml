@@ -15,6 +15,13 @@ data:
   keycloak.admin.enabled: "false"
   keycloak.admin.base-url: "http://keycloak.jtoye-infrastructure.svc.cluster.local:8080"
   keycloak.admin.realms: "jtoye-prod"
+  # 31.1-11 (D-03): the realm holding CUSTOMER sign-in accounts, the only realm a
+  # verified DSAR erasure deletes from. Separate from keycloak.admin.realms (the
+  # vendor offboarding sweep, T-kc-04). With keycloak.admin.enabled "false" (above)
+  # an erasure here stays NOT_CONFIGURED and is parked FAILED after
+  # max-process-attempts: enabling the admin seam (plus the keycloak-credentials
+  # Secret) in staging/production is a deployment step, not done here.
+  keycloak.admin.customer-realm: "jtoye-customers"
 
   # API URLs
   api.url: "https://api.olajay.co.uk"
@@ -318,7 +325,26 @@ data:
   # SOURCE: the existing frontend.url key above (overlays patch per env).
   notification.email.tracking-base-url: "https://app.olajay.co.uk"
   notification.unsubscribe.base-url: "https://app.olajay.co.uk"
-  gdpr.dsar.verify-base-url: "https://api.olajay.co.uk/api/v1/public/gdpr/dsar/verify"
+  # 31.1-20 (#839): the page the emailed DSAR verification link opens, on the
+  # WEB origin. It used to be the API, which answers a person who clicks it
+  # with raw JSON. The page spends the token (carried in the #fragment) only
+  # when the person presses "Confirm my request". Pinned to the same origin as
+  # the unsubscribe link by DsarLinkConfigContractTest.
+  gdpr.dsar.verify-base-url: "https://app.olajay.co.uk/data-request/confirm"
+  # 31.1-16 (D-01, #778): the frontend page the emailed Article 15 download link
+  # opens. Its application.yml default is http://localhost:3000/... — outside a
+  # laptop every link would be dead and the statutory reply silently undelivered.
+  gdpr.dsar.export-download-base-url: "https://app.olajay.co.uk/data-request/download"
+
+  # --- D-14 platform registered office (phase 31.1 plan 27, #794) -------------
+  # The registered office on the public Companies House record for company
+  # 16471464 (J'TOYE DIGITAL LTD, ACTIVE), confirmed by the owner 2026-10-07.
+  # core-java prints it in the footer of every order email (31.1-25) via
+  # COMPANY_REGISTERED_OFFICE. The frontend (the legal pages) inlines the same
+  # string at BUILD time: scripts/k8s-local-up.sh from .env / the compose default,
+  # CI from the repository variable FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE. One legal
+  # entity, so one value for every overlay. Pinned by RegisteredOfficeParityTest.
+  platform.registered-office: "Crispins Manor Farm Lane, Michelmersh, Romsey, England, SO51 0NT"
 
   # --- D-19 Stripe Connect return origins (production-affecting) -------------
   # Same defect class: a vendor completing Stripe Connect onboarding was

@@ -38,7 +38,7 @@ J'Toye OaaS uses a modern containerized architecture with three main services:
 
 | Service | Technology | Port | Image Size | Startup Time |
 |---------|-----------|------|------------|--------------|
-| **core-java** | Spring Boot 3 + JDK 25 | 9090 | ~880MB | ~30s |
+| **core-java** | Spring Boot 4 + JDK 25 | 9090 | ~880MB | ~30s |
 | **edge-go** | Go 1.27 (static binary) | 8089 (Docker) / 8080 (Local) | ~47MB | ~1s |
 | **frontend** | Next.js 16 (standalone) | 3000 | ~272MB | ~5s |
 

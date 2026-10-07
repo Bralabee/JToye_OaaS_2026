@@ -1,6 +1,5 @@
 package uk.jtoye.core.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
@@ -18,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -70,18 +70,24 @@ public class RateLimitInterceptor implements HandlerInterceptor {
      * {@code ProblemDetailJacksonMixin} on this bean, which is what flattens the extra
      * {@code retryAfterSeconds}/{@code tenantId} properties to top level instead of nesting
      * them under a {@code "properties"} object.
+     *
+     * <p>38-07: on Boot 4 this is Boot's Jackson-3 {@code JsonMapper}; Boot's
+     * {@code JacksonAutoConfiguration} registers the ProblemDetail mixin on it.
+     * {@code writeValueAsString} now throws the unchecked {@code JacksonException}; both callers
+     * of {@link #writeProblem} sit inside the {@code catch (Exception e)} fail-open branch, so a
+     * serialization failure is handled exactly as the checked exception was before.
      */
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
 
     public RateLimitInterceptor(ObjectProvider<MeterRegistry> meterRegistryProvider,
-                                ObjectMapper objectMapper) {
+                                JsonMapper jsonMapper) {
         MeterRegistry reg = meterRegistryProvider.getIfAvailable();
         this.failOpenCounter = reg != null
                 ? Counter.builder("jtoye.ratelimit.fail_open")
                     .description("Rate limiter degraded to fail-open because the Redis-backed bucket was unavailable (issue #86)")
                     .register(reg)
                 : null;
-        this.objectMapper = objectMapper;
+        this.jsonMapper = jsonMapper;
     }
 
     @Value("${rate-limiting.enabled:true}")
@@ -195,7 +201,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     /**
      * issue #413: write the 429 body as RFC 7807, the shape every other error surface uses.
      *
-     * <p><b>Why a real {@link ProblemDetail} and a real {@link ObjectMapper}, not hand-rolled
+     * <p><b>Why a real {@link ProblemDetail} and the application's {@link JsonMapper}, not hand-rolled
      * JSON.</b> The defect being fixed is precisely that this class hand-wrote a body which
      * only resembled the contract. Constructing the same type {@code GlobalExceptionHandler}
      * returns, and serialising it with the application's own mapper, means the shape cannot
@@ -229,7 +235,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        response.getWriter().write(objectMapper.writeValueAsString(problem));
+        response.getWriter().write(jsonMapper.writeValueAsString(problem));
     }
 
     /**

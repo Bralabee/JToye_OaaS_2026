@@ -1,6 +1,13 @@
 "use client"
 
 import type { OrderDetail } from "@/types/api"
+import {
+  ALLERGY_NOTE_LABEL_COPY,
+  ALLERGY_NOTE_NOT_READ_PRINT_COPY,
+  allergyNoteReadCopy,
+} from "@/lib/allergen-copy"
+import { describeAllergyNoteReader } from "@/lib/allergy-note-api"
+import { formatUkClockTime } from "@/lib/uk-datetime"
 
 /**
  * A printable kitchen ticket (#105).
@@ -29,7 +36,10 @@ import type { OrderDetail } from "@/types/api"
  * this needing to change.
  */
 
+// 31.1-22 (P2-CHA-18): London time, never the device zone — a kitchen tablet left on another
+// zone must stamp the time the customer was told. Same convention as lib/uk-datetime.ts.
 const dtf = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/London",
   hour12: false,
   hour: "2-digit",
   minute: "2-digit",
@@ -127,6 +137,33 @@ export function KitchenTicket({
               CHECK: {flag.productName} &mdash; ingredients mention {flag.allergenName}
             </p>
           ))}
+        </div>
+      ) : null}
+
+      {/* THE CUSTOMER'S ALLERGY NOTE (31.1-22; #812, D-15). Its own field since V73, never
+          merged into the NOTES line below, which is the delivery note.
+
+          After the allergens block and before the items, for the same reason that block is
+          there: it qualifies every line beneath it. A heavier border than the allergens block,
+          so the two read as two statements — the vendor's declaration and the customer's
+          request — and the note in the customer's own words, as plain text (T-31.1-76).
+
+          Paper cannot be pressed, so the ticket carries the acknowledgement's STATE and no
+          control: either who marked it read and when, or that nobody has yet. A ticket torn
+          off before anyone read the note says so on its face. */}
+      {order.allergyNote ? (
+        <div className="kds-ticket__allergy-note">
+          <span>{ALLERGY_NOTE_LABEL_COPY}</span>
+          <p>{order.allergyNote}</p>
+          <p className="kds-ticket__allergy-note-status">
+            {order.allergyNoteAcknowledgedAt
+              ? allergyNoteReadCopy(
+                  // No viewer on paper: the reader is named only when the record holds a name.
+                  describeAllergyNoteReader(order.allergyNoteAcknowledgedBy, null),
+                  formatUkClockTime(order.allergyNoteAcknowledgedAt)
+                )
+              : ALLERGY_NOTE_NOT_READ_PRINT_COPY}
+          </p>
         </div>
       ) : null}
 

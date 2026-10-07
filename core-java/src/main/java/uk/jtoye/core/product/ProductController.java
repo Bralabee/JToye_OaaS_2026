@@ -11,6 +11,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,6 +26,7 @@ import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 
 import java.net.URI;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -143,9 +145,33 @@ public class ProductController {
     // ---- Labels ----
 
     @GetMapping("/{id}/label")
-    @Operation(summary = "Generate allergen label PDF", description = "Returns a PDF allergen label for the product")
-    public ResponseEntity<byte[]> generateLabel(@PathVariable UUID id) {
-        byte[] pdf = labelService.generateLabel(id);
+    @Operation(summary = "Generate allergen label PDF",
+            description = "Returns a PPDS (Natasha's Law) allergen label PDF for the product. The label "
+                    + "prints the production date and a use-by / best-before date counted from it "
+                    + "(production date + the product's shelf life), and a separate 'May contain' line "
+                    + "for cross-contact allergens that are not already declared. Dates are printed "
+                    + "en-GB, e.g. '5 October 2026'.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "The label PDF (attachment label-{id}.pdf)"),
+            @ApiResponse(responseCode = "401", description = "No bearer token, or an invalid one"),
+            @ApiResponse(responseCode = "403",
+                    description = "The caller holds no STAFF grant on the product's shop (errors/shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "Product not found"),
+            @ApiResponse(responseCode = "422",
+                    description = "The product lacks required label data (errors/incomplete-label-data), "
+                            + "or productionDate is after today (UK time) or gives a durability date "
+                            + "that has already passed (errors/invalid-production-date, field "
+                            + "productionDate)")
+    })
+    public ResponseEntity<byte[]> generateLabel(
+            @PathVariable UUID id,
+            @Parameter(description = "The date the food was produced (ISO yyyy-MM-dd). Use-by / "
+                    + "best-before is counted from it. Defaults to today in Europe/London. Must not be "
+                    + "after today, and must not give a durability date that has already passed.",
+                    example = "2026-10-03")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate productionDate) {
+        byte[] pdf = labelService.generateLabel(id, productionDate);
         return ResponseEntity.ok()
                 .header("Content-Type", "application/pdf")
                 .header("Content-Disposition", "attachment; filename=label-" + id + ".pdf")

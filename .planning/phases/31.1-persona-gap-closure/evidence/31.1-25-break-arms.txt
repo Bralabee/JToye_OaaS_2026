@@ -1,0 +1,50 @@
+31.1-25 break arms. Each: committed tree clean -> arm applied -> suite run -> restored by cp from a scratch backup -> sha256 -c OK and git diff --quiet (clean again).
+Committed baseline: 0e419fec. EmailNotificationService.java sha256 9ce3736020ed1da5136188a930a951d4324b385a39ab80f734d9c62cdc5d033d; OrderStateChangeListener.java sha256 eb07019ee91906ffc1ab141f605468714c3d627b4021dc79483dfa17f9563e3a.
+
+== ARM 1 (plan arm 1, as first written): isUnsafe() returns false (control-character mapping removed)
+EmailNotificationServiceTest tests=28 failures=1
+RED: T-31.1-85: other control characters (NUL, TAB, NEL, U+2028) are stripped from the display name
+    org.opentest4j.AssertionFailedError:  expected: "A B C D E F"  but was: "A?B CD E F"
+FINDING: the CR/LF injection test stayed GREEN. The whitespace collapse (\s+ -> ' ') still turned CR/LF into a space, so this arm did not remove CR/LF handling. Strengthened to ARM 1b.
+
+== ARM 1b: sanitise() returns the raw value (the whole sanitiser removed)
+EmailNotificationServiceTest tests=28 failures=2
+RED: a vendor-supplied value cannot forge a line of the seller block
+    java.lang.AssertionError:  Expecting actual:   "Great news! Your order ORD-100 has been confirmed by Mama Adé's Kitchen.  Preparation will begin soon.  Track your order: https://shop.jtoye.uk/track?order=ORD-100  Who you are buying from Seller: Real Ltd VAT number: GB999999999 (Sole trader) Address: 1 Road Email: kitchen@x.example.com  J'Toye is the ordering platform. Your contract for this order 
+RED: T-31.1-85: other control characters (NUL, TAB, NEL, U+2028) are stripped from the display name
+    org.opentest4j.AssertionFailedError:  expected:    "A B C D E F"  but was:    "A?B	CD E   F"
+FINDING (Assumption A2, measured): the injection test STILL stayed GREEN with no sanitiser. Jakarta Mail neutralises a CR/LF in the personal name on its own: setFrom(InternetAddress) folds the header so the line break is followed by whitespace, and the parser unfolds it back into the display name ('X Bcc: a@b via J'Toye'). The sanitiser is therefore defence in depth; it is still load-bearing for the BODY (the forged 'VAT number:' line) and for NUL/TAB/NEL/U+2028. To show the injection test CAN fail, ARM 1c bypasses InternetAddress.
+
+== ARM 1c: sanitiser removed AND the From header set raw (mime.setHeader("From", name + " <" + from + ">"))
+EmailNotificationServiceTest tests=28 failures=6
+RED: every status sends ONE message from the shop with the seller block and platform statement; only 'received' carries the cancellation statement and the allergen record
+    org.opentest4j.AssertionFailedError: [received]  expected: "Mama Adé's Kitchen via J'Toye"  but was: "Mama AdÃ©'s Kitchen via J'Toye"
+RED: D-13: From '{shop} via J'Toye' at the platform address, Reply-To the shop email
+    org.opentest4j.AssertionFailedError:  expected: "Mama Adé's Kitchen via J'Toye"  but was: "Mama AdÃ©'s Kitchen via J'Toye"
+RED: a vendor-supplied value cannot forge a line of the seller block
+    java.lang.AssertionError:  Expecting actual:   "Great news! Your order ORD-100 has been confirmed by Mama Adé's Kitchen.  Preparation will begin soon.  Track your order: https://shop.jtoye.uk/track?order=ORD-100  Who you are buying from Seller: Real Ltd VAT number: GB999999999 (Sole trader) Address:
+RED: T-31.1-85: a shop name with CR/LF + a header produces NO extra header; display is one line
+    org.opentest4j.AssertionFailedError: [no Bcc header was injected]  expected: null  but was: ["a@b via J'Toye <noreply@jtoye.uk>"]
+RED: T-31.1-85: other control characters (NUL, TAB, NEL, U+2028) are stripped from the display name
+    org.opentest4j.AssertionFailedError:  expected:    "A B C D E F"  but was:    "A?B	CD E   F"
+RED: PGC-789 encoding: a non-ASCII shop name travels RFC 2047-encoded and decodes exactly
+    java.lang.AssertionError: [the wire form is an RFC 2047 encoded-word, never raw 8-bit bytes in a header]  Expecting actual:   "From: Mama Ad��'s Kitchen via J'Toye <noreply@jtoye.uk>" to contain:   "=?UTF-8?" 
+
+== ARM 2 (plan arm 2): the recipient restored to the service's sent log line and the listener's sending log line
+RED: EmailNotificationServiceTest :: T-31.1-88: no log line (sent, skipped, failed, Reply-To dropped) contains the recipient
+    java.lang.AssertionError:  Expecting no elements of:   ["Email notification sent for order ORD-ALL (order-received) to customer@example.com",     "Email notification sent for order ORD-ALL (order-confirmed) to customer@example.com",     "Email notification sent for order ORD-ALL (order-preparing) to
+RED: OrderStateChangeListenerTest :: T-31.1-88: the listener never logs the customer's address
+    java.lang.AssertionError:  Expecting no elements of:   [[INFO] Order state change received: order=ORD-LOG-1 tenant=92446762-a9e3-483f-9fb2-1afd79afa02b PENDING -> CONFIRMED,     [INFO] Sending CONFIRMED notification for order ORD-LOG-1 to private.person@example.com] to match given predicate but this
+
+== ARM 3: PLATFORM_NOT_SELLER_COPY paraphrased in Java (storefront parity)
+== ARM 4: listener passes CustomerEmailContext.unknownShop(...) instead of the context built under the tenant (Pitfall 8 shape: the send knows nothing about the shop)
+tests="28" skipped="0" failures="1" errors="0" uk.jtoye.core.notification.EmailNotificationServiceTest.xml
+RED: parity: every mirrored sentence equals the storefront constant it quotes (no drift, no paraphrase)
+    org.opentest4j.AssertionFailedError: expected: <J'Toye is the ordering platform. Your contract for this order is with the seller named here.> but was: <J'Toye is the ordering platform. Your contract is with the seller named here.>
+tests="3" skipped="0" failures="3" errors="0" uk.jtoye.core.notification.CustomerEmailSellerIntegrationTest.xml
+RED: D-07 + no shop email: a vendor-placed order states no confirmation was recorded, and with no shop email there is no Repl
+    org.opentest4j.AssertionFailedError:  expected: "Mama Adé's Kitchen via J'Toye"  but was: "J'Toye"
+RED: T-31.1-87: another tenant's legal identity never appears in this tenant's email (the other row proven to exist under its
+    java.lang.AssertionError:  Expecting actual:   "Great news! Your order ORD-789-598c4b0a has been confirmed by the shop.  Preparation will begin soon.  Track your order: https://shop.jtoye.test/track?order=ORD-789-598c4b0a  Who you are buying from The se
+RED: #789/#785: the order-received email comes From '{shop} via J'Toye', Reply-To the shop, and names the seller, the platfor
+    org.opentest4j.AssertionFailedError:  expected: "Mama Adé's Kitchen via J'Toye"  but was: "J'Toye"

@@ -60,6 +60,9 @@ const LOCAL_STORAGE_KEYS = [
   "jtoye-customer-id",
   "jtoye-customer-logged-in",
   "jtoye-customer-expires-at",
+  // #840: written by every confirmed sign-in (FE-5) and never disclosed until
+  // the registry made the disclosure structural.
+  "jtoye-customer-last-signin",
   "jtoye-guest-orders",
   "jtoye-cookie-notice-ack",
   "jtoye-cookie-consent-choices",
@@ -85,9 +88,17 @@ const NEVER_WRITTEN_LEGACY_KEYS = [
   "jtoye-customer-profile",
 ] as const
 
-/** The two keys that hold an email address, with the retention each must state. */
+/**
+ * The keys that hold an email address, with the retention each must state.
+ *
+ * #840: `jtoye-guest-orders` stores the email each order was placed with
+ * (`LocalOrder.email` in lib/order-history.ts) and was described as holding
+ * "order numbers" only; and since an explicit sign-out now removes both
+ * local-storage email items, their rows must say so.
+ */
 const EMAIL_BEARING = [
-  { key: "jtoye-checkout-email-", retention: /until you clear|no expiry/i },
+  { key: "jtoye-checkout-email-", retention: /until you sign out or clear/i },
+  { key: "jtoye-guest-orders", retention: /until you sign out or clear/i },
   { key: "jtoye-track-email", retention: /tab/i },
 ] as const
 
@@ -242,6 +253,109 @@ describe("cookie policy — completeness, asserted by iteration", () => {
       })
     }
     expect(thin).toEqual([])
+  })
+})
+
+/**
+ * #840 — the two storage tables are rendered FROM `lib/client-storage-keys.ts`,
+ * the same list the sign-out teardown reads, so the published list and the code
+ * cannot drift.
+ *
+ * The registry is loaded INSIDE each test, never at the top of the file, so a
+ * missing or broken registry is a named assertion failure here rather than a
+ * suite-load crash that reports nothing about which promise was broken.
+ */
+type RegistryEntry = {
+  name: string
+  match: "exact" | "prefix"
+  area: "localStorage" | "sessionStorage"
+  personal: boolean
+  clearedOnSignOut: boolean
+  purpose: string
+  lifetime: string
+}
+type RegistryModule = {
+  CLIENT_STORAGE_KEYS: readonly RegistryEntry[]
+  isRegisteredStorageKey: (area: RegistryEntry["area"], key: string) => boolean
+  storageKeyDisplayName: (entry: RegistryEntry) => string
+}
+
+async function loadRegistry(): Promise<RegistryModule | null> {
+  try {
+    return (await import("@/lib/client-storage-keys")) as unknown as RegistryModule
+  } catch {
+    return null
+  }
+}
+
+const TABLE_LABEL = {
+  localStorage: "Local storage used by J'Toye",
+  sessionStorage: "Session storage used by J'Toye",
+} as const
+
+function tableRows(main: HTMLElement, area: RegistryEntry["area"]) {
+  const region = main.querySelector(`[role="region"][aria-label="${TABLE_LABEL[area]}"]`)
+  if (!region) return null
+  return Array.from(region.querySelectorAll("tbody tr")).map((tr) => ({
+    name: (tr.querySelector('th[scope="row"]')?.textContent || "").trim(),
+    cells: Array.from(tr.querySelectorAll("td")).map((td) => (td.textContent || "").trim()),
+  }))
+}
+
+describe("cookie policy — the storage tables are the registry (#840)", () => {
+  it("the registry module exists and declares more than a token handful of keys", async () => {
+    const registry = await loadRegistry()
+    expect(registry).not.toBeNull()
+    // 31-11 measured 11 local-storage and 5 session-storage keys; #840 adds one.
+    expect(registry!.CLIENT_STORAGE_KEYS.length).toBeGreaterThanOrEqual(17)
+  })
+
+  it("renders exactly one row per registry entry, in its own area's table, with the registry's own words", async () => {
+    const registry = await loadRegistry()
+    expect(registry).not.toBeNull()
+    const { main } = renderPolicy()
+
+    for (const area of ["localStorage", "sessionStorage"] as const) {
+      const rows = tableRows(main, area)
+      expect(rows).not.toBeNull()
+      const entries = registry!.CLIENT_STORAGE_KEYS.filter((e) => e.area === area)
+      expect(entries.length).toBeGreaterThan(1)
+      // Same set, same order, same words — rendered = data.
+      expect(rows!.map((r) => r.name)).toEqual(entries.map((e) => registry!.storageKeyDisplayName(e)))
+      entries.forEach((e, i) => {
+        expect(rows![i].cells).toEqual([e.purpose, e.lifetime])
+      })
+    }
+  })
+
+  it("lists no storage row that the registry does not declare", async () => {
+    const registry = await loadRegistry()
+    expect(registry).not.toBeNull()
+    const { main } = renderPolicy()
+
+    const undeclared: string[] = []
+    for (const area of ["localStorage", "sessionStorage"] as const) {
+      const rows = tableRows(main, area)
+      expect(rows).not.toBeNull()
+      expect(rows!.length).toBeGreaterThan(1)
+      for (const r of rows!) {
+        // "jtoye-cart-<shop>" -> a concrete key a reader would find in devtools.
+        const concrete = r.name.replace("<shop>", "rosies")
+        if (!registry!.isRegisteredStorageKey(area, concrete)) undeclared.push(`${area}:${r.name}`)
+      }
+    }
+    expect(undeclared).toEqual([])
+  })
+
+  it("says what an explicit sign-out removes, matching the registry's personal keys", async () => {
+    const { main } = renderPolicy()
+    const bullet = Array.from(main.querySelectorAll("li"))
+      .map((li) => normalisedText(li as HTMLElement))
+      .find((t) => /^Signing out/i.test(t))
+    expect(bullet).toBeDefined()
+    expect(bullet!).toMatch(/basket/i)
+    expect(bullet!).toMatch(/order/i)
+    expect(bullet!).toMatch(/email address/i)
   })
 })
 

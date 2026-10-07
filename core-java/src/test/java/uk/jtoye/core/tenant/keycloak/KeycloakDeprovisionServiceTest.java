@@ -1,12 +1,12 @@
 package uk.jtoye.core.tenant.keycloak;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uk.jtoye.core.tenant.Tenant;
 import uk.jtoye.core.tenant.TenantRepository;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -40,7 +40,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class KeycloakDeprovisionServiceTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
     private static KeycloakAdminProperties enabledProps(String... realms) {
         KeycloakAdminProperties props = new KeycloakAdminProperties();

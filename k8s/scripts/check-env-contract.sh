@@ -168,6 +168,28 @@ ALLOW_CORE_B=(
 )
 
 # ===========================================================================
+# CORE-JAVA MUST-SUPPLY LIST — direction (b), the OPPOSITE of an allowlist.
+#
+# A placeholder whose ONLY application.yml default is the EMPTY STRING passes
+# direction (b) "by rule": for most such names (STRIPE_API_KEY, SMTP_USERNAME,
+# the WhatsApp quartet …) an empty value is the INERT state and supplying
+# nothing is correct. For the names below it is not — the empty default exists
+# so that an absent value makes core-java REFUSE TO START with a message naming
+# the property, instead of running on a guessable value. The rule cannot tell
+# the two apart from the YAML, so these names are declared here, and a name on
+# this list that no manifest supplies is a VIOLATION that NO allowlist entry
+# can excuse. Entries can only ADD failures; they never hide a channel.
+#
+# Format: NAME|reason (same hygiene as the allowlists). An entry FAILS as STALE
+# when no application*.yml reads the placeholder any more, or when its defaults
+# are no longer exactly the empty string (a real default, or none at all — the
+# no-default rule above already covers that case).
+# ===========================================================================
+MUST_SUPPLY_CORE=(
+  'DSAR_ENCRYPTION_KEY|Phase 31.1 D-19 (plan 31.1-07): the AES-256-GCM key for the DSAR subject address. application.yml reads ${DSAR_ENCRYPTION_KEY:} and DsarCipher refuses to construct on anything but 64 hex characters, so the empty default is a refusal to boot, not an inert feature. Supplied by k8s/base/core-java-deployment.yaml from Secret dsar-credentials (key encryption-key, no optional flag). Before this list existed, deleting that env entry left this gate green: the empty default scored "pass by rule (safe non-local default)".'
+)
+
+# ===========================================================================
 # EDGE-GO ALLOWLIST — direction (a): injected by k8s, read by no Go source.
 # ===========================================================================
 ALLOW_EDGE_A=()
@@ -623,6 +645,8 @@ parse_allowlist A_EDGE_A 'edge-go allowlist (a)'   ${ALLOW_EDGE_A[@]+"${ALLOW_ED
 parse_allowlist A_EDGE_B 'edge-go allowlist (b)'   ${ALLOW_EDGE_B[@]+"${ALLOW_EDGE_B[@]}"}
 parse_allowlist A_FE_A   'frontend allowlist (a)'  ${ALLOW_FE_A[@]+"${ALLOW_FE_A[@]}"}
 parse_allowlist A_FE_B   'frontend allowlist (b)'  ${ALLOW_FE_B[@]+"${ALLOW_FE_B[@]}"}
+declare -A M_CORE=()
+parse_allowlist M_CORE   'core-java must-supply list' ${MUST_SUPPLY_CORE[@]+"${MUST_SUPPLY_CORE[@]}"}
 
 note_open_defects A_CORE_A 'core-java' '(a)'
 note_open_defects A_CORE_B 'core-java' '(b)'
@@ -649,6 +673,17 @@ for name in $(printf '%s\n' "${!A_CORE_B[@]}" | sort); do
          && [[ -z "${CORE_IS_CHAINED["$name"]-}" ]] \
          && ! core_matched_local_default "$name" > /dev/null; then
         HYGIENE_ERRORS+=("core-java allowlist (b): STALE entry '$name' — its default(s) are no longer local-only, it is not default-less, and it is not an unresolved property chain, so it would pass by rule without an exemption. Remove the entry.")
+    fi
+done
+
+# --- staleness: core-java must-supply list -----------------------------------
+for name in $(printf '%s\n' "${!M_CORE[@]}" | sort); do
+    if [[ -z "${CORE_IS_READ["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("core-java must-supply list: STALE entry '$name' — no application*.yml reads that placeholder any more. Remove the entry.")
+    elif [[ -n "${CORE_HAS_NODEF["$name"]-}" ]] || [[ "${CORE_DEFAULTS["$name"]-}" != $'\n' ]]; then
+        HYGIENE_ERRORS+=("core-java must-supply list: STALE entry '$name' — its application*.yml default(s) are no longer exactly the empty string, so the reason recorded for it no longer describes the code. Re-check the consumer and update or remove the entry.")
+    elif [[ -n "${A_CORE_B["$name"]-}" ]]; then
+        HYGIENE_ERRORS+=("core-java must-supply list: '$name' is ALSO on the direction-(b) allowlist. A name that must be supplied cannot be a reviewed omission; remove the allowlist entry.")
     fi
 done
 
@@ -732,11 +767,16 @@ done
 # ===========================================================================
 # Direction (b) — expected but unsupplied, per service
 # ===========================================================================
-CORE_B_NODEF=(); CORE_B_LOCAL=(); CORE_B_CHAINED=()
+CORE_B_NODEF=(); CORE_B_LOCAL=(); CORE_B_CHAINED=(); CORE_B_MUST=()
 CORE_B_ALLOWED=0; CORE_B_SUPPLIED=0; CORE_B_BYRULE=0
 for name in "${CORE_READ_NAMES[@]}"; do
     if [[ -n "${CORE_IS_INJECTED["$name"]-}" ]]; then
         (( ++CORE_B_SUPPLIED ))
+        continue
+    fi
+    # Must-supply names are checked BEFORE any allowlist lookup: no entry excuses them.
+    if [[ -n "${M_CORE["$name"]-}" ]]; then
+        CORE_B_MUST+=("$name")
         continue
     fi
     if [[ -n "${CORE_HAS_NODEF["$name"]-}" ]]; then
@@ -807,6 +847,7 @@ printf '  (b) %-44s %d\n' 'pass by rule (safe non-local default)' "$CORE_B_BYRUL
 printf '  (b) %-44s %d\n' 'VIOLATIONS (no default at all)'       "${#CORE_B_NODEF[@]}"
 printf '  (b) %-44s %d\n' 'VIOLATIONS (local-only default)'      "${#CORE_B_LOCAL[@]}"
 printf '  (b) %-44s %d\n' 'VIOLATIONS (unresolved property chain)' "${#CORE_B_CHAINED[@]}"
+printf '  (b) %-44s %d\n' 'VIOLATIONS (must-supply, unsupplied)' "${#CORE_B_MUST[@]}"
 echo
 echo "edge-go"
 echo "  manifest : k8s/base/edge-go-deployment.yaml"
@@ -935,6 +976,17 @@ if (( ${#CORE_B_CHAINED[@]} > 0 )); then
     echo "  in a localhost literal (#299). Treating an unresolved chain as a 'safe" >&2
     echo "  non-local default' is how that half of #299 stayed invisible. Either supply" >&2
     echo "  the value, or add an ALLOWLIST entry naming where the chain lands." >&2
+    echo >&2
+    VIOLATION=1
+fi
+
+if (( ${#CORE_B_MUST[@]} > 0 )); then
+    echo "DIRECTION (b) VIOLATION [core-java] — MUST-SUPPLY placeholder that no manifest supplies:" >&2
+    for name in "${CORE_B_MUST[@]}"; do echo "  - $name  (${M_CORE["$name"]})" >&2; done
+    echo >&2
+    echo "  Its empty application.yml default is a refusal to start, not an inert" >&2
+    echo "  feature, so every pod would fail at boot. Supply it from a Secret in" >&2
+    echo "  k8s/base/core-java-deployment.yaml. This is NOT allowlistable." >&2
     echo >&2
     VIOLATION=1
 fi

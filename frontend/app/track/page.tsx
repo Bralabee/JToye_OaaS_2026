@@ -12,8 +12,16 @@ import {
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
 import { PublicShell } from "@/components/public/public-shell"
+import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
+import type { PublicOrderAllergenRecord } from "@/types/storefront"
 
-export interface OrderStatus {
+/**
+ * One order as /track receives it: from the number + email tracking response, or (signed in) as an
+ * entry of the customer's own history list. The allergen fields (31.1-09, 31.1-13) are
+ * {@link PublicOrderAllergenRecord}; on a LIST entry the recorded set is always null by design (the
+ * list loads no order lines), which this page tracks separately rather than calling it "not recorded".
+ */
+export interface OrderStatus extends PublicOrderAllergenRecord {
   orderNumber: string
   status: string
   shopName: string
@@ -143,6 +151,14 @@ function TrackOrderContent() {
   // confident lie), so it stays false on every error path.
   const [noOrdersOfTheirOwn, setNoOrdersOfTheirOwn] = useState(false)
   const [showManualForm, setShowManualForm] = useState(false)
+  // 31.1-18: true while `order` is a HISTORY LIST entry, whose recordedAllergens/Flags are null BY
+  // DESIGN (no N+1), not because nothing was recorded. The recorded set is then shown as NOT LOADED,
+  // with an explicit action that loads the tracking response. Any number + email response clears it.
+  const [orderFromList, setOrderFromList] = useState(false)
+  const [loadingRecorded, setLoadingRecorded] = useState(false)
+  // The order number whose full tracking response is on screen. A list entry for the SAME order
+  // arriving later (the session resolves after a My Orders handoff lookup) must not replace it.
+  const trackedByNumber = useRef<string | null>(null)
 
   // Session pre-fill + #458 auto-population, in one pass.
   //
@@ -177,7 +193,10 @@ function TrackOrderContent() {
           if (own.length === 0) setNoOrdersOfTheirOwn(true)
           return
         }
-        setOrder(picked)
+        if (trackedByNumber.current !== picked.orderNumber) {
+          setOrder(picked)
+          setOrderFromList(true)
+        }
         setOrderNumber(picked.orderNumber)
         setAutoResolved(true)
       } catch {
@@ -215,7 +234,9 @@ function TrackOrderContent() {
         `/public/orders/${orderNumber.trim()}`,
         { params: { email: email.trim() } }
       )
+      trackedByNumber.current = res.data.orderNumber
       setOrder(res.data)
+      setOrderFromList(false)
     } catch {
       setError("Order not found. Check your order number and email address.")
     } finally {
@@ -246,11 +267,34 @@ function TrackOrderContent() {
           `/public/orders/${order.orderNumber}`,
           { params: { email: email.trim() } }
         )
+        trackedByNumber.current = res.data.orderNumber
         setOrder(res.data)
+        setOrderFromList(false)
       } catch { /* silently fail on refresh */ }
     }, 15000)
     return () => clearInterval(interval)
   }, [order, email])
+
+  // 31.1-18: the customer asked for what the kitchen recorded on a list-sourced order. Same number +
+  // email endpoint as the guest lookup (the email is still the proof of ownership), and only on an
+  // explicit tap — the signed-in auto path itself never looks an order up by number (#458).
+  const showRecorded = async () => {
+    if (!order || !email.trim()) return
+    setLoadingRecorded(true)
+    try {
+      const res = await publicApiClient.get<OrderStatus>(
+        `/public/orders/${order.orderNumber}`,
+        { params: { email: email.trim() } }
+      )
+      trackedByNumber.current = res.data.orderNumber
+      setOrder(res.data)
+      setOrderFromList(false)
+    } catch {
+      /* keep the list entry; the NOT LOADED line and its action stay on screen */
+    } finally {
+      setLoadingRecorded(false)
+    }
+  }
 
   const currentStep = order ? STEPS.findIndex((s) => s.key === order.status) : -1
   const isCancelled = order?.status === "CANCELLED"
@@ -419,7 +463,7 @@ function TrackOrderContent() {
                   )}
                   {formatPrice(order.totalAmountPennies)}
                 </p>
-                <p className="mt-1 font-mono text-xs text-slate-300">{order.orderNumber}</p>
+                <p className="mt-1 font-mono text-xs text-slate-600">{order.orderNumber}</p>
               </div>
               {isCancelled ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
@@ -475,7 +519,7 @@ function TrackOrderContent() {
                       >
                         <step.icon className="h-3.5 w-3.5" />
                       </m.div>
-                      <p className={`mt-1 text-xs font-medium ${isComplete ? "text-slate-700" : "text-slate-400"}`}>
+                      <p className={`mt-1 text-xs font-medium ${isComplete ? "text-slate-900" : "text-slate-600"}`}>
                         {step.label}
                       </p>
                     </div>
@@ -492,7 +536,7 @@ function TrackOrderContent() {
                   transition={{ duration: 0.5, ease: "easeOut" }}
                 />
               </div>
-              <p className="mt-2 text-center text-xs text-slate-400">
+              <p className="mt-2 text-center text-xs text-slate-600">
                 <span className="inline-flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse motion-reduce:animate-none" />
                   Auto-refreshing
@@ -500,6 +544,20 @@ function TrackOrderContent() {
               </p>
             </div>
           )}
+
+          {/* The order's allergen record, who placed it, and whether the shop read the allergy
+              note (31.1-18: #785, #812; D-07, D-08, D-15). From the response, never computed. */}
+          <RecordedAllergenSet
+            acknowledged={order.acknowledgedAllergens ?? null}
+            recorded={orderFromList ? undefined : (order.recordedAllergens ?? null)}
+            flags={orderFromList ? null : (order.recordedAllergenFlags ?? null)}
+            placedVia={order.placedVia ?? null}
+            allergyNoteProvided={order.allergyNoteProvided ?? null}
+            allergyNoteAcknowledgedAt={order.allergyNoteAcknowledgedAt ?? null}
+            shopName={order.shopName}
+            onShowRecorded={orderFromList && email.trim() ? showRecorded : undefined}
+            showRecordedPending={loadingRecorded}
+          />
         </m.div>
       )}
 

@@ -148,15 +148,11 @@
                 "items" : {
                   "properties" : {
                     "annotations" : {
-                      "items" : {
-                        "type" : "object"
-                      },
+                      "items" : { },
                       "type" : "array"
                     },
                     "declaredAnnotations" : {
-                      "items" : {
-                        "type" : "object"
-                      },
+                      "items" : { },
                       "type" : "array"
                     },
                     "implementationTitle" : {
@@ -201,15 +197,11 @@
                     "items" : {
                       "properties" : {
                         "annotations" : {
-                          "items" : {
-                            "type" : "object"
-                          },
+                          "items" : { },
                           "type" : "array"
                         },
                         "declaredAnnotations" : {
-                          "items" : {
-                            "type" : "object"
-                          },
+                          "items" : { },
                           "type" : "array"
                         },
                         "implementationTitle" : {
@@ -250,15 +242,66 @@
                   "unnamedModule" : {
                     "properties" : {
                       "annotations" : {
-                        "items" : {
-                          "type" : "object"
-                        },
+                        "items" : { },
                         "type" : "array"
                       },
-                      "declaredAnnotations" : {
-                        "items" : {
-                          "type" : "object"
+                      "classLoader" : {
+                        "properties" : {
+                          "defaultAssertionStatus" : {
+                            "type" : "boolean",
+                            "writeOnly" : true
+                          },
+                          "definedPackages" : {
+                            "items" : {
+                              "properties" : {
+                                "annotations" : {
+                                  "items" : { },
+                                  "type" : "array"
+                                },
+                                "declaredAnnotations" : {
+                                  "items" : { },
+                                  "type" : "array"
+                                },
+                                "implementationTitle" : {
+                                  "type" : "string"
+                                },
+                                "implementationVendor" : {
+                                  "type" : "string"
+                                },
+                                "implementationVersion" : {
+                                  "type" : "string"
+                                },
+                                "name" : {
+                                  "type" : "string"
+                                },
+                                "sealed" : {
+                                  "type" : "boolean"
+                                },
+                                "specificationTitle" : {
+                                  "type" : "string"
+                                },
+                                "specificationVendor" : {
+                                  "type" : "string"
+                                },
+                                "specificationVersion" : {
+                                  "type" : "string"
+                                }
+                              },
+                              "type" : "object"
+                            },
+                            "type" : "array"
+                          },
+                          "name" : {
+                            "type" : "string"
+                          },
+                          "registeredAsParallelCapable" : {
+                            "type" : "boolean"
+                          }
                         },
+                        "type" : "object"
+                      },
+                      "declaredAnnotations" : {
+                        "items" : { },
                         "type" : "array"
                       },
                       "descriptor" : {
@@ -272,9 +315,7 @@
                         },
                         "type" : "object"
                       },
-                      "layer" : {
-                        "type" : "object"
-                      },
+                      "layer" : { },
                       "name" : {
                         "type" : "string"
                       },
@@ -303,15 +344,66 @@
               "unnamedModule" : {
                 "properties" : {
                   "annotations" : {
-                    "items" : {
-                      "type" : "object"
-                    },
+                    "items" : { },
                     "type" : "array"
                   },
-                  "declaredAnnotations" : {
-                    "items" : {
-                      "type" : "object"
+                  "classLoader" : {
+                    "properties" : {
+                      "defaultAssertionStatus" : {
+                        "type" : "boolean",
+                        "writeOnly" : true
+                      },
+                      "definedPackages" : {
+                        "items" : {
+                          "properties" : {
+                            "annotations" : {
+                              "items" : { },
+                              "type" : "array"
+                            },
+                            "declaredAnnotations" : {
+                              "items" : { },
+                              "type" : "array"
+                            },
+                            "implementationTitle" : {
+                              "type" : "string"
+                            },
+                            "implementationVendor" : {
+                              "type" : "string"
+                            },
+                            "implementationVersion" : {
+                              "type" : "string"
+                            },
+                            "name" : {
+                              "type" : "string"
+                            },
+                            "sealed" : {
+                              "type" : "boolean"
+                            },
+                            "specificationTitle" : {
+                              "type" : "string"
+                            },
+                            "specificationVendor" : {
+                              "type" : "string"
+                            },
+                            "specificationVersion" : {
+                              "type" : "string"
+                            }
+                          },
+                          "type" : "object"
+                        },
+                        "type" : "array"
+                      },
+                      "name" : {
+                        "type" : "string"
+                      },
+                      "registeredAsParallelCapable" : {
+                        "type" : "boolean"
+                      }
                     },
+                    "type" : "object"
+                  },
+                  "declaredAnnotations" : {
+                    "items" : { },
                     "type" : "array"
                   },
                   "descriptor" : {
@@ -325,9 +417,7 @@
                     },
                     "type" : "object"
                   },
-                  "layer" : {
-                    "type" : "object"
-                  },
+                  "layer" : { },
                   "name" : {
                     "type" : "string"
                   },
@@ -372,9 +462,7 @@
         },
         "type" : "object"
       },
-      "AutowireCapableBeanFactory" : {
-        "type" : "object"
-      },
+      "AutowireCapableBeanFactory" : { },
       "BatchSyncRequest" : {
         "properties" : {
           "items" : {
@@ -402,9 +490,7 @@
         },
         "type" : "object"
       },
-      "BeanFactory" : {
-        "type" : "object"
-      },
+      "BeanFactory" : { },
       "BulkImportResult" : {
         "properties" : {
           "created" : {
@@ -482,7 +568,8 @@
           }
         },
         "required" : [
-          "shopId"
+          "shopId",
+          "title"
         ],
         "type" : "object"
       },
@@ -494,6 +581,7 @@
             "type" : "integer"
           },
           "email" : {
+            "format" : "email",
             "maxLength" : 255,
             "minLength" : 0,
             "type" : "string"
@@ -509,6 +597,10 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "email",
+          "name"
+        ],
         "type" : "object"
       },
       "CreateOnboardingRequest" : {
@@ -600,6 +692,7 @@
           }
         },
         "required" : [
+          "items",
           "shopId"
         ],
         "type" : "object"
@@ -667,6 +760,14 @@
             "maxLength" : 2000,
             "minLength" : 1,
             "type" : "string"
+          },
+          "mayContainMask" : {
+            "description" : "\"May contain\" (cross-contact) allergens as a bitmask in the same 14-bit layout as allergenMask. Printed on the PPDS label as its own 'May contain' line and never merged into allergenMask. Omit when not recorded; 0 means no cross-contact risk declared. On an edit, omitting it keeps the stored value.",
+            "example" : 1024,
+            "format" : "int32",
+            "maximum" : 16383,
+            "minimum" : 0,
+            "type" : "integer"
           },
           "preparationTimeMinutes" : {
             "description" : "Estimated preparation time in minutes",
@@ -782,6 +883,7 @@
           }
         },
         "required" : [
+          "label",
           "shopId",
           "validFrom",
           "validUntil"
@@ -791,6 +893,7 @@
       "CreateRefundRequest" : {
         "properties" : {
           "amountPennies" : {
+            "exclusiveMinimum" : 0,
             "format" : "int64",
             "type" : "integer"
           },
@@ -914,11 +1017,15 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "name"
+        ],
         "type" : "object"
       },
       "CreateTenantRequest" : {
         "properties" : {
           "contactEmail" : {
+            "format" : "email",
             "maxLength" : 320,
             "minLength" : 0,
             "type" : "string"
@@ -947,6 +1054,9 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "name"
+        ],
         "type" : "object"
       },
       "CreateTransactionRequest" : {
@@ -1000,6 +1110,10 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "eventTypes",
+          "targetUrl"
+        ],
         "type" : "object"
       },
       "CustomerDto" : {
@@ -1150,6 +1264,7 @@
           "email" : {
             "description" : "The email address the request concerns. Stored only as a one-way SHA-256 digest; the readable address is never persisted.",
             "example" : "someone@example.com",
+            "format" : "email",
             "maxLength" : 254,
             "minLength" : 0,
             "type" : "string"
@@ -1164,6 +1279,7 @@
           }
         },
         "required" : [
+          "email",
           "requestType"
         ],
         "type" : "object"
@@ -1214,6 +1330,15 @@
           "reviewsAnonymised" : {
             "format" : "int32",
             "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "ExportRequest" : {
+        "description" : "The single-use token from the emailed download link.",
+        "properties" : {
+          "token" : {
+            "type" : "string"
           }
         },
         "type" : "object"
@@ -1330,7 +1455,8 @@
               "PAYMENTS_CONNECTED",
               "AGREEMENT_SIGNED",
               "ALLERGEN_DATA_COMPLETE",
-              "MENU_MINIMUM"
+              "MENU_MINIMUM",
+              "TRADER_IDENTITY"
             ],
             "type" : "string"
           },
@@ -1380,6 +1506,18 @@
       },
       "GuestOrderConfirmation" : {
         "properties" : {
+          "acknowledgedAllergenMask" : {
+            "description" : "The allergen mask (AllergenCatalog bits 0..13) the customer acknowledged at checkout (orders.allergen_ack_mask). 0 means they acknowledged a basket declaring none of the 14 regulated allergens; null means no acknowledgement was recorded (the order predates the acknowledgement).",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "acknowledgedAllergens" : {
+            "description" : "The names of acknowledgedAllergenMask, in AllergenCatalog bit order. [] when the mask is 0; null when no acknowledgement was recorded.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
           "allergenWarnings" : {
             "items" : {
               "type" : "string"
@@ -1399,6 +1537,20 @@
           },
           "orderNumber" : {
             "type" : "string"
+          },
+          "recordedAllergenFlags" : {
+            "description" : "ADVISORY reconciliation lines: an allergen a product's ingredients text emphasises but its declaration omits. Separate from, and never merged into, recordedAllergens. [] when nothing was flagged; null when the lines carry no snapshot.",
+            "items" : {
+              "$ref" : "#/components/schemas/OrderAllergenFlagDto"
+            },
+            "type" : "array"
+          },
+          "recordedAllergens" : {
+            "description" : "The allergens the order's lines DECLARED when it was placed (the order-line snapshot union), in AllergenCatalog bit order. [] when the lines declared none; null when the lines carry no snapshot (not recorded). Reconciliation flags are never included here.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
           },
           "shopName" : {
             "type" : "string"
@@ -1448,6 +1600,13 @@
       },
       "GuestOrderRequest" : {
         "properties" : {
+          "acknowledgedAllergenMask" : {
+            "description" : "The 14-bit allergen set (AllergenCatalog bits 0..13) shown to the customer and acknowledged at checkout. Required for a storefront order: missing is refused 422 with code ALLERGEN_ACKNOWLEDGEMENT_REQUIRED; different from the basket's current declared set is refused 409 with code ALLERGEN_ACKNOWLEDGEMENT_STALE, carrying the current set.",
+            "format" : "int32",
+            "maximum" : 16383,
+            "minimum" : 0,
+            "type" : "integer"
+          },
           "addressCity" : {
             "maxLength" : 120,
             "minLength" : 0,
@@ -1468,7 +1627,14 @@
             "minLength" : 0,
             "type" : "string"
           },
+          "allergyNote" : {
+            "description" : "Optional allergy or dietary note for the shop preparing this order, separate from the delivery notes. At most 500 characters; trimmed, and a blank note is treated as none. The shop must acknowledge it, and the order's tracking shows when it did. Never echoed on the public tracking response.",
+            "maxLength" : 500,
+            "minLength" : 0,
+            "type" : "string"
+          },
           "customerEmail" : {
+            "format" : "email",
             "maxLength" : 255,
             "minLength" : 0,
             "type" : "string"
@@ -1506,6 +1672,13 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "customerEmail",
+          "customerName",
+          "customerPhone",
+          "fulfilmentType",
+          "items"
+        ],
         "type" : "object"
       },
       "HttpStatus" : {
@@ -1519,7 +1692,6 @@
           "101 SWITCHING_PROTOCOLS",
           "102 PROCESSING",
           "103 EARLY_HINTS",
-          "103 CHECKPOINT",
           "200 OK",
           "201 CREATED",
           "202 ACCEPTED",
@@ -1533,10 +1705,8 @@
           "300 MULTIPLE_CHOICES",
           "301 MOVED_PERMANENTLY",
           "302 FOUND",
-          "302 MOVED_TEMPORARILY",
           "303 SEE_OTHER",
           "304 NOT_MODIFIED",
-          "305 USE_PROXY",
           "307 TEMPORARY_REDIRECT",
           "308 PERMANENT_REDIRECT",
           "400 BAD_REQUEST",
@@ -1552,17 +1722,15 @@
           "410 GONE",
           "411 LENGTH_REQUIRED",
           "412 PRECONDITION_FAILED",
+          "413 CONTENT_TOO_LARGE",
           "413 PAYLOAD_TOO_LARGE",
-          "413 REQUEST_ENTITY_TOO_LARGE",
           "414 URI_TOO_LONG",
-          "414 REQUEST_URI_TOO_LONG",
           "415 UNSUPPORTED_MEDIA_TYPE",
           "416 REQUESTED_RANGE_NOT_SATISFIABLE",
           "417 EXPECTATION_FAILED",
           "418 I_AM_A_TEAPOT",
-          "419 INSUFFICIENT_SPACE_ON_RESOURCE",
-          "420 METHOD_FAILURE",
-          "421 DESTINATION_LOCKED",
+          "421 MISDIRECTED_REQUEST",
+          "422 UNPROCESSABLE_CONTENT",
           "422 UNPROCESSABLE_ENTITY",
           "423 LOCKED",
           "424 FAILED_DEPENDENCY",
@@ -1799,7 +1967,10 @@
               "format" : "uuid",
               "type" : "string"
             },
-            "type" : "array",
+            "type" : [
+              "array",
+              "null"
+            ],
             "uniqueItems" : true
           },
           "groupAdmin" : {
@@ -1892,6 +2063,13 @@
       },
       "OrderDetailDto" : {
         "properties" : {
+          "acknowledgedAllergenNames" : {
+            "description" : "The names of allergenAckMask, in AllergenCatalog bit order. [] when the mask is 0; null when no acknowledgement was recorded.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
           "addressCity" : {
             "type" : "string"
           },
@@ -1903,6 +2081,16 @@
           },
           "addressPostcode" : {
             "type" : "string"
+          },
+          "allergenAckAt" : {
+            "description" : "When the server accepted allergenAckMask; null when no acknowledgement was recorded.",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergenAckMask" : {
+            "description" : "The allergen mask (AllergenCatalog bits 0..13) the customer acknowledged at checkout. 0 means they acknowledged a basket declaring none of the 14 regulated allergens; null means no acknowledgement was recorded (placedVia VENDOR, or the order predates the acknowledgement).",
+            "format" : "int32",
+            "type" : "integer"
           },
           "allergenFlags" : {
             "items" : {
@@ -1919,6 +2107,19 @@
               "type" : "string"
             },
             "type" : "array"
+          },
+          "allergyNote" : {
+            "description" : "The customer's allergy or dietary note for this order, separate from notes (delivery). Null when none was given.",
+            "type" : "string"
+          },
+          "allergyNoteAcknowledgedAt" : {
+            "description" : "When someone in the shop acknowledged reading allergyNote; null until acknowledged.",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergyNoteAcknowledgedBy" : {
+            "description" : "Who in the shop acknowledged allergyNote (the authenticated principal name); null until acknowledged.",
+            "type" : "string"
           },
           "createdAt" : {
             "format" : "date-time",
@@ -1977,6 +2178,14 @@
             ],
             "type" : "string"
           },
+          "placedVia" : {
+            "description" : "Which channel placed the order: STOREFRONT (the customer, who acknowledged the allergen set) or VENDOR (the shop entered it; no customer acknowledgement). Null when the order predates the channel being recorded.",
+            "enum" : [
+              "STOREFRONT",
+              "VENDOR"
+            ],
+            "type" : "string"
+          },
           "refunds" : {
             "items" : {
               "$ref" : "#/components/schemas/RefundDto"
@@ -2021,6 +2230,29 @@
       },
       "OrderDto" : {
         "properties" : {
+          "allergenAckAt" : {
+            "description" : "When the server accepted allergenAckMask. Absent when no acknowledgement was recorded.",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergenAckMask" : {
+            "description" : "The allergen mask (AllergenCatalog bits 0..13) the customer acknowledged at checkout. 0 means they acknowledged a basket declaring none of the 14 regulated allergens. ABSENT means no acknowledgement was recorded (placedVia VENDOR, or the order predates the acknowledgement).",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "allergyNote" : {
+            "description" : "The customer's allergy or dietary note for this order, separate from notes (delivery). Absent when none was given.",
+            "type" : "string"
+          },
+          "allergyNoteAcknowledgedAt" : {
+            "description" : "When someone in the shop acknowledged reading allergyNote. Absent until acknowledged.",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergyNoteAcknowledgedBy" : {
+            "description" : "Who in the shop acknowledged allergyNote (the authenticated principal name). Absent until acknowledged.",
+            "type" : "string"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -2073,6 +2305,14 @@
               "CAPTURED",
               "FAILED",
               "REFUNDED"
+            ],
+            "type" : "string"
+          },
+          "placedVia" : {
+            "description" : "Which channel placed the order: STOREFRONT (the customer, who acknowledged the allergen set) or VENDOR (the shop entered it; no customer acknowledgement). Absent when the order predates the channel being recorded.",
+            "enum" : [
+              "STOREFRONT",
+              "VENDOR"
             ],
             "type" : "string"
           },
@@ -2131,6 +2371,9 @@
       },
       "OrderExport" : {
         "properties" : {
+          "allergyNote" : {
+            "type" : "string"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -2865,6 +3108,36 @@
         },
         "type" : "object"
       },
+      "ProductAllergenWarning" : {
+        "description" : "Advisory warning: the ingredients text emphasises (in CAPITALS or **bold** markup) an allergen that the declared allergenMask does not include. The save still succeeds and the declared mask is stored as sent; the warning is recomputed on every read.",
+        "properties" : {
+          "allergen" : {
+            "description" : "Allergen name",
+            "example" : "Milk",
+            "type" : "string"
+          },
+          "allergenBit" : {
+            "description" : "UK FSA allergen bit, 0..13",
+            "example" : 6,
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "code" : {
+            "description" : "Stable machine-readable warning code",
+            "enum" : [
+              "UNDECLARED_INGREDIENT_ALLERGEN"
+            ],
+            "example" : "UNDECLARED_INGREDIENT_ALLERGEN",
+            "type" : "string"
+          },
+          "message" : {
+            "description" : "Human-readable explanation naming the allergen",
+            "example" : "The ingredients name Milk, but it is not ticked as an allergen. Tick it, or check the ingredients.",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "ProductDto" : {
         "properties" : {
           "additionalImageUrls" : {
@@ -2880,6 +3153,12 @@
           "allergenSpans" : {
             "items" : {
               "$ref" : "#/components/schemas/AllergenSpan"
+            },
+            "type" : "array"
+          },
+          "allergenWarnings" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ProductAllergenWarning"
             },
             "type" : "array"
           },
@@ -2918,6 +3197,10 @@
           },
           "ingredientsText" : {
             "type" : "string"
+          },
+          "mayContainMask" : {
+            "format" : "int32",
+            "type" : "integer"
           },
           "media" : {
             "items" : {
@@ -3029,6 +3312,27 @@
       },
       "PublicOrderStatus" : {
         "properties" : {
+          "acknowledgedAllergenMask" : {
+            "description" : "The allergen mask (AllergenCatalog bits 0..13) the customer acknowledged at checkout. 0 means they acknowledged a basket declaring none of the 14 regulated allergens; null means no acknowledgement was recorded: the shop entered the order (placedVia VENDOR) or it predates the acknowledgement.",
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "acknowledgedAllergens" : {
+            "description" : "The names of acknowledgedAllergenMask, in AllergenCatalog bit order. [] when the mask is 0; null when no acknowledgement was recorded.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "allergyNoteAcknowledgedAt" : {
+            "description" : "When someone in the shop acknowledged reading the allergy note; null until they have (or when no note was sent).",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "allergyNoteProvided" : {
+            "description" : "Whether the customer sent an allergy or dietary note with this order. The note's text is never returned here.",
+            "type" : "boolean"
+          },
           "createdAt" : {
             "format" : "date-time",
             "type" : "string"
@@ -3042,6 +3346,28 @@
           },
           "paymentStatus" : {
             "type" : "string"
+          },
+          "placedVia" : {
+            "description" : "Which channel placed the order: STOREFRONT (the customer, who acknowledged the allergen set) or VENDOR (the shop entered it; no customer acknowledgement was recorded). Null when the order predates the channel being recorded.",
+            "enum" : [
+              "STOREFRONT",
+              "VENDOR"
+            ],
+            "type" : "string"
+          },
+          "recordedAllergenFlags" : {
+            "description" : "ADVISORY reconciliation lines, separate from and never merged into recordedAllergens. [] when nothing was flagged; null when not recorded. Tracking response only, like recordedAllergens.",
+            "items" : {
+              "$ref" : "#/components/schemas/OrderAllergenFlagDto"
+            },
+            "type" : "array"
+          },
+          "recordedAllergens" : {
+            "description" : "The allergens the order's lines DECLARED when it was placed (the order-line snapshot union), in AllergenCatalog bit order. [] when the lines declared none; null when the lines carry no snapshot (not recorded). Populated on the single-order tracking response only: always null on the order-history list, which does not load order lines.",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
           },
           "shopName" : {
             "type" : "string"
@@ -3112,6 +3438,12 @@
           "ingredientsText" : {
             "type" : "string"
           },
+          "mayContainAllergens" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
           "preparationTimeMinutes" : {
             "format" : "int32",
             "type" : "integer"
@@ -3122,6 +3454,12 @@
           },
           "title" : {
             "type" : "string"
+          },
+          "undeclaredIngredientAllergens" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
           },
           "vatRate" : {
             "type" : "string"
@@ -3218,6 +3556,9 @@
           "phone" : {
             "type" : "string"
           },
+          "seller" : {
+            "$ref" : "#/components/schemas/SellerIdentityDto"
+          },
           "slug" : {
             "type" : "string"
           },
@@ -3244,9 +3585,7 @@
             "writeOnly" : true
           },
           "attributesMap" : {
-            "additionalProperties" : {
-              "type" : "object"
-            },
+            "additionalProperties" : { },
             "type" : "object"
           },
           "beanName" : {
@@ -3313,9 +3652,7 @@
             "writeOnly" : true
           },
           "staticAttributes" : {
-            "additionalProperties" : {
-              "type" : "object"
-            },
+            "additionalProperties" : { },
             "type" : "object"
           },
           "statusCode" : {
@@ -3407,6 +3744,9 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "reason"
+        ],
         "type" : "object"
       },
       "ResolveGateRequest" : {
@@ -3503,11 +3843,55 @@
         },
         "type" : "object"
       },
+      "SellerIdentityDto" : {
+        "description" : "The seller's statutory identity (CCR 2013 Sch 2; E-Commerce Regs 2002 reg 6). Present only on GET /public/shops/{slug}; optional fields are absent when the trader has none.",
+        "properties" : {
+          "addressLines" : {
+            "description" : "Geographic address lines: line 1, optional line 2, town or city, postcode",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "companyNumber" : {
+            "description" : "Companies House number; present only when entityType is COMPANY",
+            "type" : "string"
+          },
+          "email" : {
+            "description" : "The shop's contact email",
+            "type" : "string"
+          },
+          "entityType" : {
+            "enum" : [
+              "COMPANY",
+              "SOLE_TRADER",
+              "PARTNERSHIP"
+            ],
+            "type" : "string"
+          },
+          "legalName" : {
+            "description" : "Legal name: the registered company name or the sole trader's own name",
+            "type" : "string"
+          },
+          "phone" : {
+            "description" : "The shop's contact phone, when it has one",
+            "type" : "string"
+          },
+          "vatNumber" : {
+            "description" : "VAT number; present only when VAT-registered",
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "addressLines",
+          "entityType",
+          "legalName"
+        ],
+        "type" : "object"
+      },
       "ServletContext" : {
         "properties" : {
-          "attributeNames" : {
-            "type" : "object"
-          },
+          "attributeNames" : { },
           "classLoader" : {
             "properties" : {
               "defaultAssertionStatus" : {
@@ -3518,15 +3902,11 @@
                 "items" : {
                   "properties" : {
                     "annotations" : {
-                      "items" : {
-                        "type" : "object"
-                      },
+                      "items" : { },
                       "type" : "array"
                     },
                     "declaredAnnotations" : {
-                      "items" : {
-                        "type" : "object"
-                      },
+                      "items" : { },
                       "type" : "array"
                     },
                     "implementationTitle" : {
@@ -3561,21 +3941,223 @@
               "name" : {
                 "type" : "string"
               },
+              "parent" : {
+                "properties" : {
+                  "defaultAssertionStatus" : {
+                    "type" : "boolean",
+                    "writeOnly" : true
+                  },
+                  "definedPackages" : {
+                    "items" : {
+                      "properties" : {
+                        "annotations" : {
+                          "items" : { },
+                          "type" : "array"
+                        },
+                        "declaredAnnotations" : {
+                          "items" : { },
+                          "type" : "array"
+                        },
+                        "implementationTitle" : {
+                          "type" : "string"
+                        },
+                        "implementationVendor" : {
+                          "type" : "string"
+                        },
+                        "implementationVersion" : {
+                          "type" : "string"
+                        },
+                        "name" : {
+                          "type" : "string"
+                        },
+                        "sealed" : {
+                          "type" : "boolean"
+                        },
+                        "specificationTitle" : {
+                          "type" : "string"
+                        },
+                        "specificationVendor" : {
+                          "type" : "string"
+                        },
+                        "specificationVersion" : {
+                          "type" : "string"
+                        }
+                      },
+                      "type" : "object"
+                    },
+                    "type" : "array"
+                  },
+                  "name" : {
+                    "type" : "string"
+                  },
+                  "registeredAsParallelCapable" : {
+                    "type" : "boolean"
+                  },
+                  "unnamedModule" : {
+                    "properties" : {
+                      "annotations" : {
+                        "items" : { },
+                        "type" : "array"
+                      },
+                      "classLoader" : {
+                        "properties" : {
+                          "defaultAssertionStatus" : {
+                            "type" : "boolean",
+                            "writeOnly" : true
+                          },
+                          "definedPackages" : {
+                            "items" : {
+                              "properties" : {
+                                "annotations" : {
+                                  "items" : { },
+                                  "type" : "array"
+                                },
+                                "declaredAnnotations" : {
+                                  "items" : { },
+                                  "type" : "array"
+                                },
+                                "implementationTitle" : {
+                                  "type" : "string"
+                                },
+                                "implementationVendor" : {
+                                  "type" : "string"
+                                },
+                                "implementationVersion" : {
+                                  "type" : "string"
+                                },
+                                "name" : {
+                                  "type" : "string"
+                                },
+                                "sealed" : {
+                                  "type" : "boolean"
+                                },
+                                "specificationTitle" : {
+                                  "type" : "string"
+                                },
+                                "specificationVendor" : {
+                                  "type" : "string"
+                                },
+                                "specificationVersion" : {
+                                  "type" : "string"
+                                }
+                              },
+                              "type" : "object"
+                            },
+                            "type" : "array"
+                          },
+                          "name" : {
+                            "type" : "string"
+                          },
+                          "registeredAsParallelCapable" : {
+                            "type" : "boolean"
+                          }
+                        },
+                        "type" : "object"
+                      },
+                      "declaredAnnotations" : {
+                        "items" : { },
+                        "type" : "array"
+                      },
+                      "descriptor" : {
+                        "properties" : {
+                          "automatic" : {
+                            "type" : "boolean"
+                          },
+                          "open" : {
+                            "type" : "boolean"
+                          }
+                        },
+                        "type" : "object"
+                      },
+                      "layer" : { },
+                      "name" : {
+                        "type" : "string"
+                      },
+                      "named" : {
+                        "type" : "boolean"
+                      },
+                      "nativeAccessEnabled" : {
+                        "type" : "boolean"
+                      },
+                      "packages" : {
+                        "items" : {
+                          "type" : "string"
+                        },
+                        "type" : "array",
+                        "uniqueItems" : true
+                      }
+                    },
+                    "type" : "object"
+                  }
+                },
+                "type" : "object"
+              },
               "registeredAsParallelCapable" : {
                 "type" : "boolean"
               },
               "unnamedModule" : {
                 "properties" : {
                   "annotations" : {
-                    "items" : {
-                      "type" : "object"
-                    },
+                    "items" : { },
                     "type" : "array"
                   },
-                  "declaredAnnotations" : {
-                    "items" : {
-                      "type" : "object"
+                  "classLoader" : {
+                    "properties" : {
+                      "defaultAssertionStatus" : {
+                        "type" : "boolean",
+                        "writeOnly" : true
+                      },
+                      "definedPackages" : {
+                        "items" : {
+                          "properties" : {
+                            "annotations" : {
+                              "items" : { },
+                              "type" : "array"
+                            },
+                            "declaredAnnotations" : {
+                              "items" : { },
+                              "type" : "array"
+                            },
+                            "implementationTitle" : {
+                              "type" : "string"
+                            },
+                            "implementationVendor" : {
+                              "type" : "string"
+                            },
+                            "implementationVersion" : {
+                              "type" : "string"
+                            },
+                            "name" : {
+                              "type" : "string"
+                            },
+                            "sealed" : {
+                              "type" : "boolean"
+                            },
+                            "specificationTitle" : {
+                              "type" : "string"
+                            },
+                            "specificationVendor" : {
+                              "type" : "string"
+                            },
+                            "specificationVersion" : {
+                              "type" : "string"
+                            }
+                          },
+                          "type" : "object"
+                        },
+                        "type" : "array"
+                      },
+                      "name" : {
+                        "type" : "string"
+                      },
+                      "registeredAsParallelCapable" : {
+                        "type" : "boolean"
+                      }
                     },
+                    "type" : "object"
+                  },
+                  "declaredAnnotations" : {
+                    "items" : { },
                     "type" : "array"
                   },
                   "descriptor" : {
@@ -3589,9 +4171,7 @@
                     },
                     "type" : "object"
                   },
-                  "layer" : {
-                    "type" : "object"
-                  },
+                  "layer" : { },
                   "name" : {
                     "type" : "string"
                   },
@@ -3655,9 +4235,7 @@
             },
             "type" : "object"
           },
-          "initParameterNames" : {
-            "type" : "object"
-          },
+          "initParameterNames" : { },
           "jspConfigDescriptor" : {
             "$ref" : "#/components/schemas/JspConfigDescriptor"
           },
@@ -4080,6 +4658,63 @@
         },
         "type" : "object"
       },
+      "TraderIdentityDto" : {
+        "properties" : {
+          "addressCity" : {
+            "type" : "string"
+          },
+          "addressLine1" : {
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "addressPostcode" : {
+            "type" : "string"
+          },
+          "companyNumber" : {
+            "description" : "Companies House number from the onboarding record; never stored twice",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "entityType" : {
+            "enum" : [
+              "COMPANY",
+              "SOLE_TRADER",
+              "PARTNERSHIP"
+            ],
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "legalName" : {
+            "type" : "string"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "vatNumber" : {
+            "description" : "GB VAT number; null when no VAT registration is declared",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "version" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "UnsubscribeRequest" : {
         "properties" : {
           "category" : {
@@ -4120,6 +4755,7 @@
             "type" : "integer"
           },
           "email" : {
+            "format" : "email",
             "maxLength" : 255,
             "minLength" : 0,
             "type" : "string"
@@ -4135,6 +4771,10 @@
             "type" : "string"
           }
         },
+        "required" : [
+          "email",
+          "name"
+        ],
         "type" : "object"
       },
       "UpdateOnboardingRequest" : {
@@ -4168,6 +4808,64 @@
             "type" : "string"
           }
         },
+        "type" : "object"
+      },
+      "UpdateTraderIdentityRequest" : {
+        "description" : "The statutory trader details",
+        "properties" : {
+          "addressCity" : {
+            "maxLength" : 120,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "addressLine1" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "addressLine2" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "addressPostcode" : {
+            "minLength" : 1,
+            "pattern" : "^[A-Za-z]{1,2}[0-9][A-Za-z0-9]?\\s{0,4}[0-9][A-Za-z]{2}$",
+            "type" : "string"
+          },
+          "entityType" : {
+            "enum" : [
+              "COMPANY",
+              "SOLE_TRADER",
+              "PARTNERSHIP"
+            ],
+            "type" : "string"
+          },
+          "legalName" : {
+            "description" : "The company's registered name, or a sole trader's own name",
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "vatNumber" : {
+            "description" : "GB followed by 9 or 12 digits; omit or leave empty when not VAT-registered",
+            "pattern" : "^[Gg][Bb](\\s?[0-9]){9}((\\s?[0-9]){3})?$",
+            "type" : [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required" : [
+          "addressCity",
+          "addressLine1",
+          "addressPostcode",
+          "entityType",
+          "legalName"
+        ],
         "type" : "object"
       },
       "VatBreakdown" : {
@@ -6108,7 +6806,8 @@
                 "PAYMENTS_CONNECTED",
                 "AGREEMENT_SIGNED",
                 "ALLERGEN_DATA_COMPLETE",
-                "MENU_MINIMUM"
+                "MENU_MINIMUM",
+                "TRADER_IDENTITY"
               ],
               "type" : "string"
             }
@@ -7043,6 +7742,94 @@
           }
         ],
         "summary" : "Update order",
+        "tags" : [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}/allergy-note/acknowledgement" : {
+      "post" : {
+        "description" : "Records that someone in the shop has read the customer's allergy note: who (the authenticated user) and when. Requires at least STAFF on the order's shop. Idempotent: the first acknowledgement stands and every repeat returns it unchanged. The customer's order tracking shows when the note was read.",
+        "operationId" : "acknowledgeAllergyNote",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OrderDetailDto"
+                }
+              }
+            },
+            "description" : "Acknowledged, or already acknowledged: the order detail carrying allergyNoteAcknowledgedAt and allergyNoteAcknowledgedBy of the FIRST acknowledgement"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The order has no allergy note to acknowledge (errors/invalid-state-transition)"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or invalid bearer token"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks the orders:write scope, or lacks at least STAFF on the order's shop (errors/shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Two first acknowledgements raced on the same order; retry to read the one that won"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Acknowledge the allergy note",
         "tags" : [
           "Orders"
         ]
@@ -8585,7 +9372,7 @@
     },
     "/api/v1/products/{id}/label" : {
       "get" : {
-        "description" : "Returns a PDF allergen label for the product",
+        "description" : "Returns a PPDS (Natasha's Law) allergen label PDF for the product. The label prints the production date and a use-by / best-before date counted from it (production date + the product's shelf life), and a separate 'May contain' line for cross-contact allergens that are not already declared. Dates are printed en-GB, e.g. '5 October 2026'.",
         "operationId" : "generateLabel",
         "parameters" : [
           {
@@ -8594,6 +9381,17 @@
             "required" : true,
             "schema" : {
               "format" : "uuid",
+              "type" : "string"
+            }
+          },
+          {
+            "description" : "The date the food was produced (ISO yyyy-MM-dd). Use-by / best-before is counted from it. Defaults to today in Europe/London. Must not be after today, and must not give a durability date that has already passed.",
+            "example" : "2026-10-03",
+            "in" : "query",
+            "name" : "productionDate",
+            "required" : false,
+            "schema" : {
+              "format" : "date",
               "type" : "string"
             }
           }
@@ -8608,7 +9406,47 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "The label PDF (attachment label-{id}.pdf)"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or an invalid one"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The caller holds no STAFF grant on the product's shop (errors/shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Product not found"
+          },
+          "422" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The product lacks required label data (errors/incomplete-label-data), or productionDate is after today (UK time) or gives a durability date that has already passed (errors/invalid-production-date, field productionDate)"
           }
         },
         "security" : [
@@ -8979,6 +9817,49 @@
           }
         },
         "summary" : "Lodge a data-subject request",
+        "tags" : [
+          "Data Subject Requests"
+        ]
+      }
+    },
+    "/api/v1/public/gdpr/dsar/export" : {
+      "post" : {
+        "description" : "Spends the single-use token from the link emailed when a data-subject access request was fulfilled, and returns the export document (format jtoye-dsar-export/1) exactly once. The payload is destroyed in the same statement that marks it used. The token must be sent in a JSON body; there is no GET variant, so a link prefetcher cannot spend it. Unknown, expired and already-used tokens all receive the same 404. Not idempotent-replayable by design: a repeat is always refused.",
+        "operationId" : "download",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "description" : "The jtoye-dsar-export/1 document.",
+                  "type" : "object"
+                }
+              }
+            },
+            "description" : "The export document, once. Sent with Cache-Control: no-store."
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The link has been used, has expired or was not recognised (type https://jtoye.uk/errors/dsar-export-unavailable, code DSAR_EXPORT_UNAVAILABLE). One body for every cause. The RFC 7807 body is declared by ProblemDetailResponseCustomizer, as for every error."
+          }
+        },
+        "summary" : "Download the copy of your data (single use)",
         "tags" : [
           "Data Subject Requests"
         ]
@@ -10580,6 +11461,104 @@
         ]
       }
     },
+    "/api/v1/trader-identity" : {
+      "get" : {
+        "description" : "Returns the caller tenant's legal entity: legal name, entity type, geographic address, VAT number, and the company number read from the onboarding record.",
+        "operationId" : "getTraderIdentity",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TraderIdentityDto"
+                }
+              }
+            },
+            "description" : "Trader identity found"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No trader identity is on file for this tenant (RFC 7807)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Get the trader identity",
+        "tags" : [
+          "Trader identity"
+        ]
+      },
+      "put" : {
+        "description" : "Upserts the caller tenant's legal entity. GROUP_ADMIN only. Idempotent: the same body twice leaves one identity with the same values. The postcode is stored upper-case with one space; the VAT number upper-case with no spaces.",
+        "operationId" : "upsertTraderIdentity",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UpdateTraderIdentityRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TraderIdentityDto"
+                }
+              }
+            },
+            "description" : "Trader identity saved"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Field validation failed; errors names each field (RFC 7807)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller is not a tenant-wide GROUP_ADMIN (RFC 7807 shop-access-denied)"
+          }
+        },
+        "security" : [
+          {
+            "tenant-header" : [ ]
+          },
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Create or replace the trader identity",
+        "tags" : [
+          "Trader identity"
+        ]
+      }
+    },
     "/api/v1/webhooks" : {
       "get" : {
         "description" : "Returns this tenant's webhook subscriptions. Never includes the signing secret.",
@@ -11848,6 +12827,10 @@
     {
       "description" : "Platform-admin tenant lifecycle: create, suspend, reactivate, offboard, Stripe Connect linkage",
       "name" : "Tenant Admin"
+    },
+    {
+      "description" : "The tenant's legal entity shown to customers (CCR 2013 Sch 2, E-Commerce Regs 2002 reg 6)",
+      "name" : "Trader identity"
     },
     {
       "description" : "Webhook delivery log + manual replay (COMMS-05)",

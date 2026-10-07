@@ -1,13 +1,13 @@
 package uk.jtoye.core.gdpr;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.gdpr.dto.DsarIntakeRequest;
@@ -97,16 +97,18 @@ public class DsarIntakeService {
     private static final String INSERT_SQL = """
             INSERT INTO dsar_request
                 (id, subject_email_sha256, request_type, status, verification_token_sha256,
-                 verification_expires_at, idempotency_key, request_hash, response_status, response_body)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 verification_expires_at, idempotency_key, request_hash, response_status, response_body,
+                 subject_email_ciphertext)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private static final String RESERVE_SQL = INSERT_SQL
             + " ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING";
 
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
     private final DsarVerificationMailer verificationMailer;
+    private final DsarCipher cipher;
 
     /**
      * How long a subject has to prove control of the address before the request lapses. Injected,
@@ -115,11 +117,12 @@ public class DsarIntakeService {
     @Value("${jtoye.gdpr.dsar.verification-ttl-hours:168}")
     private long verificationTtlHours;
 
-    public DsarIntakeService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
-                             DsarVerificationMailer verificationMailer) {
+    public DsarIntakeService(JdbcTemplate jdbcTemplate, JsonMapper jsonMapper,
+                             DsarVerificationMailer verificationMailer, DsarCipher cipher) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper;
+        this.jsonMapper = jsonMapper;
         this.verificationMailer = verificationMailer;
+        this.cipher = cipher;
     }
 
     /**
@@ -145,12 +148,19 @@ public class DsarIntakeService {
         String verificationTokenDigest = sha256Hex(verificationToken);
         OffsetDateTime verificationExpiry = OffsetDateTime.now().plusHours(verificationTtlHours);
 
+        // D-19 (31.1-07): the worker must be able to reach the subject, so the address as typed
+        // (trimmed, NOT lower-cased: it is a mailbox, not a match key) is stored ENCRYPTED, bound to
+        // this row's id. V70 holds the justification and NULLs it in every terminal state.
+        UUID requestId = UUID.randomUUID();
+        byte[] addressCiphertext = cipher.encrypt(
+                DsarCipher.Purpose.SUBJECT_ADDRESS, requestId, request.email().trim());
+
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             jdbcTemplate.update(INSERT_SQL,
-                    UUID.randomUUID(), subjectDigest, request.requestType().name(),
+                    requestId, subjectDigest, request.requestType().name(),
                     DsarRequest.Status.PENDING_VERIFICATION.name(),
                     verificationTokenDigest, verificationExpiry,
-                    null, requestHash, ACCEPTED, serialize(ACK));
+                    null, requestHash, ACCEPTED, serialize(ACK), addressCiphertext);
             log.info("DSAR lodged: endpoint={} type={} keyed=false", ENDPOINT, request.requestType());
             deliverVerification(request, verificationToken);
             return ACK;
@@ -162,10 +172,10 @@ public class DsarIntakeService {
         }
 
         int inserted = jdbcTemplate.update(RESERVE_SQL,
-                UUID.randomUUID(), subjectDigest, request.requestType().name(),
+                requestId, subjectDigest, request.requestType().name(),
                 DsarRequest.Status.PENDING_VERIFICATION.name(),
                 verificationTokenDigest, verificationExpiry,
-                idempotencyKey, requestHash, ACCEPTED, serialize(ACK));
+                idempotencyKey, requestHash, ACCEPTED, serialize(ACK), addressCiphertext);
 
         if (inserted == 1) {
             log.info("DSAR lodged: endpoint={} type={} keyed=true", ENDPOINT, request.requestType());
@@ -265,16 +275,16 @@ public class DsarIntakeService {
 
     private String serialize(DsarIntakeAck ack) {
         try {
-            return objectMapper.writeValueAsString(ack);
-        } catch (JsonProcessingException e) {
+            return jsonMapper.writeValueAsString(ack);
+        } catch (JacksonException e) { // unchecked in Jackson 3; kept so the failure message is unchanged
             throw new IllegalStateException("Failed to serialize the DSAR acknowledgement", e);
         }
     }
 
     private DsarIntakeAck deserialize(String json) {
         try {
-            return objectMapper.readValue(json, DsarIntakeAck.class);
-        } catch (JsonProcessingException e) {
+            return jsonMapper.readValue(json, DsarIntakeAck.class);
+        } catch (JacksonException e) { // unchecked in Jackson 3; kept so the failure message is unchanged
             throw new IllegalStateException("Failed to deserialize the stored DSAR acknowledgement", e);
         }
     }

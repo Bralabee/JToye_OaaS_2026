@@ -6,8 +6,8 @@ spring:
     type: none
   autoconfigure:
     exclude:
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration
   rabbitmq:
     listener:
       simple:
@@ -41,6 +41,15 @@ jtoye:
       # at the 7-row fixture, so the import path is still exercised end-to-end — it is just not
       # exercised at 1.7 M rows on every unrelated test.
       enabled: false
+  gdpr:
+    dsar:
+      # 31.1-07 (D-19): a PER-RUN RANDOM key, never a literal. Spring Boot's random.value yields
+      # 32 hex characters per resolution, so two of them make the 64 hex characters DsarCipher
+      # requires; DsarSubjectAddressIntegrationTest measures that rather than assuming it. Each
+      # resolution draws fresh randomness, which is fine: DsarCipher reads the property once, at
+      # construction, and one context holds one cipher. Deliberately NOT routed through the
+      # DSAR_ENCRYPTION_KEY env var, so a developer's real key can never leak into a test run.
+      encryption-key: ${random.value}${random.value}
 
 storage:
   blob:

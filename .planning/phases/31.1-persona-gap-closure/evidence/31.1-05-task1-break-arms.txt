@@ -1,0 +1,30 @@
+BASE f1faeb41e056455afb3529f219f3660746344efd18bcc27c1f95ea9da66ee71d 8457d95954035c9b92084f718d0062d87bb3b50812de4407ed5bafb3d1de235e 4391a17b87cabfa208196e3bc2d8442845e9b5a5ec4c638affd3f1b5699ef8ad 
+== clean (before)
+  rc=0 Tests:       58 passed, 58 total
+== ARM A: removal also on the LAPSE path (clearMarker)
+  grep: lib/customer-auth.ts:29:import { PERSONAL_KEYS_CLEARED_ON_SIGN_OUT, removeStorageEntries } from "@/lib/client-storage-keys"
+  grep: lib/customer-auth.ts:169:  removeStorageEntries(PERSONAL_KEYS_CLEARED_ON_SIGN_OUT)
+  grep: lib/customer-auth.ts:197:  removeStorageEntries(PERSONAL_KEYS_CLEARED_ON_SIGN_OUT)
+  rc=1 Tests:       5 failed, 53 passed, 58 total
+  restored: sha match
+== ARM B: sign-out no longer removes registry keys
+  edits: 1
+  rc=1 Tests:       4 failed, 54 passed, 58 total
+  restored: sha match
+== ARM C: remove-while-iterating
+  rc=1 Tests:       3 failed, 55 passed, 58 total
+  restored: sha match
+== ARM D: a storage row on the page that the registry does not declare
+  rc=1 Tests:       2 failed, 56 passed, 58 total
+  restored: sha match
+== ARM E: last-signin dropped from the registry
+  rc=1 Tests:       3 failed, 55 passed, 58 total
+  restored: sha match
+== ARM F: type error in the registry -> tsc
+  tsc rc=2
+    lib/client-storage-keys.ts(74,5): error TS2322: Type 'string' is not assignable to type 'boolean'.
+  restored: sha match
+== clean (after)
+  rc=0 Tests:       58 passed, 58 total
+  tsc rc=0
+  END f1faeb41e056455afb3529f219f3660746344efd18bcc27c1f95ea9da66ee71d 8457d95954035c9b92084f718d0062d87bb3b50812de4407ed5bafb3d1de235e 4391a17b87cabfa208196e3bc2d8442845e9b5a5ec4c638affd3f1b5699ef8ad 

@@ -43,7 +43,7 @@ export const COOKIE_NOTICE_ACK_KEY = "jtoye-cookie-notice-ack"
 /** Where per-category choices live. Separate from the ack: dismissing a notice
  *  is not the same act as choosing, and conflating them would let a dismissal
  *  read as consent. */
-const CONSENT_CHOICES_KEY = "jtoye-cookie-consent-choices"
+export const CONSENT_CHOICES_KEY = "jtoye-cookie-consent-choices"
 
 /** Same-tab broadcast. The native `storage` event fires only in OTHER tabs. */
 const CONSENT_CHANGE_EVENT = "jtoye-consent:change"

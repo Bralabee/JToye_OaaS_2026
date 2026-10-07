@@ -367,7 +367,7 @@ further work there; what #297 still has to add is the part that was never right:
 ## 7. Known findings and caveats
 
 **PIT-5 — the logback boot error, fixed locally, then fixed durably (issue #302).** Under the prod
-profile, `core-java/src/main/resources/application-prod.yml:98` logs to `${LOG_PATH:/var/log/jtoye}/application.log`. The container
+profile, `core-java/src/main/resources/application-prod.yml:100` logs to `${LOG_PATH:/var/log/jtoye}/application.log`. The container
 runs as `runAsUser: 1000`, `/var/log` is root-owned, and the image never creates that directory — so
 logback's FileAppender fails to start with a `FileNotFoundException … Permission denied` on every
 boot. It is **non-fatal** (the app continues; the 2026-07-14 run reached 11/11 READY that way), but it
@@ -603,10 +603,10 @@ Spring's **in-memory** simple broker accepts arbitrary destination paths, so the
 there and invalid the moment it is relayed.
 
 **Why every k8s environment is affected while development is not.**
-`k8s/base/configmap.yaml:166` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
+`k8s/base/configmap.yaml:173` sets `stomp.broker.mode: "relay"`. Neither `k8s/staging/configmap-patch.yaml`
 nor `k8s/production/configmap-patch.yaml` overrides it, so **staging and production both inherit the
 broken path**. Meanwhile `docker-compose.full-stack.yml:310` passes
-`STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `core-java/src/main/resources/application.yml:456` reads
+`STOMP_BROKER_MODE: ${STOMP_BROKER_MODE:-in-memory}` and `core-java/src/main/resources/application.yml:519` reads
 `mode: ${STOMP_BROKER_MODE:in-memory}` — so a normal compose run never enters the relay branch at all
 (`core-java/src/main/java/uk/jtoye/core/websocket/WebSocketConfig.java:76`, `enableSimpleBroker`). That asymmetry is the entire reason this survived to
 production undetected, and it is exactly what D-06 predicted when it insisted the relay be proven on the
@@ -1587,7 +1587,7 @@ PREDICATE CAN FIRE: the identical guest        1   (applied to a synthetic fixtu
 ```
 
 `jtoye` is the value of `rabbitmq-credentials/stomp-login`, i.e. the dedicated STOMP login the
-deployment injects as `STOMP_CLIENT_LOGIN` (`k8s/base/core-java-deployment.yaml:312-316`). **No
+deployment injects as `STOMP_CLIENT_LOGIN` (`k8s/base/core-java-deployment.yaml:318-322`). **No
 passcode value appears anywhere in this document** — the login NAME is the only credential material
 recorded, and that is asserted below in the Sign-off.
 
@@ -1631,7 +1631,7 @@ jtoye
 ```
 
 `STOMP_BROKER_MODE=relay` matters on its own: dev compose defaults to
-`mode: ${STOMP_BROKER_MODE:in-memory}` (`core-java/src/main/resources/application.yml:456`), so this code path is exercised **only** on this cluster (D-06).
+`mode: ${STOMP_BROKER_MODE:in-memory}` (`core-java/src/main/resources/application.yml:519`), so this code path is exercised **only** on this cluster (D-06).
 Re-asserted on the CURRENT pod after Task 1's frontend re-apply:
 `grep -c "Access refused for user"` = **0**, `grep -c 'In-memory simple broker'` = **0**,
 `grep -c 'STOMP broker relay configured'` = **1**, restart count **4** and stable (§7 A2 explains why

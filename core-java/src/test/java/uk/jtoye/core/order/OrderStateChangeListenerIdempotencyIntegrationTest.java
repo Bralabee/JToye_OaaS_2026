@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -85,9 +85,9 @@ class OrderStateChangeListenerIdempotencyIntegrationTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private PlatformTransactionManager transactionManager;
 
-    @MockBean private EmailNotificationService emailService;
-    @MockBean private BusinessMetricsService metrics;
-    @MockBean private SimpMessagingTemplate simpMessagingTemplate;
+    @MockitoBean private EmailNotificationService emailService;
+    @MockitoBean private BusinessMetricsService metrics;
+    @MockitoBean private SimpMessagingTemplate simpMessagingTemplate;
 
     private TransactionTemplate txTemplate;
     private UUID shopId;
@@ -165,7 +165,7 @@ class OrderStateChangeListenerIdempotencyIntegrationTest {
         listener.handleOrderStateChange(event);
         listener.handleOrderStateChange(event);
 
-        verify(emailService, times(1)).sendOrderConfirmation(eq(event), eq("idem-customer@example.test"));
+        verify(emailService, times(1)).sendOrderConfirmation(eq(event), eq("idem-customer@example.test"), any());
         verify(metrics, times(1)).recordOrderCreated();
         String topic = "/topic/kitchen." + TENANT + "." + shopId;
         verify(simpMessagingTemplate, times(1)).convertAndSend(eq(topic), eq(event));
@@ -187,8 +187,8 @@ class OrderStateChangeListenerIdempotencyIntegrationTest {
         listener.handleOrderStateChange(pending);
         listener.handleOrderStateChange(confirmed);
 
-        verify(emailService, times(1)).sendOrderConfirmation(eq(pending), anyString());
-        verify(emailService, times(1)).sendOrderConfirmed(eq(confirmed), anyString());
+        verify(emailService, times(1)).sendOrderConfirmation(eq(pending), anyString(), any());
+        verify(emailService, times(1)).sendOrderConfirmed(eq(confirmed), anyString(), any());
         assertThat(processedRowCount()).isEqualTo(2);
     }
 

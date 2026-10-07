@@ -1,6 +1,5 @@
 package uk.jtoye.core.tenant.keycloak;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -8,6 +7,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.tenant.Tenant;
 import uk.jtoye.core.tenant.TenantRepository;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -107,7 +107,7 @@ public class KeycloakDeprovisionService {
                 List<ObjectNode> users = keycloakAdminClient.searchUsersByTenant(realm, tenantId, token);
                 for (ObjectNode user : users) {
                     keycloakAdminClient.setUserEnabled(realm, user, false, token);
-                    keycloakAdminClient.logoutUser(realm, user.path("id").asText(), token);
+                    keycloakAdminClient.logoutUser(realm, user.path("id").asString(), token);
                     disabled++;
                 }
             }

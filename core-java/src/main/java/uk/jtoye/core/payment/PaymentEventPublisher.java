@@ -1,11 +1,11 @@
 package uk.jtoye.core.payment;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -29,10 +29,10 @@ public class PaymentEventPublisher {
     private static final Logger log = LoggerFactory.getLogger(PaymentEventPublisher.class);
 
     private final PaymentEventOutboxRepository outboxRepository;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     public PaymentEventPublisher(PaymentEventOutboxRepository outboxRepository,
-                                 ObjectMapper objectMapper) {
+                                 JsonMapper objectMapper) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
     }
@@ -67,7 +67,9 @@ public class PaymentEventPublisher {
         String payloadJson;
         try {
             payloadJson = objectMapper.writeValueAsString(event);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
+            // Jackson 3's JacksonException is unchecked, so the compiler no longer
+            // demands this catch; a unit test keeps it (38-08).
             // Serialization failure is a programmer error (record is fixed shape);
             // loudly surface it rather than silently drop the event.
             log.error("Failed to serialize PaymentEvent for order {}: {}",

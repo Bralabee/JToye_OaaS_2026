@@ -1,0 +1,83 @@
+# 31.1-23 Task 1 break arms (committed GREEN ec3adb12; restore = cp from scratch backup, verified by sha256)
+== CLEAN before
+Tests:       25 passed, 25 total
+== ARM BODY_LEAK: attribution added to the POST body
+  ● #860: attribution changes nothing the checkout SUBMITS › posts a body byte-identical to the pre-attribution checkout for the same basket
+Tests:       1 failed, 24 passed, 25 total
+== ARM MASK_CHANGED: acknowledged mask OR 1
+  ● #860: attribution changes nothing the checkout SUBMITS › posts a body byte-identical to the pre-attribution checkout for the same basket
+Tests:       1 failed, 24 passed, 25 total
+== ARM NO_AGREE: panel skips the agreement check
+  ● #860: attribution never contradicts the set the panel states › after a stale 409 shows the server's newer set, the client's attribution is withdrawn
+Tests:       1 failed, 24 passed, 25 total
+== ARM PARTIAL: an unresolved line is skipped
+  ● basketAllergenAttribution › NOT RECORDED: any line missing from the catalogue makes the whole attribution null
+  ● basketAllergenFlags › NOT RECORDED propagates to the flags too
+Tests:       2 failed, 23 passed, 25 total
+== ARM ORDER: dishes sorted alphabetically
+  ● basketAllergenAttribution › ordering: dishes follow the BASKET order, not the catalogue's
+Tests:       1 failed, 24 passed, 25 total
+== ARM DECLARED_ONLY: undeclared names attributed
+  ● #860: the checkout attributes each declared allergen to its dish › a flagged line's D-09 name is its own advisory Check line, never a declared chip
+  ● basketAllergenAttribution › declared only: an undeclared-ingredient or may-contain name is never attributed
+Tests:       2 failed, 23 passed, 25 total
+== ARM FLAGS_DROPPED: page passes no flags
+  ● #860: the checkout attributes each declared allergen to its dish › a flagged line's D-09 name is its own advisory Check line, never a declared chip
+Tests:       1 failed, 24 passed, 25 total
+== restore by sha256: before=[2b959facd98c30304a049a37d2d73f905d359f8729d99f0101641458df2ee855 b4a114d7eb41f6046459f7c62a16e15721a3272bad4b3d0e51f6c55c47fc4d6f d5c353f9be9a7819a84e78ff102046d52d75b7f2856fb2064e9225beb1a41ef3 ] after=[2b959facd98c30304a049a37d2d73f905d359f8729d99f0101641458df2ee855 b4a114d7eb41f6046459f7c62a16e15721a3272bad4b3d0e51f6c55c47fc4d6f d5c353f9be9a7819a84e78ff102046d52d75b7f2856fb2064e9225beb1a41ef3 ] MATCH
+== CLEAN after
+Tests:       25 passed, 25 total
+== git status (frontend)
+
+# 31.1-23 Task 2 break arms (committed GREEN 26641656; restore = cp from scratch backup, verified by sha256)
+== CLEAN before
+Tests:       30 passed, 30 total
+== ARM MISSING_AS_NONE: a dish the catalogue lacks (or a failed fetch) reads as declared-none
+  ● CartDrawer — each line's own allergens (#860) › a failed catalogue fetch says 'not available' on every line, never 'No allergens declared'
+  ● Shop cart page — each line's own allergens (#860) › a dish the catalogue no longer lists says 'not available'; the other lines still state theirs
+  ● Shop cart page — each line's own allergens (#860) › a failed catalogue fetch says 'not available' on every line, never 'No allergens declared'
+Tests:       3 failed, 27 passed, 30 total
+== ARM FAILURE_AS_NONE: a failed fetch renders 'No allergens declared' on every line
+  ● CartDrawer — each line's own allergens (#860) › a failed catalogue fetch says 'not available' on every line, never 'No allergens declared'
+  ● Shop cart page — each line's own allergens (#860) › a failed catalogue fetch says 'not available' on every line, never 'No allergens declared'
+Tests:       2 failed, 28 passed, 30 total
+== ARM STORED_MASK: the stored line's own mask is read
+  ● Shop cart page — each line's own allergens (#860) › reads the LIVE catalogue, never an allergen field that found its way into the stored cart
+Tests:       1 failed, 29 passed, 30 total
+== ARM WRITES_STORAGE: the basket writes the mask into the stored cart
+  ● CartDrawer — each line's own allergens (#860) › writes nothing to the stored cart: its JSON is byte-identical before and after the lines render
+  ● Shop cart page — each line's own allergens (#860) › writes nothing to the stored cart: its JSON is byte-identical before and after the lines render
+Tests:       2 failed, 28 passed, 30 total
+== ARM DROP_D09: the D-09 line is not rendered
+  ● CartDrawer — each line's own allergens (#860) › states each line's declared set, 'No allergens declared', or the D-09 line, from the live catalogue
+  ● CartDrawer — each line's own allergens (#860) › writes nothing to the stored cart: its JSON is byte-identical before and after the lines render
+  ● Shop cart page — each line's own allergens (#860) › states each line's declared set, 'No allergens declared', or the D-09 line, in basket order
+  ● Shop cart page — each line's own allergens (#860) › writes nothing to the stored cart: its JSON is byte-identical before and after the lines render
+Tests:       4 failed, 26 passed, 30 total
+== ARM FETCH_WHILE_CLOSED: the drawer reads the catalogue at mount
+  ● CartDrawer — each line's own allergens (#860) › does not fetch the catalogue while closed
+  ● CartDrawer — each line's own allergens (#860) › re-reads the catalogue each time it opens, so a vendor edit between opens is shown
+Tests:       2 failed, 28 passed, 30 total
+== ARM CACHED: the catalogue is cached per slug across mounts (a drawer re-open shows the old set)
+Tests:       30 passed, 30 total
+== restore by sha256: before=[b66e0361f5e2b2de58c1c0286304ddebfaba5363de157db76644dc5e10fa0a62 6dbf71f1e2bd00674c74fb528e1c012582684f06efa1ea3df9ad50d8ee15a095 96dc3162dc7d2982d1d5f933161030ee3646d6665a1eb40c81e4d44f878a01c2 ] after=[b66e0361f5e2b2de58c1c0286304ddebfaba5363de157db76644dc5e10fa0a62 6dbf71f1e2bd00674c74fb528e1c012582684f06efa1ea3df9ad50d8ee15a095 96dc3162dc7d2982d1d5f933161030ee3646d6665a1eb40c81e4d44f878a01c2 ] MATCH
+== CLEAN after
+Tests:       30 passed, 30 total
+== git status (frontend)
+== ARM CACHED (rewritten; the first CACHED arm above was ineffective as constructed — its fetch path never populated the cache, so it changed nothing): the catalogue is cached per slug across mounts
+  ● CartDrawer — each line's own allergens (#860) › a failed catalogue fetch says 'not available' on every line, never 'No allergens declared'
+  ● CartDrawer — each line's own allergens (#860) › re-reads the catalogue each time it opens, so a vendor edit between opens is shown
+  ● Shop cart page — each line's own allergens (#860) › a dish the catalogue no longer lists says 'not available'; the other lines still state theirs
+  ● Shop cart page — each line's own allergens (#860) › reads the LIVE catalogue, never an allergen field that found its way into the stored cart
+  ● Shop cart page — each line's own allergens (#860) › states each line's declared set, 'No allergens declared', or the D-09 line, in basket order
+  ● Shop cart page — each line's own allergens (#860) › writes nothing to the stored cart: its JSON is byte-identical before and after the lines render
+Tests:       6 failed, 24 passed, 30 total
+== restore by sha256 (components/storefront/basket-line-allergens.tsx): b66e0361f5e2b2de58c1c0286304ddebfaba5363de157db76644dc5e10fa0a62 -> b66e0361f5e2b2de58c1c0286304ddebfaba5363de157db76644dc5e10fa0a62 MATCH
+== CLEAN after
+Tests:       30 passed, 30 total
+Note: an earlier draft arm NONE_ON_FAILURE (failed fetch -> empty Map) passed 30/30 and was dropped: an empty index makes every line NOT RECORDED via lineAllergens, i.e. the arm was behaviour-equivalent to the correct code, not a hole. FAILURE_AS_NONE above is the arm that states the dangerous direction.
+
+# build type-check fail direction: productId: 7 (number for string) in basket-line-allergens.tsx
+build rc=1
+components/storefront/basket-line-allergens.tsx(76,37): error TS2322: Type 'number' is not assignable to type 'string'.
+restore sha256: MATCH

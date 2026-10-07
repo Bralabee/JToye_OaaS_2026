@@ -102,7 +102,9 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 > `CreateContainerConfigError` and the pg-backup CronJob fails:
 > `postgres-credentials` (incl. `backup-username`/`backup-password`),
 > `keycloak-credentials`, `nextauth-secret`, `redis-credentials`,
-> `rabbitmq-credentials`.
+> `rabbitmq-credentials`, `dsar-credentials` (key `encryption-key`, phase 31.1
+> D-19: 64 hex characters from `openssl rand -hex 32`, one per environment;
+> core-java refuses to start without it).
 > CI guard: `k8s/scripts/check-no-plaintext-secrets.sh`.
 >
 > **Object storage has no Secret, by design (Phase 36, D-02).** Media and the
@@ -181,6 +183,12 @@ kubectl create secret generic keycloak-credentials \
 # NextAuth secret (generate with: openssl rand -base64 32)
 kubectl create secret generic nextauth-secret \
   --from-literal=secret='YOUR_32_CHAR_NEXTAUTH_SECRET' \
+  -n jtoye-production
+
+# DSAR subject-address key (phase 31.1, D-19; REQUIRED, 64 hex characters).
+# One fresh key per environment: openssl rand -hex 32
+kubectl create secret generic dsar-credentials \
+  --from-literal=encryption-key='YOUR_64_HEX_CHARACTER_KEY' \
   -n jtoye-production
 ```
 
