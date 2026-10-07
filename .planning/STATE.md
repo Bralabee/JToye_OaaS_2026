@@ -5,17 +5,17 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: "31.1"
 current_phase_name: Persona gap closure
 status: executing
-stopped_at: "Completed 31.1-25-PLAN.md (#789/#785 email half, D-08/D-13: customer order emails are MimeMessage From '{shop} via J'Toye' at notification.email.from with Reply-To the shop email (one strictly parsed address or none); every status names the seller via findPublicSeller with the 31.1-24 seller block and platform statement; order received adds the D-08 allergen record and the CCR reg 28(1)(c) statement; footer from jtoye.platform.* (registered office omitted until COMPANY_REGISTERED_OFFICE); CustomerEmailContext built in OrderStateChangeListener under the event tenant; no recipient in logs; unit 1580, IT 888); next: 31.1-26"
-last_updated: "2026-10-07T03:05:00.000Z"
+stopped_at: "Completed 31.1-26-PLAN.md (#838/#871, D-04: /shop/account (noindex server page, sign-in wall back to /shop/account) offers Download my data and Delete my account through the existing public DSAR intake, address read-only from the ID token, per-action Idempotency-Key kept for retries, one POST per press, deletion behind a consequences dialog, constant copy; My account in the storefront menu; slug account reserved in the @Value default and application.yml with a route-table drift test; privacy notice v1.1 #emails and /unsubscribe state what J'Toye emails (orders, data requests, password resets) and that no marketing is sent; unit 1584, IT 888, jest 195/2225); next: 31.1-27"
+last_updated: "2026-10-07T04:00:00.000Z"
 last_activity: 2026-10-07
-state_head: 0e419fecb125b3b61b698b4d9b66f4914df693c9
+state_head: 7c53aec3
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 185
-  completed_plans: 181
+  completed_plans: 182
   percent: 65
-last_activity_desc: 31.1-25 complete (order emails from the shop via J'Toye, naming the seller, with the allergen record and cancellation statement on the order-received email; unit 1580, IT 888)
+last_activity_desc: 31.1-26 complete (My account data-rights page through the existing DSAR intake, reserved 'account' slug, privacy notice v1.1 and /unsubscribe email statements; unit 1584, IT 888, jest 195/2225)
 ---
 
 # Project State
@@ -55,6 +55,7 @@ Phase: 31.1 (Persona gap closure) — EXECUTING
 - 31.1-23 DONE 2026-10-07: #860 (D-18), frontend only. lib/basket-allergens.ts (lineAllergens, basketAllergenAttribution — allergens in catalogue order, dishes in basket order as the basket names them, NOT RECORDED = null on any unresolved line — basketAllergenFlags, attributionAgreesWith; indexProductsById moved here). OrderAllergenPanel allergenAttribution prop renders 'Which dishes contain them:' + 'Milk — Jollof Rice, Puff Puff' under the unchanged chips, withheld unless it names exactly the stated set (a stale 409's server set hides it); checkout allergenFlags now = each line's server-computed undeclaredIngredientAllergens. components/storefront/basket-line-allergens.tsx (useCatalogueIndex, BasketLineAllergens) on the basket page (one fetch) and in the drawer (DrawerItems inside the sheet content: fetch per open, none while closed). Pinned submit body byte-identical (captured on the pre-change tree); stored cart JSON byte-identical across render. 15 break arms red (evidence/31.1-23-break-arms.txt; two ineffective drafts recorded and replaced). jest 192/2171, lint 0 errors/31 warnings, build TS rc 0 (TS2322 arm rc 1). Browser/visual pass owed to 31.1-30; PGC-860 checkbox waits on 31.1-30.
 - 31.1-24 DONE 2026-10-07: #789 customer surfaces (D-10/D-11/D-13/D-20). SellerIdentityDto (NON_NULL record: legalName, entityType, companyNumber COMPANY-only, vatNumber, addressLines, shop email/phone); PublicShopDto.seller (NON_NULL) set only by getShopBySlug (lists unchanged, no N+1). TraderIdentityService.findPublicSeller(tenantId, shop): REQUIRES_NEW read-only TransactionTemplate, set_config pin of the SHOP's tenant, explicit predicate, EntityManager JPQL (a repository call lets TenantSetLocalAspect reset the pin: break arm B 5/8 red), TenantContext never set (spy-read inside the request; the after-request assertion was vacuous, arm C 0/8 -> C2 2/8). SellerBlock (components/storefront/seller-block.tsx, exported copy, fixed order, absent fields absent, not-provided + /legal) on the shop page server component, checkout above the allergen panel (panel still last before Place order), cash confirmation, card payment step; nothing when the shop failed to load. OpenAPI +49/-0. e2e/seller-identity.spec.ts listed (3), live + Mailhog half owed to 31.1-30/31.1-25. Unit 1559, IT 885 (+8), jest 194/2194 (+2/+23), lint 0 errors/31 warnings, build green.
 - 31.1-25 DONE 2026-10-07: #789/#785 email half (D-08/D-13; Pitfalls 8, 19). CustomerEmailContext (immutable: shop name/email, SellerIdentityDto, placedVia, acknowledged + recorded names, flags, fulfilment) built ONCE in OrderStateChangeListener under the event tenant (ShopRepository.findByIdAndTenantId, TraderIdentityService.findPublicSeller, OrderAllergenSnapshot.viewOf, AllergenCatalog.namesFor(ack)); OrderStateChangeEvent byte-identical. EmailNotificationService sends UTF-8 plain MimeMessage: From InternetAddress(notification.email.from, sanitised(shop)+" via J'Toye"), Reply-To the bare form of exactly one strictly parsed shop address else none; bodies name the shop (no "— J'Toye" signature), every status carries the seller block + PLATFORM_NOT_SELLER, order received adds the allergen record + CANCELLATION_STATEMENT; footer J'Toye Digital Ltd, England & Wales, 16471464, registered office only when COMPANY_REGISTERED_OFFICE set (jtoye.platform.*). Copy constants parity-tested against seller-block.tsx / recorded-allergen-set.tsx / order-allergen-panel.tsx. Logs order number + template only; mail failures log the exception class. Break arms: sanitiser-only removal leaves CR/LF injection green (Jakarta folds the From header; A2 measured), raw-header arm reds it; recipient-in-log, paraphrase and unknownShop-context arms red. Unit 1580/0/0 (1 pre-existing skip), IT 888/0/0 (1 pre-existing skip); OpenApiSnapshotTest green (no contract change). Compose-stack Mailhog capture owed to 31.1-30 (WINDOWS.md).
+- 31.1-26 DONE 2026-10-07: #838/#871 (D-04). /shop/account: server page (noindex, title My account — J'Toye) mirroring My Orders; no cookies -> CustomerSignInPrompt nextPath /shop/account; else AccountClient with displayEmailFromIdToken (refresh cookie alone suffices: no authenticated call). Both actions POST {email, ACCESS|ERASURE} to /api/v1/public/gdpr/dsar via publicApiClient (no bearer: a lapsed session neither blocks nor skips email confirmation); per-action key minted on first press and kept in a ref (retry replays), in-flight ref + disabled/aria-busy (double press = 1 POST), constant ACCOUNT_REQUEST_LODGED_COPY (API answer never rendered), 429 copy, no-email -> explanation and no buttons; Delete behind a Radix dialog listing 4 consequences (every shop, sign-in account deleted, order/tax records kept without details, confirm by email), Cancel lodges nothing. StorefrontNav My account (desktop + sheet, signed-in only). 'account' reserved in ShopService @Value default + application.yml (no runtime override of SHOP_RESERVED_SLUGS; dev DB 5 shops, 0 slugged account); ShopReservedSlugAccountTest binds both sources through ApplicationContextRunner + ApplicationConversionService and walks frontend/app/shop/ (each source's removal reds its own arms). ssr-routes.conf SSR shop/account -> e2e/customer-account.spec.ts (served-HTML wall both projects; @desktop-only click-through lodging both, one Mailhog email each; listed 3, live owed to 31.1-30, WINDOWS.md). lib/email-scope-copy.ts: J'Toye only emails about orders, data requests and sign-in account emails the customer asks for (realm resetPasswordAllowed + SMTP: the plan's narrower wording would have been false), no marketing; privacy v1.1 'Emails' (#emails) + change note; /unsubscribe every state drops 'contact the vendor', links /legal/privacy#emails and /shop/account, MARKETING unlabelled. Break arms: 5 jest (account), 2 Java (one per source), 2 SSR gate, 1 e2e typecheck, 5 jest (privacy/unsubscribe), 1 build TS2322 — all red, restores hash-verified. Full jest 195/2225, unit 1584/0/0, IT 888/0/0, lint 0 errors/31 warnings, build green, claims rc 0 (cannot see this text; recorded). oasdiff not installed (no API change). PGC-838/871 left to ready-ids (shared with 31.1-30).
 - **Phase 38 (Spring Boot 4.1) COMPLETE 2026-10-05, MERGED as PR #898:** 19/19 plans, `38-VERIFICATION.md` passed 14/14 (BOOT4-01..14), code review 0 critical / 2 warning / 4 info (`38-REVIEW.md`, disposition in `38-REVIEW-DISPOSITION.md`). Not yet shipped: `/gsd-secure-phase 38` then `/gsd-ship 38` remain. Phase 29 is GSD's numeric next; the owner-set planning order in HANDOFF.md is 31.1 then 37.
 - The bullets below are Phase 38's execution history, kept for the record.
 - 19 plans in 11 waves, covering BOOT4-01..14. Research, validation and the pattern map are committed.
@@ -905,6 +906,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P15 | 17 min | 3 tasks | 18 files |
 | Phase 31.1 P20 | 42min | 3 tasks | 22 files |
 | Phase 31.1 P21 | 11 min | 2 tasks | 12 files |
+| Phase 31.1 P26 | 54 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -1153,6 +1155,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: 31.1-25: an @Async customer email takes an immutable CustomerEmailContext built in OrderStateChangeListener while the event tenant is pinned; the send looks nothing up and OrderStateChangeEvent is never widened
 - [Phase 31.1]: 31.1-25: the email seller comes from TraderIdentityService.findPublicSeller (same read as the shop page); a failed read still sends in the "not provided" state; Reply-To is one strictly parsed bare shop address or nothing
 - [Phase 31.1]: 31.1-25: header safety is layered: Jakarta Mail folding already neutralises CR/LF in an InternetAddress personal (measured), the sanitiser strips control characters for the display name and keeps body seller lines unforgeable; a header test must parse the serialised bytes (SentMail)
+- [Phase 31.1]: 31.1-26: the signed-in data-rights page lodges through the existing public DSAR intake only (publicApiClient, no bearer, address read-only from the ID token, per-action Idempotency-Key kept in a ref for retries, constant copy); no account-only endpoint
+- [Phase 31.1]: 31.1-26: what J'Toye emails is stated once in frontend/lib/email-scope-copy.ts and names password resets (jtoye-customers has resetPasswordAllowed + SMTP); privacy notice v1.1 and /unsubscribe both render it; MARKETING is never labelled as a category J'Toye sends
+- [Phase 31.1]: 31.1-26: jtoye.shop.reserved-slugs is guarded by a test that walks frontend/app/shop/ and binds both config sources through real Spring conversion, so a new static /shop route that is not reserved reds it
 
 ### Pending Todos
 
@@ -1223,8 +1228,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-07T03:05:00Z
-Stopped at: Completed 31.1-25-PLAN.md; next 31.1-26
+Last session: 2026-10-07T04:00:00Z
+Stopped at: Completed 31.1-26-PLAN.md; next 31.1-27
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
