@@ -144,3 +144,19 @@ export const VENDOR_PLACED_ORDER_COPY = "Placed by the shop — no customer alle
 
 /** An order from before confirmations were recorded (D-06): no claim either way. */
 export const CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY = "Customer allergen confirmation: not recorded"
+
+// ---------------------------------------------------------------------------------------------
+// 31.1-23 (#860, D-18): which dish in the basket carries which declared allergen. The combined
+// declared set is still stated on its own (the checkout panel's chips); these lines only say
+// where each allergen comes from, so a customer deciding what to drop need not reopen every dish.
+// ---------------------------------------------------------------------------------------------
+
+/** The line above the per-allergen attribution in the checkout panel. */
+export const ALLERGEN_ATTRIBUTION_INTRO_COPY = ""
+
+/** "Milk — Jollof Rice, Puff Puff": one declared allergen and the dishes, in basket order, that declare it. */
+export function allergenAttributionCopy(allergen: string, dishes: readonly string[]): string {
+  void allergen
+  void dishes
+  return ""
+}

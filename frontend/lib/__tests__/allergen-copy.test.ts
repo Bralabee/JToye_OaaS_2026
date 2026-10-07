@@ -35,6 +35,8 @@ import {
   customerConfirmedNoneCopy,
   VENDOR_PLACED_ORDER_COPY,
   CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY,
+  ALLERGEN_ATTRIBUTION_INTRO_COPY,
+  allergenAttributionCopy,
 } from "@/lib/allergen-copy"
 
 const MODULE_PATH = path.join(__dirname, "..", "allergen-copy.ts")
@@ -160,6 +162,17 @@ describe("D-07 (31.1-22): how the order was placed, said to the vendor", () => {
   it("vendor-placed and not-recorded are different sentences", () => {
     expect(VENDOR_PLACED_ORDER_COPY).toBe("Placed by the shop — no customer allergen confirmation recorded")
     expect(CUSTOMER_CONFIRMATION_NOT_RECORDED_COPY).toBe("Customer allergen confirmation: not recorded")
+  })
+})
+
+describe("D-18 / #860 (31.1-23): which dish carries which allergen", () => {
+  it("the intro line above the attribution", () => {
+    expect(ALLERGEN_ATTRIBUTION_INTRO_COPY).toBe("Which dishes contain them:")
+  })
+
+  it("'Milk — Jollof Rice, Puff Puff': the allergen, an em dash, the dishes in the order given", () => {
+    expect(allergenAttributionCopy("Milk", ["Jollof Rice", "Puff Puff"])).toBe("Milk — Jollof Rice, Puff Puff")
+    expect(allergenAttributionCopy("Eggs", ["Puff Puff"])).toBe("Eggs — Puff Puff")
   })
 })
 
