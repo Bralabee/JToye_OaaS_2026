@@ -164,7 +164,8 @@ export function allergenAttributionCopy(allergen: string, dishes: readonly strin
  * no longer lists the dish. NOT RECORDED, and never "No allergens declared": that would put a
  * declaration in the vendor's mouth that nobody made.
  */
-export const BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY = ""
+export const BASKET_LINE_ALLERGENS_UNAVAILABLE_COPY =
+  "Allergen information not available – check with the shop"
 
 /** #860 (31.1-23): shown on a basket line while the catalogue is loading, in the space the line will take. */
-export const BASKET_LINE_ALLERGENS_LOADING_COPY = ""
+export const BASKET_LINE_ALLERGENS_LOADING_COPY = "Checking allergen information…"

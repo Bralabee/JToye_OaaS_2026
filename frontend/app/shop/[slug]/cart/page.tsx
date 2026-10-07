@@ -5,6 +5,7 @@ import Link from "next/link"
 import { ArrowLeft, Minus, Plus, Trash2, ShoppingBag, Store } from "lucide-react"
 import { useCart } from "@/components/storefront/cart-provider"
 import { SafeImage } from "@/components/ui/safe-image"
+import { BasketLineAllergens, useCatalogueIndex } from "@/components/storefront/basket-line-allergens"
 import { minimumShortfallPennies } from "@/lib/minimum-order"
 import { previewDeliveryFeePennies } from "@/lib/delivery-fee"
 import publicApiClient from "@/lib/public-api-client"
@@ -42,6 +43,11 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
       cancelled = true
     }
   }, [slug])
+
+  // #860 (31.1-23, D-18): each line states its own allergens from the LIVE catalogue — never from
+  // the stored cart, which carries no allergen data and is not written to here. Above the early
+  // return for the same hook-order reason as the shop fetch.
+  const catalogueIndex = useCatalogueIndex(slug)
 
   if (items.length === 0) {
     return (
@@ -143,6 +149,7 @@ export default function CartPage({ params }: { params: Promise<{ slug: string }>
               {item.category && (
                 <p className="text-xs text-slate-600">{item.category}</p>
               )}
+              <BasketLineAllergens productId={item.productId} index={catalogueIndex} />
               <p className="text-sm font-bold text-slate-900 mt-0.5">
                 {formatPrice(item.pricePennies * item.quantity)}
               </p>

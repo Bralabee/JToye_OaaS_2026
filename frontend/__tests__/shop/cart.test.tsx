@@ -501,8 +501,11 @@ describe("Shop cart page — each line's own allergens (#860)", () => {
 
   it("writes nothing to the stored cart: its JSON is byte-identical before and after the lines render", async () => {
     serveCatalogue(CATALOGUE)
+    // Seeded in the provider's own canonical shape (it stamps `owner` on hydration, #459), so any
+    // later difference is a write by the basket, not the provider's normal stamp.
     const seeded = JSON.stringify({
       shopSlug: SLUG,
+      owner: null,
       items: [storedLine("p-jollof", "Jollof Rice"), storedLine("p-egusi", "Egusi")],
     })
     localStorage.setItem(STORAGE_KEY, seeded)

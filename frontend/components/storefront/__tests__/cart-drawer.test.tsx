@@ -20,8 +20,8 @@ import {
   NO_ALLERGENS_DECLARED_COPY,
 } from "@/lib/allergen-copy"
 
-// #860 (31.1-23): the open drawer reads the live catalogue for each line's allergens. Every test
-// gets a catalogue by default; the #860 block below varies it.
+// #860 (31.1-23): the open drawer reads the live catalogue for each line's allergens; the #860
+// block below serves one.
 jest.mock("@/lib/public-api-client", () => ({
   __esModule: true,
   default: { get: jest.fn(), post: jest.fn() },
@@ -132,7 +132,9 @@ describe("CartDrawer", () => {
   beforeEach(() => {
     localStorage.clear()
     mockedGet.mockReset()
-    serveCatalogue(CATALOGUE)
+    // These tests predate #860 and assert nothing about allergens: the catalogue stays pending, so
+    // no state update lands after a test has finished (each line shows the loading copy).
+    mockedGet.mockReturnValue(new Promise(() => {}))
   })
 
   it("renders nothing visible until the open event fires", () => {
@@ -263,8 +265,14 @@ describe("CartDrawer — each line's own allergens (#860)", () => {
   })
 
   it("writes nothing to the stored cart: its JSON is byte-identical before and after the lines render", async () => {
-    seed([item({ productId: "p-1" }), item({ productId: "p-3", title: "Egusi" })])
-    const seeded = localStorage.getItem(KEY)
+    // Seeded in the provider's own canonical shape (it stamps `owner` on hydration, #459), so any
+    // later difference is a write by the drawer, not the provider's normal stamp.
+    const seeded = JSON.stringify({
+      shopSlug: SLUG,
+      owner: null,
+      items: [item({ productId: "p-1" }), item({ productId: "p-3", title: "Egusi" })],
+    })
+    localStorage.setItem(KEY, seeded)
     renderDrawer()
     openDrawer()
 
