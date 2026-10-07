@@ -216,21 +216,12 @@ export const ACCESSIBILITY_STATEMENT: AccessibilityStatement = {
     },
 
     // --- Published information ---------------------------------------------
-    // The wording below is consumed VERBATIM from the decision that produced it
-    // and is deliberately not re-derived here. It is a published-information
-    // gap, not a WCAG failure, and is categorised as such so this page does not
-    // imply the standard says something it does not.
-    {
-      id: "registered-office-not-published",
-      title: "Registered office address not published",
-      description:
-        "J'Toye Digital Ltd (company number 16471464, registered in England & Wales) does not currently publish its registered office address on this site. UK GDPR Article 13(1)(a)-(b) requires the controller's identity and contact details in a privacy notice; the identity and an electronic contact route are published, the postal address is not. Data-protection enquiries and data-subject requests should be sent to the contact address given in the privacy notice, which is monitored. The registered office remains publicly available from the Companies House register against company number 16471464.",
-      reason:
-        "Status: open. Owner decision recorded during phase 31. Remediation: publish the address, or a service address, at the next review of this statement.",
-      category: "published-information",
-      routes: [],
-      remediationBy: "2027-02-16",
-    },
+    // "registered-office-not-published" was removed by phase 31.1 plan 27
+    // (#794, D-14): the registered office from the Companies House record for
+    // 16471464, confirmed by the owner, is now built into every runtime and
+    // shown on /legal, /legal/privacy and this page. Keeping the entry would
+    // publish a statement that is no longer true. The category stays in the
+    // type for the next published-information gap.
   ],
 } as const
 

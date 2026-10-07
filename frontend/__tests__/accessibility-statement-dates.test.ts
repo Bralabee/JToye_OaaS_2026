@@ -164,6 +164,12 @@ describe("accessibility statement — the exception list", () => {
     // because a presence check on the correct number passes either way.
     const serialised = JSON.stringify(S)
     expect(serialised).not.toContain("13434105")
-    expect(serialised).toContain("16471464")
+    // CONTROL that the serialisation is the real statement, not an empty
+    // object. It used to be the active number 16471464, which only the
+    // registered-office exception carried; that entry was removed when the
+    // address was published (31.1-27, #794), so the control is now every
+    // exception's own description.
+    expect(S.exceptions.length).toBeGreaterThan(0)
+    for (const e of S.exceptions) expect(serialised).toContain(JSON.stringify(e.description))
   })
 })
