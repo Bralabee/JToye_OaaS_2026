@@ -5,10 +5,10 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: planning
-stopped_at: "Phase 31.1 shipped as PR #901 on 2026-10-07 (UAT 182/182 owner-ruled, SECURITY 102/102 closed at ASVS L2, VALIDATION nyquist_compliant). Next: review round 1 (/code-review 901 --comment), narrow to zero, merge. Then plan Phase 37 per the owner's order (GSD's numeric next is Phase 29, paused on its own branch)."
+stopped_at: "Phase 37 UI-SPEC approved 2026-10-07 (bbba4d06; checker 7/7 PASS after 1 revision; state coverage 123 rows = 75 explicit / 13 backstop / 17 dismissed / 18 unresolved-as-assumption). Resume file: .planning/phases/37-real-world-operations-readiness/37-UI-SPEC.md. Next: /gsd-plan-phase 37."
 last_updated: "2026-10-07T15:29:58.775Z"
 last_activity: 2026-10-07
-last_activity_desc: Phase 31.1 shipped as PR #901 (2026-10-07); next review round 1 then merge, then plan Phase 37
+last_activity_desc: Phase 37 UI design contract approved (2026-10-07); next plan Phase 37
 state_head: 7e1ee79bf22721d8dfea32df3d1170efce4b093a
 progress:
   total_phases: 20
