@@ -43,8 +43,24 @@ no default (the V63 rule). Owner rulings D-01 to D-22 are in `31.1-CONTEXT.md`.
   accessibility statement targets WCAG 2.2 AA over the full order journey.
 - **Proof.** Every criterion was shown RED on the pre-31.1 runtime and GREEN on the rebuilt one
   with parity read from inside the running jar; UAT 182/182; 102/102 threats closed at ASVS L2.
-  Test inventory 4292 → 4863 logical invocations. Closes #777, #778, #784, #785, #787, #789,
+  Test inventory 4292 → 4868 logical invocations, counting the regression tests for the two
+  review round 1 findings (a DSAR claim stranded by a dead sweep is now reclaimed after a lease;
+  the confirm and download links survive React Strict Mode). Closes #777, #778, #784, #785, #787, #789,
   #793, #794, #812, #817, #838, #839, #840, #860 and #861; #871 and #878 stay open.
+
+### Trivy fs gate green again: sharp, source-map-js, MCP SDK and proxy-addr lockfile bumps (#902) — 2026-10-07
+
+- **Four lockfile findings, no code change.** Trivy's fs gate (`CRITICAL,HIGH`, ignore-unfixed)
+  began failing every PR, #901 included, after main's last green scan on 2026-10-06. The
+  advisories had landed in Trivy's daily DB. frontend: `sharp` 0.35.4 → 0.35.5
+  (GHSA-wq5f-xc86-pv6w, librsvg) and `source-map-js` 1.2.1 → 1.2.2 (CVE-2026-93749). mcp-server:
+  `@modelcontextprotocol/sdk` 1.29.0 → 1.32.1 (CVE-2026-104850) and `proxy-addr` 2.0.7 → 2.0.8
+  (CVE-2026-90711, CRITICAL). The change is lockfile-only (`npm update --package-lock-only`)
+  because every target was already inside its declared range or override. In the frontend, 28
+  packages move, all of them the sharp family plus source-map-js. In mcp-server, 2 move.
+- **Proof, both directions.** The Trivy container, run with the gate's flags, reports 4 findings
+  (rc=1) on main's lockfiles and 0 (rc=0) on the branch's. mcp-server: `tsc` passes and vitest
+  61/61. frontend: `next build` passes and jest 1891/1891.
 
 ### Phase 38: core-java on Spring Boot 4.1.1, Jackson 3 throughout (#898) — 2026-10-06
 
