@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 12
 waived_count: 0
 fixed_count: 1
-total_count: 11
-last_updated: 2026-10-07T00:42:00.356Z
+total_count: 13
+last_updated: 2026-10-07T02:03:55.293Z
 ---
 
 # Broken Windows Ledger
@@ -26,6 +26,8 @@ last_updated: 2026-10-07T00:42:00.356Z
 | 9 | 31.1 | unrun-verify | frontend/e2e/dsar-verify-link.spec.ts |  | 31.1-20 #839 compose-stack spec (Mailhog link -> /data-request/confirm, press, already confirmed) listed only; live RED/GREEN owed to 31.1-30 after the stack rebuild | open |  | 2026-10-07T00:04:51.201Z |  |
 | 10 | 31.1 | unrun-verify | frontend/e2e/storefront-dish-modal-a11y.spec.ts |  | 31.1-21: 'Dish modal allergen section (31.1-21)' (200% zoom placement + three statements on fixture SKU E2E-31121-DISH-ALLERGENS) listed only; live RED/GREEN owed to 31.1-30 on the rebuilt stack | open |  | 2026-10-07T00:21:26.304Z |  |
 | 11 | 31.1 | unrun-verify | frontend/e2e/kitchen-allergy-note.spec.ts |  | 31.1-22 kitchen allergy note browser spec (4 tests: board note + 44px button + ack round trip, order detail UK dates + channel line) written, type-checked and listed; not run, the live stack rebuild and click-through are owed to 31.1-30 | open |  | 2026-10-07T00:42:00.356Z |  |
+| 12 | 31.1 | unrun-verify | frontend/e2e/seller-identity.spec.ts |  | 31.1-24 #789 seller-identity spec listed only (3 tests); live RED (pre-rebuild runtime) and GREEN runs owed to 31.1-30; its Mailhog half stays red until 31.1-25 ships the email seller block | open |  | 2026-10-07T02:03:55.160Z |  |
+| 13 | 31.1 | unrun-verify | scripts/openapi-gate.sh |  | 31.1-24: oasdiff compat gate not run locally (oasdiff not installed); OpenApiSnapshotTest red on the old snapshot, green on the regenerated one (additive: 49 insertions, 0 deletions) | open |  | 2026-10-07T02:03:55.293Z |  |
 
 ````json
 [
@@ -169,6 +171,32 @@ last_updated: 2026-10-07T00:42:00.356Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-07T00:42:00.356Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 12,
+    "kind": "unrun-verify",
+    "phase": "31.1",
+    "file": "frontend/e2e/seller-identity.spec.ts",
+    "line": null,
+    "description": "31.1-24 #789 seller-identity spec listed only (3 tests); live RED (pre-rebuild runtime) and GREEN runs owed to 31.1-30; its Mailhog half stays red until 31.1-25 ships the email seller block",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-07T02:03:55.160Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 13,
+    "kind": "unrun-verify",
+    "phase": "31.1",
+    "file": "scripts/openapi-gate.sh",
+    "line": null,
+    "description": "31.1-24: oasdiff compat gate not run locally (oasdiff not installed); OpenApiSnapshotTest red on the old snapshot, green on the regenerated one (additive: 49 insertions, 0 deletions)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-07T02:03:55.293Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
