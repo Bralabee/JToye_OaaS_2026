@@ -1,3 +1,5 @@
+import type { TraderEntityType } from "@/types/api"
+
 export interface PublicShop {
   slug: string
   name: string
@@ -38,6 +40,34 @@ export interface PublicShop {
    * be able to disagree with the position it was given in the list.
    */
   distanceKm?: number | null
+  /**
+   * #789 (31.1-24, D-10/D-11/D-20): who the customer is buying from — the
+   * tenant's legal entity plus this shop's contact details. Carried ONLY by
+   * `GET /public/shops/{slug}` (never by the list endpoints) and ABSENT, not
+   * null, when the trader has not provided their details (the server writes it
+   * NON_NULL so the Phase 38 wire goldens are unchanged). Absent renders
+   * SELLER_DETAILS_MISSING_COPY — never an invented or blank field.
+   */
+  seller?: PublicSeller
+}
+
+/**
+ * The public seller object (backend SellerIdentityDto). Only what the law
+ * requires the customer to see (CCR 2013 Sch 2(b)-(c); E-Commerce Regs 2002
+ * reg 6(1)(c),(d),(g)). Optional fields are ABSENT when the trader has none:
+ * a company number only for a COMPANY, a VAT number only when registered, a
+ * phone only when the shop has one. Numbers render exactly as stored.
+ */
+export interface PublicSeller {
+  legalName: string
+  entityType: TraderEntityType
+  companyNumber?: string
+  vatNumber?: string
+  /** Geographic address: line 1, optional line 2, town/city, postcode. */
+  addressLines: string[]
+  /** The shop's email — required for a live shop (D-20). */
+  email?: string
+  phone?: string
 }
 
 import type { MediaAsset } from "@/types/api"
