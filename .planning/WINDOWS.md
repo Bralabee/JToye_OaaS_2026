@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 7
+open_count: 8
 waived_count: 0
 fixed_count: 1
-total_count: 8
-last_updated: 2026-10-06T22:47:38.806Z
+total_count: 9
+last_updated: 2026-10-07T00:04:51.201Z
 ---
 
 # Broken Windows Ledger
@@ -23,6 +23,7 @@ last_updated: 2026-10-06T22:47:38.806Z
 | 6 | 31.1 | unrun-verify | core-java/src/main/java/uk/jtoye/core/gdpr/DsarOutcomeMailer.java |  | 31.1-16 ACCESS link email proven only against a mocked JavaMailSender; live Mailhog capture, live customer-realm lookup and a click-through to /data-request/download (page built by 31.1-17) owed to 31.1-30 | open |  | 2026-10-06T19:52:27.849Z |  |
 | 7 | 31.1 | stub | frontend/app/data-request/download/download-client.tsx |  | Unavailable state links 'Request a new copy' to /shop/account, which 31.1-26 builds; until then the link 404s | open |  | 2026-10-06T22:47:38.670Z |  |
 | 8 | 31.1 | unrun-verify | frontend/app/data-request/download/page.tsx |  | Live click-through of the emailed Article 15 link (Mailhog -> /data-request/download -> Show my data once, second open unavailable) not run: shared stack not rebuilt; owed to 31.1-30 | open |  | 2026-10-06T22:47:38.806Z |  |
+| 9 | 31.1 | unrun-verify | frontend/e2e/dsar-verify-link.spec.ts |  | 31.1-20 #839 compose-stack spec (Mailhog link -> /data-request/confirm, press, already confirmed) listed only; live RED/GREEN owed to 31.1-30 after the stack rebuild | open |  | 2026-10-07T00:04:51.201Z |  |
 
 ````json
 [
@@ -127,6 +128,19 @@ last_updated: 2026-10-06T22:47:38.806Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-06T22:47:38.806Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 9,
+    "kind": "unrun-verify",
+    "phase": "31.1",
+    "file": "frontend/e2e/dsar-verify-link.spec.ts",
+    "line": null,
+    "description": "31.1-20 #839 compose-stack spec (Mailhog link -> /data-request/confirm, press, already confirmed) listed only; live RED/GREEN owed to 31.1-30 after the stack rebuild",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-07T00:04:51.201Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
