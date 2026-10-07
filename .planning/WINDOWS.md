@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 8
+open_count: 9
 waived_count: 0
 fixed_count: 1
-total_count: 9
-last_updated: 2026-10-07T00:04:51.201Z
+total_count: 10
+last_updated: 2026-10-07T00:21:26.304Z
 ---
 
 # Broken Windows Ledger
@@ -24,6 +24,7 @@ last_updated: 2026-10-07T00:04:51.201Z
 | 7 | 31.1 | stub | frontend/app/data-request/download/download-client.tsx |  | Unavailable state links 'Request a new copy' to /shop/account, which 31.1-26 builds; until then the link 404s | open |  | 2026-10-06T22:47:38.670Z |  |
 | 8 | 31.1 | unrun-verify | frontend/app/data-request/download/page.tsx |  | Live click-through of the emailed Article 15 link (Mailhog -> /data-request/download -> Show my data once, second open unavailable) not run: shared stack not rebuilt; owed to 31.1-30 | open |  | 2026-10-06T22:47:38.806Z |  |
 | 9 | 31.1 | unrun-verify | frontend/e2e/dsar-verify-link.spec.ts |  | 31.1-20 #839 compose-stack spec (Mailhog link -> /data-request/confirm, press, already confirmed) listed only; live RED/GREEN owed to 31.1-30 after the stack rebuild | open |  | 2026-10-07T00:04:51.201Z |  |
+| 10 | 31.1 | unrun-verify | frontend/e2e/storefront-dish-modal-a11y.spec.ts |  | 31.1-21: 'Dish modal allergen section (31.1-21)' (200% zoom placement + three statements on fixture SKU E2E-31121-DISH-ALLERGENS) listed only; live RED/GREEN owed to 31.1-30 on the rebuilt stack | open |  | 2026-10-07T00:21:26.304Z |  |
 
 ````json
 [
@@ -141,6 +142,19 @@ last_updated: 2026-10-07T00:04:51.201Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-07T00:04:51.201Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 10,
+    "kind": "unrun-verify",
+    "phase": "31.1",
+    "file": "frontend/e2e/storefront-dish-modal-a11y.spec.ts",
+    "line": null,
+    "description": "31.1-21: 'Dish modal allergen section (31.1-21)' (200% zoom placement + three statements on fixture SKU E2E-31121-DISH-ALLERGENS) listed only; live RED/GREEN owed to 31.1-30 on the rebuilt stack",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-07T00:21:26.304Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
