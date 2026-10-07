@@ -40,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static uk.jtoye.core.testsupport.TenantJwts.vendorJwt;
 
 /**
  * #789 (P0, D-10/D-11/D-20): the public shop endpoint names the SELLER — the tenant's legal entity
@@ -59,7 +60,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li>a published shop of a tenant with an identity carries the full seller object, and the
  *       request thread's {@link TenantContext} is empty afterwards (T-31.1-82);</li>
  *   <li>tenant B's identity never appears on tenant A's shop, with B's row proven to exist
- *       (T-31.1-81), including when A has no identity of its own;</li>
+ *       (T-31.1-81), including when A has no identity of its own and when the CALLER is a
+ *       signed-in user of B (the shop's tenant is pinned, never the caller's);</li>
  *   <li>a shop whose tenant has no identity carries NO seller — never an invented or blank one;</li>
  *   <li>a company number is shown only for a COMPANY;</li>
  *   <li>an unpublished shop's legal entity is not exposed (T-31.1-83);</li>
@@ -186,6 +188,27 @@ class PublicSellerIdentityIntegrationTest {
         mockMvc.perform(get(SHOP_PATH + slugB))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.seller.legalName").value("Bravo Secret Trading Ltd"));
+    }
+
+    @Test
+    @DisplayName("a signed-in user of tenant B viewing tenant A's shop sees A's seller: the SHOP's tenant is pinned, never the caller's")
+    void theShopsTenantIsPinnedNotTheCallers() throws Exception {
+        UUID tenantA = seedTenant();
+        UUID tenantB = seedTenant();
+        seedIdentity(tenantA, "Foxtrot Shop Owner Ltd", "COMPANY", "6 Foxtrot Road", null, "Bristol", "BS1 1AA", null);
+        seedIdentity(tenantB, "Golf Caller Tenant Ltd", "COMPANY", "7 Golf Road", null, "Exeter", "EX1 1AA", null);
+        String slugA = seedShop(tenantA, true, "f@foxtrot.example.com", null);
+
+        assertThat(this.<Long>inTenant(tenantB, c -> queryLong(c,
+                "SELECT count(*) FROM trader_identity WHERE legal_name = 'Golf Caller Tenant Ltd'")))
+                .as("PRECONDITION: the caller's tenant has an identity that a caller-tenant read would return")
+                .isEqualTo(1L);
+
+        String body = mockMvc.perform(get(SHOP_PATH + slugA).with(vendorJwt(UUID.randomUUID(), tenantB)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.seller.legalName").value("Foxtrot Shop Owner Ltd"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(body).doesNotContain("Golf Caller Tenant Ltd");
     }
 
     @Test
