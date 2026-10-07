@@ -27,6 +27,12 @@ import { render, screen } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import PrivacyNoticePage, { metadata } from "@/app/legal/privacy/page"
 import { getCustomerSession } from "@/lib/customer-auth"
+import {
+  ACCOUNT_HREF,
+  EMAILS_SECTION_HREF,
+  EMAIL_SCOPE_STATEMENT,
+  NO_MARKETING_STATEMENT,
+} from "@/lib/email-scope-copy"
 
 // The shell's header polls a customer session on an interval; unmocked it
 // resolves through a rejected fetch and makes every arm non-deterministic.
@@ -405,5 +411,59 @@ describe("privacy notice — metadata", () => {
     expect(metadata.alternates?.canonical).not.toBe(
       legalIndex.metadata.alternates?.canonical
     )
+  })
+})
+
+/**
+ * #871 (D-04, 31.1-26): the notice says what the platform actually emails. No marketing is sent, so no
+ * consent machinery is built — the notice states the scope instead, and points a signed-in customer
+ * at My account for the two data rights it can exercise there.
+ *
+ * The wording is pinned BY CONTENT as well as by constant: an emptied constant would make every
+ * "contains the constant" assertion vacuously true.
+ */
+describe("privacy notice — the emails we send (#871)", () => {
+  it("pins the shared statements by content, so a blank constant cannot pass", () => {
+    expect(EMAIL_SCOPE_STATEMENT).toMatch(/only emails you about your orders, about data requests you make, and about your sign-in account when you ask/i)
+    expect(NO_MARKETING_STATEMENT).toMatch(/do not send marketing/i)
+    expect(EMAILS_SECTION_HREF).toBe("/legal/privacy#emails")
+    expect(ACCOUNT_HREF).toBe("/shop/account")
+  })
+
+  it("has a section anchored at #emails that states the scope and that no marketing is sent", () => {
+    const { main } = renderNotice()
+    const section = sectionByAnchor(main, "emails")
+    const text = section.textContent ?? ""
+    expect(text).toContain(EMAIL_SCOPE_STATEMENT)
+    expect(text).toContain(NO_MARKETING_STATEMENT)
+  })
+
+  it("points to My account for a copy of your data or deleting your account", () => {
+    const { main } = renderNotice()
+    const section = sectionByAnchor(main, "emails")
+    const link = Array.from(section.querySelectorAll("a")).find((a) => a.textContent === "My account")
+    expect(link?.getAttribute("href")).toBe(ACCOUNT_HREF)
+    expect(section.textContent).toMatch(/copy of your data/i)
+    expect(section.textContent).toMatch(/delete your account/i)
+  })
+
+  it("lists the section in the on-this-page navigation", () => {
+    renderNotice()
+    const nav = screen.getByRole("navigation", { name: /on this page/i })
+    const hrefs = Array.from(nav.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(hrefs).toContain("#emails")
+  })
+
+  it("captures no marketing consent: no checkbox, no opt-in or newsletter wording", () => {
+    const { main } = renderNotice()
+    expect(main.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
+    expect(main.textContent).not.toMatch(/opt[- ]in|newsletter|subscribe to/i)
+  })
+
+  it("raises the version and says what changed, as its own 'Changes' section promises", () => {
+    const { main } = renderNotice()
+    expect(main.textContent).toMatch(/Version\s*1\.1/)
+    const changes = sectionByAnchor(main, "changes-to-this-notice")
+    expect(changes.textContent).toMatch(/1\.1[^.]*added the section on the emails we send/i)
   })
 })

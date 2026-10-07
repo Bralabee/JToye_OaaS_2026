@@ -43,14 +43,25 @@ import java.nio.charset.StandardCharsets;
  * synchronous send keeps the delivery observable from a test without a scheduler in the way. If the
  * bucket is ever widened, revisit this first.
  *
- * <h2>The token travels in the link, and that is unavoidable</h2>
+ * <h2>The token travels in the link's FRAGMENT, and is spent only by a press (#839, 31.1-20)</h2>
  *
- * Issue #278 moved the unsubscribe token out of the query string because a request line is captured
- * verbatim by every intermediary on the path. The same concern applies here and the same exception
- * does too: a link in an email can only be followed with a GET, which has no body slot. So the
- * canonical machine contract is a JSON POST ({@code DsarVerificationController}) and the emailed
- * link is the GET companion, exactly as {@code PublicUnsubscribeController} keeps both. The
- * mitigation is the token's short, config-injected lifetime and its single use.
+ * The link is {@code {verify-base-url}#token=…}, where the base is the web app's
+ * {@code /data-request/confirm} page in every runtime. Two defects drove this shape. On the
+ * canonical compose runtime the link used to point at {@code localhost:8080}, where nothing
+ * listens, so no request lodged there could ever be verified; and where the link did reach the
+ * API, a person who clicked it was shown raw JSON. Neither is a page a non-technical requester can
+ * act on.
+ *
+ * <p>Issue #278 moved the unsubscribe token out of the query string because a request line is
+ * captured verbatim by every intermediary on the path. A fragment goes further: a browser never
+ * sends it to any server, so no request line, access log, APM span or proxy ever carries this
+ * token. The page reads it, removes it from the address bar, and POSTs it to
+ * {@code DsarVerificationController} in a JSON body only when the person presses "Confirm my
+ * request" — so a mail scanner or link prefetcher that fetches the link confirms nothing, which
+ * matters because the request it would confirm may be an erasure.
+ *
+ * <p>The API's GET companion stays: links in emails already sent carry {@code ?token=} against the
+ * API, and they must keep working until they expire.
  */
 @Component
 public class DsarVerificationMailer {
@@ -66,11 +77,12 @@ public class DsarVerificationMailer {
     private boolean emailEnabled;
 
     /**
-     * Where the emailed link points. Config-injected rather than derived from the request, because
-     * a verification link built from an attacker-supplied {@code Host} header is a redirect to an
-     * attacker-controlled collector for a live bearer token.
+     * Where the emailed link points: the web app's confirm page, never the API. Config-injected
+     * rather than derived from the request, because a verification link built from an
+     * attacker-supplied {@code Host} header is a redirect to an attacker-controlled collector for a
+     * live bearer token. Every runtime supplies its own web origin (DsarLinkConfigContractTest).
      */
-    @Value("${jtoye.gdpr.dsar.verify-base-url:http://localhost:8080/api/v1/public/gdpr/dsar/verify}")
+    @Value("${jtoye.gdpr.dsar.verify-base-url:http://localhost:3000/data-request/confirm}")
     private String verifyBaseUrl;
 
     public DsarVerificationMailer(JavaMailSender mailSender) {
@@ -98,8 +110,9 @@ public class DsarVerificationMailer {
             return;
         }
 
-        String link = verifyBaseUrl + (verifyBaseUrl.contains("?") ? "&" : "?")
-                + "token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
+        // The token is unpadded base64url (A-Z a-z 0-9 - _), which URL encoding leaves unchanged;
+        // the encoding stays so that a future token alphabet cannot break the fragment silently.
+        String link = verifyBaseUrl + "#token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);

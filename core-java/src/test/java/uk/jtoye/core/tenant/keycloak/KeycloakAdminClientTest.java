@@ -224,6 +224,105 @@ class KeycloakAdminClientTest {
         f.server().verify();
     }
 
+    // ---- 31.1-11 (D-03, D-21): the customer-account deletion path, by request content ----------
+
+    /**
+     * The search is the exact-email form in the realm the caller names, with the address
+     * percent-encoded as a URI variable. The full URI is compared as a string, so a missing
+     * {@code exact=true} (Keycloak then does a SUBSTRING match), an unencoded {@code @}, or a
+     * different realm each fail here rather than "a GET happened".
+     */
+    @Test
+    void findUsersByEmail_getsTheExactEmailSearch_inTheNamedRealm_andParsesEachUser() {
+        Fixture f = newFixture();
+        String id1 = UUID.randomUUID().toString();
+        String id2 = UUID.randomUUID().toString();
+        String body = "[{\"id\":\"" + id1 + "\",\"username\":\"grace\",\"email\":\"grace@x.test\","
+                + "\"firstName\":\"Grace\",\"lastName\":\"Persona\",\"createdTimestamp\":1791100000000,"
+                + "\"enabled\":true},"
+                + "{\"id\":\"" + id2 + "\",\"username\":\"no-email-user\",\"enabled\":true}]";
+
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-customers/users?email=grace%40x.test&exact=true"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+
+        List<CustomerRealmUser> users = f.client().findUsersByEmail("jtoye-customers", "grace@x.test", "tok");
+
+        f.server().verify();
+        assertThat(users).containsExactly(
+                new CustomerRealmUser(id1, "grace", "grace@x.test", "Grace", "Persona", 1791100000000L),
+                new CustomerRealmUser(id2, "no-email-user", null, null, null, null));
+    }
+
+    /**
+     * A {@code +} in an address must reach Keycloak as {@code %2B}. Left raw, a query string
+     * decodes it as a SPACE, and the search looks for a different person.
+     */
+    @Test
+    void findUsersByEmail_encodesAPlusSoItIsNotReadAsASpace() {
+        Fixture f = newFixture();
+        f.server().expect(requestTo(BASE
+                        + "/admin/realms/jtoye-customers/users?email=grace%2Bdsar%40x.test&exact=true"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+        assertThat(f.client().findUsersByEmail("jtoye-customers", "grace+dsar@x.test", "tok")).isEmpty();
+        f.server().verify();
+    }
+
+    @Test
+    void findUsersByEmail_serverError_propagatesAsKeycloakAdminException_withoutTheAddress() {
+        Fixture f = newFixture();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-customers/users?email=grace%40x.test&exact=true"))
+                .andRespond(withServerError());
+
+        KeycloakAdminException e = assertThrows(KeycloakAdminException.class,
+                () -> f.client().findUsersByEmail("jtoye-customers", "grace@x.test", "tok"));
+        assertThat(e.getMessage()).contains("jtoye-customers").doesNotContain("grace");
+        f.server().verify();
+    }
+
+    @Test
+    void deleteUser_sendsDelete_toTheUserInTheNamedRealm_andReturnsTrueOn204() {
+        Fixture f = newFixture();
+        String userId = UUID.randomUUID().toString();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-customers/users/" + userId))
+                .andExpect(method(org.springframework.http.HttpMethod.DELETE))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+
+        assertThat(f.client().deleteUser("jtoye-customers", userId, "tok")).isTrue();
+        f.server().verify();
+    }
+
+    /** A 404 means the user is already gone: the goal state, reported as false, never thrown. */
+    @Test
+    void deleteUser_returnsFalseOn404_alreadyGone() {
+        Fixture f = newFixture();
+        String userId = UUID.randomUUID().toString();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-customers/users/" + userId))
+                .andExpect(method(org.springframework.http.HttpMethod.DELETE))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertThat(f.client().deleteUser("jtoye-customers", userId, "tok")).isFalse();
+        f.server().verify();
+    }
+
+    @Test
+    void deleteUser_serverError_propagatesAsKeycloakAdminException() {
+        Fixture f = newFixture();
+        String userId = UUID.randomUUID().toString();
+        f.server().expect(requestTo(BASE + "/admin/realms/jtoye-customers/users/" + userId))
+                .andExpect(method(org.springframework.http.HttpMethod.DELETE))
+                .andRespond(withServerError());
+
+        KeycloakAdminException e = assertThrows(KeycloakAdminException.class,
+                () -> f.client().deleteUser("jtoye-customers", userId, "tok"));
+        assertThat(e.getMessage()).contains("jtoye-customers");
+        f.server().verify();
+    }
+
     @Test
     void serverError_propagatesAsKeycloakAdminException() {
         Fixture f = newFixture();

@@ -1,0 +1,32 @@
+clean-before: 48bf8eefe5131d9a01db3b9d06747b02fc99265f2c09a2f205d129dba4d61075  -
+=== ARM R0-pre-plan-aggregator (source changed) gradle rc=1 tests="28" skipped="0" failures="5" errors="0"
+> Task :core-java:compileJava > Task :core-java:testClasses > Task :core-java:test FAILED 
+OrderAllergenAggregatorTest > 'WHEAT flour, EGG glaze' with mask 0 -> Gluten then Eggs, in catalogue bit order FAILED
+OrderAllergenAggregatorTest > #787 verbatim: mask 0 with 'rice, butter (MILK), pepper' -> exactly ONE flag, Milk FAILED
+OrderAllergenAggregatorTest > 'rice, MILK, MILK powder' -> ONE Milk flag; capitals share the per-product de-duplication FAILED
+OrderAllergenAggregatorTest > flags from both passes come out in bit order: '**sesame** seeds, WHEAT flour' -> Gluten, Sesame FAILED
+OrderAllergenAggregatorTest > kitchen ticket: OrderAllergenSnapshot.capture on 'butter (MILK)' with mask 0 -> flag mask Milk, declared mask still 0 FAILED
+  restored: sha OK
+=== ARM P-run-length-2 (source changed) gradle rc=0 tests="28" skipped="0" failures="0" errors="0"
+> Task :core-java:compileJava > Task :core-java:testClasses > Task :core-java:test 
+  restored: sha OK
+=== ARM L4-run-length-4 (source changed) gradle rc=1 tests="28" skipped="0" failures="1" errors="0"
+> Task :core-java:compileJava > Task :core-java:testClasses > Task :core-java:test FAILED 
+OrderAllergenAggregatorTest > 'WHEAT flour, EGG glaze' with mask 0 -> Gluten then Eggs, in catalogue bit order FAILED
+  restored: sha OK
+=== ARM C-any-case (source changed) gradle rc=1 tests="28" skipped="0" failures="3" errors="0"
+> Task :core-java:compileJava > Task :core-java:testClasses > Task :core-java:test FAILED 
+OrderAllergenAggregatorTest > dangling markup is fail-soft — the parser's own rules are inherited, not reimplemented FAILED
+OrderAllergenAggregatorTest > Title Case is not emphasis: 'Flour, Milk, Yeast' with mask 0 -> NO flag FAILED
+OrderAllergenAggregatorTest > unmarked allergen text -> no flag; the emphasis markup is what the vendor asserts FAILED
+  restored: sha OK
+=== ARM B-not-word-bounded (source changed) gradle rc=1 tests="28" skipped="0" failures="1" errors="0"
+> Task :core-java:compileJava > Task :core-java:testClasses UP-TO-DATE > Task :core-java:test FAILED 
+OrderAllergenAggregatorTest > a capital run that continues into lower case is not a word in capitals: 'MILKy foam, NUTmeg' -> NO flag FAILED
+  restored: sha OK
+=== ARM O-discovery-order (source changed) gradle rc=1 tests="28" skipped="0" failures="1" errors="0"
+> Task :core-java:compileJava > Task :core-java:testClasses UP-TO-DATE > Task :core-java:test FAILED 
+OrderAllergenAggregatorTest > flags from both passes come out in bit order: '**sesame** seeds, WHEAT flour' -> Gluten, Sesame FAILED
+  restored: sha OK
+=== clean-after gradle rc=0 tests="28" skipped="0" failures="0" errors="0"
+core-java/src/main/java/uk/jtoye/core/order/OrderAllergenAggregator.java: OK

@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import uk.jtoye.core.common.idempotency.IdempotencyService;
+import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
+import uk.jtoye.core.exception.AllergenAcknowledgementStaleException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
@@ -23,7 +25,9 @@ import uk.jtoye.core.geo.PostcodeGeocoder;
 import uk.jtoye.core.order.FulfilmentPolicy;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.Order;
+import uk.jtoye.core.order.OrderAllergenAggregator;
 import uk.jtoye.core.order.OrderAllergenSnapshot;
+import uk.jtoye.core.order.OrderChannel;
 import uk.jtoye.core.order.OrderEventPublisher;
 import uk.jtoye.core.order.OrderItem;
 import uk.jtoye.core.order.OrderNumberGenerator;
@@ -33,8 +37,11 @@ import uk.jtoye.core.order.PaymentStatus;
 import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.payment.PaymentIntentResult;
 import uk.jtoye.core.payment.PaymentService;
+import uk.jtoye.core.product.AllergenCatalog;
+import uk.jtoye.core.product.MayContainAllergens;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
+import uk.jtoye.core.onboarding.TraderIdentityService;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopAnnouncementRepository;
@@ -127,6 +134,9 @@ public class PublicStorefrontService {
      * {@link #requireUsableRadius}.
      */
     private final OrderNumberGenerator orderNumberGenerator;
+
+    /** The seller block's tenant-pinned read (#789, 31.1-24); used by {@link #getShopBySlug} only. */
+    private final TraderIdentityService traderIdentityService;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -138,6 +148,7 @@ public class PublicStorefrontService {
                                    IdempotencyService idempotencyService,
                                    PostcodeGeocoder postcodeGeocoder,
                                    OrderNumberGenerator orderNumberGenerator,
+                                   TraderIdentityService traderIdentityService,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -154,6 +165,7 @@ public class PublicStorefrontService {
         // private copy of OrderService's — two definitions of a customer-visible identifier,
         // and neither had a fault-injection seam.
         this.orderNumberGenerator = orderNumberGenerator;
+        this.traderIdentityService = traderIdentityService;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -529,13 +541,21 @@ public class PublicStorefrontService {
     }
 
     /**
-     * Get a single published shop by slug.
+     * Get a single published shop by slug, with the seller who sells through it (#789, 31.1-24).
+     *
+     * <p>The seller is attached HERE and only here: the shop has already passed the published-only
+     * lookup (an unpublished shop is a 404 before any legal entity is read, T-31.1-83), and the
+     * list/near/search endpoints, which share {@link #toPublicShopDto}, stay one query per page.
+     * {@link TraderIdentityService#findPublicSeller} pins the SHOP's tenant in its own transaction
+     * and never touches {@code TenantContext} on this request thread.
      */
     public PublicShopDto getShopBySlug(String slug) {
         log.debug("Fetching published shop: {}", slug);
         Shop shop = shopRepository.findBySlugAndPublishedTrue(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + slug));
-        return toPublicShopDto(shop);
+        PublicShopDto dto = toPublicShopDto(shop);
+        dto.setSeller(traderIdentityService.findPublicSeller(shop.getTenantId(), shop));
+        return dto;
     }
 
     /**
@@ -608,6 +628,16 @@ public class PublicStorefrontService {
             status.setUnitCount(order.getUnitCount());
             status.setCreatedAt(order.getCreatedAt());
             status.setUpdatedAt(order.getUpdatedAt());
+            // Phase 31.1 D-07/D-08: the acknowledgement and channel from the order's own COLUMNS
+            // ONLY. The recorded set (recordedAllergens / recordedAllergenFlags) is deliberately
+            // left null here and documented as tracking-only: deriving it reads order.getItems(),
+            // which initialises one collection per row on this list path (the V63 measurement:
+            // 7 orders, 7 extra SELECTs). CustomerRecordedAllergenSetIntegrationTest guards this.
+            status.setAcknowledgedAllergenMask(order.getAllergenAckMask());
+            status.setAcknowledgedAllergens(acknowledgedAllergenNames(order));
+            status.setPlacedVia(placedVia(order));
+            // D-15: that a note was sent and when the shop read it, from columns. Never the text.
+            setAllergyNoteStatus(status, order);
             return status;
         });
     }
@@ -663,7 +693,53 @@ public class PublicStorefrontService {
         status.setUnitCount(order.getUnitCount());
         status.setCreatedAt(order.getCreatedAt());
         status.setUpdatedAt(order.getUpdatedAt());
+        // Phase 31.1 D-07/D-08: what the customer acknowledged (the order's own V69 columns) and
+        // what the kitchen recorded (the V63 line snapshot, never a live join to products, so a
+        // vendor edit after the order cannot rewrite what this response says was recorded). One
+        // order, so loading its lines here is one statement, not one per row.
+        status.setAcknowledgedAllergenMask(order.getAllergenAckMask());
+        status.setAcknowledgedAllergens(acknowledgedAllergenNames(order));
+        status.setPlacedVia(placedVia(order));
+        // D-15 (#812): the customer sees that the shop read their allergy note. Never the text (T-31.1-46).
+        setAllergyNoteStatus(status, order);
+        OrderAllergenSnapshot.OrderAllergenView recorded = OrderAllergenSnapshot.viewOf(order.getItems());
+        status.setRecordedAllergens(recorded.declaredNames());
+        status.setRecordedAllergenFlags(recorded.flags());
         return status;
+    }
+
+    /**
+     * The names of the acknowledged mask, or {@code null} when none was recorded. Null is NOT
+     * RECORDED (a vendor order, or a row from before V69) and must never become [] — that would
+     * claim the customer acknowledged a basket declaring nothing. A recorded 0 gives [].
+     */
+    private static List<String> acknowledgedAllergenNames(Order order) {
+        Integer mask = order.getAllergenAckMask();
+        return mask == null ? null : AllergenCatalog.namesFor(mask);
+    }
+
+    /**
+     * D-15: whether an allergy note was sent and when the shop acknowledged it. The note TEXT is never
+     * copied onto the public response: it is minimised to a flag (T-31.1-46).
+     */
+    private static void setAllergyNoteStatus(PublicOrderStatus status, Order order) {
+        status.setAllergyNoteProvided(order.getAllergyNote() != null);
+        status.setAllergyNoteAcknowledgedAt(order.getAllergyNoteAckAt());
+    }
+
+    /** {@code value.strip()}, or {@code null} when the value is null or only whitespace. */
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String stripped = value.strip();
+        return stripped.isEmpty() ? null : stripped;
+    }
+
+    /** The channel's enum name, or {@code null} for a row from before V69: no channel is guessed. */
+    private static String placedVia(Order order) {
+        OrderChannel channel = order.getPlacedVia();
+        return channel == null ? null : channel.name();
     }
 
     /**
@@ -822,6 +898,8 @@ public class PublicStorefrontService {
                         existingOrder.getOrderNumber(), e);
             }
         }
+        OrderAllergenSnapshot.OrderAllergenView replayedSnapshot =
+                OrderAllergenSnapshot.viewOf(existingOrder.getItems());
         return new GuestOrderConfirmation(
                 existingOrder.getOrderNumber(),
                 existingOrder.getStatus().name(),
@@ -837,7 +915,14 @@ public class PublicStorefrontService {
                 // line count, so it is neither coalesced nor substituted.
                 existingOrder.getUnitCount(),
                 existingClientSecret,
-                List.of()
+                List.of(),
+                // Phase 31.1 D-08: re-derived from the ROW, like everything else on a replay, so a
+                // retry shows the same acknowledged and recorded sets the first response did. A
+                // replayed row from before V69 / V63 carries null here, which is "not recorded".
+                existingOrder.getAllergenAckMask(),
+                acknowledgedAllergenNames(existingOrder),
+                replayedSnapshot.declaredNames(),
+                replayedSnapshot.flags()
         );
     }
 
@@ -872,6 +957,9 @@ public class PublicStorefrontService {
         order.setCustomerEmail(request.getCustomerEmail());
         order.setCustomerPhone(request.getCustomerPhone());
         order.setNotes(request.getNotes());
+        // D-15 (#812): the allergy note is its own column, never folded into the delivery notes.
+        // Trimmed; a blank note is no note (NULL = none given). Never logged.
+        order.setAllergyNote(trimToNull(request.getAllergyNote()));
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             order.setIdempotencyKey(idempotencyKey);
         }
@@ -909,6 +997,15 @@ public class PublicStorefrontService {
         // The client cannot supply a rate (no rate field on the request) —
         // it is always resolved from product.vat_rate server-side.
         List<VatCalculator.LineRate> lineRates = new ArrayList<>();
+        // Phase 31.1 #784/#785 (D-05/D-06): the allergen set the server holds for this basket NOW,
+        // accumulated from the SAME Product entities, in the SAME loop and transaction, that the V63
+        // line snapshot below captures. That is what makes the recorded acknowledgement equal
+        // OR(order_items.allergen_mask) by construction: a vendor edit can land before this read or
+        // after this transaction, never between the comparison and the snapshot.
+        // products.allergen_mask is NOT NULL DEFAULT 0 (Product.java), so there is no null branch.
+        int currentAllergenMask = 0;
+        // Per-line attribution for the stale 409, in basket order, from the same reads.
+        List<AllergenAcknowledgementStaleException.StaleLine> allergenLines = new ArrayList<>();
 
         for (GuestOrderItemRequest itemReq : request.getItems()) {
             Product product = productRepository.findById(itemReq.getProductId())
@@ -958,10 +1055,34 @@ public class PublicStorefrontService {
             // are stored beside the declaration, never folded into it.
             OrderAllergenSnapshot.capture(item, product.getTitle(),
                     product.getAllergenMask(), product.getIngredientsText());
+            currentAllergenMask |= product.getAllergenMask();
+            allergenLines.add(new AllergenAcknowledgementStaleException.StaleLine(product.getId(),
+                    product.getTitle(), product.getAllergenMask(),
+                    AllergenCatalog.namesFor(product.getAllergenMask())));
             order.addItem(item);
             lineRates.add(new VatCalculator.LineRate(
                     item.getTotalPricePennies(), product.getVatRate()));
         }
+
+        // D-05: the acknowledgement is enforced HERE, on the server, before the first save. Both
+        // refusals are thrown inside the reserved idempotency work, so the reservation rolls back
+        // with this transaction and a corrected resubmit under the same key succeeds.
+        Integer acknowledgedAllergenMask = request.getAcknowledgedAllergenMask();
+        if (acknowledgedAllergenMask == null) {
+            throw new AllergenAcknowledgementRequiredException();
+        }
+        // EQUALITY, not containment: an acknowledgement that holds a bit the basket no longer
+        // declares is also a set the customer was not shown. Only the DECLARED mask is compared;
+        // advisory reconciliation flags are shown at checkout but are not acknowledged (31.1-03
+        // flagged assumption, RESEARCH Open Question 7).
+        if (acknowledgedAllergenMask != currentAllergenMask) {
+            throw new AllergenAcknowledgementStaleException(currentAllergenMask,
+                    AllergenCatalog.namesFor(currentAllergenMask), acknowledgedAllergenMask, allergenLines);
+        }
+        // D-06: what the customer acknowledged, when, and through which channel.
+        order.setAllergenAckMask(acknowledgedAllergenMask);
+        order.setAllergenAckAt(OffsetDateTime.now());
+        order.setPlacedVia(OrderChannel.STOREFRONT);
 
         // Resolve the order's single predominant VAT rate from the basket
         // (replaces the former hardcoded STANDARD). Delivery VAT then follows
@@ -1106,6 +1227,10 @@ public class PublicStorefrontService {
                 order.getVatRate(), shop.getName(),
                 clientSecret != null ? " (awaiting payment)" : " (COD)");
 
+        // Phase 31.1 D-08: the recorded set is rebuilt from the lines just captured above, through
+        // the same read model the kitchen display uses, so the confirmation and the ticket cannot
+        // disagree. The acknowledged set is the column 31.1-03 wrote in this transaction.
+        OrderAllergenSnapshot.OrderAllergenView recordedSnapshot = OrderAllergenSnapshot.viewOf(order.getItems());
         return new GuestOrderConfirmation(
                 order.getOrderNumber(),
                 order.getStatus().name(),
@@ -1120,7 +1245,11 @@ public class PublicStorefrontService {
                 // populated by calculateTotal() above; itemCount above stays LINES.
                 order.getUnitCount(),
                 clientSecret,
-                allergenWarnings
+                allergenWarnings,
+                order.getAllergenAckMask(),
+                acknowledgedAllergenNames(order),
+                recordedSnapshot.declaredNames(),
+                recordedSnapshot.flags()
         );
     }
 
@@ -1294,6 +1423,24 @@ public class PublicStorefrontService {
             allImages.addAll(product.getAdditionalImageUrls());
         }
         dto.setImageUrls(allImages);
+
+        // #787 (D-09): the ingredients text vs the declared mask, reconciled HERE by the one
+        // aggregator the order snapshot and the vendor ProductDto also use, so no storefront
+        // surface renders "No allergens" while the text names one and the browser never
+        // parses ingredients. Names only, bit order; the declared mask above is untouched.
+        List<String> undeclared = new ArrayList<>();
+        int declaredMask = product.getAllergenMask() == null ? 0 : product.getAllergenMask();
+        for (OrderAllergenAggregator.ReconciliationFlag flag : OrderAllergenAggregator.aggregate(List.of(
+                new OrderAllergenAggregator.ItemAllergens(
+                        product.getTitle(), declaredMask, product.getIngredientsText()))).flags()) {
+            undeclared.add(flag.allergenName());
+        }
+        dto.setUndeclaredIngredientAllergens(undeclared);
+
+        // #861 (D-16): cross-contact risk as its own list, by the same rule the PPDS label prints
+        // (only bits not already declared, bit order). Never merged into allergenMask above.
+        dto.setMayContainAllergens(
+                MayContainAllergens.undeclaredNames(product.getMayContainMask(), product.getAllergenMask()));
 
         return dto;
     }

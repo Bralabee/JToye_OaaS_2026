@@ -12,7 +12,11 @@
     "text" : ", sugar",
     "emphasised" : false
   } ],
-  "durabilityLine" : "Use by: 8 Jul 2026",
+  "mayContainNames" : [ ],
+  "mayContainLine" : null,
+  "productionDate" : "2026-07-05",
+  "productionLine" : "Produced: 5 July 2026",
+  "durabilityLine" : "Use by: 8 July 2026",
   "businessName" : "Test Kitchen Ltd",
   "businessAddress" : "12 Market Street, London, E1 6AN"
 }

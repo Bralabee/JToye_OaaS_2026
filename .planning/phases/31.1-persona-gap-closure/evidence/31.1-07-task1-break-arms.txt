@@ -1,0 +1,41 @@
+# 31.1-07 Task 1 break arms (2026-10-06T10:46:34Z), run on committed GREEN 0138ce06 by scratch arms1.sh
+# each arm: cp backup -> anchored replace -> gradle (clean task) -> cp restore -> sha256 compare
+CLEAN-BEFORE: 
+ARM A1-intake-stores-plaintext: gradle rc=1; tests="3" skipped="0" failures="1" errors="0"; RESTORED
+ARM A2-complete-keeps-ciphertext: gradle rc=1; tests="3" skipped="0" failures="1" errors="0"; RESTORED
+ARM A3-aad-drops-request-id: gradle rc=1; tests="9" skipped="0" failures="1" errors="0"; RESTORED
+ARM A4-fixed-iv: gradle rc=1; tests="9" skipped="0" failures="1" errors="0"; RESTORED
+ARM A5-key-echoed: gradle rc=1; tests="9" skipped="0" failures="2" errors="0"; RESTORED
+ARM A6-test-profile-key-removed: gradle rc=1; tests="3" skipped="0" failures="3" errors="0"; RESTORED
+                Caused by: java.lang.IllegalStateException at DsarCipher.java:85
+CLEAN-AFTER: 
+
+# failing tests per arm (from the gradle log)
+== arm-A1-intake-stores-plaintext
+DsarSubjectAddressIntegrationTest > aLodgedRequestStoresTheAddressOnlyAsCiphertextThatTheWorkerSideCanDecrypt() FAILED
+    org.opentest4j.AssertionFailedError at DsarSubjectAddressIntegrationTest.java:121
+== arm-A2-complete-keeps-ciphertext
+DsarSubjectAddressIntegrationTest > completingTheRequestDestroysTheCiphertext() FAILED
+    org.springframework.dao.DataIntegrityViolationException at DsarSubjectAddressIntegrationTest.java:139
+== arm-A3-aad-drops-request-id
+DsarCipherTest > ciphertextBoundToOneRequestIdDoesNotDecryptUnderAnother() FAILED
+    java.lang.AssertionError at DsarCipherTest.java:85
+== arm-A4-fixed-iv
+DsarCipherTest > twoEncryptionsOfTheSameAddressDiffer() FAILED
+    java.lang.AssertionError at DsarCipherTest.java:67
+== arm-A5-key-echoed
+DsarCipherTest > aNonHexKeyIsRefusedWithoutEchoingIt() FAILED
+    org.assertj.core.error.AssertJMultipleFailuresError at DsarCipherTest.java:130
+DsarCipherTest > aKeyOneHexCharacterShortIsRefusedWithoutEchoingIt() FAILED
+    org.assertj.core.error.AssertJMultipleFailuresError at DsarCipherTest.java:130
+== arm-A6-test-profile-key-removed
+DsarSubjectAddressIntegrationTest > completingTheRequestDestroysTheCiphertext() FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:195
+DsarSubjectAddressIntegrationTest > aLodgedRequestStoresTheAddressOnlyAsCiphertextThatTheWorkerSideCanDecrypt() FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+DsarSubjectAddressIntegrationTest > theTestProfileSuppliesAPerRunRandomKeyOfSixtyFourHexCharacters() FAILED
+    java.lang.IllegalStateException at DefaultCacheAwareContextLoaderDelegate.java:157
+
+# A6 boot cause:
+                Caused by: java.lang.IllegalStateException at DsarCipher.java:85
+jtoye.gdpr.dsar.encryption-key must be 64 hexadecimal characters (32 bytes); generate one with: openssl rand -hex 32

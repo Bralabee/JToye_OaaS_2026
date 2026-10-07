@@ -28,7 +28,7 @@
  * browser by `e2e/storefront-dish-modal-a11y.spec.ts`. Do not read a green run
  * of this file as evidence that the dialog BEHAVES correctly.
  */
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ProductDetailModal } from "../product-detail-modal"
 import type { PublicProduct } from "@/types/storefront"
@@ -187,5 +187,108 @@ describe("ProductDetailModal dialog contract (#446 / #272)", () => {
 
     await user.click(screen.getByRole("button", { name: /^close$/i }))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * 31.1-21 (#817, #787, #861; D-09, D-16, D-18): the dish modal LEADS with what the dish contains,
+ * may contain, and what its ingredients say.
+ *
+ * On the unfixed tree the "Allergen Information" box sat after the description and the
+ * ingredients, and was not rendered at all for an empty declaration — so the persona's MILK dish
+ * (empty declaration, MILK in the ingredients) opened with no allergen statement anywhere, and a
+ * 200%-zoom reader on a phone had to scroll past the description to reach the box when there was
+ * one. There was no may-contain line.
+ *
+ * jsdom has no layout, so "visible without scrolling" is asserted as the structure that produces
+ * it: the section comes BEFORE the description and the ingredients, directly under the title. The
+ * zoomed viewport itself is measured by e2e/storefront-dish-modal-a11y.spec.ts.
+ */
+describe("ProductDetailModal allergen section (31.1-21)", () => {
+  const GLUTEN = 1 << 0
+  const MILK = 1 << 6
+
+  function allergenSection() {
+    return screen.getByRole("region", { name: "Allergen Information" })
+  }
+
+  function precedes(a: Node, b: Node): boolean {
+    return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+  }
+
+  it("declared: a named 'Contains' list of the allergens in catalogue order, before Add", () => {
+    renderModal(product({ allergenMask: MILK | GLUTEN }))
+    const section = allergenSection()
+    const list = within(section).getByRole("list", { name: "Contains" })
+    expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Gluten", "Milk"])
+    expect(precedes(section, screen.getByRole("button", { name: /Add to cart/i }))).toBe(true)
+  })
+
+  it("comes before the description and the ingredients, directly under the title", () => {
+    renderModal(product({ allergenMask: MILK }))
+    const section = allergenSection()
+    expect(precedes(section, screen.getByRole("heading", { name: "About" }))).toBe(true)
+    expect(precedes(section, screen.getByRole("heading", { name: "Ingredients" }))).toBe(true)
+    expect(precedes(screen.getByRole("heading", { level: 2 }), section)).toBe(true)
+  })
+
+  it("none declared: the section still renders and says 'No allergens declared'", () => {
+    renderModal(product({ allergenMask: 0, undeclaredIngredientAllergens: [], mayContainAllergens: [] }))
+    expect(within(allergenSection()).getByText("No allergens declared")).toBeInTheDocument()
+    expect(within(allergenSection()).queryByRole("list", { name: "Contains" })).toBeNull()
+  })
+
+  it("flagged (D-09): the ingredients line names MILK and 'No allergens declared' is absent", () => {
+    renderModal(product({ allergenMask: 0, undeclaredIngredientAllergens: ["Milk"] }))
+    const section = allergenSection()
+    expect(within(section).getByText("Ingredients name: MILK – check with the shop")).toBeInTheDocument()
+    expect(within(section).queryByText("No allergens declared")).toBeNull()
+  })
+
+  it("may contain (D-16): 'May contain: Sesame' is its own line, never inside the Contains list", () => {
+    renderModal(product({ allergenMask: MILK, mayContainAllergens: ["Sesame"] }))
+    const section = allergenSection()
+    const line = within(section).getByText("May contain: Sesame")
+    const list = within(section).getByRole("list", { name: "Contains" })
+    expect(list.contains(line)).toBe(false)
+    expect(within(list).queryByText(/Sesame/)).toBeNull()
+    // Beneath the declared set, not above it.
+    expect(precedes(list, line)).toBe(true)
+  })
+
+  it("all three statements together keep their order: contains, may contain, ingredients", () => {
+    renderModal(
+      product({ allergenMask: GLUTEN, mayContainAllergens: ["Sesame"], undeclaredIngredientAllergens: ["Milk"] })
+    )
+    const section = allergenSection()
+    const list = within(section).getByRole("list", { name: "Contains" })
+    const may = within(section).getByText("May contain: Sesame")
+    const flag = within(section).getByText("Ingredients name: MILK – check with the shop")
+    expect(precedes(list, may)).toBe(true)
+    expect(precedes(may, flag)).toBe(true)
+  })
+
+  it("comes before the quantity stepper once the dish is in the basket", () => {
+    render(
+      <ProductDetailModal
+        product={product({ allergenMask: MILK })}
+        isOpen
+        onClose={() => {}}
+        quantity={2}
+        onAdd={() => {}}
+        onIncrement={() => {}}
+        onDecrement={() => {}}
+      />
+    )
+    const more = screen.getByRole("button", { name: "Add one more Party Jollof Rice to cart" })
+    expect(precedes(allergenSection(), more)).toBe(true)
+  })
+
+  it("never says 'No allergens' alone or anything the platform cannot stand behind", () => {
+    renderModal(product({ allergenMask: 0 }))
+    const text = screen.getByRole("dialog").textContent ?? ""
+    expect(text).toContain("No allergens declared")
+    expect(screen.queryByText(/^\s*No allergens\s*$/)).toBeNull()
+    expect(text).not.toMatch(/allergen[-\s]free|safe for you|no allergens present/i)
   })
 })

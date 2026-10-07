@@ -7,9 +7,9 @@ import uk.jtoye.core.product.IngredientMarkupParser.ParsedIngredients;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Aggregates an order's allergen picture into TWO independent outputs: the declared
@@ -52,6 +52,13 @@ import java.util.Set;
  * here would eventually disagree with a legally operative printed label. Its fail-soft
  * rules (non-nested left-to-right pairing, literal dangling delimiter, never throws on
  * vendor input) are inherited rather than reimplemented.
+ *
+ * <p>The same rule is applied everywhere the disagreement is shown (#787, D-09): the
+ * order-time snapshot ({@code OrderAllergenSnapshot}, the kitchen ticket's
+ * {@code allergen_flag_mask}), the vendor's product responses
+ * ({@code ProductMapper} → {@code ProductDto.allergenWarnings}) and the public menu
+ * ({@code PublicProductDto.undeclaredIngredientAllergens}). Each calls {@link #aggregate} on
+ * one item; none of them, and no browser, parses ingredients text on its own.
  */
 public final class OrderAllergenAggregator {
 
@@ -119,17 +126,43 @@ public final class OrderAllergenAggregator {
     }
 
     /**
+     * The shortest run of capital letters read as emphasis. Two-letter capitals are almost
+     * always initialisms on a menu ({@code UK}, {@code BBQ} is three but names nothing), and
+     * no allergen synonym in {@link AllergenCatalog} is shorter than three letters
+     * ({@code EGG}, {@code NUT}, {@code SOY}, {@code OAT}, {@code RYE}, {@code COD}).
+     */
+    static final int MIN_CAPITALISED_RUN = 3;
+
+    /**
      * Append one flag per allergen this item's emphasised ingredients text names but its
-     * own declared mask omits.
+     * own declared mask omits, in catalogue bit order.
      *
      * <p>Reconciliation is per item against the ITEM's mask, not against the order union —
      * otherwise a second product correctly declaring milk would silently excuse a first
      * product that failed to.
      *
-     * <p>Only EMPHASISED runs are considered. The {@code **...**} markup is what the vendor
-     * asserts as an allergen and what the PPDS label already emboldens; treating every
-     * unmarked word as a candidate would fire on nearly every product, and a flag that
-     * fires on everything is ignored — the same outcome as no flag at all.
+     * <p>Only EMPHASISED runs are considered, and there are two kinds of emphasis:
+     * <ul>
+     *   <li>the {@code **...**} markup, which is what the PPDS label already emboldens; and</li>
+     *   <li>a word written in CAPITALS: a maximal run of at least
+     *       {@link #MIN_CAPITALISED_RUN} ASCII upper-case letters bounded by non-letters
+     *       ({@code butter (MILK)}, {@code WHEAT flour}).</li>
+     * </ul>
+     * Capitals count because the FSA's allergen-labelling guidance lists them beside bold as a
+     * valid way to emphasise an allergen, and vendors use them: the #787 persona typed
+     * {@code rice, butter (MILK), pepper}, ticked nothing, and the storefront said "No
+     * allergens" because only {@code **} spans were read (RESEARCH Pitfall 6). Unmarked
+     * lower-case or Title-case words are still NOT candidates: treating every word as one
+     * would fire on nearly every product, and a flag that fires on everything is ignored —
+     * the same outcome as no flag at all. A run only becomes a flag when
+     * {@link AllergenCatalog#resolveBits(String)} resolves it, so {@code UK} or {@code BBQ}
+     * name nothing.
+     *
+     * <p>{@link IngredientMarkupParser} is deliberately untouched: capitals are already
+     * capitals on the printed label, so the label needs no new emphasis, and the label's
+     * golden output stays byte-identical. The capitals scan is a single linear character
+     * walk with no regular expression, over text the create/update contract bounds at 2000
+     * characters, so a pathological vendor string cannot make it backtrack.
      */
     private static void collectFlags(ItemAllergens item, List<ReconciliationFlag> flags) {
         String raw = item.ingredientsText();
@@ -142,7 +175,8 @@ public final class OrderAllergenAggregator {
 
         // One flag per (product, allergen): a text naming milk three times is one problem,
         // and three identical Check lines on a kitchen ticket is noise that hides the rest.
-        Set<Integer> alreadyFlagged = new LinkedHashSet<>();
+        // Sorted, so the flags come out in catalogue bit order whichever pass found them.
+        Set<Integer> alreadyFlagged = new TreeSet<>();
 
         for (AllergenSpan span : parsed.spans()) {
             int start = span.start();
@@ -152,16 +186,55 @@ public final class OrderAllergenAggregator {
             if (start < 0 || end > plain.length() || start >= end) {
                 continue;
             }
+            addUndeclared(item, plain.substring(start, end), alreadyFlagged);
+        }
 
-            for (int bit : AllergenCatalog.resolveBits(plain.substring(start, end))) {
-                if (AllergenCatalog.hasAllergen(item.declaredMask(), bit)) {
-                    continue; // declared correctly — the good path is not nagged
-                }
-                if (alreadyFlagged.add(bit)) {
-                    flags.add(new ReconciliationFlag(
-                            item.productName(), bit, AllergenCatalog.nameFor(bit)));
-                }
+        for (String run : capitalisedRuns(plain)) {
+            addUndeclared(item, run, alreadyFlagged);
+        }
+
+        for (int bit : alreadyFlagged) {
+            flags.add(new ReconciliationFlag(item.productName(), bit, AllergenCatalog.nameFor(bit)));
+        }
+    }
+
+    /** Record every allergen {@code emphasised} names that the item's own mask omits. */
+    private static void addUndeclared(ItemAllergens item, String emphasised, Set<Integer> alreadyFlagged) {
+        for (int bit : AllergenCatalog.resolveBits(emphasised)) {
+            if (!AllergenCatalog.hasAllergen(item.declaredMask(), bit)) {
+                alreadyFlagged.add(bit); // a declared allergen is the good path and is not nagged
             }
         }
+    }
+
+    /**
+     * Every word of {@code text} written wholly in ASCII capitals and at least
+     * {@link #MIN_CAPITALISED_RUN} letters long, in text order. A word is a maximal run of
+     * letters, so a capital run that continues into a lower-case or non-ASCII letter
+     * ({@code MILKy}, {@code McDONALD}) is not one. One pass, O(n).
+     */
+    static List<String> capitalisedRuns(String text) {
+        List<String> runs = new ArrayList<>();
+        int n = text.length();
+        int i = 0;
+        while (i < n) {
+            if (!Character.isLetter(text.charAt(i))) {
+                i++;
+                continue;
+            }
+            int start = i;
+            boolean allAsciiCapitals = true;
+            while (i < n && Character.isLetter(text.charAt(i))) {
+                char c = text.charAt(i);
+                if (c < 'A' || c > 'Z') {
+                    allAsciiCapitals = false;
+                }
+                i++;
+            }
+            if (allAsciiCapitals && i - start >= MIN_CAPITALISED_RUN) {
+                runs.add(text.substring(start, i));
+            }
+        }
+        return runs;
     }
 }

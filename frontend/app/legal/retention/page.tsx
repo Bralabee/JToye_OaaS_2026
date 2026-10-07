@@ -45,9 +45,9 @@ export const metadata: Metadata = {
  *      test suite does not execute, and its M-1 invariant means deleting the
  *      sentence fails the gate rather than silently satisfying it.
  *
- * ── THE FOUR GATED PERIODS ───────────────────────────────────────────────────
+ * ── THE SIX GATED PERIODS ────────────────────────────────────────────────────
  *
- * These four are the rows the manifest gives a `claim_key`, i.e. the ones this
+ * These six are the rows the manifest gives a `claim_key`, i.e. the ones this
  * platform enforces itself and can be held to. They are named constants rather
  * than inline strings for one specific reason: `grep -P` is LINE-based, so a
  * rule anchored on a row's category words cannot reach a `period:` sitting four
@@ -56,14 +56,25 @@ export const metadata: Metadata = {
  * anchored on THAT row rather than degenerating into "find any integer on this
  * page" — a pattern that would match something no matter what the sentence said.
  *
- * The remaining eight rows publish no number at all (they publish prose such as
+ * The remaining rows publish no number at all (they publish prose such as
  * "Kept indefinitely"), so there is nothing for a numeric rule to gate; the
  * field-by-field test above is what holds them.
+ *
+ * R-14 (31.1-07, D-19) is the one gated period with prose around its number:
+ * a request is held until it is closed, and the number is the window for one
+ * that is never confirmed. Its claims rule anchors on the constant and reads the
+ * integer in front of " hours", wherever it sits in the sentence.
+ *
+ * R-15 (31.1-17, D-01) has the same shape: the prepared copy of a person's
+ * data is held until they download it, and the number is the link's lifetime
+ * if they never do.
  */
 const PERIOD_ABANDONED_CHECKOUTS = "24 hours"
 const PERIOD_WEBHOOK_DELIVERY_RECORDS = "30 days"
 const PERIOD_QUARANTINED_IMAGE_UPLOADS = "72 hours"
 const PERIOD_CUSTOMER_SIGN_IN_COOKIES = "30 days"
+const PERIOD_DATA_REQUEST_EMAIL = "Until your request is closed, or 168 hours if you never confirm it"
+const PERIOD_PREPARED_DATA_COPY = "Until you download it, or 168 hours if you never do"
 
 /**
  * Exported so the test can compare it to `docs/retention-manifest.json`. The
@@ -176,20 +187,39 @@ export const RETENTION_ROWS: readonly RetentionRow[] = [
     category: "Saved checkout email in your browser",
     detail:
       "The email address you last used at a shop's checkout, kept in your browser's local storage so it can be filled in for you next time.",
-    period: "Until you clear your browser's site data",
+    period: "Until you sign out or clear your browser's site data",
     lawfulBasis:
       "Strictly necessary (PECR reg. 6(4)) - it is a convenience within the checkout you asked for, stays on your device, and is never read by us as a stored record.",
     enforcement: "Operational",
   },
   {
     id: "R-13",
-    category: "Guest order history in your browser",
+    category: "Order history in your browser",
     detail:
-      "The list of orders you placed as a guest, kept in your browser's local storage so you can find them again without an account.",
-    period: "Until you clear your browser's site data",
+      "The orders you placed on this device, each with the email address it was placed with, kept in your browser's local storage so you can find them again. Signing out removes the list.",
+    period: "Until you sign out or clear your browser's site data",
     lawfulBasis:
       "Strictly necessary (PECR reg. 6(4)) - it is what lets a guest find the order they just placed, and it stays on your device.",
     enforcement: "Operational",
+  },
+  {
+    id: "R-14",
+    category: "Your email address on a data request",
+    detail:
+      "When you ask us for a copy of your data or to erase it, the email address you give us, so that we can confirm the request with you, act on it and reply. We hold it only in encrypted form, and delete it when the request is completed, cannot be completed, or expires.",
+    period: PERIOD_DATA_REQUEST_EMAIL,
+    lawfulBasis:
+      "Legal obligation (UK GDPR Art. 6(1)(c)) - answering a data-subject request under Articles 12, 15 and 17 requires us to be able to reach the person who made it.",
+    enforcement: "Automated",
+  },  {
+    id: "R-15",
+    category: "A copy of your data prepared for you",
+    detail:
+      "When you ask for a copy of your data, the copy we prepare for you: what every shop on J'Toye holds about you, gathered into one file. We hold it only in encrypted form, behind a single-use link emailed to you, and delete it as soon as you download it.",
+    period: PERIOD_PREPARED_DATA_COPY,
+    lawfulBasis:
+      "Legal obligation (UK GDPR Art. 6(1)(c)) - Article 15 requires us to give you a copy of your personal data, and keeping it until you collect it is part of giving it to you.",
+    enforcement: "Automated",
   },
 ]
 

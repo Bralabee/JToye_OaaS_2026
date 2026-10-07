@@ -1,0 +1,70 @@
+# 31.1-13 break arms (each on a committed tree, restored by cp, restore verified by sha256 vs git show HEAD:<file>)
+
+## Task 1
+ARM T1A-fold-into-notes gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="3" skipped="0" failures="1" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [the delivery note carries only the delivery note]  expected: "Ring the bell"  but was: "Ring the bell My child is allergic to peanuts and sesame - please confirm."
+  RESTORED by content (a055fc23fee2d4d86bc35ae6003e0b57e830b807e0361edfb5563e0d75ce537c)
+ARM T1B-no-trim gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="3" skipped="0" failures="1" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [a blank note is no note: HTTP 200 {"acknowledgedAllergenNames":["Gluten"],"addressCity":null,"addressLine1":null,"addressLine2":null,"addressPostcode":null,"
+  RESTORED by content (a055fc23fee2d4d86bc35ae6003e0b57e830b807e0361edfb5563e0d75ce537c)
+ARM T1C-detail-unmapped gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="3" skipped="0" failures="1" errors="0"
+    failure message="org.opentest4j.AssertionFailedError:  expected: "My child is allergic to peanuts and sesame - please confirm."  but was: ""
+  RESTORED by content (ebf6ff6ec418afd24884d51a1e5b2789f6dfdeec14125d3f4824126c130f37f3)
+tests="3" skipped="0" failures="0" errors="0"
+
+## Task 2
+ARM T2A-no-shop-scope gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="7" skipped="0" failures="1" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [HTTP 200 {"acknowledgedAllergenNames":["Gluten"],"addressCity":null,"addressLine1":null,"addressLine2":null,"addressPostcode":null,"allergenAckAt":&quot
+  RESTORED by content (30234a98dfa36aa21db63f731132685eb902f9c40debb07b30e4a24be3c2f487)
+ARM T2B-last-write-wins gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="7" skipped="0" failures="1" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [first write wins: a second acknowledgement does not overwrite who]  expected: "d076a30c-a9c4-405f-9681-95aeadea0f6a"  but was: "0c7da920-1bef-40c0-ac80-8423b302d3aa"
+  RESTORED by content (30234a98dfa36aa21db63f731132685eb902f9c40debb07b30e4a24be3c2f487)
+ARM T2C-no-note-check gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="7" skipped="0" failures="1" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [HTTP 200 {"acknowledgedAllergenNames":["Gluten"],"addressCity":null,"addressLine1":null,"addressLine2":null,"addressPostcode":null,"allergenAckAt":&quot
+  RESTORED by content (30234a98dfa36aa21db63f731132685eb902f9c40debb07b30e4a24be3c2f487)
+ARM T2D-echo-note-on-tracking gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="7" skipped="0" failures="1" errors="0"
+    failure message="java.lang.AssertionError: [T-31.1-46: the note text never reaches the public tracking response]  Expecting actual:   "{"acknowledgedAllergenMask":1,"acknowledgedAllergens":["Gluten"],"allergyNoteAcknowledgedAt&qu
+  RESTORED by content (dbe6248ae3e041347b53903c459844f5c7ffc4d0c8b5c5801ba59d653fcd44a9)
+
+## Task 3 (erasure)
+ARM T3A-byEmail-scrub-misses-note gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="9" skipped="0" failures="1" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [Article 17: and on every orders_aud revision]  expected: 0L  but was: 2L
+  RESTORED by content (25b0232aac582da04ca11185e28742f4044cf348293d1bc1ad7322e9f5e0ed94)
+ARM T3B-customer-scrub-misses-note gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="9" skipped="0" failures="1" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [Article 17: and on every orders_aud revision]  expected: 0L  but was: 1L
+  RESTORED by content (25b0232aac582da04ca11185e28742f4044cf348293d1bc1ad7322e9f5e0ed94)
+ARM T3C-core-keeps-live-note gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="9" skipped="0" failures="2" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [Article 17: the note is erased on the order]  expected: null  but was: "My child is allergic to peanuts and sesame - please confirm."
+    failure message="org.opentest4j.AssertionFailedError: [Article 17: erased on the order]  expected: null  but was: "My child is allergic to peanuts and sesame - please confirm."
+  RESTORED by content (82e298237fd5c7d5444fbeed7c57ed745d998b7530e773ecd4217b9fcd821ed9)
+ARM T3D-erasure-drops-ack gradle rc=1
+  TEST-uk.jtoye.core.order.AllergyNoteAckIntegrationTest.xml: tests="9" skipped="0" failures="1" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [who read it and when stay: staff records, not subject data]  expected: {"allergy_note_ack_at"=2026-10-06T17:39:01.349 (java.sql.Timestamp), "allergy_note_ack_by"="124be8ad-64a5-4793-824a-24dbf9
+  RESTORED by content (82e298237fd5c7d5444fbeed7c57ed745d998b7530e773ecd4217b9fcd821ed9)
+
+## Task 3 (golden contracts, OpenAPI)
+ARM T3E-request-note-without-NON_NULL gradle rc=1
+  TEST-uk.jtoye.core.common.idempotency.IdempotencyFingerprintGoldenTest.xml: tests="15" skipped="0" failures="2" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [sha256 of IdempotencyJson's storefront.guest-order fingerprint vs the hash a Boot-3.5 pod stored]  expected: "d93f1c159fd5ca2f0ba4b7004a2a4c0f5ed87ad56cdc71abc1c000e0940a6a0d"  but was: "277796a0f618
+    failure message="org.opentest4j.AssertionFailedError: [sha256 of IdempotencyJson's storefront.guest-order.legacy fingerprint vs the hash a Boot-3.5 pod stored]  expected: "cb91a89065e7a471939ae585352cbf8f0767fb99746582db8c69d752b250b909"  but was: "7d3b5
+  RESTORED by content (e626f0fc7acc595eff3035556bb25dfbc54cca7de4105f7614265fb5069f0d34)
+ARM T3F-orderdto-note-without-NON_NULL gradle rc=1
+  TEST-uk.jtoye.core.boot4.Jackson3WireContractTest.xml: tests="12" skipped="0" failures="2" errors="0"
+    failure message="java.lang.AssertionError: [record byte identity and class-based alphabetical order]  Expecting empty but was: ["responses/OrderDto.json top-level keys [allergyNote, createdAt, customerEmail, customerName, customerPhone, deliveryFeePennies, fulfilmentT
+    failure message="java.lang.AssertionError: [fixtures whose parsed JSON (keys, values, numbers by value) differs from Boot's output]  Expecting empty but was: ["responses/OrderDto.json	false	false	/allergyNote expected=<absent> actual=null"]
+  TEST-uk.jtoye.core.common.idempotency.IdempotencyFingerprintGoldenTest.xml: tests="15" skipped="0" failures="1" errors="0"
+    failure message="org.opentest4j.AssertionFailedError: [OrderDto as IdempotencyJson stores it vs the Boot-3.5 bytes (an old pod can replay it)]  expected: "{"id":"38010000-0000-4000-8000-00000000a003","tenantId":"38010000-0000-4000-80
+  RESTORED by content (ac46f86000962e91764f267d1712c5bbd18b2b694872ded497cd39091ad5e40a)
+planted sha 8a083a12230083bb (HEAD~ copy: 8a083a12230083bb)
+ARM T3G-stale-openapi rc=1: tests="1" skipped="0" failures="1" errors="0"
+  RESTORED by content

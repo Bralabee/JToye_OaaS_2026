@@ -457,7 +457,7 @@ jobs:
   #   not a dead server. The stack-free slug page returns 200 and not 404 — `defer`,
   #   not `notfound` — which is exactly what lets the browser stub fill it.
   #
-  #   COVERS: the public layout in the DOM, and the WCAG 2.1 AA scan, on mobile and
+  #   COVERS: the public layout in the DOM, and the WCAG 2.2 AA scan, on mobile and
   #   desktop. Those are real and they are the reason this job exists.
   #   DOES NOT COVER: the server-render path of ANY route. A DOM assertion here is
   #   satisfied identically by a server that rendered the content and one that
@@ -555,7 +555,7 @@ jobs:
           NEXTAUTH_SECRET: ci-placeholder-not-a-real-secret # gitleaks:allow
 
       # Two gates, one browser start. `public-a11y.spec.ts` is the per-PR WCAG
-      # 2.1 AA scan (LGL-02): this job is the ONLY browser job triggered by both
+      # 2.2 AA scan (LGL-02, wcag22aa since 31.1-28): this job is the ONLY browser job triggered by both
       # `push` and `pull_request`, so it is the only place an accessibility
       # violation can actually block a merge — e2e-nightly.yml is schedule +
       # workflow_dispatch only and can report after the fact at best.
@@ -1518,9 +1518,15 @@ jobs:
           #   FRONTEND_PUBLIC_SUPPORT_EMAIL               (optional)
           #   FRONTEND_PUBLIC_SUPPORT_URL                 (optional)
           #   FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS  (optional)
+          #   FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE   (optional; D-14, #794)
+          # FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE is the registered office on the
+          # Companies House record for 16471464, confirmed by the owner 2026-10-07 —
+          # the same string as .env.example and the k8s ConfigMap key
+          # platform.registered-office (which core-java's email footer reads). Unset,
+          # the legal pages omit the address block; they never print a blank one.
           # If either required var is unset the frontend Dockerfile's guard FAILS
           # THE BUILD (exit 1) instead of pushing a broken image — fail-closed, and
-          # the whole point of the fix. The three optional ones degrade gracefully
+          # the whole point of the fix. The optional ones degrade gracefully
           # (frontend/lib/env-validation.ts optionalEnvVars / resolveSupportChannel).
           #
           # Passed on EVERY matrix leg on purpose. core-java/Dockerfile and
@@ -1540,6 +1546,7 @@ jobs:
             NEXT_PUBLIC_SUPPORT_EMAIL=${{ vars.FRONTEND_PUBLIC_SUPPORT_EMAIL }}
             NEXT_PUBLIC_SUPPORT_URL=${{ vars.FRONTEND_PUBLIC_SUPPORT_URL }}
             NEXT_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS=${{ vars.FRONTEND_PUBLIC_ONBOARDING_REVIEW_SLA_DAYS }}
+            NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE=${{ vars.FRONTEND_PUBLIC_COMPANY_REGISTERED_OFFICE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # frontend is amd64-only: its arm64 build runs under QEMU emulation

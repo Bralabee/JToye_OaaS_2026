@@ -4,6 +4,7 @@ import com.stripe.exception.StripeException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.core.PropertyReferenceException;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -23,11 +24,15 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import uk.jtoye.core.exception.AllergenAcknowledgementRequiredException;
+import uk.jtoye.core.exception.AllergenAcknowledgementStaleException;
+import uk.jtoye.core.exception.DsarExportUnavailableException;
 import uk.jtoye.core.exception.DsarRateLimitExceededException;
 import uk.jtoye.core.exception.IdempotencyConflictException;
 import uk.jtoye.core.exception.IdempotencyPayloadMismatchException;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
 import uk.jtoye.core.exception.InsufficientStockException;
+import uk.jtoye.core.exception.InvalidProductionDateException;
 import uk.jtoye.core.exception.InvalidReviewPhotoException;
 import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.LastGroupAdminException;
@@ -507,6 +512,21 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * #861 (D-17) — a PPDS label's production date is after today (UK time) or implies a
+     * durability date that has already passed. 422 with a typed {@code field} member so a client
+     * can point at the date input without parsing the detail; no label is produced.
+     */
+    @ExceptionHandler(InvalidProductionDateException.class)
+    public ProblemDetail handleInvalidProductionDate(InvalidProductionDateException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Invalid Production Date");
+        problem.setType(URI.create("https://jtoye.uk/errors/invalid-production-date"));
+        problem.setProperty("field", InvalidProductionDateException.FIELD);
+        return problem;
+    }
+
+    /**
      * Issue #204 (AI-2) — a concurrent same-{@code Idempotency-Key} request that
      * arrives while the first request is still in-flight (the reserved row has a
      * NULL {@code response_status}). 409 Conflict is the honest, race-safe answer
@@ -723,6 +743,63 @@ public class GlobalExceptionHandler {
         problem.setProperty("retryAfterSeconds", ex.getRetryAfterSeconds());
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
+                .body(problem);
+    }
+
+    /**
+     * Phase 31.1 #784 (D-05) — a storefront guest order carried no {@code acknowledgedAllergenMask}.
+     * 422: the body is well-formed, but the server will not place an order whose allergen
+     * information the customer has not acknowledged. Its own stable type, distinct from the stale
+     * 409 and from both idempotency problems, so a client can branch on {@code type} alone.
+     */
+    @ExceptionHandler(AllergenAcknowledgementRequiredException.class)
+    public ProblemDetail handleAllergenAcknowledgementRequired(AllergenAcknowledgementRequiredException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY,
+                "Confirm you have read the allergen information for this order.");
+        problem.setTitle("Allergen acknowledgement required");
+        problem.setType(URI.create("https://jtoye.uk/errors/allergen-acknowledgement-required"));
+        problem.setProperty("code", "ALLERGEN_ACKNOWLEDGEMENT_REQUIRED");
+        return problem;
+    }
+
+    /**
+     * Phase 31.1 #785 (D-05) — the acknowledged allergen set differs from the set the server reads
+     * for the basket at submit (a vendor edit landed after the customer read the panel). 409, with a
+     * type distinct from {@code idempotency-conflict}, carrying the CURRENT set so the checkout can
+     * re-render the panel and ask for a new tick: {@code currentAllergenMask},
+     * {@code currentAllergens} (AllergenCatalog bit order), {@code acknowledgedAllergenMask} and
+     * {@code lines} (basket order: productId, productName, allergenMask, allergens).
+     */
+    @ExceptionHandler(AllergenAcknowledgementStaleException.class)
+    public ProblemDetail handleAllergenAcknowledgementStale(AllergenAcknowledgementStaleException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Allergen information changed");
+        problem.setType(URI.create("https://jtoye.uk/errors/allergen-acknowledgement-stale"));
+        problem.setProperty("code", "ALLERGEN_ACKNOWLEDGEMENT_STALE");
+        problem.setProperty("currentAllergenMask", ex.getCurrentMask());
+        problem.setProperty("currentAllergens", ex.getCurrentAllergens());
+        problem.setProperty("acknowledgedAllergenMask", ex.getAcknowledgedMask());
+        problem.setProperty("lines", ex.getLines());
+        return problem;
+    }
+
+    /**
+     * Phase 31.1 #778 (D-01, 31.1-17) — an Article 15 export download token could not be spent.
+     * 404 with ONE body for every cause (never issued, expired, purged, already used): the detail is
+     * a constant and the exception carries no reason, so no two refusals can differ by a byte and
+     * the endpoint cannot be used to learn whether a token ever existed (T-31.1-62). Its own type,
+     * so a client can branch on it without parsing prose. no-store like the success response.
+     */
+    @ExceptionHandler(DsarExportUnavailableException.class)
+    public ResponseEntity<ProblemDetail> handleDsarExportUnavailable(DsarExportUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+                "This download link has already been used, has expired, or was not recognised. "
+                        + "You can request a new copy.");
+        problem.setTitle("Data export unavailable");
+        problem.setType(URI.create("https://jtoye.uk/errors/dsar-export-unavailable"));
+        problem.setProperty("code", "DSAR_EXPORT_UNAVAILABLE");
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .cacheControl(CacheControl.noStore())
                 .body(problem);
     }
 

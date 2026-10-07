@@ -32,6 +32,7 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
+import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
 import java.nio.charset.StandardCharsets;
@@ -440,6 +441,7 @@ class GuestCheckoutIdempotencyIntegrationTest {
         GuestOrderRequest request = guestRequest(firstProduct, 1073741824, key);
         request.setItems(List.of(request.getItems().getFirst(),
                 guestRequest(secondProduct, 1073741824, null).getItems().getFirst()));
+        GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
 
         mockMvc.perform(post("/api/v1/public/shops/" + SHOP_SLUG + "/orders")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -495,7 +497,8 @@ class GuestCheckoutIdempotencyIntegrationTest {
         request.setItems(List.of(item));
         // COLLECTION: no address, delivery fee forced to £0 — fulfilment is not what is under test.
         request.setFulfilmentType("COLLECTION");
-        return request;
+        // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
+        return GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
     }
 
     // ---- Read helpers (superuser bootstrap role; TenantContext set for correctness) ----

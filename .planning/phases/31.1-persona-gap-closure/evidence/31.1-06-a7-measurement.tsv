@@ -1,0 +1,61 @@
+# 31.1-06 A7 measurement: OrderAllergenAggregator flags per product, before (73381c65 aggregator) and after (3e8ea4ee)
+# sources: DemoDataSeeder shopOne/Two/ThreeMenu (21 items, via reflection) + live dev DB products (36 rows, read-only SELECT on jtoye-postgres)
+# columns: source, product, declared mask, flags before, flags after, flag names after
+seeder	Jollof Rice	256	0	0	
+seeder	Egusi Soup	10	0	0	
+seeder	Pounded Yam & Egusi	10	0	0	
+seeder	Fried Plantain	0	0	0	
+seeder	Moin Moin	4	0	0	
+seeder	Chapman	0	0	0	
+seeder	Zobo	0	0	0	
+seeder	Party Jollof Rice	0	0	0	
+seeder	Suya Platter	16	0	0	
+seeder	Grilled Tilapia	8	0	0	
+seeder	Puff Puff	1	0	0	
+seeder	Dodo	0	0	0	
+seeder	Palm Wine	0	0	0	
+seeder	Ginger Beer	0	0	0	
+seeder	Peri Peri Chicken	0	0	0	
+seeder	Lamb Kebab	1	0	0	
+seeder	Beef Suya Wrap	17	0	0	
+seeder	Sweet Potato Fries	0	0	0	
+seeder	Coleslaw	516	0	0	
+seeder	Mango Lassi	64	0	0	
+seeder	Sobo Punch	0	0	0	
+live	Beef Suya Wrap	17	0	0	
+live	Chapman	0	0	0	
+live	Cold Meat Pie (takeaway)	0	0	0	
+live	Coleslaw	516	0	0	
+live	Dodo	0	0	0	
+live	Egusi Soup	10	0	0	
+live	Fried Plantain	0	0	0	
+live	Ginger Beer	0	0	0	
+live	Grilled Tilapia	8	0	0	
+live	Jollof Rice	256	0	0	
+live	Lamb Kebab	1	0	0	
+live	Mango Lassi	64	0	0	
+live	Moin Moin	4	0	0	
+live	Palm Wine	0	0	0	
+live	Party Jollof Rice	0	0	0	
+live	Peri Peri Chicken	0	0	0	
+live	Pounded Yam & Egusi	10	0	0	
+live	Puff Puff	1	0	0	
+live	Sobo Punch	0	0	0	
+live	Suya Platter	16	0	0	
+live	Sweet Potato Fries	0	0	0	
+live	Tenant B Probe Product	0	0	0	
+live	Zobo	0	0	0	
+live	ade-Beef Suya (3 sticks)	16	0	0	
+live	ade-Party Jollof	0	0	1	Milk
+live	chaos-p2 Asun	0	0	0	
+live	chaos-p2 Chapman	0	0	0	
+live	chaos-p2 Chin Chin	0	0	0	
+live	chaos-p2 Coleslaw Pot	0	0	0	
+live	chaos-p2 Fried Rice	0	0	0	
+live	chaos-p2 Ofada Stew	0	0	0	
+live	chaos-p2 Pepper Soup	0	0	0	
+live	chaos-p2 Plantain Chips	0	0	0	
+live	chaos-p2 Puff-Puff Box	1093	0	0	
+live	chaos-p2 Suya Platter	0	0	0	
+live	chaos-p2 Zobo Jug	0	0	0	
+# totals: rows 57; flags before 0; flags after 1 (live 'ade-Party Jollof', Milk)

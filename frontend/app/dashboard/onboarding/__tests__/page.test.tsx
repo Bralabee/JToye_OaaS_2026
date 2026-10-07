@@ -1098,3 +1098,95 @@ describe("Onboarding — a failed load is never rendered as 'you have none'", ()
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })
 })
+
+// --- #789 / 31.1-12: the TRADER_IDENTITY gate on the vendor's page -------------------------
+// The backend refuses go-live until the tenant's legal name and address are on file and the
+// shop has an email (TraderIdentityGate). A vendor blocked by it must be told what to add and
+// where: the business-details form on THIS page, and the shop editor for the email.
+describe("Onboarding Page — business details gate (TRADER_IDENTITY)", () => {
+  const TRADER_FAILED_REASON =
+    "Add an email address to your shop — customers must be able to contact you."
+
+  function withTraderIdentity(status: GateStatus, reason: string | null): GateDto[] {
+    return [
+      ...gates("PASSED"),
+      {
+        gateType: "TRADER_IDENTITY" as GateType,
+        status,
+        mandatory: true,
+        reason,
+        checkedAt: null,
+      },
+    ]
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockToast.mockClear()
+  })
+
+  it("labels the TRADER_IDENTITY gate row 'Business details', never the fallback 'Check'", async () => {
+    routeGet(() =>
+      Promise.resolve({ data: onboarding("APPROVED", { gates: withTraderIdentity("PASSED", null) }) })
+    )
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => expect(screen.getByText("Ready to go live")).toBeInTheDocument())
+    expect(screen.getByText("Business details")).toBeInTheDocument()
+    expect(screen.queryByText("Check")).not.toBeInTheDocument()
+  })
+
+  it("a FAILED TRADER_IDENTITY gate says why and links to the business-details form AND the shop editor", async () => {
+    routeGet(() =>
+      Promise.resolve({
+        data: onboarding("APPROVED", { gates: withTraderIdentity("FAILED", TRADER_FAILED_REASON) }),
+      })
+    )
+
+    render(<OnboardingPage />)
+
+    const card = (await screen.findByText("What needs your attention")).closest("div[class*='rounded']")
+    expect(card).not.toBeNull()
+    const scope = within(card as HTMLElement)
+    // The specific reason from the gate row is shown...
+    expect(scope.getByText(TRADER_FAILED_REASON)).toBeInTheDocument()
+    // ...with the generic what-to-do, and BOTH places to fix it. The form is mounted in every
+    // onboarding state, so its link is offered in APPROVED too (unlike #company-number).
+    expect(scope.getByText(/legal name, address and an email address/)).toBeInTheDocument()
+    expect(scope.getByRole("link", { name: /edit business details/i })).toHaveAttribute(
+      "href",
+      "#business-details"
+    )
+    expect(scope.getByRole("link", { name: /add a shop email/i })).toHaveAttribute(
+      "href",
+      "/dashboard/shops"
+    )
+    // The anchor target exists on the page.
+    expect(document.getElementById("business-details")).not.toBeNull()
+  })
+
+  it("a go-live 400 re-reads the onboarding so the gate that refused it is shown", async () => {
+    // Before go-live the onboarding has no TRADER_IDENTITY row (submitted before the gate
+    // existed); the refused go-live materialises it FAILED, and the page must show it.
+    const reads = [
+      onboarding("APPROVED", { gates: gates("PASSED") }),
+      onboarding("APPROVED", { gates: withTraderIdentity("FAILED", TRADER_FAILED_REASON) }),
+    ]
+    let call = 0
+    routeGet(() => Promise.resolve({ data: reads[Math.min(call++, reads.length - 1)] }))
+    mockedApiClient.post.mockRejectedValue(guardVeto)
+
+    render(<OnboardingPage />)
+
+    await waitFor(() => expect(screen.getByText("Ready to go live")).toBeInTheDocument())
+    expect(screen.queryByText("What needs your attention")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Go live" }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Go live" }))
+
+    expect(await screen.findByText("What needs your attention")).toBeInTheDocument()
+    expect(screen.getAllByText(TRADER_FAILED_REASON).length).toBeGreaterThan(0)
+  })
+})

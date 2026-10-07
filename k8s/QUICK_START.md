@@ -152,6 +152,15 @@ kubectl create secret generic nextauth-secret \
   --from-literal=secret="$NEXTAUTH_SECRET" \
   -n jtoye-production
 
+# REQUIRED (phase 31.1, D-19): the AES-256-GCM key for the address on a
+# data-subject request. Exactly 64 hex characters; core-java refuses to start
+# without it and the manifest ref has no optional flag. One fresh key PER
+# ENVIRONMENT, never shared between staging and production.
+export DSAR_ENCRYPTION_KEY=$(openssl rand -hex 32)
+kubectl create secret generic dsar-credentials \
+  --from-literal=encryption-key="$DSAR_ENCRYPTION_KEY" \
+  -n jtoye-production
+
 # ---------------------------------------------------------------------------
 # OPTIONAL secrets (Phase 26 / DEF-6 / D-15) — create ONLY the ones whose
 # feature you are activating in this environment.

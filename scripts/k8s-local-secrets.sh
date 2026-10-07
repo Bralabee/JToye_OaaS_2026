@@ -121,6 +121,7 @@ REQUIRED_VALUES=(
   KEYCLOAK_ADMIN_PASSWORD
   KEYCLOAK_CLIENT_SECRET
   NEXTAUTH_SECRET
+  DSAR_ENCRYPTION_KEY
 )
 missing=0
 for var in "${REQUIRED_VALUES[@]}"; do
@@ -139,7 +140,16 @@ case "${DB_BACKUP_PASSWORD}" in
     exit 1
     ;;
 esac
-echo "OK: all ${#REQUIRED_VALUES[@]} required values present and DB_BACKUP_PASSWORD is not the placeholder"
+# DSAR_ENCRYPTION_KEY (phase 31.1, D-19) must be exactly 64 hex characters or core-java
+# refuses to start. It is taken from .env, NOT generated here: k8s/local shares the dev
+# database with the compose stack, and a key that differed from compose's, or changed on
+# every re-run of this script, would make the stored address of every in-flight data-subject
+# request undecryptable. The value is matched in-process and never printed.
+if ! [[ "${DSAR_ENCRYPTION_KEY}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+  echo "REFUSED [weak-value]: DSAR_ENCRYPTION_KEY in .env is not exactly 64 hexadecimal characters (value redacted). Generate one with: openssl rand -hex 32" >&2
+  exit 1
+fi
+echo "OK: all ${#REQUIRED_VALUES[@]} required values present, DB_BACKUP_PASSWORD is not the placeholder and DSAR_ENCRYPTION_KEY is 64 hex characters"
 
 # ---------------------------------------------------------------------------
 # STEP 1c — the Postgres port must mean the same thing on both sides (issue #271).
@@ -328,6 +338,11 @@ apply_secret keycloak-credentials \
 apply_secret nextauth-secret \
   "--from-literal=secret=$NEXTAUTH_SECRET"
 
+# REQUIRED by core-java (no optional flag on the manifest ref): the D-19 key from .env,
+# validated in STEP 1b, so k8s/local and compose encrypt under the same key.
+apply_secret dsar-credentials \
+  "--from-literal=encryption-key=$DSAR_ENCRYPTION_KEY"
+
 # No storage credential Secret: the local overlay authenticates to the host
 # Azurite with the key-less emulator string (STEP 4 note above).
 
@@ -363,6 +378,7 @@ for s in "${CREATED[@]}"; do
     rabbitmq-credentials)   echo "  - $s: username, password, stomp-login, stomp-passcode" ;;
     keycloak-credentials)   echo "  - $s: admin-username, admin-password, frontend-client-secret" ;;
     nextauth-secret)        echo "  - $s: secret" ;;
+    dsar-credentials)       echo "  - $s: encryption-key" ;;
     notification-credentials) echo "  - $s: unsubscribe-signing-secret" ;;
     stripe-credentials)     echo "  - $s: api-key, webhook-secret" ;;
     *)                      echo "  - $s" ;;

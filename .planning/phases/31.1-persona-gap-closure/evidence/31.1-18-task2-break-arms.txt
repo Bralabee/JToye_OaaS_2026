@@ -1,0 +1,36 @@
+# 31.1-18 Task 2 break arms (run on committed GREEN 154c051a; each restored from HEAD and verified by sha256)
+# Suite: app/shop/orders/__tests__/my-orders-allergens.test.tsx. B7 is a build arm.
+
+== clean (before)
+Tests:       5 passed, 5 total
+== clean TZ=America/New_York
+Tests:       5 passed, 5 total
+B1-per-row-detail-fetch: rc=1 Tests:       1 failed, 4 passed, 5 total restored=ok
+     ● My Orders: the allergens each order recorded at checkout (#785, D-08) › renders N orders without one extra request per order (no client-side N+1)
+B2-vendor-reads-as-not-recorded: rc=1 Tests:       1 failed, 4 passed, 5 total restored=ok
+     ● My Orders: the allergens each order recorded at checkout (#785, D-08) › vendor-placed, not-recorded and declared-none are three different sentences, none of them 'no allergens'
+B3-link-name-without-order-number: rc=1 Tests:       1 failed, 4 passed, 5 total restored=ok
+     ● My Orders: the allergens each order recorded at checkout (#785, D-08) › links each order to its tracking page for the full record, named with the order number
+B4-link-nested-in-card: rc=1 Tests:       0 total restored=ok
+     ● Test suite failed to run
+B5-date-zone-removed: rc=1 Tests:       1 failed, 4 passed, 5 total restored=ok
+     ● My Orders dates are UK dates (goods P2-CHA-18) › an order placed at 00:01 BST on 4 Oct is labelled 4 Oct
+B6-null-coalesced-to-none: rc=1 Tests:       1 failed, 4 passed, 5 total restored=ok
+     ● My Orders: the allergens each order recorded at checkout (#785, D-08) › vendor-placed, not-recorded and declared-none are three different sentences, none of them 'no allergens'
+== B7 build type-error arm
+B7-build-type-error: build rc=1 restored=ok
+   Failed to type check.
+== clean (after)
+Tests:       5 passed, 5 total
+?? ../.planning/milestone.lock
+B4b-link-nested-in-card (valid JSX: the strip moved inside the card Link): rc=1 Tests:       1 failed, 4 passed, 5 total restored=ok
+     ● My Orders: the allergens each order recorded at checkout (#785, D-08) › links each order to its tracking page for the full record, named with the order number
+
+# B4 is VOID as written: removing the card's closing tag broke JSX, so the suite failed to RUN and proved nothing.
+# B4b replaces it with valid JSX (strip moved inside the card Link); it fails on the nesting assertion:
+#   expect(link.closest('a')?.parentElement?.closest('a')).toBeNull()  Received: <a class="block group" ...>
+# B1 is the plan's fail direction: a per-row detail fetch turns the fetch-count assertion red (expected 0 calls).
+
+# Planned <automated> 1 (verbatim, repo root): rc=0, 3 suites, 13 tests.
+# Planned <automated> 2: npm run lint rc=0 (0 errors, 32 warnings, all pre-existing, none new in touched files); npm run build rc=0 ('Finished TypeScript'); B7 shows the build type-checks orders-client.tsx.
+# Full jest: 182 suites / 1998 tests passed (was 180 / 1970 at 31.1-17; +2 suites, +28 tests).

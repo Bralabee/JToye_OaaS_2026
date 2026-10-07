@@ -17,15 +17,23 @@ import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.onboarding.TraderEntityType;
+import uk.jtoye.core.onboarding.TraderIdentity;
+import uk.jtoye.core.onboarding.TraderIdentityFields;
+import uk.jtoye.core.onboarding.TraderIdentityRepository;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storage.StorageService;
 import uk.jtoye.core.storage.StorageUnavailableException;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -180,6 +188,7 @@ public class DemoDataSeeder implements ApplicationRunner {
     private final ProductRepository productRepository;
     private final CustomerRepository customerRepository;
     private final VendorOnboardingRepository onboardingRepository;
+    private final TraderIdentityRepository traderIdentityRepository;
     private final StorageService storageService;
     private final PostcodeGeocoder postcodeGeocoder;
     private final TransactionTemplate transactionTemplate;
@@ -188,6 +197,7 @@ public class DemoDataSeeder implements ApplicationRunner {
                           ProductRepository productRepository,
                           CustomerRepository customerRepository,
                           VendorOnboardingRepository onboardingRepository,
+                          TraderIdentityRepository traderIdentityRepository,
                           StorageService storageService,
                           PostcodeGeocoder postcodeGeocoder,
                           PlatformTransactionManager transactionManager) {
@@ -195,6 +205,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         this.productRepository = productRepository;
         this.customerRepository = customerRepository;
         this.onboardingRepository = onboardingRepository;
+        this.traderIdentityRepository = traderIdentityRepository;
         this.storageService = storageService;
         this.postcodeGeocoder = postcodeGeocoder;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -239,10 +250,11 @@ public class DemoDataSeeder implements ApplicationRunner {
                 log.info("DemoDataSeeder complete for tenant {}: {} shop(s) created, "
                                 + "{} product(s) created, {} customer(s) created, "
                                 + "{} non-curated product(s) quarantined, {} shop(s) unpublished, "
-                                + "{} demo image(s) seeded.",
+                                + "{} demo image(s) seeded, {} demo trader identity(ies) created, "
+                                + "{} demo shop email(s) set.",
                         DEMO_TENANT, result.shopsCreated, result.productsCreated,
                         result.customersCreated, result.productsQuarantined, result.shopsUnpublished,
-                        result.imagesSeeded);
+                        result.imagesSeeded, result.traderIdentitiesCreated, result.shopEmailsSet);
             }
         } finally {
             TenantContext.clear();
@@ -328,6 +340,11 @@ public class DemoDataSeeder implements ApplicationRunner {
                 "Flame-grilled peri peri chicken, kebabs and loaded sides.",
                 "Grill, Peri Peri, Halal", "/brand/logo-brixton-grill.png",
                 399L, 2000L));
+
+        // #789 / 31.1-12: the published demo shops are BACKFILLED with seller details, not
+        // grandfathered past the TRADER_IDENTITY gate (they are published by the bypass in
+        // upsertShop, so the gate never runs for them).
+        seedSellerDetails(result, shops);
 
         // The hidden archive shop that absorbs every non-curated / orphan product.
         Shop archive = upsertArchiveShop(result);
@@ -611,6 +628,85 @@ public class DemoDataSeeder implements ApplicationRunner {
     }
 
     /**
+     * #789 / D-12 / 31.1-12: the statutory seller details for the demo storefronts — the
+     * tenant's legal entity (one per tenant, D-11) and an email address on every published
+     * demo shop (D-20). They exist ONLY because this dev-profile seeder (and
+     * {@code scripts/seed-e2e-fixtures.sh}) writes them; no Flyway migration does, because a
+     * migration would write an invented legal name into every environment's database (the V63
+     * "fabricated record" defect).
+     *
+     * <ul>
+     *   <li>The values are plainly demonstration data: the legal name is the tenant's first
+     *       curated shop name followed by {@code "(demo)"}, the entity a SOLE_TRADER (so no
+     *       company number is invented), and the address that shop's own seeded premises
+     *       address split into lines. The e2e fixture script derives the same values.</li>
+     *   <li>Emails are {@code kitchen@<slug>.example.com}: {@code example.com} is reserved for
+     *       documentation (RFC 2606), so no real mailbox is named.</li>
+     *   <li>Create-only: a trader identity or a shop email already present is never overwritten,
+     *       so a developer's own entries through the business-details form or the shop editor
+     *       survive a restart, and a re-run changes nothing.</li>
+     * </ul>
+     * Runs inside {@link #seed}'s transaction with {@code DEMO_TENANT} pinned, so the FORCE-RLS
+     * writes carry the tenant GUC like every other write here.
+     */
+    private void seedSellerDetails(SeedResult result, List<Shop> curatedShops) {
+        Shop entityShop = curatedShops.get(0);
+        if (traderIdentityRepository.findByTenantId(DEMO_TENANT).isEmpty()) {
+            SeededAddress address = SeededAddress.split(entityShop.getAddress());
+            TraderIdentity identity = new TraderIdentity();
+            identity.setTenantId(DEMO_TENANT);
+            identity.setLegalName(entityShop.getName() + " (demo)");
+            identity.setEntityType(TraderEntityType.SOLE_TRADER);
+            identity.setAddressLine1(address.line1());
+            identity.setAddressLine2(address.line2());
+            identity.setAddressCity(address.city());
+            identity.setAddressPostcode(address.postcode());
+            identity.setUpdatedAt(OffsetDateTime.now());
+            traderIdentityRepository.save(identity);
+            result.traderIdentitiesCreated++;
+        }
+        for (Shop shop : curatedShops) {
+            if (shop.getEmail() == null || shop.getEmail().isBlank()) {
+                shop.setEmail("kitchen@" + shop.getSlug() + ".example.com");
+                shopRepository.save(shop);
+                result.shopEmailsSet++;
+            }
+        }
+    }
+
+    /**
+     * A seeded UK premises address split into the trader-identity lines:
+     * {@code "48 Rye Lane, Peckham, London SE15 5BS"} is line 1 {@code "48 Rye Lane"},
+     * line 2 {@code "Peckham"}, city {@code "London"}, postcode {@code "SE15 5BS"}. An address
+     * with no town line or no trailing postcode is refused loudly rather than given an
+     * invented one.
+     */
+    record SeededAddress(String line1, String line2, String city, String postcode) {
+
+        private static final Pattern TRAILING_POSTCODE =
+                Pattern.compile("([A-Za-z]{1,2}[0-9][A-Za-z0-9]? ?[0-9][A-Za-z]{2})$");
+
+        static SeededAddress split(String address) {
+            String[] parts = address == null ? new String[0] : address.split(",");
+            if (parts.length < 2) {
+                throw new IllegalStateException("Seeded address has no separate town line: " + address);
+            }
+            String last = parts[parts.length - 1].strip();
+            Matcher postcode = TRAILING_POSTCODE.matcher(last);
+            if (!postcode.find()) {
+                throw new IllegalStateException("Seeded address has no trailing UK postcode: " + address);
+            }
+            String city = last.substring(0, postcode.start()).strip();
+            String line2 = String.join(",", Arrays.copyOfRange(parts, 1, parts.length - 1)).strip();
+            return new SeededAddress(
+                    parts[0].strip(),
+                    line2.isEmpty() ? null : line2,
+                    city,
+                    TraderIdentityFields.normalisePostcode(postcode.group(1)));
+        }
+    }
+
+    /**
      * Geocode a seeded shop from the address already set on it, via the SAME
      * {@link PostcodeGeocoder} the API write path uses (#460 link 3b).
      *
@@ -768,6 +864,8 @@ public class DemoDataSeeder implements ApplicationRunner {
         int customersCreated;
         int productsQuarantined;
         int shopsUnpublished;
+        int traderIdentitiesCreated;
+        int shopEmailsSet;
         int imagesSeeded;
     }
 }

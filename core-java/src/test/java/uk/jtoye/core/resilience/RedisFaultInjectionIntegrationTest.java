@@ -72,7 +72,10 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 // opts out of the boot-time storage probe explicitly. Test-context opt-out only; the probe stays ON
 // in every runtime (D-08) and is proven by StorageStartupValidatorIntegrationTest. The demo seeder
 // still meets an unreachable store and skips its images, as before.
-@TestPropertySource(properties = "storage.blob.validate-on-startup=false")
+// 31.1-07 (D-19): a dev-profile context never reads the test profile, so it carries its own per-run
+// random DSAR key (never a literal); without one DsarCipher refuses to start the context.
+@TestPropertySource(properties = {"storage.blob.validate-on-startup=false",
+        "jtoye.gdpr.dsar.encryption-key=${random.value}${random.value}"})
 @Tag("testcontainers")
 // #283: drives a gated service read to exercise cache degradation under a Redis outage; the
 // subject is the fallback-to-source-of-truth behaviour, not the gate.

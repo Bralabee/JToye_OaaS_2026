@@ -55,6 +55,10 @@
  *
  * The declared surfaces, plus the five `/legal/*` routes this phase authored —
  * a page this phase created should not ship outside the gate it also creates.
+ * Phase 31.1 plan 28 (#878) widened the published scope to the basket, the cash
+ * order confirmation, the per-shop order page and /track, and added each here
+ * with its own non-vacuity control; `SCOPE_COVERAGE` ties every surface the
+ * statement names to the scan that covers it, and a test fails if they drift.
  * The AUTHENTICATED VENDOR DASHBOARD IS DELIBERATELY OUT, and the published
  * conformance statement names it as an exception rather than staying silent.
  * Do not add it here without moving that statement too.
@@ -63,7 +67,7 @@
  * `helpers/public-surface.ts`. The moment this needs a backend it stops running
  * in CI and the blind spot comes back.
  */
-import { test, expect, type Page } from "@playwright/test"
+import { test, expect, type Page, type BrowserContext } from "@playwright/test"
 import AxeBuilder from "@axe-core/playwright"
 import {
   stubPublicApi,
@@ -73,13 +77,56 @@ import {
 // The ONE definition of the basket namespace, imported rather than retyped —
 // two copies of this string is how a seed silently stops seeding.
 import { CART_KEY_PREFIX } from "../lib/cart-identity"
+// The published statement itself: the standard it claims and the surfaces it
+// covers. Read here so the gate and the claim cannot describe different things.
+import { ACCESSIBILITY_STATEMENT as STATEMENT } from "../lib/accessibility-statement"
 
 /**
- * WCAG 2.1 level AA, which is exactly what the published statement claims.
- * Tags and claim must move together: scanning a narrower set than we publish
- * would make the gate green while the claim stayed wrong.
+ * WCAG 2.2 level AA, which is exactly what the published statement claims
+ * (phase 31.1 plan 28, #878). Tags and claim must move together: scanning a
+ * narrower set than we publish would make the gate green while the claim stayed
+ * wrong. `wcag22aa` is what makes this a 2.2 scan — in axe-core 4.13 it carries
+ * `target-size` (WCAG 2.5.8, 24x24 CSS px), the rule the 2.1 set never ran. The
+ * test "the tag set is the claim's standard" below fails if the statement's
+ * standard moves without this list moving with it.
  */
-const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]
+const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
+
+/** The tag set each standard the statement may name REQUIRES. */
+const TAGS_FOR_STANDARD: Record<string, readonly string[]> = {
+  "WCAG 2.1": ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+  "WCAG 2.2": ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"],
+}
+
+/** "WCAG 2.2 AA" — every title and failure message below names the claim, not a copy of it. */
+const CLAIM = `${STATEMENT.standard} ${STATEMENT.level}`
+
+/**
+ * Which test in this file scans each surface the statement names, keyed by the
+ * statement's own label. "the gate covers every surface the statement claims"
+ * asserts this map's keys equal the statement's `inScopeRoutes` labels exactly,
+ * so a surface added to the statement without a scan here — or a scan dropped
+ * while the claim stays — fails a PR instead of widening the claim untested.
+ */
+const SCOPE_COVERAGE: Record<string, string> = {
+  "The J'Toye home page": "/ (SIMPLE_ROUTES)",
+  "The list of vendors": "/shop",
+  "An individual vendor's shop page": "a storefront",
+  "The dish detail panel that opens on a vendor's shop page": "the dish detail modal",
+  "Your basket at a vendor": "cart (with a seeded basket)",
+  Checkout: "checkout (with a seeded basket)",
+  "The order confirmation shown on the checkout page when you pay on collection or delivery":
+    "the cash order confirmation",
+  "The page for one order, where you follow its progress": "the per-shop order page",
+  "Order tracking by order number and email address": "/track (lookup form) and /track (a looked-up order)",
+  "Customer sign-in": "/shop/signin (SIMPLE_ROUTES)",
+  "Vendor sign-in": "/auth/signin (SIMPLE_ROUTES)",
+  "Legal and company information": "/legal (SIMPLE_ROUTES)",
+  "This statement": "/legal/accessibility (SIMPLE_ROUTES)",
+}
+
+/** The skip link every public surface opens with (WCAG 2.4.1) — see scanSurface. */
+const SKIP_LINK_TEXT = "Skip to main content"
 
 /**
  * React's streaming staging buffer (`<div id="S:n" hidden>`) briefly holds a
@@ -132,6 +179,27 @@ async function scanSurface(
     `${label}: no <h1> — the page did not render its own content`
   ).toBeGreaterThanOrEqual(1)
 
+  // ── THE SKIP LINK (WCAG 2.4.1), WHICH AXE CANNOT SEE ──
+  // axe's `bypass` rule is satisfied by landmarks alone, so a page that lost
+  // its skip link would still scan clean. The statement used to list "no skip
+  // link" as an exception; plan 31.1-28 removed it on measurement and promised
+  // this assertion instead, so the defect cannot return without a red PR.
+  // Asserted on the DOM, not by pressing Tab: a Tab inside an open modal moves
+  // focus within the dialog, not to the top of the page.
+  const skip = await page.evaluate(() => {
+    const first = document.querySelector("a[href]")
+    const target = document.getElementById("main")
+    return {
+      text: first?.textContent?.trim() ?? null,
+      href: first?.getAttribute("href") ?? null,
+      targetTag: target?.tagName ?? null,
+    }
+  })
+  expect(
+    skip,
+    `${label}: the first link on the page must be the skip link to the <main> landmark`
+  ).toEqual({ text: SKIP_LINK_TEXT, href: "#main", targetTag: "MAIN" })
+
   // ── PER-SURFACE CONTROL ──
   await control(page)
 
@@ -148,7 +216,7 @@ async function scanSurface(
 
   expect(
     summarise(results.violations),
-    `${label}: WCAG 2.1 AA violations (${results.violations.length} rule(s))`
+    `${label}: ${CLAIM} violations (${results.violations.length} rule(s))`
   ).toBe("")
 }
 
@@ -176,19 +244,19 @@ const SIMPLE_ROUTES = [
   "/legal/accessibility",
 ] as const
 
-test.describe("public surfaces — WCAG 2.1 AA", () => {
+test.describe(`public surfaces — ${CLAIM}`, () => {
   test.beforeEach(async ({ context }) => {
     await stubPublicApi(context)
   })
 
   for (const route of SIMPLE_ROUTES) {
-    test(`${route} has no WCAG 2.1 AA violations`, async ({ page }) => {
+    test(`${route} has no ${CLAIM} violations`, async ({ page }) => {
       await open(page, route)
       await scanSurface(page, route, NO_EXTRA_CONTROL)
     })
   }
 
-  test("/shop has no WCAG 2.1 AA violations", async ({ page }) => {
+  test(`/shop has no ${CLAIM} violations`, async ({ page }) => {
     await open(page, "/shop")
     await scanSurface(page, "/shop", async (p) => {
       // The listing's whole content IS the cards. Zero cards is the "shop
@@ -202,7 +270,7 @@ test.describe("public surfaces — WCAG 2.1 AA", () => {
     })
   })
 
-  test("a storefront has no WCAG 2.1 AA violations", async ({ page }) => {
+  test(`a storefront has no ${CLAIM} violations`, async ({ page }) => {
     // Resolved at runtime, never a hardcoded slug: the fixture slug 404s the
     // moment a real backend is reachable, and a "Shop not found" page satisfies
     // every invariant a real storefront does.
@@ -223,7 +291,7 @@ test.describe("public surfaces — WCAG 2.1 AA", () => {
    * artefact: the dialog is not in the DOM, axe finds nothing wrong with it,
    * and the result reads as "the dish panel is accessible".
    */
-  test("the dish detail modal has no WCAG 2.1 AA violations", async ({ page }) => {
+  test(`the dish detail modal has no ${CLAIM} violations`, async ({ page }) => {
     const path = await resolveStorefrontPath(page)
     await openStorefront(page, path)
 
@@ -260,7 +328,7 @@ test.describe("public surfaces — WCAG 2.1 AA", () => {
    * page containing none of the surface being claimed, and in particular none
    * of the seven autofill tokens and error-announcement wiring 31-14 shipped.
    */
-  test("checkout has no WCAG 2.1 AA violations (with a seeded basket)", async ({
+  test(`checkout has no ${CLAIM} violations (with a seeded basket)`, async ({
     page,
   }) => {
     const path = await resolveStorefrontPath(page)
@@ -331,7 +399,7 @@ test.describe("public surfaces — WCAG 2.1 AA", () => {
    * category-label contrast on exactly this page; this test is what proves the
    * fix on the real seeded route rather than merely on the source.
    */
-  test("cart has no WCAG 2.1 AA violations (with a seeded basket)", async ({
+  test(`cart has no ${CLAIM} violations (with a seeded basket)`, async ({
     page,
   }) => {
     const path = await resolveStorefrontPath(page)
@@ -399,7 +467,233 @@ test.describe("public surfaces — WCAG 2.1 AA", () => {
       console.log(`  [control] cart seeded line items on page = ${lineCount}`)
     })
   })
+
+  /**
+   * THE CASH ORDER CONFIRMATION — A STATE OF THE CHECKOUT URL, REACHED BY PLACING AN ORDER.
+   *
+   * It is not a route: `/shop/[slug]/checkout` renders "Order confirmed!" only
+   * after the order POST answers without a `clientSecret` (pay on collection or
+   * delivery). Navigating to the URL shows the form, and a scan there would
+   * report the FORM and call it the confirmation — the modal artefact again. So
+   * the order is actually placed (seeded basket, Collection, the three details,
+   * the allergen tick, Place order) against a stubbed POST, and the scan runs
+   * only once the confirmation's own heading and order number are on screen.
+   */
+  test(`the cash order confirmation has no ${CLAIM} violations`, async ({
+    page,
+    context,
+  }) => {
+    const path = await resolveStorefrontPath(page)
+    const slug = slugOf(path)
+
+    // Registered AFTER the shared stub, so it answers first (Playwright runs
+    // matching routes newest-first); anything else falls back to the stub.
+    await context.route(`**/public/shops/${slug}/orders`, async (route) => {
+      if (route.request().method() !== "POST") return route.fallback()
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(cashConfirmation()),
+      })
+    })
+
+    await seedBasket(page, slug)
+    await open(page, `${path}/checkout`)
+    await expect(page.getByRole("heading", { level: 1, name: "Checkout" })).toBeVisible()
+
+    await page.getByRole("button", { name: /collection/i }).click()
+    await page.fill("input#name", "Accessibility Audit")
+    await page.fill("input#email", AUDIT_EMAIL)
+    await page.fill("input#phone", "07700 900878")
+    const ack = page.getByRole("checkbox", {
+      name: /I have read the allergen information for this order\./i,
+    })
+    await ack.click()
+    await expect(ack).toBeChecked()
+    await page.locator('button[type="submit"]:has-text("Place order")').click()
+
+    await scanSurface(page, `${path}/checkout (cash order confirmation)`, async (p) => {
+      // THE CONTROL THIS TEST EXISTS FOR: the confirmation, not the form.
+      await expect(
+        p.getByRole("heading", { level: 1, name: "Order confirmed!" }),
+        "the order confirmation did not render — a scan now would measure the " +
+          "checkout form and report it as the confirmation"
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(p.getByText(`Order ${AUDIT_ORDER}`)).toBeVisible()
+      expect(
+        await p.locator("form input#name").count(),
+        "the checkout form is still on screen — this is not the confirmation state"
+      ).toBe(0)
+      console.log(`  [control] confirmation for ${AUDIT_ORDER} rendered, form gone`)
+    })
+  })
+
+  /**
+   * THE PER-SHOP ORDER PAGE — where a card payment returns to, and where the
+   * confirmation's "Track this order" leads. With no email it renders an email
+   * PROMPT instead of the order; the email the checkout stores is therefore
+   * seeded first, and the scan waits for the order's own heading and steps.
+   */
+  test(`the per-shop order page has no ${CLAIM} violations`, async ({ page, context }) => {
+    const path = await resolveStorefrontPath(page)
+    const slug = slugOf(path)
+    await stubOrderLookup(context)
+
+    await page.addInitScript(
+      ([key, email]) => window.localStorage.setItem(key, email),
+      [`jtoye-checkout-email-${slug}`, AUDIT_EMAIL]
+    )
+    await open(page, `${path}/orders/${AUDIT_ORDER}`)
+
+    await scanSurface(page, `${path}/orders/${AUDIT_ORDER}`, async (p) => {
+      await expect(
+        p.getByRole("heading", { level: 1, name: "Order in Progress" }),
+        "the order did not load — the page is on its email prompt, loading " +
+          "spinner or error state, none of which is the order page"
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(p.getByText(AUDIT_ORDER, { exact: true })).toBeVisible()
+      await expect(p.getByText("Preparing", { exact: true })).toBeVisible()
+      console.log(`  [control] order page for ${AUDIT_ORDER} rendered its progress steps`)
+    })
+  })
+
+  /** /track as a guest first sees it: the lookup form. */
+  test(`/track (lookup form) has no ${CLAIM} violations`, async ({ page }) => {
+    await open(page, "/track")
+    await scanSurface(page, "/track (lookup form)", async (p) => {
+      await expect(p.getByRole("heading", { level: 1, name: "Track your order" })).toBeVisible()
+      await expect(p.getByLabel("Order number")).toBeVisible()
+      await expect(p.getByLabel("Email")).toBeVisible()
+    })
+  })
+
+  /** /track after a lookup: the order it found, scanned only once it is on screen. */
+  test(`/track (a looked-up order) has no ${CLAIM} violations`, async ({ page, context }) => {
+    await stubOrderLookup(context)
+    await open(page, "/track")
+    await page.getByLabel("Order number").fill(AUDIT_ORDER)
+    await page.getByLabel("Email").fill(AUDIT_EMAIL)
+    await page.getByRole("button", { name: "Track order" }).click()
+
+    await scanSurface(page, "/track (a looked-up order)", async (p) => {
+      await expect(
+        p.getByText(AUDIT_SHOP_NAME, { exact: true }).first(),
+        "the lookup did not return an order — a scan now would measure the bare form again"
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(p.getByText("Preparing", { exact: true }).first()).toBeVisible()
+      await expect(p.getByText("Order not found")).toHaveCount(0)
+      console.log(`  [control] /track rendered the looked-up order ${AUDIT_ORDER}`)
+    })
+  })
+
+  /**
+   * THE GATE COVERS WHAT THE STATEMENT CLAIMS — BOTH THE STANDARD AND THE SURFACES.
+   * Pure assertions over the imported statement; no page is opened.
+   */
+  test("the tag set is the claim's standard, and every claimed surface has a scan here", () => {
+    const required = TAGS_FOR_STANDARD[STATEMENT.standard]
+    expect(
+      required,
+      `the statement claims "${STATEMENT.standard}", which this gate has no tag set for — ` +
+        "add the standard's axe tags before publishing the claim"
+    ).toBeDefined()
+    expect(STATEMENT.level).toBe("AA")
+    expect([...WCAG_TAGS].sort()).toEqual([...(required ?? [])].sort())
+
+    const claimed = STATEMENT.inScopeRoutes.map((r) => r.label).sort()
+    expect(claimed.length).toBeGreaterThan(0) // control: the statement loaded
+    expect(
+      Object.keys(SCOPE_COVERAGE).sort(),
+      "the statement's in-scope surfaces and this gate's scans have drifted apart"
+    ).toEqual(claimed)
+  })
 })
+
+/** The seeded fixture order the confirmation, order-page and /track scans use. */
+const AUDIT_ORDER = "ORD-E2E31128-A11Y-0001"
+const AUDIT_EMAIL = "a11y-audit@example.test"
+const AUDIT_SHOP_NAME = "Test Kitchen"
+
+function slugOf(path: string): string {
+  const slug = path.split("/").filter(Boolean).pop() as string
+  expect(slug, "could not derive a slug from the resolved storefront path").toBeTruthy()
+  return slug
+}
+
+/** The same seed the checkout and cart scans use: one line, quantity 2. */
+async function seedBasket(page: Page, slug: string): Promise<void> {
+  await page.addInitScript(
+    ([key, shopSlug]) => {
+      window.localStorage.setItem(
+        key,
+        JSON.stringify({
+          shopSlug,
+          owner: null,
+          items: [
+            {
+              productId: "p-1",
+              title: "Portrait Dish",
+              pricePennies: 950,
+              quantity: 2,
+              imageUrl: null,
+              category: "Mains",
+            },
+          ],
+        })
+      )
+    },
+    [`${CART_KEY_PREFIX}${slug}`, slug]
+  )
+}
+
+/** A cash (pay on collection) confirmation: no clientSecret, so no Stripe step. */
+function cashConfirmation() {
+  return {
+    orderNumber: AUDIT_ORDER,
+    status: "PENDING",
+    subtotalPennies: 1900,
+    deliveryFeePennies: 0,
+    vatRate: "STANDARD",
+    vatAmountPennies: 317,
+    totalAmountPennies: 1900,
+    shopName: AUDIT_SHOP_NAME,
+    itemCount: 1,
+    clientSecret: null,
+    allergenWarnings: [],
+    acknowledgedAllergenMask: 0,
+    acknowledgedAllergens: [],
+    recordedAllergens: [],
+    recordedAllergenFlags: [],
+  }
+}
+
+/** GET /public/orders/{number}?email= — the tracking response both order surfaces read. */
+async function stubOrderLookup(context: BrowserContext): Promise<void> {
+  const now = new Date().toISOString()
+  await context.route(`**/public/orders/${AUDIT_ORDER}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        orderNumber: AUDIT_ORDER,
+        status: "PREPARING",
+        shopName: AUDIT_SHOP_NAME,
+        totalAmountPennies: 1900,
+        itemCount: 1,
+        unitCount: 2,
+        createdAt: now,
+        updatedAt: now,
+        acknowledgedAllergenMask: 0,
+        acknowledgedAllergens: [],
+        recordedAllergens: [],
+        recordedAllergenFlags: [],
+        placedVia: "STOREFRONT",
+        allergyNoteProvided: false,
+        allergyNoteAcknowledgedAt: null,
+      }),
+    })
+  )
+}
 
 /**
  * THE INSTRUMENT — PROOF THE SCANNER CAN FAIL, ON EVERY RUN.
@@ -448,5 +742,41 @@ test.describe("axe instrument", () => {
     expect(ids, "the instrument fixture's missing alt text was not detected").toContain(
       "image-alt"
     )
+  })
+
+  /**
+   * THE 2.2 HALF OF THE INSTRUMENT. Adding `wcag22aa` to WCAG_TAGS is only worth
+   * something if axe actually RUNS `target-size` under it; a misspelt tag is
+   * silently ignored and every surface above would still pass. Two labelled
+   * 16x16 buttons side by side fail WCAG 2.5.8 (24x24, no spacing exemption),
+   * and nothing else on the fixture fails anything.
+   */
+  test("INSTRUMENT: the 2.2 tag set reports target-size on undersized adjacent buttons", async ({
+    page,
+  }) => {
+    await page.setContent(`
+      <!doctype html>
+      <html lang="en">
+        <head><title>instrument</title></head>
+        <body>
+          <main>
+            <h1>Target size instrument</h1>
+            <div style="display:flex;gap:0">
+              <button aria-label="Decrease" style="width:16px;height:16px;padding:0;border:0;margin:0;background:#3A0B0D"></button>
+              <button aria-label="Increase" style="width:16px;height:16px;padding:0;border:0;margin:0;background:#3A0B0D"></button>
+            </div>
+          </main>
+        </body>
+      </html>
+    `)
+
+    const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()
+    const ids = results.violations.map((v) => v.id).sort()
+    console.log(`  [instrument] 2.2 violations: ${ids.join(", ") || "(none)"}`)
+    expect(
+      ids,
+      "axe did not report target-size on 16x16 adjacent buttons — wcag22aa is not " +
+        "reaching the scanner, so this gate is still a 2.1 gate whatever the statement says"
+    ).toContain("target-size")
   })
 })

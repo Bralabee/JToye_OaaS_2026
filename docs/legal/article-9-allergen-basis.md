@@ -5,6 +5,8 @@ decision D-01) — see the final section, *Extension, 2026-08-16*. **Nothing in 
 determination has been withdrawn, reworded or replaced**; the extension is additive and records a
 further decision that rests on Finding 1 rather than reopening it. One code change shipped with the
 original; the consent record remains open, and the extension explains why this phase does not close it.
+Extended again **2026-10-06** (Phase 31.1, decision D-15, #812) for the optional allergy or dietary
+note at checkout — see *2026-10 extension*. Also additive; it rests on Finding 1 and changes nothing above.
 **Refs:** ADR-0004 (knowledge-graph strategy), [`derivation-clause.md`](derivation-clause.md) (Art. 9 excluded from derivation), [`article-26-arrangement.md`](article-26-arrangement.md) (the joint-controller allocation, which leaves this determination intact)
 
 > **Not legal advice.** Written by an engineer to state precisely what the platform does with this
@@ -257,3 +259,72 @@ retrospectively supply the vendor with the consent evidence the original determi
 missing — it only means this phase adds no new processing that would need one.
 
 **Adviser confirmation (recommended next step 1) is still open** and covers this extension too.
+
+---
+
+## 2026-10 extension — the allergy or dietary note (31.1, D-15)
+
+**Recorded:** 2026-10-06 · **Source:** Phase 31.1 (Persona Gap Closure), decision D-15, issue #812 ·
+**Status:** research position, **pending adviser review** (Phase 31.1 research, Open Question 6). Nothing
+above is withdrawn or reworded.
+
+> Same caveat as everything above: **not legal advice**, written by an engineer to state precisely what
+> the platform does, so that an adviser can correct a concrete position.
+
+### What changed, and why it is not Finding 2 again
+
+Phase 31.1 adds an **optional free-text "allergy or dietary note"** to the storefront checkout, separate
+from the delivery notes. The persona run had put "My child is allergic to peanuts and sesame - please
+confirm" in the delivery notes; the order was completed and nothing recorded that anyone in the shop had
+read it. A customer will tell a shop this whether or not a field exists. The only question is whether it
+arrives somewhere the shop has to look at and answer.
+
+A note like that is very likely **data concerning health**. Finding 2 removed an earlier guest-checkout
+allergen field, so the difference is stated rather than assumed:
+
+| Finding 2's field (removed 2026-07-30) | This note (added 2026-10-06) |
+|---|---|
+| A structured allergen mask the platform used to build warning strings | Free text the platform does not parse, match or derive from |
+| No consumer: no client ever sent it | Solicited for one stated purpose, and shown to the shop |
+| No recipient: never persisted, nobody read it | Persisted on the order, read and acknowledged by the shop |
+| No notice | Labelled at the point of entry as going to the named shop to prepare this order |
+
+### The position
+
+1. **The note is optional**, and the checkout labels it as going **to the named shop, to prepare this
+   order**. That label is the inline notice. The checkout field itself is plan 31.1-15.
+2. **The vendor is the controller of its content**, consistent with Finding 1. The customer gives it to
+   the shop for the shop's own purpose of preparing their food safely, and J'Toye carries it as the
+   processor. The Article 9(2) condition is therefore the vendor's to hold. Realistically it is explicit
+   consent, given by the customer volunteering the note under the inline notice. **Whether that notice is
+   enough is exactly the question for the adviser (Open Question 6).**
+3. **The platform does not read it for any purpose of its own.** It is not derived from, matched on,
+   used to build a customer profile, analysed, used for marketing, or carried onto another order. It is
+   never compared with the products' allergen data, with `Customer.allergenRestrictions` or with anything
+   else. Clause M.5 of [`derivation-clause.md`](derivation-clause.md) excludes it from derivation along
+   with all other Article 9 data.
+4. **It is minimised where it is shown.** It reaches the shop's order detail, order list and kitchen
+   board. The customer's public tracking response is reachable with an order number and an email address,
+   so it carries only that a note was sent (`allergyNoteProvided`) and when the shop read it
+   (`allergyNoteAcknowledgedAt`), **never the text**. The server never logs it.
+5. **The acknowledgement records a person, not the subject.** The shop confirms it has read the note,
+   and the platform records who (`orders.allergy_note_ack_by`, the signed-in user) and when
+   (`orders.allergy_note_ack_at`). Those two are staff records, not data about the customer.
+6. **It is exported and erased with the order.** The Article 20 export
+   (`GdprController.OrderExport.allergyNote`) includes it, and the DSAR access export (plan 31.1-16) is
+   specified to. An Article 17 erasure, by either entry point, sets `orders.allergy_note` to NULL on the
+   order and in every `orders_aud` revision (`OrderRepository.scrubOrdersAudit` and
+   `scrubOrdersAuditByEmail`). The acknowledgement's who and when are kept: they evidence the shop having
+   read a request, and they are not the subject's data.
+7. **The acknowledged allergen MASK is not health data.** The separate checkout acknowledgement (V69,
+   31.1-03) records which of the 14 regulated allergens the basket's products declared. That is product
+   data, as the 2026-08-16 extension already records, and nothing about the customer is inferred from it.
+
+### What this does not decide
+
+- **Adviser review is open** for this extension, as for everything above (recommended next step 1).
+- **The consent record (recommended next step 3) is still open.** This extension must not be read as
+  closing it.
+- **Three working assumptions, recorded for owner review:** the note cannot be edited after the order is
+  placed, an acknowledgement cannot be withdrawn, and the shop cannot reply in words through the
+  platform. None of them changes the position above.

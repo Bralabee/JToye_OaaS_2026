@@ -11,11 +11,24 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.gdpr.DsarAccessExportService.IssuedToken;
+import uk.jtoye.core.gdpr.DsarAccessExportService.TenantSection;
 import uk.jtoye.core.security.access.SystemPrincipal;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.AccountDeletionResult;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.PlatformAccountLookup;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.PlatformAccountStatus;
 
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * Executes lodged data-subject requests across every tenant, in the background, so that
@@ -71,15 +84,40 @@ import java.util.UUID;
  *       unverified erasure request is a destructive action anybody on the internet could aim at
  *       anybody else (T-31-05-02), so control of the address is proven first —
  *       {@link DsarVerificationService} owns that transition.</li>
- *   <li><b>{@code ERASURE} only, in this plan.</b> See {@link #outstandingAccessRequests()} for the
- *       reason, which is this plan's own threat register rather than an oversight.</li>
+ *   <li><b>Both request types</b> (31.1-16). {@code ERASURE} anonymises; {@code ACCESS} (Article 15,
+ *       D-01) collects the subject's data in every tenant through the SAME per-tenant wrapper, stores
+ *       one encrypted document behind a single-use token and emails the verified address a link.
+ *       Until 31.1-16 ACCESS was only counted and logged, because an Article 15 answer must name the
+ *       vendors (Article 15(1)(c)) and that needed a delivery channel decided deliberately; D-01
+ *       decided it.</li>
  * </ul>
  *
- * <h2>The outcome tells the subject nothing about which vendors held their data</h2>
+ * <h2>An erasure is complete only when the sign-in account is gone (31.1-11, D-03)</h2>
+ *
+ * After every tenant's erasure has committed, the worker decrypts the verified address (D-19) and
+ * deletes the subject's customer-realm Keycloak account through
+ * {@link CustomerAccountDeletionService}. The request becomes {@code COMPLETED} only when that is
+ * confirmed ({@code DELETED}) or no account exists ({@code NONE_FOUND}); then, and only after that
+ * commit, {@link DsarOutcomeMailer} tells the subject. Anything else — an outage, an error, the admin
+ * seam switched off — records {@code OUTSTANDING} or {@code NOT_CONFIGURED} and releases the request;
+ * the erasure is never rolled back, and the retry re-runs a harmless erasure before trying again.
+ *
+ * <h2>An access request is complete only when the subject has the link (31.1-16, D-01)</h2>
+ *
+ * Every tenant is collected first (one failure releases the request: a partial Article 15 answer is
+ * not an answer); then the address is decrypted, the customer-realm account looked up, the document
+ * built ONCE, stored encrypted, and the link emailed. {@code COMPLETED} — with the address ciphertext
+ * dropped in the same statement — is written only after the export row has committed AND the mailer
+ * reports the message accepted. A failed send releases the request; the retry builds a fresh export
+ * and a fresh token, replacing the old row, so a link that may never have arrived is never left live.
+ *
+ * <h2>The erasure outcome tells the subject nothing about which vendors held their data</h2>
  *
  * The row records a COUNT of tenants erased, never their identities (T-31-09-05). "Which of your
  * vendors holds this person's address" is exactly what the tenant wall exists to withhold, and
- * 31-05's opaque 202 would be worthless if the completion path handed the answer back.
+ * 31-05's opaque 202 would be worthless if the completion path handed the answer back. The ACCESS
+ * export is the one place vendors ARE named, because Article 15(1)(c) requires it — and it is
+ * delivered only to the verified address, behind a single-use, expiring link.
  */
 @Component
 public class DsarFanoutWorker {
@@ -96,6 +134,12 @@ public class DsarFanoutWorker {
      * <p>{@code process_attempts} is incremented here, on the claim — mirroring
      * {@code media_asset.process_attempts} (V60), which exists so a sweep can tell "never attempted"
      * from "attempted and stalled" instead of guessing from age.
+     *
+     * <p>An {@code IN_PROGRESS} row whose claim is older than {@code claim-lease-ms} is claimable
+     * again. The claim commits on its own, so a sweep that dies before completing or releasing (a pod
+     * restart, a DB error in {@code complete}/{@code release}, an exception escaping the loop) leaves
+     * the row claimed. Without the lease nothing ever returned it: the subject's request was neither
+     * fulfilled nor failed, and the V70 rule never cleared the address it holds (#901 review).
      */
     private static final String CLAIM_SQL = """
             UPDATE dsar_request
@@ -105,16 +149,22 @@ public class DsarFanoutWorker {
              WHERE id IN (
                    SELECT id
                      FROM dsar_request
-                    WHERE status = 'VERIFIED'
+                    WHERE (status = 'VERIFIED'
+                           OR (status = 'IN_PROGRESS'
+                               AND claimed_at < NOW() - (? * INTERVAL '1 millisecond')))
                       AND completed_at IS NULL
-                      AND request_type = 'ERASURE'
                     ORDER BY received_at
                     FOR UPDATE SKIP LOCKED
                     LIMIT ?)
-            RETURNING id, subject_email_sha256, process_attempts
+            RETURNING id, request_type, subject_email_sha256, process_attempts, subject_email_ciphertext,
+                      received_at
             """;
 
     private final GdprService gdprService;
+    private final DsarCipher dsarCipher;
+    private final CustomerAccountDeletionService accountDeletionService;
+    private final DsarOutcomeMailer outcomeMailer;
+    private final DsarAccessExportService accessExportService;
     private final JdbcTemplate jdbcTemplate;
     private final EntityManager entityManager;
     private final TransactionTemplate transactionTemplate;
@@ -130,11 +180,27 @@ public class DsarFanoutWorker {
     @Value("${jtoye.gdpr.dsar.max-process-attempts:5}")
     private int maxProcessAttempts;
 
+    /**
+     * How long a claim protects its row from other sweeps. It must outlast the longest live sweep,
+     * because reclaiming a request a live sweep still holds runs it twice: harmless for an erasure,
+     * and for an access request the second export replaces the first, killing a link already sent.
+     */
+    @Value("${jtoye.gdpr.dsar.claim-lease-ms:3600000}")
+    private long claimLeaseMs;
+
     public DsarFanoutWorker(GdprService gdprService,
+                            DsarCipher dsarCipher,
+                            CustomerAccountDeletionService accountDeletionService,
+                            DsarOutcomeMailer outcomeMailer,
+                            DsarAccessExportService accessExportService,
                             JdbcTemplate jdbcTemplate,
                             EntityManager entityManager,
                             PlatformTransactionManager transactionManager) {
         this.gdprService = gdprService;
+        this.dsarCipher = dsarCipher;
+        this.accountDeletionService = accountDeletionService;
+        this.outcomeMailer = outcomeMailer;
+        this.accessExportService = accessExportService;
         this.jdbcTemplate = jdbcTemplate;
         this.entityManager = entityManager;
         // Built here rather than annotating a method: see hazard 2 in the class javadoc.
@@ -151,26 +217,179 @@ public class DsarFanoutWorker {
     @Scheduled(fixedDelayString = "${jtoye.gdpr.dsar.fanout-interval-ms:300000}")
     public void executeLodgedRequests() {
         List<Map<String, Object>> claimed = claim();
-        long outstandingAccess = outstandingAccessRequests();
-        if (outstandingAccess > 0) {
-            log.warn("event=dsar_access_requests_outstanding count={} — ACCESS delivery is not "
-                    + "implemented in plan 31-09; these rows are counted here rather than left "
-                    + "invisible", outstandingAccess);
-        }
         if (claimed.isEmpty()) {
             return;
         }
 
         List<UUID> tenantIds = listTenantIds();
-        for (Map<String, Object> request : claimed) {
+        // Oldest first, as lodged. The claim's subquery is ordered, but UPDATE ... RETURNING returns rows
+        // in no guaranteed order — measured (31.1-16): an ACCESS lodged before an ERASURE for the same
+        // subject was sometimes executed AFTER it, so the subject's copy said "no data held" about data
+        // they asked to see before they asked to erase it.
+        List<Map<String, Object>> inOrder = new ArrayList<>(claimed);
+        inOrder.sort(Comparator.comparing((Map<String, Object> r) -> receivedAt(r.get("received_at")))
+                .thenComparing(r -> r.get("id").toString()));
+        for (Map<String, Object> request : inOrder) {
             UUID requestId = (UUID) request.get("id");
             String subjectDigest = (String) request.get("subject_email_sha256");
             int attempts = ((Number) request.get("process_attempts")).intValue();
-            executeOne(requestId, subjectDigest, attempts, tenantIds);
+            byte[] ciphertext = (byte[]) request.get("subject_email_ciphertext");
+            String requestType = (String) request.get("request_type");
+            if (attempts > maxProcessAttempts) {
+                // Only a reclaim gets here: every attempt that finishes parks the row FAILED at the
+                // cap. A request that keeps killing the sweep claiming it would otherwise be
+                // reclaimed forever.
+                parkStranded(requestId, attempts);
+            } else if ("ACCESS".equals(requestType)) {
+                executeAccess(requestId, subjectDigest, ciphertext, attempts, tenantIds);
+            } else {
+                executeOne(requestId, subjectDigest, ciphertext, attempts, tenantIds);
+            }
         }
     }
 
-    private void executeOne(UUID requestId, String subjectDigest, int attempts, List<UUID> tenantIds) {
+    private static Instant receivedAt(Object value) {
+        if (value instanceof Timestamp t) {
+            return t.toInstant();
+        }
+        if (value instanceof OffsetDateTime t) {
+            return t.toInstant();
+        }
+        return Instant.EPOCH;
+    }
+
+    // ---- ACCESS (Article 15, 31.1-16, D-01) ----------------------------------------------------------
+
+    /**
+     * Collect in every tenant, then build, store, send — and complete only when the send succeeded.
+     * Never throws: anything unexpected releases the request for retry.
+     */
+    private void executeAccess(UUID requestId, String subjectDigest, byte[] ciphertext, int attempts,
+                               List<UUID> tenantIds) {
+        List<TenantSection> sections = new ArrayList<>();
+        int tenantsFailed = 0;
+        for (UUID tenantId : tenantIds) {
+            try {
+                // The SAME wrapper as the erasure: one tenant, one transaction, GUC pinned, thread
+                // cleared. The export can only contain a tenant's rows because this loop pinned it.
+                Optional<TenantSection> section = inPinnedTenant(tenantId,
+                        () -> accessExportService.collectForTenant(tenantId, subjectDigest));
+                if (section != null) {
+                    section.ifPresent(sections::add);
+                }
+            } catch (Exception e) {
+                // A partial Article 15 answer is not an answer: the request is released below and the
+                // whole collection is retried. The tenant id makes the failure actionable.
+                tenantsFailed++;
+                log.error("event=dsar_access_tenant_failed request={} tenant={} error={}",
+                        requestId, tenantId, e.getClass().getName());
+            }
+        }
+        if (tenantsFailed > 0) {
+            releaseAccess(requestId, "%d tenant(s) failed during collection".formatted(tenantsFailed), attempts);
+            return;
+        }
+        if (ciphertext == null) {
+            // Without the address there is nowhere to send the link; retrying will not produce one, so
+            // the request runs out its attempts and is parked FAILED, loudly.
+            log.error("event=dsar_access_failed request={} reason=no_subject_address", requestId);
+            releaseAccess(requestId, "no subject address on the request", attempts);
+            return;
+        }
+
+        String address;
+        try {
+            address = dsarCipher.decrypt(DsarCipher.Purpose.SUBJECT_ADDRESS, requestId, ciphertext);
+        } catch (RuntimeException e) {
+            log.error("event=dsar_access_failed request={} stage=decrypt error={}", requestId,
+                    e.getClass().getName());
+            releaseAccess(requestId, "the subject address could not be decrypted", attempts);
+            return;
+        }
+
+        // The customer-realm sign-in account is personal data held about the subject too. The same
+        // realm and matching rules as the erasure's deletion. A failed lookup is "not answered yet",
+        // never "no account": the request is retried rather than answered with a hole in it. A seam
+        // that is switched off is stated in the document as NOT_CHECKED.
+        PlatformAccountLookup account = accountDeletionService.lookupCustomerAccounts(address);
+        if (account == null || account.status() == PlatformAccountStatus.FAILED) {
+            releaseAccess(requestId, "the sign-in account lookup failed", attempts);
+            return;
+        }
+
+        IssuedToken issued;
+        try {
+            byte[] document = accessExportService.buildDocument(address, sections, account, OffsetDateTime.now());
+            // Stored and COMMITTED before the email goes: a link must never point at nothing.
+            issued = accessExportService.storeAndIssueToken(requestId, document);
+        } catch (RuntimeException e) {
+            log.error("event=dsar_access_failed request={} stage=build_or_store error={}", requestId,
+                    e.getClass().getName());
+            releaseAccess(requestId, "the export could not be built or stored", attempts);
+            return;
+        }
+
+        boolean sent = outcomeMailer.sendAccessExportReady(address, issued.token(),
+                accessExportService.exportLinkTtlHours());
+        if (!sent) {
+            // The link is the fulfilment. Not sent = not fulfilled: the next sweep builds a fresh
+            // export and a fresh token, replacing this row, so this token dies unused.
+            releaseAccess(requestId, "the download link email was not sent", attempts);
+            return;
+        }
+        completeAccess(requestId, sections.size(), tenantIds.size());
+    }
+
+    /**
+     * The subject has the link: COMPLETED, and the encrypted address dropped in the same statement
+     * (the V70 CHECK refuses a terminal row that keeps it).
+     */
+    private void completeAccess(UUID requestId, int tenantsHolding, int tenantsScanned) {
+        transactionTemplate.executeWithoutResult(status ->
+                jdbcTemplate.update(
+                        "UPDATE dsar_request SET status = 'COMPLETED', completed_at = NOW(), "
+                                + "last_error = NULL, subject_email_ciphertext = NULL WHERE id = ?",
+                        requestId));
+        // The count is recorded in the log only; the vendor names are in the export the subject holds.
+        log.info("event=dsar_access_completed request={} tenantsHolding={} tenantsScanned={}",
+                requestId, tenantsHolding, tenantsScanned);
+    }
+
+    /**
+     * Back to {@code VERIFIED} with the address KEPT (the retry needs it), or {@code FAILED} after
+     * {@code max-process-attempts} — then the address is dropped like every terminal state, and any
+     * export prepared for a link that never reached the subject is deleted with it: nobody holds a
+     * working token for it, and a stored copy of a subject's data that no one can collect is exactly
+     * what this design exists not to leave behind.
+     */
+    private void releaseAccess(UUID requestId, String reason, int attempts) {
+        boolean exhausted = attempts >= maxProcessAttempts;
+        String error = reason + "; attempt " + attempts + " of " + maxProcessAttempts;
+        transactionTemplate.executeWithoutResult(status -> {
+            if (exhausted) {
+                jdbcTemplate.update("DELETE FROM dsar_access_export WHERE dsar_request_id = ?", requestId);
+                jdbcTemplate.update(
+                        "UPDATE dsar_request SET status = 'FAILED', completed_at = NOW(), "
+                                + "last_error = ?, subject_email_ciphertext = NULL WHERE id = ?",
+                        error, requestId);
+            } else {
+                jdbcTemplate.update(
+                        "UPDATE dsar_request SET status = 'VERIFIED', claimed_at = NULL, "
+                                + "last_error = ? WHERE id = ?", error, requestId);
+            }
+        });
+        if (exhausted) {
+            log.error("event=dsar_access_exhausted request={} {} — this request will NOT be retried again "
+                    + "and a data subject's statutory right of access is unsatisfied", requestId, error);
+        } else {
+            log.warn("event=dsar_access_released_for_retry request={} {}", requestId, error);
+        }
+    }
+
+    // ---- ERASURE (Article 17) --------------------------------------------------------------------
+
+    private void executeOne(UUID requestId, String subjectDigest, byte[] ciphertext, int attempts,
+                            List<UUID> tenantIds) {
         int tenantsErased = 0;
         int tenantsFailed = 0;
 
@@ -190,20 +409,113 @@ public class DsarFanoutWorker {
             }
         }
 
-        if (tenantsFailed == 0) {
-            complete(requestId, tenantsErased, tenantIds.size());
+        if (tenantsFailed > 0) {
+            release(requestId, tenantsErased, tenantsFailed, attempts);
             return;
         }
-        release(requestId, tenantsErased, tenantsFailed, attempts);
+
+        // D-03: every tenant's erasure has COMMITTED (each ran in its own transaction above). Only now
+        // is the sign-in account deleted, so a Keycloak failure can never roll an erasure back.
+        AccountStep account = deleteSubjectAccount(requestId, ciphertext);
+        if (account.result() == AccountDeletionResult.DELETED
+                || account.result() == AccountDeletionResult.NONE_FOUND) {
+            complete(requestId, tenantsErased, tenantIds.size(), account.result());
+            // After the COMPLETED UPDATE has committed, never before: a subject is told "done" only
+            // about a request the database already records as done. The address is the one decrypted
+            // above, held in memory only; the row no longer carries it.
+            outcomeMailer.sendErasureCompleted(account.address(), account.result());
+            return;
+        }
+        releaseAccountOutstanding(requestId, tenantsErased, account.result(), attempts);
+    }
+
+    /** The outcome of the account step, and the decrypted address the completion email goes to. */
+    private record AccountStep(AccountDeletionResult result, String address) {
+    }
+
+    /**
+     * Decrypt the verified address (D-19) and delete the subject's customer-realm account. Never
+     * throws: anything unexpected is an unconfirmed deletion, not a reason to abandon the sweep.
+     * Nothing logged here carries the address.
+     */
+    private AccountStep deleteSubjectAccount(UUID requestId, byte[] ciphertext) {
+        if (ciphertext == null) {
+            // Without the address the account cannot be found, so the deletion cannot be confirmed.
+            // Retrying will not produce one; the request runs out its attempts and is parked FAILED.
+            log.error("event=dsar_account_deletion_failed request={} reason=no_subject_address", requestId);
+            return new AccountStep(AccountDeletionResult.FAILED, null);
+        }
+        String address = null;
+        try {
+            address = dsarCipher.decrypt(DsarCipher.Purpose.SUBJECT_ADDRESS, requestId, ciphertext);
+            AccountDeletionResult result = accountDeletionService.deleteCustomerAccount(address);
+            return new AccountStep(result == null ? AccountDeletionResult.FAILED : result, address);
+        } catch (RuntimeException e) {
+            log.error("event=dsar_account_deletion_failed request={} error={}", requestId,
+                    e.getClass().getName());
+            return new AccountStep(AccountDeletionResult.FAILED, address);
+        }
+    }
+
+    /**
+     * The data is erased but the sign-in account is not confirmed gone: the request goes back to
+     * {@code VERIFIED} with the ciphertext KEPT (the retry needs the address), recording
+     * {@code OUTSTANDING} — or {@code NOT_CONFIGURED} when the admin seam is off in this runtime,
+     * which is still not complete. The next sweep re-runs the erasure, which now matches nothing and
+     * writes no second record, and then the deletion.
+     *
+     * <p>After {@code max-process-attempts} the request is parked {@code FAILED}, the ciphertext is
+     * dropped like every other terminal state, and an ERROR is logged: a data subject's statutory
+     * right is then unsatisfied and somebody has to act.
+     */
+    private void releaseAccountOutstanding(UUID requestId, int tenantsErased, AccountDeletionResult account,
+                                           int attempts) {
+        String accountStatus = account == AccountDeletionResult.NOT_CONFIGURED ? "NOT_CONFIGURED" : "OUTSTANDING";
+        boolean exhausted = attempts >= maxProcessAttempts;
+        String error = "sign-in account deletion " + accountStatus + "; " + tenantsErased
+                + " tenant(s) erased; attempt " + attempts + " of " + maxProcessAttempts;
+
+        transactionTemplate.executeWithoutResult(status -> {
+            if (exhausted) {
+                jdbcTemplate.update(
+                        "UPDATE dsar_request SET status = 'FAILED', completed_at = NOW(), last_error = ?, "
+                                + "subject_email_ciphertext = NULL, account_deletion_status = ?, "
+                                + "account_deletion_attempts = account_deletion_attempts + 1 WHERE id = ?",
+                        error, accountStatus, requestId);
+            } else {
+                jdbcTemplate.update(
+                        "UPDATE dsar_request SET status = 'VERIFIED', claimed_at = NULL, last_error = ?, "
+                                + "account_deletion_status = ?, "
+                                + "account_deletion_attempts = account_deletion_attempts + 1 WHERE id = ?",
+                        error, accountStatus, requestId);
+            }
+        });
+
+        if (exhausted) {
+            log.error("event=dsar_account_deletion_exhausted request={} {} — the personal data is erased "
+                    + "but the customer sign-in account may still exist; this request will NOT be retried "
+                    + "again", requestId, error);
+        } else {
+            log.warn("event=dsar_account_deletion_outstanding request={} {}", requestId, error);
+        }
     }
 
     /**
      * One tenant, one transaction, GUC pinned inside it, thread left clean on every path.
      */
     private int eraseForTenant(UUID tenantId, String subjectDigest) {
+        Integer erased = inPinnedTenant(tenantId, () -> gdprService.eraseSubjectByDigest(tenantId, subjectDigest));
+        return erased == null ? 0 : erased;
+    }
+
+    /**
+     * The per-tenant unit of work for BOTH request types: one tenant, one transaction, the GUC pinned
+     * inside it, system authority declared, and the thread left clean on every path.
+     */
+    private <T> T inPinnedTenant(UUID tenantId, Supplier<T> work) {
         TenantContext.set(tenantId);
         try {
-            Integer erased = transactionTemplate.execute(status -> {
+            return transactionTemplate.execute(status -> {
                 pinTenantGuc(tenantId);
 
                 // WHAT THIS WRAP DOES AND DOES NOT DO — the comment that stops the next reader
@@ -220,10 +532,8 @@ public class DsarFanoutWorker {
                 // tenant at a time, under FORCE row-level security, exactly like every other
                 // caller. Delete the loop or the pin and this worker sees nothing; delete this
                 // wrap and it may be refused at the gate. They are different controls.
-                return SystemPrincipal.asSystem(
-                        () -> gdprService.eraseSubjectByDigest(tenantId, subjectDigest));
+                return SystemPrincipal.asSystem(work);
             });
-            return erased == null ? 0 : erased;
         } finally {
             // ALWAYS, on every path. These are pooled threads; a stale tenant left on a returned
             // thread is a cross-tenant read waiting to happen on an unrelated request.
@@ -231,17 +541,23 @@ public class DsarFanoutWorker {
         }
     }
 
-    private void complete(UUID requestId, int tenantsErased, int tenantsScanned) {
+    private void complete(UUID requestId, int tenantsErased, int tenantsScanned,
+                          AccountDeletionResult account) {
         transactionTemplate.executeWithoutResult(status ->
                 jdbcTemplate.update(
+                        // D-19 / V70: the encrypted address is destroyed in the SAME statement that
+                        // makes the row terminal — the CHECK refuses a COMPLETED row that keeps it.
+                        // D-03 / V72: the account outcome is recorded in that same statement.
                         "UPDATE dsar_request SET status = 'COMPLETED', completed_at = NOW(), "
-                                + "last_error = NULL WHERE id = ?",
-                        requestId));
+                                + "last_error = NULL, subject_email_ciphertext = NULL, "
+                                + "account_deletion_status = ?, "
+                                + "account_deletion_attempts = account_deletion_attempts + 1 WHERE id = ?",
+                        account.name(), requestId));
         // A request from somebody no tenant holds is SATISFIED, not stuck — tenantsErased may
         // legitimately be zero. The count is recorded in the log and nowhere the subject can read
         // it (T-31-09-05).
-        log.info("event=dsar_fanout_completed request={} tenantsErased={} tenantsScanned={}",
-                requestId, tenantsErased, tenantsScanned);
+        log.info("event=dsar_fanout_completed request={} tenantsErased={} tenantsScanned={} account={}",
+                requestId, tenantsErased, tenantsScanned, account);
     }
 
     /**
@@ -262,7 +578,8 @@ public class DsarFanoutWorker {
             if (exhausted) {
                 jdbcTemplate.update(
                         "UPDATE dsar_request SET status = 'FAILED', completed_at = NOW(), "
-                                + "last_error = ? WHERE id = ?", error, requestId);
+                                + "last_error = ?, subject_email_ciphertext = NULL WHERE id = ?",
+                        error, requestId);
             } else {
                 jdbcTemplate.update(
                         "UPDATE dsar_request SET status = 'VERIFIED', claimed_at = NULL, "
@@ -279,30 +596,27 @@ public class DsarFanoutWorker {
     }
 
     /**
-     * How many verified ACCESS requests are waiting, counted every sweep so the backlog is visible
-     * rather than silent.
-     *
-     * <p><b>Why ACCESS is not executed here.</b> This plan's own threat register lists
-     * "telling the subject which tenants held their data" as T-31-09-05, to be mitigated by
-     * recording a count and never per-tenant detail. An Article 15 response cannot honour that: UK
-     * GDPR Article 15(1)(c) obliges the controller to name the recipients, and an order history
-     * stripped of the vendor is neither useful nor compliant. Executing ACCESS therefore needs a
-     * delivery channel decided deliberately — a one-time expiring download rather than a mailed
-     * copy, which needs a table this plan does not own (V63 belongs to 31-10). Rather than resolve
-     * that unilaterally, or leave the rows to rot invisibly, the backlog is counted and logged.
+     * A request reclaimed past {@code max-process-attempts}: every earlier claim belonged to a sweep
+     * that died without finishing. Parked FAILED like an exhausted release: the address is dropped
+     * (V70) and any export prepared for an access link is deleted with it.
      */
-    private long outstandingAccessRequests() {
-        Long n = transactionTemplate.execute(status -> jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM dsar_request "
-                        + "WHERE status = 'VERIFIED' AND completed_at IS NULL "
-                        + "AND request_type = 'ACCESS'",
-                Long.class));
-        return n == null ? 0 : n;
+    private void parkStranded(UUID requestId, int attempts) {
+        String error = "claimed " + attempts + " times by sweeps that never finished; attempt cap "
+                + maxProcessAttempts;
+        transactionTemplate.executeWithoutResult(status -> {
+            jdbcTemplate.update("DELETE FROM dsar_access_export WHERE dsar_request_id = ?", requestId);
+            jdbcTemplate.update(
+                    "UPDATE dsar_request SET status = 'FAILED', completed_at = NOW(), "
+                            + "last_error = ?, subject_email_ciphertext = NULL WHERE id = ?",
+                    error, requestId);
+        });
+        log.error("event=dsar_stranded_exhausted request={} {} — this request will NOT be retried again "
+                + "and a data subject's statutory right is unsatisfied", requestId, error);
     }
 
     private List<Map<String, Object>> claim() {
         return transactionTemplate.execute(status ->
-                jdbcTemplate.queryForList(CLAIM_SQL, claimBatchSize));
+                jdbcTemplate.queryForList(CLAIM_SQL, claimLeaseMs, claimBatchSize));
     }
 
     @SuppressWarnings("unchecked")

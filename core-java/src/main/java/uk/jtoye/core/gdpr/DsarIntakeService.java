@@ -97,8 +97,9 @@ public class DsarIntakeService {
     private static final String INSERT_SQL = """
             INSERT INTO dsar_request
                 (id, subject_email_sha256, request_type, status, verification_token_sha256,
-                 verification_expires_at, idempotency_key, request_hash, response_status, response_body)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 verification_expires_at, idempotency_key, request_hash, response_status, response_body,
+                 subject_email_ciphertext)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private static final String RESERVE_SQL = INSERT_SQL
@@ -107,6 +108,7 @@ public class DsarIntakeService {
     private final JdbcTemplate jdbcTemplate;
     private final JsonMapper jsonMapper;
     private final DsarVerificationMailer verificationMailer;
+    private final DsarCipher cipher;
 
     /**
      * How long a subject has to prove control of the address before the request lapses. Injected,
@@ -116,10 +118,11 @@ public class DsarIntakeService {
     private long verificationTtlHours;
 
     public DsarIntakeService(JdbcTemplate jdbcTemplate, JsonMapper jsonMapper,
-                             DsarVerificationMailer verificationMailer) {
+                             DsarVerificationMailer verificationMailer, DsarCipher cipher) {
         this.jdbcTemplate = jdbcTemplate;
         this.jsonMapper = jsonMapper;
         this.verificationMailer = verificationMailer;
+        this.cipher = cipher;
     }
 
     /**
@@ -145,12 +148,19 @@ public class DsarIntakeService {
         String verificationTokenDigest = sha256Hex(verificationToken);
         OffsetDateTime verificationExpiry = OffsetDateTime.now().plusHours(verificationTtlHours);
 
+        // D-19 (31.1-07): the worker must be able to reach the subject, so the address as typed
+        // (trimmed, NOT lower-cased: it is a mailbox, not a match key) is stored ENCRYPTED, bound to
+        // this row's id. V70 holds the justification and NULLs it in every terminal state.
+        UUID requestId = UUID.randomUUID();
+        byte[] addressCiphertext = cipher.encrypt(
+                DsarCipher.Purpose.SUBJECT_ADDRESS, requestId, request.email().trim());
+
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             jdbcTemplate.update(INSERT_SQL,
-                    UUID.randomUUID(), subjectDigest, request.requestType().name(),
+                    requestId, subjectDigest, request.requestType().name(),
                     DsarRequest.Status.PENDING_VERIFICATION.name(),
                     verificationTokenDigest, verificationExpiry,
-                    null, requestHash, ACCEPTED, serialize(ACK));
+                    null, requestHash, ACCEPTED, serialize(ACK), addressCiphertext);
             log.info("DSAR lodged: endpoint={} type={} keyed=false", ENDPOINT, request.requestType());
             deliverVerification(request, verificationToken);
             return ACK;
@@ -162,10 +172,10 @@ public class DsarIntakeService {
         }
 
         int inserted = jdbcTemplate.update(RESERVE_SQL,
-                UUID.randomUUID(), subjectDigest, request.requestType().name(),
+                requestId, subjectDigest, request.requestType().name(),
                 DsarRequest.Status.PENDING_VERIFICATION.name(),
                 verificationTokenDigest, verificationExpiry,
-                idempotencyKey, requestHash, ACCEPTED, serialize(ACK));
+                idempotencyKey, requestHash, ACCEPTED, serialize(ACK), addressCiphertext);
 
         if (inserted == 1) {
             log.info("DSAR lodged: endpoint={} type={} keyed=true", ENDPOINT, request.requestType());

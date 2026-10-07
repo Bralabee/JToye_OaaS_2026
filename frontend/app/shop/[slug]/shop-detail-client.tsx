@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useState, useRef, useMemo, useCallback } from "react"
+import { useEffect, useState, useRef, useMemo, useCallback, useId } from "react"
 import Link from "next/link"
 import {
   MapPin, Clock, Phone, Mail, ArrowLeft, Store,
-  Flame, Leaf, Star, Timer, ChevronRight, AlertTriangle,
+  Flame, Leaf, Star, Timer, ChevronRight, AlertTriangle, AlertCircle,
   Plus as PlusIcon, Minus, UtensilsCrossed, Loader2
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
@@ -16,7 +16,7 @@ import {
 import { DAY_LABELS, DAY_ORDER, isOpenNow } from "@/lib/opening-hours"
 import { PublicShop, PublicProduct, ProductsByCategory, Review, ShopDetail } from "@/types/storefront"
 import type { PublicPromotion, PublicAnnouncement } from "@/types/storefront"
-import { ALLERGENS, hasAllergen } from "@/types/api"
+import { productAllergenStatement } from "@/lib/product-allergens"
 import { useCart } from "@/components/storefront/cart-provider"
 import { FloatingCartBar } from "@/components/storefront/floating-cart-bar"
 import { SafeImage } from "@/components/ui/safe-image"
@@ -54,7 +54,11 @@ function ProductCard({
   const [modalOpen, setModalOpen] = useState(false)
   const { addItem, items, updateQuantity } = useCart()
   const dietaryTags = product.dietaryTags?.split(",").filter(Boolean) || []
-  const allergenList = ALLERGENS.filter(a => hasAllergen(product.allergenMask, a.bit))
+  // #817 / D-18: the allergen line, in words, in every state. Its id is per RENDER (useId), not per
+  // product: a featured dish renders twice (rail + category), and two elements sharing one id would
+  // describe the rail's Add button with the list copy's line, or with nothing.
+  const allergens = productAllergenStatement(product)
+  const allergenLineId = useId()
   const cartItem = items.find((i) => i.productId === product.id)
   const quantity = cartItem?.quantity || 0
 
@@ -123,6 +127,35 @@ function ProductCard({
               </div>
             )}
 
+            {/* Allergens (#817, #787; D-09, D-18). In WORDS, never a count: the card used to show
+                an amber triangle and a bare "2" beside the price, which a screen reader announced as
+                "Halal Spicy £8.50 2", and said nothing at all when the declaration was empty — so
+                the persona's dish, whose ingredients say MILK, looked like a dish with nothing to
+                declare. Placed ABOVE the bottom row so it precedes "Add" in DOM and reading order,
+                and referenced by the Add button's aria-describedby so a screen-reader user who
+                jumps straight to the control still hears it.
+
+                Rendered in EVERY state (declared / none declared / flagged), so every card carries
+                the line and no state is a card one line shorter than its neighbours. The text
+                wraps rather than truncates: no allergen is ever hidden behind an ellipsis. */}
+            <div id={allergenLineId} className="mt-2 space-y-0.5 text-xs leading-snug">
+              {allergens.containsLine && (
+                <p className="flex items-start gap-1 font-medium text-amber-700">
+                  <AlertTriangle aria-hidden="true" className="mt-px h-3 w-3 flex-shrink-0" />
+                  {allergens.containsLine}
+                </p>
+              )}
+              {allergens.undeclaredLine && (
+                <p className="flex items-start gap-1 font-semibold text-amber-800">
+                  <AlertCircle aria-hidden="true" className="mt-px h-3 w-3 flex-shrink-0" />
+                  {allergens.undeclaredLine}
+                </p>
+              )}
+              {allergens.noneDeclaredLine && (
+                <p className="text-slate-600">{allergens.noneDeclaredLine}</p>
+              )}
+            </div>
+
             {/* Bottom row */}
             <div className="mt-2.5 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -133,12 +166,6 @@ function ProductCard({
                   <span className="inline-flex items-center gap-0.5 text-xs text-slate-400">
                     <Timer className="h-2.5 w-2.5" />
                     {product.preparationTimeMinutes}min
-                  </span>
-                )}
-                {allergenList.length > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-xs text-amber-700">
-                    <AlertTriangle className="h-2.5 w-2.5" />
-                    {allergenList.length}
                   </span>
                 )}
               </div>
@@ -155,6 +182,8 @@ function ProductCard({
                   // wrong dish. Visible text stays "Add"; the name says which dish, the
                   // same way the +/- stepper beside it already does.
                   aria-label={`Add ${product.title} to basket${inFeaturedRail ? " (featured)" : ""}`}
+                  // #817: the name stays the dish (A11Y-4); the description is its allergen line.
+                  aria-describedby={allergenLineId}
                   className="relative z-10 inline-flex items-center gap-1 rounded-full bg-amber-500 px-3 py-1 text-xs font-semibold text-amber-ink hover:bg-amber-400 active:scale-95 transition-all"
                 >
                   <PlusIcon className="h-3 w-3" />

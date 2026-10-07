@@ -1,0 +1,53 @@
+BASE 730825c0aa0790a92b4d9115135c76ec881b96ff18d5bfb6e197199e65e8a3cc da1890cefde094dad595cf400c6050aadd2e8ced298684bdd007832d9073b2a1 36e1656537694596d8d6ee2af03ddde7f7e020cf38dc2269b0491be121f62eed 
+== clean (before)
+  no fixture
+  rc=0 Tests:       20 passed, 20 total
+== ARM A: unregistered literal key in a scratch source file
+  rc=1 Tests:       1 failed, 19 passed, 20 total
+     ● #840 source scan — every setItem key is declared in the registry › every setItem call site writes a registered key (unresolvable sites only via CALL_SITE_KEYS)
+    msg:     + localStorage	jtoye-unregistered-fixture	lib/__scan_fixture__.ts:2
+    msg:     +     "lib/__scan_fixture__.ts:2 writes localStorage key \"jtoye-unregistered-fixture\", which lib/client-storage-keys.ts does not declare",
+  fixture removed: absent
+== ARM B: unresolvable key expression, not in CALL_SITE_KEYS
+  rc=1 Tests:       1 failed, 19 passed, 20 total
+     ● #840 source scan — every setItem key is declared in the registry › every setItem call site writes a registered key (unresolvable sites only via CALL_SITE_KEYS)
+    msg:     + sessionStorage	<unresolved: k>	lib/__scan_fixture__.ts:2
+    msg:     +     "lib/__scan_fixture__.ts:2 setItem(k) — key not statically resolvable and not in CALL_SITE_KEYS",
+  fixture removed: absent
+== ARM C: template literal with an unregistered static prefix
+  rc=1 Tests:       1 failed, 19 passed, 20 total
+     ● #840 source scan — every setItem key is declared in the registry › every setItem call site writes a registered key (unresolvable sites only via CALL_SITE_KEYS)
+    msg:     + localStorage	jtoye-new-prefix-<shop>	lib/__scan_fixture__.ts:2
+    msg:     +     "lib/__scan_fixture__.ts:2 writes localStorage key \"jtoye-new-prefix-<shop>\", which lib/client-storage-keys.ts does not declare",
+  fixture removed: absent
+== ARM D: unregistered key via an imported constant
+  rc=1 Tests:       1 failed, 19 passed, 20 total
+     ● #840 source scan — every setItem key is declared in the registry › every setItem call site writes a registered key (unresolvable sites only via CALL_SITE_KEYS)
+    msg:     + localStorage	jtoye-imported-fixture	lib/__scan_fixture__.ts:3
+    msg:     +     "lib/__scan_fixture__.ts:3 writes localStorage key \"jtoye-imported-fixture\", which lib/client-storage-keys.ts does not declare",
+  fixture removed: absent
+  const fixture absent
+== CONTROL E: a COMMENT and a STRING mentioning setItem( must NOT be counted (expect green)
+  rc=0 Tests:       20 passed, 20 total
+  fixture removed: absent
+== ARM F: a CALL_SITE_KEYS entry removed
+  remaining refs: 0
+  rc=1 Tests:       2 failed, 18 passed, 20 total
+     ● #840 source scan — every setItem key is declared in the registry › every setItem call site writes a registered key (unresolvable sites only via CALL_SITE_KEYS)
+     ● #840 source scan — every setItem key is declared in the registry › every registry entry is written by some call site (no over-disclosure)
+    msg:     +     "hooks/use-stored-state.ts:108 setItem(key) — key not statically resolvable and not in CALL_SITE_KEYS",
+  restored: sha match
+== ARM G: R-13 period reverted in the manifest only
+  rc=1 Tests:       3 failed, 17 passed, 20 total
+     ● #840 the retention schedule says what sign-out now does › R-12 and R-13 publish 'until you sign out or clear', for keys the registry clears on sign-out
+     ● the published rows are the manifest's rows › publishes every field verbatim from the manifest, in manifest order
+     ● the published rows are the manifest's rows › renders each manifest row's category, period and lawful basis on the page
+  restored: sha match
+== ARM H: spec imports a module that does not exist -> --list fails
+  --list rc=1 Error: Cannot find module '../lib/client-storage-keys-nope' Error: No tests found. 
+  restored: sha match
+== clean (after)
+  no fixture
+  rc=0 Tests:       20 passed, 20 total
+  --list rc=0 Total: 2 tests in 1 file
+  END 730825c0aa0790a92b4d9115135c76ec881b96ff18d5bfb6e197199e65e8a3cc da1890cefde094dad595cf400c6050aadd2e8ced298684bdd007832d9073b2a1 36e1656537694596d8d6ee2af03ddde7f7e020cf38dc2269b0491be121f62eed 

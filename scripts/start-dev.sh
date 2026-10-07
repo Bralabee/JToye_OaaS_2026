@@ -100,6 +100,26 @@ echo -e "\n${YELLOW}Step 2: Starting Backend (Spring Boot)${NC}"
 # emulator default (UseDevelopmentStorage=true) already targets 127.0.0.1:10000, which
 # infra/docker-compose.yml publishes, so no connection string or key is set here.
 export STORAGE_CREATE_CONTAINERS=true
+# 31.1-07 / D-19: core-java refuses to start without DSAR_ENCRYPTION_KEY, and bootRun is a
+# HOST process that reads no env file of its own. If the caller has not exported the key,
+# take it from the SAME env file the preflight above just validated (its format included)
+# and export it for this process only. The value is never echoed. Arguments are resolved
+# exactly as verify-env.sh resolves them: the last non-flag argument, else ./.env.
+if [ -z "${DSAR_ENCRYPTION_KEY:-}" ]; then
+  DSAR_ENV_FILE="./.env"
+  for arg in "$@"; do
+    case "$arg" in
+      --*) ;;
+      *) DSAR_ENV_FILE="$arg" ;;
+    esac
+  done
+  DSAR_ENCRYPTION_KEY=$( set -a; . "$DSAR_ENV_FILE" >/dev/null 2>&1; printf '%s' "${DSAR_ENCRYPTION_KEY:-}" )
+  if [ -z "$DSAR_ENCRYPTION_KEY" ]; then
+    echo "DSAR_ENCRYPTION_KEY is not set in ${DSAR_ENV_FILE}; core-java would refuse to start. Generate one with: openssl rand -hex 32" >&2
+    exit 1
+  fi
+  export DSAR_ENCRYPTION_KEY
+fi
 ./gradlew :core-java:bootRun > logs/backend.log 2>&1 &
 BACKEND_PID=$!
 echo "Backend started with PID: $BACKEND_PID"

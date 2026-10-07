@@ -1,0 +1,149 @@
+31.1-22 break arms. Each arm: cp backup -> node string transform (must change the file) -> jest on the named suites -> cp restore -> sha256 of the file compared with the committed blob.
+Arms ran on committed trees: Task 1 arms on 7ddc86f2, Task 3 arms on c416b585, Task 2 arms on 96fda316. Arm script: scratchpad p22-arm.sh.
+
+## Task 1 (kitchen board, block, printed ticket)
+ARM T1A-optimistic: jest rc=1; Tests:       6 failed, 7 passed, 13 total
+    restore OK (sha = HEAD)
+ARM T1B-html-note: jest rc=1; Tests:       1 failed, 12 passed, 13 total
+    restore OK (sha = HEAD)
+ARM T1C-swallow-error: jest rc=1; Tests:       3 failed, 10 passed, 13 total
+    restore OK (sha = HEAD)
+ARM T1D-no-press-guard: jest rc=1; Tests:       1 failed, 12 passed, 13 total
+    restore OK (sha = HEAD)
+ARM T1E-trust-empty-200: jest rc=1; Tests:       1 failed, 12 passed, 13 total
+    restore OK (sha = HEAD)
+ARM T1F-no-onAck: jest rc=1; Tests:       1 failed, 5 passed, 6 total
+    restore OK (sha = HEAD)
+ARM T1G-raw-id: jest rc=1; Tests:       2 failed, 28 passed, 30 total
+    restore OK (sha = HEAD)
+ARM T1H-note-into-NOTES: jest rc=1; Tests:       6 failed, 11 passed, 17 total
+    restore OK (sha = HEAD)
+ARM T1I-block-below-items: jest rc=1; Tests:       1 failed, 5 passed, 6 total
+    restore OK (sha = HEAD)
+ARM T1J-print-split: jest rc=1; Tests:       1 failed, 5 passed, 6 total
+    restore OK (sha = HEAD)
+== p22-arm-T1A-optimistic.log
+  ● AllergyNoteBlock — marking it read › a 200 that carries no acknowledgement is NOT shown as read
+  ● AllergyNoteBlock — marking it read › a 403 is announced and the button stays (T-31.1-78)
+  ● AllergyNoteBlock — marking it read › a network failure is announced and the button stays
+  ● AllergyNoteBlock — marking it read › a retry after a failure can succeed
+  ● AllergyNoteBlock — marking it read › one press sends ONE acknowledgement, and 'read' appears only after the 200 (T-31.1-77)
+  ● AllergyNoteBlock — marking it read › shows the SERVER's who and when — a colleague's earlier acknowledgement, not this click
+== p22-arm-T1B-html-note.log
+  ● AllergyNoteBlock — shown › renders a note carrying markup as inert text (T-31.1-76)
+== p22-arm-T1C-swallow-error.log
+  ● AllergyNoteBlock — marking it read › a 403 is announced and the button stays (T-31.1-78)
+  ● AllergyNoteBlock — marking it read › a network failure is announced and the button stays
+  ● AllergyNoteBlock — marking it read › a retry after a failure can succeed
+== p22-arm-T1D-no-press-guard.log
+  ● AllergyNoteBlock — marking it read › one press sends ONE acknowledgement, and 'read' appears only after the 200 (T-31.1-77)
+== p22-arm-T1E-trust-empty-200.log
+  ● AllergyNoteBlock — marking it read › a 200 that carries no acknowledgement is NOT shown as read
+== p22-arm-T1F-no-onAck.log
+  ● KDS card — the allergy note (31.1-22) › a re-print after marking it read says who read it — the board's copy learned the 200
+== p22-arm-T1G-raw-id.log
+  ● AllergyNoteBlock — who read it › says 'a member of staff' for another account, never the raw id
+  ● KitchenTicket — the allergy note (31.1-22, #812, D-15) › never prints the raw account id of whoever read it
+== p22-arm-T1H-note-into-NOTES.log
+  ● KitchenTicket — the allergy note (31.1-22, #812, D-15) › keeps the NOTES line to the delivery notes — the allergy note is never merged into it
+  ● KitchenTicket — the allergy note (31.1-22, #812, D-15) › never prints the raw account id of whoever read it
+  ● KitchenTicket — the allergy note (31.1-22, #812, D-15) › prints an ALLERGY NOTE block with the note text, ABOVE the items
+  ● KitchenTicket — the allergy note (31.1-22, #812, D-15) › prints that nobody has marked the note as read yet
+  ● KitchenTicket — the allergy note (31.1-22, #812, D-15) › prints who marked it as read and when, in UK time, once it has been
+  ● KitchenTicket — the allergy note (31.1-22, #812, D-15) › renders a note carrying markup as inert text (T-31.1-76)
+== p22-arm-T1I-block-below-items.log
+  ● KDS card — the allergy note (31.1-22) › sits in the card header after the allergen banner, before the customer and the items
+== p22-arm-T1J-print-split.log
+  ● The print stylesheet — the allergy note block › never splits the note block across two pages
+ARM T1K-no-viewer: jest rc=1; Tests:       1 failed, 12 passed, 13 total
+    restore OK (sha = HEAD)
+  ● AllergyNoteBlock — who read it › says 'you' when the signed-in account is the one that read it
+
+## Task 3 (date helper) — the device-zone arms are run twice: green on this London host (vacuous there), red under TZ=America/New_York
+ARM T3A-utc: jest rc=1; Tests:       8 failed, 26 passed, 34 total
+    restore OK (sha = HEAD)
+ARM T3B-device-zone-host: jest rc=0; Tests:       34 passed, 34 total
+    restore OK (sha = HEAD)
+ARM T3B-device-zone-NY: jest rc=1; Tests:       10 failed, 24 passed, 34 total
+    restore OK (sha = HEAD)
+ARM T3C-panel-PPpp: jest rc=1; Tests:       1 failed, 19 passed, 20 total
+    restore OK (sha = HEAD)
+ARM T3D-ticket-zone-host: jest rc=0; Tests:       18 passed, 18 total
+    restore OK (sha = HEAD)
+ARM T3D-ticket-zone-NY: jest rc=1; Tests:       1 failed, 17 passed, 18 total
+    restore OK (sha = HEAD)
+ARM T3E-two-conventions: jest rc=1; Tests:       1 failed, 13 passed, 14 total
+    restore OK (sha = HEAD)
+ARM T3F-hour12: jest rc=1; Tests:       9 failed, 25 passed, 34 total
+    restore OK (sha = HEAD)
+== T3A-utc
+  ● formatUkClockTime — '18:05', or '18:05 on 4 Oct' when not today in London › another London day: the time and the day
+  ● formatUkClockTime — '18:05', or '18:05 on 4 Oct' when not today in London › today in London: the time alone
+  ● formatUkClockTime — '18:05', or '18:05 on 4 Oct' when not today in London › 'today' is London's today: 23:30Z on 3 Oct is already 4 Oct
+  ● formatUkDate — the date alone, in UK time › BST rolls the date over; GMT does not
+  ● formatUkDateTime — an order record's date and time, in UK time › accepts a Date and an epoch number as well as an ISO string
+  ● formatUkDateTime — an order record's date and time, in UK time › BST: 23:10Z on 3 Oct 2026 is '4 October 2026, 00:10'
+  ● formatUkDateTime — an order record's date and time, in UK time › has no AM/PM and no US month-first form
+  ● OrderDetailPanel — UK dates (31.1-22) › states when the order was created as '4 October 2026, 00:10'
+== T3B-device-zone-host
+== T3B-device-zone-NY
+  ● formatUkClockTime — '18:05', or '18:05 on 4 Oct' when not today in London › another London day: the time and the day
+  ● formatUkClockTime — '18:05', or '18:05 on 4 Oct' when not today in London › today in London: the time alone
+  ● formatUkClockTime — '18:05', or '18:05 on 4 Oct' when not today in London › 'today' is London's today: 23:30Z on 3 Oct is already 4 Oct
+  ● formatUkDate — the date alone, in UK time › BST rolls the date over; GMT does not
+  ● formatUkDateTime — an order record's date and time, in UK time › accepts a Date and an epoch number as well as an ISO string
+  ● formatUkDateTime — an order record's date and time, in UK time › BST: 23:10Z on 3 Oct 2026 is '4 October 2026, 00:10'
+  ● formatUkDateTime — an order record's date and time, in UK time › GMT: 23:10Z on 3 Dec 2026 is '3 December 2026, 23:10'
+  ● formatUkDateTime — an order record's date and time, in UK time › has no AM/PM and no US month-first form
+  ● OrderDetailPanel — UK dates (31.1-22) › dates each refund in UK time too
+  ● OrderDetailPanel — UK dates (31.1-22) › states when the order was created as '4 October 2026, 00:10'
+== T3C-panel-PPpp
+  ● OrderDetailPanel — UK dates (31.1-22) › states when the order was created as '4 October 2026, 00:10'
+== T3D-ticket-zone-host
+== T3D-ticket-zone-NY
+  ● KitchenTicket — UK time on the stamps (31.1-22, P2-CHA-18) › stamps the order time in London time, whatever zone the kitchen device is set to
+== T3E-two-conventions
+  ● formatUkClockTime — '18:05', or '18:05 on 4 Oct' when not today in London › is the SAME rule the customer's tracking page uses (one convention, 31.1-18)
+== T3F-hour12
+  ● formatUkClockTime — '18:05', or '18:05 on 4 Oct' when not today in London › another London day: the time and the day
+  ● formatUkClockTime — '18:05', or '18:05 on 4 Oct' when not today in London › today in London: the time alone
+  ● formatUkClockTime — '18:05', or '18:05 on 4 Oct' when not today in London › 'today' is London's today: 23:30Z on 3 Oct is already 4 Oct
+  ● formatUkDateTime — an order record's date and time, in UK time › accepts a Date and an epoch number as well as an ISO string
+  ● formatUkDateTime — an order record's date and time, in UK time › BST: 23:10Z on 3 Oct 2026 is '4 October 2026, 00:10'
+  ● formatUkDateTime — an order record's date and time, in UK time › GMT: 23:10Z on 3 Dec 2026 is '3 December 2026, 23:10'
+  ● formatUkDateTime — an order record's date and time, in UK time › has no AM/PM and no US month-first form
+  ● OrderDetailPanel — UK dates (31.1-22) › dates each refund in UK time too
+  ● OrderDetailPanel — UK dates (31.1-22) › states when the order was created as '4 October 2026, 00:10'
+
+## Task 2 (vendor order detail)
+ARM T2A-vendor-as-unrecorded: jest rc=1; Tests:       2 failed, 28 passed, 30 total
+    restore OK (sha = HEAD)
+ARM T2B-no-when: jest rc=1; Tests:       1 failed, 29 passed, 30 total
+    restore OK (sha = HEAD)
+ARM T2C-no-note-block: jest rc=1; Tests:       3 failed, 27 passed, 30 total
+    restore OK (sha = HEAD)
+ARM T2D-line-below-customer: jest rc=1; Tests:       1 failed, 29 passed, 30 total
+    restore OK (sha = HEAD)
+ARM T2E-none-collapses: jest rc=1; Tests:       1 failed, 29 passed, 30 total
+    restore OK (sha = HEAD)
+== T2A-vendor-as-unrecorded
+  ● OrderDetailPanel — how the order was placed (31.1-22, D-07) › the three channel states say three different things
+  ● OrderDetailPanel — how the order was placed (31.1-22, D-07) › vendor-placed: 'Placed by the shop — no customer allergen confirmation recorded'
+== T2B-no-when
+  ● OrderDetailPanel — how the order was placed (31.1-22, D-07) › storefront: 'Customer confirmed allergens: Gluten, Milk — 3 October 2026, 18:02'
+== T2C-no-note-block
+  ● OrderDetailPanel — the allergy note (31.1-22, #812, D-15) › an already-read note shows who and when, with no button
+  ● OrderDetailPanel — the allergy note (31.1-22, #812, D-15) › marks it read from the order detail, showing the server's who and when
+  ● OrderDetailPanel — the allergy note (31.1-22, #812, D-15) › shows the note above the delivery notes, never merged into them
+== T2D-line-below-customer
+  ● OrderDetailPanel — how the order was placed (31.1-22, D-07) › sits above the customer block
+== T2E-none-collapses
+  ● OrderDetailPanel — how the order was placed (31.1-22, D-07) › storefront, declared none: a confirmation of none, never 'not recorded'
+
+## Type-check controls
+tsc --noEmit -p tsconfig.json with allergyNoteAcknowledgedByX planted in allergy-note-block.tsx: rc=2, error TS2551; restored, sha = HEAD
+tsc --noEmit -p tsconfig.e2e.json with toHaveLength("1") planted in the e2e spec: rc=2, 1 error TS; restored
+
+## PPpp control (plan acceptance criterion)
+git grep -n '"PPpp"' cd204d83 -- OrderDetailPanel.tsx orders/page.tsx: rc=0, 2 lines (page.tsx:1120, OrderDetailPanel.tsx:145)
+git grep -n '"PPpp"' (HEAD after c416b585) -- same paths: rc=1, empty

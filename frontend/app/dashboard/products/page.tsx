@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -44,17 +44,32 @@ import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye
 import { ImageUploader, type AiSuggestions } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
-import type { Product, CreateProductRequest, Shop } from "@/types/api"
+import type { Product, CreateProductRequest, Shop, ProductAllergenWarning } from "@/types/api"
 import {
   ALLERGENS,
   hasAllergen,
   toggleAllergen,
   getAllergenNames,
 } from "@/types/api"
+import {
+  INGREDIENTS_EMPHASIS_HELP_COPY,
+  KEEP_AS_IS_COPY,
+  MAY_CONTAIN_HELP_COPY,
+  NO_ALLERGENS_DECLARED_COPY,
+  tickAllergenCopy,
+  undeclaredIngredientCopy,
+  undeclaredIngredientVendorCopy,
+  vendorSaveWarningCopy,
+} from "@/lib/allergen-copy"
 
 // The form schema lives in its own module so it can be unit-tested — a Next
 // App Router page.tsx may not export non-route symbols (A11Y-8 / A11Y-11).
-import { productSchema, toPricePennies, type ProductFormData } from "./product-form-schema"
+import {
+  mayContainMaskSchema,
+  productSchema,
+  toPricePennies,
+  type ProductFormData,
+} from "./product-form-schema"
 
 function AiSuggestionRow({ label, value, onAccept }: { label: string; value: string; onAccept: () => void }) {
   return (
@@ -77,6 +92,66 @@ function AiSuggestionRow({ label, value, onAccept }: { label: string; value: str
 
 const PAGE_SIZE = 20
 
+/**
+ * D-09: the catalogue name for a warning's bit. The bit is the fact; the server's name is the
+ * fallback for a bit this build's catalogue does not know.
+ */
+function warningAllergenName(warning: ProductAllergenWarning): string {
+  return ALLERGENS.find((a) => a.bit === warning.allergenBit)?.name ?? warning.allergen
+}
+
+/**
+ * D-17: today's date in the UK, ISO-shaped (en-CA formats as YYYY-MM-DD), whatever zone the
+ * browser is in. A label printed at 00:30 BST is dated the UK day, not the UTC one; the server
+ * judges "future" on the same Europe/London date (31.1-14 ClockConfig).
+ */
+function ukTodayIso(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
+}
+
+function blobText(blob: Blob): Promise<string> {
+  if (typeof blob.text === "function") return blob.text()
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(blob)
+  })
+}
+
+/**
+ * The status and RFC 7807 detail of a failed request. A blob request (the label PDF) delivers
+ * its error body as a Blob too, so the problem JSON is read out of it.
+ */
+async function readProblem(error: unknown): Promise<{ status?: number; detail?: string }> {
+  const response = (error as { response?: { status?: number; data?: unknown } } | null)?.response
+  if (!response) return {}
+  let body: unknown = response.data
+  if (typeof Blob !== "undefined" && body instanceof Blob) {
+    try {
+      body = JSON.parse(await blobText(body))
+    } catch {
+      body = undefined
+    }
+  }
+  const detail = (body as { detail?: unknown } | undefined)?.detail
+  return { status: response.status, detail: typeof detail === "string" ? detail : undefined }
+}
+
+const LABEL_DATE_REQUIRED_COPY = "Enter the date the food was made."
+const LABEL_DATE_FUTURE_COPY = "The production date cannot be in the future."
+const LABEL_DATE_REFUSED_COPY = "This production date cannot be used for a label."
+
+/** The allergens a product's ingredients name but its declaration omits, once each. */
+function undeclaredAllergenNames(warnings: ProductAllergenWarning[] | null | undefined): string[] {
+  return Array.from(new Set((warnings ?? []).map(warningAllergenName)))
+}
+
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,7 +164,22 @@ export default function ProductsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
   const [allergenMask, setAllergenMask] = useState(0)
+  // D-09 (#787): the warnings the LAST save returned. The save succeeded; these ask the vendor
+  // to tick the named allergen or keep the declaration as it is. Nothing here is persisted.
+  const [allergenWarnings, setAllergenWarnings] = useState<ProductAllergenWarning[]>([])
+  const allergenWarningRef = useRef<HTMLDivElement>(null)
+  // D-16 (#861): "may contain" (cross-contact), its own mask. null = not recorded (an untouched
+  // fieldset stays null), 0 = the vendor recorded no risk. Never derived from allergenMask and
+  // never written into it.
+  const [mayContainMask, setMayContainMask] = useState<number | null>(null)
   const [available, setAvailable] = useState(true)
+  // D-17 (#861): the label dialog. The production date is asked for every time; nothing is
+  // remembered between labels (no batch record, CONTEXT deferred).
+  const [labelProduct, setLabelProduct] = useState<Product | null>(null)
+  const [labelDate, setLabelDate] = useState("")
+  const [labelMaxDate, setLabelMaxDate] = useState("")
+  const [labelError, setLabelError] = useState<string | null>(null)
+  const [labelDownloading, setLabelDownloading] = useState(false)
   const [featured, setFeatured] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestions | null>(null)
@@ -235,6 +325,7 @@ export default function ProductsPage() {
     setEditingProduct(null)
     reset({ sku: "", title: "", ingredientsText: "", pricePounds: "" })
     setAllergenMask(0)
+    setMayContainMask(null)
     setAvailable(true)
     setFeatured(false)
     // D-08: outside the All-shops context a create is a single-shop write —
@@ -243,6 +334,7 @@ export default function ProductsPage() {
     setTrackInventory(false)
     setQuantityInStock(0)
     setAiSuggestions(null)
+    setAllergenWarnings([])
     setDialogOpen(true)
   }
 
@@ -253,14 +345,36 @@ export default function ProductsPage() {
     setValue("ingredientsText", product.ingredientsText)
     setValue("pricePounds", ((product.pricePennies || 0) / 100).toFixed(2))
     setAllergenMask(product.allergenMask)
+    setMayContainMask(product.mayContainMask ?? null)
     setAvailable(product.available ?? true)
     setFeatured(product.featured ?? false)
     setSelectedShopId(product.shopId || "")
     setTrackInventory(product.quantityInStock != null)
     setQuantityInStock(product.quantityInStock ?? 0)
     setAiSuggestions(null)
+    setAllergenWarnings([])
     setDialogOpen(true)
   }
+
+  // The form dialog closing, by any route, drops a pending save-time warning with it.
+  const onFormDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open)
+    if (!open) setAllergenWarnings([])
+  }
+
+  const closeFormAfterSave = () => {
+    setAllergenWarnings([])
+    setDialogOpen(false)
+    reset()
+    setAllergenMask(0)
+    setMayContainMask(null)
+  }
+
+  // D-09: move focus to the warning when a save returns one, so a keyboard or screen-reader
+  // user lands on the decision rather than on a form that still looks finished.
+  useEffect(() => {
+    if (allergenWarnings.length > 0) allergenWarningRef.current?.focus()
+  }, [allergenWarnings])
 
   const openDeleteDialog = (product: Product) => {
     setDeletingProduct(product)
@@ -271,7 +385,18 @@ export default function ProductsPage() {
     setAllergenMask(toggleAllergen(allergenMask, bit))
   }
 
-  const onSubmit = async (data: ProductFormData) => {
+  // D-16: the first tick turns "not recorded" into a recorded mask; unticking the last box
+  // leaves 0 (recorded: no risk), not null.
+  const toggleMayContainBit = (bit: number) => {
+    setMayContainMask(toggleAllergen(mayContainMask ?? 0, bit))
+  }
+
+  /**
+   * Create or update. `mask` is passed explicitly by the "Tick …" action, which sets a bit and
+   * saves in the same gesture: reading `allergenMask` state there would send the value from
+   * before the tick.
+   */
+  const saveProduct = async (data: ProductFormData, mask: number = allergenMask) => {
     try {
       setSubmitting(true)
 
@@ -288,7 +413,9 @@ export default function ProductsPage() {
         sku: data.sku,
         title: data.title,
         ingredientsText: data.ingredientsText,
-        allergenMask,
+        allergenMask: mask,
+        // D-16: sent as held — null stays null (not recorded), 0 stays 0.
+        mayContainMask: mayContainMaskSchema.parse(mayContainMask),
         pricePennies: toPricePennies(data.pricePounds),
         available,
         featured,
@@ -302,27 +429,37 @@ export default function ProductsPage() {
         quantityInStock: trackInventory ? quantityInStock : null,
       }
 
+      let saved: Product | undefined
       if (editingProduct) {
         // Update existing product
-        await apiClient.put(`/api/v1/products/${editingProduct.id}`, payload)
+        saved = (await apiClient.put(`/api/v1/products/${editingProduct.id}`, payload))?.data
         toast({
           title: "Product updated",
           description: `${data.title} has been updated successfully.`,
         })
       } else {
         // Create new product
-        await apiClient.post("/api/v1/products", payload)
+        saved = (await apiClient.post("/api/v1/products", payload))?.data
         toast({
           title: "Product created",
           description: `${data.title} has been created successfully.`,
         })
       }
 
-      setDialogOpen(false)
-      reset()
-      setAllergenMask(0)
       if (currentPage === 0) fetchProducts()
       else setCurrentPage(0)
+
+      // D-09 (#787): the save SUCCEEDED, but the ingredients name an allergen the declaration
+      // omits. Keep the form open on the product just saved (so "Tick …" updates it rather than
+      // creating a second one) and ask the vendor to decide.
+      const warnings = saved?.allergenWarnings ?? []
+      if (saved && warnings.length > 0) {
+        setEditingProduct(saved)
+        setAllergenWarnings(warnings)
+        return
+      }
+
+      closeFormAfterSave()
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : `Failed to ${editingProduct ? "update" : "create"} product`
       toast({
@@ -332,6 +469,75 @@ export default function ProductsPage() {
       })
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const onSubmit = (data: ProductFormData) => saveProduct(data)
+
+  // D-09 "Tick Milk": an explicit vendor action — the warning arriving never ticks anything
+  // (T-31.1-69). Sets the bit on the declaration and saves the same product again.
+  const tickAllergenAndResave = (bit: number) => {
+    const next = allergenMask | (1 << bit)
+    setAllergenMask(next)
+    void handleSubmit((data) => saveProduct(data, next))()
+  }
+
+  // D-09 "Keep as it is": the product is already saved; the storefront keeps showing the
+  // disagreement until the ingredients and the declaration agree. Nothing is recorded.
+  const keepDeclarationAsIs = () => {
+    closeFormAfterSave()
+  }
+
+  const openLabelDialog = (product: Product) => {
+    const today = ukTodayIso()
+    setLabelDate(today)
+    setLabelMaxDate(today)
+    setLabelError(null)
+    setLabelProduct(product)
+  }
+
+  const closeLabelDialog = () => {
+    setLabelProduct(null)
+    setLabelError(null)
+  }
+
+  const downloadLabel = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!labelProduct) return
+    if (!labelDate) {
+      setLabelError(LABEL_DATE_REQUIRED_COPY)
+      return
+    }
+    // ISO dates compare correctly as strings.
+    if (labelDate > labelMaxDate) {
+      setLabelError(LABEL_DATE_FUTURE_COPY)
+      return
+    }
+    setLabelError(null)
+    setLabelDownloading(true)
+    try {
+      const res = await apiClient.get(
+        `/api/v1/products/${labelProduct.id}/label?productionDate=${encodeURIComponent(labelDate)}`,
+        { responseType: "blob" }
+      )
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `label-${labelProduct.sku}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+      closeLabelDialog()
+    } catch (error: unknown) {
+      const problem = await readProblem(error)
+      if (problem.status === 422) {
+        // 31.1-14: errors/invalid-production-date, field productionDate — a future date, or
+        // one whose use-by has already passed. Said under the field it is about.
+        setLabelError(problem.detail ?? LABEL_DATE_REFUSED_COPY)
+      } else {
+        toast({ variant: "destructive", title: "Error", description: "Failed to download label" })
+      }
+    } finally {
+      setLabelDownloading(false)
     }
   }
 
@@ -492,6 +698,10 @@ export default function ProductsPage() {
                 <TableBody>
                   {products.map((product) => {
                     const allergenNames = getAllergenNames(product.allergenMask)
+                    // Pitfall 11 / D-18: the persona's dish must never read "no allergens" here.
+                    const undeclaredLine = undeclaredIngredientVendorCopy(
+                      undeclaredAllergenNames(product.allergenWarnings)
+                    )
                     return (
                       <m.tr
                         key={product.id}
@@ -534,16 +744,13 @@ export default function ProductsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {allergenNames.length === 0 ? (
+                            {allergenNames.length === 0 && !undeclaredLine ? (
                               <span className="text-sm text-muted-foreground">
-                                No allergens
+                                {NO_ALLERGENS_DECLARED_COPY}
                               </span>
                             ) : (
-                              allergenNames.map((name) => {
-                                const allergen = ALLERGENS.find(
-                                  (a) => a.name === name
-                                )
-                                return (
+                              <>
+                                {allergenNames.map((name) => (
                                   <Badge
                                     key={name}
                                     variant="outline"
@@ -551,8 +758,14 @@ export default function ProductsPage() {
                                   >
                                     {name}
                                   </Badge>
-                                )
-                              })
+                                ))}
+                                {undeclaredLine && (
+                                  <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-800">
+                                    <AlertCircle className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
+                                    {undeclaredLine}
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                         </TableCell>
@@ -578,19 +791,7 @@ export default function ProductsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={async () => {
-                                try {
-                                  const res = await apiClient.get(`/api/v1/products/${product.id}/label`, { responseType: "blob" })
-                                  const url = URL.createObjectURL(res.data)
-                                  const a = document.createElement("a")
-                                  a.href = url
-                                  a.download = `label-${product.sku}.pdf`
-                                  a.click()
-                                  URL.revokeObjectURL(url)
-                                } catch {
-                                  toast({ variant: "destructive", title: "Error", description: "Failed to download label" })
-                                }
-                              }}
+                              onClick={() => openLabelDialog(product)}
                               className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                               title="Download allergen label"
                               aria-label={`Download allergen label for ${product.title}`}
@@ -628,7 +829,7 @@ export default function ProductsPage() {
       </m.div>
 
       {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={onFormDialogOpenChange}>
         <DialogContent className="max-h-[90vh] overflow-y-auto max-w-2xl">
           <DialogHeader>
             <DialogTitle>
@@ -640,6 +841,61 @@ export default function ProductsPage() {
                 : "Add a new product to your catalog."}
             </DialogDescription>
           </DialogHeader>
+          {allergenWarnings.length > 0 && (
+            // D-09 (#787): the save-time warning, above the form. role=alert announces it; focus
+            // is moved here by the effect above. The two actions are the vendor's decision.
+            <div
+              ref={allergenWarningRef}
+              role="alert"
+              tabIndex={-1}
+              data-testid="allergen-save-warning"
+              className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-2"
+            >
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" aria-hidden="true" />
+                <div className="min-w-0 flex-1 space-y-3">
+                  <p className="text-sm font-semibold">
+                    Saved. Check the allergens you ticked.
+                  </p>
+                  <ul className="space-y-2">
+                    {allergenWarnings.map((warning) => {
+                      const name = warningAllergenName(warning)
+                      return (
+                        <li
+                          key={warning.allergenBit}
+                          className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                        >
+                          <span>{vendorSaveWarningCopy(name)}</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={submitting}
+                            onClick={() => tickAllergenAndResave(warning.allergenBit)}
+                          >
+                            {tickAllergenCopy(name)}
+                          </Button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  <p className="text-sm">
+                    Until they agree, customers see &ldquo;
+                    {undeclaredIngredientCopy(undeclaredAllergenNames(allergenWarnings))}
+                    &rdquo; on this dish.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={submitting}
+                    onClick={keepDeclarationAsIs}
+                  >
+                    {KEEP_AS_IS_COPY}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
           <form id="product-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Product Details</h4>
             <div className="space-y-2">
@@ -687,9 +943,14 @@ export default function ProductsPage() {
                 placeholder="e.g., Flour, sugar, butter, chocolate chips..."
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-invalid={errors.ingredientsText ? "true" : undefined}
-                aria-describedby={errors.ingredientsText ? "ingredientsText-error" : undefined}
+                // Pitfall 6: the helper is the field's description; while a validation error
+                // is showing, the error replaces it (A11Y-7 resolves this to ONE message id).
+                aria-describedby={errors.ingredientsText ? "ingredientsText-error" : "ingredientsText-help"}
                 {...register("ingredientsText")}
               />
+              <p id="ingredientsText-help" className="text-xs text-slate-500">
+                {INGREDIENTS_EMPHASIS_HELP_COPY}
+              </p>
               {errors.ingredientsText && (
                 <p id="ingredientsText-error" className="text-sm text-red-600">
                   {errors.ingredientsText.message}
@@ -941,12 +1202,14 @@ export default function ProductsPage() {
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-orange-600" />
-                <Label>Allergens</Label>
-              </div>
-              <p className="text-sm text-slate-600">
+            {/* A fieldset so the declared set is a named group: D-16 adds a second set of the
+                same 14 names (may contain), and the two must never be confused. */}
+            <fieldset className="space-y-3" aria-describedby="allergens-help">
+              <legend className="flex items-center gap-2 text-sm font-medium leading-none">
+                <AlertCircle className="h-4 w-4 text-orange-600" aria-hidden="true" />
+                Allergens
+              </legend>
+              <p id="allergens-help" className="text-sm text-slate-600">
                 Select all allergens present in this product
               </p>
               <div className="grid grid-cols-2 gap-3 rounded-lg border p-4 bg-slate-50">
@@ -965,7 +1228,35 @@ export default function ProductsPage() {
                   </label>
                 ))}
               </div>
-            </div>
+            </fieldset>
+
+            {/* D-16 (#861): cross-contact, recorded apart from the declaration and shown to
+                customers as its own "May contain" line. Visually distinct (dashed, neutral) so
+                it never reads as a second copy of the declared set. */}
+            <fieldset className="space-y-3" aria-describedby="may-contain-help">
+              <legend className="text-sm font-medium leading-none">
+                May contain (cross-contact)
+              </legend>
+              <p id="may-contain-help" className="text-sm text-slate-600">
+                {MAY_CONTAIN_HELP_COPY}
+              </p>
+              <div className="grid grid-cols-2 gap-3 rounded-lg border border-dashed border-slate-300 p-4">
+                {ALLERGENS.map((allergen) => (
+                  <label
+                    key={allergen.bit}
+                    className="flex items-center gap-3 cursor-pointer rounded-md p-2 hover:bg-slate-50 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={hasAllergen(mayContainMask ?? 0, allergen.bit)}
+                      onChange={() => toggleMayContainBit(allergen.bit)}
+                      className="h-4 w-4 rounded border-gray-300 text-slate-700 focus:ring-slate-500"
+                    />
+                    <span className="text-sm">{allergen.name}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
 
             <DialogFooter>
               <Button
@@ -984,6 +1275,60 @@ export default function ProductsPage() {
                   : editingProduct
                   ? "Update Product"
                   : "Create Product"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* D-17 (#861): the production-date dialog in front of every label download */}
+      <Dialog
+        open={labelProduct !== null}
+        onOpenChange={(open) => {
+          if (!open) closeLabelDialog()
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Print allergen label</DialogTitle>
+            <DialogDescription>
+              {labelProduct?.title}: the use-by date on the label is counted from the day the
+              food was made.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={downloadLabel} noValidate className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="label-production-date">Production date</Label>
+              <Input
+                id="label-production-date"
+                type="date"
+                value={labelDate}
+                max={labelMaxDate}
+                required
+                onChange={(e) => {
+                  setLabelDate(e.target.value)
+                  setLabelError(null)
+                }}
+                aria-invalid={labelError ? "true" : undefined}
+                aria-describedby={labelError ? "label-production-date-error" : undefined}
+              />
+              {labelError && (
+                <p id="label-production-date-error" className="text-sm text-red-600">
+                  {labelError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeLabelDialog}
+                disabled={labelDownloading}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={labelDownloading}>
+                {labelDownloading ? "Preparing label..." : "Download label"}
               </Button>
             </DialogFooter>
           </form>

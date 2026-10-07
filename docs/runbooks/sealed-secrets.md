@@ -38,6 +38,7 @@ bootstrap only, `kubectl create secret generic` (`k8s/QUICK_START.md` Step 1).
 | `nextauth-secret` | `secret` | `frontend-deployment.yaml` |
 | `redis-credentials` | `password` | `core-java-deployment.yaml` |
 | `rabbitmq-credentials` | `username`, `password`, `stomp-login`, `stomp-passcode` | `core-java-deployment.yaml` |
+| `dsar-credentials` | `encryption-key` (64 hex characters, `openssl rand -hex 32`, one per environment; core-java refuses to start without it) | `core-java-deployment.yaml` (phase 31.1, D-19) |
 
 The exact key shapes live in `k8s/base/secrets-template.yaml.example` — that
 file is reference-only and is never applied.
@@ -183,6 +184,7 @@ resources:
   - sealed-secrets/nextauth-secret.sealed.yaml
   - sealed-secrets/redis-credentials.sealed.yaml
   - sealed-secrets/rabbitmq-credentials.sealed.yaml
+  - sealed-secrets/dsar-credentials.sealed.yaml
 ```
 
 (The base `resources:` list no longer includes any Secret manifest — that

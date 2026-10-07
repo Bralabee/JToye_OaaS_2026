@@ -9,7 +9,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mail.SimpleMailMessage;
+import jakarta.mail.internet.MimeMessage;
+import uk.jtoye.core.notification.CustomerEmailContext;
+import uk.jtoye.core.testsupport.SentMail;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
 import uk.jtoye.core.customer.CustomerRepository;
@@ -314,6 +316,7 @@ class OrderCreateFulfilmentTest {
     @DisplayName("COR-1/A8: a vendor DELIVERY order is emailed delivery copy; a defaulted one is emailed collection copy")
     void theReadyEmailFollowsTheOrderTheVendorActuallyCreated() {
         JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
         EmailNotificationService emailService = new EmailNotificationService(mailSender);
         ReflectionTestUtils.setField(emailService, "fromAddress", "noreply@jtoye.uk");
         ReflectionTestUtils.setField(emailService, "emailEnabled", true);
@@ -330,11 +333,12 @@ class OrderCreateFulfilmentTest {
         OrderStateChangeEvent event = new OrderStateChangeEvent(
                 UUID.randomUUID(), tenantId, "ORD-COR1-DEL", OrderStatus.PREPARING,
                 OrderStatus.READY, OffsetDateTime.now());
-        emailService.sendOrderReady(event, "caller@example.com", deliveryOrder.getFulfilmentType());
+        emailService.sendOrderReady(event, "caller@example.com",
+                CustomerEmailContext.unknownShop(deliveryOrder.getFulfilmentType()));
 
-        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
         verify(mailSender, times(1)).send(captor.capture());
-        String deliveryBody = captor.getValue().getText();
+        String deliveryBody = SentMail.text(SentMail.reparse(captor.getValue()));
         org.junit.jupiter.api.Assertions.assertTrue(
                 deliveryBody.toLowerCase().contains("deliver"),
                 "E-1: a phone-in DELIVERY customer must be told the order comes to them");
@@ -347,6 +351,7 @@ class OrderCreateFulfilmentTest {
     @DisplayName("COR-1/A8: a DEFAULTED vendor order is emailed collection copy — no false delivery promise")
     void aDefaultedVendorOrderIsEmailedCollectionCopy() {
         JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(mailSender.createMimeMessage()).thenAnswer(inv -> SentMail.newMimeMessage());
         EmailNotificationService emailService = new EmailNotificationService(mailSender);
         ReflectionTestUtils.setField(emailService, "fromAddress", "noreply@jtoye.uk");
         ReflectionTestUtils.setField(emailService, "emailEnabled", true);
@@ -357,11 +362,12 @@ class OrderCreateFulfilmentTest {
         OrderStateChangeEvent event = new OrderStateChangeEvent(
                 UUID.randomUUID(), tenantId, "ORD-COR1-COL", OrderStatus.PREPARING,
                 OrderStatus.READY, OffsetDateTime.now());
-        emailService.sendOrderReady(event, "caller@example.com", walkIn.getFulfilmentType());
+        emailService.sendOrderReady(event, "caller@example.com",
+                CustomerEmailContext.unknownShop(walkIn.getFulfilmentType()));
 
-        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
         verify(mailSender, times(1)).send(captor.capture());
-        String body = captor.getValue().getText();
+        String body = SentMail.text(SentMail.reparse(captor.getValue()));
         org.junit.jupiter.api.Assertions.assertTrue(body.contains("ready for collection"),
                 "a walk-in ticket must not promise a delivery nobody has an address for");
     }

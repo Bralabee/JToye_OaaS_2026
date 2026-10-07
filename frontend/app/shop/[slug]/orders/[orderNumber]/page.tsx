@@ -11,8 +11,14 @@ import {
 } from "lucide-react"
 import publicApiClient from "@/lib/public-api-client"
 import { getCustomerSession } from "@/lib/customer-auth"
+import { RecordedAllergenSet } from "@/components/storefront/recorded-allergen-set"
+import type { PublicOrderAllergenRecord } from "@/types/storefront"
 
-interface OrderStatus {
+/**
+ * The tracking response (`PublicOrderStatus`). The allergen record (31.1-09) and the allergy-note
+ * status (31.1-13) come from {@link PublicOrderAllergenRecord}; all optional, absent = not recorded.
+ */
+interface OrderStatus extends PublicOrderAllergenRecord {
   orderNumber: string
   status: string
   shopName: string
@@ -52,8 +58,13 @@ function formatPrice(pennies: number): string {
   return `£${(pennies / 100).toFixed(2)}`
 }
 
+/** UK time, whatever zone the browser is in (goods P2-CHA-18): the shop and the customer read one clock. */
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+  return new Date(iso).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/London",
+  })
 }
 
 export default function OrderTrackingPage({
@@ -202,14 +213,19 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
 
       {/* Order number */}
       <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm text-center mb-6">
-        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Order number</p>
+        {/* 31.1-28 (#878): this page joined the published accessibility scope, and the WCAG 2.2
+            axe scan found the label at slate-400 (2.56:1 on white) and the copy button with no
+            accessible name. The label is slate-600 (the A11Y-11 precedent); the button is named. */}
+        <p className="text-xs font-medium text-slate-600 uppercase tracking-wider">Order number</p>
         <div className="mt-1 flex items-center justify-center gap-2">
           <p className="text-sm font-bold font-mono text-slate-900">{orderNumber}</p>
           <button
+            type="button"
             onClick={copyOrderNumber}
+            aria-label="Copy order number"
             className="flex h-6 w-6 items-center justify-center rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
           >
-            <Copy className="h-3 w-3" />
+            <Copy className="h-3 w-3" aria-hidden="true" />
           </button>
           {copied && <span className="text-xs text-emerald-600">Copied!</span>}
         </div>
@@ -288,12 +304,12 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
                   <div className="pb-6">
                     <p
                       className={`text-sm font-medium ${
-                        isComplete || isActive ? "text-slate-900" : "text-slate-400"
+                        isComplete || isActive ? "text-slate-900" : "text-slate-600"
                       }`}
                     >
                       {step.label}
                     </p>
-                    <p className={`text-xs ${isActive ? "text-amber-700" : "text-slate-400"}`}>
+                    <p className={`text-xs ${isActive ? "text-amber-700" : "text-slate-600"}`}>
                       {isActive && order.updatedAt
                         ? `${step.desc} · ${formatTime(order.updatedAt)}`
                         : step.desc}
@@ -327,9 +343,26 @@ function OrderTrackingContent({ slug, orderNumber }: { slug: string; orderNumber
         </div>
       )}
 
+      {/* What this order recorded about allergens, who placed it, and whether the shop read the
+          customer's allergy note (31.1-18: #785, #812; D-07, D-08, D-15). Rendered from the
+          tracking response only — this page computes nothing about allergens. Shown for every
+          status, cancelled and refunded included: the record is a fact about the order. */}
+      {order && (
+        <RecordedAllergenSet
+          acknowledged={order.acknowledgedAllergens ?? null}
+          recorded={order.recordedAllergens ?? null}
+          flags={order.recordedAllergenFlags ?? null}
+          placedVia={order.placedVia ?? null}
+          allergyNoteProvided={order.allergyNoteProvided ?? null}
+          allergyNoteAcknowledgedAt={order.allergyNoteAcknowledgedAt ?? null}
+          shopName={order.shopName}
+          className="mb-6"
+        />
+      )}
+
       {/* Auto-refresh indicator */}
       {order && !isCancelled && !isRefunded && currentStep < 4 && (
-        <p className="text-center text-xs text-slate-400 mb-6">
+        <p className="text-center text-xs text-slate-600 mb-6">
           <span className="inline-flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Live updates every 15 seconds
@@ -389,7 +422,7 @@ function EmailPrompt({ orderNumber, onSubmit }: { orderNumber: string; onSubmit:
         </p>
       </div>
       <div className="rounded-xl bg-white border border-cream-100 p-4 shadow-sm">
-        <p className="text-xs font-mono text-slate-400 mb-3">{orderNumber}</p>
+        <p className="text-xs font-mono text-slate-600 mb-3">{orderNumber}</p>
         <form onSubmit={(e) => { e.preventDefault(); if (emailInput.trim()) onSubmit(emailInput.trim()) }}>
           <input
             type="email"

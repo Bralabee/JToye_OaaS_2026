@@ -134,7 +134,7 @@ slugs=$(jq -r '.content[]?.slug // empty' <<< "$shops") \
 [ -n "${SHOP_SLUG:-}" ] && slugs="$SHOP_SLUG"
 [ -z "$slugs" ] && void "no published shops returned — nothing to order, so this run would prove nothing"
 
-slug=""; product=""; qty=0; minimum=0
+slug=""; product=""; qty=0; minimum=0; allergen_mask=""
 while read -r s; do
   [ -z "$s" ] && continue
   shop=$(curl -sf --max-time 15 "$CORE_URL/public/shops/$s") || continue
@@ -146,39 +146,47 @@ while read -r s; do
   # Pick the DEAREST available product: it reaches the minimum in the fewest units, so
   # the synthetic order stays small. `available == false` is exclusion; a missing field
   # means the DTO does not project it, which is not the same as unavailable.
+  # 31.1-03 (#784): the order must also acknowledge the product's DECLARED allergen set, so
+  # only a product whose allergenMask is a number on this menu can be ordered; the mask is
+  # read from the same menu JSON the storefront renders, never assumed.
   line=$(jq -r '
-      [ .[]?[]? | select(.available != false) | select(.id != null and .pricePennies != null and .pricePennies > 0) ]
-      | sort_by(-.pricePennies) | .[0] | select(. != null) | "\(.id) \(.pricePennies)"
+      [ .[]?[]? | select(.available != false) | select(.id != null and .pricePennies != null and .pricePennies > 0)
+        | select((.allergenMask | type) == "number") ]
+      | sort_by(-.pricePennies) | .[0] | select(. != null) | "\(.id) \(.pricePennies) \(.allergenMask)"
     ' <<< "$prods" 2>/dev/null)
   [ -z "$line" ] && continue
 
-  pid=${line% *}; price=${line#* }
+  read -r pid price pmask <<< "$line"
   # ceil(min / price), at least 1
   q=$(( (min + price - 1) / price )); [ "$q" -lt 1 ] && q=1
   if [ "$q" -gt "$MAX_QTY" ]; then
     echo "  skip $s: would need ${q} x ${price}p to clear a ${min}p minimum (> MAX_QTY=$MAX_QTY)"
     continue
   fi
-  slug=$s; product=$pid; qty=$q; minimum=$min
+  slug=$s; product=$pid; qty=$q; minimum=$min; allergen_mask=$pmask
   break
 done <<< "$slugs"
 
 [ -z "$slug" ] && void "no published shop had a purchasable product that can clear its minimum order value within MAX_QTY=$MAX_QTY — nothing was ordered, so this run proves nothing"
 
 echo "  shop       : $slug (minimum ${minimum}p)"
-echo "  product    : $product x $qty"
+echo "  product    : $product x $qty (declared allergen mask $allergen_mask)"
 
 # --- 3. place one real guest order --------------------------------------------------
 # COLLECTION deliberately: it needs no delivery address, so this is the smallest request
 # that still exercises the real path and yields a 201.
+# acknowledgedAllergenMask (31.1-03, #784): a one-product basket's declared set IS that
+# product's mask. Missing, the server answers 422; stale (the vendor edited it since the
+# menu was read), 409 — both are a non-201 and VOID below with the server's own body.
 key="metric-seed-$(date -u +%Y%m%d%H%M%S)-$$"
-body=$(jq -n --arg k "$key" --arg p "$product" --argjson q "$qty" '{
+body=$(jq -n --arg k "$key" --arg p "$product" --argjson q "$qty" --argjson m "$allergen_mask" '{
   customerName:   "Metric Seed Probe",
   customerEmail:  "metric-seed@jtoye.local",
   customerPhone:  "+441234567890",
   notes:          "Synthetic order from scripts/seed-order-metric.sh to materialise the NoOrdersCreated counter. Safe to delete.",
   idempotencyKey: $k,
   fulfilmentType: "COLLECTION",
+  acknowledgedAllergenMask: $m,
   items: [{productId: $p, quantity: $q}]
 }') || void "could not build the request body"
 

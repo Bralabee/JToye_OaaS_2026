@@ -163,6 +163,18 @@ export function StorefrontNav() {
             My Orders
           </Link>
         )}
+        {/* #838 (D-04): the signed-in customer's door to their data rights. Customer-only, like
+            My Orders — a guest has no account to act on, and the public DSAR route for everyone
+            else is the privacy notice. */}
+        {profile && (
+          <Link
+            href="/shop/account"
+            className="text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1"
+          >
+            <User className="h-3.5 w-3.5" aria-hidden="true" />
+            My account
+          </Link>
+        )}
       </div>
 
       {/* Basket — only on /shop/[slug] routes where a cart exists (all
@@ -331,6 +343,16 @@ export function StorefrontNav() {
                   className={mobileLink(isActive("/shop/orders"))}
                 >
                   My Orders
+                </Link>
+              </SheetClose>
+            )}
+            {profile && (
+              <SheetClose asChild>
+                <Link
+                  href="/shop/account"
+                  className={mobileLink(isActive("/shop/account"))}
+                >
+                  My account
                 </Link>
               </SheetClose>
             )}

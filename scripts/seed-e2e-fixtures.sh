@@ -309,6 +309,76 @@ SQL
 )
 psql_run "$zero_vat_sql" || void "zero-rated product seed failed"
 
+# --- 4b. Seller details (#789, 31.1-12: backfilled, not grandfathered) ---------------
+#   The TRADER_IDENTITY onboarding gate is MANDATORY: it FAILS unless the tenant has a
+#   legal name and a geographic address on file and the onboarding's shop has an email.
+#   ONBD-05 onboards PROMO_SHOP_SLUG, so without these rows its onboarding lands in
+#   ACTION_REQUIRED and the in-review copy it asserts can never render — the same
+#   "a fixture sabotages another fixture" shape as the allergen note above. The
+#   storefront seller block (31.1-24) reads the same rows.
+#
+#   The values are PLAINLY DEMONSTRATION DATA, and they live only here and in the dev
+#   DemoDataSeeder — never in a Flyway migration, which would write an invented legal name
+#   into every environment's database (the V63 "fabricated record" defect):
+#     legal name : the shop's name followed by "(demo)", entity SOLE_TRADER (so no company
+#                  number is invented);
+#     address    : the shop's own seeded premises address, split into lines;
+#     shop email : kitchen@<slug>.example.com (example.com is reserved, RFC 2606), set only
+#                  where the shop has none. A vendor-entered identity or email is never
+#                  overwritten (INSERT ... ON CONFLICT DO NOTHING; the CASE keeps an email).
+#
+#   RLS (memory trap_rls_migration_backfill): trader_identity and shops are FORCE RLS, and a
+#   write from a role that does not bypass it matches ZERO rows unless the tenant GUC is
+#   pinned. So each tenant's writes run in ONE transaction (one multi-statement -c string)
+#   after set_config('app.current_tenant_id', <tenant>, true), and the shops UPDATE touches
+#   EVERY published shop of the tenant (it rewrites a present email to itself), so its
+#   affected count must equal the published-shop count and be > 0 on every run. A 0 there
+#   is the RLS trap, not "nothing to do", and VOIDs the run.
+#
+#   SCOPE: the tenant that owns PROMO_SHOP_SLUG — the vendor tenant the specs sign in as.
+SELLER_TENANTS="$SHOP_TENANT"
+SELLER_POSTCODE_RE='([A-Za-z]{1,2}[0-9][A-Za-z0-9]? ?[0-9][A-Za-z]{2})$'
+for seller_tenant in $SELLER_TENANTS; do
+  seller_counts=$(psql_q "
+select set_config('app.current_tenant_id', '$seller_tenant', true);
+with src as (
+  select s.tenant_id, s.name, string_to_array(s.address, ',') as parts
+    from shops s where s.tenant_id = '$seller_tenant' and s.slug = '$PROMO_SHOP_SLUG'
+), split as (
+  select tenant_id, name,
+         btrim(parts[1]) as line1,
+         nullif(btrim(array_to_string(parts[2:array_length(parts, 1) - 1], ',')), '') as line2,
+         btrim(parts[array_length(parts, 1)]) as last_part
+    from src where array_length(parts, 1) >= 2
+), ins as (
+  insert into trader_identity
+    (id, tenant_id, legal_name, entity_type, address_line1, address_line2, address_city, address_postcode)
+  select gen_random_uuid(), tenant_id, name || ' (demo)', 'SOLE_TRADER', line1, line2,
+         btrim(regexp_replace(last_part, '$SELLER_POSTCODE_RE', '')),
+         upper(substring(last_part from '$SELLER_POSTCODE_RE'))
+    from split
+   where substring(last_part from '$SELLER_POSTCODE_RE') is not null
+  on conflict (tenant_id) do nothing
+  returning 1
+), upd as (
+  update shops set email = case
+           when email is null or email ~ '^[[:space:]]*\$' then 'kitchen@' || slug || '.example.com'
+           else email end
+   where tenant_id = '$seller_tenant' and published
+  returning 1
+)
+select (select count(*) from shops where tenant_id = '$seller_tenant' and published)
+       || ' ' || (select count(*) from upd) || ' ' || (select count(*) from ins);") \
+    || void "seller-details seed failed for tenant $seller_tenant"
+  # psql 15 prints every statement's result (set_config's first); the counts are the last line.
+  read -r seller_visible seller_updated seller_inserted <<< "$(tail -n 1 <<< "$seller_counts")"
+  echo "  seller    : tenant $seller_tenant — published shops visible under the pin: $seller_visible, shops UPDATE affected: $seller_updated, identities inserted: $seller_inserted"
+  [ -n "${seller_visible:-}" ] && [ "$seller_visible" -gt 0 ] \
+    || void "tenant $seller_tenant: 0 published shops visible with the tenant pinned — cannot backfill seller details"
+  [ "$seller_updated" -eq "$seller_visible" ] \
+    || void "tenant $seller_tenant: shops UPDATE affected $seller_updated of $seller_visible published shops — the RLS-backfill trap"
+done
+
 # --- 5. Media review fixtures (delegated, not duplicated) ---------------------------
 #   Same shape as psql_run: quiet on success, the child's FULL output on failure. This used to be
 #   `>/dev/null 2>&1`, which left a CI log reading only "did not pass — run it directly" with no
@@ -380,6 +450,21 @@ zero_vat=$(psql_q "select count(*) from products p join shops s on s.id = p.shop
 # POSIX [[:space:]] is exactly space/TAB/LF/VT/FF/CR — it states the intent, matches
 # Character.isWhitespace for these inputs, and takes backslash-escape spelling out of this
 # path for good. `*` covers the empty string, so it subsumes the original `= ''`.
+# #789 / 31.1-12: the TRADER_IDENTITY gate's predicate, asked of the DB — the tenant has a
+# legal name and a full address, and every published shop of the tenant has a non-blank email.
+# Same [[:space:]] spelling as the allergen check below, for the same reason (the gate tests
+# isBlank()). Expect 0 — else ONBD-05's onboarding FAILS the mandatory gate.
+seller_incomplete=$(psql_q "select
+    (select count(*) from shops s
+      where s.tenant_id = '$SHOP_TENANT' and s.published
+        and (s.email is null or s.email ~ '^[[:space:]]*\$'))
+  + (select case when exists (select 1 from trader_identity t
+                               where t.tenant_id = '$SHOP_TENANT'
+                                 and t.legal_name !~ '^[[:space:]]*\$'
+                                 and t.address_line1 !~ '^[[:space:]]*\$'
+                                 and t.address_city !~ '^[[:space:]]*\$'
+                                 and t.address_postcode !~ '^[[:space:]]*\$')
+                 then 0 else 1 end);")
 allergen_incomplete=$(psql_q "select count(*) from products
   where shop_id = '$SHOP_ID'
     and (durability_type is null or durability_type ~ '^[[:space:]]*\$'
@@ -392,9 +477,10 @@ echo "  ACTIVE, in-window announcements on the shop  : $ann  (expect >= 1)"
 echo "  Onboarding rows ONBD-05 cannot run from      : $onb_terminal  (expect 0 — else ONBD-05 skips undeclared)"
 echo "  Allergen-incomplete products on the shop     : $allergen_incomplete  (expect 0 — else the mandatory gate FAILS and ONBD-05 cannot reach in-review)"
 echo "  VISIBLE zero-rated products (COR-6 arming)   : $zero_vat  (expect >= 1 — else the VAT-preview assertion is vacuous)"
+echo "  Seller-details gaps (no identity / no email) : $seller_incomplete  (expect 0 — else the mandatory TRADER_IDENTITY gate FAILS)"
 
 if [ "$draft" -ge 1 ] && [ "$promo" -ge 1 ] && [ "$ann" -ge 1 ] && [ "$onb_terminal" -eq 0 ] \
-   && [ "$zero_vat" -ge 1 ] && [ "$allergen_incomplete" -eq 0 ]; then
+   && [ "$zero_vat" -ge 1 ] && [ "$allergen_incomplete" -eq 0 ] && [ "$seller_incomplete" -eq 0 ]; then
   echo "PASS: vendor-refund-flow's DRAFT test, storefront-flows' STFR-06 and onboarding-blocked-flow's ONBD-05 can now assert non-vacuously."
   echo "      COR-6: a VISIBLE zero-rated product exists, so 'checkout preview == confirmation'"
   echo "      is falsifiable rather than a coincidence of an all-STANDARD catalogue."

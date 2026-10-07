@@ -20,6 +20,7 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.storefront.dto.GuestOrderConfirmation;
 import uk.jtoye.core.storefront.dto.GuestOrderItemRequest;
 import uk.jtoye.core.storefront.dto.GuestOrderRequest;
+import uk.jtoye.core.testsupport.GuestOrderAcknowledgements;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 
 import java.util.ArrayList;
@@ -237,7 +238,8 @@ class GuestCheckoutStockConvergenceIntegrationTest {
         // fulfilment-agnostic (it pins STOCK behaviour), so use COLLECTION —
         // no address needed, delivery fee forced to £0.
         request.setFulfilmentType("COLLECTION");
-        return request;
+        // 31.1-03 (#784): a storefront order carries the CURRENT declared allergen set.
+        return GuestOrderAcknowledgements.acknowledgeCurrent(request, jdbcTemplate, TENANT_ID);
     }
 
     // ---- Read helpers (TenantContext set for correctness; Testcontainers

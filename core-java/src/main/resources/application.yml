@@ -161,6 +161,19 @@ spring:
 # NOT used because this project supplies a custom JwtDecoder bean — that
 # property only applies to Spring's auto-configured decoder.
 jtoye:
+  # The PLATFORM operator's own identity, printed in the footer of every customer order email
+  # (31.1-25, D-13/D-14). J'Toye is the ordering platform, never the seller: the seller is the
+  # shop's legal entity, named in the body. Company 16471464 (ACTIVE) — never the dissolved
+  # namesake 13434105. These mirror frontend/lib/company.ts.
+  platform:
+    legal-name: "J'Toye Digital Ltd"
+    company-number: "16471464"
+    registration-jurisdiction: "England & Wales"
+    # D-14: taken from the public Companies House record and confirmed by the owner (31.1-27).
+    # EMPTY DEFAULT ON PURPOSE: with no value the footer omits the line, it never prints a blank
+    # "Registered office:" (Pitfall 13 — 31.1-27 sets it in every runtime, beside the frontend's
+    # NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE).
+    registered-office: ${COMPANY_REGISTERED_OFFICE:}
   shop:
     # Slugs a vendor may NOT claim, because the storefront serves a STATIC route at
     # /shop/<segment> and Next.js resolves a static segment BEFORE the dynamic
@@ -170,11 +183,14 @@ jtoye:
     # This is configuration rather than a constant because the list is a function of
     # the frontend route table (frontend/app/shop/*/), which changes as routes are
     # added. Keep it in step with that directory — 'auth' and 'orders' have been
-    # static since Phase 18; 'signin' is the customer sign-in page.
+    # static since Phase 18; 'signin' is the customer sign-in page; 'account' is the
+    # signed-in customer's data-rights page (31.1-26, #838). ShopReservedSlugAccountTest
+    # walks frontend/app/shop/ and fails if a static segment is missing here or from
+    # the ShopService default.
     #
     # Only an EXPLICITLY supplied slug can collide: ShopService appends a random
     # 8-character suffix to any slug it generates itself.
-    reserved-slugs: ${SHOP_RESERVED_SLUGS:auth,orders,signin}
+    reserved-slugs: ${SHOP_RESERVED_SLUGS:account,auth,orders,signin}
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:
@@ -220,16 +236,57 @@ jtoye:
       # permanently broken tenant would re-claim the same request forever, and the failure would
       # stay invisible; with one it becomes a loud, countable state.
       max-process-attempts: ${DSAR_MAX_PROCESS_ATTEMPTS:5}
+      # How long a claim holds a request before another sweep may take it back. The claim commits
+      # on its own, so a sweep that dies mid-run (a pod restart, a DB error) leaves the row
+      # IN_PROGRESS; past the lease the next sweep reclaims it, and a request reclaimed past
+      # max-process-attempts is parked FAILED. One hour: it must outlast the longest live sweep,
+      # because reclaiming a request a live sweep still holds runs it twice.
+      claim-lease-ms: ${DSAR_CLAIM_LEASE_MS:3600000}
       # How long a subject has to confirm control of the address. Seven days: long enough to
       # survive a weekend and a spam folder, short enough that a live bearer token is not left
       # lying in a mailbox indefinitely. Read by DsarIntakeService when stamping the expiry, and
       # quoted verbatim to the subject by DsarVerificationMailer, so the promise and the column
       # cannot disagree.
       verification-ttl-hours: ${DSAR_VERIFICATION_TTL_HOURS:168}
-      # Where the emailed confirmation link points. Config-injected and NEVER derived from the
-      # request: a link built from an attacker-supplied Host header would redirect a live,
-      # single-use bearer token to a collector of their choosing.
-      verify-base-url: ${DSAR_VERIFY_BASE_URL:http://localhost:8080/api/v1/public/gdpr/dsar/verify}
+      # Where the emailed confirmation link points: the web app's /data-request/confirm page, with
+      # the token appended in the URL FRAGMENT (#token=...), which a browser never sends to a server
+      # (31.1-20, #839: this used to be the API on localhost:8080, where nothing listens on compose,
+      # and the API answers raw JSON). The page spends the token only when the person presses
+      # "Confirm my request". Config-injected and NEVER derived from the request: a link built from
+      # an attacker-supplied Host header would redirect a live, single-use bearer token to a
+      # collector of their choosing. Every runtime supplies its own web origin, pinned by
+      # DsarLinkConfigContractTest.
+      verify-base-url: ${DSAR_VERIFY_BASE_URL:http://localhost:3000/data-request/confirm}
+      # 31.1-16 (D-01, #778): how long the emailed Article 15 download link lives. Seven days
+      # (assumption A5, cheap to change): the same window the verification link gets. Read by
+      # DsarAccessExportService when stamping dsar_access_export.expires_at AND quoted to the subject
+      # by DsarOutcomeMailer from that same value, so the promise and the column cannot disagree.
+      export-link-ttl-hours: ${DSAR_EXPORT_LINK_TTL_HOURS:168}
+      # 31.1-16 (D-01): where the emailed download link points — the frontend page (31.1-17), with the
+      # single-use token appended in the URL FRAGMENT (#token=...), which a browser never sends to a
+      # server. Config-injected and NEVER derived from a request: a link built from an
+      # attacker-supplied Host header would hand a live bearer token for a personal-data document to
+      # whoever supplied it.
+      export-download-base-url: ${DSAR_EXPORT_DOWNLOAD_BASE_URL:http://localhost:3000/data-request/download}
+      # 31.1-17 (D-01, retention row R-15): how often DsarExportPurgeJob destroys the payload of every
+      # Article 15 export whose link lapsed without being used. Hourly: the published promise is that
+      # the copy is gone when the link (export-link-ttl-hours) expires, so it may outlive that by at
+      # most this interval; the sweep is one UPDATE over a table that is almost always empty. The
+      # @Scheduled annotation carries the same inline default, so absence never disables it.
+      export-purge-interval-ms: ${DSAR_EXPORT_PURGE_INTERVAL_MS:3600000}
+      # 31.1-07 (D-19): the AES-256-GCM key for the subject's address, which dsar_request holds
+      # ENCRYPTED from intake until a terminal state (V70). A SECRET, unlike every key above: 64
+      # hexadecimal characters (32 bytes), generated with `openssl rand -hex 32`, supplied only by
+      # the environment. The default is deliberately EMPTY so an absent key fails fast at startup
+      # (DsarCipher refuses to construct, naming this property and never the value) instead of
+      # silently encrypting under something guessable. Never commit a value here.
+      encryption-key: ${DSAR_ENCRYPTION_KEY:}
+      # 31.1-07 (D-19): how often DsarRequestExpirySweep moves unverified requests whose
+      # verification window has passed to EXPIRED, dropping their encrypted address in the same
+      # statement. Fifteen minutes: an address must not outlive verification-ttl-hours by much, and
+      # the sweep is a single UPDATE over a table that is almost always empty. The
+      # @Scheduled annotation carries the same inline default, so absence never disables it.
+      expiry-sweep-interval-ms: ${DSAR_EXPIRY_SWEEP_INTERVAL_MS:900000}
       # QA-council cluster S1 (SEC-1): DsarIntakeRateLimiter's three independent axes. The
       # pre-existing IP-keyed bucket (requests-per-hour / max-tracked-clients — deliberately left
       # undocumented here to match its own prior convention) is keyed on the client-controllable
@@ -303,6 +360,12 @@ jtoye:
       # realm only: jtoye-customers has no tenant_id user attributes, so it is
       # deliberately excluded.
       realms: ${KC_DEPROVISION_REALMS:jtoye-dev}
+      # 31.1-11 (D-03, #777): the realm holding CUSTOMER sign-in accounts (ADR-0005), and
+      # the ONLY realm a verified DSAR erasure deletes an account from. Deliberately a
+      # separate key from `realms` above, which stays the vendor offboarding sweep
+      # (T-kc-04). Same enabled/base-url/password switch: with the seam off, an erasure
+      # is recorded NOT_CONFIGURED and is never reported complete.
+      customer-realm: ${KC_CUSTOMER_REALM:jtoye-customers}
       username: ${KEYCLOAK_ADMIN:admin}
       password: ${KEYCLOAK_ADMIN_PASSWORD:}
   # Phase 22 COMMS-07: WhatsApp/SMS provider seam. FULLY INERT by default —

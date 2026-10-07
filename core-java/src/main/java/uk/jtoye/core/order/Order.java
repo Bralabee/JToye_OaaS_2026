@@ -134,6 +134,52 @@ public class Order {
     @Column(name = "unit_count")
     private Integer unitCount;
 
+    /**
+     * The 14-bit allergen set the customer ACKNOWLEDGED at checkout (V69, Phase 31.1 D-06), in the
+     * {@link uk.jtoye.core.product.AllergenCatalog} bit layout shared with
+     * {@code order_items.allergen_mask}. The storefront path accepts only an acknowledgement equal to
+     * the union of the declared masks it snapshots onto the lines in the same transaction, so on a
+     * STOREFRONT order this equals {@code OR(order_items.allergen_mask)} by construction.
+     *
+     * <p><b>NULLABLE, and null means NOT RECORDED</b>: the order predates V69, or was placed by the
+     * vendor ({@link OrderChannel#VENDOR}, D-07). 0 is a different statement: the customer
+     * acknowledged a basket declaring none of the 14. Never default it and never infer it.
+     */
+    @Column(name = "allergen_ack_mask")
+    private Integer allergenAckMask;
+
+    /** When the server accepted {@link #allergenAckMask} (V69). Null means not recorded. */
+    @Column(name = "allergen_ack_at")
+    private OffsetDateTime allergenAckAt;
+
+    /**
+     * The channel that placed this order (V69, D-07). Null means not recorded (the order predates
+     * V69); it is never guessed.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "placed_via", length = 16)
+    private OrderChannel placedVia;
+
+    /**
+     * The customer's own allergy or dietary note (V73, Phase 31.1 D-15, #812), sent for THIS shop
+     * to prepare THIS order. Separate from {@link #notes}, which stays the delivery note. Trimmed by
+     * the storefront write path; null means none was given (or an Article 17 erasure removed it).
+     * Never read for any other purpose: no derivation, matching, profiling or analytics.
+     */
+    @Column(name = "allergy_note", length = 500)
+    private String allergyNote;
+
+    /**
+     * When someone in the shop confirmed reading {@link #allergyNote} (V73). Null means not
+     * acknowledged. First write wins and is never overwritten; an erasure keeps it.
+     */
+    @Column(name = "allergy_note_ack_at")
+    private OffsetDateTime allergyNoteAckAt;
+
+    /** Who confirmed reading it: the authenticated principal name (V73). Written with {@link #allergyNoteAckAt}. */
+    @Column(name = "allergy_note_ack_by", length = 255)
+    private String allergyNoteAckBy;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", length = 20)
     private PaymentStatus paymentStatus = PaymentStatus.NONE;
@@ -335,6 +381,54 @@ public class Order {
 
     public void setUnitCount(Integer unitCount) {
         this.unitCount = unitCount;
+    }
+
+    public Integer getAllergenAckMask() {
+        return allergenAckMask;
+    }
+
+    public void setAllergenAckMask(Integer allergenAckMask) {
+        this.allergenAckMask = allergenAckMask;
+    }
+
+    public OffsetDateTime getAllergenAckAt() {
+        return allergenAckAt;
+    }
+
+    public void setAllergenAckAt(OffsetDateTime allergenAckAt) {
+        this.allergenAckAt = allergenAckAt;
+    }
+
+    public OrderChannel getPlacedVia() {
+        return placedVia;
+    }
+
+    public void setPlacedVia(OrderChannel placedVia) {
+        this.placedVia = placedVia;
+    }
+
+    public String getAllergyNote() {
+        return allergyNote;
+    }
+
+    public void setAllergyNote(String allergyNote) {
+        this.allergyNote = allergyNote;
+    }
+
+    public OffsetDateTime getAllergyNoteAckAt() {
+        return allergyNoteAckAt;
+    }
+
+    public void setAllergyNoteAckAt(OffsetDateTime allergyNoteAckAt) {
+        this.allergyNoteAckAt = allergyNoteAckAt;
+    }
+
+    public String getAllergyNoteAckBy() {
+        return allergyNoteAckBy;
+    }
+
+    public void setAllergyNoteAckBy(String allergyNoteAckBy) {
+        this.allergyNoteAckBy = allergyNoteAckBy;
     }
 
     public void setItemCount(Integer itemCount) {

@@ -61,6 +61,19 @@ REQUIRED_VARS=(
   # not fire on a variable it was not looking at.
   GRAFANA_ADMIN_PASSWORD
   POSTGRES_EXPORTER_PASSWORD
+  # 31.1-07 / D-19: the AES-256-GCM key for the DSAR subject address. core-java
+  # refuses to START without a valid one, so a missing or malformed key here is a
+  # stack that never comes up. Beyond presence, section (c2) below checks its exact
+  # FORMAT, because a long, non-weak value can still be the wrong shape.
+  DSAR_ENCRYPTION_KEY
+)
+
+# Variables that must match an exact format, as "NAME|extended-regex|description".
+# The regex is anchored by the check itself. Checks (a)-(c) cannot see these: a
+# 63-character or non-hex value is set, long enough and on no deny-list, and is
+# still a value the application rejects at boot.
+FORMAT_RULES=(
+  "DSAR_ENCRYPTION_KEY|[0-9a-fA-F]{64}|exactly 64 hexadecimal characters (32 bytes); generate one with: openssl rand -hex 32"
 )
 
 # Weak values that must never be used. Tokens are stored canonical UPPER-case and
@@ -175,6 +188,20 @@ for var in "${REQUIRED_VARS[@]}"; do
   [ -z "$val" ] && continue # already reported as missing above
   if [ "${#val}" -lt "$MIN_CREDENTIAL_LENGTH" ]; then
     fail "Required variable ${var} is shorter than the ${MIN_CREDENTIAL_LENGTH}-character minimum (value redacted)"
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
+# ---- (c2) exact format -------------------------------------------------------
+# The value is matched with bash's own [[ =~ ]] against an anchored pattern, so it
+# never reaches a command line, a pipe or the output. Only the NAME is reported.
+echo "Checking variables with an exact required format..."
+for rule in "${FORMAT_RULES[@]}"; do
+  IFS='|' read -r f_var f_re f_desc <<< "$rule"
+  val="${!f_var-}"
+  [ -z "$val" ] && continue # already reported as missing above
+  if ! [[ "$val" =~ ^${f_re}$ ]]; then
+    fail "Required variable ${f_var} must be ${f_desc} (value redacted)"
     ERRORS=$((ERRORS + 1))
   fi
 done

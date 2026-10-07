@@ -35,7 +35,7 @@ jest.mock("@/lib/customer-auth", () => ({
   getCustomerSession: jest.fn(() => Promise.resolve(null)),
 }))
 jest.mock("@/lib/order-history", () => ({ saveLocalOrder: jest.fn() }))
-jest.mock("@stripe/stripe-js", () => ({ loadStripe: jest.fn(() => Promise.resolve(null)) }))
+jest.mock("@stripe/stripe-js/pure", () => ({ loadStripe: jest.fn(() => Promise.resolve(null)) }))
 jest.mock("@stripe/react-stripe-js", () => ({
   Elements: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PaymentElement: () => null,
@@ -44,6 +44,18 @@ jest.mock("@stripe/react-stripe-js", () => ({
 }))
 
 const mockedGet = publicApiClient.get as jest.Mock
+
+// 31.1-15 (T-31.1-53): the checkout now refuses to submit without the basket's declared allergen
+// set, which it reads from the products endpoint. This harness used to answer EVERY GET with the
+// shop, so the catalogue never resolved — a state in which the server (31.1-03) would refuse the
+// order 422. Serve a catalogue for the basket's lines (declared none) and the shop for everything
+// else. Harness only: no assertion in this file changed.
+const CATALOGUE = { Mains: Array.from({ length: 10 }, (_, i) => ({ id: `p${i}`, allergenMask: 0 })) }
+function mockShop(shop: unknown) {
+  mockedGet.mockImplementation((url: string) =>
+    Promise.resolve({ data: typeof url === "string" && url.endsWith("/products") ? CATALOGUE : shop })
+  )
+}
 const mockedPost = publicApiClient.post as jest.Mock
 
 const SLUG = "jollof-express"
@@ -107,7 +119,7 @@ function renderCheckout() {
 beforeEach(() => {
   mockedGet.mockReset()
   mockedPost.mockReset()
-  mockedGet.mockResolvedValue({ data: SHOP })
+  mockShop(SHOP)
 })
 
 /** Fill a COLLECTION order, acknowledge the allergen panel and submit, landing on the COD confirmation. */

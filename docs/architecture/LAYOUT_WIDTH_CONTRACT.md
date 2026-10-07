@@ -333,7 +333,7 @@ tier is worse than one that admits none is, because the first stops anyone looki
 **Adjacent, and not the same claim.** `frontend/e2e/public-layout.spec.ts` and
 `frontend/e2e/public-a11y.spec.ts` also run per-PR, over a wider route set — `/`, `/shop`,
 `/for-operators`, `/track`, `/business-model-guide`, `/competitive` and all five `/legal` routes —
-and they block a merge. But they assert **no horizontal overflow and WCAG 2.1 AA conformance**, not
+and they block a merge. But they assert **no horizontal overflow and WCAG 2.2 AA conformance**, not
 band width: measured with a control, neither spec references the tier attribute at all. So a gross
 regression on `/competitive` or `/shop` would red per-PR; a wrong band width on those two routes
 would not.

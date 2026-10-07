@@ -103,12 +103,26 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     Optional<Order> findByOrderNumberAndCustomerEmail(String orderNumber, String customerEmail);
 
     /**
-     * Find all orders by customer email, most recent first, unpaged.
-     * Internal use only (GdprService email sweep must cover ALL orders) — the
-     * public order-history API uses the paginated overload (Issue #95).
-     * RLS policy requires matching session variable.
+     * A subject's orders in ONE tenant, unpaged — the GDPR erasure sweep must reach them all.
+     *
+     * <p>The tenant predicate is explicit and is the first layer, not a courtesy: the
+     * {@code orders_customer_history} / {@code orders_guest_tracking} SELECT policies let a session that
+     * carries {@code app.customer_email} read that address's orders in EVERY tenant, so an email-only
+     * lookup is one GUC away from reaching another tenant's rows (the #764 lesson for reviews).
+     * This replaces the unpredicated {@code findByCustomerEmailOrderByCreatedAtDesc(String)} (#777).
      */
-    List<Order> findByCustomerEmailOrderByCreatedAtDesc(String customerEmail);
+    List<Order> findByTenantIdAndCustomerEmail(UUID tenantId, String customerEmail);
+
+    /**
+     * Every distinct stored spelling of a customer address on ONE tenant's orders (#777).
+     *
+     * <p>The DSAR fan-out holds only a digest of the subject's address, so it compares each stored
+     * spelling's {@code DsarSubjectDigest} in Java; the finders are exact-match, so every spelling that
+     * normalises to the subject (case, surrounding whitespace) has to be found and erased separately.
+     */
+    @Query("SELECT DISTINCT o.customerEmail FROM Order o "
+            + "WHERE o.tenantId = :tenantId AND o.customerEmail IS NOT NULL")
+    List<String> findDistinctCustomerEmailsByTenantId(@Param("tenantId") UUID tenantId);
 
     /**
      * Find orders by customer email, most recent first, paginated.
@@ -134,7 +148,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = "UPDATE orders_aud SET customer_name = :redacted, customer_email = NULL, "
-            + "customer_phone = NULL, notes = NULL, "
+            + "customer_phone = NULL, notes = NULL, allergy_note = NULL, "
             + "address_line1 = NULL, address_line2 = NULL, address_city = NULL, address_postcode = NULL "
             + "WHERE tenant_id = :tenantId AND (customer_id = :customerId OR customer_email = :email)",
             nativeQuery = true)
@@ -142,4 +156,21 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
                          @Param("customerId") UUID customerId,
                          @Param("email") String email,
                          @Param("redacted") String redacted);
+
+    /**
+     * The {@link #scrubOrdersAudit} scrub for a subject reached by address alone: a guest storefront
+     * subject with no {@code customers} row, or a further stored spelling of a customer's address
+     * (#777). Same columns, same explicit {@code tenant_id} predicate, same V42 UPDATE policy.
+     *
+     * @return number of audit rows scrubbed
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "UPDATE orders_aud SET customer_name = :redacted, customer_email = NULL, "
+            + "customer_phone = NULL, notes = NULL, allergy_note = NULL, "
+            + "address_line1 = NULL, address_line2 = NULL, address_city = NULL, address_postcode = NULL "
+            + "WHERE tenant_id = :tenantId AND customer_email = :email",
+            nativeQuery = true)
+    int scrubOrdersAuditByEmail(@Param("tenantId") UUID tenantId,
+                                @Param("email") String email,
+                                @Param("redacted") String redacted);
 }

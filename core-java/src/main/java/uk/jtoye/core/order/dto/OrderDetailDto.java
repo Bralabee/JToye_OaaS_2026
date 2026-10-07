@@ -1,5 +1,6 @@
 package uk.jtoye.core.order.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderStatus;
 import uk.jtoye.core.order.PaymentStatus;
@@ -74,6 +75,71 @@ public class OrderDetailDto {
      * declaration and never merged into it. Empty (not null) when nothing was flagged.
      */
     private List<OrderAllergenFlagDto> allergenFlags;
+
+    // ------------------------------------------------------------------
+    // Phase 31.1 D-06/D-07: what the customer ACKNOWLEDGED, and which channel placed the order.
+    // The acknowledged set (V69 order columns) is a different fact from the recorded set above
+    // (V63 line snapshot): this DTO carries both, and the reconciliation flags stay in
+    // allergenFlags, never merged into either. Null on any of these means NOT RECORDED (a vendor
+    // order, or a row from before V69); a recorded 0 gives acknowledgedAllergenNames [].
+    // ------------------------------------------------------------------
+    @Schema(description = "The allergen mask (AllergenCatalog bits 0..13) the customer acknowledged at checkout. "
+            + "0 means they acknowledged a basket declaring none of the 14 regulated allergens; null means no "
+            + "acknowledgement was recorded (placedVia VENDOR, or the order predates the acknowledgement).")
+    private Integer allergenAckMask;
+
+    @Schema(description = "When the server accepted allergenAckMask; null when no acknowledgement was recorded.")
+    private OffsetDateTime allergenAckAt;
+
+    @Schema(description = "Which channel placed the order: STOREFRONT (the customer, who acknowledged the allergen "
+            + "set) or VENDOR (the shop entered it; no customer acknowledgement). Null when the order predates the "
+            + "channel being recorded.", allowableValues = {"STOREFRONT", "VENDOR"})
+    private String placedVia;
+
+    @Schema(description = "The names of allergenAckMask, in AllergenCatalog bit order. [] when the mask is 0; null "
+            + "when no acknowledgement was recorded.")
+    private List<String> acknowledgedAllergenNames;
+
+    public Integer getAllergenAckMask() { return allergenAckMask; }
+    public void setAllergenAckMask(Integer allergenAckMask) { this.allergenAckMask = allergenAckMask; }
+
+    public OffsetDateTime getAllergenAckAt() { return allergenAckAt; }
+    public void setAllergenAckAt(OffsetDateTime allergenAckAt) { this.allergenAckAt = allergenAckAt; }
+
+    public String getPlacedVia() { return placedVia; }
+    public void setPlacedVia(String placedVia) { this.placedVia = placedVia; }
+
+    public List<String> getAcknowledgedAllergenNames() { return acknowledgedAllergenNames; }
+    public void setAcknowledgedAllergenNames(List<String> acknowledgedAllergenNames) { this.acknowledgedAllergenNames = acknowledgedAllergenNames; }
+
+    // ------------------------------------------------------------------
+    // Phase 31.1 D-15 (#812): the customer's allergy note, which the kitchen board and the order
+    // page show prominently, and the shop's acknowledgement of it (who and when). Scalar V73
+    // columns. Null means no note was given / not acknowledged yet.
+    // ------------------------------------------------------------------
+    @Schema(description = "The customer's allergy or dietary note for this order, separate from notes (delivery). "
+            + "Null when none was given.")
+    private String allergyNote;
+
+    @Schema(description = "When someone in the shop acknowledged reading allergyNote; null until acknowledged.")
+    private OffsetDateTime allergyNoteAcknowledgedAt;
+
+    @Schema(description = "Who in the shop acknowledged allergyNote (the authenticated principal name); null until "
+            + "acknowledged.")
+    private String allergyNoteAcknowledgedBy;
+
+    public String getAllergyNote() { return allergyNote; }
+    public void setAllergyNote(String allergyNote) { this.allergyNote = allergyNote; }
+
+    public OffsetDateTime getAllergyNoteAcknowledgedAt() { return allergyNoteAcknowledgedAt; }
+    public void setAllergyNoteAcknowledgedAt(OffsetDateTime allergyNoteAcknowledgedAt) {
+        this.allergyNoteAcknowledgedAt = allergyNoteAcknowledgedAt;
+    }
+
+    public String getAllergyNoteAcknowledgedBy() { return allergyNoteAcknowledgedBy; }
+    public void setAllergyNoteAcknowledgedBy(String allergyNoteAcknowledgedBy) {
+        this.allergyNoteAcknowledgedBy = allergyNoteAcknowledgedBy;
+    }
 
     // Getters and Setters
     public UUID getId() { return id; }

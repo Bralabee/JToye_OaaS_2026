@@ -1,0 +1,5 @@
+=== ARM LBL (parser keeps ** in plainText) gradle rc=1 tests="2" skipped="1" failures="1" errors="0"
+ProductLabelGoldenFileTest > renderModelMatchesCommittedGolden() FAILED
+<failure message="java.lang.AssertionError:  Expecting actual:   LabelRenderModel[productName=Yam Pottage 500g, sku=YAM-500, pricePennies=599, ingredientRuns=[IngredientRun[text=Wheat flour, , emphasised=false], IngredientRun[text=**milk**, emphasise
+core-java/src/main/java/uk/jtoye/core/product/IngredientMarkupParser.java: OK
+=== clean-after gradle rc=0 tests="2" skipped="1" failures="0" errors="0"

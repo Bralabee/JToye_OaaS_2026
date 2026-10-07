@@ -5,6 +5,8 @@ import { AlertTriangle, AlertCircle } from "lucide-react"
 
 import { Checkbox } from "@/components/ui/checkbox"
 import type { OrderAllergenFlag } from "@/types/api"
+import { ALLERGEN_ATTRIBUTION_INTRO_COPY, allergenAttributionCopy } from "@/lib/allergen-copy"
+import { attributionAgreesWith, type AllergenAttribution } from "@/lib/basket-allergens"
 
 /**
  * S3 — the pre-submit allergen set and its acknowledgement (Phase 31-14, LGL-03 / D-01..D-03).
@@ -70,6 +72,51 @@ export const ALLERGEN_PANEL_SUBLINE_COPY =
 export const ALLERGEN_ACK_ERROR_COPY =
   "Confirm you have read the allergen information before placing this order."
 
+/**
+ * #785 (D-05, 31.1-15): rendered in the SAME `role="alert"` region when the server refused the
+ * submit because the set the customer acknowledged is no longer the basket's declared set (a
+ * vendor edit landed after they read it), or when a set arrived for a basket the panel had shown
+ * as NOT RECORDED. The panel now shows the current set and the box is unticked.
+ */
+export const ALLERGEN_ACK_STALE_COPY =
+  "The allergen information for your basket has changed. Read it again and tick the box to confirm."
+
+/**
+ * T-31.1-53 (31.1-15): rendered in the same alert region when the basket's declared set could not
+ * be loaded, so there is no set to acknowledge. The checkout refuses rather than send a guessed or
+ * zero mask — NOT RECORDED is never "none".
+ */
+export const ALLERGEN_ACK_UNAVAILABLE_COPY =
+  "We could not load the allergen information for your basket, so we cannot place this order yet. Check your connection and try again."
+
+/**
+ * #812 (D-15, 31.1-15): the checkout's dedicated allergy note. Separate from the order/delivery
+ * notes because it goes to the kitchen ticket and the shop must acknowledge reading it (31.1-13).
+ */
+export const ALLERGY_NOTE_LABEL_COPY = "Allergy or dietary note (optional)"
+
+/** GuestOrderRequest.allergyNote @Size(max = 500) (31.1-13). */
+export const ALLERGY_NOTE_MAX_LENGTH = 500
+
+/** Who reads the note, said where the customer writes it — so they write only what the kitchen needs. */
+export function allergyNoteHelpCopy(shopName: string): string {
+  return `Goes to ${shopName} so they can prepare your order. Only write what the kitchen needs to know.`
+}
+
+/** The live character count under the note. */
+export function allergyNoteCountCopy(length: number): string {
+  return `${length} of ${ALLERGY_NOTE_MAX_LENGTH}`
+}
+
+/** Which refusal the alert region is announcing. */
+export type AllergenAckErrorKind = "unticked" | "stale" | "unavailable"
+
+const ALLERGEN_ACK_ERROR_COPY_BY_KIND: Record<AllergenAckErrorKind, string> = {
+  unticked: ALLERGEN_ACK_ERROR_COPY,
+  stale: ALLERGEN_ACK_STALE_COPY,
+  unavailable: ALLERGEN_ACK_UNAVAILABLE_COPY,
+}
+
 /** The intro line, which attributes the declaration to the kitchen that made it. */
 export function allergenPanelIntroCopy(vendorName: string): string {
   return `These items are prepared by ${vendorName}. Based on what the kitchen has declared, this order contains:`
@@ -90,10 +137,23 @@ export interface OrderAllergenPanelProps {
   allergenNames: string[] | null
   /** Advisory only. Never OR-ed into `allergenNames`. */
   allergenFlags: OrderAllergenFlag[] | null
+  /**
+   * #860 (31.1-23, D-18): which dish carries each declared allergen, computed by the caller with
+   * `basketAllergenAttribution` (lib/basket-allergens.ts). Said BENEATH the declared set, never in
+   * place of it, and only when it names exactly the set `allergenNames` states: after a stale 409
+   * the panel states the server's newer set, and an attribution that disagrees with it is withheld
+   * rather than shown beside a contradiction. Optional: every earlier caller renders as before.
+   */
+  allergenAttribution?: AllergenAttribution[] | null
   acknowledged: boolean
   onAcknowledgedChange: (next: boolean) => void
   /** Set by the parent when a submit was refused for want of the acknowledgement. */
   errored?: boolean
+  /**
+   * Which refusal to announce when `errored`. Defaults to "unticked" (ALLERGEN_ACK_ERROR_COPY), so
+   * every pre-31.1-15 caller renders exactly what it did before.
+   */
+  errorKind?: AllergenAckErrorKind
   /** Stable id shared by the alert region and the checkbox's aria-describedby. */
   errorId?: string
   checkboxId?: string
@@ -105,9 +165,11 @@ export function OrderAllergenPanel({
   vendorName,
   allergenNames,
   allergenFlags,
+  allergenAttribution = null,
   acknowledged,
   onAcknowledgedChange,
   errored = false,
+  errorKind = "unticked",
   errorId = "allergen-ack-error",
   checkboxId = "allergen-ack",
   checkboxRef,
@@ -129,6 +191,9 @@ export function OrderAllergenPanel({
       : ALLERGEN_PANEL_HEADING_COPY
 
   const flags = allergenFlags ?? []
+  const attribution =
+    declared && attributionAgreesWith(allergenAttribution, allergenNames) ? allergenAttribution : null
+  const attributionIntroId = `${checkboxId}-attribution-intro`
 
   return (
     <section
@@ -157,6 +222,24 @@ export function OrderAllergenPanel({
               </li>
             ))}
           </ul>
+          {attribution && (
+            <div className="mt-3">
+              <p id={attributionIntroId} className="text-sm text-amber-700">
+                {ALLERGEN_ATTRIBUTION_INTRO_COPY}
+              </p>
+              <ul
+                data-testid="allergen-attribution"
+                aria-labelledby={attributionIntroId}
+                className="mt-1 space-y-0.5 text-sm text-amber-800"
+              >
+                {attribution.map((entry) => (
+                  <li key={entry.allergen} data-testid="allergen-attribution-line">
+                    {allergenAttributionCopy(entry.allergen, entry.dishes)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
 
@@ -212,7 +295,7 @@ export function OrderAllergenPanel({
           trains users to ignore the one announcement that matters. */}
       {errored && (
         <p id={errorId} role="alert" className="mt-2 text-sm font-semibold text-amber-800">
-          {ALLERGEN_ACK_ERROR_COPY}
+          {ALLERGEN_ACK_ERROR_COPY_BY_KIND[errorKind]}
         </p>
       )}
     </section>

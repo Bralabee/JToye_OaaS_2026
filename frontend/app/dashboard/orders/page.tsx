@@ -64,7 +64,8 @@ import {
 } from "lucide-react"
 import { Pagination } from "@/components/ui/pagination"
 import type { Order, OrderDetail, OrderStatus, Shop, Product } from "@/types/api"
-import { formatDistanceToNow, format } from "date-fns"
+import { formatDistanceToNow } from "date-fns"
+import { formatUkDateTime } from "@/lib/uk-datetime"
 import { Trash2 } from "lucide-react"
 
 // COR-1 (QA-council 20260902-134741, owner ruling E-1). The dialog had NO fulfilment control, so
@@ -1117,7 +1118,7 @@ function OrdersPageInner() {
                   {selectedOrderDetail.orderNumber || selectedOrderDetail.id.substring(0, 8)}
                 </DialogTitle>
                 <DialogDescription>
-                  Created {format(new Date(selectedOrderDetail.createdAt), "PPpp")}
+                  Created {formatUkDateTime(selectedOrderDetail.createdAt)}
                 </DialogDescription>
               </DialogHeader>
 

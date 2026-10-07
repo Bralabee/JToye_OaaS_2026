@@ -158,7 +158,31 @@ class RlsContractTest {
             //
             // Exempted BY ADDITION, per the standing instruction above; the schema-walk
             // assertion itself is untouched.
-            "dsar_request"
+            "dsar_request",
+
+            // V75 (Phase 31.1 / plan 31.1-16, D-01, #778): the single-use, expiring,
+            // encrypted Article 15 export behind the link an ACCESS request is answered
+            // with. It has no tenant_id because it CANNOT have one: one row is ONE
+            // document for ONE data subject, holding a section for every vendor that
+            // holds them (Article 15(1)(c) requires the recipients to be named), and it
+            // is read by an ANONYMOUS token holder from an email link — no JWT, no
+            // TenantContext, no app.current_tenant_id on the connection.
+            //
+            // Adding RLS here would not be "safer" — with no tenant_id there is no
+            // predicate to write, so a FORCE'd policy would return zero rows to the
+            // download, every emailed link would be dead, and every test would stay
+            // green because a dead table is indistinguishable from an empty one. What
+            // protects it instead: the token is stored only as a SHA-256 digest, the
+            // payload is AES-256-GCM encrypted (DsarCipher ACCESS_EXPORT, request id as
+            // associated data, key outside the database), single use (a CHECK refuses a
+            // consumed row that keeps its payload), an expiry, and a purge (31.1-17). No
+            // _aud mirror: a second long-lived store keyed by a data subject would defeat
+            // the purpose. The tenant data in it was read by the background worker one
+            // pinned tenant at a time, under FORCE RLS like every other caller.
+            //
+            // Exempted BY ADDITION, per the standing instruction above; the schema-walk
+            // assertion itself is untouched.
+            "dsar_access_export"
     );
 
     /**

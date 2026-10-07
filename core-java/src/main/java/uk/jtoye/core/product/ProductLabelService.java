@@ -10,7 +10,9 @@ import com.lowagie.text.Rectangle;
 import com.lowagie.text.pdf.PdfWriter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import uk.jtoye.core.config.ClockConfig;
 import uk.jtoye.core.exception.IncompleteLabelDataException;
+import uk.jtoye.core.exception.InvalidProductionDateException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.IngredientMarkupParser.ParsedIngredients;
 import uk.jtoye.core.product.LabelRenderModel.IngredientRun;
@@ -21,6 +23,7 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
 import java.io.ByteArrayOutputStream;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -37,37 +40,62 @@ import java.util.UUID;
  * the product is missing any of that required data, generation throws
  * {@link IncompleteLabelDataException} (HTTP 422) naming the missing field(s)
  * rather than emitting a misleading, non-compliant label.
+ *
+ * <p>#861 (D-16, D-17): the label also prints the production date and counts the
+ * durability date from it (not from the moment the PDF is downloaded), and prints a
+ * separate "May contain: …" line for the product's cross-contact allergens that are
+ * not already declared. Every date is rendered en-GB with the full month name.
  */
 @Service
 @Transactional(readOnly = true)
 public class ProductLabelService {
 
-    /** UK durability date format, e.g. "8 Jul 2026". */
-    private static final DateTimeFormatter DURABILITY_DATE =
-            DateTimeFormatter.ofPattern("d MMM yyyy", Locale.UK);
+    /**
+     * UK label date format with the full month name, e.g. "5 October 2026" (D-17). The full
+     * name is unambiguous to every reader, and avoids the CLDR short form "Sept".
+     */
+    static final DateTimeFormatter LABEL_DATE =
+            DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.UK);
 
     private final ProductRepository productRepository;
     private final ShopRepository shopRepository;
     private final ShopAccessService shopAccessService;
+    private final Clock clock;
 
     public ProductLabelService(ProductRepository productRepository, ShopRepository shopRepository,
-                               ShopAccessService shopAccessService) {
+                               ShopAccessService shopAccessService, Clock clock) {
         this.productRepository = productRepository;
         this.shopRepository = shopRepository;
         this.shopAccessService = shopAccessService;
+        this.clock = clock;
+    }
+
+    /**
+     * Generate the PPDS label PDF for a product produced today (UK time). Equivalent to
+     * {@code generateLabel(productId, null)}.
+     */
+    public byte[] generateLabel(UUID productId) {
+        return generateLabel(productId, null);
     }
 
     /**
      * Generate the PPDS label PDF for a product.
      *
-     * @throws ResourceNotFoundException    if the product does not exist (tenant-scoped, 404)
-     * @throws IncompleteLabelDataException if the product is missing required PPDS
-     *                                      data — business identity (null/blank shop_id,
-     *                                      or a shop_id that resolves to no tenant-owned
-     *                                      shop), business address, shelf life, or
-     *                                      durability type (422)
+     * @param productionDate the date the food was produced (D-17), or {@code null} for today in
+     *                       Europe/London. "Today" is read from the injected clock once per call,
+     *                       so concurrent downloads either side of UK midnight each get their own
+     *                       date; no date state is shared between calls.
+     * @throws ResourceNotFoundException      if the product does not exist (tenant-scoped, 404)
+     * @throws IncompleteLabelDataException   if the product is missing required PPDS
+     *                                        data — business identity (null/blank shop_id,
+     *                                        or a shop_id that resolves to no tenant-owned
+     *                                        shop), business address, shelf life, or
+     *                                        durability type (422)
+     * @throws InvalidProductionDateException if the production date is after today (UK time),
+     *                                        or the durability date it gives has already
+     *                                        passed (422, field {@code productionDate})
      */
-    public byte[] generateLabel(UUID productId) {
+    public byte[] generateLabel(UUID productId, LocalDate productionDate) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
         // VSA-02 (D-02): the label endpoint (/products/{id}/label) is a shop-scoped
@@ -98,8 +126,38 @@ public class ProductLabelService {
 
         validatePpdsData(product, shop);
 
-        LabelRenderModel model = buildRenderModel(product, shop, LocalDate.now());
+        // D-17 / Pitfall 17: "today" is the UK date, resolved once for this request from the
+        // injected clock. withZone makes a clock supplied in any other zone (a UTC container, a
+        // fixed UTC test clock) still yield the London date: at 00:30 BST it is already tomorrow.
+        LocalDate today = LocalDate.now(clock.withZone(ClockConfig.UK_ZONE));
+        LocalDate produced = productionDate != null ? productionDate : today;
+        validateProductionDate(product, produced, today);
+
+        LabelRenderModel model = buildRenderModel(product, shop, produced);
         return renderPdf(model);
+    }
+
+    /**
+     * D-17: refuse a production date that cannot be true for food being labelled now — one
+     * after today (UK time), or one whose durability date (production date + shelf life) is
+     * already before today. A use-by of today is still printable. Called after
+     * {@link #validatePpdsData}, so shelf life and durability type are present.
+     */
+    private static void validateProductionDate(Product product, LocalDate produced, LocalDate today) {
+        if (produced.isAfter(today)) {
+            throw new InvalidProductionDateException(
+                    "productionDate " + produced.format(LABEL_DATE) + " is after today ("
+                            + today.format(LABEL_DATE) + ", UK time): a label cannot be dated "
+                            + "from food that has not been made yet");
+        }
+        LocalDate durability = produced.plusDays(product.getShelfLifeDays());
+        if (durability.isBefore(today)) {
+            throw new InvalidProductionDateException(
+                    "productionDate " + produced.format(LABEL_DATE) + " gives a "
+                            + durabilityWord(product) + " date of " + durability.format(LABEL_DATE)
+                            + ", which has already passed (today is " + today.format(LABEL_DATE)
+                            + ", UK time)");
+        }
     }
 
     /**
@@ -129,28 +187,40 @@ public class ProductLabelService {
 
     /**
      * Pure, deterministic render-model builder. No repository/PDF I/O; the
-     * {@code generationDate} is INJECTABLE so the durability date is byte-stable
-     * for a fixed date (the AC3 golden test relies on this).
+     * {@code productionDate} is INJECTABLE so the production and durability dates
+     * are byte-stable for a fixed date (the AC3 golden test relies on this).
      *
      * <p>Ingredient runs come from a render-time RE-PARSE of {@code ingredientsText}
      * via {@link IngredientMarkupParser} (authoritative), NOT the stored
      * {@code allergen_spans} cache, so an edited text can never render stale
      * emphasis.
      *
+     * <p>#861 (D-16): the may-contain names are the product's cross-contact allergens that
+     * are not already declared ({@link MayContainAllergens}), in catalogue bit order. Neither
+     * mask is changed; the declared emphasis in the ingredients is untouched by them.
+     *
      * <p>Callers MUST have validated required PPDS data first (see
      * {@link #validatePpdsData}); this method assumes a non-null shop with a
      * durability type + shelf life.
      */
-    static LabelRenderModel buildRenderModel(Product product, Shop shop, LocalDate generationDate) {
+    static LabelRenderModel buildRenderModel(Product product, Shop shop, LocalDate productionDate) {
         ParsedIngredients parsed = IngredientMarkupParser.parse(product.getIngredientsText());
         List<IngredientRun> runs = toRuns(parsed);
-        String durabilityLine = durabilityLine(product, generationDate);
+        List<String> mayContainNames =
+                MayContainAllergens.undeclaredNames(product.getMayContainMask(), product.getAllergenMask());
+        String mayContainLine = mayContainNames.isEmpty()
+                ? null
+                : "May contain: " + String.join(", ", mayContainNames);
         return new LabelRenderModel(
                 product.getTitle(),
                 product.getSku(),
                 product.getPricePennies(),
                 runs,
-                durabilityLine,
+                mayContainNames,
+                mayContainLine,
+                productionDate,
+                "Produced: " + productionDate.format(LABEL_DATE),
+                durabilityLine(product, productionDate),
                 shop.getName(),
                 shop.getAddress());
     }
@@ -176,10 +246,14 @@ public class ProductLabelService {
         return runs;
     }
 
-    private static String durabilityLine(Product product, LocalDate generationDate) {
-        LocalDate date = generationDate.plusDays(product.getShelfLifeDays());
+    private static String durabilityLine(Product product, LocalDate productionDate) {
+        LocalDate date = productionDate.plusDays(product.getShelfLifeDays());
         String label = "BEST_BEFORE".equals(product.getDurabilityType()) ? "Best before: " : "Use by: ";
-        return label + date.format(DURABILITY_DATE);
+        return label + date.format(LABEL_DATE);
+    }
+
+    private static String durabilityWord(Product product) {
+        return "BEST_BEFORE".equals(product.getDurabilityType()) ? "best-before" : "use-by";
     }
 
     /**
@@ -221,17 +295,34 @@ public class ProductLabelService {
             doc.add(price);
         }
 
-        // Ingredients with allergens emphasised INLINE (FSA requirement).
-        doc.add(new Paragraph("Ingredients:", sectionFont));
+        // Ingredients with allergens emphasised INLINE (FSA requirement). #861: the heading runs
+        // into the list on the same line (it was a line of its own), which frees the height the
+        // May contain and Produced lines need on the 100x60mm label (one page, asserted by
+        // ProductLabelServiceTest).
         Paragraph ingredients = new Paragraph();
+        ingredients.add(new Chunk("Ingredients: ", sectionFont));
         for (IngredientRun run : model.ingredientRuns()) {
             ingredients.add(new Chunk(run.text(), run.emphasised() ? boldFont : bodyFont));
         }
-        ingredients.setSpacingAfter(5);
+        ingredients.setSpacingAfter(model.mayContainLine() == null ? 5 : 1);
         doc.add(ingredients);
 
-        // Durability date (FSA: use-by / best-before).
-        doc.add(new Paragraph(model.durabilityLine(), sectionFont));
+        // #861 (D-16): cross-contact allergens, their own line beneath the ingredients, only when
+        // at least one is not already declared. Never part of the emphasised ingredients.
+        if (model.mayContainLine() != null) {
+            Paragraph mayContain = new Paragraph(model.mayContainLine(), boldFont);
+            mayContain.setSpacingAfter(3);
+            doc.add(mayContain);
+        }
+
+        // Production date and the durability date counted from it (FSA: use-by / best-before;
+        // D-17). One line at a 12pt leading, so the extra date does not push the business
+        // identity off the 100x60mm label (asserted one page by ProductLabelServiceTest).
+        Paragraph dates = new Paragraph(12);
+        dates.add(new Chunk(model.productionLine(), bodyFont));
+        dates.add(new Chunk("    ", bodyFont));
+        dates.add(new Chunk(model.durabilityLine(), sectionFont));
+        doc.add(dates);
 
         // Food business identity (FSA: business name + address).
         Paragraph business = new Paragraph(model.businessName(), bodyFont);

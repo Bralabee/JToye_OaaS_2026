@@ -1,6 +1,11 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { PolicyPage, PolicySection } from "@/components/legal/policy-page"
+import {
+  CLIENT_STORAGE_KEYS,
+  type StorageArea,
+  storageKeyDisplayName,
+} from "@/lib/client-storage-keys"
 
 export const metadata: Metadata = {
   title: "Cookie and browser-storage policy — J'Toye",
@@ -19,14 +24,16 @@ export const metadata: Metadata = {
  * would be inaccurate on its face here, because most of what this platform
  * stores in a browser is not a cookie at all — it is localStorage.
  *
- * THE INVENTORY BELOW WAS RE-DERIVED FROM SOURCE, not copied forward. The
- * completeness claim is the only claim this page makes, so a stale list is the
- * one defect that matters. It was measured across `app`, `components`, `lib`
- * and `hooks`, excluding tests, over every `localStorage.setItem`,
- * `sessionStorage.setItem` and cookie write, plus the identity library's own
- * defaults. Anything added later must be added here in the same change.
+ * THE STORAGE INVENTORY IS THE REGISTRY (#840). The completeness claim is the
+ * only claim this page makes, so a stale list is the one defect that matters.
+ * The localStorage and sessionStorage tables are rendered from
+ * `lib/client-storage-keys.ts`, and `lib/__tests__/client-storage-keys.test.ts`
+ * fails when any `setItem` call in `app`, `components`, `lib` or `hooks` writes
+ * a key the registry does not declare. The cookie rows below are still written
+ * here: they were measured from every cookie write plus the identity library's
+ * own defaults, and anything added later must be added here in the same change.
  *
- * TWO KEYS HOLD AN EMAIL ADDRESS. They are called out in their own rows AND in
+ * THREE KEYS HOLD AN EMAIL ADDRESS. They are called out in their own rows AND in
  * prose, with their lifetimes, because an email address in browser storage is
  * personal data and burying it in a table row is the likeliest way for this
  * page to be technically complete and practically misleading.
@@ -55,8 +62,8 @@ const SECTIONS = [
   "How to see and delete this information",
 ] as const
 
-const LAST_UPDATED = "16 August 2026"
-const VERSION = "1.0"
+const LAST_UPDATED = "6 October 2026"
+const VERSION = "1.1"
 
 const LINK =
   "font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -111,112 +118,24 @@ const COOKIE_ROWS: readonly StorageRow[] = [
   },
 ] as const
 
-const LOCAL_ROWS: readonly StorageRow[] = [
-  {
-    name: "jtoye-cart-<shop>",
-    purpose:
-      "Your basket for one shop. There is one of these per shop you have added something to.",
-    lifetime:
-      "Until you sign out or clear your browser storage. Signing out removes every shop's basket.",
-  },
-  {
-    name: "jtoye-checkout-email-<shop>",
-    purpose:
-      "The email address you last used at that shop's checkout, so it can be filled in for you next time and so you can look up your order.",
-    lifetime:
-      "No expiry is set: it stays until you clear it or your browser storage is cleared. This one holds an email address.",
-  },
-  {
-    name: "jtoye-customer-id",
-    purpose:
-      "An opaque identifier for the signed-in customer. It stamps your basket so that a second person signing in on the same device cannot inherit it. It is not your email address or your name.",
-    lifetime: "Until you sign out.",
-  },
-  {
-    name: "jtoye-customer-logged-in",
-    purpose:
-      "A yes/no marker so the page can show the right header immediately, without waiting for a request to the server.",
-    lifetime: "Until you sign out.",
-  },
-  {
-    name: "jtoye-customer-expires-at",
-    purpose:
-      "When the marker above stops being valid, so a stale sign-in state is not shown to you.",
-    lifetime: "Until you sign out.",
-  },
-  {
-    name: "jtoye-guest-orders",
-    purpose:
-      "The order numbers of your most recent orders placed without an account, so you can find them again on this device. Capped at the twenty most recent.",
-    lifetime: "Until you clear your browser storage.",
-  },
-  {
-    name: "jtoye-cookie-notice-ack",
-    purpose:
-      "Records that you have seen the notice about this page, so it is not shown to you on every visit.",
-    lifetime: "Until you clear your browser storage.",
-  },
-  {
-    name: "jtoye-cookie-consent-choices",
-    purpose:
-      "Your choices about optional storage categories, kept separately from the record above so that dismissing a notice is never treated as consent. We register no optional categories today, so nothing is written to it at present.",
-    lifetime: "Until you clear your browser storage.",
-  },
-  {
-    name: "shopContext",
-    purpose:
-      "Which shop a vendor's dashboard is currently filtered to. Dashboard only.",
-    lifetime: "Until changed or cleared.",
-  },
-  {
-    name: "theme",
-    purpose:
-      "Whether you chose the light or dark appearance for the dashboard.",
-    lifetime: "Until changed or cleared.",
-  },
-  {
-    name: "kds-muted",
-    purpose:
-      "Whether the kitchen display's new-order sound is muted. Kitchen display only.",
-    lifetime: "Until changed or cleared.",
-  },
-] as const
+/**
+ * #840 — the two storage tables are NOT written here. They are rendered from
+ * `CLIENT_STORAGE_KEYS` in `lib/client-storage-keys.ts`, the same list an
+ * explicit sign-out reads to decide what to remove, and the list a source scan
+ * holds against every `setItem` call in the code. A key added to the code
+ * without a registry entry fails that scan; a registry entry is on this page by
+ * construction. The prose for each row lives with its entry.
+ */
+function rowsFor(area: StorageArea): readonly StorageRow[] {
+  return CLIENT_STORAGE_KEYS.filter((entry) => entry.area === area).map((entry) => ({
+    name: storageKeyDisplayName(entry),
+    purpose: entry.purpose,
+    lifetime: entry.lifetime,
+  }))
+}
 
-const SESSION_ROWS: readonly StorageRow[] = [
-  {
-    name: "jtoye-track-email",
-    purpose:
-      "Carries the email address you typed on one order-tracking page across to the next, so you do not type it twice. This one holds an email address.",
-    lifetime: "Cleared when you close the tab.",
-  },
-  {
-    name: "jtoye-auth-return",
-    purpose:
-      "The page you were on when you started signing in, so you are returned there afterwards rather than to the home page.",
-    lifetime: "Cleared when you close the tab.",
-  },
-  {
-    name: "jtoye-pkce-verifier",
-    purpose:
-      "A one-time secret that proves the sign-in finishing in this tab is the same one that started here. It is what stops an intercepted sign-in from being completed by somebody else.",
-    lifetime:
-      "Discarded as soon as sign-in completes, and in any case when you close the tab.",
-  },
-  {
-    name: "jtoye-oauth-state",
-    purpose:
-      "A one-time value that protects the sign-in against a cross-site request forgery attack.",
-    lifetime:
-      "Discarded as soon as sign-in completes, and in any case when you close the tab.",
-  },
-  {
-    name: "jtoye-oauth-nonce",
-    purpose:
-      "A one-time value that stops a previously issued sign-in response from being replayed.",
-    lifetime:
-      "Discarded as soon as sign-in completes, and in any case when you close the tab.",
-  },
-] as const
+const LOCAL_ROWS = rowsFor("localStorage")
+const SESSION_ROWS = rowsFor("sessionStorage")
 
 function StorageTable({
   caption,
@@ -317,11 +236,11 @@ export default function CookiePolicyPage() {
         </ul>
         <p>
           <span className="font-semibold">
-            Two of the items below hold an email address
+            Three of the items below hold an email address
           </span>{" "}
-          — one in local storage, one in session storage. Both are named in their
-          tables, and both say so in their own row rather than leaving you to
-          work it out.
+          — two in local storage, one in session storage. All three are named in
+          their tables, and each says so in its own row rather than leaving you
+          to work it out.
         </p>
       </PolicySection>
 
@@ -365,10 +284,12 @@ export default function CookiePolicyPage() {
         </p>
         <p>
           <span className="font-semibold">
-            The checkout email item holds an email address and has no expiry set.
+            The checkout email item and the order list both hold an email
+            address.
           </span>{" "}
-          It remains in your browser until you clear it, which you can do at any
-          time using the steps at the end of this page. We keep it because
+          Signing out removes both. If you never sign in, they remain in your
+          browser until you clear them, which you can do at any time using the
+          steps at the end of this page. We keep the checkout email because
           re-typing an email address on every order is the most common complaint
           about ordering as a guest; we are telling you plainly because it is
           personal data sitting on your device.
@@ -389,7 +310,7 @@ export default function CookiePolicyPage() {
         <p>
           <span className="font-semibold">
             The order-tracking item holds an email address, and it is cleared when
-            you close the tab.
+            you sign out or close the tab.
           </span>{" "}
           The last three are security values used during sign-in. They are
           one-time and short-lived, and they are what make the sign-in resistant
@@ -491,7 +412,9 @@ export default function CookiePolicyPage() {
         <ul className="list-disc space-y-2 pl-6">
           <li>
             <span className="font-semibold">Signing out</span> removes the
-            sign-in cookies and every stored basket.
+            sign-in cookies, every stored basket, your order list and every
+            checkout email address saved on this device, the order-tracking
+            email address in that tab, and the record that you signed in here.
           </li>
           <li>
             <span className="font-semibold">Closing the tab</span> discards

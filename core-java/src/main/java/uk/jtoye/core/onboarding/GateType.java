@@ -34,5 +34,14 @@ public enum GateType {
     ALLERGEN_DATA_COMPLETE,
 
     /** At least N published-eligible products (slice 2). */
-    MENU_MINIMUM
+    MENU_MINIMUM,
+
+    /**
+     * The statutory seller identity customers must see before they buy (#789, D-10/D-12/D-20):
+     * the tenant's legal name and geographic address ({@code trader_identity}, V71), the
+     * company number when the entity is a company, and an email address on the shop.
+     * Consumer Contracts Regulations 2013 Sch 2 and Electronic Commerce Regulations 2002
+     * reg 6. Admitted by V71's rewritten gate CHECK.
+     */
+    TRADER_IDENTITY
 }

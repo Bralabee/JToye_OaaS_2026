@@ -12,7 +12,10 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
+import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.AccountDeletionResult;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -54,6 +57,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -138,8 +142,16 @@ class DsarFanoutIntegrationTest {
     @MockitoSpyBean private DsarVerificationMailer mailer;
     @MockitoSpyBean private GdprService gdprService;
 
+    /**
+     * 31.1-11 (D-03): a request now completes only once the subject's sign-in account is deleted or
+     * proven absent. This class is about the fan-out, so the account step answers "no account";
+     * DsarAccountDeletionIntegrationTest owns that step.
+     */
+    @MockitoBean private CustomerAccountDeletionService accountDeletion;
+
     @BeforeEach
     void downgradeRole() {
+        when(accountDeletion.deleteCustomerAccount(anyString())).thenReturn(AccountDeletionResult.NONE_FOUND);
         jdbc.update("DELETE FROM dsar_request");
         // Idempotent: only a superuser may run ALTER ROLE, so this must happen exactly once.
         if (DOWNGRADED.compareAndSet(false, true)) {
@@ -232,6 +244,71 @@ class DsarFanoutIntegrationTest {
                 .as("a completed request must not be claimed again")
                 .isEqualTo(1);
         assertThat(processAttempts()).isEqualTo(1);
+    }
+
+    // ---- A sweep that dies after its claim (#901 review round 1) --------------------------------
+
+    /**
+     * The claim commits {@code IN_PROGRESS} in its own transaction, so a sweep that dies before
+     * completing or releasing (pod restart mid-sweep, a DB error in {@code complete}/{@code release},
+     * an exception escaping the loop) leaves the row claimed. Before the lease, only
+     * {@code VERIFIED} was claimable and nothing returned such a row: the subject's request was never
+     * fulfilled or failed, nothing was logged, and the V70 rule never cleared the encrypted address.
+     */
+    @Test
+    void aRequestStrandedByADeadSweepIsReclaimedOnceItsLeaseExpires() throws Exception {
+        UUID a = seedTenant();
+        String email = "stranded-" + UUID.randomUUID() + "@example.com";
+        seedCustomer(a, email);
+        lodgeVerifiedErasure(email, "203.0.113.41");
+        strandAsClaimed("2 hours", 1);
+
+        worker.executeLodgedRequests();
+
+        assertThat(requestStatus())
+                .as("a claim older than the lease belongs to a sweep that is gone")
+                .isEqualTo("COMPLETED");
+        assertThat(erasureRecordCount(a)).isEqualTo(1);
+        assertThat(processAttempts()).as("the reclaim counts as an attempt").isEqualTo(2);
+        assertThat(ciphertextIsHeld()).as("V70: a terminal row keeps no address").isFalse();
+    }
+
+    @Test
+    void aClaimInsideItsLeaseIsNotTakenByAnotherSweep() throws Exception {
+        UUID a = seedTenant();
+        String email = "leased-" + UUID.randomUUID() + "@example.com";
+        seedCustomer(a, email);
+        lodgeVerifiedErasure(email, "203.0.113.42");
+        strandAsClaimed("1 minute", 1);
+
+        worker.executeLodgedRequests();
+
+        assertThat(requestStatus())
+                .as("a live sweep's claim must not be stolen")
+                .isEqualTo("IN_PROGRESS");
+        assertThat(erasureRecordCount(a)).isZero();
+        assertThat(processAttempts()).isEqualTo(1);
+    }
+
+    @Test
+    void aRequestThatKeepsKillingItsSweepIsParkedFailedAtTheAttemptCap() throws Exception {
+        UUID a = seedTenant();
+        String email = "poison-" + UUID.randomUUID() + "@example.com";
+        seedCustomer(a, email);
+        lodgeVerifiedErasure(email, "203.0.113.43");
+        // Already claimed max-process-attempts (5) times, every one of them by a sweep that died.
+        strandAsClaimed("2 hours", 5);
+
+        worker.executeLodgedRequests();
+
+        assertThat(requestStatus())
+                .as("without a cap, a request that kills every sweep that claims it would be "
+                        + "reclaimed forever")
+                .isEqualTo("FAILED");
+        assertThat(completedAtIsSet()).isTrue();
+        assertThat(ciphertextIsHeld()).as("V70: a terminal row keeps no address").isFalse();
+        assertThat(lastError()).contains("claimed 6 times");
+        assertThat(erasureRecordCount(a)).as("a parked request is not executed again").isZero();
     }
 
     @Test
@@ -672,5 +749,19 @@ class DsarFanoutIntegrationTest {
 
     private String lastError() {
         return jdbc.queryForObject("SELECT last_error FROM dsar_request", String.class);
+    }
+
+    private boolean ciphertextIsHeld() {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT subject_email_ciphertext IS NOT NULL FROM dsar_request", Boolean.class));
+    }
+
+    /** What a sweep that claimed the request and then died leaves behind. */
+    private void strandAsClaimed(String claimedAgo, int attempts) {
+        int updated = jdbc.update("UPDATE dsar_request SET status = 'IN_PROGRESS', "
+                + "claimed_at = NOW() - CAST(? AS INTERVAL), process_attempts = ? WHERE status = 'VERIFIED'",
+                claimedAgo, attempts);
+        assertThat(updated).as("PRECONDITION: exactly one verified request to strand").isEqualTo(1);
+        assertThat(ciphertextIsHeld()).as("PRECONDITION: a claimed request holds the address").isTrue();
     }
 }

@@ -222,7 +222,8 @@ data:
   # origin still has to be right or the redirect leaves the platform entirely.)
   notification.email.tracking-base-url: "http://app.jtoye.local"
   notification.unsubscribe.base-url: "http://app.jtoye.local"
-  gdpr.dsar.verify-base-url: "http://api.jtoye.local/api/v1/public/gdpr/dsar/verify"
+  gdpr.dsar.verify-base-url: "http://app.jtoye.local/data-request/confirm"
+  gdpr.dsar.export-download-base-url: "http://app.jtoye.local/data-request/download"
   stripe.connect.return-url: "http://app.jtoye.local/dashboard/payments/connect/return"
   stripe.connect.refresh-url: "http://app.jtoye.local/dashboard/payments/connect/refresh"
 

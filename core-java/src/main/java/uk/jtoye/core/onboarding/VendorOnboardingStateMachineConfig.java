@@ -195,7 +195,15 @@ public class VendorOnboardingStateMachineConfig
     /**
      * GO_LIVE / REINSTATE guard: the APPROVE precondition PLUS a PASSED
      * ALLERGEN_DATA_COMPLETE gate row (a storefront may not go live with
-     * incomplete allergen data — Natasha's Law).
+     * incomplete allergen data — Natasha's Law) PLUS a PASSED TRADER_IDENTITY row
+     * (#789, D-12: customers must see the seller's legal name, address and an email
+     * address before they order).
+     *
+     * <p>Both are required EXPLICITLY, by type and PASSED status. The APPROVE
+     * precondition alone would accept a WAIVED row, and would accept an onboarding
+     * that has no row of that type at all — the shape of every onboarding submitted
+     * before the gate existed (RESEARCH Pitfall 7). Neither statutory check has a
+     * manual override.
      */
     private Guard<OnboardingState, OnboardingEvent> goLiveGuard() {
         return ctx -> {
@@ -203,11 +211,14 @@ public class VendorOnboardingStateMachineConfig
             List<VendorOnboardingGate> gates = gatesFor(idHeader);
             List<VendorOnboardingGate> mandatory = gates.stream().filter(VendorOnboardingGate::isMandatory).toList();
             boolean approveOk = !mandatory.isEmpty() && mandatory.stream().allMatch(this::passedOrWaived);
-            boolean allergenComplete = gates.stream()
-                    .anyMatch(g -> g.getGateType() == GateType.ALLERGEN_DATA_COMPLETE
-                            && g.getStatus() == GateStatus.PASSED);
-            return approveOk && allergenComplete;
+            boolean allergenComplete = passed(gates, GateType.ALLERGEN_DATA_COMPLETE);
+            boolean traderIdentityComplete = passed(gates, GateType.TRADER_IDENTITY);
+            return approveOk && allergenComplete && traderIdentityComplete;
         };
+    }
+
+    private static boolean passed(List<VendorOnboardingGate> gates, GateType type) {
+        return gates.stream().anyMatch(g -> g.getGateType() == type && g.getStatus() == GateStatus.PASSED);
     }
 
     private List<VendorOnboardingGate> mandatoryGates(Object idHeader) {

@@ -29,7 +29,7 @@ const JAVA_DIR = path.join(REPO_ROOT, "core-java", "src", "main", "java", "uk", 
 
 /** The contract, restated so a count regression is named and not silently absorbed. */
 const EXPECTED = {
-  GateType: 8,
+  GateType: 9,
   GateStatus: 5,
   OnboardingState: 9,
 } as const
@@ -96,7 +96,7 @@ function extractTypeScriptUnion(name: EnumName): string[] {
 
 describe("onboarding enum parity: Java <-> TypeScript (INT-6)", () => {
   // --- positive controls ---------------------------------------------------
-  it("POSITIVE CONTROL: the Java extraction finds 8 GateType, 5 GateStatus and 9 OnboardingState constants", () => {
+  it("POSITIVE CONTROL: the Java extraction finds 9 GateType, 5 GateStatus and 9 OnboardingState constants", () => {
     expect(extractJavaEnum("GateType")).toHaveLength(EXPECTED.GateType)
     expect(extractJavaEnum("GateStatus")).toHaveLength(EXPECTED.GateStatus)
     expect(extractJavaEnum("OnboardingState")).toHaveLength(EXPECTED.OnboardingState)

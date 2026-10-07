@@ -149,7 +149,9 @@ describe('Products Page', () => {
     })
   })
 
-  it('should display "No allergens" when allergenMask is 0', async () => {
+  // 31.1-19 (D-18, Pitfall 11): the bare "No allergens" was the persona's defect. An empty
+  // declaration now says it is a declaration.
+  it('should display "No allergens declared" when allergenMask is 0', async () => {
     const mockProducts = [
       {
         id: 'prod-1',
@@ -173,7 +175,8 @@ describe('Products Page', () => {
     render(<ProductsPage />)
 
     await waitFor(() => {
-      expect(screen.getByText('No allergens')).toBeInTheDocument()
+      expect(screen.getByText('No allergens declared')).toBeInTheDocument()
+      expect(screen.queryByText('No allergens')).not.toBeInTheDocument()
     })
   })
 

@@ -165,7 +165,7 @@ class OrderStateChangeListenerIdempotencyIntegrationTest {
         listener.handleOrderStateChange(event);
         listener.handleOrderStateChange(event);
 
-        verify(emailService, times(1)).sendOrderConfirmation(eq(event), eq("idem-customer@example.test"));
+        verify(emailService, times(1)).sendOrderConfirmation(eq(event), eq("idem-customer@example.test"), any());
         verify(metrics, times(1)).recordOrderCreated();
         String topic = "/topic/kitchen." + TENANT + "." + shopId;
         verify(simpMessagingTemplate, times(1)).convertAndSend(eq(topic), eq(event));
@@ -187,8 +187,8 @@ class OrderStateChangeListenerIdempotencyIntegrationTest {
         listener.handleOrderStateChange(pending);
         listener.handleOrderStateChange(confirmed);
 
-        verify(emailService, times(1)).sendOrderConfirmation(eq(pending), anyString());
-        verify(emailService, times(1)).sendOrderConfirmed(eq(confirmed), anyString());
+        verify(emailService, times(1)).sendOrderConfirmation(eq(pending), anyString(), any());
+        verify(emailService, times(1)).sendOrderConfirmed(eq(confirmed), anyString(), any());
         assertThat(processedRowCount()).isEqualTo(2);
     }
 
