@@ -23,3 +23,9 @@
   **Found by:** 31.1-27 (Task 3), running the citation gate after editing `docs/legal/article-26-arrangement.md`.
   **What:** six C-3 failures — `.planning/codebase/STACK.md:84` and `INTEGRATIONS.md:14` (application.yml:749-800 / 752-757), `k8s/LOCAL.md:606` (configmap.yaml:166), `k8s/LOCAL.md:609` and `:1634` (application.yml:456), `k8s/LOCAL.md:1590` (core-java-deployment.yaml:312-316). The identical six fail on the plan base commit `ecee486a` (gate run in a detached worktree; `diff` of the two FAIL lists is empty), so line drift from earlier plans moved them, not this one.
   **Why deferred:** out of scope for 31.1-27 (no cited line moved because of it). The fix is to re-point each citation at the line that now carries the claim; 31.1-29 (docs/metrics regeneration) is the natural owner.
+
+- Two docs still describe the public accessibility claim as WCAG 2.1 AA
+  status: open
+  **Found by:** 31.1-28 (Task 2), grepping for "WCAG 2.1" after the statement and its axe gate moved to WCAG 2.2 AA.
+  **What:** `docs/PRD.md:137` ("WCAG 2.1 AA — partial", "seven dated exceptions", "12 public surfaces") and `docs/architecture/LAYOUT_WIDTH_CONTRACT.md:336` ("WCAG 2.1 AA conformance") predate 31.1-28. After it, the statement names WCAG 2.2 AA with five dated exceptions, and the per-PR gate scans 17 surfaces (plus two instruments and the scope/standard coupling test) on both viewports. The statement, its tests, the spec and the `ci-cd.yaml` comments were corrected in 31.1-28.
+  **Why deferred:** the PRD line carries counts that 31.1-29's docs/metrics regeneration owns; correcting the prose there keeps one owner for those numbers.
