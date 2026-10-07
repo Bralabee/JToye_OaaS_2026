@@ -1,0 +1,101 @@
+# 31.1-21 break arms (each run against the committed tree; restore by sha256; a closing clean run after each set)
+
+## Task 1 (card) — suite __tests__/shop/product-card-allergens.test.tsx, committed at 10b4250a
+ARM NODESC: jest rc=1; Tests:       4 failed, 9 passed, 13 total
+  restore sha256 OK (e1e0863f856d58f235dece082f7e1c8b265ce38833b94fa8159e53f635dafc57)
+ARM NONE_IGNORES_FLAG: jest rc=1; Tests:       1 failed, 12 passed, 13 total
+  restore sha256 OK (f9a3df98bafa36752a65df14d9fe2488ab385b3a257dff4c8119c6b59972e23e)
+ARM KEEP_DECLARED: jest rc=1; Tests:       1 failed, 12 passed, 13 total
+  restore sha256 OK (f9a3df98bafa36752a65df14d9fe2488ab385b3a257dff4c8119c6b59972e23e)
+ARM NO_SORT: jest rc=1; Tests:       1 failed, 12 passed, 13 total
+  restore sha256 OK (f9a3df98bafa36752a65df14d9fe2488ab385b3a257dff4c8119c6b59972e23e)
+ARM SHARED_ID: jest rc=1; Tests:       1 failed, 12 passed, 13 total
+  restore sha256 OK (e1e0863f856d58f235dece082f7e1c8b265ce38833b94fa8159e53f635dafc57)
+ARM BARE_NO_ALLERGENS: jest rc=1; Tests:       3 failed, 10 passed, 13 total
+  restore sha256 OK (1096debc8572376538493f9004b00002cf44282846a251c8f4464e5f06a7055d)
+ARM COUNT_BADGE: jest rc=1; Tests:       8 failed, 5 passed, 13 total
+  restore sha256 OK (f9a3df98bafa36752a65df14d9fe2488ab385b3a257dff4c8119c6b59972e23e)
+NODESC:
+    ● #817: a card names its declared allergens before Add › the Add button's accessible description carries the allergen line; its name is unchanged
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › mask 0 with an undeclared ingredient allergen reads the D-09 wording, never 'No allergens declared'
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › mask 0 with no flag reads 'No allergens declared'
+    ● the featured rail renders a dish twice: both copies are described, by distinct ids › each Add control resolves its own allergen line
+NONE_IGNORES_FLAG:
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › mask 0 with an undeclared ingredient allergen reads the D-09 wording, never 'No allergens declared'
+KEEP_DECLARED:
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › adjacency: a flag for a bit that IS declared adds nothing (the card adds no second line)
+NO_SORT:
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › names several undeclared ingredient allergens in catalogue order
+SHARED_ID:
+    ● the featured rail renders a dish twice: both copies are described, by distinct ids › each Add control resolves its own allergen line
+BARE_NO_ALLERGENS:
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › an older backend (fields absent) still states the declaration
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › mask 0 with no flag reads 'No allergens declared'
+    ● prohibition: no card says what the platform cannot stand behind › no text equals 'No allergens' and none says allergen-free / safe for you / no allergens present
+COUNT_BADGE:
+    ● #817: a card names its declared allergens before Add › has no bare numeric badge (the '△2' a screen reader read as '2')
+    ● #817: a card names its declared allergens before Add › lists names in catalogue bit order, rendered from the shared table
+    ● #817: a card names its declared allergens before Add › mask Gluten|Milk reads 'Contains: Gluten, Milk', before the Add button in document order
+    ● #817: a card names its declared allergens before Add › the Add button's accessible description carries the allergen line; its name is unchanged
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › a declared allergen beside an undeclared one shows both lines, each its own statement
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › adjacency: a flag for a bit that IS declared adds nothing (the card adds no second line)
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › adjacency: declared Milk with no flag shows only 'Contains: Milk'
+    ● the featured rail renders a dish twice: both copies are described, by distinct ids › each Add control resolves its own allergen line
+ARM DOM_ORDER (line moved after the bottom row, i.e. after Add): jest rc=1; Tests:       2 failed, 11 passed, 13 total
+    ● #817: a card names its declared allergens before Add › mask Gluten|Milk reads 'Contains: Gluten, Milk', before the Add button in document order
+    ● D-18 / D-09: the card is never silent, and never says 'none' over the ingredients › mask 0 with an undeclared ingredient allergen reads the D-09 wording, never 'No allergens declared'
+  restore sha256 OK (e1e0863f856d58f235dece082f7e1c8b265ce38833b94fa8159e53f635dafc57)
+CLOSING CLEAN: Test Suites: 4 passed, 4 total
+CLOSING CLEAN: Tests:       38 passed, 38 total
+
+## Task 2 (modal) — suite components/storefront/__tests__/product-detail-modal.test.tsx, committed at 3fd77895
+ARM MERGE_MAYCONTAIN: jest rc=1; Tests:       2 failed, 18 passed, 20 total
+  restore sha256 OK (f9a3df98bafa36752a65df14d9fe2488ab385b3a257dff4c8119c6b59972e23e)
+ARM UNNAMED_LIST: jest rc=1; Tests:       3 failed, 17 passed, 20 total
+  restore sha256 OK (910d4e25eac22a8018ead2e58b8f3bd0cdd1d6d1ad70138fa39b826ae71cf05a)
+ARM NOT_A_REGION: jest rc=1; Tests:       7 failed, 13 passed, 20 total
+  restore sha256 OK (910d4e25eac22a8018ead2e58b8f3bd0cdd1d6d1ad70138fa39b826ae71cf05a)
+ARM ONLY_WHEN_DECLARED: jest rc=1; Tests:       0 total
+  restore sha256 OK (910d4e25eac22a8018ead2e58b8f3bd0cdd1d6d1ad70138fa39b826ae71cf05a)
+(ONLY_WHEN_DECLARED above was VOID: the anchor edit left an unclosed brace, the suite failed to load, 0 tests ran. Re-run as ONLY_WHEN_DECLARED_2.)
+ARM ONLY_WHEN_DECLARED_2: jest rc=1; Tests:       3 failed, 17 passed, 20 total
+    ● ProductDetailModal allergen section (31.1-21) › flagged (D-09): the ingredients line names MILK and 'No allergens declared' is absent
+    ● ProductDetailModal allergen section (31.1-21) › never says 'No allergens' alone or anything the platform cannot stand behind
+    ● ProductDetailModal allergen section (31.1-21) › none declared: the section still renders and says 'No allergens declared'
+  restore sha256 OK (910d4e25eac22a8018ead2e58b8f3bd0cdd1d6d1ad70138fa39b826ae71cf05a)
+ARM OLD_POSITION: jest rc=1; Tests:       1 failed, 19 passed, 20 total
+    ● ProductDetailModal allergen section (31.1-21) › comes before the description and the ingredients, directly under the title
+  restore sha256 OK (910d4e25eac22a8018ead2e58b8f3bd0cdd1d6d1ad70138fa39b826ae71cf05a)
+CLOSING CLEAN:
+Test Suites: 2 passed, 2 total
+Tests:       33 passed, 33 total
+MERGE_MAYCONTAIN:
+    ● ProductDetailModal allergen section (31.1-21) › all three statements together keep their order: contains, may contain, ingredients
+    ● ProductDetailModal allergen section (31.1-21) › may contain (D-16): 'May contain: Sesame' is its own line, never inside the Contains list
+UNNAMED_LIST:
+    ● ProductDetailModal allergen section (31.1-21) › all three statements together keep their order: contains, may contain, ingredients
+    ● ProductDetailModal allergen section (31.1-21) › declared: a named 'Contains' list of the allergens in catalogue order, before Add
+    ● ProductDetailModal allergen section (31.1-21) › may contain (D-16): 'May contain: Sesame' is its own line, never inside the Contains list
+NOT_A_REGION:
+    ● ProductDetailModal allergen section (31.1-21) › all three statements together keep their order: contains, may contain, ingredients
+    ● ProductDetailModal allergen section (31.1-21) › comes before the description and the ingredients, directly under the title
+    ● ProductDetailModal allergen section (31.1-21) › comes before the quantity stepper once the dish is in the basket
+    ● ProductDetailModal allergen section (31.1-21) › declared: a named 'Contains' list of the allergens in catalogue order, before Add
+    ● ProductDetailModal allergen section (31.1-21) › flagged (D-09): the ingredients line names MILK and 'No allergens declared' is absent
+    ● ProductDetailModal allergen section (31.1-21) › may contain (D-16): 'May contain: Sesame' is its own line, never inside the Contains list
+    ● ProductDetailModal allergen section (31.1-21) › none declared: the section still renders and says 'No allergens declared'
+ARM BUILD_TYPE (string|null assigned to number in product-detail-modal.tsx): build rc=1
+components/storefront/product-detail-modal.tsx(70,9): error TS2322: Type 'string | null' is not assignable to type 'number'.
+Failed to type check.
+  restore sha256 OK
+
+## e2e type-check arm
+ARM E2E_TYPE (const _armTypeError: number = "x" appended to e2e/storefront-dish-modal-a11y.spec.ts): npx tsc --noEmit -p tsconfig.e2e.json rc=2, TS2322 at line 534; restore sha256 OK. Real tree: rc=0, 0 errors.
+
+## Plan verify runs (real tree)
+Task 1: npm --prefix frontend test -- --ci --runTestsByPath __tests__/shop/product-card-allergens.test.tsx __tests__/shop/product-card-quantity-a11y.test.tsx __tests__/shop/server-seeded-islands.test.tsx -> rc=0, 3 suites, 23 tests
+Task 2: npm --prefix frontend test -- --ci --runTestsByPath components/storefront/__tests__/product-detail-modal.test.tsx -> rc=0, 1 suite, 20 tests
+npm run lint -> rc=0, 0 errors, 31 warnings (baseline 31)
+npm run build -> rc=0, Running TypeScript ... Finished TypeScript
+npx playwright test e2e/storefront-dish-modal-a11y.spec.ts --list -> Total: 20 tests in 1 file (16 before + 2 new x 2 projects)
+full npx jest --ci -> rc=0, 187 suites / 2072 tests (baseline 186 / 2049)
