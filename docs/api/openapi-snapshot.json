@@ -3556,6 +3556,9 @@
           "phone" : {
             "type" : "string"
           },
+          "seller" : {
+            "$ref" : "#/components/schemas/SellerIdentityDto"
+          },
           "slug" : {
             "type" : "string"
           },
@@ -3838,6 +3841,52 @@
             "type" : "integer"
           }
         },
+        "type" : "object"
+      },
+      "SellerIdentityDto" : {
+        "description" : "The seller's statutory identity (CCR 2013 Sch 2; E-Commerce Regs 2002 reg 6). Present only on GET /public/shops/{slug}; optional fields are absent when the trader has none.",
+        "properties" : {
+          "addressLines" : {
+            "description" : "Geographic address lines: line 1, optional line 2, town or city, postcode",
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "companyNumber" : {
+            "description" : "Companies House number; present only when entityType is COMPANY",
+            "type" : "string"
+          },
+          "email" : {
+            "description" : "The shop's contact email",
+            "type" : "string"
+          },
+          "entityType" : {
+            "enum" : [
+              "COMPANY",
+              "SOLE_TRADER",
+              "PARTNERSHIP"
+            ],
+            "type" : "string"
+          },
+          "legalName" : {
+            "description" : "Legal name: the registered company name or the sole trader's own name",
+            "type" : "string"
+          },
+          "phone" : {
+            "description" : "The shop's contact phone, when it has one",
+            "type" : "string"
+          },
+          "vatNumber" : {
+            "description" : "VAT number; present only when VAT-registered",
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "addressLines",
+          "entityType",
+          "legalName"
+        ],
         "type" : "object"
       },
       "ServletContext" : {
