@@ -92,6 +92,8 @@ data:
   smtp.port: "587"
   smtp.starttls: "true"
   sql.log.level: WARN
+  staff.invite.accept-base-url: https://app.olajay.co.uk/invite
+  staff.invite.ttl-hours: "72"
   stomp.broker.mode: relay
   stomp.broker.relay-host: rabbitmq.jtoye-infrastructure.svc.cluster.local
   stomp.broker.relay-port: "61613"
@@ -541,6 +543,16 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: gdpr.dsar.export-download-base-url
+              name: app-config
+        - name: STAFF_INVITE_ACCEPT_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              key: staff.invite.accept-base-url
+              name: app-config
+        - name: STAFF_INVITE_TTL_HOURS
+          valueFrom:
+            configMapKeyRef:
+              key: staff.invite.ttl-hours
               name: app-config
         - name: COMPANY_REGISTERED_OFFICE
           valueFrom:

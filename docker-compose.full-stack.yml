@@ -372,6 +372,10 @@ services:
       # DsarLinkConfigContractTest; .env may override both.
       DSAR_VERIFY_BASE_URL: ${DSAR_VERIFY_BASE_URL:-http://localhost:3000/data-request/confirm}
       DSAR_EXPORT_DOWNLOAD_BASE_URL: ${DSAR_EXPORT_DOWNLOAD_BASE_URL:-http://localhost:3000/data-request/download}
+      # 37-07 (D-07): staff invitation links open the WEB app's /invite page, never the API
+      # (the PGC-839 lesson); the link is {base}/{tenantId}.{token}. TTL in hours (default 72).
+      STAFF_INVITE_ACCEPT_BASE_URL: ${STAFF_INVITE_ACCEPT_BASE_URL:-http://localhost:3000/invite}
+      STAFF_INVITE_TTL_HOURS: ${STAFF_INVITE_TTL_HOURS:-72}
       # D-14 (phase 31.1 plan 27, #794): the platform's registered office, printed in the
       # footer of every order email (31.1-25). Read from NEXT_PUBLIC_COMPANY_REGISTERED_OFFICE
       # — the variable that also feeds the frontend build arg below — never from a name of its

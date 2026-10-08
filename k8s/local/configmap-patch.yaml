@@ -224,6 +224,7 @@ data:
   notification.unsubscribe.base-url: "http://app.jtoye.local"
   gdpr.dsar.verify-base-url: "http://app.jtoye.local/data-request/confirm"
   gdpr.dsar.export-download-base-url: "http://app.jtoye.local/data-request/download"
+  staff.invite.accept-base-url: "http://app.jtoye.local/invite"
   stripe.connect.return-url: "http://app.jtoye.local/dashboard/payments/connect/return"
   stripe.connect.refresh-url: "http://app.jtoye.local/dashboard/payments/connect/refresh"
 

@@ -91,6 +91,7 @@ class StaffInviteIntegrationTest {
 
     static final String ACCEPT_BASE = "https://app.jtoye.test/invite";
     static final String PATH = "/api/v1/staff/invites";
+    static final int TTL_HOURS = 48;
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
@@ -99,7 +100,8 @@ class StaffInviteIntegrationTest {
         registry.add("notification.email.enabled", () -> "true");
         registry.add("notification.email.from", () -> "noreply@platform.jtoye.test");
         registry.add("jtoye.staff.invite.accept-base-url", () -> ACCEPT_BASE);
-        registry.add("jtoye.staff.invite.ttl-hours", () -> "72");
+        // Not the default (72): a key that failed to bind would fall back to 72 and red the expiry assertion.
+        registry.add("jtoye.staff.invite.ttl-hours", () -> String.valueOf(TTL_HOURS));
         // The sender is a mock; Boot's mail health contributor needs a real JavaMailSenderImpl.
         registry.add("management.health.mail.enabled", () -> "false");
     }
@@ -160,8 +162,8 @@ class StaffInviteIntegrationTest {
         String digest = (String) row.get("token_sha256");
         assertThat(digest).as("a 64-hex SHA-256 digest").matches("[0-9a-f]{64}");
         OffsetDateTime expiresAt = ((java.sql.Timestamp) row.get("expires_at")).toInstant().atOffset(ZoneOffset.UTC);
-        OffsetDateTime expected = OffsetDateTime.now(ZoneOffset.UTC).plusHours(72);
-        assertThat(expiresAt).as("expires_at = now + ttl-hours (72)")
+        OffsetDateTime expected = OffsetDateTime.now(ZoneOffset.UTC).plusHours(TTL_HOURS);
+        assertThat(expiresAt).as("expires_at = now + jtoye.staff.invite.ttl-hours (48, not the default 72)")
                 .isBetween(expected.minusMinutes(2), expected.plusMinutes(2));
 
         MimeMessage mail = SentMail.reparse((MimeMessage) awaitSends(1).get(0).getArgument(0));

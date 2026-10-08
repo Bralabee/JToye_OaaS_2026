@@ -219,6 +219,20 @@ jtoye:
     # EMPTY default = fail-closed: every non-UUID-subject token is denied by default.
     # Comma-separated list, e.g. ACCESS_MACHINE_CLIENT_IDS=mcp-server,batch-worker.
     machine-client-ids: ${ACCESS_MACHINE_CLIENT_IDS:}
+  # Phase 37-07 (D-07) — staff invitations. Config KEYS, not secrets.
+  staff:
+    invite:
+      # How long an emailed invitation link works. 72 hours: long enough to survive a weekend, short
+      # enough that a link sitting in a mailbox stops being a credential soon (T-37-14). Read by
+      # StaffInviteService when stamping staff_invite.expires_at, and the same instant is quoted in the
+      # email in UK time, so the promise and the column cannot disagree.
+      ttl-hours: ${STAFF_INVITE_TTL_HOURS:72}
+      # Where the emailed link points: the FRONTEND's public /invite page, never core's own origin (the
+      # 31.1 PGC-839 lesson: a link to the API answers a person with JSON, and on compose nothing listens
+      # there). The link is {accept-base-url}/{tenantId}.{token}. Config-injected and NEVER derived from
+      # a request: a link built from an attacker-supplied Host header would hand a live invitation to a
+      # collector. Every runtime supplies its own web origin (compose, .env.example, k8s app-config).
+      accept-base-url: ${STAFF_INVITE_ACCEPT_BASE_URL:http://localhost:3000/invite}
   # Phase 31 (LGL-01, D-16/D-17) — the consumer data-subject-request desk. Config KEYS, not
   # secrets. 31-05 owns the intake, 31-09 the verification gate and the background fan-out.
   gdpr:

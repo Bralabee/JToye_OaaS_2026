@@ -335,6 +335,14 @@ data:
   # opens. Its application.yml default is http://localhost:3000/... — outside a
   # laptop every link would be dead and the statutory reply silently undelivered.
   gdpr.dsar.export-download-base-url: "https://app.olajay.co.uk/data-request/download"
+  # 37-07 (D-07): the frontend /invite page a staff invitation link opens
+  # ({base}/{tenantId}.{token}). Its application.yml default is
+  # http://localhost:3000/invite — outside a laptop every invitation would be a
+  # dead link. SOURCE: frontend.url above; overlays patch per env.
+  staff.invite.accept-base-url: "https://app.olajay.co.uk/invite"
+  # Byte-identical to the application.yml default (${STAFF_INVITE_TTL_HOURS:72}),
+  # declared so every render states how long an invitation link lives.
+  staff.invite.ttl-hours: "72"
 
   # --- D-14 platform registered office (phase 31.1 plan 27, #794) -------------
   # The registered office on the public Companies House record for company

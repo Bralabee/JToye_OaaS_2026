@@ -34,7 +34,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/v1/staff/invites")
-@Tag(name = "Staff", description = "Vendor shop-staff management: list / grant / revoke / invite (GROUP_ADMIN only)")
+@Tag(name = "Staff", description = "Vendor shop-staff management: list / grant / revoke (GROUP_ADMIN only)")
 @SecurityRequirement(name = "bearer-jwt")
 public class StaffInviteController {
 
@@ -58,7 +58,7 @@ public class StaffInviteController {
             @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied)"),
             @ApiResponse(responseCode = "404", description = "The shop is not a shop of this business")
     })
-    public ResponseEntity<StaffInviteDto> issue(@Valid @RequestBody CreateStaffInviteRequest request) {
+    public ResponseEntity<StaffInviteDto> issueInvite(@Valid @RequestBody CreateStaffInviteRequest request) {
         IssueResult result = staffInviteService.issue(request);
         return ResponseEntity
                 .status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
@@ -74,7 +74,7 @@ public class StaffInviteController {
             @ApiResponse(responseCode = "200", description = "The invitations"),
             @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied)")
     })
-    public ResponseEntity<List<StaffInviteDto>> list() {
+    public ResponseEntity<List<StaffInviteDto>> listInvites() {
         return ResponseEntity.ok(staffInviteService.list());
     }
 
@@ -89,7 +89,7 @@ public class StaffInviteController {
             @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied)"),
             @ApiResponse(responseCode = "404", description = "No invitation of this business has that id")
     })
-    public ResponseEntity<StaffInviteDto> resend(@PathVariable UUID id) {
+    public ResponseEntity<StaffInviteDto> resendInvite(@PathVariable UUID id) {
         return ResponseEntity.status(HttpStatus.CREATED).body(staffInviteService.resend(id));
     }
 
@@ -102,7 +102,7 @@ public class StaffInviteController {
             @ApiResponse(responseCode = "403", description = "Caller is not a GROUP_ADMIN (shop-access-denied)"),
             @ApiResponse(responseCode = "404", description = "No invitation of this business has that id")
     })
-    public ResponseEntity<Void> cancel(@PathVariable UUID id) {
+    public ResponseEntity<Void> cancelInvite(@PathVariable UUID id) {
         staffInviteService.cancel(id);
         return ResponseEntity.noContent().build();
     }
