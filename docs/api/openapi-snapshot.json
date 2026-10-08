@@ -1284,6 +1284,66 @@
         ],
         "type" : "object"
       },
+      "EffectiveAccess" : {
+        "description" : "A person's effective access in this tenant, computed by the same decision the API enforces with. Never derived from raw grant rows.",
+        "properties" : {
+          "allShops" : {
+            "description" : "The access covers every shop of the tenant.",
+            "type" : "boolean"
+          },
+          "bootstrapAdmin" : {
+            "description" : "GROUP_ADMIN only because the tenant has no operator-granted admin and this is its oldest automatic admin (kept so the tenant cannot lock itself out).",
+            "type" : "boolean"
+          },
+          "level" : {
+            "description" : "GROUP_ADMIN: manages the tenant and all shops. REALM_ADMIN: a platform admin account (seen signing in with the realm admin role). SHOP_ROLES: a role on some or all shops. NONE: signed in, no access.",
+            "enum" : [
+              "GROUP_ADMIN",
+              "REALM_ADMIN",
+              "SHOP_ROLES",
+              "NONE"
+            ],
+            "type" : "string"
+          },
+          "perShopRole" : {
+            "additionalProperties" : {
+              "enum" : [
+                "STAFF",
+                "SHOP_MANAGER",
+                "GROUP_ADMIN"
+              ],
+              "type" : "string"
+            },
+            "description" : "Role per specifically granted shop id.",
+            "type" : "object"
+          },
+          "realmAdminSeenAt" : {
+            "description" : "First time this person was seen with the realm admin role; null when never observed.",
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "tenantWideRole" : {
+            "description" : "Role conferred on every shop by a tenant-wide STAFF or SHOP_MANAGER grant; null when none.",
+            "enum" : [
+              "STAFF",
+              "SHOP_MANAGER",
+              "GROUP_ADMIN"
+            ],
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "userId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "Environment" : {
         "properties" : {
           "activeProfiles" : {
@@ -1976,6 +2036,18 @@
           "groupAdmin" : {
             "description" : "True if the caller has unrestricted (tenant-wide GROUP_ADMIN) access.",
             "type" : "boolean"
+          },
+          "tenantWideRole" : {
+            "description" : "The role a tenant-wide STAFF or SHOP_MANAGER grant gives the caller on EVERY shop of the tenant; grantedShopIds then lists every current shop. Null when the caller holds no such grant, and always null for a GROUP_ADMIN.",
+            "enum" : [
+              "STAFF",
+              "SHOP_MANAGER",
+              "GROUP_ADMIN"
+            ],
+            "type" : [
+              "string",
+              "null"
+            ]
           },
           "userId" : {
             "description" : "The caller's own Keycloak subject (user id).",
@@ -4478,6 +4550,12 @@
               "$ref" : "#/components/schemas/StaffMemberDto"
             },
             "type" : "array"
+          },
+          "people" : {
+            "items" : {
+              "$ref" : "#/components/schemas/StaffPersonDto"
+            },
+            "type" : "array"
           }
         },
         "type" : "object"
@@ -4514,6 +4592,40 @@
           "shopId" : {
             "format" : "uuid",
             "type" : "string"
+          },
+          "userId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "StaffPersonDto" : {
+        "description" : "A person in this tenant with their server-computed effective access.",
+        "properties" : {
+          "displayName" : {
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "effectiveAccess" : {
+            "$ref" : "#/components/schemas/EffectiveAccess"
+          },
+          "lastSeen" : {
+            "description" : "Last sign-in recorded in the directory; null for a grant holder who has never signed in here.",
+            "format" : "date-time",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
+          "maskedEmail" : {
+            "description" : "Masked email (first character + domain); null when the person has never signed in here.",
+            "type" : [
+              "string",
+              "null"
+            ]
           },
           "userId" : {
             "format" : "uuid",
