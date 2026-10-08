@@ -6,7 +6,7 @@
  * container (below sm) and a table container (sm+) so nothing overflows at
  * 375px (card-stacking vs horizontal-scroll — cards win on mobile).
  */
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import WebhooksPage from "../page"
 import apiClient from "@/lib/api-client"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
@@ -65,6 +65,33 @@ describe("Webhook subscriptions list (Surface A)", () => {
     // status badges carry a text label (never colour alone)
     expect(screen.getAllByText("Active").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Auto-paused").length).toBeGreaterThan(0)
+  })
+
+  // 37-06: the confirm dialog's cancel says what it keeps (no bare "Cancel"), and
+  // the non-destructive Rotate confirm is the accent Button (orange-700, 5.18:1),
+  // not the orange-500 literal that measured 2.80:1.
+  it("confirms Rotate with 'Keep current secret' and an accent confirm", async () => {
+    render(<WebhooksPage />)
+    await screen.findAllByText("https://a.example.com/hooks")
+
+    fireEvent.click(screen.getAllByRole("button", { name: /^rotate$/i })[0])
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByRole("button", { name: "Keep current secret" })).toBeInTheDocument()
+    expect(within(dialog).queryByRole("button", { name: /^cancel$/i })).toBeNull()
+    expect(within(dialog).getByRole("button", { name: "Rotate secret" })).toHaveClass("bg-primary")
+  })
+
+  it("confirms Revoke with 'Keep endpoint' and a destructive confirm", async () => {
+    render(<WebhooksPage />)
+    await screen.findAllByText("https://a.example.com/hooks")
+
+    fireEvent.click(screen.getAllByRole("button", { name: /^revoke$/i })[0])
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByRole("button", { name: "Keep endpoint" })).toBeInTheDocument()
+    expect(within(dialog).queryByRole("button", { name: /^cancel$/i })).toBeNull()
+    expect(within(dialog).getByRole("button", { name: "Revoke endpoint" })).toHaveClass(
+      "bg-destructive"
+    )
   })
 
   it("exposes the Add endpoint CTA", async () => {

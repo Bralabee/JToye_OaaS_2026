@@ -193,6 +193,9 @@ describe("Webhook delivery-log browser (Surface B)", () => {
     const confirmBtn = await screen.findByRole("button", {
       name: /replay delivery/i,
     })
+    // 37-06: the cancel says what it keeps, never a bare "Cancel".
+    expect(screen.getByRole("button", { name: "Skip replay" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^cancel$/i })).toBeNull()
     await user.click(confirmBtn)
 
     await waitFor(() => expect(mockedApiClient.post).toHaveBeenCalled())

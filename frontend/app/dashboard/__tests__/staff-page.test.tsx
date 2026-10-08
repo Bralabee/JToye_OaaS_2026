@@ -706,16 +706,106 @@ describe("Remove access", () => {
 })
 
 /**
- * Remove access is confirmed in a dialog from 37-06 Task 3 on. Until then the
- * click acts directly; this helper presses the dialog's confirm when one is open,
- * so the cases above state the outcome rather than the mechanism.
+ * Remove access is confirmed in a destructive dialog (UI-SPEC § B1, 37-06 Task 3).
+ * The dialog must be open; this presses its confirm.
  */
 async function removeConfirmIfShown() {
-  const dialog = screen.queryByRole("dialog")
-  if (dialog) {
-    fireEvent.click(within(dialog).getByRole("button", { name: /^remove access$/i }))
-  }
+  const dialog = await screen.findByRole("dialog")
+  fireEvent.click(within(dialog).getByRole("button", { name: /^remove access$/i }))
 }
+
+describe("Remove access confirm names the consequence (UI-SPEC § B1)", () => {
+  const USER_MULTI = "77777777-7777-7777-7777-777777777777"
+  const multiDir = {
+    userId: USER_MULTI,
+    email: "m***@vendor.co.uk",
+    displayName: "Mo Twoshops",
+    lastSeen: "2026-10-01T10:00:00Z",
+  }
+  const GRANT_MULTI_A = "70707070-7070-7070-7070-707070707070"
+  const GRANT_MULTI_B = "71717171-7171-7171-7171-717171717171"
+  const multiGrants = [
+    {
+      id: GRANT_MULTI_A,
+      userId: USER_MULTI,
+      shopId: SHOP_A,
+      role: "SHOP_MANAGER",
+      grantSource: "OPERATOR",
+      createdAt: "2026-07-05T10:00:00Z",
+      createdBy: USER_GA,
+    },
+    {
+      id: GRANT_MULTI_B,
+      userId: USER_MULTI,
+      shopId: SHOP_B,
+      role: "STAFF",
+      grantSource: "OPERATOR",
+      createdAt: "2026-07-05T10:00:00Z",
+      createdBy: USER_GA,
+    },
+  ]
+
+  beforeEach(() => {
+    mockedApiClient.get.mockResolvedValue({
+      data: {
+        directory: [...directory, multiDir],
+        grants: [...grants, ...multiGrants],
+        people: [
+          ...people,
+          person(
+            multiDir,
+            access(USER_MULTI, "SHOP_ROLES", {
+              perShopRole: { [SHOP_A]: "SHOP_MANAGER", [SHOP_B]: "STAFF" },
+            })
+          ),
+        ],
+      },
+    } as never)
+  })
+
+  it("for a last grant, says they will have no access, and keeps access on 'Keep access'", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    fireEvent.click(
+      within(rowOf("Sam Cook")).getByRole("button", { name: /remove staff at peckham kitchen/i })
+    )
+
+    const dialog = await screen.findByRole("dialog")
+    expect(
+      within(dialog).getByText("Remove Staff at Peckham Kitchen for Sam Cook?")
+    ).toBeInTheDocument()
+    expect(dialog).toHaveTextContent("After this they'll have no access to this business.")
+    expect(dialog).toHaveTextContent("They'll lose it on their next action.")
+    expect(within(dialog).getByRole("button", { name: /^remove access$/i })).toHaveClass(
+      "bg-destructive"
+    )
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Keep access" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(mockedApiClient.delete).not.toHaveBeenCalled()
+  })
+
+  it("for one of several grants, names the access that remains", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Mo Twoshops")).toBeInTheDocument())
+
+    fireEvent.click(
+      within(rowOf("Mo Twoshops")).getByRole("button", {
+        name: /remove shop manager at peckham kitchen/i,
+      })
+    )
+
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog).toHaveTextContent("After this they'll have: Staff · Brixton Bakery.")
+    expect(dialog).not.toHaveTextContent(/no access to this business/i)
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /^remove access$/i }))
+    await waitFor(() =>
+      expect(mockedApiClient.delete).toHaveBeenCalledWith(`/api/v1/staff/${GRANT_MULTI_A}`)
+    )
+  })
+})
 
 /**
  * #454 — CLS. The route measured 0.1805 at the repo's declared throttle profile
