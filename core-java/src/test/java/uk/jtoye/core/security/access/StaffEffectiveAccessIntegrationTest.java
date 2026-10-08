@@ -337,6 +337,32 @@ class StaffEffectiveAccessIntegrationTest {
         assertThat(listedAccess(vendorJwt(admin), ordinary).path("level").asString()).isEqualTo("NONE");
     }
 
+    // ---- 37-09: staff/me names the caller's own business ---------------------------------------
+
+    @Test
+    @DisplayName("37-09: staff/me carries the caller's own business name, for a group admin, a scoped user and one with no access")
+    void staffMe_namesTheCallersOwnBusiness() throws Exception {
+        String ownName = "37-05 effective access " + tenantId;
+        UUID otherTenant = UUID.randomUUID();
+        jdbc.update("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now())",
+                otherTenant, "37-09 another business " + otherTenant);
+
+        UUID admin = operatorGroupAdmin();
+        UUID scoped = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenantId, scoped, shopA, "SHOP_MANAGER", "scoped-" + scoped + "@example.com");
+        UUID ungranted = UUID.randomUUID();
+
+        for (UUID caller : List.of(admin, scoped, ungranted)) {
+            MvcResult me = mockMvc.perform(get("/api/v1/staff/me").with(vendorJwt(caller))
+                            .accept(MediaType.APPLICATION_JSON))
+                    .andReturn();
+            assertThat(me.getResponse().getStatus()).as(body(me)).isEqualTo(200);
+            assertThat(json(me).path("businessName").asString())
+                    .as("the name of the business the token is pinned to, never another: %s", body(me))
+                    .isEqualTo(ownName);
+        }
+    }
+
     // ---- helpers ------------------------------------------------------------------------------
 
     private static final String SHOP_ACCESS_DENIED = "https://jtoye.uk/errors/shop-access-denied";
