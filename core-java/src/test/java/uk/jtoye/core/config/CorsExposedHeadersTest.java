@@ -346,7 +346,8 @@ class CorsExposedHeadersTest {
 
         assertThat(merged).as("no duplicate under a different casing")
                 .containsExactly("retry-after", "x-search-interpretation",
-                        "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset");
+                        "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
+                        "Content-Disposition", "X-Finance-Scope");
     }
 
     @Test

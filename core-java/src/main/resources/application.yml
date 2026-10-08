@@ -818,7 +818,9 @@ cors:
   # 33-08 (#619) appends the search-interpretation header (last name below). The storefront
   # reads it cross-origin (:3000 -> :9090), so unlisted it would be on the wire and null to
   # every fetch. The name is written ONCE in this file, on the line beneath, on purpose.
-  exposed-headers: ${CORS_EXPOSED_HEADERS:Authorization,Content-Type,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset,X-Search-Interpretation}
+  # 37-11 appends the finance CSV export's filename and scope echo (Content-Disposition,
+  # X-Finance-Scope): the dashboard downloads cross-origin and must name the file for its scope.
+  exposed-headers: ${CORS_EXPOSED_HEADERS:Authorization,Content-Type,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset,X-Search-Interpretation,Content-Disposition,X-Finance-Scope}
 
 rate-limiting:
   enabled: ${RATE_LIMIT_ENABLED:true}

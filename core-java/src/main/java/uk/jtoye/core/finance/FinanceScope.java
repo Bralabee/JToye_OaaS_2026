@@ -20,10 +20,11 @@ import java.util.UUID;
  *
  * @param shopId   the shop, or null for every shop of the tenant (rows with no shop included)
  * @param shopName the shop's name, resolved under the caller's tenant; null when {@code shopId} is null
+ * @param shopSlug the shop's slug, for the export's filename; null when {@code shopId} is null
  * @param from     first UK day included, or null for an open start
  * @param to       last UK day included, or null for an open end
  */
-public record FinanceScope(UUID shopId, String shopName, LocalDate from, LocalDate to) {
+public record FinanceScope(UUID shopId, String shopName, String shopSlug, LocalDate from, LocalDate to) {
 
     /** UK calendar days: a day is midnight to midnight in Europe/London, BST included. */
     public static final ZoneId UK = ZoneId.of("Europe/London");
@@ -46,7 +47,7 @@ public record FinanceScope(UUID shopId, String shopName, LocalDate from, LocalDa
 
     /** Every shop of the tenant, all time: the pre-37-11 tenant-wide view. */
     public static FinanceScope tenantWide() {
-        return new FinanceScope(null, null, null, null);
+        return new FinanceScope(null, null, null, null, null);
     }
 
     public boolean allShops() {
@@ -75,5 +76,28 @@ public record FinanceScope(UUID shopId, String shopName, LocalDate from, LocalDa
 
     public FinanceScopeDto toDto() {
         return new FinanceScopeDto(shopId, shopName, from, to);
+    }
+
+    /**
+     * The export's filename (UI-SPEC B5): {@code jtoye-finance-{shop-slug | all-shops}-{from}-{to}.csv}. An
+     * open start reads {@code start}; an open end reads {@code today}'s UK date, because an export with no end
+     * holds every row up to the moment it was taken.
+     */
+    public String exportFilename(LocalDate todayUk) {
+        String shopPart = shopId == null ? "all-shops" : shopSlug;
+        String fromPart = from != null ? from.toString() : "start";
+        String toPart = to != null ? to.toString() : todayUk.toString();
+        return "jtoye-finance-" + shopPart + "-" + fromPart + "-" + toPart + ".csv";
+    }
+
+    /**
+     * The export's scope echo (header {@code X-Finance-Scope}), ASCII by construction so it is a legal header
+     * value whatever the shop is called: {@code shopId=<uuid|all-shops>; from=<date|open>; to=<date|open>}.
+     * The shop's name is in the summary's scope; a header cannot carry arbitrary text.
+     */
+    public String headerEcho() {
+        return "shopId=" + (shopId == null ? "all-shops" : shopId.toString())
+                + "; from=" + (from != null ? from.toString() : "open")
+                + "; to=" + (to != null ? to.toString() : "open");
     }
 }

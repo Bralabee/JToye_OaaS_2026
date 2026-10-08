@@ -8,6 +8,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
+import uk.jtoye.core.finance.dto.FinanceExportRow;
 import uk.jtoye.core.finance.dto.FinancialAggregateRow;
 import uk.jtoye.core.finance.dto.FinancialSummaryDto;
 import uk.jtoye.core.finance.dto.FinancialTransactionDto;
@@ -314,6 +315,19 @@ public class FinancialTransactionService {
                 vatBreakdown,
                 scope.toDto()
         );
+    }
+
+    /**
+     * The CSV export of a scope (Phase 37-11, RWO-027, roadmap SC-2): exactly the rows the summary and the
+     * list count for the same scope, oldest first, written by {@link FinanceCsvExporter}. One statement
+     * (order numbers and shop names joined DB-side). A scope with no rows is the header row alone.
+     */
+    @Transactional(readOnly = true)
+    public String exportCsv(FinanceScope scope) {
+        List<FinanceExportRow> rows = financialTransactionRepository.exportForScope(scope.allShops(),
+                scope.shopIdOrPlaceholder(), scope.fromInclusive(), scope.toExclusive());
+        log.info("Exporting {} ledger row(s) for scope {}", rows.size(), scope.headerEcho());
+        return FinanceCsvExporter.write(rows);
     }
 
     // NOTE: No update or delete methods - financial transactions are IMMUTABLE

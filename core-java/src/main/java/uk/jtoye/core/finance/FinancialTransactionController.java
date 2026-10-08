@@ -11,6 +11,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -27,6 +30,7 @@ import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -50,7 +54,9 @@ import java.util.UUID;
  * caller's tenant; the shop gate and RLS are complementary, not a replacement for one another.
  *
  * <p>Every summary and list response carries the {@code scope} it filtered on, so the dashboard's banner
- * reads what the API did rather than the shop switcher's own value.
+ * reads what the API did rather than the shop switcher's own value. The CSV export
+ * ({@code GET /export.csv}) has the same gate and scope, names the scope in its filename and echoes it in
+ * {@code X-Finance-Scope}.
  *
  * Financial transactions are IMMUTABLE - no update or delete endpoints.
  */
@@ -157,6 +163,44 @@ public class FinancialTransactionController {
         return financialTransactionService.getSummary(authorise(shopId, from, to));
     }
 
+    /** The scope echo header on the CSV export; exposed to cross-origin script by the CORS floor. */
+    static final String SCOPE_HEADER = "X-Finance-Scope";
+
+    @GetMapping(value = "/export.csv", produces = "text/csv")
+    @Operation(summary = "Export financial transactions as CSV",
+            description = "The same rows the summary and list count for the same scope, oldest first, as RFC 4180 "
+                    + "CSV (header: date, reference, order_number, entry_kind, amount, vat_rate, vat_amount, shop). "
+                    + "Dates are UK local time (dd/MM/yyyy HH:mm); amounts and VAT are signed pounds, so a voided "
+                    + "order's SALE and REVERSAL net to zero. Text cells starting = + - @ are written with a "
+                    + "leading apostrophe. Same gate as the summary: shopId needs SHOP_MANAGER on it, no shopId "
+                    + "needs Group admin. The filename is jtoye-finance-{shop-slug|all-shops}-{from}-{to}.csv and "
+                    + "X-Finance-Scope echoes the scope. A range with no rows is a header-only file. Read-only, "
+                    + "so no Idempotency-Key is needed.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "CSV of the scope (header only when it has no rows)"),
+            @ApiResponse(responseCode = "400", description = "from is after to, or a parameter is malformed"),
+            @ApiResponse(responseCode = "403", description = "shop-access-denied: not a SHOP_MANAGER of shopId, or no "
+                    + "shopId and not a Group admin"),
+            @ApiResponse(responseCode = "404", description = "shopId is not a shop of the caller's tenant")
+    })
+    public ResponseEntity<byte[]> exportCsv(
+            @Parameter(description = "Only this shop's rows (needs SHOP_MANAGER on it). Omit for the whole tenant (Group admin).")
+            @RequestParam(required = false) UUID shopId,
+            @Parameter(description = "First UK day included (ISO date, e.g. 2026-10-01)")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(description = "Last UK day included (ISO date)")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        FinanceScope scope = authorise(shopId, from, to);
+        byte[] body = financialTransactionService.exportCsv(scope).getBytes(StandardCharsets.UTF_8);
+        String filename = scope.exportFilename(LocalDate.now(FinanceScope.UK));
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(filename).build().toString())
+                .header(SCOPE_HEADER, scope.headerEcho())
+                .body(body);
+    }
+
     /**
      * The gate and the scope in one place (Phase 37-11), so the summary, the list and the export cannot
      * disagree about who may read what. The gate runs FIRST: a refused caller learns nothing from a range
@@ -166,14 +210,14 @@ public class FinancialTransactionController {
     FinanceScope authorise(UUID shopId, LocalDate from, LocalDate to) {
         if (shopId == null) {
             shopAccessService.requireGroupAdmin();
-            return new FinanceScope(null, null, from, to);
+            return new FinanceScope(null, null, null, from, to);
         }
         shopAccessService.require(shopId, ShopRole.SHOP_MANAGER);
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new MissingTenantContextException("Tenant context not set"));
         Shop shop = shopRepository.findByIdAndTenantId(shopId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
-        return new FinanceScope(shopId, shop.getName(), from, to);
+        return new FinanceScope(shopId, shop.getName(), shop.getSlug(), from, to);
     }
 
     // NOTE: No PUT or DELETE endpoints - financial transactions are IMMUTABLE

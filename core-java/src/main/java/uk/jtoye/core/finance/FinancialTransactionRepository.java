@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import uk.jtoye.core.finance.dto.FinanceExportRow;
 import uk.jtoye.core.finance.dto.FinancialAggregateRow;
 import uk.jtoye.core.finance.dto.FinancialVatRow;
 
@@ -210,4 +211,24 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
                                             @Param("fromTs") OffsetDateTime fromTs,
                                             @Param("toTs") OffsetDateTime toTs,
                                             Pageable pageable);
+
+    /**
+     * Every ledger row of a scope as an export line, oldest first, with the order's number and the shop's
+     * name joined DB-side (one statement). LEFT joins: a MANUAL row has neither, and still exports.
+     */
+    @Query("""
+            SELECT new uk.jtoye.core.finance.dto.FinanceExportRow(
+              ft.id, ft.createdAt, ft.reference, o.orderNumber, ft.entryKind, ft.amountPennies, ft.vatRate, s.name)
+            FROM FinancialTransaction ft
+            LEFT JOIN Order o ON o.id = ft.orderId
+            LEFT JOIN Shop s ON s.id = ft.shopId
+            WHERE (:allShops = true OR ft.shopId = :shopId)
+              AND ft.createdAt >= :fromTs
+              AND ft.createdAt < :toTs
+            ORDER BY ft.createdAt, ft.id
+            """)
+    List<FinanceExportRow> exportForScope(@Param("allShops") boolean allShops,
+                                          @Param("shopId") UUID shopId,
+                                          @Param("fromTs") OffsetDateTime fromTs,
+                                          @Param("toTs") OffsetDateTime toTs);
 }
