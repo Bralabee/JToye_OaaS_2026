@@ -38,6 +38,10 @@ import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
+import uk.jtoye.core.exception.StaffInviteAccountServiceUnavailableException;
+import uk.jtoye.core.exception.StaffInviteEmailTakenException;
+import uk.jtoye.core.exception.StaffInvitePasswordRejectedException;
+import uk.jtoye.core.exception.StaffInviteUnavailableException;
 import uk.jtoye.core.exception.PublishStateNotAcceptedException;
 import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceInUseException;
@@ -799,6 +803,78 @@ public class GlobalExceptionHandler {
         problem.setType(URI.create("https://jtoye.uk/errors/dsar-export-unavailable"));
         problem.setProperty("code", "DSAR_EXPORT_UNAVAILABLE");
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .cacheControl(CacheControl.noStore())
+                .body(problem);
+    }
+
+    /**
+     * Phase 37-08 (D-07; UI-SPEC B2 state 4) — a staff-invitation link cannot be used. 404 with ONE body
+     * for every cause (expired, used, cancelled, another business's, inactive business, malformed,
+     * unknown): the detail is a constant and the exception carries no reason, so no two refusals differ
+     * by a byte and a link holder learns nothing about the invitation (T-37-18). no-store, like the
+     * success responses.
+     */
+    @ExceptionHandler(StaffInviteUnavailableException.class)
+    public ResponseEntity<ProblemDetail> handleStaffInviteUnavailable(StaffInviteUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+                StaffInviteUnavailableException.DETAIL);
+        problem.setTitle("Invitation unavailable");
+        problem.setType(URI.create("https://jtoye.uk/errors/staff-invite-unavailable"));
+        problem.setProperty("code", "STAFF_INVITE_UNAVAILABLE");
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .cacheControl(CacheControl.noStore())
+                .body(problem);
+    }
+
+    /**
+     * Phase 37-08 (D-07, T-37-20) — the invited address already belongs to another business (one user,
+     * one tenant). 409; nothing was written.
+     */
+    @ExceptionHandler(StaffInviteEmailTakenException.class)
+    public ResponseEntity<ProblemDetail> handleStaffInviteEmailTaken(StaffInviteEmailTakenException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+                StaffInviteEmailTakenException.DETAIL);
+        problem.setTitle("Email belongs to another business");
+        problem.setType(URI.create("https://jtoye.uk/errors/staff-invite-email-in-other-business"));
+        problem.setProperty("code", "STAFF_INVITE_EMAIL_IN_OTHER_BUSINESS");
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .cacheControl(CacheControl.noStore())
+                .body(problem);
+    }
+
+    /**
+     * Phase 37-08 (D-26, T-37-22) — Keycloak refused the new account's password. 422 whose detail is
+     * Keycloak's message verbatim (never the password); the invitation stays open.
+     */
+    @ExceptionHandler(StaffInvitePasswordRejectedException.class)
+    public ResponseEntity<ProblemDetail> handleStaffInvitePasswordRejected(StaffInvitePasswordRejectedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        problem.setTitle("Password not accepted");
+        problem.setType(URI.create("https://jtoye.uk/errors/staff-invite-password-rejected"));
+        problem.setProperty("code", "STAFF_INVITE_PASSWORD_REJECTED");
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .cacheControl(CacheControl.noStore())
+                .body(problem);
+    }
+
+    /**
+     * Phase 37-08 — the Keycloak admin seam is off or did not answer while previewing or accepting a staff
+     * invitation. 503 with Retry-After; nothing was written and the invitation stays open. The cause is
+     * logged by type only (its message names a realm; the address never reaches it).
+     */
+    @ExceptionHandler(StaffInviteAccountServiceUnavailableException.class)
+    public ResponseEntity<ProblemDetail> handleStaffInviteAccountServiceUnavailable(
+            StaffInviteAccountServiceUnavailableException ex) {
+        log.warn("event=staff_invite_account_service_unavailable cause={}",
+                ex.getCause() == null ? "not-configured" : ex.getCause().getClass().getSimpleName());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
+                StaffInviteAccountServiceUnavailableException.DETAIL);
+        problem.setTitle("Account service unavailable");
+        problem.setType(URI.create("https://jtoye.uk/errors/staff-invite-account-service-unavailable"));
+        problem.setProperty("code", "STAFF_INVITE_ACCOUNT_SERVICE_UNAVAILABLE");
+        problem.setProperty("retryAfterSeconds", 60);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "60")
                 .cacheControl(CacheControl.noStore())
                 .body(problem);
     }

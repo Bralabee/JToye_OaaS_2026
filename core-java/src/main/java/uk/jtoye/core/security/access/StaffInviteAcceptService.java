@@ -6,7 +6,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.exception.StaffInviteAccountServiceUnavailableException;
+import uk.jtoye.core.exception.StaffInviteEmailTakenException;
+import uk.jtoye.core.exception.StaffInvitePasswordRejectedException;
+import uk.jtoye.core.exception.StaffInviteUnavailableException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.dto.AcceptStaffInviteRequest;
 import uk.jtoye.core.security.access.dto.StaffInviteAcceptedDto;
@@ -18,6 +21,7 @@ import uk.jtoye.core.tenant.Tenant;
 import uk.jtoye.core.tenant.TenantRepository;
 import uk.jtoye.core.tenant.TenantStatus;
 import uk.jtoye.core.tenant.keycloak.KeycloakAdminClient;
+import uk.jtoye.core.tenant.keycloak.KeycloakAdminException;
 import uk.jtoye.core.tenant.keycloak.KeycloakAdminProperties;
 import uk.jtoye.core.tenant.keycloak.KeycloakUserExistsException;
 import uk.jtoye.core.tenant.keycloak.KeycloakUserRejectedException;
@@ -225,6 +229,8 @@ public class StaffInviteAcceptService {
             throw emailInOtherBusiness();
         } catch (KeycloakUserRejectedException rejected) {
             throw passwordRejected(rejected.getKeycloakMessage());
+        } catch (KeycloakAdminException down) {
+            throw new StaffInviteAccountServiceUnavailableException(down);
         }
     }
 
@@ -291,13 +297,21 @@ public class StaffInviteAcceptService {
 
     private String keycloakToken() {
         if (!keycloakProperties.configured()) {
-            throw new IllegalStateException("Keycloak admin seam is not configured");
+            throw new StaffInviteAccountServiceUnavailableException(null);
         }
-        return keycloak.obtainAdminToken();
+        try {
+            return keycloak.obtainAdminToken();
+        } catch (KeycloakAdminException down) {
+            throw new StaffInviteAccountServiceUnavailableException(down);
+        }
     }
 
     private List<VendorRealmUser> lookUp(String email, String token) {
-        return keycloak.findVendorUsersByEmail(keycloakProperties.getVendorRealm(), email, token);
+        try {
+            return keycloak.findVendorUsersByEmail(keycloakProperties.getVendorRealm(), email, token);
+        } catch (KeycloakAdminException down) {
+            throw new StaffInviteAccountServiceUnavailableException(down);
+        }
     }
 
     /**
@@ -378,22 +392,22 @@ public class StaffInviteAcceptService {
         }
     }
 
-    // ---- refusals (typed in Task 2) ------------------------------------------------------------
+    // ---- refusals -------------------------------------------------------------------------------
 
     private RuntimeException unavailable() {
         return unavailableStatic();
     }
 
     private static RuntimeException unavailableStatic() {
-        return new ResourceNotFoundException("This invitation can't be used.");
+        return new StaffInviteUnavailableException();
     }
 
     private static RuntimeException emailInOtherBusiness() {
-        return new IllegalArgumentException("This email already belongs to another business");
+        return new StaffInviteEmailTakenException();
     }
 
     private static RuntimeException passwordRejected(String keycloakMessage) {
-        return new IllegalArgumentException(keycloakMessage);
+        return new StaffInvitePasswordRejectedException(keycloakMessage);
     }
 
     // ---- value types -------------------------------------------------------------------------------
