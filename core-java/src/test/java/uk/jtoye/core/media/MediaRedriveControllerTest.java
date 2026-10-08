@@ -356,7 +356,10 @@ class MediaRedriveControllerTest {
         UUID stalledPending = seedAsset(tenantA, productA, "PENDING", retained(), null, 0, null);
         ageTo(stalledPending, OffsetDateTime.now().minusMinutes(30));
 
-        mockMvc.perform(get("/api/v1/media/review-queue").with(vendorJwt(tenantA)))
+        // 37-04: the queue is shop-scoped, so read it as shopA's manager (productA is on shopA). Until
+        // 37-04 this arm read it with a fresh, ungranted subject and still saw shopA's assets — the
+        // leak MediaReviewQueueShopScopeIntegrationTest now pins.
+        mockMvc.perform(get("/api/v1/media/review-queue").with(vendorJwt(tenantA, managerA)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.assetId=='" + reaperFailed + "')].redrivable").value(true))
                 .andExpect(jsonPath("$[?(@.assetId=='" + reaperFailed + "')].delayed").value(false))

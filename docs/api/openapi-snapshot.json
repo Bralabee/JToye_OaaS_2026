@@ -6356,7 +6356,7 @@
     },
     "/api/v1/media/review-queue" : {
       "get" : {
-        "description" : "Returns the tenant's media assets that need vendor attention: FAILED uploads (each carries a vendor-visible failureReason; the vendor re-uploads) and flagged-ACTIVE assets (content-relevance review — the vendor Keeps or Replaces). Clean ACTIVE and in-flight PENDING assets are excluded. Authenticated read surface (mirrors the ProductController read endpoints); tenant-isolated by RLS.",
+        "description" : "Returns the tenant's media assets that need vendor attention: FAILED uploads (each carries a vendor-visible failureReason; the vendor re-uploads) and flagged-ACTIVE assets (content-relevance review — the vendor Keeps or Replaces). Clean ACTIVE and in-flight PENDING assets are excluded. Authenticated read surface (mirrors the ProductController read endpoints); tenant-isolated by RLS and shop-scoped: a GROUP_ADMIN sees the whole tenant's queue, any other caller only assets on the shops it is granted (an ungranted caller gets an empty list), and an asset with no owning shop is GROUP_ADMIN-only.",
         "operationId" : "reviewQueue",
         "responses" : {
           "200" : {
