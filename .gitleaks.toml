@@ -146,9 +146,10 @@ regexes = [
 # tenant id is a literal UUID chosen for the test and the token decodes to
 # "CheckOnlyThisIsATestTokenThatIsLong". ONE exact value, matched on the secret.
 [[allowlists]]
-description = "Phase 37-08 test-fixture invite link (a literal tenant id in the fragment, not a credential)"
+description = "Phase 37 test fixtures: the 37-08 invite link (a literal tenant id in the fragment) and the 37-09 accept-page password marker (PwMarker-7c1f-correct…, a test string chosen so a log leak is greppable); neither is a credential"
 condition = "OR"
 regexTarget = "secret"
 regexes = [
   '''^6f318039-1f48-40f2-b7a0-1132ce4bb369\.?$''',
+  '''^PwMarker-7c1f-correct$''',
 ]
