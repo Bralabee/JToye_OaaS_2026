@@ -28,3 +28,28 @@ where it must be resolved.
 - **Why deferred:** a production authorization change, not a test conversion; outside 37-03's
   files. Under D-06 an ungranted user can still read this tenant-wide list (asset ids, product ids,
   failure reasons). Route to the 37-B shop-read work or a dedicated plan.
+- **RESOLVED in 37-04** (deviation, Rule 2), because 37-04's flip made it live:
+  RED `b2ff028a` (`MediaReviewQueueShopScopeIntegrationTest`, RED_EVIDENCE_OK), fix `4c55677b`.
+  The queue now follows the product-list read rule: GROUP_ADMIN sees the tenant, any other caller
+  only its granted shops' assets, an ungranted caller nothing, a shop-less asset GROUP_ADMIN only.
+  AC-4.8 now reads as shopA's manager. The companion `POST /api/v1/media/{assetId}/keep` was
+  checked and already required SHOP_MANAGER on the owning shop (WR-03,
+  `MediaKeepShopScopeIntegrationTest`); no change. Evidence: 37-04-SUMMARY.md.
+
+## 3. Comments in the frontend still describe the old OFF default (found in 37-04)
+
+- `frontend/lib/shops-api.ts:9-12` ("under the default strict-scoping = false is every
+  JIT-provisioned user"), `frontend/lib/staff-api.ts:19` and
+  `frontend/app/dashboard/staff/page.tsx:~639` (copy about "before enabling strict-scoping").
+- **Why deferred:** comment/copy only, no behaviour; RESEARCH §37-B.1 routes this copy to the
+  D-07 / D-09 Staff-page work, which rewrites the same lines. Leaving it to them avoids two
+  rewrites of one paragraph.
+
+## 4. The flip is not on the shared runtime yet (by design, 37-04)
+
+- 37-04 changed code and config only. The running compose stack was NOT rebuilt: per the plan's
+  must-have, the flip reaches a shared runtime only at the 37-15 gate, after the owner has seen
+  the list of existing users who hold only an automatic grant.
+- So MCP `create_order` / `list_products` under strict ON with real Keycloak client-credentials
+  tokens (37-03 coverage D4) is still proven by integration tests only; the live check is owed
+  to the 37-15 gate, together with `scripts/check-runtime-freshness.sh`.
