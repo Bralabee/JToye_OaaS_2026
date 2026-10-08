@@ -1,6 +1,7 @@
 import apiClient from "@/lib/api-client"
 import { resolveShopsPageSize } from "@/lib/env-validation"
 import { fetchAllPages } from "@/lib/paged-fetch"
+import type { ShopRole } from "@/lib/staff-api"
 import type { Shop } from "@/types/api"
 
 /**
@@ -19,10 +20,18 @@ export interface MyAccess {
   groupAdmin: boolean
   /**
    * Resolved at the DTO boundary by 23-12: `null` for an unrestricted GROUP_ADMIN
-   * (all shops — NOT "no shops"); an exact, possibly-empty set for a scoped user
-   * (empty ⇒ no access). So an empty array only ever means "no access".
+   * (all shops — NOT "no shops"); an exact, possibly-empty set for a scoped user.
+   * Empty means no shop today; it means "no access" only together with a null
+   * {@link MyAccess.tenantWideRole} (a tenant-wide role in a tenant with no shops yet
+   * is still access).
    */
   grantedShopIds: string[] | null
+  /**
+   * The role a tenant-wide STAFF / SHOP_MANAGER grant gives the caller on every shop
+   * (37-05; `grantedShopIds` then lists every current shop). Null when none, and
+   * always null for a GROUP_ADMIN.
+   */
+  tenantWideRole: ShopRole | null
 }
 
 /**
@@ -37,6 +46,8 @@ export interface MyShops {
   isGroupAdmin: boolean
   /** The caller's Keycloak `sub`, for self-identification without an email round-trip. */
   userId: string
+  /** The whole staff/me answer, for the dashboard shell's no-access decision (D-08). */
+  access: MyAccess
 }
 
 /**
@@ -50,6 +61,7 @@ export async function fetchMyAccess(): Promise<MyAccess> {
     userId: res.data?.userId ?? "",
     groupAdmin: res.data?.groupAdmin ?? false,
     grantedShopIds: res.data?.grantedShopIds ?? null,
+    tenantWideRole: res.data?.tenantWideRole ?? null,
   }
 }
 
@@ -106,5 +118,5 @@ export async function fetchAllMyShops(sort?: string): Promise<Shop[]> {
  */
 export async function fetchMyShops(): Promise<MyShops> {
   const [shops, access] = await Promise.all([fetchAllMyShops(), fetchMyAccess()])
-  return { shops, isGroupAdmin: access.groupAdmin, userId: access.userId }
+  return { shops, isGroupAdmin: access.groupAdmin, userId: access.userId, access }
 }

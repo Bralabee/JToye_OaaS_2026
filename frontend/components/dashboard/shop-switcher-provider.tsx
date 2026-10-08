@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { fetchMyShops } from "@/lib/shops-api"
+import { fetchMyShops, type MyAccess, type MyShops } from "@/lib/shops-api"
 import {
   ALL_SHOPS_CONTEXT,
   getShopContext,
@@ -45,6 +45,34 @@ export interface ShopSwitcherData {
   stale: boolean
   /** Clear the stale notice once the operator picks a valid selection. */
   dismissStale: () => void
+  /**
+   * The caller's whole staff/me answer (D-08, 37-06), or null before it has
+   * arrived (or when it could not be read). Null decides nothing.
+   */
+  access: MyAccess | null
+  /**
+   * True once THIS provider instance — this browser session's dashboard — has seen
+   * the caller hold some access. In memory only: no storage key, so a "You no longer
+   * have access" claim always rests on something this session observed (T-37-13).
+   */
+  observedAccess: boolean
+  /** Re-read staff/me (and the shop list with it). Rejects when the read fails. */
+  reloadAccess: () => Promise<void>
+}
+
+/**
+ * Whether a staff/me answer grants anything at all. Reads only the server's own
+ * fields: GROUP_ADMIN, an unrestricted (null) shop set, any granted shop, or a
+ * tenant-wide role. A missing field reads as access, so a partial answer can never
+ * produce a no-access page.
+ */
+export function hasAnyAccess(access: MyAccess): boolean {
+  return (
+    access.groupAdmin ||
+    access.grantedShopIds === null ||
+    access.grantedShopIds.length > 0 ||
+    access.tenantWideRole != null
+  )
 }
 
 const ShopSwitcherContext = createContext<ShopSwitcherData | null>(null)
@@ -55,37 +83,52 @@ export function ShopSwitcherProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [stale, setStale] = useState(false)
+  const [access, setAccess] = useState<MyAccess | null>(null)
+  const [observedAccess, setObservedAccess] = useState(false)
+
+  /**
+   * Apply one fetchMyShops answer. Shared by the mount-time load and by
+   * `reloadAccess`, so a re-read updates the switchers and the access decision
+   * together and through the same stale-selection rule.
+   */
+  const apply = useCallback((result: MyShops) => {
+    const { shops: fetched, isGroupAdmin: ga, userId: uid } = result
+    const saved = getShopContext()
+    const grantedIds = fetched.map((s) => s.id)
+    // D-13: a saved *specific shop* no longer in the granted set was revoked.
+    const savedIsStale =
+      saved !== ALL_SHOPS_CONTEXT && !grantedIds.includes(saved)
+    // SSR-safe mount-time hydration, and the SINGLE writer for both switchers.
+    // (No eslint-disable needed: `react-hooks/set-state-in-effect` only fires on
+    // a setState called DIRECTLY in the effect body — these run in the resolved
+    // promise's callback. The directives that used to sit here were inert and
+    // reported as unused-directive warnings; the rule itself is live and will
+    // error if this ever moves into the effect body.)
+    setShops(fetched)
+    setIsGroupAdmin(ga)
+    setUserId(uid)
+    setStale(savedIsStale)
+    setLoading(false)
+    // A mock or an older caller may omit `access`; null then decides nothing.
+    const answer = result.access ?? null
+    setAccess(answer)
+    if (answer && hasAnyAccess(answer)) setObservedAccess(true)
+    // CR-08/T-23-13-02: persist ONLY the stale correction (D-13). A clean
+    // first load must not write a pin — that silently narrowed the cross-shop
+    // view. This is the SOLE hydration writer, so the two switchers can never
+    // both dispatch 'shopcontext:change' on mount.
+    if (savedIsStale) {
+      setShopContext(
+        ga || fetched.length === 0 ? ALL_SHOPS_CONTEXT : fetched[0].id
+      )
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
     fetchMyShops()
-      .then(({ shops: fetched, isGroupAdmin: ga, userId: uid }) => {
-        if (!active) return
-        const saved = getShopContext()
-        const grantedIds = fetched.map((s) => s.id)
-        // D-13: a saved *specific shop* no longer in the granted set was revoked.
-        const savedIsStale =
-          saved !== ALL_SHOPS_CONTEXT && !grantedIds.includes(saved)
-        // SSR-safe mount-time hydration, and the SINGLE writer for both switchers.
-        // (No eslint-disable needed: `react-hooks/set-state-in-effect` only fires on
-        // a setState called DIRECTLY in the effect body — these run in the resolved
-        // promise's callback. The directives that used to sit here were inert and
-        // reported as unused-directive warnings; the rule itself is live and will
-        // error if this ever moves into the effect body.)
-        setShops(fetched)
-        setIsGroupAdmin(ga)
-        setUserId(uid)
-        setStale(savedIsStale)
-        setLoading(false)
-        // CR-08/T-23-13-02: persist ONLY the stale correction (D-13). A clean
-        // first load must not write a pin — that silently narrowed the cross-shop
-        // view. This is the SOLE hydration writer, so the two switchers can never
-        // both dispatch 'shopcontext:change' on mount.
-        if (savedIsStale) {
-          setShopContext(
-            ga || fetched.length === 0 ? ALL_SHOPS_CONTEXT : fetched[0].id
-          )
-        }
+      .then((result) => {
+        if (active) apply(result)
       })
       .catch(() => {
         // The error path still settles the loading state (same rejected-promise
@@ -95,13 +138,27 @@ export function ShopSwitcherProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
-  }, [])
+  }, [apply])
+
+  const reloadAccess = useCallback(async () => {
+    apply(await fetchMyShops())
+  }, [apply])
 
   const dismissStale = useCallback(() => setStale(false), [])
 
   const value = useMemo<ShopSwitcherData>(
-    () => ({ shops, isGroupAdmin, userId, loading, stale, dismissStale }),
-    [shops, isGroupAdmin, userId, loading, stale, dismissStale]
+    () => ({
+      shops,
+      isGroupAdmin,
+      userId,
+      loading,
+      stale,
+      dismissStale,
+      access,
+      observedAccess,
+      reloadAccess,
+    }),
+    [shops, isGroupAdmin, userId, loading, stale, dismissStale, access, observedAccess, reloadAccess]
   )
 
   return (

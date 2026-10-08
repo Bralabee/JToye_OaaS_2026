@@ -6,6 +6,11 @@ import { Sidebar } from "@/components/dashboard/sidebar"
 import { MobileTabBar } from "@/components/dashboard/mobile-tab-bar"
 import { ShopSwitcher, shopSwitcherApplies } from "@/components/dashboard/shop-switcher"
 import { ShopSwitcherProvider } from "@/components/dashboard/shop-switcher-provider"
+import {
+  DashboardAccessContent,
+  DashboardAccessProvider,
+  useDashboardNoAccess,
+} from "@/components/dashboard/dashboard-access"
 import { CompanyLegalLine } from "@/components/platform/company-legal"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { cn } from "@/lib/utils"
@@ -24,14 +29,30 @@ import type { ReactNode } from "react"
  * navigation. `pb-20` on the container clears the fixed bar.
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname()
-  const showShopSwitcher = shopSwitcherApplies(pathname)
-
   return (
     // One provider above BOTH switchers (sidebar + mobile top bar): a single
     // fetch and a single hydration writer (WR-06). Renders no DOM of its own, so
     // the MOBL-01-verified 375px shell markup below is unchanged.
+    //
+    // D-08 (37-06): the access provider reads that same staff/me answer (no second
+    // fetch) and decides whether the no-access page replaces the page content.
     <ShopSwitcherProvider>
+      <DashboardAccessProvider>
+        <ShellFrame>{children}</ShellFrame>
+      </DashboardAccessProvider>
+    </ShopSwitcherProvider>
+  )
+}
+
+function ShellFrame({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
+  // While the no-access page shows, the shop switcher (nothing to switch) and the
+  // mobile tab bar (every tab would be refused) are hidden; the page carries its
+  // own Sign out, and the desktop sidebar keeps the user block and Sign out.
+  const noAccess = useDashboardNoAccess()
+  const showShopSwitcher = shopSwitcherApplies(pathname) && !noAccess
+
+  return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
       {/* SKIP LINK (A11Y-1, QA council 20260902-134741; WCAG 2.4.1). With no
           bypass control the first Tab stop was the shop switcher and <main> was
@@ -101,14 +122,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             "p-4 pb-20 sm:p-8 sm:pb-20 md:pb-8 dark:text-slate-100"
           )}
         >
-          {children}
+          <DashboardAccessContent>{children}</DashboardAccessContent>
           <footer className="mt-10 border-t border-slate-200 pt-4 dark:border-slate-800">
             <CompanyLegalLine />
           </footer>
         </div>
       </main>
-      <MobileTabBar className="md:hidden" />
+      {!noAccess && <MobileTabBar className="md:hidden" />}
     </div>
-    </ShopSwitcherProvider>
   )
 }

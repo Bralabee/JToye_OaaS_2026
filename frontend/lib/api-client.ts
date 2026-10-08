@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from "axios"
 import { getSession } from "next-auth/react"
 import type { Session } from "next-auth"
+import { isShopAccessDenied, SHOP_ACCESS_DENIED_EVENT } from "@/lib/access-events"
 
 /**
  * Hardened axios instance for the vendor dashboard.
@@ -158,6 +159,13 @@ apiClient.interceptors.response.use(
       if (typeof window !== "undefined") {
         window.location.href = "/auth/signin"
       }
+    }
+
+    // D-08 (37-06): tell the dashboard shell a read was refused, so it can re-read
+    // staff/me and show the no-access page if nothing is left. The request still
+    // rejects; the caller keeps its own handling of the refusal.
+    if (isShopAccessDenied(status, problemType) && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(SHOP_ACCESS_DENIED_EVENT))
     }
 
     return Promise.reject(error)

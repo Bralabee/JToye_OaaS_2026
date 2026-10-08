@@ -30,6 +30,7 @@ import { useSession } from "next-auth/react"
 import { vendorLogout } from "@/lib/vendor-logout"
 import { Button } from "@/components/ui/button"
 import { ShopSwitcher, shopSwitcherApplies } from "@/components/dashboard/shop-switcher"
+import { useDashboardNoAccess } from "@/components/dashboard/dashboard-access"
 import { useTheme } from "@/hooks/use-theme"
 
 export const navigation = [
@@ -84,6 +85,11 @@ export function Sidebar() {
   // documentElement class, so there is no mount-time setState here to suppress
   // and no second copy of the class side effect.
   const { dark, toggle } = useTheme()
+  // D-08 (37-06): while the no-access page shows, every route below would be
+  // refused (each reads tenant data behind the shop/group gate, and the dashboard
+  // home itself shows the same page), so the links and the shop switcher are
+  // hidden. The user block and Sign out stay (UI-SPEC § B3).
+  const noAccess = useDashboardNoAccess()
 
   return (
     <div className="hidden md:flex h-full w-64 flex-col bg-slate-900 text-white">
@@ -100,7 +106,7 @@ export function Sidebar() {
           GROUP_ADMIN lands on "All shops" (D-06). Omitted, border and all, on
           the per-tenant onboarding sub-tree, where it acts on nothing
           (#450 item 1 — see `shopSwitcherApplies`). */}
-      {shopSwitcherApplies(pathname) && (
+      {shopSwitcherApplies(pathname) && !noAccess && (
         <div className="border-b border-slate-800 px-3 py-3">
           <ShopSwitcher variant="sidebar" />
         </div>
@@ -123,7 +129,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
-        {navigation.map((item) => {
+        {!noAccess && navigation.map((item) => {
           const isActive = pathname === item.href
           return (
             <Link
