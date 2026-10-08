@@ -14,8 +14,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -26,6 +24,7 @@ import uk.jtoye.core.security.JwtRolesAndScopesConverter;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -135,7 +134,6 @@ class MediaRedriveControllerTest {
     /** Superuser template — the app datasource is RLS-bound and cannot seed another tenant's row. */
     private JdbcTemplate su;
 
-    private ShopAccessService targetService;
     private UUID tenantA;
     private UUID tenantB;
     private UUID shopA;
@@ -157,9 +155,17 @@ class MediaRedriveControllerTest {
         productA = seedProduct(tenantA, shopA);
     }
 
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
+
     @AfterEach
     void cleanUp() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         TenantContext.clear();
         SecurityContextHolder.clearContext();
     }
@@ -246,7 +252,7 @@ class MediaRedriveControllerTest {
 
         UUID sm = UUID.randomUUID();
         grantShopStaff(tenantA, sm, otherShop);
-        setStrictScoping(true);   // without this a JIT tenant-wide GROUP_ADMIN would pass
+        StrictScopingGuard.set(shopAccessService, true);   // without this a JIT tenant-wide GROUP_ADMIN would pass
 
         mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
                         .header("Idempotency-Key", key()).with(vendorJwt(tenantA, sm)))
@@ -473,12 +479,5 @@ class MediaRedriveControllerTest {
                         .claim("email", "vendor-" + subject + "@example.com")
                         .claim("scope", "catalog:read catalog:write"))
                 .authorities(new JwtRolesAndScopesConverter());
-    }
-
-    private void setStrictScoping(boolean value) {
-        if (targetService == null) {
-            targetService = AopTestUtils.getTargetObject(shopAccessService);
-        }
-        ReflectionTestUtils.setField(targetService, "strictScoping", value);
     }
 }

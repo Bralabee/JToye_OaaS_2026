@@ -1,6 +1,7 @@
 package uk.jtoye.core.security.access;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -56,7 +58,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Harness mirrors {@code ShopAccessJitProvisionTest}: NOT {@code @Transactional} (seeded
  * grants must genuinely COMMIT so a separate-transaction gate call observes them), fresh
  * random {@code (tenant, sub)} per test, and the strict-scoping flag + machine allowlist
- * toggled on the {@link AopTestUtils}-unwrapped target bean. Tenant-wide GROUP_ADMIN rows
+ * toggled on the proxy-unwrapped target bean (the flag via {@link StrictScopingGuard}). Tenant-wide GROUP_ADMIN rows
  * have a NULL {@code shop_id} (no FK) so no {@code tenants}/{@code shops} seeding is needed.
  */
 @SpringBootTest
@@ -81,9 +83,17 @@ class StrictScopingTighteningIntegrationTest {
 
     private ShopAccessService targetService;
 
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
+
     @AfterEach
     void tearDown() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         setMachineClientIds(Set.of());
         TenantContext.clear();
         SecurityContextHolder.clearContext();
@@ -109,7 +119,7 @@ class StrictScopingTighteningIntegrationTest {
         seedTenantWideGroupAdmin(tenant, jitA, "JIT", now.minusDays(2));
         seedTenantWideGroupAdmin(tenant, jitB, "JIT", now.minusDays(1));
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
 
         // Both JIT users are de-honoured: no longer group admin, and denied a shop-scoped call.
         for (UUID jit : List.of(jitA, jitB)) {
@@ -149,7 +159,7 @@ class StrictScopingTighteningIntegrationTest {
         seedTenantWideGroupAdmin(tenant, middle, "JIT", base.plusDays(1));
         seedTenantWideGroupAdmin(tenant, newest, "JIT", base.plusDays(2));
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
 
         assertThat(isGroupAdminAs(oldest, tenant))
                 .as("the oldest JIT GROUP_ADMIN is retained as the bootstrap admin (no zero-admin lockout)")
@@ -173,7 +183,7 @@ class StrictScopingTighteningIntegrationTest {
         UUID jit = UUID.randomUUID();
         seedTenantWideGroupAdmin(tenant, jit, "JIT", OffsetDateTime.now().minusDays(1));
 
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
 
         assertThat(isGroupAdminAs(jit, tenant))
                 .as("strict OFF: a JIT GROUP_ADMIN is honoured (day-one preserved)")
@@ -206,7 +216,7 @@ class StrictScopingTighteningIntegrationTest {
         UUID tenant = UUID.randomUUID();
         UUID machineSub = UUID.randomUUID();   // Keycloak service accounts carry a UUID sub
 
-        setStrictScoping(false);               // strict OFF is exactly when JIT would fire
+        StrictScopingGuard.set(shopAccessService, false);               // strict OFF is exactly when JIT would fire
         setMachineClientIds(Set.of("mcp-server"));
         authenticateMachine(machineSub, "mcp-server");
         TenantContext.set(tenant);
@@ -236,7 +246,7 @@ class StrictScopingTighteningIntegrationTest {
         seedTenantWideGroupAdmin(tenant, operator, "OPERATOR", now.minusDays(2));
         seedTenantWideGroupAdmin(tenant, jit, "JIT", now.minusDays(1));
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         TenantContext.set(tenant);   // canAccessShop asserts the pinned tenant equals its arg
 
         UUID anyShop = UUID.randomUUID();
@@ -322,10 +332,6 @@ class StrictScopingTighteningIntegrationTest {
             targetService = AopTestUtils.getTargetObject(shopAccessService);
         }
         return targetService;
-    }
-
-    private void setStrictScoping(boolean value) {
-        ReflectionTestUtils.setField(target(), "strictScoping", value);
     }
 
     private void setMachineClientIds(Set<String> ids) {

@@ -1,6 +1,7 @@
 package uk.jtoye.core.security.access;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,8 +17,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -33,6 +32,7 @@ import uk.jtoye.core.security.access.dto.StaffMemberDto;
 import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -70,7 +70,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Harness mirrors {@code ShopAccessJitProvisionTest}: NOT {@code @Transactional}
  * (grants/revokes must genuinely COMMIT so a separate-transaction {@code require()}
  * observes them), fresh random {@code (tenant, sub)} per test, and the strict-scoping
- * flag toggled on the {@link AopTestUtils}-unwrapped target bean. The caller is a
+ * flag toggled on the proxy-unwrapped target bean via {@link StrictScopingGuard}. The caller is a
  * realm-admin (implicit GROUP_ADMIN, {@code ROLE_admin}) so it needs no
  * {@code shop_staff} row and never JIT-provisions one — keeping the GROUP_ADMIN count
  * equal to exactly the target grants under test.
@@ -107,24 +107,19 @@ class StaffManagementIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
-    private ShopAccessService targetService;
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
 
     @AfterEach
     void tearDown() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         TenantContext.clear();
         SecurityContextHolder.clearContext();
-    }
-
-    private ShopAccessService target() {
-        if (targetService == null) {
-            targetService = AopTestUtils.getTargetObject(shopAccessService);
-        }
-        return targetService;
-    }
-
-    private void setStrictScoping(boolean value) {
-        ReflectionTestUtils.setField(target(), "strictScoping", value);
     }
 
     /** Install a JWT principal (sub + optional realm-admin authority) + pin the tenant. */
@@ -202,7 +197,7 @@ class StaffManagementIntegrationTest {
      */
     @Test
     void grantGivesAccess_thenRevokeProduces403() {
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         UUID tenant = UUID.randomUUID();
         UUID admin = UUID.randomUUID();
         UUID staff = UUID.randomUUID();
@@ -332,7 +327,7 @@ class StaffManagementIntegrationTest {
      */
     @Test
     void nonGroupAdminReceivesTypedShopAccess403() {
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         UUID tenant = UUID.randomUUID();
         UUID nobody = UUID.randomUUID();
 
@@ -733,7 +728,7 @@ class StaffManagementIntegrationTest {
      */
     @Test
     void myAccessReportsDayOneImplicitGroupAdmin() {
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
         UUID tenant = UUID.randomUUID();
         UUID user = UUID.randomUUID();
 
@@ -759,7 +754,7 @@ class StaffManagementIntegrationTest {
      */
     @Test
     void myAccessReportsScopedGrantsForNonGroupAdmin() {
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
         UUID tenant = UUID.randomUUID();
         UUID admin = UUID.randomUUID();
         UUID manager = UUID.randomUUID();

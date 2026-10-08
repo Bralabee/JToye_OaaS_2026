@@ -9,9 +9,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.test.util.ReflectionTestUtils;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -22,8 +22,9 @@ import static org.mockito.Mockito.mock;
  * with instead of leaving OFF-by-choice indistinguishable from OFF-by-omission.
  *
  * <p>Pure unit test: the service is constructed with inert collaborators (the posture line
- * reads only the bound flag and touches nothing else), the flag is set by reflection exactly as
- * {@code StaffManagementIntegrationTest} / {@code ShopAccessEnforcementIntegrationTest} set it,
+ * reads only the bound flag and touches nothing else), the flag is set through
+ * {@link StrictScopingGuard} exactly as {@code StaffManagementIntegrationTest} /
+ * {@code ShopAccessEnforcementIntegrationTest} set it,
  * and the emission is captured with the {@code ListAppender} pattern from
  * {@code RabbitListenerContainerFactoryTest}. Both directions are asserted — WARN present when
  * OFF, ABSENT when ON — because a test that only looked for the WARN could pass against an
@@ -59,7 +60,7 @@ class ShopAccessServiceScopingPostureTest {
 
     @Test
     void strictScopingOff_emitsAWarnNamingThePostureAndItsBlockers() {
-        ReflectionTestUtils.setField(service, "strictScoping", false);
+        StrictScopingGuard.set(service, false);   // a fresh unit-test instance per test: nothing to restore
 
         service.logScopingPosture();
 
@@ -86,7 +87,7 @@ class ShopAccessServiceScopingPostureTest {
 
     @Test
     void strictScopingOn_emitsNoWarn_andStatesEnforcedAtInfo() {
-        ReflectionTestUtils.setField(service, "strictScoping", true);
+        StrictScopingGuard.set(service, true);
 
         service.logScopingPosture();
 

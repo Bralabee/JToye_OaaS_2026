@@ -1,6 +1,7 @@
 package uk.jtoye.core.security.access;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,7 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.net.URI;
 import java.util.List;
@@ -93,9 +95,17 @@ class ShopAccessFailClosedIntegrationTest {
 
     private ShopAccessService targetService;
 
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
+
     @AfterEach
     void tearDown() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         setMachineClientIds(Set.of());
         TenantContext.clear();
         SecurityContextHolder.clearContext();
@@ -114,7 +124,7 @@ class ShopAccessFailClosedIntegrationTest {
         UUID tenant = UUID.randomUUID();
         ensureTenant(tenant);
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticateRaw("service-account-mcp", "mcp-server");
         TenantContext.set(tenant);
 
@@ -140,7 +150,7 @@ class ShopAccessFailClosedIntegrationTest {
         UUID tenant = UUID.randomUUID();
         ensureTenant(tenant);
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticateRaw("service-account-mcp", "mcp-server");
         TenantContext.set(tenant);
 
@@ -166,7 +176,7 @@ class ShopAccessFailClosedIntegrationTest {
         ensureTenant(tenant);
         seedDirectoryEntry(tenant, UUID.randomUUID(), "victim-pii@example.com", "Victim User");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticateRaw("service-account-mcp", "mcp-server");
         TenantContext.set(tenant);
 
@@ -187,7 +197,7 @@ class ShopAccessFailClosedIntegrationTest {
         UUID tenant = UUID.randomUUID();
         ensureTenant(tenant);
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         SecurityContextHolder.getContext().setAuthentication(new AnonymousAuthenticationToken(
                 "anon-key", "anonymousUser",
                 List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
@@ -244,7 +254,7 @@ class ShopAccessFailClosedIntegrationTest {
         UUID tenant = UUID.randomUUID();
         ensureTenant(tenant);
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         setMachineClientIds(Set.of("mcp-server"));
         authenticateRaw("service-account-mcp", "mcp-server");
         TenantContext.set(tenant);
@@ -270,7 +280,7 @@ class ShopAccessFailClosedIntegrationTest {
         UUID manager = UUID.randomUUID();
         grantShopStaff(tenant, manager, shopA, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(manager, false);
         TenantContext.set(tenant);
 
@@ -292,7 +302,7 @@ class ShopAccessFailClosedIntegrationTest {
     // --- seeding helpers (run through the real service layer as a realm-admin) --------
 
     private UUID seedShop(UUID tenant, String name) {
-        boolean prevStrict = currentStrictScoping();
+        boolean prevStrict = StrictScopingGuard.current(shopAccessService);
         authenticate(UUID.randomUUID(), true);
         TenantContext.set(tenant);
         try {
@@ -303,7 +313,7 @@ class ShopAccessFailClosedIntegrationTest {
         } finally {
             TenantContext.clear();
             SecurityContextHolder.clearContext();
-            setStrictScoping(prevStrict);
+            StrictScopingGuard.set(shopAccessService, prevStrict);
         }
     }
 
@@ -363,14 +373,6 @@ class ShopAccessFailClosedIntegrationTest {
             targetService = AopTestUtils.getTargetObject(shopAccessService);
         }
         return targetService;
-    }
-
-    private void setStrictScoping(boolean value) {
-        ReflectionTestUtils.setField(target(), "strictScoping", value);
-    }
-
-    private boolean currentStrictScoping() {
-        return Boolean.TRUE.equals(ReflectionTestUtils.getField(target(), "strictScoping"));
     }
 
     private void setMachineClientIds(Set<String> ids) {

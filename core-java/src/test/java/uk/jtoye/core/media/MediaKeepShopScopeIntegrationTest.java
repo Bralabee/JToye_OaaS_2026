@@ -1,6 +1,7 @@
 package uk.jtoye.core.media;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,8 +15,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -23,6 +22,7 @@ import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.util.List;
 import java.util.UUID;
@@ -65,12 +65,19 @@ class MediaKeepShopScopeIntegrationTest {
     @Autowired private ShopAccessService shopAccessService;
     @Autowired private JdbcTemplate jdbc;
 
-    private ShopAccessService targetService;
     private int seq;
+
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
 
     @AfterEach
     void tearDown() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         TenantContext.clear();
         SecurityContextHolder.clearContext();
     }
@@ -89,7 +96,7 @@ class MediaKeepShopScopeIntegrationTest {
         UUID sm = UUID.randomUUID();
         grantShopStaff(tenant, sm, shopA, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(sm, false);
         TenantContext.set(tenant);
 
@@ -113,7 +120,7 @@ class MediaKeepShopScopeIntegrationTest {
         UUID sm = UUID.randomUUID();
         grantShopStaff(tenant, sm, shopB, "SHOP_MANAGER");   // granted the OWNING shop
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(sm, false);
         TenantContext.set(tenant);
 
@@ -135,7 +142,7 @@ class MediaKeepShopScopeIntegrationTest {
         UUID sm = UUID.randomUUID();
         grantShopStaff(tenant, sm, shopA, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(sm, false);
         TenantContext.set(tenant);
 
@@ -205,16 +212,5 @@ class MediaKeepShopScopeIntegrationTest {
                 ? List.of(new SimpleGrantedAuthority("ROLE_admin"))
                 : List.of();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, authorities));
-    }
-
-    private ShopAccessService target() {
-        if (targetService == null) {
-            targetService = AopTestUtils.getTargetObject(shopAccessService);
-        }
-        return targetService;
-    }
-
-    private void setStrictScoping(boolean value) {
-        ReflectionTestUtils.setField(target(), "strictScoping", value);
     }
 }

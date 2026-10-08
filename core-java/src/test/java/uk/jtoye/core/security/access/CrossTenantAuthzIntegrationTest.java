@@ -1,6 +1,7 @@
 package uk.jtoye.core.security.access;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,8 +16,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -31,6 +30,7 @@ import uk.jtoye.core.shop.dto.CreateAnnouncementRequest;
 import uk.jtoye.core.shop.dto.CreatePromotionRequest;
 import uk.jtoye.core.shop.dto.PromotionDto;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -73,7 +73,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Harness mirrors {@code StaffManagementIntegrationTest}: NOT {@code @Transactional} (a
  * blocked write must roll back its own service transaction independently, and seeded rows must
  * commit for a separate-transaction read to observe them), fresh random tenants/shops per test,
- * strict-scoping forced OFF on the {@link AopTestUtils}-unwrapped bean so the tenant-B caller is
+ * strict-scoping forced OFF per test with {@link StrictScopingGuard#set} (the booted value is
+ * restored after each test, 37-02) so the tenant-B caller is
  * the day-one implicit GROUP_ADMIN that the exploit used.
  */
 @SpringBootTest
@@ -99,11 +100,17 @@ class CrossTenantAuthzIntegrationTest {
     @Autowired private ProductService productService;
     @Autowired private JdbcTemplate jdbc;
 
-    private ShopAccessService targetService;
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
 
     @AfterEach
     void tearDown() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         TenantContext.clear();
         SecurityContextHolder.clearContext();
     }
@@ -122,7 +129,7 @@ class CrossTenantAuthzIntegrationTest {
      */
     @Test
     void createPromotion_crossTenantShop_isBlocked() {
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
         UUID shopA = seedTenantAndShop(tenantA, true);   // a PUBLISHED tenant-A shop (the RLS trap)
@@ -145,7 +152,7 @@ class CrossTenantAuthzIntegrationTest {
      */
     @Test
     void createPromotion_ownTenantShop_succeeds() {
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
         UUID tenantB = UUID.randomUUID();
         UUID shopB = seedTenantAndShop(tenantB, true);
 
@@ -163,7 +170,7 @@ class CrossTenantAuthzIntegrationTest {
      */
     @Test
     void createProduct_crossTenantShop_isBlocked() {
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
         UUID shopA = seedTenantAndShop(tenantA, true);
@@ -184,7 +191,7 @@ class CrossTenantAuthzIntegrationTest {
      */
     @Test
     void createAnnouncement_crossTenantShop_isBlocked() {
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
         UUID shopA = seedTenantAndShop(tenantA, true);
@@ -211,7 +218,7 @@ class CrossTenantAuthzIntegrationTest {
      */
     @Test
     void getAllPromotions_forGroupAdmin_isConfinedToOwnTenant() {
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
         UUID shopA = seedTenantAndShop(tenantA, true);
@@ -235,7 +242,7 @@ class CrossTenantAuthzIntegrationTest {
      */
     @Test
     void getAllAnnouncements_forGroupAdmin_isConfinedToOwnTenant() {
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
         UUID shopA = seedTenantAndShop(tenantA, true);
@@ -342,16 +349,5 @@ class CrossTenantAuthzIntegrationTest {
     private long productCount(UUID shopId) {
         Long n = jdbc.queryForObject("SELECT count(*) FROM products WHERE shop_id = ?", Long.class, shopId);
         return n == null ? 0 : n;
-    }
-
-    private ShopAccessService target() {
-        if (targetService == null) {
-            targetService = AopTestUtils.getTargetObject(shopAccessService);
-        }
-        return targetService;
-    }
-
-    private void setStrictScoping(boolean value) {
-        ReflectionTestUtils.setField(target(), "strictScoping", value);
     }
 }
