@@ -24,6 +24,23 @@ where it must be resolved.
   entry at the same pre-PR step. 37-05 also added Java test methods
   (`StaffEffectiveAccessIntegrationTest` 9 in a new file, `MembershipSerializerRoundTripTest` 2,
   `StaffManagementIntegrationTest` 2 in nested classes). Re-measure; do not copy these numbers.
+- **37-07 adds V77** (`V77__staff_invite.sql`, a new tenant table), so `schema_version` moves to 77
+  and the prose naming the current schema / migration count needs a V77 entry at the same pre-PR
+  step. 37-07 also added three test files (`StaffInviteIntegrationTest`,
+  `StaffInviteRlsIntegrationTest`, `EmailNotificationServiceStaffInviteTest`). Re-measure.
+
+## 6. 37-07 invites are not on the shared runtime, and the accept page does not exist yet
+
+- 37-07 changed core-java, config and manifests only; the compose stack was not rebuilt (the
+  strict-scoping flip and everything layered on it reach the shared runtime at the 37-15 gate,
+  §4). So V77, the four `/api/v1/staff/invites` endpoints and the invitation email through
+  Mailhog are proven by integration tests only (a mocked `JavaMailSender` whose message is
+  serialised and re-parsed). The live send through Mailhog is owed to the 37-15 rebuild, with
+  `scripts/check-runtime-freshness.sh`. Recorded in `.planning/WINDOWS.md`.
+- The emailed link `{STAFF_INVITE_ACCEPT_BASE_URL}/{tenantId}.{token}` points at the frontend
+  `/invite/[token]` page, which 37-08/37-09 build. Until then an invitation emailed from a
+  rebuilt stack opens a 404 page. No staff-page UI was added in 37-07, so the 37-06 jest test and
+  e2e spec that assert "no invite control" are unchanged; they change with the UI plan.
 
 ## 2. `GET /api/v1/media/review-queue` is not shop-scoped (found in 37-03)
 

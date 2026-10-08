@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 5
+open_count: 6
 waived_count: 0
 fixed_count: 13
-total_count: 18
-last_updated: 2026-10-08T12:56:29.946Z
+total_count: 19
+last_updated: 2026-10-08T13:58:26.371Z
 ---
 
 # Broken Windows Ledger
@@ -33,6 +33,7 @@ last_updated: 2026-10-08T12:56:29.946Z
 | 16 | 37 | unrun-verify | frontend/e2e/dashboard-interface-corrections.spec.ts | 185 | 37-06 edited two staff-page e2e assertions (no invite-denial copy; People heading in the CLS test); not run, the shared runtime is not rebuilt until the 37-15 gate | open |  | 2026-10-08T12:56:26.518Z |  |
 | 17 | 37 | unrun-verify | frontend/components/dashboard/no-access-page.tsx |  | 37-06 B3 backstop not run: Playwright at 375px asserting no horizontal overflow on the no-access page body with a 60-character business name; the body wraps with overflow-wrap:anywhere (jsdom cannot measure) | open |  | 2026-10-08T12:56:28.291Z |  |
 | 18 | 37 | deviation | frontend/components/dashboard/no-access-page.tsx |  | 37-06 B3 body says 'your business' where UI-SPEC copy has {business}: a person with no access cannot read any tenant record, and the session carries no business name | open |  | 2026-10-08T12:56:29.946Z |  |
+| 19 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java |  | 37-07 invitation email not yet sent through the running compose stack (Mailhog): V77 and /api/v1/staff/invites reach the shared runtime only at the 37-15 rebuild; proven by integration tests with a re-parsed MimeMessage | open |  | 2026-10-08T13:58:26.371Z |  |
 
 ````json
 [
@@ -267,6 +268,19 @@ last_updated: 2026-10-08T12:56:29.946Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-08T12:56:29.946Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 19,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java",
+    "line": null,
+    "description": "37-07 invitation email not yet sent through the running compose stack (Mailhog): V77 and /api/v1/staff/invites reach the shared runtime only at the 37-15 rebuild; proven by integration tests with a re-parsed MimeMessage",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T13:58:26.371Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
