@@ -488,10 +488,13 @@ class StaffInviteAcceptIntegrationTest {
 
     @Test
     @DisplayName("T-37-22: neither the password nor the link token reaches any log line, although MVC logs every "
-            + "request body it reads at DEBUG")
+            + "request body it reads, in full, at TRACE")
     void passwordAndToken_neverReachALogLine() throws Exception {
         String email = "quiet@example.com";
-        String secret = "Unique-Secret-" + UUID.randomUUID().toString().substring(0, 8) + "!9";
+        // The secret STARTS with a short unique marker, and the check is on the marker: a logger that
+        // truncates a long value still prints its first characters.
+        String marker = "Pw" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        String secret = marker + "-Unique-Secret!9";
         String ref = seedInvite(tenantId, email, shopA, "STAFF", "1 hour");
         String token = ref.substring(ref.indexOf('.') + 1);
         when(keycloak.findVendorUsersByEmail(VENDOR_REALM, email, "tok")).thenReturn(List.of());
@@ -499,12 +502,14 @@ class StaffInviteAcceptIntegrationTest {
                 eq(tenantId), eq("tok"))).thenReturn(UUID.randomUUID().toString());
 
         Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
-        // MVC logs every request body it reads at DEBUG, through the DTO's toString. Raised here, for this
-        // test only, so the arm can fail: a level set through @DynamicPropertySource was measured NOT to
-        // reach MVC's logger (the positive control below went red with zero org.springframework.web lines).
+        // MVC logs every request body it reads through the DTO's toString: at DEBUG cut to 100 characters,
+        // at TRACE in full. Raised to TRACE here, for this test only, so the arm can fail. Two measured
+        // reasons: a level set through @DynamicPropertySource never reached MVC's logger (the positive
+        // control below went red with zero org.springframework.web lines), and at DEBUG a toString that
+        // printed the whole password still passed, because the 100-character cut fell inside the password.
         Logger web = (Logger) LoggerFactory.getLogger("org.springframework.web");
         ch.qos.logback.classic.Level previousWebLevel = web.getLevel();
-        web.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        web.setLevel(ch.qos.logback.classic.Level.TRACE);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
         root.addAppender(appender);
@@ -523,7 +528,8 @@ class StaffInviteAcceptIntegrationTest {
         assertThat(lines).as("MVC logged the request body it read (so this arm can fail)")
                 .anyMatch(l -> l.contains("AcceptStaffInviteRequest"));
         assertThat(lines).anyMatch(l -> l.contains("event=staff_invite_accepted"));
-        assertThat(lines).as("no log line carries the password").noneMatch(l -> l.contains(secret));
+        assertThat(lines).as("no log line carries the password, or even its first characters")
+                .noneMatch(l -> l.contains(marker));
         assertThat(lines).as("no log line carries the link token").noneMatch(l -> l.contains(token));
     }
 
