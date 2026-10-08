@@ -44,7 +44,7 @@ metadata:
 ---
 apiVersion: v1
 data:
-  access.strict-scoping: "false"
+  access.strict-scoping: "true"
   api.internal.url: http://core-java:9090
   api.url: https://api.olajay.co.uk
   backup.blob.auth-mode: workload-identity

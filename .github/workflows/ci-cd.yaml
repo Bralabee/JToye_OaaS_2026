@@ -976,6 +976,19 @@ jobs:
           chmod +x ./scripts/check-no-create-extension.sh
           ./scripts/check-no-create-extension.sh
 
+      # Phase 37-04 (D-06, threat T-37-07). Strict scoping is ON by default: ungranted means no
+      # access. D-06 says compose and the k8s overlays must never override it back to false,
+      # because that silently makes every ungranted staff login a tenant-wide admin again and
+      # reverting needs an owner ruling, not a config edit. This makes the sentence a property
+      # every PR re-proves: application*.yml, compose, .env.example, k8s base/overlays/goldens.
+      # Exit 1 on any non-true value or a dropped true default, 2 (VOID) on a missing input.
+      #
+      # Static by construction: reads files only, no stack, no network.
+      - name: Assert no runtime overrides strict scoping back to false (37-04, D-06)
+        run: |
+          chmod +x ./scripts/check-strict-scoping-default.sh
+          ./scripts/check-strict-scoping-default.sh
+
       # Phase 36 (SC6, BLOB-09). Phase 36 retired the self-hosted object store and moved every
       # environment to Azure Blob Storage (Azurite locally). The removal was proven by a
       # search, and a search run once proves nothing about next month, so this makes it a

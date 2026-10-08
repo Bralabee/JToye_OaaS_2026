@@ -559,11 +559,11 @@ spec:
             configMapKeyRef:
               name: app-config
               key: webhook.target.block-private-ranges
-        # --- Vendor shop-scoping posture (Phase 23 D-12; QA-council 20260902 SEC-2) ---
-        # Declared EXPLICITLY as "false" so the posture is visible in every render and
-        # to check-env-contract.sh direction (a), instead of silently resolving to the
-        # application.yml default. See the app-config key for why OFF is deliberate and
-        # what blocks arming it (#285, SEC-5/#648, integration-orders-rw). Do not flip here.
+        # --- Vendor shop-scoping posture (D-06, Phase 37 owner ruling) ---
+        # Declared EXPLICITLY ("true", ungranted means no access) so the posture is visible
+        # in every render and to check-env-contract.sh direction (a), instead of silently
+        # resolving to the application.yml default. See the app-config key: "false" needs an
+        # owner ruling, and scripts/check-strict-scoping-default.sh fails CI on it.
         - name: ACCESS_STRICT_SCOPING
           valueFrom:
             configMapKeyRef:
