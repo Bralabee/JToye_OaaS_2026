@@ -12,6 +12,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import uk.jtoye.core.config.ClockConfig;
 import uk.jtoye.core.onboarding.TraderEntityType;
 import uk.jtoye.core.order.FulfilmentType;
 import uk.jtoye.core.order.OrderChannel;
@@ -20,8 +21,12 @@ import uk.jtoye.core.order.dto.OrderAllergenFlagDto;
 import uk.jtoye.core.storefront.dto.SellerIdentityDto;
 
 import java.io.UnsupportedEncodingException;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * The customer's order emails, one per order status transition.
@@ -237,6 +242,70 @@ public class EmailNotificationService {
                 If this was unexpected, please contact %s directly.""".formatted(
                 event.orderNumber(), shopLabel(ctx), event.previousStatus(), shopLabel(ctx));
         send(event, recipientEmail, "order-cancelled", subject(event, "Cancelled"), lead, ctx, false);
+    }
+
+    // ---- Staff invitation (D-07, 37-07) ------------------------------------------------------------
+
+    /** "10 October 2026, 14:32": the expiry as a person in the UK reads it (UI-SPEC § Copywriting). */
+    static final DateTimeFormatter INVITE_EXPIRY_FORMAT =
+            DateTimeFormatter.ofPattern("d MMMM yyyy, HH:mm", Locale.UK);
+
+    /**
+     * The invitation email (D-07, UI-SPEC § Copywriting B1-B3): plain text, one link, single use, the
+     * expiry in UK time, and "Nothing happens unless you accept".
+     *
+     * <p>Sent from J'Toye itself (no shop Reply-To): the inviter is a person at the business, but the
+     * link is the platform's. The inviter and business names are tenant-controlled, so they go through
+     * {@link #sanitise} before they reach the subject header or a body line (T-31.1-85).
+     *
+     * <p><b>Logging (T-37-17).</b> The address and the link are never logged: the link carries a
+     * bearer token until it is used or expires. Only the event name is logged, and on failure only the
+     * exception class (a mail exception's message can quote the address).
+     *
+     * @param recipientEmail the normalised invitee address; the link goes here and nowhere else
+     * @param link           {accept-base-url}/{tenantId}.{token}; never logged, never stored readable
+     * @param expiresAt      the same instant written to {@code staff_invite.expires_at}
+     */
+    @Async
+    public void sendStaffInvite(String recipientEmail, String inviterName, String businessName,
+                                String roleLabel, String shopLabel, String link, OffsetDateTime expiresAt) {
+        if (!emailEnabled) {
+            log.debug("event=staff_invite_email_skipped reason=email_disabled");
+            return;
+        }
+        if (recipientEmail == null || recipientEmail.isBlank() || link == null || link.isBlank()
+                || expiresAt == null) {
+            log.warn("event=staff_invite_email_skipped reason=incomplete");
+            return;
+        }
+        String inviter = Objects.requireNonNullElse(sanitise(inviterName), "A Group admin");
+        String business = Objects.requireNonNullElse(sanitise(businessName), "a business");
+        String role = Objects.requireNonNullElse(sanitise(roleLabel), "Staff");
+        String shop = Objects.requireNonNullElse(sanitise(shopLabel), "all shops");
+        String expiry = expiresAt.atZoneSameInstant(ClockConfig.UK_ZONE).format(INVITE_EXPIRY_FORMAT);
+        String subject = inviter + " invited you to " + business + " on " + PLATFORM_NAME;
+        String body = """
+                %s has invited you to help run %s on J'Toye as %s for %s.
+
+                Accept the invitation: %s
+
+                This link works once and expires on %s (UK time).
+
+                If you weren't expecting this, you can ignore this email. Nothing happens unless you accept.
+                """.formatted(inviter, business, role, shop, link, expiry);
+        try {
+            MimeMessage mime = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mime, false, "UTF-8");
+            helper.setFrom(new InternetAddress(fromAddress, PLATFORM_NAME, "UTF-8"));
+            helper.setTo(new InternetAddress(recipientEmail, true));
+            helper.setSubject(subject);
+            helper.setText(body, false);
+            mailSender.send(mime);
+            log.info("event=staff_invite_email_sent");
+        } catch (MailException | MessagingException | UnsupportedEncodingException e) {
+            // The exception class only: a mail exception's message can quote the recipient (V7).
+            log.error("event=staff_invite_email_failed error={}", e.getClass().getSimpleName());
+        }
     }
 
     // ---- Body ------------------------------------------------------------------------------------
