@@ -613,7 +613,8 @@ public class OrderService {
                             order.getTotalAmountPennies(),
                             order.getVatRate(),
                             "Order " + order.getOrderNumber(),
-                            order.getId()
+                            order.getId(),
+                            order.getShopId()   // Phase 37-11: the SALE belongs to the order's shop
                     ));
             log.info("Auto-created financial transaction for completed order {}", order.getOrderNumber());
         }

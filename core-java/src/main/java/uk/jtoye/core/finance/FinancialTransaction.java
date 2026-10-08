@@ -79,6 +79,14 @@ public class FinancialTransaction {
     @Column(name = "reverses_transaction_id")
     private UUID reversesTransactionId;
 
+    /**
+     * The shop this row belongs to (V79, Phase 37-11, RWO-027): the order's shop for a SALE, copied from the
+     * sale for a REVERSAL. Null for a MANUAL row (no order), which therefore appears only in the tenant-wide
+     * (Group admin) view. Set once by {@link FinancialTransactionService}; never updated.
+     */
+    @Column(name = "shop_id")
+    private UUID shopId;
+
     // Constructors
 
     public FinancialTransaction() {
@@ -154,6 +162,14 @@ public class FinancialTransaction {
 
     public void setReversesTransactionId(UUID reversesTransactionId) {
         this.reversesTransactionId = reversesTransactionId;
+    }
+
+    public UUID getShopId() {
+        return shopId;
+    }
+
+    public void setShopId(UUID shopId) {
+        this.shopId = shopId;
     }
 
     /**

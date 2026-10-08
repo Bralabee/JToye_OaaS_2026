@@ -28,6 +28,9 @@ public record FinancialTransactionDto(
         @Schema(description = "The order this row belongs to; null for a MANUAL row.")
         UUID orderId,
         @Schema(description = "For a REVERSAL, the id of the SALE it reverses; null otherwise.")
-        UUID reversesTransactionId
+        UUID reversesTransactionId,
+        @Schema(description = "The shop the row belongs to (Phase 37-11): the order's shop for a SALE, the "
+                + "sale's shop for a REVERSAL; null for a MANUAL row, which only the tenant-wide view lists.")
+        UUID shopId
 ) {
 }

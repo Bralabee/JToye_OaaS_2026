@@ -1,11 +1,15 @@
 package uk.jtoye.core.finance;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import uk.jtoye.core.finance.dto.FinancialAggregateRow;
 import uk.jtoye.core.finance.dto.FinancialVatRow;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -129,4 +133,81 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
             ORDER BY ft.vatRate
             """)
     List<FinancialVatRow> aggregateByVatRate();
+
+    // ------------------------------------------------------------------
+    // Scoped reads (Phase 37-11, RWO-027 / UXT-027): one shop, or every shop, inside a date window.
+    //
+    // Shape, and why: the scope is bound as NON-NULL parameters only. {@code allShops} selects every row of
+    // the tenant (rows with no shop included); otherwise {@code shopId} must match. The window is half-open,
+    // {@code fromTs <= created_at < toTs}, and the service passes wide sentinels for an open end. A nullable
+    // "{@code :p IS NULL OR ...}" shape was rejected: PostgreSQL cannot type an untyped NULL bind and fails
+    // "could not determine data type of parameter". As with the two aggregates above there is NO tenant
+    // predicate: RLS appends {@code tenant_id = current_tenant_id()}, and the shop gate
+    // ({@code ShopAccessService.require}) has already proven the shop is the caller's tenant's. The VAT and
+    // revenue arithmetic is the two aggregates' above, character for character, so a scope that selects
+    // every row yields their output exactly.
+    // ------------------------------------------------------------------
+
+    /** {@link #aggregateForCurrentTenant()} restricted to a shop (or every shop) and a time window. */
+    @Query("""
+            SELECT new uk.jtoye.core.finance.dto.FinancialAggregateRow(
+              COALESCE(SUM(CASE
+                WHEN ft.entryKind = uk.jtoye.core.finance.EntryKind.REVERSAL THEN ft.amountPennies
+                WHEN ft.amountPennies > 0 THEN ft.amountPennies
+                ELSE 0L END), 0L),
+              COALESCE(SUM(CASE
+                WHEN ft.entryKind = uk.jtoye.core.finance.EntryKind.REVERSAL THEN 0L
+                WHEN ft.amountPennies < 0 THEN -ft.amountPennies
+                ELSE 0L END), 0L),
+              COALESCE(SUM(CASE
+                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.REDUCED  THEN (ft.amountPennies * 5)  / 105
+                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.STANDARD THEN (ft.amountPennies * 20) / 120
+                ELSE 0L END), 0L),
+              COUNT(ft)
+            )
+            FROM FinancialTransaction ft
+            WHERE (:allShops = true OR ft.shopId = :shopId)
+              AND ft.createdAt >= :fromTs
+              AND ft.createdAt < :toTs
+            """)
+    FinancialAggregateRow aggregateForScope(@Param("allShops") boolean allShops,
+                                            @Param("shopId") UUID shopId,
+                                            @Param("fromTs") OffsetDateTime fromTs,
+                                            @Param("toTs") OffsetDateTime toTs);
+
+    /** {@link #aggregateByVatRate()} restricted to a shop (or every shop) and a time window. */
+    @Query("""
+            SELECT new uk.jtoye.core.finance.dto.FinancialVatRow(
+              ft.vatRate,
+              COALESCE(SUM(ft.amountPennies), 0L),
+              COALESCE(SUM(CASE
+                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.REDUCED  THEN (ft.amountPennies * 5)  / 105
+                WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.STANDARD THEN (ft.amountPennies * 20) / 120
+                ELSE 0L END), 0L),
+              COUNT(ft)
+            )
+            FROM FinancialTransaction ft
+            WHERE (:allShops = true OR ft.shopId = :shopId)
+              AND ft.createdAt >= :fromTs
+              AND ft.createdAt < :toTs
+            GROUP BY ft.vatRate
+            ORDER BY ft.vatRate
+            """)
+    List<FinancialVatRow> aggregateByVatRateForScope(@Param("allShops") boolean allShops,
+                                                     @Param("shopId") UUID shopId,
+                                                     @Param("fromTs") OffsetDateTime fromTs,
+                                                     @Param("toTs") OffsetDateTime toTs);
+
+    /** The ledger rows of a scope, paged (the transaction list). */
+    @Query("""
+            SELECT ft FROM FinancialTransaction ft
+            WHERE (:allShops = true OR ft.shopId = :shopId)
+              AND ft.createdAt >= :fromTs
+              AND ft.createdAt < :toTs
+            """)
+    Page<FinancialTransaction> findForScope(@Param("allShops") boolean allShops,
+                                            @Param("shopId") UUID shopId,
+                                            @Param("fromTs") OffsetDateTime fromTs,
+                                            @Param("toTs") OffsetDateTime toTs,
+                                            Pageable pageable);
 }

@@ -104,7 +104,8 @@ class FinancialTransactionServiceTest {
                     transaction.getCreatedAt(),
                     transaction.getEntryKind(),
                     transaction.getOrderId(),
-                    transaction.getReversesTransactionId()
+                    transaction.getReversesTransactionId(),
+                    transaction.getShopId()
             );
         });
 
