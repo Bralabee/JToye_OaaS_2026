@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-09 complete (9/53). 37-09 closed 2026-10-08: Staff-page invite form + pending invitations, the /invite accept page (fragment token, no-referrer, login_hint sign-in), staff/me businessName (additive) and the joined toast; jest 2313/0, core-java 1610/0 + 947/0; live e2e/staff-invite.spec.ts owed to 37-15 (WINDOWS 22-24). Next: /gsd-execute-phase 37 (37-10)."
-last_updated: "2026-10-08T16:53:14.651Z"
-last_activity: 2026-10-08
+stopped_at: "Phase 37 executing: 37-01..37-10 complete (10/53). 37-10 closed 2026-10-09: DELETE past PENDING is a 409 order-not-deletable (orderStatus); POST /orders/{id}/void (Group admin, reason) keeps the order, records who/when/why and writes one REVERSAL of its SALE; V78 entry_kind SALE|REVERSAL|MANUAL + reverses_transaction_id, uq_fin_tx_tenant_order (tenant_id, order_id, entry_kind), per-tenant backfill proven two-tenant under the RLS-bound migrator; revenue = SALE - REVERSAL, 1k golden unchanged; core-java 1615/0 + 970/0. Owner ruling D-10 ledger = entry-kind. Next: /gsd-execute-phase 37 (37-11)."
+last_updated: "2026-10-08T23:06:00.000Z"
+last_activity: 2026-10-09
 state_head: 6926181c5c1d6b45a6f65e364805062cd93ac2da
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 194
+  completed_plans: 195
   percent: 65
 ---
 
@@ -912,6 +912,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P21 | 11 min | 2 tasks | 12 files |
 | Phase 31.1 P26 | 54 min | 3 tasks | 17 files |
 | Phase 37 P09 | 55 min | 3 tasks | 31 files |
+| Phase 37 P10 | 47 min (continuation; Task 1 earlier) | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -1178,6 +1179,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-09: the invite accept page is /invite (token in the fragment, POST preview/accept with the ref in a JSON body), following 37-08; Referrer-Policy no-referrer on /invite/:path* after the default
 - [Phase 37]: 37-09: GET /api/v1/staff/me carries a nullable businessName (the caller's own tenant name); the dashboard joined toast is worded only from staff/me + shops, ?joined=1 is a trigger only
 - [Phase 37]: 37-09: the invite password input is uncontrolled and Keycloak's 422 is shown verbatim; no client-side password rule
+- [Phase 37]: D-10 ledger representation: entry-kind, owner ruling 2026-10-08 (financial_transactions.entry_kind SALE|REVERSAL|MANUAL + reverses_transaction_id; uq_fin_tx_tenant_order = (tenant_id, order_id, entry_kind) WHERE order_id IS NOT NULL)
+- [Phase 37]: 37-10: a void is columns on orders (voided_at/by/reason), never a VOIDED status; a reversal copies the sale's vat_rate; revenue = SALE - REVERSAL, MANUAL negatives stay expenses
+- [Phase 37]: 37-10: createTransaction writes SALE with an order and MANUAL without (the V78 backfill rule); the unkeyed findByOrderId is deleted, every per-order ledger lookup is keyed by kind
+- [Phase 37]: 37-10: a voided order cannot transition again (400) and leaves the kitchen board; a problem property never reuses an RFC 7807 member name (order-not-deletable carries orderStatus, status stays the HTTP code)
 
 ### Pending Todos
 
