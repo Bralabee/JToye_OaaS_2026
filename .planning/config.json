@@ -34,7 +34,8 @@
     "security_asvs_level": 2,
     "security_block_on": "medium",
     "drift_action": "auto-remap",
-    "context_coverage_gate": true
+    "context_coverage_gate": true,
+    "use_worktrees": false
   },
   "hooks": {
     "context_warnings": true
