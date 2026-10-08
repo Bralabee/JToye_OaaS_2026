@@ -22,7 +22,11 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
-import { EffectiveAccessCell } from "@/components/dashboard/staff/effective-access-cell"
+import { ConfirmActionDialog } from "@/components/dashboard/confirm-action-dialog"
+import {
+  EffectiveAccessCell,
+  remainingAccessLines,
+} from "@/components/dashboard/staff/effective-access-cell"
 import { useToast } from "@/hooks/use-toast"
 import { describeLoadError } from "@/lib/human-error"
 import { fetchMyShops } from "@/lib/shops-api"
@@ -286,6 +290,11 @@ export default function StaffPage() {
    *  NOT a toast, so the reason stays on screen next to the action that caused it. */
   const [notice, setNotice] = useState<string | null>(null)
 
+  /** The grant whose removal is awaiting confirmation, with the person it belongs to. */
+  const [removing, setRemoving] = useState<{ grant: StaffMember; person: StaffPerson } | null>(
+    null
+  )
+
   const [targetUserId, setTargetUserId] = useState("")
   const [targetShopId, setTargetShopId] = useState(ALL_SHOPS_VALUE)
   const [targetRole, setTargetRole] = useState<ShopRole>("STAFF")
@@ -452,6 +461,23 @@ export default function StaffPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const removeTitle = (grant: StaffMember, person: StaffPerson): string => {
+    const role = ROLE_LABELS[grant.role] ?? grant.role
+    return `Remove ${role} at ${shopLabel(grant.shopId)} for ${personName(person)}?`
+  }
+
+  /** "After this they'll have: …" from the server's access minus this grant. */
+  const removeDescription = (grant: StaffMember, person: StaffPerson): string => {
+    const remaining = remainingAccessLines(person.effectiveAccess, grant, shopNameById)
+    const after =
+      remaining === null
+        ? ""
+        : remaining.length === 0
+          ? "After this they'll have no access to this business. "
+          : `After this they'll have: ${remaining.join("; ")}. `
+    return `${after}They'll lose it on their next action.`
   }
 
   /*
@@ -704,7 +730,7 @@ export default function StaffPage() {
                                 className="h-11 w-full sm:w-auto"
                                 disabled={submitting}
                                 aria-label={`Remove ${role} at ${shop} for ${name}`}
-                                onClick={() => handleRevoke(g)}
+                                onClick={() => setRemoving({ grant: g, person: p })}
                               >
                                 {personGrants.length === 1
                                   ? "Remove access"
@@ -722,6 +748,24 @@ export default function StaffPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Remove access is destructive, and its copy names the consequence: what the
+          person keeps, from the server's effective access minus this one grant, or
+          "no access" when it is the last (UI-SPEC § Copywriting B1-B3). */}
+      <ConfirmActionDialog
+        open={removing !== null}
+        onOpenChange={(o) => !o && setRemoving(null)}
+        title={removing ? removeTitle(removing.grant, removing.person) : ""}
+        description={removing ? removeDescription(removing.grant, removing.person) : ""}
+        confirmLabel="Remove access"
+        cancelLabel="Keep access"
+        destructive
+        onConfirm={async () => {
+          if (!removing) return
+          await handleRevoke(removing.grant)
+          setRemoving(null)
+        }}
+      />
     </div>
   )
 }

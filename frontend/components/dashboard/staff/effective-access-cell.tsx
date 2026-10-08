@@ -59,6 +59,46 @@ export function shopRoleLines(
   return lines
 }
 
+/**
+ * What a person keeps if one grant is removed, for the Remove access confirm (UI-SPEC
+ * § Copywriting B1-B3). It starts from the SERVER's effective access and takes away
+ * the one thing that grant confers. It never adds anything the server did not say:
+ *
+ * - removing the tenant-wide GROUP_ADMIN grant drops "Group admin";
+ * - removing a tenant-wide STAFF / SHOP_MANAGER grant drops that "all shops" line;
+ * - removing a shop grant drops that shop's line;
+ * - a realm admin keeps "Admin account" whatever is removed (it comes from their
+ *   sign-in account, not from a grant).
+ *
+ * A grant the server does not honour (an automatic GROUP_ADMIN row under strict
+ * scoping) drops nothing, because it conferred nothing. An empty result means "no
+ * access to this business". Returns null when the server sent no value, so the
+ * confirm makes no claim about what remains.
+ */
+export function remainingAccessLines(
+  access: EffectiveAccess | null | undefined,
+  removed: { shopId: string | null; role: ShopRole },
+  shopNameById: ReadonlyMap<string, string>
+): string[] | null {
+  if (!access) return null
+  const removesGroupAdmin = removed.shopId === null && removed.role === "GROUP_ADMIN"
+  if (access.level === "GROUP_ADMIN" && !removesGroupAdmin) {
+    return [ACCESS_COPY.groupAdmin]
+  }
+  const lines: string[] = []
+  if (access.realmAdminSeenAt) lines.push(ACCESS_COPY.realmAdmin)
+  const removesTenantWide = removed.shopId === null && removed.role !== "GROUP_ADMIN"
+  const perShopRole = { ...(access.perShopRole ?? {}) }
+  if (removed.shopId !== null) delete perShopRole[removed.shopId]
+  lines.push(
+    ...shopRoleLines(
+      { tenantWideRole: removesTenantWide ? null : access.tenantWideRole, perShopRole },
+      shopNameById
+    )
+  )
+  return lines
+}
+
 interface EffectiveAccessCellProps {
   access: EffectiveAccess | null | undefined
   shopNameById: ReadonlyMap<string, string>

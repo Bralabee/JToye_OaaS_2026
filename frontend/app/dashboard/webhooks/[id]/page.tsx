@@ -48,7 +48,7 @@ import {
   ReplayTag,
 } from "@/components/dashboard/webhooks/status-badge"
 import { SecretRevealDialog } from "@/components/dashboard/webhooks/SecretRevealDialog"
-import { ConfirmActionDialog } from "@/components/dashboard/webhooks/ConfirmActionDialog"
+import { ConfirmActionDialog } from "@/components/dashboard/confirm-action-dialog"
 
 const PAGE_SIZE = 20
 const RETENTION_DAYS = process.env.NEXT_PUBLIC_WEBHOOK_RETENTION_DAYS ?? "30"
@@ -595,6 +595,7 @@ export default function WebhookDetailPage() {
         title="Rotate signing secret?"
         description="The current secret stops working immediately. Update your endpoint with the new secret to keep verifying signatures — in-flight deliveries signed with the old secret will fail verification."
         confirmLabel="Rotate secret"
+        cancelLabel="Keep current secret"
         onConfirm={onConfirmAction}
       />
 
@@ -604,6 +605,7 @@ export default function WebhookDetailPage() {
         title="Revoke this endpoint?"
         description={`Revoking permanently stops all deliveries to ${subscription.targetUrl} and can't be undone. Delivery history is kept for ${RETENTION_DAYS} days.`}
         confirmLabel="Revoke endpoint"
+        cancelLabel="Keep endpoint"
         destructive
         onConfirm={onConfirmAction}
       />
@@ -614,6 +616,7 @@ export default function WebhookDetailPage() {
         title="Replay this delivery?"
         description={`We'll re-send this event to ${subscription.targetUrl} as a new attempt tagged "Replay". The original delivery record is unchanged.`}
         confirmLabel="Replay delivery"
+        cancelLabel="Skip replay"
         onConfirm={onConfirmReplay}
       />
     </div>

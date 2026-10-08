@@ -40,7 +40,7 @@ import {
 import { SubscriptionStatusBadge } from "@/components/dashboard/webhooks/status-badge"
 import { WebhookCreateDialog } from "@/components/dashboard/webhooks/WebhookCreateDialog"
 import { SecretRevealDialog } from "@/components/dashboard/webhooks/SecretRevealDialog"
-import { ConfirmActionDialog } from "@/components/dashboard/webhooks/ConfirmActionDialog"
+import { ConfirmActionDialog } from "@/components/dashboard/confirm-action-dialog"
 
 // Config-injected retention window for the revoke copy (GLOBAL_RULE_6) —
 // mirrors the backend webhook.delivery.retention-days default (22-05).
@@ -410,6 +410,7 @@ export default function WebhooksPage() {
         title="Rotate signing secret?"
         description="The current secret stops working immediately. Update your endpoint with the new secret to keep verifying signatures — in-flight deliveries signed with the old secret will fail verification."
         confirmLabel="Rotate secret"
+        cancelLabel="Keep current secret"
         onConfirm={onConfirm}
       />
 
@@ -423,6 +424,7 @@ export default function WebhooksPage() {
             : ""
         }
         confirmLabel="Revoke endpoint"
+        cancelLabel="Keep endpoint"
         destructive
         onConfirm={onConfirm}
       />
