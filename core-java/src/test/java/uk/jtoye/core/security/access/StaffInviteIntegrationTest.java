@@ -50,6 +50,8 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
@@ -197,7 +199,259 @@ class StaffInviteIntegrationTest {
                 .as("one row for the triple").isEqualTo(1L);
     }
 
+    // ---- Task 2: validation and the tenant wall on issue ------------------------------------------
+
+    @Test
+    @DisplayName("D-07: a GROUP_ADMIN invitation scoped to a shop is a 400 (the grant() rule), and nothing is stored or sent")
+    void issue_groupAdminWithShop_is400() throws Exception {
+        MvcResult result = issue(adminJwt(), "ga@example.com", "GROUP_ADMIN", shopA);
+        assertThat(result.getResponse().getStatus()).as(body(result)).isEqualTo(400);
+        assertThat(json(result).path("type").asString()).isEqualTo("https://jtoye.uk/errors/invalid-argument");
+        assertThat(inviteCount()).isZero();
+        Thread.sleep(300);
+        assertThat(sends()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("D-07: a GROUP_ADMIN invitation for all shops is accepted (201)")
+    void issue_groupAdminAllShops_is201() throws Exception {
+        MvcResult result = issue(adminJwt(), "ga@example.com", "GROUP_ADMIN", null);
+        assertThat(result.getResponse().getStatus()).as(body(result)).isEqualTo(201);
+        assertThat(json(result).path("shopId").isNull()).as(body(result)).isTrue();
+        awaitSends(1);
+    }
+
+    @Test
+    @DisplayName("T-23-12-03: another tenant's shop gets the SAME 404 body as a shop that does not exist")
+    void issue_foreignShop_is404_identicalToMissingShop() throws Exception {
+        UUID otherTenant = UUID.randomUUID();
+        jdbc.update("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now())", otherTenant, "Other " + otherTenant);
+        UUID foreignShop = UUID.randomUUID();
+        jdbc.update("INSERT INTO shops (id, tenant_id, created_at, name, slug, address, published, "
+                        + "delivery_fee_pennies, minimum_order_pennies, version) "
+                        + "VALUES (?, ?, now(), ?, ?, ?, true, 0, 0, 0)",
+                foreignShop, otherTenant, "Foreign Shop", "inv-f-" + foreignShop, "2 Test Street, London, E1 6AN");
+
+        MvcResult foreign = issue(adminJwt(), "x@example.com", "STAFF", foreignShop);
+        MvcResult missing = issue(adminJwt(), "x@example.com", "STAFF", UUID.randomUUID());
+
+        assertThat(foreign.getResponse().getStatus()).as(body(foreign)).isEqualTo(404);
+        assertThat(missing.getResponse().getStatus()).as(body(missing)).isEqualTo(404);
+        assertThat(body(foreign)).as("not an existence oracle for another tenant's shops").isEqualTo(body(missing));
+        assertThat(body(foreign)).doesNotContain(foreignShop.toString());
+        assertThat(inviteCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("D-07: an address that is not one valid email is a 400 that does not quote it")
+    void issue_invalidEmail_is400() throws Exception {
+        MvcResult result = issue(adminJwt(), "not-an-address", "STAFF", shopA);
+        assertThat(result.getResponse().getStatus()).as(body(result)).isEqualTo(400);
+        assertThat(body(result)).doesNotContain("not-an-address");
+        assertThat(inviteCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("T-37-15: a SHOP_MANAGER may not issue, list, resend or cancel invitations (403 shop-access-denied)")
+    void shopManager_isRefused_everywhere() throws Exception {
+        UUID manager = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenantId, manager, shopA, "SHOP_MANAGER", "m-" + manager + "@example.com");
+        RequestPostProcessor managerJwt = userJwt(manager, "Mo Manager");
+        UUID inviteId = UUID.fromString(json(issue(adminJwt(), "staff@example.com", "STAFF", shopA)).path("id").asString());
+        awaitSends(1);
+
+        MvcResult post = issue(managerJwt, "other@example.com", "STAFF", shopA);
+        MvcResult list = mockMvc.perform(get(PATH).with(managerJwt)).andReturn();
+        MvcResult resend = mockMvc.perform(post(PATH + "/" + inviteId + "/resend").with(managerJwt)).andReturn();
+        MvcResult cancel = mockMvc.perform(delete(PATH + "/" + inviteId).with(managerJwt)).andReturn();
+
+        for (MvcResult r : List.of(post, list, resend, cancel)) {
+            assertThat(r.getResponse().getStatus()).as(body(r)).isEqualTo(403);
+            assertThat(json(r).path("type").asString()).as(body(r))
+                    .isEqualTo("https://jtoye.uk/errors/shop-access-denied");
+        }
+        assertThat(inviteCount()).as("the refused issue stored nothing").isEqualTo(1L);
+        assertThat(jdbc.queryForObject("SELECT revoked_at FROM staff_invite WHERE id = ?", Object.class, inviteId))
+                .as("the refused cancel and resend changed nothing").isNull();
+        Thread.sleep(300);
+        assertThat(sends()).as("no email for any refused call").hasSize(1);
+    }
+
+    // ---- Task 2: the lifecycle --------------------------------------------------------------------
+
+    @Test
+    @DisplayName("D-07: the list derives status: OPEN, then EXPIRED once the expiry passes, never stored")
+    void list_derivesOpenThenExpired() throws Exception {
+        UUID inviteId = UUID.fromString(json(issue(adminJwt(), "staff@example.com", "STAFF", shopA)).path("id").asString());
+        awaitSends(1);
+
+        JsonNode open = listed(inviteId);
+        assertThat(open.path("status").asString()).as(open.toString()).isEqualTo("OPEN");
+        assertThat(open.path("email").asString()).isEqualTo("staff@example.com");
+        assertThat(open.path("role").asString()).isEqualTo("STAFF");
+        assertThat(open.path("shopId").asString()).isEqualTo(shopA.toString());
+        assertThat(open.toString()).as("the list never carries the digest").doesNotContain(digestOf(inviteId));
+
+        // Move the clock past the expiry: the row's expiry is put one second in the past.
+        jdbc.update("UPDATE staff_invite SET expires_at = now() - interval '1 second' WHERE id = ?", inviteId);
+        assertThat(listed(inviteId).path("status").asString()).isEqualTo("EXPIRED");
+        // And just before it: still open (the boundary is "now is before expires_at").
+        jdbc.update("UPDATE staff_invite SET expires_at = now() + interval '1 minute' WHERE id = ?", inviteId);
+        assertThat(listed(inviteId).path("status").asString()).isEqualTo("OPEN");
+    }
+
+    @Test
+    @DisplayName("D-07: DELETE cancels (204) and the list reads CANCELLED; DELETE again is 204 and keeps the first who/when")
+    void cancel_is204_andRepeatable() throws Exception {
+        UUID inviteId = UUID.fromString(json(issue(adminJwt(), "staff@example.com", "STAFF", shopA)).path("id").asString());
+        awaitSends(1);
+
+        MvcResult first = mockMvc.perform(delete(PATH + "/" + inviteId).with(adminJwt())).andReturn();
+        assertThat(first.getResponse().getStatus()).as(body(first)).isEqualTo(204);
+        Map<String, Object> afterFirst = jdbc.queryForMap(
+                "SELECT revoked_at, revoked_by FROM staff_invite WHERE id = ?", inviteId);
+        assertThat(afterFirst.get("revoked_at")).isNotNull();
+        assertThat(afterFirst.get("revoked_by")).isEqualTo(admin);
+        assertThat(listed(inviteId).path("status").asString()).isEqualTo("CANCELLED");
+
+        MvcResult again = mockMvc.perform(delete(PATH + "/" + inviteId).with(adminJwt())).andReturn();
+        assertThat(again.getResponse().getStatus()).as(body(again)).isEqualTo(204);
+        assertThat(jdbc.queryForMap("SELECT revoked_at, revoked_by FROM staff_invite WHERE id = ?", inviteId))
+                .as("a repeated cancel changes nothing").isEqualTo(afterFirst);
+
+        MvcResult unknown = mockMvc.perform(delete(PATH + "/" + UUID.randomUUID()).with(adminJwt())).andReturn();
+        assertThat(unknown.getResponse().getStatus()).as(body(unknown)).isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("D-07: after a cancel, issuing the same triple creates a new invitation (201) with its own email")
+    void issue_afterCancel_isNew() throws Exception {
+        String firstId = json(issue(adminJwt(), "staff@example.com", "STAFF", shopA)).path("id").asString();
+        awaitSends(1);
+        mockMvc.perform(delete(PATH + "/" + firstId).with(adminJwt())).andReturn();
+
+        MvcResult again = issue(adminJwt(), "staff@example.com", "STAFF", shopA);
+        assertThat(again.getResponse().getStatus()).as(body(again)).isEqualTo(201);
+        assertThat(json(again).path("id").asString()).isNotEqualTo(firstId);
+        awaitSends(2);
+    }
+
+    @Test
+    @DisplayName("D-07: issuing a triple whose only live invitation has expired creates a new one and revokes the expired row")
+    void issue_afterExpiry_isNew_andRevokesExpired() throws Exception {
+        UUID firstId = UUID.fromString(json(issue(adminJwt(), "staff@example.com", "STAFF", shopA)).path("id").asString());
+        awaitSends(1);
+        jdbc.update("UPDATE staff_invite SET expires_at = now() - interval '1 second' WHERE id = ?", firstId);
+
+        MvcResult again = issue(adminJwt(), "staff@example.com", "STAFF", shopA);
+        assertThat(again.getResponse().getStatus()).as(body(again)).isEqualTo(201);
+        assertThat(json(again).path("id").asString()).isNotEqualTo(firstId.toString());
+        assertThat(jdbc.queryForObject("SELECT revoked_at FROM staff_invite WHERE id = ?", Object.class, firstId))
+                .as("a triple never has two live rows").isNotNull();
+        awaitSends(2);
+    }
+
+    @Test
+    @DisplayName("D-07: resend revokes the old row (its link dies) and issues a new invitation (201) with a new link")
+    void resend_revokesOld_andIssuesNew() throws Exception {
+        UUID oldId = UUID.fromString(json(issue(adminJwt(), "staff@example.com", "SHOP_MANAGER", shopA)).path("id").asString());
+        String oldToken = linkToken(awaitSends(1).get(0));
+        String oldDigest = digestOf(oldId);
+
+        MvcResult resent = mockMvc.perform(post(PATH + "/" + oldId + "/resend").with(adminJwt())).andReturn();
+        assertThat(resent.getResponse().getStatus()).as(body(resent)).isEqualTo(201);
+        JsonNode fresh = json(resent);
+        UUID newId = UUID.fromString(fresh.path("id").asString());
+        assertThat(newId).isNotEqualTo(oldId);
+        assertThat(fresh.path("status").asString()).isEqualTo("OPEN");
+        assertThat(fresh.path("email").asString()).isEqualTo("staff@example.com");
+        assertThat(fresh.path("role").asString()).isEqualTo("SHOP_MANAGER");
+        assertThat(fresh.path("shopId").asString()).isEqualTo(shopA.toString());
+
+        Map<String, Object> old = jdbc.queryForMap("SELECT revoked_at, revoked_by FROM staff_invite WHERE id = ?", oldId);
+        assertThat(old.get("revoked_at")).as("the old link is dead").isNotNull();
+        assertThat(old.get("revoked_by")).isEqualTo(admin);
+        assertThat(listed(oldId).path("status").asString()).isEqualTo("CANCELLED");
+
+        String newToken = linkToken(awaitSends(2).get(1));
+        assertThat(newToken).isNotEqualTo(oldToken);
+        assertThat(sha256Hex(newToken)).isEqualTo(digestOf(newId));
+        assertThat(sha256Hex(oldToken)).isEqualTo(oldDigest);
+    }
+
+    @Test
+    @DisplayName("D-07: an accepted invitation cannot be sent again (400) and a cancel leaves it ACCEPTED")
+    void accepted_isFinal() throws Exception {
+        UUID inviteId = UUID.fromString(json(issue(adminJwt(), "staff@example.com", "STAFF", shopA)).path("id").asString());
+        awaitSends(1);
+        jdbc.update("UPDATE staff_invite SET accepted_at = now(), accepted_user_id = ? WHERE id = ?",
+                UUID.randomUUID(), inviteId);
+
+        MvcResult resend = mockMvc.perform(post(PATH + "/" + inviteId + "/resend").with(adminJwt())).andReturn();
+        assertThat(resend.getResponse().getStatus()).as(body(resend)).isEqualTo(400);
+        MvcResult cancel = mockMvc.perform(delete(PATH + "/" + inviteId).with(adminJwt())).andReturn();
+        assertThat(cancel.getResponse().getStatus()).as(body(cancel)).isEqualTo(204);
+        assertThat(listed(inviteId).path("status").asString()).isEqualTo("ACCEPTED");
+        assertThat(inviteCount()).isEqualTo(1L);
+        Thread.sleep(300);
+        assertThat(sends()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("D-07: a Group admin of another tenant cannot see, cancel or resend this tenant's invitation")
+    void otherTenantsAdmin_cannotReachTheInvite() throws Exception {
+        UUID inviteId = UUID.fromString(json(issue(adminJwt(), "staff@example.com", "STAFF", shopA)).path("id").asString());
+        awaitSends(1);
+        UUID otherTenant = UUID.randomUUID();
+        jdbc.update("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now())", otherTenant, "Other " + otherTenant);
+        UUID otherAdmin = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, otherTenant, otherAdmin, null, "GROUP_ADMIN", "oa-" + otherAdmin + "@example.com");
+        RequestPostProcessor otherJwt = jwt().jwt(j -> j.subject(otherAdmin.toString())
+                        .claim("tenant_id", otherTenant.toString())
+                        .claim("realm_access", Map.of("roles", List.of("user"))))
+                .authorities(new KeycloakRealmRoleConverter());
+
+        MvcResult list = mockMvc.perform(get(PATH).with(otherJwt)).andReturn();
+        assertThat(list.getResponse().getStatus()).as(body(list)).isEqualTo(200);
+        assertThat(body(list)).doesNotContain(inviteId.toString());
+        assertThat(mockMvc.perform(delete(PATH + "/" + inviteId).with(otherJwt)).andReturn().getResponse().getStatus())
+                .isEqualTo(404);
+        assertThat(mockMvc.perform(post(PATH + "/" + inviteId + "/resend").with(otherJwt)).andReturn().getResponse()
+                .getStatus()).isEqualTo(404);
+        assertThat(jdbc.queryForObject("SELECT revoked_at FROM staff_invite WHERE id = ?", Object.class, inviteId))
+                .isNull();
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------
+
+    JsonNode listed(UUID inviteId) throws Exception {
+        MvcResult list = mockMvc.perform(get(PATH).with(adminJwt()).accept(MediaType.APPLICATION_JSON)).andReturn();
+        assertThat(list.getResponse().getStatus()).as(body(list)).isEqualTo(200);
+        JsonNode root = json(list);
+        assertThat(root.isArray()).as(body(list)).isTrue();
+        for (JsonNode node : root) {
+            if (inviteId.toString().equals(node.path("id").asString())) {
+                return node;
+            }
+        }
+        throw new AssertionError("invite " + inviteId + " not listed: " + body(list));
+    }
+
+    long inviteCount() {
+        return jdbc.queryForObject("SELECT count(*) FROM staff_invite WHERE tenant_id = ?", Long.class, tenantId);
+    }
+
+    String digestOf(UUID inviteId) {
+        return jdbc.queryForObject("SELECT token_sha256 FROM staff_invite WHERE id = ?", String.class, inviteId);
+    }
+
+    String linkToken(Invocation send) {
+        String text = SentMail.text(SentMail.reparse((MimeMessage) send.getArgument(0)));
+        Matcher link = Pattern.compile(Pattern.quote(ACCEPT_BASE + "/" + tenantId + ".") + "([A-Za-z0-9_-]+)")
+                .matcher(text);
+        assertThat(link.find()).as(text).isTrue();
+        return link.group(1);
+    }
 
     MvcResult issue(RequestPostProcessor caller, String email, String role, UUID shopId) throws Exception {
         String payload = "{\"email\":" + jsonString(email) + ",\"role\":" + jsonString(role)
