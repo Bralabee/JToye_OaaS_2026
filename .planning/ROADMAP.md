@@ -1004,7 +1004,7 @@ Plans:
 - [x] 37-07-PLAN.md — 37-B: staff invites issue/list/resend/cancel with email (V77)
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 37-08-PLAN.md — 37-B: invite accept, Keycloak user creation, admin-only tenant_id profile
+- [x] 37-08-PLAN.md — 37-B: invite accept, Keycloak user creation, admin-only tenant_id profile
 
 **Wave 8** *(blocked on Wave 7 completion)*
 - [ ] 37-09-PLAN.md — 37-B: invite form, pending invitations, /invite accept page

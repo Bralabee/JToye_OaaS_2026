@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 6
+open_count: 8
 waived_count: 0
 fixed_count: 13
-total_count: 19
-last_updated: 2026-10-08T13:58:26.371Z
+total_count: 21
+last_updated: 2026-10-08T14:40:06.592Z
 ---
 
 # Broken Windows Ledger
@@ -34,6 +34,8 @@ last_updated: 2026-10-08T13:58:26.371Z
 | 17 | 37 | unrun-verify | frontend/components/dashboard/no-access-page.tsx |  | 37-06 B3 backstop not run: Playwright at 375px asserting no horizontal overflow on the no-access page body with a 60-character business name; the body wraps with overflow-wrap:anywhere (jsdom cannot measure) | open |  | 2026-10-08T12:56:28.291Z |  |
 | 18 | 37 | deviation | frontend/components/dashboard/no-access-page.tsx |  | 37-06 B3 body says 'your business' where UI-SPEC copy has {business}: a person with no access cannot read any tenant record, and the session carries no business name | open |  | 2026-10-08T12:56:29.946Z |  |
 | 19 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java |  | 37-07 invitation email not yet sent through the running compose stack (Mailhog): V77 and /api/v1/staff/invites reach the shared runtime only at the 37-15 rebuild; proven by integration tests with a re-parsed MimeMessage | open |  | 2026-10-08T13:58:26.371Z |  |
+| 20 | 37 | unrun-verify | infra/keycloak/realm-export.template.json |  | 37-08 vendor-realm user profile (tenant_id admin-only) not yet on the shared compose Keycloak: needs kc.sh import --override true at the 37-15 rebuild, then the live chain (profile GET, accepted invitee keeps tenant_id, token claim, account-console edit refused). Proven on a throwaway Keycloak 24.0.5 only | open |  | 2026-10-08T14:40:02.180Z |  |
+| 21 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java |  | 37-08 moved the invite token from the URL path to the fragment ({base}#token={tenantId}.{token}) and the public API to POST preview/accept with the ref in the body; 37-09's /invite/[token] route, GET /{ref} and POST /{ref}/accept wording are superseded: the page must read location.hash and POST the ref | open |  | 2026-10-08T14:40:06.592Z |  |
 
 ````json
 [
@@ -281,6 +283,32 @@ last_updated: 2026-10-08T13:58:26.371Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-08T13:58:26.371Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 20,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "infra/keycloak/realm-export.template.json",
+    "line": null,
+    "description": "37-08 vendor-realm user profile (tenant_id admin-only) not yet on the shared compose Keycloak: needs kc.sh import --override true at the 37-15 rebuild, then the live chain (profile GET, accepted invitee keeps tenant_id, token claim, account-console edit refused). Proven on a throwaway Keycloak 24.0.5 only",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T14:40:02.180Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 21,
+    "kind": "deviation",
+    "phase": "37",
+    "file": "core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java",
+    "line": null,
+    "description": "37-08 moved the invite token from the URL path to the fragment ({base}#token={tenantId}.{token}) and the public API to POST preview/accept with the ref in the body; 37-09's /invite/[token] route, GET /{ref} and POST /{ref}/accept wording are superseded: the page must read location.hash and POST the ref",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T14:40:06.592Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }

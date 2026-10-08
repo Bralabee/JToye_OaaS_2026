@@ -93,3 +93,36 @@ where it must be resolved.
 - So MCP `create_order` / `list_products` under strict ON with real Keycloak client-credentials
   tokens (37-03 coverage D4) is still proven by integration tests only; the live check is owed
   to the 37-15 gate, together with `scripts/check-runtime-freshness.sh`.
+
+## 7. 37-08 accept flow: what binds 37-09 and 37-15
+
+- **The invite link changed shape (37-08 deviation, the V75 rule).** It is now
+  `{STAFF_INVITE_ACCEPT_BASE_URL}#token={tenantId}.{token}`: the token rides in the URL
+  **fragment**, which a browser never sends to a server. The public API takes the reference in a
+  JSON body, never in a path: `POST /api/v1/public/staff-invites/preview {ref}` and
+  `POST /api/v1/public/staff-invites/accept {ref, firstName, lastName, password}`.
+  **37-09 must follow:** the page is `/invite` (not `/invite/[token]`), reads `location.hash`
+  client-side, drops it with `history.replaceState`, and POSTs the ref. 37-09-PLAN's
+  `GET /api/v1/public/staff-invites/{ref}` and `POST .../{ref}/accept` wording is superseded
+  (WINDOWS.md entry 21). Measured reasons the path form was unsafe, beyond access logs: the
+  ProblemDetail `instance` member echoes the request path, so a path token would be written back
+  into every error body, and `RateLimitInterceptor` logs the request path on every public 429.
+- **Shared-runtime Keycloak is stale.** The vendor-realm user profile (`tenant_id` admin-only)
+  reaches the running compose Keycloak only by `kc.sh import --override true` at the 37-15
+  rebuild. Until then an invitation accepted against the shared stack would create a user whose
+  `tenant_id` is stripped. The chain is proven on a throwaway Keycloak 24.0.5 only
+  (`infra/keycloak/README.md`, "User profile"); the live proof is owed to 37-15 (WINDOWS.md
+  entry 20). Staging/production need the operator step in `37-USER-SETUP.md`.
+- **`.env.example` ships `KC_ADMIN_ENABLED=false`** while compose defaults it to `true`. An
+  operator who copies `.env.example` verbatim turns the admin seam off, and then every preview
+  and accept answers 503 `staff-invite-account-service-unavailable` (DSAR account deletion is
+  already NOT_CONFIGURED in the same state). Pre-existing; not changed here.
+- **Keycloak 24.0.5's password-policy refusal is generic.** Measured against the shared
+  `jtoye-dev` realm: `{"errorMessage":"Password policy not met"}`, with no rule named. The 422
+  shows it verbatim, as UI-SPEC B2 requires, so the invitee is not told which rule failed.
+  37-09 may add the realm's rule text as static help copy; the server cannot name the rule.
+- **Docs metrics (§1).** 37-08 adds `StaffInviteAcceptIntegrationTest` (11 tests, new file) and
+  5 test methods to `KeycloakAdminClientTest`. Re-measure at the pre-PR step.
+- **GDPR residual (from 37-07, unchanged).** A cancelled or expired invitation keeps the
+  invitee's address in `staff_invite.email_normalised` indefinitely; an accepted one keeps it
+  too. Recorded for `/gsd-secure-phase`; not redesigned here.

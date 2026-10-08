@@ -5,8 +5,8 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 planned 2026-10-08: 53 plans (37-01..37-53), seven sub-theme PRs B→A→D→C→E→G→F with gate plans 15/23/31/38/47/50/53, migrations V76–V83 reserved, 35 RWO-* requirement IDs (minted by 37-01 Task 2). Plan checker PASSED after 1 revision (0 blockers); decision coverage 27/27. 37-01 Task 3 is a BLOCKING owner checkpoint on D-26 ('then signs the user in'). Next: /gsd-execute-phase 37."
-last_updated: "2026-10-08T07:21:27.547Z"
+stopped_at: "Phase 37 executing: 37-01..37-08 complete (8/53), 37-08 closed 2026-10-08 after a session break (summary written from the commit record, suite re-run 1610/0 + 946/0, two gate line-shifts repaired). Next: /gsd-execute-phase 37 from wave 8 (37-09 invite page; it must read the fragment token and POST preview/accept, WINDOWS entry 21)."
+last_updated: "2026-10-08T15:45:54Z"
 last_activity: 2026-10-08
 state_head: 953df054845908e238a56818851ce70a7ddf83e4
 progress:
