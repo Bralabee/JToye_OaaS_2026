@@ -985,7 +985,7 @@ NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git workt
 
 Plans:
 **Wave 1**
-- [ ] 37-01-PLAN.md — Merge main, prove the baseline, reserve V76..V83, mint RWO-* requirements
+- [x] 37-01-PLAN.md — Merge main, prove the baseline, reserve V76..V83, mint RWO-* requirements
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 37-02-PLAN.md — 37-B: strict-scoping test hardening I (capture/restore, booted-value instrument, enumerate reds)
