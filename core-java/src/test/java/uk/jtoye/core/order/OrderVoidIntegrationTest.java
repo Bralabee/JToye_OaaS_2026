@@ -132,10 +132,13 @@ class OrderVoidIntegrationTest {
                 .as(text + " | ledger rows now pointing at a missing order: " + danglingAfterDelete)
                 .isEqualTo(409);
         JsonNode problem = json(refused, 409);
+        // RFC 7807's status member is the HTTP status code. A problem property must never overwrite it.
+        assertThat(problem.path("status").isNumber()).as("status is the HTTP code, a number: " + text).isTrue();
+        assertThat(problem.path("status").asInt()).as(text).isEqualTo(409);
         assertThat(problem.path("type").asString()).as(text).isEqualTo(NOT_DELETABLE_TYPE);
         assertThat(problem.path("code").asString()).as(text).isEqualTo("ORDER_NOT_DELETABLE");
         assertThat(problem.path("title").asString()).as(text).isEqualTo("Order can't be deleted");
-        assertThat(problem.path("status").asString()).as("the order's status is named: " + text)
+        assertThat(problem.path("orderStatus").asString()).as("the order's status is named: " + text)
                 .isEqualTo("COMPLETED");
         assertThat(problem.path("orderNumber").asString()).as(text).isEqualTo(orderNumber);
         assertThat(problem.path("detail").asString()).as("the detail tells the caller to void: " + text)
@@ -162,7 +165,8 @@ class OrderVoidIntegrationTest {
         String text = responseText(refused);
         JsonNode problem = json(refused, 409);
         assertThat(problem.path("type").asString()).as(text).isEqualTo(NOT_DELETABLE_TYPE);
-        assertThat(problem.path("status").asString()).as(text).isEqualTo(status.name());
+        assertThat(problem.path("orderStatus").asString()).as(text).isEqualTo(status.name());
+        assertThat(problem.path("status").asInt()).as("status stays the HTTP code: " + text).isEqualTo(409);
         assertThat(orderExists(orderId)).as("the order is kept").isTrue();
     }
 
@@ -370,7 +374,25 @@ class OrderVoidIntegrationTest {
         JsonNode problem = json(refused, 409);
         assertThat(problem.path("type").asString()).as(text).isEqualTo(NOT_VOIDABLE_TYPE);
         assertThat(problem.path("code").asString()).as(text).isEqualTo("ORDER_NOT_VOIDABLE");
+        assertThat(problem.path("orderStatus").asString()).as(text).isEqualTo(status.name());
+        assertThat(problem.path("status").isNumber()).as("status stays the HTTP code: " + text).isTrue();
         assertThat(orderVoidColumns(orderId).get("voided_at")).isNull();
+    }
+
+    @Test
+    @DisplayName("D-10: a voided order does not move again; completing a voided READY order is refused and writes no SALE that nothing would reverse")
+    void voidedOrder_cannotBeCompleted() throws Exception {
+        UUID orderId = seedOrder(OrderStatus.READY);
+        json(voidOrder(orderId, "{\"reason\":\"Customer never came\"}", adminJwt(ADMIN_SUB)), 200);
+
+        MvcResult refused = mockMvc.perform(post(orderUrl(orderId) + "/complete").with(adminJwt())).andReturn();
+        String text = responseText(refused);
+        JsonNode problem = json(refused, 400);
+        assertThat(problem.path("type").asString()).as(text).isEqualTo("https://jtoye.uk/errors/invalid-state-transition");
+        assertThat(ledgerRowsOf(orderId)).as("no SALE written for a voided order").isEmpty();
+        Map<String, Object> status = inTenant(() -> jdbcTemplate.queryForMap(
+                "SELECT status FROM orders WHERE id = ?", orderId));
+        assertThat(status.get("status")).isEqualTo("READY");
     }
 
     @Test

@@ -38,7 +38,9 @@ import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
+import uk.jtoye.core.exception.OrderAlreadyVoidedException;
 import uk.jtoye.core.exception.OrderNotDeletableException;
+import uk.jtoye.core.exception.OrderNotVoidableException;
 import uk.jtoye.core.exception.StaffInviteAccountServiceUnavailableException;
 import uk.jtoye.core.exception.StaffInviteEmailTakenException;
 import uk.jtoye.core.exception.StaffInvitePasswordRejectedException;
@@ -410,7 +412,41 @@ public class GlobalExceptionHandler {
         problem.setTitle("Order can't be deleted");
         problem.setType(URI.create("https://jtoye.uk/errors/order-not-deletable"));
         problem.setProperty("code", "ORDER_NOT_DELETABLE");
-        problem.setProperty("status", ex.getStatus().name());
+        // orderStatus, never status: RFC 7807's status member is the HTTP code, and a property named status
+        // serialised as a SECOND "status" key that last-wins parsers read in place of the 409 (37-10 Task 3).
+        problem.setProperty("orderStatus", ex.getStatus().name());
+        problem.setProperty("orderNumber", ex.getOrderNumber());
+        return problem;
+    }
+
+    /**
+     * Phase 37-10 (D-10): a void with a different reason on an already-voided order. Names who voided it
+     * and when, so the caller can see the record that stands. The same reason again never reaches here: it
+     * returns the existing void (200).
+     */
+    @ExceptionHandler(OrderAlreadyVoidedException.class)
+    public ProblemDetail handleOrderAlreadyVoided(OrderAlreadyVoidedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Order already voided");
+        problem.setType(URI.create("https://jtoye.uk/errors/order-already-voided"));
+        problem.setProperty("code", "ORDER_ALREADY_VOIDED");
+        problem.setProperty("orderNumber", ex.getOrderNumber());
+        problem.setProperty("voidedBy", ex.getVoidedBy());
+        problem.setProperty("voidedAt", ex.getVoidedAt());
+        return problem;
+    }
+
+    /**
+     * Phase 37-10 (D-10): a void of a DRAFT or PENDING order, which is deleted instead. The order's status
+     * is {@code orderStatus}, never {@code status}: RFC 7807's {@code status} member is the HTTP status code.
+     */
+    @ExceptionHandler(OrderNotVoidableException.class)
+    public ProblemDetail handleOrderNotVoidable(OrderNotVoidableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Order can't be voided");
+        problem.setType(URI.create("https://jtoye.uk/errors/order-not-voidable"));
+        problem.setProperty("code", "ORDER_NOT_VOIDABLE");
+        problem.setProperty("orderStatus", ex.getStatus().name());
         problem.setProperty("orderNumber", ex.getOrderNumber());
         return problem;
     }

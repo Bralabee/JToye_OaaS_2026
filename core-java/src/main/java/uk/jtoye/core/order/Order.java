@@ -180,6 +180,23 @@ public class Order {
     @Column(name = "allergy_note_ack_by", length = 255)
     private String allergyNoteAckBy;
 
+    /**
+     * When a Group admin voided this order (V78, Phase 37-10 D-10). Null means not voided. A void is
+     * columns, not a status (CONTEXT discretion Q6): the order keeps the status it had, leaves the kitchen
+     * board, and its SALE is reversed in the ledger. Written once with {@link #voidedBy} and
+     * {@link #voidReason}; the database refuses a partial triple ({@code ck_orders_void_triple}).
+     */
+    @Column(name = "voided_at")
+    private OffsetDateTime voidedAt;
+
+    /** Who voided the order: the authenticated principal name (V78). */
+    @Column(name = "voided_by", length = 255)
+    private String voidedBy;
+
+    /** Why, as the Group admin wrote it, trimmed (V78). */
+    @Column(name = "void_reason", length = 500)
+    private String voidReason;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", length = 20)
     private PaymentStatus paymentStatus = PaymentStatus.NONE;
@@ -429,6 +446,35 @@ public class Order {
 
     public void setAllergyNoteAckBy(String allergyNoteAckBy) {
         this.allergyNoteAckBy = allergyNoteAckBy;
+    }
+
+    public OffsetDateTime getVoidedAt() {
+        return voidedAt;
+    }
+
+    public void setVoidedAt(OffsetDateTime voidedAt) {
+        this.voidedAt = voidedAt;
+    }
+
+    public String getVoidedBy() {
+        return voidedBy;
+    }
+
+    public void setVoidedBy(String voidedBy) {
+        this.voidedBy = voidedBy;
+    }
+
+    public String getVoidReason() {
+        return voidReason;
+    }
+
+    public void setVoidReason(String voidReason) {
+        this.voidReason = voidReason;
+    }
+
+    /** True once the order has been voided (Phase 37-10). */
+    public boolean isVoided() {
+        return voidedAt != null;
     }
 
     public void setItemCount(Integer itemCount) {

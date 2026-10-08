@@ -62,8 +62,13 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      *
      * <p>RLS still scopes every row to the tenant; the shop-level grant check is the
      * caller's ({@code OrderService.getKitchenBoard}).
+     *
+     * <p>Phase 37-10 (D-10): a VOIDED order is excluded. A void is columns, not a status, so a voided
+     * CONFIRMED order still has a kitchen status; without {@code VoidedAtIsNull} it would stay on the
+     * board as a ticket nobody should cook.
      */
-    Page<Order> findByShopIdAndStatusIn(UUID shopId, Collection<OrderStatus> statuses, Pageable pageable);
+    Page<Order> findByShopIdAndStatusInAndVoidedAtIsNull(UUID shopId, Collection<OrderStatus> statuses,
+                                                         Pageable pageable);
 
     /**
      * Re-read a known page of orders with their line items attached, in ONE query (#564).

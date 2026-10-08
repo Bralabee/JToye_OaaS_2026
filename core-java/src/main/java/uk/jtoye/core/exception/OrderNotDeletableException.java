@@ -12,7 +12,7 @@ import uk.jtoye.core.order.OrderStatus;
  *
  * <p>Maps to HTTP 409 via {@code GlobalExceptionHandler.handleOrderNotDeletable} with the stable type
  * {@code https://jtoye.uk/errors/order-not-deletable}, code {@code ORDER_NOT_DELETABLE}, and the
- * properties {@code status} and {@code orderNumber}.
+ * properties {@code orderStatus} and {@code orderNumber} ({@code status} stays the HTTP code).
  */
 public class OrderNotDeletableException extends RuntimeException {
 

@@ -36,5 +36,9 @@ public interface FinancialTransactionMapper {
     @Mapping(target = "tenantId", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "reference", source = "description")
+    // Phase 37-10: the kind and the reversal link are decided by FinancialTransactionService
+    // (SALE with an order, MANUAL without; REVERSAL only through createReversal), never by a request.
+    @Mapping(target = "entryKind", ignore = true)
+    @Mapping(target = "reversesTransactionId", ignore = true)
     FinancialTransaction toEntity(CreateTransactionRequest request);
 }

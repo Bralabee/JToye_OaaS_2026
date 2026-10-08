@@ -35,27 +35,38 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
     Optional<FinancialTransaction> findOneByReference(String reference);
 
     /**
-     * Find the ledger row for a given order (Issue #81 BUG 3). Tenant-scoped via
-     * RLS; backed by the partial unique index {@code uq_fin_tx_tenant_order} so
-     * at most one order-linked row exists per settled order. Used as the
-     * service-layer idempotency fast-path in
-     * {@link FinancialTransactionService#createTransaction}.
+     * The order's ledger row of one kind (Issue #81 BUG 3; keyed by kind since Phase 37-10, D-10).
+     * Tenant-scoped via RLS; backed by the partial unique index {@code uq_fin_tx_tenant_order}
+     * {@code (tenant_id, order_id, entry_kind)}, so at most one row of each kind exists per order.
+     *
+     * <p>The unkeyed {@code findByOrderId} this replaces is deleted on purpose: once an order is voided it
+     * has two rows, its SALE and its REVERSAL, and a single-row lookup by order alone throws
+     * {@code IncorrectResultSizeDataAccessException}. Used as the idempotency fast path and race backstop of
+     * {@link FinancialTransactionService#createTransaction} (SALE) and
+     * {@link FinancialTransactionService#createReversal} (REVERSAL).
      */
-    Optional<FinancialTransaction> findByOrderId(UUID orderId);
-
-    /** RED skeleton (37-10 Task 3): delegates to the unkeyed finder until GREEN derives it. */
-    default Optional<FinancialTransaction> findByOrderIdAndEntryKind(UUID orderId, EntryKind entryKind) {
-        return findByOrderId(orderId);
-    }
+    Optional<FinancialTransaction> findByOrderIdAndEntryKind(UUID orderId, EntryKind entryKind);
 
     /**
      * CQ-02 scalar aggregate for the current tenant — totalRevenue (sum of
-     * positive amounts), totalExpenses (sum of absolute-valued negatives),
+     * positive amounts, LESS every REVERSAL), totalExpenses (sum of absolute-valued
+     * negatives that are not reversals),
      * totalVat (VAT math mirrored exactly from
      * {@link FinancialTransaction#calculateVatAmount()} via the HMRC VAT
      * fraction method — {@code (amount * rate) / (100 + rate)}, multiply BEFORE
      * divide, integer division truncating toward zero, same as
      * {@link VatCalculator#vatFromGross(long, VatRate)}), and transactionCount.
+     *
+     * <p><b>Revenue is SALE minus REVERSAL (Phase 37-10, D-10).</b> A void writes a
+     * REVERSAL row carrying the sale's amount negated. Under the sign rule alone that
+     * negative would be reported as an EXPENSE, so the voided sale would stay in revenue
+     * and the books would show a cost nobody incurred. A REVERSAL therefore adds its
+     * (negative) amount to revenue and nothing to expenses. SALE and MANUAL rows keep the
+     * sign rule exactly as before: positive is revenue, negative is an expense. Rows with
+     * no reversal produce byte-identical output to the pre-V78 query, which the 1k golden
+     * ({@code FinancialSummaryGoldenFileTest}) pins. VAT is unchanged: a reversal carries
+     * the sale's rate, so its fraction-method VAT is the sale's VAT negated and the
+     * voided sale's VAT nets out.
      *
      * <p>No explicit WHERE clause — RLS appends
      * {@code tenant_id = current_tenant_id()} at the SQL rewriter stage,
@@ -72,8 +83,14 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
      */
     @Query("""
             SELECT new uk.jtoye.core.finance.dto.FinancialAggregateRow(
-              COALESCE(SUM(CASE WHEN ft.amountPennies > 0 THEN ft.amountPennies ELSE 0L END), 0L),
-              COALESCE(SUM(CASE WHEN ft.amountPennies < 0 THEN -ft.amountPennies ELSE 0L END), 0L),
+              COALESCE(SUM(CASE
+                WHEN ft.entryKind = uk.jtoye.core.finance.EntryKind.REVERSAL THEN ft.amountPennies
+                WHEN ft.amountPennies > 0 THEN ft.amountPennies
+                ELSE 0L END), 0L),
+              COALESCE(SUM(CASE
+                WHEN ft.entryKind = uk.jtoye.core.finance.EntryKind.REVERSAL THEN 0L
+                WHEN ft.amountPennies < 0 THEN -ft.amountPennies
+                ELSE 0L END), 0L),
               COALESCE(SUM(CASE
                 WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.REDUCED  THEN (ft.amountPennies * 5)  / 105
                 WHEN ft.vatRate = uk.jtoye.core.finance.VatRate.STANDARD THEN (ft.amountPennies * 20) / 120

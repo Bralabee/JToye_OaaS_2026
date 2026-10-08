@@ -12,7 +12,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.finance.dto.FinancialAggregateRow;
 import uk.jtoye.core.finance.dto.FinancialSummaryDto;
@@ -102,7 +101,10 @@ class FinancialTransactionServiceTest {
                     transaction.getVatRate(),
                     transaction.calculateVatAmount(),
                     transaction.getReference(),
-                    transaction.getCreatedAt()
+                    transaction.getCreatedAt(),
+                    transaction.getEntryKind(),
+                    transaction.getOrderId(),
+                    transaction.getReversesTransactionId()
             );
         });
 
@@ -530,10 +532,9 @@ class FinancialTransactionServiceTest {
                 EntryKind.SALE, null);
         when(financialTransactionRepository.findByOrderIdAndEntryKind(orderId, EntryKind.SALE))
                 .thenReturn(Optional.of(sale));
-        // What the unkeyed finder does once the order has a SALE and a REVERSAL: two rows for a single
-        // Optional, which Spring Data reports as an IncorrectResultSizeDataAccessException.
-        lenient().when(financialTransactionRepository.findByOrderId(orderId))
-                .thenThrow(new IncorrectResultSizeDataAccessException(1, 2));
+        // The unkeyed findByOrderId is deleted (GREEN): once the order has a SALE and a REVERSAL it was a
+        // two-row result for a single Optional (IncorrectResultSizeDataAccessException, the RED evidence).
+        // Any lookup other than the SALE-keyed one returns empty here, and the never().save below reds.
 
         FinancialTransactionDto result = assertDoesNotThrow(
                 () -> financialTransactionService.createTransaction(

@@ -24,6 +24,7 @@ import uk.jtoye.core.order.dto.CreateOrderRequest;
 import uk.jtoye.core.order.dto.OrderDetailDto;
 import uk.jtoye.core.order.dto.OrderDto;
 import uk.jtoye.core.order.dto.UpdateOrderRequest;
+import uk.jtoye.core.order.dto.VoidOrderRequest;
 
 import java.util.UUID;
 
@@ -258,8 +259,8 @@ public class OrderController {
             @ApiResponse(responseCode = "403", description = "Caller lacks SHOP_MANAGER on the order's shop"),
             @ApiResponse(responseCode = "404", description = "Order not found"),
             @ApiResponse(responseCode = "409", description = "The order is CONFIRMED or later "
-                    + "(type https://jtoye.uk/errors/order-not-deletable, code ORDER_NOT_DELETABLE, with its "
-                    + "status and orderNumber): void it instead")
+                    + "(type https://jtoye.uk/errors/order-not-deletable, code ORDER_NOT_DELETABLE, with "
+                    + "orderStatus and orderNumber): void it instead")
     })
     public ResponseEntity<Void> deleteOrder(@PathVariable UUID id) {
         orderService.deleteOrder(id);
@@ -428,5 +429,45 @@ public class OrderController {
     })
     public ResponseEntity<OrderDetailDto> acknowledgeAllergyNote(@PathVariable UUID id) {
         return ResponseEntity.ok(orderService.acknowledgeAllergyNote(id));
+    }
+
+    /**
+     * Void an order (Phase 37-10, D-10, UXT-018).
+     * POST /orders/{id}/void
+     *
+     * <p>Agent-readiness contract: idempotent by construction, so no Idempotency-Key is needed — the same
+     * reason again returns the existing void, and a different reason is a typed 409. Errors are typed RFC
+     * 7807. No MCP tool in this plan: a void is a Group-admin decision about the shop's own books, recorded
+     * against the person who made it; MCP order tools are scoped to create and read (recorded for 37-B).
+     */
+    @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // same scope as every other order mutation (AI-02)
+    @PostMapping("/{id}/void")
+    @Operation(summary = "Void an order",
+            description = "Takes a CONFIRMED-or-later order out of the books without deleting it. Group admins only. "
+                    + "The order keeps its status and stays readable, records who voided it, when and why "
+                    + "(voidedBy, voidedAt, voidReason), and leaves the kitchen board. If the order has a SALE in "
+                    + "the ledger, one REVERSAL (the sale's amount negated, same VAT rate) is written in the same "
+                    + "transaction, so revenue nets to zero for the order. Idempotent: the same reason again "
+                    + "returns the existing void. A DRAFT or PENDING order is deleted instead.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Voided, or already voided with the same reason: the order detail carrying "
+                            + "voidedAt, voidedBy and voidReason"),
+            @ApiResponse(responseCode = "400",
+                    description = "The reason is missing, blank or longer than 500 characters"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid bearer token"),
+            @ApiResponse(responseCode = "403",
+                    description = "Caller lacks the orders:write scope, or is not a Group admin "
+                            + "(errors/shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "Order not found"),
+            @ApiResponse(responseCode = "409",
+                    description = "Already voided with a different reason (type https://jtoye.uk/errors/"
+                            + "order-already-voided, code ORDER_ALREADY_VOIDED, with voidedBy and voidedAt); or "
+                            + "the order is DRAFT or PENDING (type https://jtoye.uk/errors/order-not-voidable, "
+                            + "code ORDER_NOT_VOIDABLE): delete it instead; or two first voids raced")
+    })
+    public ResponseEntity<OrderDetailDto> voidOrder(@PathVariable UUID id,
+                                                    @Valid @RequestBody VoidOrderRequest request) {
+        return ResponseEntity.ok(orderService.voidOrder(id, request.reason()));
     }
 }

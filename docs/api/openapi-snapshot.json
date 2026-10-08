@@ -1530,7 +1530,26 @@
           "description" : {
             "type" : "string"
           },
+          "entryKind" : {
+            "description" : "What the row is (Phase 37-10): SALE (an order's settlement), REVERSAL (takes a voided order's SALE back out; negative, and not an expense), or MANUAL (no order; positive is revenue, negative an expense).",
+            "enum" : [
+              "SALE",
+              "REVERSAL",
+              "MANUAL"
+            ],
+            "type" : "string"
+          },
           "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "orderId" : {
+            "description" : "The order this row belongs to; null for a MANUAL row.",
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "reversesTransactionId" : {
+            "description" : "For a REVERSAL, the id of the SALE it reverses; null otherwise.",
             "format" : "uuid",
             "type" : "string"
           },
@@ -2357,6 +2376,19 @@
           "updatedAt" : {
             "format" : "date-time",
             "type" : "string"
+          },
+          "voidReason" : {
+            "description" : "Why the order was voided; null unless voided.",
+            "type" : "string"
+          },
+          "voidedAt" : {
+            "description" : "When a Group admin voided this order; null unless voided. A voided order keeps its status.",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "voidedBy" : {
+            "description" : "Who voided the order (the authenticated principal name); null unless voided.",
+            "type" : "string"
           }
         },
         "type" : "object"
@@ -2497,6 +2529,19 @@
               "STANDARD",
               "EXEMPT"
             ],
+            "type" : "string"
+          },
+          "voidReason" : {
+            "description" : "Why the order was voided. Absent unless voided.",
+            "type" : "string"
+          },
+          "voidedAt" : {
+            "description" : "When a Group admin voided this order. Absent unless voided; a voided order keeps its status.",
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "voidedBy" : {
+            "description" : "Who voided the order (the authenticated principal name). Absent unless voided.",
             "type" : "string"
           }
         },
@@ -5216,6 +5261,22 @@
             "type" : "string"
           }
         },
+        "type" : "object"
+      },
+      "VoidOrderRequest" : {
+        "description" : "Why the order is being voided.",
+        "properties" : {
+          "reason" : {
+            "description" : "Why the order is being voided, e.g. \"Rang it up twice\". Required, at most 500 characters. Repeating a void with the same reason returns the existing void.",
+            "example" : "Customer cancelled at the counter",
+            "maxLength" : 500,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        },
+        "required" : [
+          "reason"
+        ],
         "type" : "object"
       },
       "WebhookDeliveryView" : {
@@ -7981,7 +8042,7 @@
                 }
               }
             },
-            "description" : "The order is CONFIRMED or later (type https://jtoye.uk/errors/order-not-deletable, code ORDER_NOT_DELETABLE, with its status and orderNumber): void it instead"
+            "description" : "The order is CONFIRMED or later (type https://jtoye.uk/errors/order-not-deletable, code ORDER_NOT_DELETABLE, with orderStatus and orderNumber): void it instead"
           }
         },
         "security" : [
@@ -8666,6 +8727,104 @@
           }
         ],
         "summary" : "Submit order",
+        "tags" : [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}/void" : {
+      "post" : {
+        "description" : "Takes a CONFIRMED-or-later order out of the books without deleting it. Group admins only. The order keeps its status and stays readable, records who voided it, when and why (voidedBy, voidedAt, voidReason), and leaves the kitchen board. If the order has a SALE in the ledger, one REVERSAL (the sale's amount negated, same VAT rate) is written in the same transaction, so revenue nets to zero for the order. Idempotent: the same reason again returns the existing void. A DRAFT or PENDING order is deleted instead.",
+        "operationId" : "voidOrder",
+        "parameters" : [
+          {
+            "in" : "path",
+            "name" : "id",
+            "required" : true,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VoidOrderRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OrderDetailDto"
+                }
+              }
+            },
+            "description" : "Voided, or already voided with the same reason: the order detail carrying voidedAt, voidedBy and voidReason"
+          },
+          "400" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The reason is missing, blank or longer than 500 characters"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Missing or invalid bearer token"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks the orders:write scope, or is not a Group admin (errors/shop-access-denied)"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Already voided with a different reason (type https://jtoye.uk/errors/order-already-voided, code ORDER_ALREADY_VOIDED, with voidedBy and voidedAt); or the order is DRAFT or PENDING (type https://jtoye.uk/errors/order-not-voidable, code ORDER_NOT_VOIDABLE): delete it instead; or two first voids raced"
+          }
+        },
+        "security" : [
+          {
+            "bearer-jwt" : [ ]
+          }
+        ],
+        "summary" : "Void an order",
         "tags" : [
           "Orders"
         ]
