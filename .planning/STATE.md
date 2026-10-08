@@ -625,7 +625,7 @@ Next: **Phase 28 (Security Triage + the Dev/Prod Boundary) — not started, not 
 > **Corrected the same day.** This block first named `#461` beside `#453` as awaiting a decision.
 > **Wrong** — the owner made it on 2026-08-02 and it is quoted verbatim in the issue body: the
 > payment request goes to the buyer's **verified telephone number**, or the social channel they
-> engaged on; pay-on-collection is not permitted. What blocks #461 is a four-link dependency chain —
+> engaged on; cash at fulfilment is not permitted (the owner's "pay on collection" means the link; clarified 2026-10-05). What blocks #461 is a four-link dependency chain —
 > capture → **verify** → channel → Stripe keys — and the second link does not exist: no
 > `phone_verified` column in any migration, no OTP, no flow, while `emailVerified` resolves to four
 > files. **The platform verifies email and does not verify phone, and the design routes on phone.**

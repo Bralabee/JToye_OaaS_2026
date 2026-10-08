@@ -416,6 +416,12 @@ These carry the **open** v2.3 milestone to a first paying tenant. Cohort framing
 `docs/analysis/BUSINESS_MODEL_DECISION_GUIDE.md`: **Cohort A (takeaway) is the go-to-market**;
 Cohort B (catering) runs as discovery in parallel under #428 and gates no phase here.
 
+> **Business alignment (2026-10-05; owner decisions D-B1/D-B6/D-B9/D-B27 ruled the same day):**
+> [`BUSINESS-ALIGNMENT-2026-10.md`](BUSINESS-ALIGNMENT-2026-10.md) maps ten product requirements from
+> the business research (swarm simulations + unit economics) onto Phases 29, 30, 31.1, 32, 33 and 37,
+> naming what is already covered, what the gap is, and a fail-capable acceptance test for each.
+> Read it before planning any of those phases.
+
 > **Every success criterion below must be capable of FAILING on the tree as it stands on
 > 2026-08-01.** Where a criterion is already satisfied it is not a criterion — that is this repo's
 > Proof Standard #1 and the reason ~22 unfalsifiable criteria were found in Phase 26.
@@ -613,7 +619,7 @@ mock. This is the phase that turns a working product into a business.
 
 | # | Maps to | Note |
 |---|---|---|
-| **#461** | **PAY-04 — see below** | **P1.** UX-5: orders complete with **no payment**, and pay-on-collection must be replaced by channel-issued payment links |
+| **#461** | **PAY-04 — see below** | **P1.** UX-5: orders complete with **no payment**, and cash at fulfilment must be replaced by channel-issued payment links |
 | **#462** | **PAY-04** | **P2.** UX-6: password signups have no second factor and **no verified contact channel**. Moved here from Phase 33 the same day: the verified-contact half is the address #461 sends to |
 | **#108** | PAY-03 | [P3-6] missing outbound-call timeouts (Stripe/SMTP/axios/S3) and dead email breaker config. A hung Stripe call is a money-path failure, not general hygiene |
 
@@ -627,6 +633,14 @@ and simply not collect, leaving the vendor with produced stock and no payment �
 link is issued automatically to the buyer's **verified telephone number**, or the social channel they
 engaged on, so the order is paid before production.
 
+> **Vocabulary, clarified by the owner 2026-10-05.** In the owner's usage, *"pay on delivery /
+> collection"* means exactly this link: the buyer is sent a payment link and pays by **bank transfer
+> or any payment method the platform integrates**, before service. What is banned is **cash exchanged
+> at the point of fulfilment**, the fallback the code labelled `"Cash on Delivery"` until 2026-09-02
+> (INT-9 renamed it `"Unpaid"`: `PublicStorefrontService:1186-1194`). Older text (here, in #461, in STATE) that says
+> "pay-on-collection is not permitted" means that cash handover, never the link. Policy in one line:
+> **the consumer pays, by link, before service.**
+
   7. **A payment request reaches a verified telephone number, and an unpaid order cannot be
      produced.** Falsifiable on the current tree in four independent places, which is the point —
      what blocks #461 is a dependency chain, not a decision: (a) `Customer.phone` is
@@ -636,8 +650,8 @@ engaged on, so the order is paid before production.
      `CustomerJwtVerifier`, so the platform verifies email and not phone **while the design routes on
      phone** (this is #462, and it is why #462 moved into this phase); (c) `WhatsAppSmsChannel` exists
      but `WhatsAppProperties.enabled` defaults **false** and Phase 22's inbound parser is incomplete
-     (#208 — a deferral now on the critical path); (d) `PublicStorefrontService:508-521` deliberately
-     falls back to cash-on-delivery when no provider is configured, which is what makes the policy
+     (#208 — a deferral now on the critical path); (d) `PublicStorefrontService:1186-1194` deliberately
+     falls back to an unpaid order (the label `"Unpaid"` replaced `"Cash on Delivery"` on 2026-09-02) when no provider is configured, which is what makes the policy
      violable and must be removed or gated deliberately, not left as a silent default. The link must
      be single-use and expiring — it is a bearer credential. (PAY-04)
 
