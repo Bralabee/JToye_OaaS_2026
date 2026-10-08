@@ -321,3 +321,52 @@ describe("api-client interceptors — 429 Retry-After", () => {
     expect(adapter).toHaveBeenCalledTimes(2)
   })
 })
+
+/**
+ * D-08 (37-06). Every shop/group refusal is the same typed 403
+ * (`https://jtoye.uk/errors/shop-access-denied`). The interceptor tells the
+ * dashboard shell about it with a window event, so the shell can re-read staff/me
+ * and show the no-access page when nothing is left. The request still rejects: the
+ * page that made it keeps its own refusal handling.
+ */
+describe("shop-access-denied signal (D-08)", () => {
+  function rejectWith(status: number, type: string | undefined) {
+    adapter.mockImplementation((config: unknown) => {
+      const e = err(status, config)
+      if (type) e.response.data = { type, status }
+      return Promise.reject(e)
+    })
+  }
+
+  it("dispatches the event on a shop-access-denied 403, and still rejects", async () => {
+    const seen = jest.fn()
+    window.addEventListener("jtoye:shop-access-denied", seen)
+    try {
+      rejectWith(403, "https://jtoye.uk/errors/shop-access-denied")
+      await expect(apiClient.get("/api/v1/orders")).rejects.toMatchObject({
+        response: { status: 403 },
+      })
+      expect(seen).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener("jtoye:shop-access-denied", seen)
+    }
+  })
+
+  it("does not dispatch it for any other refusal (control)", async () => {
+    const seen = jest.fn()
+    window.addEventListener("jtoye:shop-access-denied", seen)
+    try {
+      rejectWith(403, "https://jtoye.uk/errors/insufficient-scope")
+      await expect(apiClient.get("/api/v1/orders")).rejects.toMatchObject({
+        response: { status: 403 },
+      })
+      rejectWith(404, "https://jtoye.uk/errors/shop-access-denied")
+      await expect(apiClient.get("/api/v1/orders")).rejects.toMatchObject({
+        response: { status: 404 },
+      })
+      expect(seen).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener("jtoye:shop-access-denied", seen)
+    }
+  })
+})
