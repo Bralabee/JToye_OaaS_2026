@@ -138,3 +138,17 @@ regexTarget = "line"
 regexes = [
   '''dsar_access_completed request=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b''',
 ]
+
+# ---- Phase 37 fixture (plan 37-08, 2026-10-08) -------------------------------
+# `EmailNotificationServiceStaffInviteTest.LINK` is the emailed invite link in its
+# 37-08 shape, `{base}#token={tenantId}.{token}`. The `token=` key followed by a
+# UUID trips `generic-api-key` on gitleaks 8.30.1. The value is a fixture: the
+# tenant id is a literal UUID chosen for the test and the token decodes to
+# "CheckOnlyThisIsATestTokenThatIsLong". ONE exact value, matched on the secret.
+[[allowlists]]
+description = "Phase 37-08 test-fixture invite link (a literal tenant id in the fragment, not a credential)"
+condition = "OR"
+regexTarget = "secret"
+regexes = [
+  '''^6f318039-1f48-40f2-b7a0-1132ce4bb369\.?$''',
+]
