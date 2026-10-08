@@ -116,6 +116,11 @@ public class FinancialTransactionService {
         return financialTransactionMapper.toDto(transaction);
     }
 
+    /** RED skeleton (37-10 Task 3): writes nothing until GREEN. */
+    public FinancialTransactionDto createReversal(FinancialTransaction sale, String reference) {
+        return null;
+    }
+
     /**
      * Get financial transaction by ID (tenant-scoped).
      * NO CACHING - financial data is compliance-sensitive.

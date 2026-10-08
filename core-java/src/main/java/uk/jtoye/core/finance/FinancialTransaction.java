@@ -65,6 +65,14 @@ public class FinancialTransaction {
     @Column(name = "order_id")
     private UUID orderId;
 
+    // RED skeleton (37-10 Task 3): compile-only members so the failing tests build. Transient until
+    // V78 adds the columns; the GREEN commit maps them.
+    @Transient
+    private EntryKind entryKind;
+
+    @Transient
+    private UUID reversesTransactionId;
+
     // Constructors
 
     public FinancialTransaction() {
@@ -124,6 +132,22 @@ public class FinancialTransaction {
 
     public void setOrderId(UUID orderId) {
         this.orderId = orderId;
+    }
+
+    public EntryKind getEntryKind() {
+        return entryKind;
+    }
+
+    public void setEntryKind(EntryKind entryKind) {
+        this.entryKind = entryKind;
+    }
+
+    public UUID getReversesTransactionId() {
+        return reversesTransactionId;
+    }
+
+    public void setReversesTransactionId(UUID reversesTransactionId) {
+        this.reversesTransactionId = reversesTransactionId;
     }
 
     /**

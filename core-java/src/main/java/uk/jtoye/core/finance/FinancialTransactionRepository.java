@@ -43,6 +43,11 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
      */
     Optional<FinancialTransaction> findByOrderId(UUID orderId);
 
+    /** RED skeleton (37-10 Task 3): delegates to the unkeyed finder until GREEN derives it. */
+    default Optional<FinancialTransaction> findByOrderIdAndEntryKind(UUID orderId, EntryKind entryKind) {
+        return findByOrderId(orderId);
+    }
+
     /**
      * CQ-02 scalar aggregate for the current tenant — totalRevenue (sum of
      * positive amounts), totalExpenses (sum of absolute-valued negatives),

@@ -10,10 +10,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
@@ -31,7 +33,9 @@ import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
 import uk.jtoye.core.testsupport.StrictScopingGuard;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -39,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
  * Phase 37-10 (D-10, RWO-018 / UXT-018, P0): an order the books depend on can no longer be deleted.
@@ -84,6 +89,10 @@ class OrderVoidIntegrationTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000371010");
     private static final String SHOP_SLUG = "shop-37-10-void";
     private static final String NOT_DELETABLE_TYPE = "https://jtoye.uk/errors/order-not-deletable";
+    private static final String ALREADY_VOIDED_TYPE = "https://jtoye.uk/errors/order-already-voided";
+    private static final String NOT_VOIDABLE_TYPE = "https://jtoye.uk/errors/order-not-voidable";
+    /** The Group admin who voids, by JWT subject: the void records who did it. */
+    private static final String ADMIN_SUB = "3710a0a0-0000-4000-8000-000000000001";
 
     private UUID shopId;
     private Object bootedStrictScoping;
@@ -192,6 +201,228 @@ class OrderVoidIntegrationTest {
         assertThat(orderExists(orderId)).isTrue();
     }
 
+    // ==================================================================
+    // Task 3 (D-10, owner ruling 2026-10-08: entry-kind): an order the books depend on is VOIDED, not
+    // deleted. The order stays, records who voided it, when and why, and its sale is taken back out
+    // of the ledger by a REVERSAL row in the same transaction.
+    // ==================================================================
+
+    @Test
+    @DisplayName("D-10 void: a Group admin voids a COMPLETED order with a reason; the order still reads 200 with who, when and why, the ledger gains exactly one REVERSAL of its SALE, and revenue drops by the sale while expenses do not move")
+    void completedOrder_voidedByGroupAdmin_reversesTheSale() throws Exception {
+        UUID orderId = seedOrder(OrderStatus.COMPLETED);
+        String orderNumber = orderNumber(orderId);
+        UUID saleId = seedSaleRow(orderId, orderNumber);
+        JsonNode before = summary();
+
+        MvcResult voided = voidOrder(orderId, "{\"reason\":\"Test order\"}", adminJwt(ADMIN_SUB));
+        String text = responseText(voided);
+        JsonNode body = json(voided, 200);
+        assertThat(body.path("voidReason").asString()).as(text).isEqualTo("Test order");
+        assertThat(body.path("voidedBy").asString()).as(text).isEqualTo(ADMIN_SUB);
+        assertThat(body.path("voidedAt").asString()).as(text).isNotBlank();
+        assertThat(body.path("status").asString()).as("a void is not a status (CONTEXT Q6): " + text)
+                .isEqualTo("COMPLETED");
+
+        // The order is kept and reads the void back.
+        MvcResult read = mockMvc.perform(get(orderUrl(orderId)).with(adminJwt())).andReturn();
+        JsonNode order = json(read, 200);
+        assertThat(order.path("voidReason").asString()).as(responseText(read)).isEqualTo("Test order");
+        assertThat(order.path("voidedBy").asString()).as(responseText(read)).isEqualTo(ADMIN_SUB);
+        assertThat(order.path("voidedAt").asString()).as(responseText(read)).isNotBlank();
+        assertThat(order.path("status").asString()).as(responseText(read)).isEqualTo("COMPLETED");
+
+        // Exactly one SALE and one REVERSAL for the order, and the reversal mirrors the sale.
+        List<Map<String, Object>> rows = ledgerRowsOf(orderId);
+        assertThat(rows).as("ledger rows of the order: " + rows).hasSize(2);
+        Map<String, Object> sale = rows.stream().filter(r -> "SALE".equals(r.get("entry_kind"))).findFirst()
+                .orElseThrow(() -> new AssertionError("no SALE row: " + rows));
+        Map<String, Object> reversal = rows.stream().filter(r -> "REVERSAL".equals(r.get("entry_kind"))).findFirst()
+                .orElseThrow(() -> new AssertionError("no REVERSAL row: " + rows));
+        assertThat(sale.get("id")).isEqualTo(saleId);
+        assertThat(((Number) reversal.get("amount_pennies")).longValue()).as(rows.toString()).isEqualTo(-1200L);
+        assertThat(reversal.get("vat_rate")).as("the reversal copies the sale's VAT rate").isEqualTo("STANDARD");
+        assertThat(reversal.get("reverses_transaction_id")).as("the reversal names its sale").isEqualTo(saleId);
+        assertThat(reversal.get("reference")).isEqualTo("Reversal of " + orderNumber);
+        assertThat(sumOfLedgerFor(orderId)).as("the order nets to zero in the ledger").isZero();
+
+        // Revenue is SALE minus REVERSAL; the reversal is not an expense.
+        JsonNode after = summary();
+        assertThat(after.path("totalRevenuePennies").asLong())
+                .as("revenue drops by the voided sale: before " + before + " after " + after)
+                .isEqualTo(before.path("totalRevenuePennies").asLong() - 1200L);
+        assertThat(after.path("totalExpensesPennies").asLong())
+                .as("a reversal is not an expense: before " + before + " after " + after)
+                .isEqualTo(before.path("totalExpensesPennies").asLong());
+        assertThat(after.path("netAmountPennies").asLong())
+                .isEqualTo(before.path("netAmountPennies").asLong() - 1200L);
+        assertThat(after.path("transactionCount").asLong())
+                .isEqualTo(before.path("transactionCount").asLong() + 1);
+
+        // Stored by content, not only rendered.
+        Map<String, Object> stored = orderVoidColumns(orderId);
+        assertThat(stored.get("void_reason")).isEqualTo("Test order");
+        assertThat(stored.get("voided_by")).isEqualTo(ADMIN_SUB);
+        assertThat(stored.get("voided_at")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("D-10 void is idempotent by construction: the same reason again is 200 with the FIRST void, and no second reversal is written")
+    void sameReasonAgain_returnsTheExistingVoid_andWritesNothing() throws Exception {
+        UUID orderId = seedOrder(OrderStatus.COMPLETED);
+        seedSaleRow(orderId, orderNumber(orderId));
+
+        JsonNode first = json(voidOrder(orderId, "{\"reason\":\"Rang it up twice\"}", adminJwt(ADMIN_SUB)), 200);
+        MvcResult again = voidOrder(orderId, "{\"reason\":\"Rang it up twice\"}", adminJwt());
+        JsonNode second = json(again, 200);
+
+        assertThat(second.path("voidedAt").asString()).as(responseText(again))
+                .isEqualTo(first.path("voidedAt").asString());
+        assertThat(second.path("voidedBy").asString()).as("the first voider stands: " + responseText(again))
+                .isEqualTo(ADMIN_SUB);
+        assertThat(ledgerRowsOf(orderId)).as("still one SALE and one REVERSAL").hasSize(2);
+    }
+
+    @Test
+    @DisplayName("D-10 void: a different reason on a voided order is a typed 409 order-already-voided naming who voided it and when; nothing changes")
+    void differentReason_isAlreadyVoided409() throws Exception {
+        UUID orderId = seedOrder(OrderStatus.COMPLETED);
+        seedSaleRow(orderId, orderNumber(orderId));
+        JsonNode first = json(voidOrder(orderId, "{\"reason\":\"Customer cancelled at the counter\"}",
+                adminJwt(ADMIN_SUB)), 200);
+
+        MvcResult refused = voidOrder(orderId, "{\"reason\":\"Something else\"}", adminJwt());
+        String text = responseText(refused);
+        JsonNode problem = json(refused, 409);
+        assertThat(problem.path("type").asString()).as(text).isEqualTo(ALREADY_VOIDED_TYPE);
+        assertThat(problem.path("code").asString()).as(text).isEqualTo("ORDER_ALREADY_VOIDED");
+        assertThat(problem.path("voidedBy").asString()).as(text).isEqualTo(ADMIN_SUB);
+        assertThat(problem.path("voidedAt").asString()).as(text).isEqualTo(first.path("voidedAt").asString());
+
+        assertThat(orderVoidColumns(orderId).get("void_reason")).isEqualTo("Customer cancelled at the counter");
+        assertThat(ledgerRowsOf(orderId)).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("D-10 void is Group-admin only: a SHOP_MANAGER of the order's own shop gets the shop-access 403 and nothing is written")
+    void shopManager_cannotVoid() throws Exception {
+        UUID orderId = seedOrder(OrderStatus.COMPLETED);
+        seedSaleRow(orderId, orderNumber(orderId));
+        UUID manager = UUID.randomUUID();
+        grantShopStaff(manager, shopId, "SHOP_MANAGER");
+        StrictScopingGuard.set(shopAccessService, true);
+
+        MvcResult refused = voidOrder(orderId, "{\"reason\":\"Test order\"}", staffJwt(manager));
+        String text = responseText(refused);
+        JsonNode problem = json(refused, 403);
+        assertThat(problem.path("type").asString()).as(text).isEqualTo("https://jtoye.uk/errors/shop-access-denied");
+        assertThat(orderVoidColumns(orderId).get("voided_at")).as("nothing written").isNull();
+        assertThat(ledgerRowsOf(orderId)).as("no reversal").hasSize(1);
+    }
+
+    @ParameterizedTest(name = "reason body {0} -> 400")
+    @ValueSource(strings = {"{\"reason\":\"\"}", "{\"reason\":\"   \"}", "{}"})
+    @DisplayName("D-10 void requires a reason: a blank or missing reason is a 400 and nothing is written")
+    void blankReason_is400(String body) throws Exception {
+        UUID orderId = seedOrder(OrderStatus.COMPLETED);
+        seedSaleRow(orderId, orderNumber(orderId));
+
+        MvcResult refused = voidOrder(orderId, body, adminJwt());
+        assertThat(refused.getResponse().getStatus()).as(responseText(refused)).isEqualTo(400);
+        assertThat(orderVoidColumns(orderId).get("voided_at")).as("nothing written").isNull();
+        assertThat(ledgerRowsOf(orderId)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("D-10 void: a reason longer than the 500-character column is a 400, not a database error")
+    void overlongReason_is400() throws Exception {
+        UUID orderId = seedOrder(OrderStatus.COMPLETED);
+
+        MvcResult refused = voidOrder(orderId, "{\"reason\":\"" + "x".repeat(501) + "\"}", adminJwt());
+        assertThat(refused.getResponse().getStatus()).as(responseText(refused)).isEqualTo(400);
+        assertThat(orderVoidColumns(orderId).get("voided_at")).isNull();
+    }
+
+    @Test
+    @DisplayName("D-10 void: a CONFIRMED order with no SALE is voided with no ledger row, and it leaves the kitchen board while an unvoided CONFIRMED order stays on it")
+    void confirmedOrderWithoutSale_voids_andLeavesTheKitchenBoard() throws Exception {
+        UUID voidedId = seedOrder(OrderStatus.CONFIRMED);
+        UUID keptId = seedOrder(OrderStatus.CONFIRMED);
+
+        MvcResult voided = voidOrder(voidedId, "{\"reason\":\"Duplicate ticket\"}", adminJwt(ADMIN_SUB));
+        JsonNode body = json(voided, 200);
+        assertThat(body.path("voidReason").asString()).as(responseText(voided)).isEqualTo("Duplicate ticket");
+        assertThat(ledgerRowsOf(voidedId)).as("no sale, so no reversal").isEmpty();
+
+        List<String> onBoard = kitchenBoardIds();
+        assertThat(onBoard).as("positive control: the unvoided CONFIRMED order is on the board").contains(keptId.toString());
+        assertThat(onBoard).as("the voided order is not").doesNotContain(voidedId.toString());
+    }
+
+    @ParameterizedTest(name = "{0} -> 409 order-not-voidable")
+    @EnumSource(value = OrderStatus.class, names = {"DRAFT", "PENDING"})
+    @DisplayName("D-10: a DRAFT or PENDING order is not voided (delete it instead): typed 409, nothing written")
+    void draftOrPending_isNotVoidable(OrderStatus status) throws Exception {
+        UUID orderId = seedOrder(status);
+
+        MvcResult refused = voidOrder(orderId, "{\"reason\":\"Test order\"}", adminJwt());
+        String text = responseText(refused);
+        JsonNode problem = json(refused, 409);
+        assertThat(problem.path("type").asString()).as(text).isEqualTo(NOT_VOIDABLE_TYPE);
+        assertThat(problem.path("code").asString()).as(text).isEqualTo("ORDER_NOT_VOIDABLE");
+        assertThat(orderVoidColumns(orderId).get("voided_at")).isNull();
+    }
+
+    @Test
+    @DisplayName("AI-02: void needs the orders:write scope like every other order mutation")
+    void voidWithoutWriteScope_is403() throws Exception {
+        UUID orderId = seedOrder(OrderStatus.COMPLETED);
+        RequestPostProcessor noScope = jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
+                        .claim("tenant_id", TENANT_ID.toString()))
+                .authorities(new SimpleGrantedAuthority("ROLE_admin"));
+
+        MvcResult refused = voidOrder(orderId, "{\"reason\":\"Test order\"}", noScope);
+        assertThat(refused.getResponse().getStatus()).as(responseText(refused)).isEqualTo(403);
+        assertThat(orderVoidColumns(orderId).get("voided_at")).isNull();
+    }
+
+    private MvcResult voidOrder(UUID orderId, String body, RequestPostProcessor auth) throws Exception {
+        return mockMvc.perform(post(orderUrl(orderId) + "/void").with(auth)
+                .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn();
+    }
+
+    private JsonNode summary() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/financial-transactions/summary").with(adminJwt())).andReturn();
+        return json(result, 200);
+    }
+
+    private List<String> kitchenBoardIds() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/orders/kitchen").param("shopId", shopId.toString())
+                .param("size", "100").with(adminJwt())).andReturn();
+        JsonNode page = json(result, 200);
+        List<String> ids = new ArrayList<>();
+        page.path("content").forEach(n -> ids.add(n.path("id").asString()));
+        return ids;
+    }
+
+    private List<Map<String, Object>> ledgerRowsOf(UUID orderId) {
+        return inTenant(() -> jdbcTemplate.queryForList(
+                "SELECT * FROM financial_transactions WHERE order_id = ? ORDER BY created_at, id", orderId));
+    }
+
+    private long sumOfLedgerFor(UUID orderId) {
+        Long n = inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(amount_pennies), 0) FROM financial_transactions WHERE order_id = ?",
+                Long.class, orderId));
+        return n == null ? Long.MIN_VALUE : n;
+    }
+
+    private Map<String, Object> orderVoidColumns(UUID orderId) {
+        return inTenant(() -> jdbcTemplate.queryForMap(
+                "SELECT to_jsonb(o) ->> 'voided_at' AS voided_at, to_jsonb(o) ->> 'voided_by' AS voided_by, "
+                        + "to_jsonb(o) ->> 'void_reason' AS void_reason FROM orders o WHERE o.id = ?", orderId));
+    }
+
     // ---- fixtures ----
 
     private UUID seedOrder(OrderStatus status) {
@@ -206,11 +437,13 @@ class OrderVoidIntegrationTest {
         return id;
     }
 
-    private void seedSaleRow(UUID orderId, String orderNumber) {
+    private UUID seedSaleRow(UUID orderId, String orderNumber) {
+        UUID id = UUID.randomUUID();
         inTenant(() -> jdbcTemplate.update(
                 "INSERT INTO financial_transactions (id, tenant_id, amount_pennies, vat_rate, reference, order_id) "
                         + "VALUES (?, ?, 1200, 'STANDARD', ?, ?)",
-                UUID.randomUUID(), TENANT_ID, "Order " + orderNumber, orderId));
+                id, TENANT_ID, "Order " + orderNumber, orderId));
+        return id;
     }
 
     private String orderNumber(UUID orderId) {
@@ -274,7 +507,12 @@ class OrderVoidIntegrationTest {
 
     /** A realm admin of the tenant (implicit GROUP_ADMIN) with the order-write scope. */
     private static RequestPostProcessor adminJwt() {
-        return jwt().jwt(j -> j.subject(UUID.randomUUID().toString()).claim("tenant_id", TENANT_ID.toString()))
+        return adminJwt(UUID.randomUUID().toString());
+    }
+
+    /** The same, with a known subject, for asserting who a void records. */
+    private static RequestPostProcessor adminJwt(String subject) {
+        return jwt().jwt(j -> j.subject(subject).claim("tenant_id", TENANT_ID.toString()))
                 .authorities(new SimpleGrantedAuthority("ROLE_admin"),
                         new SimpleGrantedAuthority("SCOPE_orders:write"));
     }
