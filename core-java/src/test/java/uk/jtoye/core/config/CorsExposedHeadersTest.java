@@ -218,6 +218,21 @@ class CorsExposedHeadersTest {
     }
 
     @Test
+    @DisplayName("37-11: the finance CSV export's filename and scope headers are exposed to script, even when the operator list omits them")
+    void financeExportHeadersAreInTheFloor() throws Exception {
+        // The dashboard calls the API cross-origin (NEXT_PUBLIC_API_URL, no rewrite), so without an exposure
+        // the browser hides Content-Disposition and X-Finance-Scope: the download cannot be named for the
+        // scope it holds, and the scope it was filtered on cannot be read back. Built from the shipped
+        // operator-tunable list WITHOUT the two names, so only the floor can supply them.
+        CorsFilter operatorList = buildFilter(
+                "Authorization,Content-Type,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,"
+                        + "X-RateLimit-Reset,X-Search-Interpretation");
+
+        assertThat(exposedNames(actualRequest(operatorList))).contains("content-disposition", "x-finance-scope");
+        assertThat(exposedNames(preflightRequest(operatorList))).contains("content-disposition", "x-finance-scope");
+    }
+
+    @Test
     @DisplayName("33-08: an actual cross-origin response exposes X-Search-Interpretation to script")
     void actualResponseExposesSearchInterpretationHeader() throws Exception {
         // The yml assertion above proves the CONFIGURED name. This proves the filter emits it —

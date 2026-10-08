@@ -98,6 +98,7 @@ class FinanceShopScopeIntegrationTest {
     private UUID shopA;
     private UUID shopB;
     private String shopAName;
+    private String shopASlug;
     private UUID managerOfA;
     private UUID staffOfA;
     private UUID operatorGroupAdmin;
@@ -119,7 +120,8 @@ class FinanceShopScopeIntegrationTest {
         jdbcTemplate.update("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now())",
                 tenantId, "37-11 Finance Tenant " + suffix);
         shopAName = "37-11 Shop A " + suffix;
-        shopA = seedShop("shop-a-3711-" + suffix, shopAName);
+        shopASlug = "shop-a-3711-" + suffix;
+        shopA = seedShop(shopASlug, shopAName);
         shopB = seedShop("shop-b-3711-" + suffix, "37-11 Shop B " + suffix);
 
         managerOfA = UUID.randomUUID();
@@ -313,6 +315,130 @@ class FinanceShopScopeIntegrationTest {
         JsonNode body = json(summary, 200);
         assertThat(body.path("totalRevenuePennies").asLong()).as(responseText(summary)).isZero();
         assertThat(body.path("totalExpensesPennies").asLong()).as(responseText(summary)).isZero();
+    }
+
+    // ==================================================================
+    // Task 3 (roadmap SC-2: figures can be exported): GET /financial-transactions/export.csv returns
+    // exactly the scope and range the summary shows, behind the same gate.
+    // ==================================================================
+
+    private static final String EXPORT = "/api/v1/financial-transactions/export.csv";
+    private static final String CSV_HEADER = "date,reference,order_number,entry_kind,amount,vat_rate,vat_amount,shop";
+    private static final java.util.regex.Pattern UK_DATE_TIME =
+            java.util.regex.Pattern.compile("\\d{2}/\\d{2}/\\d{4} \\d{2}:\\d{2}");
+
+    @Test
+    @DisplayName("SC-2: the manager of shop A exports shop A's rows in range as CSV: header row, UK dates, entry kinds, signed amounts and VAT, a voided order as SALE + REVERSAL, and a filename naming the scope")
+    void managerOfA_exportsOwnShopCsv() throws Exception {
+        seedThreeShopLedger();
+        UUID voided = seedOrder(shopA, "READY", 1500L);
+        assertThat(perform(post("/api/v1/orders/" + voided + "/complete"), adminJwt()).getResponse().getStatus())
+                .isEqualTo(200);
+        MvcResult voidResult = perform(post("/api/v1/orders/" + voided + "/void")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Test order\"}"), adminJwt());
+        assertThat(voidResult.getResponse().getStatus()).as(responseText(voidResult)).isEqualTo(200);
+        String voidedNumber = orderNumberOf(voided);
+        String today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/London")).toString();
+
+        MvcResult result = perform(get(EXPORT).param("shopId", shopA.toString())
+                .param("from", today).param("to", today), userJwt(managerOfA));
+        String text = responseText(result);
+        assertThat(result.getResponse().getStatus()).as(text).isEqualTo(200);
+        assertThat(result.getResponse().getContentType()).as(text).startsWith("text/csv");
+        assertThat(result.getResponse().getHeader("Content-Disposition")).as(text)
+                .isEqualTo("attachment; filename=\"jtoye-finance-" + shopASlug + "-" + today + "-" + today + ".csv\"");
+        assertThat(result.getResponse().getHeader("X-Finance-Scope")).as(text)
+                .isEqualTo("shopId=" + shopA + "; from=" + today + "; to=" + today);
+
+        List<String> lines = csvLines(result);
+        assertThat(lines.get(0)).as("header row: " + text).isEqualTo(CSV_HEADER);
+        List<String> rows = lines.subList(1, lines.size());
+        assertThat(rows).as("shop A only: the A sale, and the voided order's SALE and REVERSAL: " + text).hasSize(3);
+        assertThat(rows).as("no shop B or MANUAL row: " + text)
+                .noneMatch(r -> r.contains("37-11 Shop B") || r.contains("Cash adjustment"));
+        for (String row : rows) {
+            assertThat(row.substring(0, 16)).as("UK date-time first: " + row).matches(UK_DATE_TIME);
+            assertThat(row).as("every row names shop A: " + row).endsWith("," + shopAName);
+        }
+        assertThat(rows).as(text).anyMatch(r -> r.endsWith(",Order " + voidedNumber + "," + voidedNumber
+                + ",SALE,15.00,STANDARD,2.50," + shopAName));
+        assertThat(rows).as(text).anyMatch(r -> r.endsWith(",Reversal of " + voidedNumber + "," + voidedNumber
+                + ",REVERSAL,-15.00,STANDARD,-2.50," + shopAName));
+    }
+
+    @Test
+    @DisplayName("SC-2: a range with no rows exports a header-only CSV (200), never an error")
+    void emptyRange_exportsHeaderOnly() throws Exception {
+        seedThreeShopLedger();
+
+        MvcResult result = perform(get(EXPORT).param("shopId", shopA.toString())
+                .param("from", "2020-01-01").param("to", "2020-01-31"), userJwt(managerOfA));
+        assertThat(result.getResponse().getStatus()).as(responseText(result)).isEqualTo(200);
+        assertThat(result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8))
+                .as("exactly the header row").isEqualTo(CSV_HEADER + "\r\n");
+        assertThat(result.getResponse().getHeader("Content-Disposition"))
+                .isEqualTo("attachment; filename=\"jtoye-finance-" + shopASlug + "-2020-01-01-2020-01-31.csv\"");
+    }
+
+    @Test
+    @DisplayName("T-37-30: the export has the summary's gate: manager of A refused shop B and the tenant view; STAFF refused")
+    void export_isGatedLikeTheSummary() throws Exception {
+        seedThreeShopLedger();
+
+        MvcResult otherShop = perform(get(EXPORT).param("shopId", shopB.toString()), userJwt(managerOfA));
+        assertThat(json(otherShop, 403).path("type").asString()).as(responseText(otherShop))
+                .isEqualTo(SHOP_ACCESS_DENIED);
+        MvcResult tenantWide = perform(get(EXPORT), userJwt(managerOfA));
+        assertThat(json(tenantWide, 403).path("type").asString()).as(responseText(tenantWide))
+                .isEqualTo(SHOP_ACCESS_DENIED);
+        MvcResult staff = perform(get(EXPORT).param("shopId", shopA.toString()), userJwt(staffOfA));
+        assertThat(json(staff, 403).path("type").asString()).as(responseText(staff)).isEqualTo(SHOP_ACCESS_DENIED);
+    }
+
+    @Test
+    @DisplayName("T-37-31: the Group admin's tenant-wide export includes rows with no shop, and a cell starting = + - @ is written with a leading apostrophe")
+    void tenantWideExport_neutralisesFormulaCells() throws Exception {
+        seedThreeShopLedger();
+        String hyperlink = "=HYPERLINK(\"http://evil.example\",\"click\")";
+        for (String reference : List.of(hyperlink, "+1+2", "-3+4", "@SUM(A1:A9)")) {
+            inTenant(() -> jdbcTemplate.update(
+                    "INSERT INTO financial_transactions (id, tenant_id, created_at, amount_pennies, vat_rate, "
+                            + "reference, entry_kind) VALUES (?, ?, now(), 100, 'ZERO', ?, 'MANUAL')",
+                    UUID.randomUUID(), tenantId, reference));
+        }
+
+        MvcResult result = perform(get(EXPORT), adminJwt());
+        String text = responseText(result);
+        assertThat(result.getResponse().getStatus()).as(text).isEqualTo(200);
+        String today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/London")).toString();
+        assertThat(result.getResponse().getHeader("Content-Disposition")).as(text)
+                .isEqualTo("attachment; filename=\"jtoye-finance-all-shops-start-" + today + ".csv\"");
+        assertThat(result.getResponse().getHeader("X-Finance-Scope")).as(text)
+                .isEqualTo("shopId=all-shops; from=open; to=open");
+
+        List<String> rows = csvLines(result).subList(1, csvLines(result).size());
+        assertThat(rows).as("every row of the tenant: 3 standard + 4 formula rows: " + text).hasSize(7);
+        assertThat(rows).as("the MANUAL row is exported, with an empty order number and shop: " + text)
+                .anyMatch(r -> r.endsWith(",Cash adjustment,,MANUAL,7.00,ZERO,0.00,"));
+        // Exact text, RFC 4180-quoted because the neutralised cell contains quotes and a comma.
+        assertThat(rows).as(text).anyMatch(r -> r.contains(
+                ",\"'=HYPERLINK(\"\"http://evil.example\"\",\"\"click\"\")\",,MANUAL,1.00,ZERO,0.00,"));
+        assertThat(rows).as(text).anyMatch(r -> r.contains(",'+1+2,,MANUAL,1.00,ZERO,0.00,"));
+        assertThat(rows).as(text).anyMatch(r -> r.contains(",'-3+4,,MANUAL,1.00,ZERO,0.00,"));
+        assertThat(rows).as(text).anyMatch(r -> r.contains(",'@SUM(A1:A9),,MANUAL,1.00,ZERO,0.00,"));
+        assertThat(rows).as("no cell begins with a bare formula character: " + text)
+                .noneMatch(r -> r.contains(",=") || r.contains(",+") || r.contains(",@"));
+    }
+
+    private List<String> csvLines(MvcResult result) throws Exception {
+        String body = result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(body).as("RFC 4180 lines end CRLF: " + body).endsWith("\r\n");
+        return List.of(body.split("\r\n"));
+    }
+
+    private String orderNumberOf(UUID orderId) {
+        return inTenant(() -> jdbcTemplate.queryForObject(
+                "SELECT order_number FROM orders WHERE id = ?", String.class, orderId));
     }
 
     // ------------------------------------------------------------------
