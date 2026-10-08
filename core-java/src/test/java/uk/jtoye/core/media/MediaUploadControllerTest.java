@@ -25,6 +25,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.JwtRolesAndScopesConverter;
 import uk.jtoye.core.storage.StorageService;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 
 import java.util.UUID;
 
@@ -79,6 +80,8 @@ class MediaUploadControllerTest {
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000240");
     private UUID productId;
+    /** The uploading vendor: an explicit OPERATOR SHOP_MANAGER on the product's shop (37-03, D-06). */
+    private UUID operatorSub;
 
     @BeforeEach
     void setUp() {
@@ -94,16 +97,22 @@ class MediaUploadControllerTest {
                         + "VALUES (?, ?, now(), ?, ?, ?, 0, 1000, 0, true, false, ?, 0, 0)",
                 productId, TENANT, "SKU-MEDIA-" + productId.toString().substring(0, 8), "Jollof Rice",
                 "rice, tomato", shopId);
+        // SHOP_MANAGER is what the image-write gate requires (ProductService: VSA-02 image write).
+        operatorSub = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, TENANT, operatorSub, shopId, "SHOP_MANAGER",
+                "media-operator-" + operatorSub + "@example.com");
         // Quarantine PUT stubbed — no live object store; the real detectContentType still runs.
         Mockito.doReturn("http://store/quarantine-object")
                 .when(storageService).putBytes(ArgumentMatchers.anyString(), ArgumentMatchers.any(), ArgumentMatchers.anyString());
     }
 
-    // Operator-shaped token (UUID subject + tenant claim + catalog:write) — under strict-scoping OFF
-    // a UUID-subject caller is a day-one implicit GROUP_ADMIN, so the SHOP_MANAGER shop gate passes.
-    private static RequestPostProcessor operatorJwt() {
+    // Operator-shaped token (UUID subject + tenant claim + catalog:write) for the subject seeded with
+    // an explicit SHOP_MANAGER grant on the product's shop, so the shop gate passes under
+    // strict-scoping ON (D-06) as well as OFF — no reliance on the day-one implicit GROUP_ADMIN.
+    private RequestPostProcessor operatorJwt() {
+        UUID sub = operatorSub;
         return jwt()
-                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                .jwt(j -> j.subject(sub.toString())
                         .claim("tenant_id", TENANT.toString())
                         .claim("scope", "catalog:read catalog:write"))
                 .authorities(new JwtRolesAndScopesConverter());

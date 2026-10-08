@@ -24,6 +24,7 @@ import uk.jtoye.core.security.JwtRolesAndScopesConverter;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.sql.Connection;
@@ -138,6 +139,13 @@ class MediaRedriveControllerTest {
     private UUID tenantB;
     private UUID shopA;
     private UUID productA;
+    /**
+     * The vendor who re-drives shopA's uploads: an explicit OPERATOR SHOP_MANAGER on shopA (the
+     * role the re-drive gate requires), seeded per test. Phase 37-03 (D-06): before this the
+     * arms used a fresh random subject and relied on the implicit tenant-wide GROUP_ADMIN an
+     * ungranted user held under strict-scoping OFF.
+     */
+    private UUID managerA;
     private int seq;
 
     @BeforeEach
@@ -153,6 +161,9 @@ class MediaRedriveControllerTest {
         }
         shopA = seedShop(tenantA);
         productA = seedProduct(tenantA, shopA);
+        managerA = UUID.randomUUID();
+        ShopGrants.grantOperator(su, tenantA, managerA, shopA, "SHOP_MANAGER",
+                "vendor-" + managerA + "@example.com");
     }
 
     /** The value the context booted with: restored after every test, never a literal (37-02). */
@@ -179,7 +190,7 @@ class MediaRedriveControllerTest {
         UUID asset = seedAsset(tenantA, productA, "FAILED", retained(), null, 0, "dispatch stalled");
 
         mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
-                        .header("Idempotency-Key", key()).with(vendorJwt(tenantA)))
+                        .header("Idempotency-Key", key()).with(vendorJwt(tenantA, managerA)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.assetId").value(asset.toString()))
                 .andExpect(jsonPath("$.status").value("PENDING"));
@@ -204,10 +215,10 @@ class MediaRedriveControllerTest {
         String key = key();
 
         MvcResult first = mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
-                        .header("Idempotency-Key", key).with(vendorJwt(tenantA)))
+                        .header("Idempotency-Key", key).with(vendorJwt(tenantA, managerA)))
                 .andExpect(status().isAccepted()).andReturn();
         MvcResult second = mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
-                        .header("Idempotency-Key", key).with(vendorJwt(tenantA)))
+                        .header("Idempotency-Key", key).with(vendorJwt(tenantA, managerA)))
                 .andExpect(status().isAccepted()).andReturn();
 
         assertThat(assetIdOf(second)).as("the replay echoes the ORIGINAL response body")
@@ -307,7 +318,7 @@ class MediaRedriveControllerTest {
 
     private MvcResult reprocess(UUID assetId) throws Exception {
         return mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", assetId)
-                .header("Idempotency-Key", key()).with(vendorJwt(tenantA))).andReturn();
+                .header("Idempotency-Key", key()).with(vendorJwt(tenantA, managerA))).andReturn();
     }
 
     // --- AC-4.6 -------------------------------------------------------------
@@ -319,7 +330,7 @@ class MediaRedriveControllerTest {
         UUID asset = seedAsset(tenantA, productA, "FAILED", retained(), null, MAX_ATTEMPTS, "still broken");
 
         mockMvc.perform(post("/api/v1/media/{assetId}/reprocess", asset)
-                        .header("Idempotency-Key", key()).with(vendorJwt(tenantA)))
+                        .header("Idempotency-Key", key()).with(vendorJwt(tenantA, managerA)))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/media-redrive-budget-exhausted"))

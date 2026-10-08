@@ -16,6 +16,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 
 import java.util.UUID;
 
@@ -86,9 +87,10 @@ class ScopedCatalogAccessIntegrationTest {
     // any authenticated principal whose sub is not a UUID (parseSub -> null -> typed 403). The
     // pre-Phase-23 default MockMvc subject ("user") tripped that gate BEFORE the scope contract
     // under test could be exercised. The scope-gate semantics are unchanged: the write gate is
-    // driven by the `scope` claim via JwtRolesAndScopesConverter, and under strict-scoping OFF a
-    // UUID-subject caller is a day-one implicit GROUP_ADMIN, so the shop gate never masks the
-    // scope assertion.
+    // driven by the `scope` claim via JwtRolesAndScopesConverter. The one arm that must also pass
+    // the shop gate (operatorScopeNotForbiddenOnCreate) is given that access with an explicit
+    // OPERATOR grant (Phase 37-03), so the shop gate never masks the scope assertion in either
+    // strict-scoping mode.
 
     /** Read-only machine token: scope=catalog:read, no realm role. */
     private static RequestPostProcessor readOnlyJwt() {
@@ -100,9 +102,9 @@ class ScopedCatalogAccessIntegrationTest {
     }
 
     /** Operator-shaped token: scope=catalog:read catalog:write (as core-api grants by default). */
-    private static RequestPostProcessor operatorJwt() {
+    private static RequestPostProcessor operatorJwt(UUID sub) {
         return jwt()
-                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                .jwt(j -> j.subject(sub.toString())
                         .claim("tenant_id", TENANT_A.toString())
                         .claim("scope", "catalog:read catalog:write"))
                 .authorities(new JwtRolesAndScopesConverter());
@@ -148,8 +150,15 @@ class ScopedCatalogAccessIntegrationTest {
     @Test
     void operatorScopeNotForbiddenOnCreate() throws Exception {
         // The gate must pass; downstream status (201/other) is irrelevant — assert only != 403.
+        // Phase 37-03 (D-06): VALID_PRODUCT_JSON names no shop, so this is a tenant-wide product
+        // write, which only a GROUP_ADMIN may make (ShopAccessService.require(null, …)). The caller
+        // states that access with an explicit OPERATOR tenant-wide GROUP_ADMIN grant instead of
+        // relying on the implicit one an ungranted user held under strict-scoping OFF.
+        UUID operator = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbcTemplate, TENANT_A, operator, null, "GROUP_ADMIN",
+                "catalog-operator-" + operator + "@example.com");
         mockMvc.perform(post("/api/v1/products")
-                        .with(operatorJwt())
+                        .with(operatorJwt(operator))
                         .contentType("application/json")
                         .content(VALID_PRODUCT_JSON))
                 .andExpect(not403());

@@ -23,6 +23,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.JwtRolesAndScopesConverter;
 import uk.jtoye.core.storage.StorageService;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 
 import java.util.UUID;
 
@@ -77,6 +78,8 @@ class MediaUploadIdempotencyTest {
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000241");
     private UUID productId;
+    /** The uploading vendor: an explicit OPERATOR SHOP_MANAGER on the product's shop (37-03, D-06). */
+    private UUID operatorSub;
 
     @BeforeEach
     void setUp() {
@@ -92,13 +95,19 @@ class MediaUploadIdempotencyTest {
                         + "VALUES (?, ?, now(), ?, ?, ?, 0, 1000, 0, true, false, ?, 0, 0)",
                 productId, TENANT, "SKU-IDEM-" + productId.toString().substring(0, 8), "Suya",
                 "beef, spice", shopId);
+        // SHOP_MANAGER is what the image-write gate requires (ProductService: VSA-02 image write).
+        operatorSub = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, TENANT, operatorSub, shopId, "SHOP_MANAGER",
+                "media-operator-" + operatorSub + "@example.com");
         Mockito.doReturn("http://store/quarantine-object")
                 .when(storageService).putBytes(ArgumentMatchers.anyString(), ArgumentMatchers.any(), ArgumentMatchers.anyString());
     }
 
-    private static RequestPostProcessor operatorJwt() {
+    /** The vendor seeded in {@link #setUp} — an explicit grant, not the day-one implicit GROUP_ADMIN. */
+    private RequestPostProcessor operatorJwt() {
+        UUID sub = operatorSub;
         return jwt()
-                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                .jwt(j -> j.subject(sub.toString())
                         .claim("tenant_id", TENANT.toString())
                         .claim("scope", "catalog:read catalog:write"))
                 .authorities(new JwtRolesAndScopesConverter());

@@ -19,6 +19,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.JwtRolesAndScopesConverter;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 
 import java.util.UUID;
 
@@ -154,7 +155,17 @@ class TypedNotFoundBodyIntegrationTest {
     @Test
     @DisplayName("GET /shops/{unknown} carries a typed problem body")
     void getShop_unknownId_isTypedProblem() throws Exception {
-        assertTypedNotFound(get(path("shops")).with(vendor(seedTenant())));
+        // Phase 37-03 (D-06): GET /shops/{id} requires STAFF on that shop, so a SCOPED caller is
+        // refused (403) for any shop it holds no grant on, absent or not — only a tenant-wide
+        // GROUP_ADMIN reaches the shop lookup that answers 404 (ShopAccessService
+        // .requireShopInCallerTenant). The caller states that access with an explicit OPERATOR
+        // tenant-wide GROUP_ADMIN grant instead of the implicit one an ungranted user held under
+        // strict-scoping OFF.
+        UUID tenant = seedTenant();
+        UUID groupAdmin = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenant, groupAdmin, null, "GROUP_ADMIN",
+                "group-admin-" + groupAdmin + "@example.com");
+        assertTypedNotFound(get(path("shops")).with(vendor(tenant, groupAdmin)));
     }
 
     @Test
@@ -223,7 +234,11 @@ class TypedNotFoundBodyIntegrationTest {
 
     /** A day-one vendor: UUID subject (the 23-08 fail-closed gate) + tenant claim, no realm role. */
     private static RequestPostProcessor vendor(UUID tenant) {
-        return jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
+        return vendor(tenant, UUID.randomUUID());
+    }
+
+    private static RequestPostProcessor vendor(UUID tenant, UUID subject) {
+        return jwt().jwt(j -> j.subject(subject.toString())
                 .claim("tenant_id", tenant.toString()));
     }
 

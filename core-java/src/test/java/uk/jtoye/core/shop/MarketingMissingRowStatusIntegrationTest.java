@@ -20,6 +20,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -158,11 +159,12 @@ class MarketingMissingRowStatusIntegrationTest {
     void deletePromotion_repeated_is204Then404() throws Exception {
         UUID tenant = seedTenant();
         UUID shop = seedShop(tenant);
+        UUID manager = grantManager(tenant, shop);
         UUID promotion = seedPromotion(tenant, shop);
 
-        mockMvc.perform(delete("/api/v1/promotions/" + promotion).with(vendor(tenant)))
+        mockMvc.perform(delete("/api/v1/promotions/" + promotion).with(vendor(tenant, manager)))
                 .andExpect(status().isNoContent());
-        mockMvc.perform(delete("/api/v1/promotions/" + promotion).with(vendor(tenant)))
+        mockMvc.perform(delete("/api/v1/promotions/" + promotion).with(vendor(tenant, manager)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value(NOT_FOUND_TYPE));
     }
@@ -172,11 +174,12 @@ class MarketingMissingRowStatusIntegrationTest {
     void deleteAnnouncement_repeated_is204Then404() throws Exception {
         UUID tenant = seedTenant();
         UUID shop = seedShop(tenant);
+        UUID manager = grantManager(tenant, shop);
         UUID announcement = seedAnnouncement(tenant, shop);
 
-        mockMvc.perform(delete("/api/v1/announcements/" + announcement).with(vendor(tenant)))
+        mockMvc.perform(delete("/api/v1/announcements/" + announcement).with(vendor(tenant, manager)))
                 .andExpect(status().isNoContent());
-        mockMvc.perform(delete("/api/v1/announcements/" + announcement).with(vendor(tenant)))
+        mockMvc.perform(delete("/api/v1/announcements/" + announcement).with(vendor(tenant, manager)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value(NOT_FOUND_TYPE));
     }
@@ -190,10 +193,11 @@ class MarketingMissingRowStatusIntegrationTest {
     void deletePromotion_rowVanishesMidTransaction_isTyped404() throws Exception {
         UUID tenant = seedTenant();
         UUID shop = seedShop(tenant);
+        UUID manager = grantManager(tenant, shop);
         UUID promotion = seedPromotion(tenant, shop);
         deleteFromUnderneath("shop_promotions", promotion);
 
-        mockMvc.perform(delete("/api/v1/promotions/" + promotion).with(vendor(tenant)))
+        mockMvc.perform(delete("/api/v1/promotions/" + promotion).with(vendor(tenant, manager)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value(NOT_FOUND_TYPE));
 
@@ -207,11 +211,12 @@ class MarketingMissingRowStatusIntegrationTest {
     void updatePromotion_rowVanishesMidTransaction_isTyped404() throws Exception {
         UUID tenant = seedTenant();
         UUID shop = seedShop(tenant);
+        UUID manager = grantManager(tenant, shop);
         UUID promotion = seedPromotion(tenant, shop);
         deleteFromUnderneath("shop_promotions", promotion);
 
         mockMvc.perform(put("/api/v1/promotions/" + promotion)
-                        .with(vendor(tenant))
+                        .with(vendor(tenant, manager))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(promotionJson(shop)))
                 .andExpect(status().isNotFound())
@@ -225,10 +230,11 @@ class MarketingMissingRowStatusIntegrationTest {
     void deleteAnnouncement_rowVanishesMidTransaction_isTyped404() throws Exception {
         UUID tenant = seedTenant();
         UUID shop = seedShop(tenant);
+        UUID manager = grantManager(tenant, shop);
         UUID announcement = seedAnnouncement(tenant, shop);
         deleteFromUnderneath("shop_announcements", announcement);
 
-        mockMvc.perform(delete("/api/v1/announcements/" + announcement).with(vendor(tenant)))
+        mockMvc.perform(delete("/api/v1/announcements/" + announcement).with(vendor(tenant, manager)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.type").value(NOT_FOUND_TYPE));
 
@@ -240,11 +246,12 @@ class MarketingMissingRowStatusIntegrationTest {
     void updateAnnouncement_rowVanishesMidTransaction_isTyped404() throws Exception {
         UUID tenant = seedTenant();
         UUID shop = seedShop(tenant);
+        UUID manager = grantManager(tenant, shop);
         UUID announcement = seedAnnouncement(tenant, shop);
         deleteFromUnderneath("shop_announcements", announcement);
 
         mockMvc.perform(put("/api/v1/announcements/" + announcement)
-                        .with(vendor(tenant))
+                        .with(vendor(tenant, manager))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(announcementJson(shop)))
                 .andExpect(status().isNotFound())
@@ -262,9 +269,10 @@ class MarketingMissingRowStatusIntegrationTest {
     void deletePromotion_liveRow_stillSucceeds() throws Exception {
         UUID tenant = seedTenant();
         UUID shop = seedShop(tenant);
+        UUID manager = grantManager(tenant, shop);
         UUID promotion = seedPromotion(tenant, shop);
 
-        mockMvc.perform(delete("/api/v1/promotions/" + promotion).with(vendor(tenant)))
+        mockMvc.perform(delete("/api/v1/promotions/" + promotion).with(vendor(tenant, manager)))
                 .andExpect(status().isNoContent());
 
         assertThat(rowExists("shop_promotions", promotion)).isFalse();
@@ -275,10 +283,11 @@ class MarketingMissingRowStatusIntegrationTest {
     void updateAnnouncement_liveRow_stillSucceeds() throws Exception {
         UUID tenant = seedTenant();
         UUID shop = seedShop(tenant);
+        UUID manager = grantManager(tenant, shop);
         UUID announcement = seedAnnouncement(tenant, shop);
 
         mockMvc.perform(put("/api/v1/announcements/" + announcement)
-                        .with(vendor(tenant))
+                        .with(vendor(tenant, manager))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(announcementJson(shop)))
                 .andExpect(status().isOk())
@@ -315,10 +324,30 @@ class MarketingMissingRowStatusIntegrationTest {
         }).when(shopAccessService).require(any(UUID.class), any(ShopRole.class));
     }
 
-    /** A day-one vendor: UUID subject (the 23-08 fail-closed gate) + tenant claim, no realm role. */
+    /**
+     * An ungranted vendor: UUID subject (the 23-08 fail-closed gate) + tenant claim, no realm role.
+     * Used only by the absent-id arms, which answer 404 before any shop gate runs.
+     */
     private static RequestPostProcessor vendor(UUID tenant) {
-        return jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
+        return vendor(tenant, UUID.randomUUID());
+    }
+
+    private static RequestPostProcessor vendor(UUID tenant, UUID subject) {
+        return jwt().jwt(j -> j.subject(subject.toString())
                 .claim("tenant_id", tenant.toString()));
+    }
+
+    /**
+     * Phase 37-03 (D-06): a vendor with an explicit OPERATOR SHOP_MANAGER grant on {@code shop} —
+     * the role every promotion/announcement update and delete requires. Arms that must get PAST
+     * the shop gate (the race arms, the repeat deletes and the controls) use it, instead of the
+     * implicit tenant-wide GROUP_ADMIN an ungranted user held under strict-scoping OFF.
+     */
+    private UUID grantManager(UUID tenant, UUID shop) {
+        UUID manager = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenant, manager, shop, "SHOP_MANAGER",
+                "manager-" + manager + "@example.com");
+        return manager;
     }
 
     private UUID seedTenant() {
