@@ -32,6 +32,7 @@ import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -129,7 +130,70 @@ public class StaffInviteService {
         return new IssueResult(StaffInviteDto.from(created, now), true);
     }
 
+    /**
+     * Every invitation of the business, newest first, each with its status computed now. Group admin
+     * only. Cancelled, re-sent and accepted invitations stay listed: the row is the record of who
+     * invited whom, and the client decides what to show.
+     */
+    @Transactional(readOnly = true)
+    public List<StaffInviteDto> list() {
+        shopAccessService.requireGroupAdmin();
+        UUID tenantId = currentTenantId();
+        OffsetDateTime now = now();
+        return staffInviteRepository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
+                .map(invite -> StaffInviteDto.from(invite, now))
+                .toList();
+    }
+
+    /**
+     * Cancel an invitation: its link stops working. Group admin only. Repeatable: cancelling a
+     * cancelled invitation changes nothing (the first who and when are kept), and an accepted one is
+     * final, so cancelling it changes nothing either.
+     *
+     * @throws ResourceNotFoundException 404 when no invitation of this business has that id
+     */
+    public void cancel(UUID inviteId) {
+        shopAccessService.requireGroupAdmin();
+        UUID caller = requireIssuer();
+        StaffInvite invite = findInTenant(inviteId);
+        if (invite.getAcceptedAt() != null || invite.getRevokedAt() != null) {
+            return;
+        }
+        invite.revoke(caller, now());
+        log.info("event=staff_invite_cancelled invite={} tenant={}", invite.getId(), invite.getTenantId());
+    }
+
+    /**
+     * Send an invitation again: the old row is revoked (its link dies) and a new invitation for the same
+     * address, shop and role is issued and emailed after commit, in one transaction. Group admin only.
+     * Deliberately not idempotent: every call kills the previous link.
+     *
+     * @throws ResourceNotFoundException 404 when no invitation of this business has that id, or its shop
+     *                                   is no longer a shop of this business
+     * @throws IllegalArgumentException  400 when the invitation was already accepted
+     */
+    public StaffInviteDto resend(UUID inviteId) {
+        shopAccessService.requireGroupAdmin();
+        UUID issuer = requireIssuer();
+        StaffInvite old = findInTenant(inviteId);
+        if (old.getAcceptedAt() != null) {
+            throw new IllegalArgumentException("This invitation has already been accepted, so it cannot be sent again");
+        }
+        Shop shop = validateGrant(old.getTenantId(), old.getShopId(), old.getRole());
+        OffsetDateTime now = now();
+        old.revoke(issuer, now);
+        StaffInvite fresh = issueFresh(old.getTenantId(), old.getEmailNormalised(), shop, old.getRole(), issuer, now);
+        log.info("event=staff_invite_resent old={} new={} tenant={}", old.getId(), fresh.getId(), old.getTenantId());
+        return StaffInviteDto.from(fresh, now);
+    }
+
     // ---- internals -------------------------------------------------------------------------------
+
+    /** The invitation by id, within the caller's business only; the same 404 for a foreign or unknown id. */
+    private StaffInvite findInTenant(UUID inviteId) {
+        return staffInviteRepository.findByIdAndTenantId(inviteId, currentTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException("Invitation not found"));
+    }
 
     /**
      * Revoke every live row for the triple, store a new digest, and email the link after commit. The
