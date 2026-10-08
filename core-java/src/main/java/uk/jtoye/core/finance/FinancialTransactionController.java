@@ -17,17 +17,15 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
-import uk.jtoye.core.exception.MissingTenantContextException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.finance.dto.FinanceTransactionPage;
 import uk.jtoye.core.finance.dto.FinancialSummaryDto;
 import uk.jtoye.core.finance.dto.FinancialTransactionDto;
-import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
-import uk.jtoye.core.shop.Shop;
-import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.shop.ShopService;
+import uk.jtoye.core.shop.dto.ShopDto;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -69,14 +67,14 @@ public class FinancialTransactionController {
 
     private final FinancialTransactionService financialTransactionService;
     private final ShopAccessService shopAccessService;
-    private final ShopRepository shopRepository;
+    private final ShopService shopService;
 
     public FinancialTransactionController(FinancialTransactionService financialTransactionService,
                                           ShopAccessService shopAccessService,
-                                          ShopRepository shopRepository) {
+                                          ShopService shopService) {
         this.financialTransactionService = financialTransactionService;
         this.shopAccessService = shopAccessService;
-        this.shopRepository = shopRepository;
+        this.shopService = shopService;
     }
 
     @GetMapping
@@ -204,8 +202,14 @@ public class FinancialTransactionController {
     /**
      * The gate and the scope in one place (Phase 37-11), so the summary, the list and the export cannot
      * disagree about who may read what. The gate runs FIRST: a refused caller learns nothing from a range
-     * error. With a shop: SHOP_MANAGER on it, and its name resolved under the caller's own tenant for the
-     * scope echo. Without: Group admin.
+     * error. With a shop: SHOP_MANAGER on it, and its name and slug resolved under the caller's own tenant
+     * for the scope echo and the export filename. Without: Group admin.
+     *
+     * <p>The shop is read through {@link ShopService#getShopById} (transactional, tenant-predicated), never a
+     * repository injected here: a repository call from a controller runs with no transaction, so
+     * TenantSetLocalAspect never pins the tenant GUC and FORCE RLS would hide an UNPUBLISHED shop, turning
+     * a manager's own shop into a 404 in production while every superuser test stayed green (issue #501;
+     * ControllerRepositoryInjectionGateTest).
      */
     FinanceScope authorise(UUID shopId, LocalDate from, LocalDate to) {
         if (shopId == null) {
@@ -213,9 +217,7 @@ public class FinancialTransactionController {
             return new FinanceScope(null, null, null, from, to);
         }
         shopAccessService.require(shopId, ShopRole.SHOP_MANAGER);
-        UUID tenantId = TenantContext.get()
-                .orElseThrow(() -> new MissingTenantContextException("Tenant context not set"));
-        Shop shop = shopRepository.findByIdAndTenantId(shopId, tenantId)
+        ShopDto shop = shopService.getShopById(shopId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
         return new FinanceScope(shopId, shop.getName(), shop.getSlug(), from, to);
     }
