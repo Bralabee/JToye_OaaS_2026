@@ -44,6 +44,9 @@ const DISALLOW = [
   "/shop/*/orders/",
   "/track",
   "/unsubscribe",
+  // 37-09: the staff-invitation accept page. Reached only from an emailed link whose
+  // token is in the fragment; it is a transaction, never a destination.
+  "/invite",
 ]
 
 export default function robots(): MetadataRoute.Robots {

@@ -46,6 +46,41 @@ describe("Security headers snapshot (regression guard)", () => {
     expect(snapshot).toMatchSnapshot()
   })
 
+  // 37-09 (T-37-24): the staff-invitation accept page sends no Referer at all. Two
+  // properties the snapshot alone cannot state: Next applies the LAST entry that sets
+  // a key for a path, so the /invite entry must come after the '/:path*' default;
+  // and its source must actually match the page's path, '/invite' itself (the token
+  // is in the fragment, so the path never grows a segment).
+  it("/invite gets Referrer-Policy no-referrer, after (so over) the default", async () => {
+    const mod: any = await import("../next.config.mjs")
+    const routes: Array<{ source: string; headers: Array<{ key: string; value: string }> }> =
+      await mod.default.headers()
+    const referrer = (r: (typeof routes)[number]) =>
+      r.headers.find((h) => h.key === "Referrer-Policy")?.value
+
+    const defaultIdx = routes.findIndex((r) => r.source === "/:path*")
+    const inviteIdx = routes.findIndex((r) => referrer(r) === "no-referrer")
+    expect(defaultIdx).toBeGreaterThanOrEqual(0)
+    expect(inviteIdx).toBeGreaterThan(defaultIdx)
+
+    // Next's own matcher (the compiled path-to-regexp it builds header rules with).
+    const { pathToRegexp } = jest.requireActual("next/dist/compiled/path-to-regexp") as {
+      pathToRegexp: (source: string, keys: unknown[], options: object) => RegExp
+    }
+    const matches = (path: string) => pathToRegexp(routes[inviteIdx].source, [], {}).test(path)
+    expect(matches("/invite")).toBe(true)
+    // Control: it is scoped to the invite page, not a prefix of other routes.
+    expect(matches("/invitex")).toBe(false)
+    expect(matches("/dashboard/staff")).toBe(false)
+
+    // The last entry setting Referrer-Policy for /invite is the no-referrer one.
+    const effective = routes
+      .filter((r) => pathToRegexp(r.source, [], {}).test("/invite") && referrer(r))
+      .map(referrer)
+      .pop()
+    expect(effective).toBe("no-referrer")
+  })
+
   it("CSP directive string matches snapshot (fixed nonce)", () => {
     const csp = buildCsp({
       nonce: "SNAPSHOT_NONCE",

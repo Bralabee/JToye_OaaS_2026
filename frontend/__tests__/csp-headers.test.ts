@@ -227,10 +227,13 @@ describe("next.config.mjs static security headers", () => {
     return mod.default.headers()
   }
 
-  it("returns a single route matching all paths", async () => {
+  // 37-09 added a second entry, '/invite/:path*' (Referrer-Policy no-referrer for the
+  // staff-invitation accept page). The default still comes FIRST and covers every
+  // path; the per-route override is asserted in header-snapshot.test.ts.
+  it("returns the all-paths default first, plus only the /invite override", async () => {
     const routes = await loadHeaders()
-    expect(routes).toHaveLength(1)
-    expect(routes[0].source).toBe("/:path*")
+    expect(routes.map((r: { source: string }) => r.source)).toEqual(["/:path*", "/invite/:path*"])
+    expect(routes[1].headers).toEqual([{ key: "Referrer-Policy", value: "no-referrer" }])
   })
 
   it("emits X-Content-Type-Options nosniff, Referrer-Policy, and Permissions-Policy", async () => {
