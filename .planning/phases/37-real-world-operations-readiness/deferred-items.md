@@ -126,3 +126,34 @@ where it must be resolved.
 - **GDPR residual (from 37-07, unchanged).** A cancelled or expired invitation keeps the
   invitee's address in `staff_invite.email_normalised` indefinitely; an accepted one keeps it
   too. Recorded for `/gsd-secure-phase`; not redesigned here.
+
+## 8. 37-09 invite UI: what binds 37-15 and the phase PR
+
+- **The route is `/invite`, and WINDOWS.md entry 21 is closed.** The page reads `#token=` once,
+  drops it with `history.replaceState`, and POSTs `{ref}` to `preview` and
+  `{ref, firstName, lastName, password}` to `accept`. `Referrer-Policy: no-referrer` is served on
+  `/invite/:path*` (measured on `next start` of this tree: `/invite` no-referrer, `/for-operators`
+  strict-origin-when-cross-origin), robots disallows `/invite`, and `scripts/gates/ssr-routes.conf`
+  declares it STATIC.
+- **`GET /api/v1/staff/me` now carries `businessName` (37-09 deviation, WINDOWS.md entry 24).** No
+  endpoint a staff member can read named the business, and the D-26 "You've joined {business}"
+  toast must come from server data. Additive (OpenAPI +7/-0). Until the 37-15 rebuild the running
+  core-java omits it and the toast reads "You've joined your new business." Re-check after the
+  rebuild with the live spec below.
+- **B3 can now name the business.** WINDOWS.md entry 18 (37-06: the no-access body says "your
+  business" because the session carries no name) has its data source now: `MyAccess.businessName`
+  from staff/me, which the no-access page's shell already fetches. Not changed here (37-06's
+  component, not in this plan's files); route to whichever plan next touches B3, or close it at the
+  phase PR.
+- **Live proof owed to 37-15** (WINDOWS.md entries 22 and 23): `e2e/staff-invite.spec.ts` (RED on the
+  pre-rebuild runtime: no "Invite someone" card; GREEN after the rebuild and the realm re-import of
+  entry 20), and the inverted `dashboard-interface-corrections.spec.ts` test 2.
+- **The invite form's 409 copy is ready but dormant.** UI-SPEC B1 maps a 409 on
+  `POST /api/v1/staff/invites` to "This email address already has a J'Toye account with another
+  business…", but 37-07's issue endpoint never answers 409 (the other-business check runs at
+  preview/accept, 37-08). The accept page shows that state from the preview's `accountState`. No
+  change made; recorded so nobody reads the form's 409 branch as server behaviour.
+- **Docs metrics (§1).** 37-09 adds jest `staff-invites.test.tsx` (13), `invite-client.test.tsx`
+  (23), `joined-toast.test.tsx` (6), one header test, and one Java IT method
+  (`StaffEffectiveAccessIntegrationTest`); one Playwright test. Full jest at 37-09: 200 suites / 2313
+  tests. Re-measure at the pre-PR step.

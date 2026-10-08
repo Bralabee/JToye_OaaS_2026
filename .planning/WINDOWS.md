@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 8
+open_count: 10
 waived_count: 0
-fixed_count: 13
-total_count: 21
-last_updated: 2026-10-08T14:40:06.592Z
+fixed_count: 14
+total_count: 24
+last_updated: 2026-10-08T16:22:20.362Z
 ---
 
 # Broken Windows Ledger
@@ -35,7 +35,10 @@ last_updated: 2026-10-08T14:40:06.592Z
 | 18 | 37 | deviation | frontend/components/dashboard/no-access-page.tsx |  | 37-06 B3 body says 'your business' where UI-SPEC copy has {business}: a person with no access cannot read any tenant record, and the session carries no business name | open |  | 2026-10-08T12:56:29.946Z |  |
 | 19 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java |  | 37-07 invitation email not yet sent through the running compose stack (Mailhog): V77 and /api/v1/staff/invites reach the shared runtime only at the 37-15 rebuild; proven by integration tests with a re-parsed MimeMessage | open |  | 2026-10-08T13:58:26.371Z |  |
 | 20 | 37 | unrun-verify | infra/keycloak/realm-export.template.json |  | 37-08 vendor-realm user profile (tenant_id admin-only) not yet on the shared compose Keycloak: needs kc.sh import --override true at the 37-15 rebuild, then the live chain (profile GET, accepted invitee keeps tenant_id, token claim, account-console edit refused). Proven on a throwaway Keycloak 24.0.5 only | open |  | 2026-10-08T14:40:02.180Z |  |
-| 21 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java |  | 37-08 moved the invite token from the URL path to the fragment ({base}#token={tenantId}.{token}) and the public API to POST preview/accept with the ref in the body; 37-09's /invite/[token] route, GET /{ref} and POST /{ref}/accept wording are superseded: the page must read location.hash and POST the ref | open |  | 2026-10-08T14:40:06.592Z |  |
+| 21 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java |  | 37-08 moved the invite token from the URL path to the fragment ({base}#token={tenantId}.{token}) and the public API to POST preview/accept with the ref in the body; 37-09's /invite/[token] route, GET /{ref} and POST /{ref}/accept wording are superseded: the page must read location.hash and POST the ref | fixed |  | 2026-10-08T14:40:06.592Z | 2026-10-08T16:22:20.362Z |
+| 22 | 37 | unrun-verify | frontend/e2e/staff-invite.spec.ts |  | 37-09 live invite journey listed only (1 test, @desktop-only): Staff-form invite, Mailhog link, origin allow-list and no /invite Referer, 375px overflow backstop, account + Keycloak login_hint sign-in, joined toast, 'Shop manager · {shop}' with an instrument arm, second visit unusable; live RED (pre-rebuild runtime has no invite card) and GREEN owed to 37-15 | open |  | 2026-10-08T16:22:20.043Z |  |
+| 23 | 37 | unrun-verify | frontend/e2e/dashboard-interface-corrections.spec.ts | 174 | 37-09 inverted test 2: it asserted zero invite buttons on the Staff page and now asserts exactly one 'Send invitation' in the 'Invite someone' region; not run, the shared runtime is rebuilt at 37-15 | open |  | 2026-10-08T16:22:20.149Z |  |
+| 24 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/security/access/dto/MyAccessDto.java |  | 37-09 added a nullable businessName to GET /api/v1/staff/me (additive, OpenAPI +7/-0): no endpoint a staff member can read named the business, and the D-26 joined toast must be built from server data; reaches the shared runtime only at the 37-15 rebuild (until then the toast says 'your new business') | open |  | 2026-10-08T16:22:20.257Z |  |
 
 ````json
 [
@@ -306,9 +309,48 @@ last_updated: 2026-10-08T14:40:06.592Z
     "file": "core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java",
     "line": null,
     "description": "37-08 moved the invite token from the URL path to the fragment ({base}#token={tenantId}.{token}) and the public API to POST preview/accept with the ref in the body; 37-09's /invite/[token] route, GET /{ref} and POST /{ref}/accept wording are superseded: the page must read location.hash and POST the ref",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-08T14:40:06.592Z",
+    "resolved_at": "2026-10-08T16:22:20.362Z",
+    "milestone": "v2.3"
+  },
+  {
+    "id": 22,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "frontend/e2e/staff-invite.spec.ts",
+    "line": null,
+    "description": "37-09 live invite journey listed only (1 test, @desktop-only): Staff-form invite, Mailhog link, origin allow-list and no /invite Referer, 375px overflow backstop, account + Keycloak login_hint sign-in, joined toast, 'Shop manager · {shop}' with an instrument arm, second visit unusable; live RED (pre-rebuild runtime has no invite card) and GREEN owed to 37-15",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T16:22:20.043Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 23,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "frontend/e2e/dashboard-interface-corrections.spec.ts",
+    "line": 174,
+    "description": "37-09 inverted test 2: it asserted zero invite buttons on the Staff page and now asserts exactly one 'Send invitation' in the 'Invite someone' region; not run, the shared runtime is rebuilt at 37-15",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T16:22:20.149Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 24,
+    "kind": "deviation",
+    "phase": "37",
+    "file": "core-java/src/main/java/uk/jtoye/core/security/access/dto/MyAccessDto.java",
+    "line": null,
+    "description": "37-09 added a nullable businessName to GET /api/v1/staff/me (additive, OpenAPI +7/-0): no endpoint a staff member can read named the business, and the D-26 joined toast must be built from server data; reaches the shared runtime only at the 37-15 rebuild (until then the toast says 'your new business')",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T16:22:20.257Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
