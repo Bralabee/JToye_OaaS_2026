@@ -38,6 +38,7 @@ import uk.jtoye.core.exception.InvalidStateTransitionException;
 import uk.jtoye.core.exception.LastGroupAdminException;
 import uk.jtoye.core.exception.MisconfiguredPlatformRadiusException;
 import uk.jtoye.core.exception.MissingTenantContextException;
+import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.StaffInviteAccountServiceUnavailableException;
 import uk.jtoye.core.exception.StaffInviteEmailTakenException;
 import uk.jtoye.core.exception.StaffInvitePasswordRejectedException;
@@ -395,6 +396,22 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         problem.setTitle("Last Group Admin");
         problem.setType(URI.create("https://jtoye.uk/errors/last-group-admin"));
+        return problem;
+    }
+
+    /**
+     * Phase 37-10 (D-10, UXT-018) — a delete targeted an order past PENDING. 409 with its own type, so
+     * a client can branch on {@code type} alone; {@code status} and {@code orderNumber} let it say which
+     * order and why, and the detail (UI-SPEC "API problem details") names the next action: void it.
+     */
+    @ExceptionHandler(OrderNotDeletableException.class)
+    public ProblemDetail handleOrderNotDeletable(OrderNotDeletableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Order can't be deleted");
+        problem.setType(URI.create("https://jtoye.uk/errors/order-not-deletable"));
+        problem.setProperty("code", "ORDER_NOT_DELETABLE");
+        problem.setProperty("status", ex.getStatus().name());
+        problem.setProperty("orderNumber", ex.getOrderNumber());
         return problem;
     }
 

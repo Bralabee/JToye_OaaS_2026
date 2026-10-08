@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
+import uk.jtoye.core.exception.OrderNotDeletableException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.finance.VatCalculator;
@@ -62,6 +63,13 @@ public class OrderService {
      */
     static final List<OrderStatus> KITCHEN_STATUSES =
             List.of(OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY);
+
+    /**
+     * The only statuses an order can be deleted in (Phase 37-10, D-10). Everything later is voided.
+     * An allow-list, so a status added to {@link OrderStatus} later is refused until someone decides
+     * otherwise, rather than silently becoming deletable.
+     */
+    static final Set<OrderStatus> DELETABLE_STATUSES = Set.of(OrderStatus.DRAFT, OrderStatus.PENDING);
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
@@ -653,14 +661,23 @@ public class OrderService {
     }
 
     /**
-     * Delete order by ID (tenant-scoped).
-     * Cascade delete will remove order items.
+     * Delete order by ID (tenant-scoped). Cascade delete will remove order items.
+     *
+     * <p>Only a DRAFT or PENDING order can be deleted (Phase 37-10, D-10, UXT-018). From CONFIRMED on
+     * the order is part of the shop's records, and {@code financial_transactions.order_id} has no
+     * foreign key, so deleting it would leave a ledger row pointing at an order that reads 404. Those
+     * orders get a typed 409 telling the caller to void instead. The shop check runs first, so a caller
+     * without SHOP_MANAGER on the shop learns nothing about the order's status.
      */
     public void deleteOrder(UUID orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         // VSA-02 (D-02): order delete requires SHOP_MANAGER on the order's shop.
         shopAccessService.require(order.getShopId(), ShopRole.SHOP_MANAGER);
+
+        if (!DELETABLE_STATUSES.contains(order.getStatus())) {
+            throw new OrderNotDeletableException(order.getOrderNumber(), order.getStatus());
+        }
 
         log.info("Deleting order {}", order.getOrderNumber());
         orderRepository.delete(order);

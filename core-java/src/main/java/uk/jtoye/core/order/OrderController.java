@@ -250,7 +250,17 @@ public class OrderController {
      */
     @PreAuthorize("hasAuthority('SCOPE_orders:write')")  // Phase 25 [CR-01]: gate all order mutations on orders:write (AI-02 least-privilege)
     @DeleteMapping("/{id}")
-    @Operation(summary = "Delete order", description = "Deletes an order and its items")
+    @Operation(summary = "Delete order",
+            description = "Deletes a DRAFT or PENDING order and its items. An order that is CONFIRMED or later "
+                    + "is part of the shop's records and cannot be deleted; void it instead (Phase 37-10, D-10).")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Order deleted"),
+            @ApiResponse(responseCode = "403", description = "Caller lacks SHOP_MANAGER on the order's shop"),
+            @ApiResponse(responseCode = "404", description = "Order not found"),
+            @ApiResponse(responseCode = "409", description = "The order is CONFIRMED or later "
+                    + "(type https://jtoye.uk/errors/order-not-deletable, code ORDER_NOT_DELETABLE, with its "
+                    + "status and orderNumber): void it instead")
+    })
     public ResponseEntity<Void> deleteOrder(@PathVariable UUID id) {
         orderService.deleteOrder(id);
         return ResponseEntity.noContent().build();

@@ -7936,7 +7936,7 @@
     },
     "/api/v1/orders/{id}" : {
       "delete" : {
-        "description" : "Deletes an order and its items",
+        "description" : "Deletes a DRAFT or PENDING order and its items. An order that is CONFIRMED or later is part of the shop's records and cannot be deleted; void it instead (Phase 37-10, D-10).",
         "operationId" : "deleteOrder",
         "parameters" : [
           {
@@ -7950,8 +7950,38 @@
           }
         ],
         "responses" : {
-          "200" : {
-            "description" : "OK"
+          "204" : {
+            "description" : "Order deleted"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Caller lacks SHOP_MANAGER on the order's shop"
+          },
+          "404" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Order not found"
+          },
+          "409" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "The order is CONFIRMED or later (type https://jtoye.uk/errors/order-not-deletable, code ORDER_NOT_DELETABLE, with its status and orderNumber): void it instead"
           }
         },
         "security" : [
