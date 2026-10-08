@@ -1001,7 +1001,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [x] 37-06-PLAN.md — 37-B: Staff page effective access, NoAccessPage, ConfirmActionDialog generalised
-- [ ] 37-07-PLAN.md — 37-B: staff invites issue/list/resend/cancel with email (V77)
+- [x] 37-07-PLAN.md — 37-B: staff invites issue/list/resend/cancel with email (V77)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 37-08-PLAN.md — 37-B: invite accept, Keycloak user creation, admin-only tenant_id profile
