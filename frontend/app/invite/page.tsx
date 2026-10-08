@@ -22,7 +22,8 @@ import { InviteClient } from "./invite-client"
  *     page's own address is not handed to anything it links to;
  *   - no third-party resource: the page loads only this origin, the API and, after
  *     accepting, the Keycloak sign-in;
- *   - nothing is written to localStorage or sessionStorage by the island.
+ *   - nothing is written to web storage (local or session) by the island; the
+ *     route's source does not name either API (37-09 acceptance, rg -uu).
  *
  * The title is generic here because the business is not known until the preview
  * answers; the island then sets "Join {business} on J'Toye".

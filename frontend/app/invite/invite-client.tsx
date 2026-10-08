@@ -18,8 +18,8 @@ import { ROLE_LABELS, type ShopRole } from "@/lib/staff-api"
  *      does not survive in history, a copied URL or a screenshot.
  *   3. It lives in memory only (a ref) and is POSTed in a JSON body — never in a
  *      path, where ProblemDetail's `instance` would echo it back and the rate
- *      limiter would log it (37-08). Nothing is written to localStorage or
- *      sessionStorage; this page registers no client-persisted key.
+ *      limiter would log it (37-08). Nothing is written to web storage, local or
+ *      session; this page registers no client-persisted key.
  *
  * THE PASSWORD (T-37-26) is read from an UNCONTROLLED input at submit time, so it is
  * never React state, never a `value` attribute in the DOM, never in a message. A
