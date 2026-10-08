@@ -156,6 +156,16 @@ const httpError = (status: number, type?: string) =>
     response: { status, data: type ? { type, status } : undefined },
   })
 
+/**
+ * The grant form's card. 37-09 added an invite form with its own "Role" and "Shop"
+ * fields above it, so a page-wide label query would now match two controls.
+ */
+function grantCard(): HTMLElement {
+  const card = screen.getByLabelText(/team member/i).closest(".rounded-lg")
+  expect(card).not.toBeNull()
+  return card as HTMLElement
+}
+
 /** The People-table row (`<tr>`) that names this person. */
 function rowOf(name: string): HTMLElement {
   const row = screen.getByText(name).closest("tr")
@@ -213,8 +223,8 @@ describe("Staff management screen (VSA-04)", () => {
     fireEvent.change(screen.getByLabelText(/team member/i), {
       target: { value: USER_SAM },
     })
-    fireEvent.change(screen.getByLabelText(/^shop$/i), { target: { value: SHOP_B } })
-    fireEvent.change(screen.getByLabelText(/^role$/i), {
+    fireEvent.change(within(grantCard()).getByLabelText(/^shop$/i), { target: { value: SHOP_B } })
+    fireEvent.change(within(grantCard()).getByLabelText(/^role$/i), {
       target: { value: "SHOP_MANAGER" },
     })
 
@@ -268,7 +278,7 @@ describe("Staff management screen (VSA-04)", () => {
       target: { value: USER_SAM },
     })
     // "All shops" is the default shop option → shopId null.
-    fireEvent.change(screen.getByLabelText(/^role$/i), {
+    fireEvent.change(within(grantCard()).getByLabelText(/^role$/i), {
       target: { value: "GROUP_ADMIN" },
     })
     fireEvent.click(screen.getByRole("button", { name: /^grant access$/i }))
@@ -835,8 +845,9 @@ describe("staff loading state (#454)", () => {
     expect(container.querySelector(".animate-spin")).toBeNull()
     // The same vertical rhythm as the loaded page, so the swap moves nothing.
     expect(loading).toHaveClass("space-y-6")
-    // Two cards (Grant access, People), in the same order as the loaded page.
-    expect(container.querySelectorAll(".rounded-lg.border")).toHaveLength(2)
+    // Three cards (Invite someone, Grant access, People), in the same order as the
+    // loaded page (37-09 put the invite card first).
+    expect(container.querySelectorAll(".rounded-lg.border")).toHaveLength(3)
   })
 
   it("renders the static chrome for real, and bars only where data is unknown", () => {

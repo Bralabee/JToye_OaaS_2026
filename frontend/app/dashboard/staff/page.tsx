@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { formatDistanceToNow } from "date-fns"
-import { ShieldCheck, UserPlus, Users, AlertTriangle } from "lucide-react"
+import { ShieldCheck, UserPlus, Users, AlertTriangle, Mail } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -27,16 +27,32 @@ import {
   EffectiveAccessCell,
   remainingAccessLines,
 } from "@/components/dashboard/staff/effective-access-cell"
+import {
+  INVITE_COPY,
+  INVITE_FIELD_LABELS,
+  InviteStaffForm,
+} from "@/components/dashboard/staff/invite-staff-form"
+import {
+  formatInviteExpiry,
+  PendingInvitesTable,
+} from "@/components/dashboard/staff/pending-invites-table"
 import { useToast } from "@/hooks/use-toast"
 import { describeLoadError } from "@/lib/human-error"
 import { fetchMyShops } from "@/lib/shops-api"
 import {
+  cancelStaffInvite,
   fetchStaff,
+  fetchStaffInvites,
   grantStaff,
+  resendStaffInvite,
   revokeStaff,
+  ROLE_HINTS,
   ROLE_LABELS,
+  ROLE_ORDER,
+  type CreateStaffInviteResult,
   type DirectoryEntry,
   type ShopRole,
+  type StaffInvite,
   type StaffMember,
   type StaffPerson,
 } from "@/lib/staff-api"
@@ -57,6 +73,11 @@ import type { Shop } from "@/types/api"
  * which "Remove" buttons a row carries; they never decide what the Access column
  * says, so an automatic grant that strict scoping no longer honours cannot read as
  * access here (T-37-12).
+ *
+ * D-07 (37-09): the page also invites. "Invite someone" sits first, under the h1,
+ * because it is how a person who has never signed in gets access at all; the grant
+ * form below it still serves people who already have. "Pending invitations" sits last
+ * and is not rendered when no link is open or re-sendable (UI-SPEC § B1).
  */
 
 /** Axios error → HTTP status, or undefined for a non-HTTP failure. */
@@ -67,12 +88,13 @@ function httpStatus(err: unknown): number | undefined {
   return undefined
 }
 
-/** Role options carry a plain-English scope hint so a grant is a deliberate act. */
-const ROLE_OPTIONS: { value: ShopRole; hint: string }[] = [
-  { value: "STAFF", hint: "order ops on one shop" },
-  { value: "SHOP_MANAGER", hint: "full CRUD on one shop" },
-  { value: "GROUP_ADMIN", hint: "all shops + staff management" },
-]
+/** Role options carry a plain-English scope hint so a grant is a deliberate act.
+ *  The hints are shared with the invite form (`ROLE_HINTS`), so one role cannot be
+ *  described two ways on one page. */
+const ROLE_OPTIONS: { value: ShopRole; hint: string }[] = ROLE_ORDER.map((value) => ({
+  value,
+  hint: ROLE_HINTS[value],
+}))
 
 const ALL_SHOPS_VALUE = ""
 
@@ -155,8 +177,10 @@ const CELL_CLASS = "block p-0 align-top sm:table-cell sm:p-4"
  *     lists, the people rows) is bars.
  *
  * 37-06 folded the "Team directory" card into the People card (every directory
- * row is a People row, with its last-seen line), so the page and this skeleton
- * are two cards, not three.
+ * row is a People row, with its last-seen line). 37-09 put "Invite someone" above
+ * the grant form, so the page and this skeleton open with the same three cards.
+ * "Pending invitations" is not stood in for: it renders only when the server lists
+ * an open or expired invitation, and it sits below everything the skeleton holds.
  */
 function StaffLoading() {
   return (
@@ -170,6 +194,34 @@ function StaffLoading() {
         <h1 className="text-4xl font-bold text-slate-900">{PAGE_TITLE}</h1>
         <p className="mt-2 text-slate-600">{PAGE_SUBTITLE}</p>
       </div>
+
+      {/* 37-09: the invite card is the first card of the loaded page, so it is the
+          first card here too — its title, description and labels for real, bars for
+          the controls (no pressable button, no select). */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5 text-orange-600" aria-hidden="true" />
+            {INVITE_COPY.title}
+          </CardTitle>
+          <CardDescription>{INVITE_COPY.description}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            {Object.values(INVITE_FIELD_LABELS).map((label) => (
+              <div key={label} className="space-y-1.5">
+                <span className="block text-sm font-medium text-slate-700">
+                  {label}
+                </span>
+                <Skeleton className="h-11 w-full rounded-md" />
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <Skeleton className="h-11 w-full shrink-0 rounded-md sm:w-[140px]" />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -290,6 +342,12 @@ export default function StaffPage() {
    *  NOT a toast, so the reason stays on screen next to the action that caused it. */
   const [notice, setNotice] = useState<string | null>(null)
 
+  /** Every invitation of the business (the Pending card lists the open and expired ones). */
+  const [invites, setInvites] = useState<StaffInvite[]>([])
+  /** A failed invitation read: UNKNOWN, which must not render as "none pending". */
+  const [invitesError, setInvitesError] = useState<string | null>(null)
+  const [inviteBusy, setInviteBusy] = useState(false)
+
   /** The grant whose removal is awaiting confirmation, with the person it belongs to. */
   const [removing, setRemoving] = useState<{ grant: StaffMember; person: StaffPerson } | null>(
     null
@@ -309,8 +367,22 @@ export default function StaffPage() {
   const load = async () => {
     try {
       setLoading(true)
-      const [staff, myShops] = await Promise.all([fetchStaff(), fetchMyShops()])
+      const [staff, myShops, inviteList] = await Promise.all([
+        fetchStaff(),
+        fetchMyShops(),
+        // Read beside the staff list, but its failure is its own: a page that cannot
+        // list invitations can still list people (and says the invitations are unknown).
+        fetchStaffInvites().then(
+          (list) => ({ list, error: null as string | null }),
+          (error: unknown) => ({
+            list: [] as StaffInvite[],
+            error: describeLoadError(error, "Failed to load invitations").message,
+          })
+        ),
+      ])
       setDirectory(staff.directory)
+      setInvites(inviteList.list)
+      setInvitesError(inviteList.error)
       setGrants(staff.grants)
       setPeople(staff.people)
       setShops(myShops.shops)
@@ -463,6 +535,70 @@ export default function StaffPage() {
     }
   }
 
+  /** Re-read the invitation list from the server after any write (never a local edit). */
+  const reloadInvites = async () => {
+    try {
+      setInvites(await fetchStaffInvites())
+      setInvitesError(null)
+    } catch (error: unknown) {
+      setInvitesError(describeLoadError(error, "Failed to load invitations").message)
+    }
+  }
+
+  /** "Invitation sent to …" only when the server sent one; the 200 replay sent none. */
+  const handleInvited = async ({ invite, created }: CreateStaffInviteResult) => {
+    const expires = formatInviteExpiry(invite.expiresAt)
+    toast({
+      title: created
+        ? `Invitation sent to ${invite.email}. The link works once and expires on ${expires}.`
+        : `An invitation to ${invite.email} is already open. It expires on ${expires}.`,
+    })
+    await reloadInvites()
+  }
+
+  const handleResend = async (old: StaffInvite) => {
+    setNotice(null)
+    setInviteBusy(true)
+    try {
+      const invite = await resendStaffInvite(old.id)
+      toast({
+        title: `Invitation sent to ${invite.email}. The link works once and expires on ${formatInviteExpiry(invite.expiresAt)}.`,
+      })
+    } catch (error: unknown) {
+      const status = httpStatus(error)
+      if (status === 403) {
+        setForbidden(true)
+      } else if (status === 400) {
+        setNotice(`The invitation to ${old.email} has already been accepted, so it can't be sent again.`)
+      } else if (status === 404) {
+        setNotice(`The invitation to ${old.email} no longer exists.`)
+      } else {
+        setNotice("Couldn't send the invitation again. Check your connection and try again.")
+      }
+    } finally {
+      await reloadInvites()
+      setInviteBusy(false)
+    }
+  }
+
+  const handleCancelInvite = async (invite: StaffInvite) => {
+    setNotice(null)
+    setInviteBusy(true)
+    try {
+      await cancelStaffInvite(invite.id)
+      toast({ title: `Invitation to ${invite.email} cancelled` })
+    } catch (error: unknown) {
+      if (httpStatus(error) === 403) {
+        setForbidden(true)
+      } else {
+        setNotice("Couldn't cancel the invitation. Check your connection and try again.")
+      }
+    } finally {
+      await reloadInvites()
+      setInviteBusy(false)
+    }
+  }
+
   const removeTitle = (grant: StaffMember, person: StaffPerson): string => {
     const role = ROLE_LABELS[grant.role] ?? grant.role
     return `Remove ${role} at ${shopLabel(grant.shopId)} for ${personName(person)}?`
@@ -559,6 +695,10 @@ export default function StaffPage() {
           <p>{notice}</p>
         </div>
       )}
+
+      {/* Invite someone (D-07, 37-09) — first, because it is the only way a person who
+          has never signed in gets access under strict scoping. */}
+      <InviteStaffForm shops={shops} onInvited={handleInvited} />
 
       {/* Grant form — the directory is the grant-target picker (D-09). */}
       <Card ref={grantCardRef}>
@@ -748,6 +888,28 @@ export default function StaffPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Pending invitations — last, and absent when nothing is open or re-sendable.
+          A failed read is shown as unknown, never as "none pending". */}
+      {invitesError ? (
+        <Card>
+          <CardContent>
+            <LoadErrorPanel
+              subject="invitations"
+              message={invitesError}
+              onRetry={() => reloadInvites()}
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <PendingInvitesTable
+          invites={invites}
+          shopNameById={shopNameById}
+          busy={inviteBusy}
+          onResend={handleResend}
+          onCancel={handleCancelInvite}
+        />
+      )}
 
       {/* Remove access is destructive, and its copy names the consequence: what the
           person keeps, from the server's effective access minus this one grant, or

@@ -136,3 +136,94 @@ export async function grantStaff(input: GrantStaffInput): Promise<StaffMember> {
 export async function revokeStaff(id: string): Promise<void> {
   await apiClient.delete(`/api/v1/staff/${id}`)
 }
+
+/**
+ * Each role's plain-English scope, shown beside its name wherever a role is chosen
+ * (the grant form and the invite form, UI-SPEC § B1). One list, so the two forms
+ * cannot describe the same role differently.
+ */
+export const ROLE_HINTS: Record<ShopRole, string> = {
+  STAFF: "order ops on one shop",
+  SHOP_MANAGER: "full CRUD on one shop",
+  GROUP_ADMIN: "all shops + staff management",
+}
+
+/** The roles in the order every picker lists them. */
+export const ROLE_ORDER: ShopRole[] = ["STAFF", "SHOP_MANAGER", "GROUP_ADMIN"]
+
+/**
+ * An invitation's state, computed by the server at read time (mirrors the Java
+ * `StaffInvite.Status`, 37-07). OPEN = the link works; EXPIRED = its time ran out;
+ * ACCEPTED = it became a grant; CANCELLED = cancelled, or replaced by a resend.
+ */
+export type StaffInviteStatus = "OPEN" | "EXPIRED" | "ACCEPTED" | "CANCELLED"
+
+/**
+ * One invitation as a Group admin sees it (`StaffInviteDto`, 37-07). `shopId` null
+ * means every shop. The link token is never part of this body: it exists only in the
+ * invitee's email.
+ */
+export interface StaffInvite {
+  id: string
+  /** The address the link went to, in full (the Group admin typed it). */
+  email: string
+  role: ShopRole
+  shopId: string | null
+  status: StaffInviteStatus
+  expiresAt: string
+  createdAt: string | null
+  createdBy: string | null
+  acceptedAt: string | null
+  revokedAt: string | null
+}
+
+export interface CreateStaffInviteInput {
+  email: string
+  role: ShopRole
+  /** null ⇒ every shop (always null for GROUP_ADMIN; the server refuses otherwise). */
+  shopId: string | null
+}
+
+/**
+ * The outcome of {@link createStaffInvite}. `created` is false on the server's
+ * idempotent replay (200): an invitation for the same email, shop and role was
+ * already open, and NO second email was sent — so the page must not say "sent".
+ */
+export interface CreateStaffInviteResult {
+  invite: StaffInvite
+  created: boolean
+}
+
+/** The problem `type` suffix of the "address belongs to another business" refusal. */
+export const INVITE_OTHER_BUSINESS_PROBLEM = "staff-invite-email-in-other-business"
+
+/** GET /api/v1/staff/invites — every invitation of the business, newest first. */
+export async function fetchStaffInvites(): Promise<StaffInvite[]> {
+  const res = await apiClient.get<StaffInvite[]>("/api/v1/staff/invites")
+  return Array.isArray(res.data) ? res.data : []
+}
+
+/**
+ * POST /api/v1/staff/invites — 201 when a new invitation was created and emailed,
+ * 200 when the same (email, shop, role) invitation was already open (no email).
+ */
+export async function createStaffInvite(
+  input: CreateStaffInviteInput
+): Promise<CreateStaffInviteResult> {
+  const res = await apiClient.post<StaffInvite>("/api/v1/staff/invites", input)
+  return { invite: res.data, created: res.status !== 200 }
+}
+
+/**
+ * POST /api/v1/staff/invites/{id}/resend — revokes the old link and emails a new
+ * one for the same email, shop and role. Deliberately not idempotent.
+ */
+export async function resendStaffInvite(id: string): Promise<StaffInvite> {
+  const res = await apiClient.post<StaffInvite>(`/api/v1/staff/invites/${id}/resend`)
+  return res.data
+}
+
+/** DELETE /api/v1/staff/invites/{id} — the link stops working (204, repeatable). */
+export async function cancelStaffInvite(id: string): Promise<void> {
+  await apiClient.delete(`/api/v1/staff/invites/${id}`)
+}
