@@ -148,9 +148,6 @@ class StaffInviteAcceptIntegrationTest {
         registry.add("rate-limiting.public.window-seconds", () -> "60");
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379).toString());
-        // MVC logs every request body it reads at DEBUG (through the DTO's toString). Turned on so the
-        // "the password never reaches a log line" arm can actually fail.
-        registry.add("logging.level.org.springframework.web", () -> "DEBUG");
     }
 
     @MockitoBean private KeycloakAdminClient keycloak;
@@ -263,6 +260,339 @@ class StaffInviteAcceptIntegrationTest {
         assertThat(invite.get("accepted_user_id")).isEqualTo(newUserId);
     }
 
+    // ---- Task 2: every other outcome ---------------------------------------------------------------
+
+    @Test
+    @DisplayName("D-07: an address that already has an account of THIS business accepts with no password; the "
+            + "grant is exactly the invitation's even when the body asks for more, and a de-honoured JIT row "
+            + "for the same shop becomes the invited OPERATOR grant")
+    void existingAccountHere_acceptsWithoutPassword_andGetsExactlyTheInvitedGrant() throws Exception {
+        String email = "already.here@example.com";
+        UUID existingUser = UUID.randomUUID();
+        // A day-one JIT row on the same shop, which strict scoping de-honours: the invite must replace it.
+        pinned(tenantId, j -> j.update("INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, grant_source, "
+                + "created_at) VALUES (?, ?, ?, ?, 'SHOP_MANAGER', 'JIT', now())", UUID.randomUUID(), tenantId,
+                existingUser, shopA));
+        String ref = seedInvite(tenantId, email, shopA, "STAFF", "1 hour");
+        UUID inviteId = lastSeededId;
+        when(keycloak.findVendorUsersByEmail(VENDOR_REALM, email, "tok"))
+                .thenReturn(List.of(new VendorRealmUser(existingUser.toString(), email, tenantId.toString())));
+
+        MvcResult preview = preview(ref, randomIp());
+        assertThat(preview.getResponse().getStatus()).as(body(preview)).isEqualTo(200);
+        assertThat(json(preview).path("accountState").asString()).isEqualTo("EXISTS_HERE");
+
+        // The body tries to escalate: role, shop and tenant fields are not part of the contract and change nothing.
+        String escalation = "{\"ref\":" + jsonString(ref) + ",\"role\":\"GROUP_ADMIN\",\"shopId\":null,"
+                + "\"tenantId\":\"" + UUID.randomUUID() + "\",\"createdBy\":\"" + existingUser + "\"}";
+        MvcResult accepted = mockMvc.perform(post(ACCEPT).with(from(randomIp()))
+                        .contentType(MediaType.APPLICATION_JSON).content(escalation))
+                .andReturn();
+        assertThat(accepted.getResponse().getStatus()).as(body(accepted)).isEqualTo(201);
+        assertThat(json(accepted).path("role").asString()).isEqualTo("STAFF");
+
+        verify(keycloak, never()).createUser(anyString(), anyString(), anyString(), anyString(), any(char[].class),
+                any(UUID.class), anyString());
+        List<Map<String, Object>> grants = pinned(tenantId, j -> j.queryForList(
+                "SELECT shop_id, role, grant_source, created_by FROM shop_staff WHERE tenant_id = ? AND user_id = ?",
+                tenantId, existingUser));
+        assertThat(grants).as("one row: the invited grant, nothing wider").hasSize(1);
+        assertThat(grants.get(0).get("shop_id")).isEqualTo(shopA);
+        assertThat(grants.get(0).get("role")).isEqualTo("STAFF");
+        assertThat(grants.get(0).get("grant_source")).isEqualTo("OPERATOR");
+        assertThat(grants.get(0).get("created_by")).isEqualTo(admin);
+        assertThat(acceptedUserId(inviteId)).isEqualTo(existingUser);
+        assertThat(count("SELECT count(*) FROM user_directory WHERE tenant_id = ? AND user_id = ? AND email = ?",
+                tenantId, existingUser, email)).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("T-37-20: an address whose account belongs to another business previews OTHER_BUSINESS and "
+            + "accepting is refused 409 staff-invite-email-in-other-business with nothing written")
+    void addressOfAnotherBusiness_isRefused409_andNothingIsWritten() throws Exception {
+        String email = "elsewhere@example.com";
+        UUID otherUser = UUID.randomUUID();
+        String ref = seedInvite(tenantId, email, shopA, "STAFF", "1 hour");
+        UUID inviteId = lastSeededId;
+        when(keycloak.findVendorUsersByEmail(VENDOR_REALM, email, "tok"))
+                .thenReturn(List.of(new VendorRealmUser(otherUser.toString(), email, UUID.randomUUID().toString())));
+
+        MvcResult preview = preview(ref, randomIp());
+        assertThat(preview.getResponse().getStatus()).as(body(preview)).isEqualTo(200);
+        assertThat(json(preview).path("accountState").asString()).isEqualTo("OTHER_BUSINESS");
+
+        MvcResult refused = accept(ref, "Other", "Person", PASSWORD, randomIp());
+        assertThat(refused.getResponse().getStatus()).as(body(refused)).isEqualTo(409);
+        JsonNode problem = json(refused);
+        assertThat(problem.path("type").asString())
+                .isEqualTo("https://jtoye.uk/errors/staff-invite-email-in-other-business");
+        assertThat(problem.path("code").asString()).isEqualTo("STAFF_INVITE_EMAIL_IN_OTHER_BUSINESS");
+
+        verify(keycloak, never()).createUser(anyString(), anyString(), anyString(), anyString(), any(char[].class),
+                any(UUID.class), anyString());
+        assertThat(count("SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?", tenantId, otherUser))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM user_directory WHERE tenant_id = ? AND email = ?", tenantId, email))
+                .isZero();
+        assertThat(acceptedAt(inviteId)).as("still open").isNull();
+    }
+
+    @Test
+    @DisplayName("UI-SPEC B2 state 4: expired, used, cancelled, wrong-business, unknown, malformed, missing and "
+            + "offboarded-business links all PREVIEW as one byte-identical 404 with Cache-Control no-store")
+    void everyUnusablePreview_isOneIdentical404() throws Exception {
+        List<String> refs = unusableRefs();
+        List<byte[]> bodies = new ArrayList<>();
+        for (String ref : refs) {
+            MvcResult r = preview(ref, randomIp());
+            assertThat(r.getResponse().getStatus()).as("cause #%d: %s", bodies.size(), body(r)).isEqualTo(404);
+            assertThat(r.getResponse().getHeader("Cache-Control")).as("cause #%d", bodies.size()).contains("no-store");
+            bodies.add(r.getResponse().getContentAsByteArray());
+        }
+        assertUnavailableBodies(bodies);
+        verify(keycloak, never()).findVendorUsersByEmail(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("UI-SPEC B2 state 4: the same eight causes ACCEPT as one byte-identical 404, and nothing is written")
+    void everyUnusableAccept_isOneIdentical404_andWritesNothing() throws Exception {
+        List<String> refs = unusableRefs();
+        long grantsBefore = count("SELECT count(*) FROM shop_staff WHERE tenant_id = ?", tenantId);
+        List<byte[]> bodies = new ArrayList<>();
+        for (String ref : refs) {
+            MvcResult r = accept(ref, "Link", "Holder", PASSWORD, randomIp());
+            assertThat(r.getResponse().getStatus()).as("cause #%d: %s", bodies.size(), body(r)).isEqualTo(404);
+            assertThat(r.getResponse().getHeader("Cache-Control")).as("cause #%d", bodies.size()).contains("no-store");
+            bodies.add(r.getResponse().getContentAsByteArray());
+        }
+        assertUnavailableBodies(bodies);
+        verify(keycloak, never()).createUser(anyString(), anyString(), anyString(), anyString(), any(char[].class),
+                any(UUID.class), anyString());
+        assertThat(count("SELECT count(*) FROM shop_staff WHERE tenant_id = ?", tenantId)).isEqualTo(grantsBefore);
+    }
+
+    @Test
+    @DisplayName("T-37-21: two simultaneous accepts of one link produce exactly one 201, one 404 and one grant")
+    void twoConcurrentAccepts_produceOneGrant() throws Exception {
+        String email = "race@example.com";
+        String ref = seedInvite(tenantId, email, shopA, "STAFF", "1 hour");
+        UUID newUser = UUID.randomUUID();
+        CyclicBarrier bothLookedUp = new CyclicBarrier(2);
+        when(keycloak.findVendorUsersByEmail(VENDOR_REALM, email, "tok")).thenAnswer(inv -> {
+            bothLookedUp.await(10, TimeUnit.SECONDS);   // both requests are past the read before either claims
+            return List.of();
+        });
+        when(keycloak.createUser(eq(VENDOR_REALM), eq(email), anyString(), anyString(), any(char[].class),
+                eq(tenantId), eq("tok"))).thenAnswer(inv -> {
+                    Thread.sleep(500);                   // the winner holds the claim while Keycloak works
+                    return newUser.toString();
+                });
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch go = new CountDownLatch(1);
+        try {
+            List<Future<Integer>> results = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                results.add(pool.submit(() -> {
+                    go.await(10, TimeUnit.SECONDS);
+                    return accept(ref, "Race", "Runner", PASSWORD, randomIp()).getResponse().getStatus();
+                }));
+            }
+            go.countDown();
+            List<Integer> statuses = new ArrayList<>();
+            for (Future<Integer> f : results) {
+                statuses.add(f.get(30, TimeUnit.SECONDS));
+            }
+            assertThat(statuses).as("one winner, one refusal").containsExactlyInAnyOrder(201, 404);
+        } finally {
+            pool.shutdownNow();
+        }
+        verify(keycloak, times(1)).createUser(anyString(), anyString(), anyString(), anyString(), any(char[].class),
+                any(UUID.class), anyString());
+        assertThat(count("SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?", tenantId, newUser))
+                .as("exactly one grant row").isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("T-37-22: a Keycloak password-policy 400 is 422 staff-invite-password-rejected carrying Keycloak's "
+            + "message (never the password), the invite stays open, and a retry with a good password succeeds")
+    void passwordPolicyRefusal_is422_andLeavesTheInviteOpen() throws Exception {
+        String email = "weak.password@example.com";
+        String weak = "weakpass-" + UUID.randomUUID().toString().substring(0, 6);
+        String ref = seedInvite(tenantId, email, shopA, "STAFF", "1 hour");
+        UUID inviteId = lastSeededId;
+        UUID newUser = UUID.randomUUID();
+        when(keycloak.findVendorUsersByEmail(VENDOR_REALM, email, "tok")).thenReturn(List.of());
+        when(keycloak.createUser(eq(VENDOR_REALM), eq(email), anyString(), anyString(), any(char[].class),
+                eq(tenantId), eq("tok")))
+                .thenThrow(new KeycloakUserRejectedException(VENDOR_REALM, "Password policy not met"))
+                .thenReturn(newUser.toString());
+
+        MvcResult refused = accept(ref, "Pat", "Weak", weak, randomIp());
+        assertThat(refused.getResponse().getStatus()).as(body(refused)).isEqualTo(422);
+        JsonNode problem = json(refused);
+        assertThat(problem.path("type").asString()).isEqualTo("https://jtoye.uk/errors/staff-invite-password-rejected");
+        assertThat(problem.path("code").asString()).isEqualTo("STAFF_INVITE_PASSWORD_REJECTED");
+        assertThat(problem.path("detail").asString()).isEqualTo("Password policy not met");
+        assertThat(body(refused)).as("the password is never echoed").doesNotContain(weak);
+
+        Map<String, Object> invite = pinned(tenantId, j -> j.queryForMap(
+                "SELECT accepted_at, accepted_user_id FROM staff_invite WHERE id = ?", inviteId));
+        assertThat(invite.get("accepted_at")).as("the claim rolled back: still open").isNull();
+        assertThat(count("SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?", tenantId, newUser)).isZero();
+        assertThat(count("SELECT count(*) FROM user_directory WHERE tenant_id = ? AND email = ?", tenantId, email)).isZero();
+
+        MvcResult retry = accept(ref, "Pat", "Strong", PASSWORD, randomIp());
+        assertThat(retry.getResponse().getStatus()).as(body(retry)).isEqualTo(201);
+        assertThat(count("SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?", tenantId, newUser))
+                .isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("A NEW account without a name or a password is 400 before anything is claimed or created")
+    void newAccountWithoutNamesOrPassword_is400_andTheInviteStaysOpen() throws Exception {
+        String email = "incomplete@example.com";
+        String ref = seedInvite(tenantId, email, shopA, "STAFF", "1 hour");
+        UUID inviteId = lastSeededId;
+        when(keycloak.findVendorUsersByEmail(VENDOR_REALM, email, "tok")).thenReturn(List.of());
+
+        for (String[] form : List.of(new String[]{null, "Last", PASSWORD}, new String[]{"First", " ", PASSWORD},
+                new String[]{"First", "Last", null}, new String[]{"<script>", "Last", PASSWORD})) {
+            MvcResult r = accept(ref, form[0], form[1], form[2], randomIp());
+            assertThat(r.getResponse().getStatus()).as(body(r)).isEqualTo(400);
+            assertThat(body(r)).doesNotContain(PASSWORD).doesNotContain("<script>");
+        }
+        verify(keycloak, never()).createUser(anyString(), anyString(), anyString(), anyString(), any(char[].class),
+                any(UUID.class), anyString());
+        assertThat(acceptedAt(inviteId)).isNull();
+    }
+
+    @Test
+    @DisplayName("T-37-18: both public endpoints share the per-IP public rate limit: a flood from one address gets 429")
+    void publicRateLimit_floodFromOneAddress_gets429_onBothEndpoints() throws Exception {
+        String ip = "198.51.100." + (1 + ThreadLocalRandom.current().nextInt(254));
+        int capacity = PUBLIC_RPM + PUBLIC_BURST;
+        for (int i = 0; i < capacity; i++) {
+            MvcResult r = preview(tenantId + "." + randomToken(), ip);
+            assertThat(r.getResponse().getStatus()).as("request %d of %d is inside the bucket", i + 1, capacity)
+                    .isEqualTo(404);
+        }
+        MvcResult limitedPreview = preview(tenantId + "." + randomToken(), ip);
+        assertThat(limitedPreview.getResponse().getStatus()).as(body(limitedPreview)).isEqualTo(429);
+        assertThat(limitedPreview.getResponse().getHeader("Retry-After")).isNotNull();
+        MvcResult limitedAccept = accept(tenantId + "." + randomToken(), "A", "B", PASSWORD, ip);
+        assertThat(limitedAccept.getResponse().getStatus()).as("same address, other endpoint").isEqualTo(429);
+        MvcResult otherAddress = preview(tenantId + "." + randomToken(), randomIp());
+        assertThat(otherAddress.getResponse().getStatus()).as("another address is unaffected").isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("T-37-22: neither the password nor the link token reaches any log line, although MVC logs every "
+            + "request body it reads at DEBUG")
+    void passwordAndToken_neverReachALogLine() throws Exception {
+        String email = "quiet@example.com";
+        String secret = "Unique-Secret-" + UUID.randomUUID().toString().substring(0, 8) + "!9";
+        String ref = seedInvite(tenantId, email, shopA, "STAFF", "1 hour");
+        String token = ref.substring(ref.indexOf('.') + 1);
+        when(keycloak.findVendorUsersByEmail(VENDOR_REALM, email, "tok")).thenReturn(List.of());
+        when(keycloak.createUser(eq(VENDOR_REALM), eq(email), anyString(), anyString(), any(char[].class),
+                eq(tenantId), eq("tok"))).thenReturn(UUID.randomUUID().toString());
+
+        Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        // MVC logs every request body it reads at DEBUG, through the DTO's toString. Raised here, for this
+        // test only, so the arm can fail: a level set through @DynamicPropertySource was measured NOT to
+        // reach MVC's logger (the positive control below went red with zero org.springframework.web lines).
+        Logger web = (Logger) LoggerFactory.getLogger("org.springframework.web");
+        ch.qos.logback.classic.Level previousWebLevel = web.getLevel();
+        web.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        root.addAppender(appender);
+        try {
+            assertThat(preview(ref, randomIp()).getResponse().getStatus()).isEqualTo(200);
+            assertThat(accept(ref, "Quiet", "Person", null, randomIp()).getResponse().getStatus()).isEqualTo(400);
+            assertThat(accept(ref, "Quiet", "Person", secret, randomIp()).getResponse().getStatus()).isEqualTo(201);
+        } finally {
+            root.detachAppender(appender);
+            web.setLevel(previousWebLevel);
+        }
+        List<String> lines = appender.list.stream()
+                .map(e -> e.getFormattedMessage() + (e.getThrowableProxy() == null ? "" : " " + e.getThrowableProxy().getMessage()))
+                .toList();
+        // Positive controls: the capture saw MVC's body-read DEBUG line for this DTO and the service's event.
+        assertThat(lines).as("MVC logged the request body it read (so this arm can fail)")
+                .anyMatch(l -> l.contains("AcceptStaffInviteRequest"));
+        assertThat(lines).anyMatch(l -> l.contains("event=staff_invite_accepted"));
+        assertThat(lines).as("no log line carries the password").noneMatch(l -> l.contains(secret));
+        assertThat(lines).as("no log line carries the link token").noneMatch(l -> l.contains(token));
+    }
+
+    @Test
+    @DisplayName("Keycloak unreachable: preview and accept answer 503 staff-invite-account-service-unavailable and "
+            + "the invite stays open")
+    void keycloakOutage_is503_andTheInviteStaysOpen() throws Exception {
+        String ref = seedInvite(tenantId, "outage@example.com", shopA, "STAFF", "1 hour");
+        UUID inviteId = lastSeededId;
+        when(keycloak.obtainAdminToken()).thenThrow(new KeycloakAdminException("Keycloak admin token request failed"));
+
+        for (MvcResult r : List.of(preview(ref, randomIp()), accept(ref, "Out", "Age", PASSWORD, randomIp()))) {
+            assertThat(r.getResponse().getStatus()).as(body(r)).isEqualTo(503);
+            assertThat(json(r).path("type").asString())
+                    .isEqualTo("https://jtoye.uk/errors/staff-invite-account-service-unavailable");
+            assertThat(json(r).path("code").asString()).isEqualTo("STAFF_INVITE_ACCOUNT_SERVICE_UNAVAILABLE");
+        }
+        assertThat(acceptedAt(inviteId)).isNull();
+    }
+
+    /** Expired, accepted, cancelled, tenant swapped, unknown token, malformed, missing, offboarded business. */
+    List<String> unusableRefs() {
+        List<String> refs = new ArrayList<>();
+        refs.add(seedInvite(tenantId, "expired@example.com", shopA, "STAFF", "-1 hour"));
+        String accepted = seedInvite(tenantId, "used@example.com", shopA, "STAFF", "1 hour");
+        UUID acceptedId = lastSeededId;
+        pinned(tenantId, j -> j.update("UPDATE staff_invite SET accepted_at = now(), accepted_user_id = ? WHERE id = ?",
+                UUID.randomUUID(), acceptedId));
+        refs.add(accepted);
+        String cancelled = seedInvite(tenantId, "cancelled@example.com", shopA, "STAFF", "1 hour");
+        UUID cancelledId = lastSeededId;
+        pinned(tenantId, j -> j.update("UPDATE staff_invite SET revoked_at = now(), revoked_by = ? WHERE id = ?",
+                admin, cancelledId));
+        refs.add(cancelled);
+        UUID otherTenant = UUID.randomUUID();
+        jdbc.update("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now())", otherTenant, "Other " + otherTenant);
+        String live = seedInvite(tenantId, "swapped@example.com", shopA, "STAFF", "1 hour");
+        refs.add(otherTenant + live.substring(live.indexOf('.')));
+        refs.add(tenantId + "." + randomToken());
+        refs.add("not-a-reference");
+        refs.add(null);
+        UUID gone = UUID.randomUUID();
+        jdbc.update("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now())", gone, "Gone " + gone);
+        UUID goneShop = seedShop(gone, "Gone shop");
+        String offboarded = seedInvite(gone, "offboarded@example.com", goneShop, "STAFF", "1 hour");
+        jdbc.update("UPDATE tenants SET status = 'OFFBOARDED', offboarded_at = now() WHERE id = ?", gone);
+        refs.add(offboarded);
+        return refs;
+    }
+
+    void assertUnavailableBodies(List<byte[]> bodies) throws Exception {
+        JsonNode first = jsonMapper.readTree(bodies.get(0));
+        assertThat(first.path("type").asString()).isEqualTo(UNAVAILABLE_TYPE);
+        assertThat(first.path("code").asString()).isEqualTo("STAFF_INVITE_UNAVAILABLE");
+        assertThat(first.path("status").asInt()).isEqualTo(404);
+        assertThat(first.path("detail").asString()).isEqualTo("This invitation can't be used.");
+        for (int i = 1; i < bodies.size(); i++) {
+            assertThat(new String(bodies.get(i), StandardCharsets.UTF_8))
+                    .as("cause #%d must be byte-identical to cause #0", i)
+                    .isEqualTo(new String(bodies.get(0), StandardCharsets.UTF_8));
+        }
+    }
+
+    static String randomToken() {
+        byte[] raw = new byte[32];
+        RANDOM.nextBytes(raw);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------
 
     MvcResult preview(String ref, String ip) throws Exception {
@@ -313,6 +643,16 @@ class StaffInviteAcceptIntegrationTest {
             jdbc.queryForObject("SELECT set_config('app.current_tenant_id', ?, true)", String.class, tenant.toString());
             return work.apply(jdbc);
         });
+    }
+
+    Object acceptedAt(UUID inviteId) {
+        return pinned(tenantId, j -> j.queryForObject(
+                "SELECT accepted_at FROM staff_invite WHERE id = ?", Object.class, inviteId));
+    }
+
+    UUID acceptedUserId(UUID inviteId) {
+        return pinned(tenantId, j -> j.queryForObject(
+                "SELECT accepted_user_id FROM staff_invite WHERE id = ?", UUID.class, inviteId));
     }
 
     long count(String sql, Object... args) {
