@@ -1,6 +1,7 @@
 package uk.jtoye.core.security.access;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,8 +17,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -40,6 +39,7 @@ import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.net.URI;
 import java.util.List;
@@ -74,7 +74,8 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
  * GROUP_ADMIN, bypasses the gate even under strict-scoping) so the graph is valid;
  * {@code shop_staff} grants for the scoped principals are seeded directly. Each test
  * uses a fresh {@code tenant} so RLS-scoped list counts are deterministic. Strict
- * scoping is toggled on the proxy-unwrapped bean via {@link ReflectionTestUtils}.
+ * scoping is toggled on the proxy-unwrapped bean via {@link StrictScopingGuard}, which restores the
+ * BOOTED value after each test (37-02), never a literal.
  */
 @SpringBootTest
 @Testcontainers
@@ -101,11 +102,17 @@ class ShopAccessEnforcementIntegrationTest {
     @Autowired private GlobalExceptionHandler exceptionHandler;
     @Autowired private JdbcTemplate jdbc;
 
-    private ShopAccessService targetService;
+    /** The value the context booted with — restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
 
     @AfterEach
     void tearDown() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         TenantContext.clear();
         SecurityContextHolder.clearContext();
     }
@@ -121,7 +128,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID sm = UUID.randomUUID();
         grantShopStaff(tenant, sm, shopA, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(sm, false);
         TenantContext.set(tenant);
 
@@ -155,7 +162,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID staff = UUID.randomUUID();
         grantShopStaff(tenant, staff, shopA, "STAFF");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(staff, false);
         TenantContext.set(tenant);
 
@@ -188,7 +195,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID sm = UUID.randomUUID();
         grantShopStaff(tenant, sm, shopA, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(sm, false);
         TenantContext.set(tenant);
 
@@ -222,7 +229,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID sm = UUID.randomUUID();
         grantShopStaff(tenant, sm, shopA, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(sm, false);
         TenantContext.set(tenant);
 
@@ -256,7 +263,7 @@ class ShopAccessEnforcementIntegrationTest {
 
         UUID ungranted = UUID.randomUUID();  // NO shop_staff grant at all
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(ungranted, false);
         TenantContext.set(tenant);
 
@@ -293,7 +300,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID shopA = seedShop(tenant, "Shop A");
         UUID realmAdmin = UUID.randomUUID();  // NO shop_staff grant at all
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         TenantContext.set(tenant);
 
         assertThat(shopAccessService.canAccessShop(tenant, realmAdmin, true, shopA))
@@ -309,7 +316,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID ga = UUID.randomUUID();
         grantGroupAdmin(tenant, ga);
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         TenantContext.set(tenant);
 
         assertThat(shopAccessService.canAccessShop(tenant, ga, false, shopA))
@@ -326,7 +333,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID staff = UUID.randomUUID();
         grantShopStaff(tenant, staff, shopA, "STAFF");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         TenantContext.set(tenant);
 
         // Genuine-grant proof (23-11 RLS note): a REAL shop_staff row comes back through the
@@ -349,7 +356,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID shopA = seedShop(tenant, "Shop A");
         UUID ungranted = UUID.randomUUID();  // NO shop_staff grant
 
-        setStrictScoping(false);  // day-one default
+        StrictScopingGuard.set(shopAccessService, false);  // day-one default
         TenantContext.set(tenant);
 
         assertThat(shopAccessService.canAccessShop(tenant, ungranted, false, shopA))
@@ -364,7 +371,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID shopA = seedShop(tenant, "Shop A");
         UUID ungranted = UUID.randomUUID();
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         TenantContext.set(tenant);
 
         assertThat(shopAccessService.canAccessShop(tenant, ungranted, false, shopA))
@@ -382,7 +389,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID scoped = UUID.randomUUID();
         grantShopStaff(tenant, scoped, shopA, "SHOP_MANAGER");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         TenantContext.set(tenant);
 
         assertThat(shopAccessService.canAccessShop(tenant, ga, false, null))
@@ -404,7 +411,7 @@ class ShopAccessEnforcementIntegrationTest {
         UUID staff = UUID.randomUUID();
         grantShopStaff(tenant, staff, shopA, "STAFF");
 
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(staff, false);
         TenantContext.set(tenant);
 
@@ -447,7 +454,7 @@ class ShopAccessEnforcementIntegrationTest {
 
         UUID ga = UUID.randomUUID();
         grantGroupAdmin(tenant, ga);
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         authenticate(ga, false);
         TenantContext.set(tenant);
 
@@ -537,7 +544,7 @@ class ShopAccessEnforcementIntegrationTest {
 
     /** Run a seeding action as a fresh realm-admin under the given tenant, then clear the context. */
     private <T> T asRealmAdmin(UUID tenant, java.util.function.Supplier<T> action) {
-        boolean prevStrict = currentStrictScoping();
+        boolean prevStrict = StrictScopingGuard.current(shopAccessService);
         authenticate(UUID.randomUUID(), true);
         TenantContext.set(tenant);
         try {
@@ -545,7 +552,7 @@ class ShopAccessEnforcementIntegrationTest {
         } finally {
             TenantContext.clear();
             SecurityContextHolder.clearContext();
-            setStrictScoping(prevStrict);
+            StrictScopingGuard.set(shopAccessService, prevStrict);
         }
     }
 
@@ -604,18 +611,4 @@ class ShopAccessEnforcementIntegrationTest {
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, authorities));
     }
 
-    private ShopAccessService target() {
-        if (targetService == null) {
-            targetService = AopTestUtils.getTargetObject(shopAccessService);
-        }
-        return targetService;
-    }
-
-    private void setStrictScoping(boolean value) {
-        ReflectionTestUtils.setField(target(), "strictScoping", value);
-    }
-
-    private boolean currentStrictScoping() {
-        return Boolean.TRUE.equals(ReflectionTestUtils.getField(target(), "strictScoping"));
-    }
 }
