@@ -958,7 +958,7 @@ NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git workt
 - abuse of a no-upfront-payment checkout is bounded;
 - the API, MCP, webhook and sync paths enforce the same rules as the storefront.
 
-**Requirements**: derived at plan time from the 87 clusters, in seven sub-themes. P0/P1 counts are from the catalogue.
+**Requirements**: RWO-003, RWO-004, RWO-018, RWO-026, RWO-027, RWO-046, RWO-047 (37-B); RWO-011, RWO-020, RWO-021, RWO-022 (37-A); RWO-005, RWO-006, RWO-039, RWO-041, RWO-042 (37-D); RWO-007, RWO-008, RWO-029, RWO-044 (37-C); RWO-016, RWO-017, RWO-035, RWO-036, RWO-037, RWO-038, RWO-040 (37-E); RWO-023, RWO-028 (37-G); RWO-080..RWO-085 (37-F). Minted at plan time 2026-10-07 (REQUIREMENTS.md § RWO; one ID per in-scope cluster, keyed RWO-<UXT number>). Scope per CONTEXT D-01/D-05: the 29 P0/P1 clusters of 37-A..37-E and 37-G plus all six 37-F clusters; the other P2/P3 clusters go to a 37.x follow-up phase. The original 87-cluster breakdown, kept for reference: P0/P1 counts are from the catalogue.
 - **37-A Kitchen & order operations** (15; P0 1, P1 3): #786 #795 #796 #797 #818 #819 #820 #821 #822 #823 #824 #857 #858 #866, plus part of bundle #875.
 - **37-B Multi-site, staff access & finance** (12; P0 3, P1 4): #779 #780 #791 #799 #800 #815 #816 #827 #856 #867, plus part of #875.
 - **37-C Checkout integrity & customer trust/retention** (23; P0 1, P1 3): #783 #792 #802 #813 #825 #826 #843 #844 #845 #846 #847 #855 #862 #868 #869 #870, plus bundles #876 and #877.
@@ -970,20 +970,160 @@ NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git workt
 
 **Depends on:** nothing hard. **Blocks:** Phase 32 (first tenant), but only through its P0 clusters (#779 #780 #781 #782 #783 #786 #790 #791 and #727), which gate a real tenant whatever order the rest takes. Its sibling P0s live elsewhere and gate Phase 32 the same way: #777 and #778 (DSAR), #784 and #785 (allergen acknowledgement), #787 and #789 (Phase 31 gap-closure), and #788 (Phase 33: FSA match / hygiene claim).
 
-**Success Criteria** (what must be TRUE). These are drafts; `/gsd-plan-phase 37` refines them. Each must be shown to FAIL on the pre-fix tree and PASS after, and each issue states its own acceptance test:
+**Success Criteria** (what must be TRUE), restated at plan time 2026-10-07 against the D-01 scope. Each must be shown to FAIL on the pre-fix tree and PASS after, both directions recorded. Clauses whose cluster moved to 37.x are dropped, per CONTEXT ("Do not plan a criterion for a cluster that moved to 37.x"): "a double-tap cannot skip a status" (UXT-049, P2); "unavailable products … missing contact details" on non-storefront paths (UXT-097, UXT-072, P2); "Keycloak sign-in and registration pass WCAG 2.2 AA" (UXT-079, P2, homed to Phase 33).
 
-  1. **Kitchen (37-A).** A customer's new order is announced audibly and visibly within seconds, and reaches the kitchen display with its full order number, the customer's note and the fulfilment type. A double-tap cannot skip a status. A lapsed session, a muted handover or an unreachable API is never shown as "Live".
-  2. **Staff access (37-B).** A staff login holds only what was granted: granting no role yields no access, and revoking the last grant removes access rather than escalating it, proven through the API with the staff member's own token. Per-shop finance figures are the shop's own and can be exported. A completed order cannot be deleted from under its ledger rows.
-  3. **Checkout (37-C).** The price, availability and allergen set a customer confirms are re-validated by the server at submit. Any change is shown and must be re-confirmed. What was charged and acknowledged is what is recorded and what the customer can see afterwards.
-  4. **Abuse (37-D).** Rate limits key on a trusted client identity, so a spoofed `X-Forwarded-For` header does not mint a fresh bucket. Order quantity and volume per identity are bounded. A vendor can bulk-reject junk orders. A review is accepted only from a buyer of that shop.
-  5. **Integrators (37-E).** API, MCP, sync and CSV paths refuse what the storefront refuses (unavailable products, shop-less items, missing contact details). A partial update cannot silently turn stock tracking off. An MCP-placed order reaches the kitchen. A vendor can issue a scoped, revocable credential without sharing the owner's password.
-  6. **Accessibility (37-F).** Order confirmation and tracking status changes are announced to screen readers. Shop cards have accessible names. Keycloak sign-in and registration pass the same WCAG 2.2 AA bar as the storefront. Each is guarded by a test that sees what axe missed.
-  7. **No regression of the goods.** The 40 entries in `goods-to-preserve.md` are re-verified at phase end. They include idempotent retries, the allergen gate, offline banner honesty, server-authoritative pricing and the webhook secret UX.
+  1. **Kitchen (37-A).** A customer's new order (storefront or MCP) lands PENDING in the kitchen's New lane within seconds, alerts audibly (repeating until accepted, once sound is enabled) and visibly, and shows its full order number, the customer's note and the fulfilment type. A lapsed session, a muted handover, a stale feed or an unreachable API is never shown as "Live". A vendor can pause orders in one tap, and structured opening hours are enforced by the server (legacy empty-hours shops keep their behaviour until their vendor sets hours, D-25).
+  2. **Staff access (37-B).** A staff login holds only what was granted: granting no role yields no access, and revoking the last grant removes access rather than escalating it, proven through the API with the staff member's own token. Staff join by an emailed invite that carries their grant. Per-shop finance figures are the shop's own and can be exported. A completed order cannot be deleted from under its ledger rows; it is voided with a reason and a reversing entry.
+  3. **Checkout (37-C).** The price, availability and allergen set a customer confirms are re-validated by the server at submit. Any change is shown and must be re-confirmed. What was charged and acknowledged is what is recorded and what the customer can see afterwards; no promotion is shown that checkout does not apply.
+  4. **Abuse (37-D).** Rate limits key on a trusted client identity, so a spoofed `X-Forwarded-For` header does not mint a fresh bucket, and the edge limits per tenant with a typed 429. Order quantity and open cash orders per identity are bounded. A vendor can bulk-reject junk orders. A review is accepted only from a buyer of that shop.
+  5. **Integrators (37-E).** API, MCP and sync paths refuse shop-less items. A partial update cannot silently turn stock tracking off. Sync reports each item's outcome, through the edge too. An MCP-placed order reaches the kitchen, and an agent can list one shop's menu with readable allergens. A paused webhook endpoint keeps its events and its owner is told. A vendor can issue a scoped, revocable credential without sharing the owner's password.
+  6. **Accessibility (37-F).** Order confirmation and tracking status changes are announced to screen readers; shop cards have accessible names; Add/Remove keeps focus; each step has its own title; the cookie banner never hides focus; large text wraps. Each is guarded by a test that sees what axe missed.
+  7. **No regression of the goods.** The 40 entries in `goods-to-preserve.md` are re-verified at phase end on the delivered runtime. They include idempotent retries, the allergen gate, offline banner honesty, server-authoritative pricing and the webhook secret UX.
+  8. **Catalogue & shop admin (37-G).** Vendors can set a delivery fee, a free-delivery threshold and collection-only, enforced on every writer, and editing a shop keeps its public address.
 
-**Plans:** 0 plans
+**Plans:** 53 plans in 42 waves. Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 37 to break down)
+**Wave 1**
+- [ ] 37-01-PLAN.md — Merge main, prove the baseline, reserve V76..V83, mint RWO-* requirements
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 37-02-PLAN.md — 37-B: strict-scoping test hardening I (capture/restore, booted-value instrument, enumerate reds)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 37-03-PLAN.md — 37-B: convert implicit-admin tests to explicit grants; seed the MCP service account
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 37-04-PLAN.md — 37-B: D-06 strict scoping ON by default everywhere, with a CI guard
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 37-05-PLAN.md — 37-B: server-computed effective access, read-path directory, UXT-003 own-token proof (V76)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 37-06-PLAN.md — 37-B: Staff page effective access, NoAccessPage, ConfirmActionDialog generalised
+- [ ] 37-07-PLAN.md — 37-B: staff invites issue/list/resend/cancel with email (V77)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 37-08-PLAN.md — 37-B: invite accept, Keycloak user creation, admin-only tenant_id profile
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 37-09-PLAN.md — 37-B: invite form, pending invitations, /invite accept page
+- [ ] 37-10-PLAN.md — 37-B: delete guard and void with reversing ledger entry (V78, owner checkpoint)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 37-11-PLAN.md — 37-B: per-shop finance scope and CSV export (V79)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 37-12-PLAN.md — 37-B: finance scope/export UI and the void dialog
+- [ ] 37-13-PLAN.md — 37-B: CSV import target shop and copy-to-shop
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 37-14-PLAN.md — 37-B: product VAT rate select, import/copy UI, VAT line only for VAT-registered sellers
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 37-15-PLAN.md — 37-B gate: static gates, runtime RED/GREEN, live invite proof, goods, PR pointer
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 37-16-PLAN.md — 37-A: kitchen New lane, Accept/Reject, notes and fulfilment on every card
+- [ ] 37-19-PLAN.md — 37-A: structured hours migration with legacy-always-open (V80)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 37-17-PLAN.md — 37-A: repeating alert, honest sound state, "Live" only when true
+- [ ] 37-20-PLAN.md — 37-A: ShopAvailabilityPolicy, pause endpoints, structured-hours write path
+
+**Wave 15** *(blocked on Wave 14 completion)*
+- [ ] 37-18-PLAN.md — 37-A: board-stopped overlay on session lapse or access end; safe sign-in return
+- [ ] 37-22-PLAN.md — 37-A: customer availability from the server, JSON-LD hours, explicit seed hours
+
+**Wave 16** *(blocked on Wave 15 completion)*
+- [ ] 37-21-PLAN.md — 37-A: kitchen pause control, hours editor, vendor hours notices
+
+**Wave 17** *(blocked on Wave 16 completion)*
+- [ ] 37-23-PLAN.md — 37-A gate
+
+**Wave 18** *(blocked on Wave 17 completion)*
+- [ ] 37-24-PLAN.md — 37-D: trusted-proxy client IP resolver and render invariant
+
+**Wave 19** *(blocked on Wave 18 completion)*
+- [ ] 37-25-PLAN.md — 37-D: edge per-tenant rate limiter with typed 429
+
+**Wave 20** *(blocked on Wave 19 completion)*
+- [ ] 37-26-PLAN.md — 37-D: order size limits on every writer; review shop check
+
+**Wave 21** *(blocked on Wave 20 completion)*
+- [ ] 37-27-PLAN.md — 37-D: open cash-order caps by email/phone; contact-verified flag (V81)
+
+**Wave 22** *(blocked on Wave 21 completion)*
+- [ ] 37-28-PLAN.md — 37-D: keyed client-IP digest cap, retention and erasure (D-27)
+
+**Wave 23** *(blocked on Wave 22 completion)*
+- [ ] 37-29-PLAN.md — 37-D: bulk reject with a kept reason
+
+**Wave 24** *(blocked on Wave 23 completion)*
+- [ ] 37-30-PLAN.md — 37-D: reject dialog, unverified badge, checkout refusals, stepper limit, R-16
+
+**Wave 25** *(blocked on Wave 24 completion)*
+- [ ] 37-31-PLAN.md — 37-D gate
+
+**Wave 26** *(blocked on Wave 25 completion)*
+- [ ] 37-32-PLAN.md — 37-C: guest-order contract carries the prices shown; every caller sends them
+
+**Wave 27** *(blocked on Wave 26 completion)*
+- [ ] 37-33-PLAN.md — 37-C: basket re-validation at submit, composed with the 31.1 allergen refusal
+
+**Wave 28** *(blocked on Wave 27 completion)*
+- [ ] 37-34-PLAN.md — 37-C: basket-changed panel and the reprice-race spec
+- [ ] 37-35-PLAN.md — 37-C: no public promotions; reviewer "First L."
+
+**Wave 29** *(blocked on Wave 28 completion)*
+- [ ] 37-36-PLAN.md — 37-C: storefront without promotions, marketing notice, review display
+- [ ] 37-37-PLAN.md — 37-C: cash confirmation on its own announced route
+
+**Wave 30** *(blocked on Wave 29 completion)*
+- [ ] 37-38-PLAN.md — 37-C gate
+
+**Wave 31** *(blocked on Wave 30 completion)*
+- [ ] 37-39-PLAN.md — 37-E: partial update keeps stock tracking; narrow product PATCH
+
+**Wave 32** *(blocked on Wave 31 completion)*
+- [ ] 37-40-PLAN.md — 37-E: sync requires a shop, reports per item; shop-less products unorderable
+
+**Wave 33** *(blocked on Wave 32 completion)*
+- [ ] 37-41-PLAN.md — 37-E: edge passes sync results and core refusals through
+- [ ] 37-42-PLAN.md — 37-E: MCP orders land PENDING; list_products shop filter and allergen names
+
+**Wave 34** *(blocked on Wave 33 completion)*
+- [ ] 37-43-PLAN.md — 37-E: webhook auto-pause on failed deliveries, HELD events, owner email
+- [ ] 37-44-PLAN.md — 37-E: Keycloak client-management calls for credentials
+
+**Wave 35** *(blocked on Wave 34 completion)*
+- [ ] 37-45-PLAN.md — 37-E: scoped, revocable integrator credentials, human-only management (V82)
+
+**Wave 36** *(blocked on Wave 35 completion)*
+- [ ] 37-46-PLAN.md — 37-E: Developers page with show-once secrets
+
+**Wave 37** *(blocked on Wave 36 completion)*
+- [ ] 37-47-PLAN.md — 37-E gate with the live Keycloak credential lifecycle
+
+**Wave 38** *(blocked on Wave 37 completion)*
+- [ ] 37-48-PLAN.md — 37-G: delivery fee, threshold, collection-only on every writer; stable slug (V83)
+
+**Wave 39** *(blocked on Wave 38 completion)*
+- [ ] 37-49-PLAN.md — 37-G: shop form and storefront/checkout fulfilment UI
+
+**Wave 40** *(blocked on Wave 39 completion)*
+- [ ] 37-50-PLAN.md — 37-G gate
+
+**Wave 41** *(blocked on Wave 40 completion)*
+- [ ] 37-51-PLAN.md — 37-F: tracking live regions and per-step titles
+- [ ] 37-52-PLAN.md — 37-F: shop card names, Add/Remove focus, cookie banner, large text
+
+**Wave 42** *(blocked on Wave 41 completion)*
+- [ ] 37-53-PLAN.md — 37-F gate and the 40-goods re-verification (SC-7)
+
+**Cross-cutting constraints:**
+- After the cut, origin/main is merged into phase-37-ops-readiness once more so the next sub-theme starts on current main (D-04)
+- Nothing touches the shared compose stack until a person confirms at the checkpoint
 
 ### Phase 38: Spring Boot 4.1 Migration
 

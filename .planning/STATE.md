@@ -4,11 +4,11 @@ milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
-status: planning
-stopped_at: "Phase 37 UI-SPEC approved 2026-10-07 (bbba4d06; checker 7/7 PASS after 1 revision; state coverage 123 rows = 75 explicit / 13 backstop / 17 dismissed / 18 unresolved-as-assumption). Resume file: .planning/phases/37-real-world-operations-readiness/37-UI-SPEC.md. Next: /gsd-plan-phase 37."
-last_updated: "2026-10-07T15:29:58.775Z"
-last_activity: 2026-10-07
-last_activity_desc: Phase 37 UI design contract approved (2026-10-07); next plan Phase 37
+status: ready_to_execute
+stopped_at: "Phase 37 planned 2026-10-08: 53 plans (37-01..37-53), seven sub-theme PRs B→A→D→C→E→G→F with gate plans 15/23/31/38/47/50/53, migrations V76–V83 reserved, 35 RWO-* requirement IDs (minted by 37-01 Task 2). Plan checker PASSED after 1 revision (0 blockers); decision coverage 27/27. 37-01 Task 3 is a BLOCKING owner checkpoint on D-26 ('then signs the user in'). Next: /gsd-execute-phase 37."
+last_updated: "2026-10-08T00:00:00.000Z"
+last_activity: 2026-10-08
+last_activity_desc: Phase 37 planned (53 plans, checker passed); next execute Phase 37
 state_head: 7e1ee79bf22721d8dfea32df3d1170efce4b093a
 progress:
   total_phases: 20
