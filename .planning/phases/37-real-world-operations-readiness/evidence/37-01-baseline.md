@@ -184,7 +184,25 @@ to Phase 37; each sub-theme gate must rebuild every image and run `scripts/check
 
 ---
 
-## 6. Out of scope for Phase 37 (D-01 deferrals, recorded, not planned)
+## 6. Owner decision D-26: how the invitee is signed in after accepting a staff invitation
+
+Plan 37-01 Task 3 (`checkpoint:decision`, `gate="blocking-human"`) asks for the owner's reading of D-26's "and then
+signs the user in", before any 37-B code exists.
+
+| Field | Value |
+|-------|-------|
+| **Answer (option id)** | **`login-hint`** |
+| Option text | After the account is created, the page starts the normal Keycloak sign-in with the invited email pre-filled; the invitee types the password they just chose once more |
+| Answered by | the owner, 2026-10-08, via the `/gsd-execute-phase 37` orchestrator session (relayed to the 37-01 executor as an already-given owner decision) |
+| Rejected option | `server-session` (a server-side step mints the session, e.g. a NextAuth credentials provider doing a direct-grant exchange) — would have added a second session-minting path every gate must honour and direct grants on the dashboard client, the reason D-22 rejected Postgres API keys |
+| Consequence | No new authentication path; tokens and sessions stay exactly as today; the invitee enters the chosen password once more. Plans 37-08 and 37-09 are written for `login-hint` and are executed as planned: **no re-plan** |
+
+Owner's words as relayed: **"login-hint"** — after the account is created, the accept page starts the normal Keycloak
+sign-in with the invited email pre-filled; the invitee types the password they just chose once more.
+
+---
+
+## 7. Out of scope for Phase 37 (D-01 deferrals, recorded, not planned)
 
 - The remaining P2/P3 persona clusters of sub-themes 37-A..37-E and 37-G (to a 37.x follow-up phase),
   including **UXT-049** (double-tap skips a status — SC-1's clause moves with it), **UXT-050** (mute
