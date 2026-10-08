@@ -628,16 +628,16 @@ mock. This is the phase that turns a working product into a business.
 > #461 says orders today complete without taking any. **Do not plan PAY-01..03 around it.**
 
 **The product decision is made. Do not re-open it.** Recorded verbatim in #461 from the owner on
-2026-08-02 and reaffirmed 2026-08-07: **cash (or any unpaid handover) at the point of fulfilment is
-not permitted** — a customer can order and simply not collect, leaving the vendor with produced stock
-and no payment — and instead a payment link is issued automatically to the buyer's **verified
-telephone number**, or the social channel they engaged on, so the order is paid before production.
+2026-08-02 and reaffirmed 2026-08-07: pay-on-collection is **not permitted** — a customer can order
+and simply not collect, leaving the vendor with produced stock and no payment — and instead a payment
+link is issued automatically to the buyer's **verified telephone number**, or the social channel they
+engaged on, so the order is paid before production.
 
 > **Vocabulary, clarified by the owner 2026-10-05.** In the owner's usage, *"pay on delivery /
 > collection"* means exactly this link: the buyer is sent a payment link and pays by **bank transfer
 > or any payment method the platform integrates**, before service. What is banned is **cash exchanged
-> at the point of fulfilment**, the behaviour the code labels `"Cash on Delivery"`
-> (`PublicStorefrontService:508-521`). Older text (here, in #461, in STATE) that says
+> at the point of fulfilment**, the fallback the code labelled `"Cash on Delivery"` until 2026-09-02
+> (INT-9 renamed it `"Unpaid"`: `PublicStorefrontService:1186-1194`). Older text (here, in #461, in STATE) that says
 > "pay-on-collection is not permitted" means that cash handover, never the link. Policy in one line:
 > **the consumer pays, by link, before service.**
 
@@ -650,8 +650,8 @@ telephone number**, or the social channel they engaged on, so the order is paid 
      `CustomerJwtVerifier`, so the platform verifies email and not phone **while the design routes on
      phone** (this is #462, and it is why #462 moved into this phase); (c) `WhatsAppSmsChannel` exists
      but `WhatsAppProperties.enabled` defaults **false** and Phase 22's inbound parser is incomplete
-     (#208 — a deferral now on the critical path); (d) `PublicStorefrontService:508-521` deliberately
-     falls back to cash-on-delivery when no provider is configured, which is what makes the policy
+     (#208 — a deferral now on the critical path); (d) `PublicStorefrontService:1186-1194` deliberately
+     falls back to an unpaid order (the label `"Unpaid"` replaced `"Cash on Delivery"` on 2026-09-02) when no provider is configured, which is what makes the policy
      violable and must be removed or gated deliberately, not left as a silent default. The link must
      be single-use and expiring — it is a bearer credential. (PAY-04)
 
