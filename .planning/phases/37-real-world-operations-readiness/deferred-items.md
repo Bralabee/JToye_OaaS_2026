@@ -17,6 +17,13 @@ where it must be resolved.
 - **Must be resolved before the phase PR opens** (both gates run in
   `.github/workflows/docs-freshness.yml` and fail the build on drift). Re-measure at that point;
   do not copy the numbers above.
+- **37-05 adds a second dimension:** migration `V76__user_directory_realm_admin_seen.sql`. So
+  `schema_version` in `docs/metrics.json` (computed by `docs-freshness.sh` from the tracked
+  migration files) moves from 75 to 76. The prose in `CLAUDE.md` / `AGENTS.md` that names the current
+  schema version and the migration count ("V75", "75 Flyway migrations, V1 through V75") needs a V76
+  entry at the same pre-PR step. 37-05 also added Java test methods
+  (`StaffEffectiveAccessIntegrationTest` 9 in a new file, `MembershipSerializerRoundTripTest` 2,
+  `StaffManagementIntegrationTest` 2 in nested classes). Re-measure; do not copy these numbers.
 
 ## 2. `GET /api/v1/media/review-queue` is not shop-scoped (found in 37-03)
 
