@@ -4,18 +4,17 @@ milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
-status: ready_to_execute
+status: executing
 stopped_at: "Phase 37 planned 2026-10-08: 53 plans (37-01..37-53), seven sub-theme PRs B→A→D→C→E→G→F with gate plans 15/23/31/38/47/50/53, migrations V76–V83 reserved, 35 RWO-* requirement IDs (minted by 37-01 Task 2). Plan checker PASSED after 1 revision (0 blockers); decision coverage 27/27. 37-01 Task 3 is a BLOCKING owner checkpoint on D-26 ('then signs the user in'). Next: /gsd-execute-phase 37."
-last_updated: "2026-10-08T00:00:00.000Z"
+last_updated: "2026-10-08T07:21:27.547Z"
 last_activity: 2026-10-08
-last_activity_desc: Phase 37 planned (53 plans, checker passed); next execute Phase 37
-state_head: 7e1ee79bf22721d8dfea32df3d1170efce4b093a
+state_head: 953df054845908e238a56818851ce70a7ddf83e4
 progress:
   total_phases: 20
   completed_phases: 13
-  total_plans: 185
+  total_plans: 238
   completed_plans: 185
-  percent: 72
+  percent: 65
 ---
 
 # Project State
@@ -25,11 +24,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-07)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 31.1 (Persona gap closure) is complete, verified, secured and validated (2026-10-07) and shipped as PR #901; the review series and merge are next. After that, the owner-set planning order continues with Phase 37 (Real-world operations readiness; no CONTEXT.md yet → `/gsd-discuss-phase 37`). GSD's numeric next is Phase 29, which is paused on its own branch and is NOT the next phase.
+**Current focus:** Phase 37 — Real-world operations readiness
 
 ## Current Position
 
-Phase: 29 — Deployable Staging, With Its Own Monitoring
+Phase: 37 (Real-world operations readiness) — EXECUTING
 - 31.1-01 DONE 2026-10-06: D-21 gate passed on origin/main itself (Boot 4.1.1); merge 2f0bcc41 verified, code tree byte-identical to origin/main; KeycloakAdminClientTest 5, DsarFanout 11, DsarVerification 8, GuestCheckoutIdempotency 13, OrderAllergenSnapshot 8, all 0 failures/errors. `evidence/31.1-01-baseline.md` is the Boot 4 interface record (JsonMapper, golden-contract additive-field rule, A1 measured on a replica, MockitoBean idioms, V68..V75 reservation, stack provenance). Requirements stay open: shared with later plans (ready-ids 0/5).
 - 31.1-02 DONE 2026-10-06: #777 closed at the service. V68 (erasure_records.subject_customer_id nullable, no backfill); GdprService.matchSubjectInTenant + one private anonymisation core behind eraseCustomerData and eraseSubjectByDigest (returns records written, so tenantsErased counts real erasures); tenant-predicated order finder + DISTINCT email projections; unpredicated unpaged finder deleted. DsarGuestErasureRlsIntegrationTest 8/0/0 (RED tenantsErased=0 with all PII present), GdprErasure 4, GdprErasureReviewRls 7, DsarFanout 11, RlsContract 7, GdprServiceTest 16, full unit 1495/0/0. Break arms 1 and 3 red, 2 green under RLS as predicted. PGC-777 stays open (shared with 31.1-07/-11).
 - 31.1-03 DONE 2026-10-06: #784/#785 closed at the server. V69 (orders + orders_aud allergen_ack_mask, allergen_ack_at, placed_via; nullable, no backfill, no default; CHECKs on orders). GuestOrderRequest.acknowledgedAllergenMask (@Min 0 @Max 16383, NON_NULL). Missing -> 422 allergen-acknowledgement-required; differs from the union read in the V63 snapshot loop -> 409 allergen-acknowledgement-stale with currentAllergenMask/currentAllergens (bit order)/lines (basket order); both roll the reservation back. Vendor/API/MCP orders: placed_via VENDOR, ack NULL. GuestOrderAllergenAckIntegrationTest 10/0/0 (RED: missing-ack 201; stale arms 201). Containment break arm red on the removed-bit arm. A1 in-tree confirmed: without NON_NULL the two storefront.guest-order* golden rows red; with it IdempotencyFingerprintGoldenTest 15/0/0, jackson2-golden untouched. Six callers + seed-order-metric.sh send the CURRENT mask (GuestOrderAcknowledgements); OpenAPI snapshot +1 field. Full unit 1495/0/0, full integration 790/0/0. Owed: seed-order-metric.sh live run + fail direction (31.1-30); 31.1-15 must send the mask before 31.1-30's rebuild. PGC-784/785 stay open (shared).
@@ -762,7 +761,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Phase 31.1 shipped — PR #901
+Status: Executing Phase 37
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -773,9 +772,9 @@ Status: Phase 31.1 shipped — PR #901
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-07 — Phase 31.1 shipped as PR #901
+Last activity: 2026-10-08
 
-Progress: [███████░░░] 72%
+Progress: [███████░░░] 65%
 
 ## Milestone v2.3 Phase Map
 
