@@ -2,13 +2,26 @@ package uk.jtoye.core.security.access;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.cache.CacheManager;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import tools.jackson.databind.json.JsonMapper;
+import uk.jtoye.core.security.JwtRolesAndScopesConverter;
+import uk.jtoye.core.testsupport.ShopGrants;
+import uk.jtoye.testsupport.cache.LiveCacheTestSlice;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -38,7 +51,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -51,6 +66,10 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
  * VSA-04 staff-management proof against real Postgres 15 (Testcontainers). Drives
@@ -877,5 +896,183 @@ class StaffManagementIntegrationTest {
                 "SELECT count(*) FROM shop_staff_aud WHERE id = ? AND revtype = ?",
                 Long.class, grantId, revtype);
         return n == null ? 0 : n;
+    }
+
+    // ====================================================================
+    // 37-05 Task 3 — UXT-003 (D-08, roadmap SC-2): revoking a manager's LAST grant ends
+    // access on the manager's very next request, proven over HTTP with the manager's OWN
+    // token. Both arms run on the shipped strict-scoping default and never touch the switch:
+    // under the strict-OFF override the revoked manager, now holding no grant, becomes the
+    // day-one implicit GROUP_ADMIN and the arms go red — that is the UXT-003 escalation.
+    // ====================================================================
+
+    /** The revoke arm, in the test profile's context (no cache manager: every read re-resolves). */
+    @Nested
+    @AutoConfigureMockMvc
+    class Uxt003RevokeEndsAccess {
+
+        @Autowired private MockMvc mockMvc;
+        @Autowired private JsonMapper jsonMapper;
+
+        @Test
+        @DisplayName("UXT-003: after the last grant is revoked, the manager's own token gets 403 and staff/me says no access")
+        void revokingTheLastGrant_endsAccessOnTheNextRequest() throws Exception {
+            Uxt003 uxt = new Uxt003(mockMvc, jsonMapper, jdbc);
+            uxt.seed();
+            uxt.assertManagerCanWrite();
+            uxt.revokeAsGroupAdmin();
+            uxt.assertManagerHasNoAccess();
+        }
+    }
+
+    /**
+     * The same arm with the membership cache genuinely ON (the production shape: Redis there, an
+     * in-memory cache here) and WARM — the manager's own staff/me runs before the revoke, and the
+     * entry is asserted present. So the 403 after the revoke proves the post-commit eviction (D-05),
+     * not a cache expiry and not the test profile's absent cache.
+     */
+    @Nested
+    @AutoConfigureMockMvc
+    @Import(LiveCacheTestSlice.class)
+    class Uxt003RevokeEndsAccessWithAWarmCache {
+
+        @Autowired private MockMvc mockMvc;
+        @Autowired private JsonMapper jsonMapper;
+        @Autowired private CacheManager cacheManager;
+
+        @AfterEach
+        void clearCache() {
+            cacheManager.getCache("shopMembership").clear();
+        }
+
+        @Test
+        @DisplayName("UXT-003: a cache-warm membership is evicted by the revoke — next request 403, staff/me no access")
+        void revokingTheLastGrant_evictsAWarmMembership() throws Exception {
+            Uxt003 uxt = new Uxt003(mockMvc, jsonMapper, jdbc);
+            uxt.seed();
+            uxt.assertManagerCanWrite();
+
+            MvcResult warm = mockMvc.perform(get("/api/v1/staff/me").with(uxt.managerJwt())
+                            .accept(MediaType.APPLICATION_JSON))
+                    .andReturn();
+            assertThat(warm.getResponse().getStatus()).as(Uxt003.body(warm)).isEqualTo(200);
+            assertThat(warm.getResponse().getContentAsString()).as("warm read sees the grant")
+                    .contains(uxt.shopId.toString());
+            String key = "tenant:" + uxt.tenant + ":resolveMembership:" + uxt.manager;
+            assertThat(cacheManager.getCache("shopMembership").get(key))
+                    .as("instrument: the manager's membership is cached before the revoke")
+                    .isNotNull();
+
+            uxt.revokeAsGroupAdmin();
+
+            assertThat(cacheManager.getCache("shopMembership").get(key))
+                    .as("the revoke evicted the manager's membership after commit")
+                    .isNull();
+            uxt.assertManagerHasNoAccess();
+        }
+    }
+
+    /** One tenant, one shop, a Group admin and a manager with exactly one per-shop grant. */
+    private static final class Uxt003 {
+        private static final String SHOP_ACCESS_DENIED = "https://jtoye.uk/errors/shop-access-denied";
+
+        private final MockMvc mockMvc;
+        private final JsonMapper jsonMapper;
+        private final JdbcTemplate jdbc;
+        final UUID tenant = UUID.randomUUID();
+        final UUID shopId = UUID.randomUUID();
+        final UUID groupAdmin = UUID.randomUUID();
+        final UUID manager = UUID.randomUUID();
+        UUID managerGrant;
+
+        Uxt003(MockMvc mockMvc, JsonMapper jsonMapper, JdbcTemplate jdbc) {
+            this.mockMvc = mockMvc;
+            this.jsonMapper = jsonMapper;
+            this.jdbc = jdbc;
+        }
+
+        void seed() {
+            jdbc.update("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now())",
+                    tenant, "37-05 UXT-003 " + tenant);
+            jdbc.update("INSERT INTO shops (id, tenant_id, created_at, name, slug, address, published, "
+                            + "delivery_fee_pennies, minimum_order_pennies, version) "
+                            + "VALUES (?, ?, now(), ?, ?, ?, true, 0, 0, 0)",
+                    shopId, tenant, "UXT-003 Kitchen " + shopId, "uxt003-" + shopId, "1 Test Street, London, E1 6AN");
+            ShopGrants.grantOperator(jdbc, tenant, groupAdmin, null, "GROUP_ADMIN", "admin-" + groupAdmin + "@example.com");
+            managerGrant = ShopGrants.grantOperator(jdbc, tenant, manager, shopId, "SHOP_MANAGER",
+                    "manager-" + manager + "@example.com");
+        }
+
+        void assertManagerCanWrite() throws Exception {
+            MvcResult write = writeProductAsManager("UXT003-BEFORE");
+            assertThat(write.getResponse().getStatus())
+                    .as("positive control: the granted manager writes on its shop: %s", body(write))
+                    .isEqualTo(201);
+        }
+
+        void revokeAsGroupAdmin() throws Exception {
+            MvcResult revoke = mockMvc.perform(delete("/api/v1/staff/" + managerGrant).with(vendorJwt(groupAdmin)))
+                    .andReturn();
+            assertThat(revoke.getResponse().getStatus()).as("Group admin revoke: %s", body(revoke)).isEqualTo(204);
+            Long rows = jdbc.queryForObject("SELECT count(*) FROM shop_staff WHERE tenant_id = ? AND user_id = ?",
+                    Long.class, tenant, manager);
+            assertThat(rows).as("the manager holds no grant at all after the revoke").isZero();
+        }
+
+        void assertManagerHasNoAccess() throws Exception {
+            MvcResult write = writeProductAsManager("UXT003-AFTER");
+            assertThat(write.getResponse().getStatus())
+                    .as("the revoked manager's own token, next request: %s", body(write))
+                    .isEqualTo(403);
+            assertThat(jsonMapper.readTree(write.getResponse().getContentAsString()).path("type").asString())
+                    .as(body(write)).isEqualTo(SHOP_ACCESS_DENIED);
+
+            MvcResult me = mockMvc.perform(get("/api/v1/staff/me").with(managerJwt())
+                            .accept(MediaType.APPLICATION_JSON))
+                    .andReturn();
+            assertThat(me.getResponse().getStatus()).as(body(me)).isEqualTo(200);
+            tools.jackson.databind.JsonNode access = jsonMapper.readTree(me.getResponse().getContentAsString());
+            assertThat(access.path("groupAdmin").asBoolean())
+                    .as("not escalated to the implicit admin: %s", body(me)).isFalse();
+            assertThat(access.path("grantedShopIds").isArray()).as(body(me)).isTrue();
+            assertThat(access.path("grantedShopIds").size()).as("no shops: %s", body(me)).isZero();
+        }
+
+        RequestPostProcessor managerJwt() {
+            return vendorJwt(manager);
+        }
+
+        private MvcResult writeProductAsManager(String skuPrefix) throws Exception {
+            Map<String, Object> product = new LinkedHashMap<>();
+            product.put("sku", skuPrefix + "-" + UUID.randomUUID());
+            product.put("title", "Jollof Rice");
+            product.put("ingredientsText", "Rice, tomato, pepper");
+            product.put("allergenMask", 0);
+            product.put("pricePennies", 799);
+            product.put("category", "Mains");
+            product.put("available", true);
+            product.put("shopId", shopId);
+            return mockMvc.perform(post("/api/v1/products").with(managerJwt())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(jsonMapper.writeValueAsString(product)))
+                    .andReturn();
+        }
+
+        private RequestPostProcessor vendorJwt(UUID sub) {
+            return jwt().jwt(j -> j.subject(sub.toString())
+                            .claim("tenant_id", tenant.toString())
+                            .claim("email", "user-" + sub + "@example.com")
+                            .claim("realm_access", Map.of("roles", List.of("user")))
+                            .claim("scope", "catalog:read catalog:write"))
+                    .authorities(new JwtRolesAndScopesConverter());
+        }
+
+        static String body(MvcResult result) {
+            try {
+                return result.getResponse().getStatus() + " " + result.getResponse().getContentAsString();
+            } catch (Exception e) {
+                return "<unreadable body: " + e + ">";
+            }
+        }
     }
 }
