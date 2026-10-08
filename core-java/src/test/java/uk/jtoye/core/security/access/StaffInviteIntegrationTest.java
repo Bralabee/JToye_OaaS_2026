@@ -170,10 +170,12 @@ class StaffInviteIntegrationTest {
         assertThat(SentMail.recipients(mail, Message.RecipientType.TO)).containsExactly("new@example.com");
         assertThat(SentMail.subject(mail)).isEqualTo("Ada Admin invited you to " + tenantName + " on J'Toye");
         String text = SentMail.text(mail);
-        Matcher link = Pattern.compile(Pattern.quote(ACCEPT_BASE + "/" + tenantId + ".") + "([A-Za-z0-9_-]+)")
+        Matcher link = Pattern.compile(Pattern.quote(ACCEPT_BASE + "#token=" + tenantId + ".") + "([A-Za-z0-9_-]+)")
                 .matcher(text);
-        assertThat(link.find()).as("the email carries the accept link {base}/{tenantId}.{token}: %s", text).isTrue();
+        assertThat(link.find()).as("the email carries the accept link {base}#token={tenantId}.{token} (37-08: the token rides in the fragment, never the path): %s", text).isTrue();
         String token = link.group(1);
+        assertThat(text).as("the token never rides in the URL path, where request logs would keep it (V75 rule)")
+                .doesNotContain(ACCEPT_BASE + "/" + tenantId);
         assertThat(token).as("32 random bytes, unpadded base64url").hasSize(43);
         assertThat(sha256Hex(token)).as("the emailed token hashes to the stored digest").isEqualTo(digest);
 
@@ -449,7 +451,7 @@ class StaffInviteIntegrationTest {
 
     String linkToken(Invocation send) {
         String text = SentMail.text(SentMail.reparse((MimeMessage) send.getArgument(0)));
-        Matcher link = Pattern.compile(Pattern.quote(ACCEPT_BASE + "/" + tenantId + ".") + "([A-Za-z0-9_-]+)")
+        Matcher link = Pattern.compile(Pattern.quote(ACCEPT_BASE + "#token=" + tenantId + ".") + "([A-Za-z0-9_-]+)")
                 .matcher(text);
         assertThat(link.find()).as(text).isTrue();
         return link.group(1);

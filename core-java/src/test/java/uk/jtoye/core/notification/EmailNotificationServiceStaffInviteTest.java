@@ -48,7 +48,7 @@ class EmailNotificationServiceStaffInviteTest {
     private Logger logger;
 
     static final String TO = "new.person@example.com";
-    static final String LINK = "https://app.jtoye.test/invite/6f318039-1f48-40f2-b7a0-1132ce4bb369."
+    static final String LINK = "https://app.jtoye.test/invite#token=6f318039-1f48-40f2-b7a0-1132ce4bb369."
             + "Q2hlY2tPbmx5VGhpc0lzQVRlc3RUb2tlblRoYXRJc0xvbmc";
     /** 13:32 UTC on 10 Oct 2026 is 14:32 in London (BST). */
     static final OffsetDateTime EXPIRES_BST = OffsetDateTime.of(2026, 10, 10, 13, 32, 0, 0, ZoneOffset.UTC);

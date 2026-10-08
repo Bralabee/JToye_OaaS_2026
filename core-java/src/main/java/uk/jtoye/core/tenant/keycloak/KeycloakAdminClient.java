@@ -235,6 +235,17 @@ public class KeycloakAdminClient {
         }
     }
 
+    /** 37-08 RED skeleton: not implemented yet. */
+    public String createUser(String realm, String email, String firstName, String lastName,
+                             char[] password, UUID tenantId, String token) {
+        return null;
+    }
+
+    /** 37-08 RED skeleton: not implemented yet. */
+    public List<VendorRealmUser> findVendorUsersByEmail(String realm, String email, String token) {
+        return List.of();
+    }
+
     /** A string field of a user representation, or {@code null} when absent or JSON null. */
     private static String text(ObjectNode node, String field) {
         JsonNode v = node.get(field);
