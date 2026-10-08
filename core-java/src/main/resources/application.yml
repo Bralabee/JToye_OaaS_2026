@@ -194,19 +194,20 @@ jtoye:
   # Phase 23 vendor-scoped access (VSA-02). Config KEYS (not secrets); base
   # inherits to all profiles, env-overridable with safe defaults.
   access:
-    # D-12 (revised, CR-07): strict-scoping switch. OFF (default) preserves day-one
-    # behaviour exactly — an ungranted tenant user's first write request
-    # JIT-auto-provisions a tenant-wide GROUP_ADMIN grant (D-04) and every grant is
-    # honoured. ON does TWO things so the off-ramp is actually reachable for a tenant
-    # with existing usage: (1) stops new JIT auto-provisioning, and (2) STOPS HONOURING
-    # the JIT-sourced tenant-wide GROUP_ADMIN rows already written for day-one users —
-    # those users genuinely become scoped (deny-by-default on shop-scoped calls).
-    # Deliberate operator grants (grant_source = 'OPERATOR', via /api/v1/staff/grant)
-    # and realm admins are honoured unchanged. Lockout safety: if de-honouring JIT rows
-    # would leave a tenant with zero GROUP_ADMINs, the OLDEST JIT admin is retained as a
-    # WARN-logged bootstrap admin — so flipping this flag can never lock a tenant out.
-    # Global flag for now; per-tenant granularity is deferred.
-    strict-scoping: ${ACCESS_STRICT_SCOPING:false}
+    # D-06 (Phase 37, owner ruling): ungranted means no access. Strict scoping is ON
+    # by default in every profile. A user's access is exactly what their shop_staff
+    # rows say: no JIT auto-provisioning, and the JIT-sourced tenant-wide GROUP_ADMIN
+    # rows written for day-one users are no longer honoured. Deliberate operator grants
+    # (grant_source = 'OPERATOR', via /api/v1/staff/grant) and realm admins are honoured.
+    # V57 lockout safety (unchanged): if a tenant has no OPERATOR GROUP_ADMIN, its
+    # OLDEST JIT admin is kept as a WARN-logged bootstrap admin, so no tenant locks
+    # itself out. Integration service accounts get explicit grants (D-23).
+    # OFF (false) restores the day-one implicit tenant-wide GROUP_ADMIN for every
+    # ungranted user and silently re-escalates everyone the flip scoped, so setting it
+    # false needs an owner ruling, never a config edit. scripts/check-strict-scoping-default.sh
+    # fails CI if any profile, compose file, .env.example or k8s manifest says false.
+    # Global flag; a per-tenant switch was considered and not chosen (37-CONTEXT).
+    strict-scoping: ${ACCESS_STRICT_SCOPING:true}
     # D-09: throttle window for the login-populated user_directory upsert. A
     # returning user whose row is younger than this interval is a no-op (never a
     # write per request). ISO-8601 duration; default one hour.

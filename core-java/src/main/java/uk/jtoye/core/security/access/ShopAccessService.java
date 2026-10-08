@@ -46,21 +46,21 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li><strong>Realm-admin bridge (D-03)</strong> — a caller carrying the
  *       existing {@code ROLE_admin} authority is an implicit GROUP_ADMIN; the
  *       authority is read, {@code realm_access} is NOT re-parsed.</li>
- *   <li><strong>JIT lazy-provision (D-04)</strong> — the first authenticated
- *       request from an ungranted tenant user auto-creates a tenant-wide
- *       GROUP_ADMIN grant for that user's OWN {@code sub} via the race-safe
- *       {@code INSERT ... ON CONFLICT DO NOTHING} (never a client-supplied
- *       role/shop), preserving day-one "everyone can do everything" while
- *       strict-scoping is OFF.</li>
+ *   <li><strong>JIT lazy-provision (D-04)</strong> — ONLY under an explicit
+ *       strict-scoping OFF override: the first write request from an ungranted tenant
+ *       user auto-creates a tenant-wide GROUP_ADMIN grant for that user's OWN
+ *       {@code sub} via the race-safe {@code INSERT ... ON CONFLICT DO NOTHING} (never a
+ *       client-supplied role/shop). Never runs under the shipped default (D-06).</li>
  *   <li><strong>Throttled directory upsert (D-09)</strong> — records/refreshes
  *       the {@code user_directory} grant-target row, gated on a stale
  *       {@code last_seen} so it is never a write per request.</li>
- *   <li><strong>Strict-scoping switch (D-12, revised CR-07)</strong> — OFF (default)
- *       = D-04 auto-provision, everything honoured (day-one unchanged). ON = stops new
- *       auto-provisioning AND de-honours JIT-sourced tenant-wide GROUP_ADMIN rows (a day-one
- *       user genuinely becomes scoped); deliberate {@link GrantSource#OPERATOR} grants and
- *       realm admins are honoured unchanged; the tenant's oldest JIT admin is retained as a
- *       WARN-logged bootstrap so no tenant can lock itself out on the flip.</li>
+ *   <li><strong>Strict-scoping switch (D-12, revised CR-07; default ON since D-06)</strong>
+ *       — ON (default) = ungranted means no access: no auto-provisioning, and JIT-sourced
+ *       tenant-wide GROUP_ADMIN rows are de-honoured (a day-one user genuinely becomes
+ *       scoped); deliberate {@link GrantSource#OPERATOR} grants and realm admins are honoured;
+ *       the tenant's oldest JIT admin is retained as a WARN-logged bootstrap when it has no
+ *       OPERATOR admin, so no tenant can lock itself out. OFF is an explicit override that
+ *       restores the day-one implicit admin and needs an owner ruling.</li>
  * </ul>
  *
  * <p><strong>Pitfall 4 (RESEARCH §5):</strong> the JIT provision + directory
@@ -101,11 +101,12 @@ public class ShopAccessService {
     private final ObjectProvider<ShopAccessService> selfProvider;
 
     /**
-     * D-12 (revised, CR-07): OFF (default) preserves the day-one JIT auto-provision and honours
-     * every grant; ON stops new provisioning AND de-honours JIT-sourced tenant-wide GROUP_ADMIN
-     * rows (operator grants + realm admins unchanged, oldest JIT admin kept as bootstrap).
+     * D-06 (default ON): ungranted means no access — no JIT provisioning, JIT-sourced tenant-wide
+     * GROUP_ADMIN rows de-honoured (operator grants + realm admins honoured, oldest JIT admin kept
+     * as bootstrap). OFF is an explicit override that restores the day-one implicit admin and the
+     * JIT auto-provision (D-12, CR-07); reverting D-06 needs an owner ruling.
      */
-    @Value("${jtoye.access.strict-scoping:false}")
+    @Value("${jtoye.access.strict-scoping:true}")
     private boolean strictScoping;
 
     /** D-09: throttle window — a returning user younger than this is a directory no-op. */
@@ -151,33 +152,28 @@ public class ShopAccessService {
     /**
      * Log the resolved shop-scoping posture ONCE at startup (QA-council 20260902 SEC-2).
      *
-     * <p>{@code strict-scoping=false} is a recorded design decision (D-12, CR-07) and the
-     * production default — but until this line existed the posture was invisible: no
-     * manifest declared the variable and nothing in the logs said which rule was in force,
-     * so OFF-by-choice and OFF-by-omission were indistinguishable. A WARN (not INFO) because
-     * the consequence is an authorization posture — every ungranted tenant user is an implicit
-     * tenant-wide GROUP_ADMIN — and an operator reading a deployment's first log lines must
-     * see that stated, not infer it. The flip itself is NOT decided here: it is blocked on
-     * #285 (bulk-revoke of JIT grants), the {@code /sync/batch} shop predicate, and the
-     * {@code integration-orders-rw} UUID-subject client whose GROUP_ADMIN comes solely from
-     * the strict-OFF rule.
+     * <p>Strict scoping ON is the default (D-06, owner ruling): ungranted means no access. ON is
+     * stated at INFO so every startup log says which rule is in force. OFF can only come from an
+     * explicit override ({@code ACCESS_STRICT_SCOPING=false}), and it is a WARN because it is an
+     * authorization posture — every ungranted tenant user becomes an implicit tenant-wide
+     * GROUP_ADMIN — and reverting D-06 needs an owner ruling, not a config edit. The WARN names
+     * the override so an operator reading a deployment's first log lines sees where it came from.
      *
-     * <p>Reads the startup-bound field only; tests that flip {@code strictScoping} by
-     * reflection do not re-trigger it, which is correct — it describes the posture the
-     * process BOOTED with.
+     * <p>Reads the startup-bound field only; tests that set {@code strictScoping} through
+     * {@code StrictScopingGuard} do not re-trigger it, which is correct — it describes the
+     * posture the process BOOTED with.
      */
     @PostConstruct
     void logScopingPosture() {
         if (strictScoping) {
-            log.info("event=shop_scoping_posture strict=true: vendor shop-scoping is ENFORCED "
-                    + "(jtoye.access.strict-scoping=true) — JIT-provisioned tenant-wide GROUP_ADMIN grants "
-                    + "are de-honoured, no new JIT provisioning; operator grants and realm admins honoured.");
+            log.info("event=shop_scoping_posture strict=true: access: strict scoping ON (default, D-06) — "
+                    + "ungranted users have no access; JIT-provisioned tenant-wide GROUP_ADMIN grants are "
+                    + "de-honoured and nothing new is provisioned; operator grants and realm admins are honoured.");
             return;
         }
-        log.warn("event=shop_scoping_posture strict=false: vendor shop-scoping is NOT enforced — every "
-                + "ungranted tenant user is an implicit tenant-wide GROUP_ADMIN and every JIT grant is honoured "
-                + "(jtoye.access.strict-scoping=false, D-12 recorded default). Arming is tracked and blocked on "
-                + "#285, the /sync/batch shop predicate and the integration-orders-rw UUID-subject client.");
+        log.warn("event=shop_scoping_posture strict=false: access: strict scoping OFF by explicit override "
+                + "(ACCESS_STRICT_SCOPING=false): ungranted users are implicit tenant-wide GROUP_ADMIN; "
+                + "reverting D-06 needs an owner ruling");
     }
 
     // ---------------------------------------------------------------------

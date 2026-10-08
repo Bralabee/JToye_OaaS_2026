@@ -23,8 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * green under OFF says nothing about ON. This class reads the value the {@code ShopAccessService}
  * bean in a freshly booted context actually holds and asserts it is the value the ENVIRONMENT
  * declares ({@code ACCESS_STRICT_SCOPING}, falling back to the {@code application.yml} default
- * {@code false} until 37-04 flips it). Run with {@code ACCESS_STRICT_SCOPING=true} exported in the
- * same shell as Gradle, it proves the variable reached the bean; run with it unset, it proves the
+ * {@code true}, flipped from {@code false} by 37-04 / D-06). Run with a value exported in the same
+ * shell as Gradle, it proves the variable reached the bean; run with it unset, it proves the
  * default did. Either way the reading is taken from the context bean (proxy-unwrapped), never from a
  * test's belief about the default.
  *
@@ -54,7 +54,8 @@ class StrictScopingBootedValueIntegrationTest {
 
     @Test
     void bootedStrictScopingEqualsTheValueTheEnvironmentDeclares() {
-        String declared = System.getenv().getOrDefault("ACCESS_STRICT_SCOPING", "false");
+        // 37-04 (D-06): the application.yml default is now true, so "unset" expects true.
+        String declared = System.getenv().getOrDefault("ACCESS_STRICT_SCOPING", "true");
         boolean expected = Boolean.parseBoolean(declared);
 
         boolean booted = StrictScopingGuard.current(shopAccessService);

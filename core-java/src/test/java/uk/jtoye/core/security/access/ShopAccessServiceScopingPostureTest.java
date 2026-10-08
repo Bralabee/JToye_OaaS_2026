@@ -9,6 +9,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.convert.ApplicationConversionService;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import uk.jtoye.core.config.TenantCacheEvictor;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.testsupport.StrictScopingGuard;
@@ -17,36 +20,33 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 /**
- * QA-council 20260902 SEC-2 — the shop-scoping posture is LOGGED at startup, at WARN when
- * strict-scoping is OFF, so a deployment's own logs state which authorization rule it booted
- * with instead of leaving OFF-by-choice indistinguishable from OFF-by-omission.
+ * The shop-scoping posture is LOGGED at startup (QA-council 20260902 SEC-2), and since D-06
+ * (Phase 37-04) the default is strict scoping ON.
  *
- * <p>Pure unit test: the service is constructed with inert collaborators (the posture line
- * reads only the bound flag and touches nothing else), the flag is set through
- * {@link StrictScopingGuard} exactly as {@code StaffManagementIntegrationTest} /
- * {@code ShopAccessEnforcementIntegrationTest} set it,
- * and the emission is captured with the {@code ListAppender} pattern from
- * {@code RabbitListenerContainerFactoryTest}. Both directions are asserted — WARN present when
- * OFF, ABSENT when ON — because a test that only looked for the WARN could pass against an
- * implementation that warns unconditionally, which would train operators to ignore it.
+ * <p>Two kinds of assertion:
+ * <ul>
+ *   <li><strong>The booted default.</strong> A context is booted with the REAL
+ *       {@code application.yml} (via {@link ConfigDataApplicationContextInitializer}) and the
+ *       {@code ShopAccessService} bean is read back from it. With {@code ACCESS_STRICT_SCOPING}
+ *       unset it must hold {@code true}, and the {@code @PostConstruct} posture line it emitted
+ *       while booting must be the ON INFO line — the value is observed through the bean's own
+ *       startup behaviour, not set by reflection.</li>
+ *   <li><strong>Each log branch.</strong> A fresh instance with inert collaborators has the flag
+ *       set through {@link StrictScopingGuard} and the line captured with a {@code ListAppender}.
+ *       Both directions are asserted: OFF is a WARN naming the explicit override and the owner
+ *       ruling, and ON emits no WARN at all — an unconditional warning would train operators to
+ *       ignore it.</li>
+ * </ul>
  */
 class ShopAccessServiceScopingPostureTest {
 
     private static final String POSTURE_EVENT = "event=shop_scoping_posture";
 
-    private ShopAccessService service;
     private Logger serviceLogger;
     private ListAppender<ILoggingEvent> appender;
 
     @BeforeEach
-    @SuppressWarnings("unchecked")
-    void setUp() {
-        service = new ShopAccessService(
-                mock(ShopStaffRepository.class),
-                mock(UserDirectoryRepository.class),
-                mock(TenantCacheEvictor.class),
-                mock(ShopRepository.class),
-                (ObjectProvider<ShopAccessService>) mock(ObjectProvider.class));
+    void attachAppender() {
         serviceLogger = (Logger) LoggerFactory.getLogger(ShopAccessService.class);
         appender = new ListAppender<>();
         appender.start();
@@ -54,13 +54,54 @@ class ShopAccessServiceScopingPostureTest {
     }
 
     @AfterEach
-    void tearDown() {
+    void detachAppender() {
         serviceLogger.detachAppender(appender);
     }
 
     @Test
-    void strictScopingOff_emitsAWarnNamingThePostureAndItsBlockers() {
-        StrictScopingGuard.set(service, false);   // a fresh unit-test instance per test: nothing to restore
+    void bootedBean_readsTheD06Default_andLoggedTheOnPostureWhileBooting() {
+        // The default under test is application.yml's; an exported value is honoured so a run with
+        // ACCESS_STRICT_SCOPING=true stays green, and an exported false is reported, never hidden.
+        String declared = System.getenv("ACCESS_STRICT_SCOPING");
+        boolean expected = declared == null || Boolean.parseBoolean(declared);
+
+        new ApplicationContextRunner()
+                .withInitializer(new ConfigDataApplicationContextInitializer())
+                // Boot's conversion service, as every application bean factory has: the bean also binds a
+                // Duration and a Set<String> from application.yml.
+                .withInitializer(ctx -> ctx.getBeanFactory()
+                        .setConversionService(ApplicationConversionService.getSharedInstance()))
+                .withBean(ShopStaffRepository.class, () -> mock(ShopStaffRepository.class))
+                .withBean(UserDirectoryRepository.class, () -> mock(UserDirectoryRepository.class))
+                .withBean(TenantCacheEvictor.class, () -> mock(TenantCacheEvictor.class))
+                .withBean(ShopRepository.class, () -> mock(ShopRepository.class))
+                .withBean(ShopAccessService.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    ShopAccessService booted = context.getBean(ShopAccessService.class);
+                    assertThat(StrictScopingGuard.current(booted))
+                            .as("ShopAccessService.strictScoping booted from application.yml (ACCESS_STRICT_SCOPING=%s)",
+                                    declared)
+                            .isEqualTo(expected);
+                    assertThat(context.getEnvironment().getProperty("jtoye.access.strict-scoping", Boolean.class))
+                            .as("resolved jtoye.access.strict-scoping")
+                            .isEqualTo(expected);
+                });
+
+        Level expectedLevel = expected ? Level.INFO : Level.WARN;
+        String expectedMarker = "strict=" + expected;
+        assertThat(appender.list)
+                .as("the bean's own @PostConstruct posture line, emitted while the context booted")
+                .anySatisfy(event -> {
+                    assertThat(event.getLevel()).isEqualTo(expectedLevel);
+                    assertThat(event.getFormattedMessage()).contains(POSTURE_EVENT).contains(expectedMarker);
+                });
+    }
+
+    @Test
+    void strictScopingOff_emitsAWarnNamingTheExplicitOverrideAndTheOwnerRuling() {
+        ShopAccessService service = freshService();
+        StrictScopingGuard.set(service, false);   // a fresh unit-test instance: nothing to restore
 
         service.logScopingPosture();
 
@@ -71,22 +112,18 @@ class ShopAccessServiceScopingPostureTest {
                     assertThat(event.getFormattedMessage())
                             .contains(POSTURE_EVENT)
                             .contains("strict=false")
-                            .contains("NOT enforced")
-                            .contains("implicit tenant-wide GROUP_ADMIN")
-                            .contains("jtoye.access.strict-scoping=false")
-                            // the flip's blockers travel with the warning so the reader knows
-                            // it is tracked, not forgotten
-                            .contains("#285")
-                            .contains("/sync/batch")
-                            .contains("integration-orders-rw");
+                            .contains("access: strict scoping OFF by explicit override (ACCESS_STRICT_SCOPING=false)")
+                            .contains("ungranted users are implicit tenant-wide GROUP_ADMIN")
+                            .contains("reverting D-06 needs an owner ruling");
                 });
         assertThat(appender.list)
-                .as("no misleading ENFORCED line when the posture is OFF")
+                .as("no misleading ON line when the posture is OFF")
                 .noneSatisfy(event -> assertThat(event.getFormattedMessage()).contains("strict=true"));
     }
 
     @Test
-    void strictScopingOn_emitsNoWarn_andStatesEnforcedAtInfo() {
+    void strictScopingOn_emitsNoWarn_andStatesTheDefaultAtInfo() {
+        ShopAccessService service = freshService();
         StrictScopingGuard.set(service, true);
 
         service.logScopingPosture();
@@ -104,7 +141,17 @@ class ShopAccessServiceScopingPostureTest {
                     assertThat(event.getFormattedMessage())
                             .contains(POSTURE_EVENT)
                             .contains("strict=true")
-                            .contains("ENFORCED");
+                            .contains("access: strict scoping ON (default, D-06)");
                 });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ShopAccessService freshService() {
+        return new ShopAccessService(
+                mock(ShopStaffRepository.class),
+                mock(UserDirectoryRepository.class),
+                mock(TenantCacheEvictor.class),
+                mock(ShopRepository.class),
+                (ObjectProvider<ShopAccessService>) mock(ObjectProvider.class));
     }
 }
