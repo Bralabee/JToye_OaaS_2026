@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -84,6 +85,7 @@ class StaffEffectiveAccessIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private JsonMapper jsonMapper;
+    @Autowired private ShopStaffRepository shopStaffRepository;
 
     /** A spy over the real repository: every call goes to the database unless a test stubs it. */
     @MockitoSpyBean private UserDirectoryRepository userDirectoryRepository;
@@ -142,11 +144,19 @@ class StaffEffectiveAccessIntegrationTest {
     @DisplayName("T-37-11: a directory write that fails does not fail the request that triggered it")
     void directoryWriteFailure_doesNotFailTheRequest() throws Exception {
         UUID reader = UUID.randomUUID();
-        // A genuine database failure, not a thrown stub: the statement aborts the transaction the
-        // write runs in, exactly as a constraint or connection fault would.
+        // A genuine database failure, not a thrown stub. The first statement aborts the PostgreSQL
+        // transaction the write runs in; the next repository call on it then fails THROUGH Spring
+        // Data's own transaction interceptor, which marks the transaction rollback-only — exactly
+        // what a failing upsert does. (A bare thrown stub would skip that marking, and a
+        // @Transactional-annotated toucher that catches inside its body would then pass this arm
+        // while throwing UnexpectedRollbackException in production.)
         doAnswer(invocation -> {
-            jdbc.execute("SELECT 1 / 0");
-            return 0;
+            try {
+                jdbc.execute("SELECT 1 / 0");
+            } catch (DataAccessException aborted) {
+                // the transaction is now aborted; the repository call below reports it
+            }
+            return (int) shopStaffRepository.count();
         }).when(userDirectoryRepository).upsertSeen(any(), eq(reader), any(), any(), any());
 
         MvcResult me = mockMvc.perform(get("/api/v1/staff/me").with(vendorJwt(reader))
