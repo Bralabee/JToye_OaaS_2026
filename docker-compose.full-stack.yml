@@ -343,6 +343,8 @@ services:
       KC_ADMIN_BASE_URL: ${KC_ADMIN_BASE_URL:-http://keycloak:8080}
       KC_DEPROVISION_REALMS: ${KC_DEPROVISION_REALMS:-jtoye-dev}
       KC_CUSTOMER_REALM: ${KC_CUSTOMER_REALM:-jtoye-customers}
+      # 37-08 (D-07): the vendor realm a staff-invite accept creates the invited person in.
+      KC_VENDOR_REALM: ${KC_VENDOR_REALM:-jtoye-dev}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set}
       # Local-stack opt-in for the Prometheus scrape endpoint (base profile

@@ -61,6 +61,7 @@ data:
   keycloak.admin.customer-realm: jtoye-customers
   keycloak.admin.enabled: "false"
   keycloak.admin.realms: jtoye-prod
+  keycloak.admin.vendor-realm: jtoye-prod
   keycloak.client-id: frontend
   keycloak.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
   keycloak.public.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
@@ -381,6 +382,11 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: keycloak.admin.customer-realm
+              name: app-config
+        - name: KC_VENDOR_REALM
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.admin.vendor-realm
               name: app-config
         - name: KEYCLOAK_ADMIN
           valueFrom:

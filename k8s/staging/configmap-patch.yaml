@@ -14,6 +14,8 @@ data:
 
   # Keycloak deprovisioning realm (issue #102 remainder) — staging realm.
   keycloak.admin.realms: "jtoye-staging"
+  # 37-08: the vendor realm staff-invite accepts create users in (same realm as above).
+  keycloak.admin.vendor-realm: "jtoye-staging"
 
   # DEF-6 / D-13 / D-19 (Phase 26 / INFRA-02): the env-VARYING subset of the new
   # base app-config keys. Each value is derived from this overlay's OWN

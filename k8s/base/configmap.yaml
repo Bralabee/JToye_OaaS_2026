@@ -22,6 +22,10 @@ data:
   # max-process-attempts: enabling the admin seam (plus the keycloak-credentials
   # Secret) in staging/production is a deployment step, not done here.
   keycloak.admin.customer-realm: "jtoye-customers"
+  # 37-08 (D-07, D-26): the VENDOR realm a staff-invite accept creates the invited person in. One realm
+  # (not a list), and per env like keycloak.admin.realms: base tracks the prod realm. Left at the code
+  # default (jtoye-dev) every staging/production accept would target a realm that does not exist there.
+  keycloak.admin.vendor-realm: "jtoye-prod"
 
   # API URLs
   api.url: "https://api.olajay.co.uk"

@@ -229,6 +229,12 @@ spec:
             configMapKeyRef:
               name: app-config
               key: keycloak.admin.customer-realm
+        # 37-08 (D-07): the vendor realm a staff-invite accept creates the invited user in.
+        - name: KC_VENDOR_REALM
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.admin.vendor-realm
         - name: KEYCLOAK_ADMIN
           valueFrom:
             secretKeyRef:

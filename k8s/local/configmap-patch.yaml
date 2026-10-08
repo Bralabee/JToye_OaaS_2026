@@ -105,6 +105,7 @@ data:
   # client with no credential Secret would only add noise.
   keycloak.admin.base-url: "http://host.minikube.internal:8085"
   keycloak.admin.realms: "jtoye-dev"
+  keycloak.admin.vendor-realm: "jtoye-dev"
 
   # --- Ingress hosts (D-12) --------------------------------------------------
   # The two `.local` hosts served by the minikube ingress addon, resolved via
