@@ -229,7 +229,9 @@ jtoye:
       ttl-hours: ${STAFF_INVITE_TTL_HOURS:72}
       # Where the emailed link points: the FRONTEND's public /invite page, never core's own origin (the
       # 31.1 PGC-839 lesson: a link to the API answers a person with JSON, and on compose nothing listens
-      # there). The link is {accept-base-url}/{tenantId}.{token}. Config-injected and NEVER derived from
+      # there). The link is {accept-base-url}#token={tenantId}.{token}: the token rides in the URL FRAGMENT,
+      # which a browser never sends to a server (37-08, the V75 DSAR-link rule), and the page POSTs it in a
+      # body to /api/v1/public/staff-invites/preview and /accept. Config-injected and NEVER derived from
       # a request: a link built from an attacker-supplied Host header would hand a live invitation to a
       # collector. Every runtime supplies its own web origin (compose, .env.example, k8s app-config).
       accept-base-url: ${STAFF_INVITE_ACCEPT_BASE_URL:http://localhost:3000/invite}
@@ -381,6 +383,11 @@ jtoye:
       # (T-kc-04). Same enabled/base-url/password switch: with the seam off, an erasure
       # is recorded NOT_CONFIGURED and is never reported complete.
       customer-realm: ${KC_CUSTOMER_REALM:jtoye-customers}
+      # 37-08 (D-07, D-26): the VENDOR realm a staff-invite accept creates the invited person in (with the
+      # admin-only tenant_id attribute) and looks an invited address up in. One realm, not a list: an
+      # account is created in exactly one place. Same enabled/base-url/password switch as above; with the
+      # seam off, accepting an invitation answers a typed 503 and the invitation stays open.
+      vendor-realm: ${KC_VENDOR_REALM:jtoye-dev}
       username: ${KEYCLOAK_ADMIN:admin}
       password: ${KEYCLOAK_ADMIN_PASSWORD:}
   # Phase 22 COMMS-07: WhatsApp/SMS provider seam. FULLY INERT by default —

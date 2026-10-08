@@ -215,7 +215,10 @@ public class StaffInviteService {
         StaffInvite invite = staffInviteRepository.saveAndFlush(new StaffInvite(UUID.randomUUID(), tenantId,
                 email, shopId, role, sha256Hex(token), expiresAt, issuer, now));
 
-        String link = stripTrailingSlash(acceptBaseUrl) + "/" + tenantId + "." + token;
+        // 37-08: the token rides in the URL FRAGMENT, which a browser never sends to a server (the V75
+        // DSAR-link rule): no request line, access log, APM span or Referer ever carries it. The accept
+        // page reads it client-side and POSTs it in a body.
+        String link = stripTrailingSlash(acceptBaseUrl) + "#token=" + tenantId + "." + token;
         String inviterName = currentCallerName();
         String businessName = tenantRepository.findById(tenantId).map(Tenant::getName).orElse(null);
         String roleLabel = roleLabel(role);

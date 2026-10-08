@@ -14,6 +14,13 @@ public interface StaffInviteRepository extends JpaRepository<StaffInvite, UUID> 
 
     Optional<StaffInvite> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    /**
+     * 37-08: the invitation a link names, by the digest of its token, within the tenant the link names. The
+     * tenant is pinned from the link before this runs, so FORCE RLS and the explicit predicate both scope
+     * it: a token presented with another tenant's id finds nothing.
+     */
+    Optional<StaffInvite> findByTenantIdAndTokenSha256(UUID tenantId, String tokenSha256);
+
     List<StaffInvite> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
 
     /** The live (neither accepted nor revoked) invitations of one address, backed by the V77 partial index. */

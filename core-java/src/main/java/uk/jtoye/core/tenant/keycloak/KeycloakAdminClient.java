@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -14,6 +15,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -24,8 +26,8 @@ import java.util.UUID;
  * the Java side (the only existing admin caller is the one-shot
  * {@code infra/keycloak/configure-keycloak.sh}, deliberately untouched).
  *
- * <p>Six operations, mapped to the Keycloak 24 admin REST shape (the last two added by 31.1-11 for
- * DSAR customer-account deletion, D-03):
+ * <p>Eight operations, mapped to the Keycloak 24 admin REST shape (two added by 31.1-11 for DSAR
+ * customer-account deletion, D-03, and two by 37-08 for staff invitations, D-07):
  * <ul>
  *   <li>{@link #obtainAdminToken()} — master-realm {@code admin-cli} password grant.</li>
  *   <li>{@link #searchUsersByTenant} — paginated user search by the
@@ -35,6 +37,9 @@ import java.util.UUID;
  *   <li>{@link #logoutUser} — revoke the user's active sessions.</li>
  *   <li>{@link #findUsersByEmail} — exact-email user search in one named realm.</li>
  *   <li>{@link #deleteUser} — delete one user; 404 reports "already gone", not an error.</li>
+ *   <li>{@link #findVendorUsersByEmail} — 37-08: the exact-email search in the vendor realm, with each
+ *       user's {@code tenant_id} attribute.</li>
+ *   <li>{@link #createUser} — 37-08: create an invited person with the password they chose.</li>
  * </ul>
  *
  * <p><b>Security (STRIDE T-kc-01):</b> the bearer token and admin password are
@@ -185,6 +190,40 @@ public class KeycloakAdminClient {
      * <p>The error message names the realm and never the address: the address is personal data.
      */
     public List<CustomerRealmUser> findUsersByEmail(String realm, String email, String token) {
+        List<CustomerRealmUser> users = new ArrayList<>();
+        for (ObjectNode on : searchByExactEmail(realm, email, token)) {
+            users.add(new CustomerRealmUser(
+                    text(on, "id"), text(on, "username"), text(on, "email"),
+                    text(on, "firstName"), text(on, "lastName"),
+                    on.hasNonNull("createdTimestamp") && on.get("createdTimestamp").isNumber()
+                            ? on.get("createdTimestamp").longValue() : null));
+        }
+        return users;
+    }
+
+    /**
+     * 37-08 (D-07): the same exact-email search as {@link #findUsersByEmail}, in the VENDOR realm, reading
+     * each user's {@code tenant_id} attribute (its first value; {@code null} when absent). The
+     * staff-invite accept flow uses it to tell NEW from EXISTS_HERE from OTHER_BUSINESS. Errors name the
+     * realm only, never the address.
+     */
+    public List<VendorRealmUser> findVendorUsersByEmail(String realm, String email, String token) {
+        List<VendorRealmUser> users = new ArrayList<>();
+        for (ObjectNode on : searchByExactEmail(realm, email, token)) {
+            JsonNode tenant = on.path("attributes").path("tenant_id");
+            String tenantId = null;
+            if (tenant.isArray() && !tenant.isEmpty() && !tenant.get(0).isNull()) {
+                tenantId = tenant.get(0).asString();
+            } else if (tenant.isString()) {
+                tenantId = tenant.asString();
+            }
+            users.add(new VendorRealmUser(text(on, "id"), text(on, "email"), tenantId));
+        }
+        return users;
+    }
+
+    /** The exact-email GET both lookups share; see {@link #findUsersByEmail} for why exact=true. */
+    private List<ObjectNode> searchByExactEmail(String realm, String email, String token) {
         try {
             String body = restClient.get()
                     .uri("/admin/realms/{realm}/users?email={email}&exact=true", realm, email)
@@ -192,15 +231,11 @@ public class KeycloakAdminClient {
                     .retrieve()
                     .body(String.class);
             JsonNode page = jsonMapper.readTree(body == null ? "[]" : body);
-            List<CustomerRealmUser> users = new ArrayList<>();
+            List<ObjectNode> users = new ArrayList<>();
             if (page.isArray()) {
                 for (JsonNode user : page.values()) {
                     if (user instanceof ObjectNode on) {
-                        users.add(new CustomerRealmUser(
-                                text(on, "id"), text(on, "username"), text(on, "email"),
-                                text(on, "firstName"), text(on, "lastName"),
-                                on.hasNonNull("createdTimestamp") && on.get("createdTimestamp").isNumber()
-                                        ? on.get("createdTimestamp").longValue() : null));
+                        users.add(on);
                     }
                 }
             }
@@ -211,6 +246,104 @@ public class KeycloakAdminClient {
             throw new KeycloakAdminException(
                     "Keycloak user email-search response could not be parsed for realm=" + realm, e);
         }
+    }
+
+    /**
+     * 37-08 (D-07, D-26): {@code POST /admin/realms/{realm}/users} — create the invited person with the
+     * password they chose on the accept page, and return the new user's id.
+     *
+     * <p>The representation is a Jackson-3 {@link ObjectNode} (the 38-07 lesson above): {@code username}
+     * and {@code email} are the invited address, {@code enabled} and {@code emailVerified} are true (the
+     * invite link proved the mailbox; without {@code emailVerified} the vendor realm refuses to mint a
+     * token, "Account is not fully set up"), {@code attributes.tenant_id} is the inviting business (an
+     * admin-only managed attribute in the vendor realm's user profile, so the person cannot change it),
+     * and the one credential is a non-temporary password.
+     *
+     * <p>The id is the last segment of Keycloak's {@code Location} header; when there is none it is read
+     * back with the exact-email search. {@code password} is zeroed in a {@code finally} on every path. A
+     * 400 (Keycloak 24.0.5 sends {@code {"errorMessage":"Password policy not met"}}) becomes
+     * {@link KeycloakUserRejectedException} carrying that message ONLY; a 409 becomes
+     * {@link KeycloakUserExistsException}. No error text ever carries the request body, the address or the
+     * password (T-37-22).
+     */
+    public String createUser(String realm, String email, String firstName, String lastName,
+                             char[] password, UUID tenantId, String token) {
+        ObjectNode rep = jsonMapper.createObjectNode();
+        try {
+            rep.put("username", email);
+            rep.put("email", email);
+            rep.put("firstName", firstName);
+            rep.put("lastName", lastName);
+            rep.put("enabled", true);
+            rep.put("emailVerified", true);
+            rep.putObject("attributes").putArray("tenant_id").add(tenantId.toString());
+            ObjectNode credential = rep.putArray("credentials").addObject();
+            credential.put("type", "password");
+            credential.put("value", new String(password));
+            credential.put("temporary", false);
+
+            ResponseEntity<Void> created = restClient.post()
+                    .uri("/admin/realms/{realm}/users", realm)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(rep)
+                    .retrieve()
+                    .toBodilessEntity();
+            String id = idFromLocation(created.getHeaders().getLocation());
+            if (id != null) {
+                return id;
+            }
+        } catch (HttpClientErrorException.BadRequest e) {
+            throw new KeycloakUserRejectedException(realm, keycloakErrorMessage(e));
+        } catch (HttpClientErrorException.Conflict e) {
+            throw new KeycloakUserExistsException(realm);
+        } catch (RestClientException e) {
+            throw new KeycloakAdminException("Keycloak user create failed for realm=" + realm, e);
+        } finally {
+            java.util.Arrays.fill(password, '\0');
+            rep.removeAll();
+        }
+        // Created, but Keycloak named no Location: read the id back by the exact address.
+        for (ObjectNode on : searchByExactEmail(realm, email, token)) {
+            String found = text(on, "email");
+            if (found != null && found.equalsIgnoreCase(email) && text(on, "id") != null) {
+                return text(on, "id");
+            }
+        }
+        throw new KeycloakAdminException("Keycloak created a user but it could not be found for realm=" + realm);
+    }
+
+    /** The user id: the last non-empty path segment of the Location URI, or {@code null}. */
+    private static String idFromLocation(URI location) {
+        if (location == null || location.getPath() == null) {
+            return null;
+        }
+        String path = location.getPath();
+        while (path.endsWith("/")) {
+            path = path.substring(0, path.length() - 1);
+        }
+        int slash = path.lastIndexOf('/');
+        String id = slash < 0 ? path : path.substring(slash + 1);
+        return id.isBlank() ? null : id;
+    }
+
+    /**
+     * Keycloak's {@code errorMessage} (or {@code error_description} / {@code error}) from a 400 body.
+     * Only that one string is kept; the rest of the body is discarded.
+     */
+    private String keycloakErrorMessage(HttpClientErrorException e) {
+        try {
+            JsonNode node = jsonMapper.readTree(e.getResponseBodyAsString());
+            for (String field : List.of("errorMessage", "error_description", "error")) {
+                JsonNode v = node.get(field);
+                if (v != null && v.isString() && !v.asString().isBlank()) {
+                    return v.asString();
+                }
+            }
+        } catch (Exception ignored) {
+            // An unreadable body falls through to the generic sentence below.
+        }
+        return "Keycloak refused this account.";
     }
 
     /**
@@ -233,17 +366,6 @@ public class KeycloakAdminClient {
         } catch (RestClientException e) {
             throw new KeycloakAdminException("Keycloak user delete failed for realm=" + realm, e);
         }
-    }
-
-    /** 37-08 RED skeleton: not implemented yet. */
-    public String createUser(String realm, String email, String firstName, String lastName,
-                             char[] password, UUID tenantId, String token) {
-        return null;
-    }
-
-    /** 37-08 RED skeleton: not implemented yet. */
-    public List<VendorRealmUser> findVendorUsersByEmail(String realm, String email, String token) {
-        return List.of();
     }
 
     /** A string field of a user representation, or {@code null} when absent or JSON null. */

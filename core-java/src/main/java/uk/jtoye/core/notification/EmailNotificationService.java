@@ -263,7 +263,8 @@ public class EmailNotificationService {
      * exception class (a mail exception's message can quote the address).
      *
      * @param recipientEmail the normalised invitee address; the link goes here and nowhere else
-     * @param link           {accept-base-url}/{tenantId}.{token}; never logged, never stored readable
+     * @param link           {accept-base-url}#token={tenantId}.{token} (token in the fragment, 37-08); never
+     *                       logged, never stored readable
      * @param expiresAt      the same instant written to {@code staff_invite.expires_at}
      */
     @Async
