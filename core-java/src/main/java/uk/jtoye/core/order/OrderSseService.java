@@ -237,7 +237,10 @@ public class OrderSseService {
             if (scope.groupAdmin()) {
                 return !scope.grantBacked() || current.isGroupAdmin();
             }
-            return shopId != null && current.perShopRole().containsKey(shopId);
+            // 37-05: a tenant-wide STAFF/SHOP_MANAGER grant covers every shop of the tenant (the
+            // emitter bucket is keyed by tenant, so shopId is this tenant's); a revoke of that
+            // grant ends the stream here like a revoke of a specific grant.
+            return shopId != null && current.roleOn(shopId) != null;
         } catch (Exception e) {
             log.warn("SSE grant re-check failed for user {} shop {} — denying this emit (fail-closed): {}",
                     scope.userId(), shopId, e.toString());

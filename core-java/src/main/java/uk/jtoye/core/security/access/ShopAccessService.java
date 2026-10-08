@@ -20,7 +20,9 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
+import java.time.OffsetDateTime;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -235,9 +237,18 @@ public class ShopAccessService {
             throw new ShopAccessDeniedException(null, ShopRole.GROUP_ADMIN);
         }
         Membership membership = self().resolveMembership(requireVendorUserId());
-        ShopRole role = membership.perShopRole().get(shopId);
+        // 37-05 (D-07/D-23): the role on this shop is the higher of the specific grant and a
+        // tenant-wide (NULL-shop) STAFF/SHOP_MANAGER grant — "a role plus all shops" confers what
+        // it says, and never more than its own rank (T-37-10).
+        ShopRole role = membership.roleOn(shopId);
         if (role == null || !role.satisfies(minRole)) {
             throw new ShopAccessDeniedException(shopId, minRole);
+        }
+        if (membership.perShopRole().get(shopId) == null) {
+            // Granted by the tenant-wide role alone: "all shops" means all shops OF THIS TENANT.
+            // Same FC-1 check (and the same non-disclosing 404) as a GROUP_ADMIN naming a shop —
+            // a published foreign shop is visible through RLS and must not pass.
+            requireShopInCallerTenant(shopId);
         }
     }
 
@@ -323,6 +334,9 @@ public class ShopAccessService {
      * {@link #machineClientIds} allowlist.
      */
     public boolean isGroupAdmin() {
+        // D-09 (37-05): every gated read records its vendor user, GROUP_ADMIN and realm admin
+        // included — their reads short-circuit here and never reach onRequest().
+        touchDirectory();
         if (isRealmAdmin() || isInternalCaller()) {
             return true;
         }
@@ -390,7 +404,9 @@ public class ShopAccessService {
             // deterministic bootstrap admin (kept to avoid a zero-admin lockout).
             return isBootstrapAdmin(userId);
         }
-        return !strictScoping && membership.perShopRole().isEmpty();
+        // A tenant-wide STAFF/SHOP_MANAGER row (37-05) is an explicit grant: its holder is scoped,
+        // never the day-one implicit admin, even under the strict-OFF override.
+        return !strictScoping && membership.perShopRole().isEmpty() && membership.tenantWideRole() == null;
     }
 
     /**
@@ -480,16 +496,24 @@ public class ShopAccessService {
             // Tenant-wide resource: GROUP_ADMIN-only (handled above). A scoped caller is denied.
             return false;
         }
-        // Any explicit per-shop grant (STAFF+) is sufficient to READ/SUBSCRIBE the shop feed.
-        return self().resolveMembership(userId).perShopRole().get(shopId) != null;
+        // Any explicit per-shop grant (STAFF+) is sufficient to READ/SUBSCRIBE the shop feed, and so
+        // is a tenant-wide STAFF/SHOP_MANAGER grant (37-05) — for a shop of THIS tenant only.
+        Membership membership = self().resolveMembership(userId);
+        if (membership.perShopRole().get(shopId) != null) {
+            return true;
+        }
+        return membership.tenantWideRole() != null
+                && shopRepository.findByIdAndTenantId(shopId, tenantId).isPresent();
     }
 
     /**
      * The specific shop ids the caller may read. For a GROUP_ADMIN this returns an
      * EMPTY set as an "unrestricted" sentinel — callers MUST short-circuit on
      * {@link #isGroupAdmin()} first (a GROUP_ADMIN reads all shops, so there is no
-     * finite id set to filter by). For a scoped user it is the exact grant set;
-     * for a fully-ungranted user in strict mode it is empty (deny-by-default). The
+     * finite id set to filter by). For a scoped user it is the exact grant set — and, for a
+     * holder of a tenant-wide STAFF/SHOP_MANAGER grant (37-05), every current shop of the
+     * tenant plus any specific grants; for a fully-ungranted user in strict mode it is empty
+     * (deny-by-default). The
      * 23-03 read-scope helper interprets this against {@link #isGroupAdmin()}.
      */
     public Set<UUID> grantedShopIds() {
@@ -497,7 +521,15 @@ public class ShopAccessService {
         if (isGroupAdmin()) {
             return Set.of();
         }
-        return Set.copyOf(self().resolveMembership(requireVendorUserId()).perShopRole().keySet());
+        Membership membership = self().resolveMembership(requireVendorUserId());
+        if (membership.tenantWideRole() == null) {
+            return Set.copyOf(membership.perShopRole().keySet());
+        }
+        // 37-05: a tenant-wide STAFF/SHOP_MANAGER reads every CURRENT shop of its own tenant (an
+        // explicit tenant predicate: shops_public_read also exposes other tenants' published shops).
+        Set<UUID> all = new HashSet<>(shopRepository.findIdsByTenantId(currentTenantId()));
+        all.addAll(membership.perShopRole().keySet());
+        return Set.copyOf(all);
     }
 
     /**
@@ -510,23 +542,43 @@ public class ShopAccessService {
      * JIT tenant-wide GROUP_ADMIN row reads GROUP_ADMIN only when the strict-scoping decision
      * honours it (the bootstrap admin), and NONE otherwise.
      *
+     * <p>A realm admin (Pitfall 13) is recognised from {@code user_directory.realm_admin_seen_at}
+     * (V76), stamped when a token carrying the role signs in: level {@link EffectiveAccess.Level#REALM_ADMIN}
+     * rather than "No access".
+     *
      * <p>Read-only: no directory touch, no JIT provision.
      */
     public EffectiveAccess effectiveAccessFor(UUID userId) {
+        OffsetDateTime realmAdminSeenAt = userDirectoryRepository
+                .findById(new UserDirectoryId(currentTenantId(), userId))
+                .map(UserDirectory::getRealmAdminSeenAt)
+                .orElse(null);
+        return effectiveAccessFor(userId, realmAdminSeenAt);
+    }
+
+    /**
+     * {@link #effectiveAccessFor(UUID)} with the directory's {@code realm_admin_seen_at} already in
+     * hand (the Staff list reads the directory rows anyway, so it does not look each one up again).
+     */
+    public EffectiveAccess effectiveAccessFor(UUID userId, OffsetDateTime realmAdminSeenAt) {
         Membership membership = self().resolveMembership(userId);
         boolean groupAdmin = isGroupAdminForUser(userId, false);
         boolean bootstrapAdmin = groupAdmin && strictScoping
                 && membership.isGroupAdmin() && membership.groupAdminFromJit();
+        ShopRole tenantWideRole = membership.tenantWideRole();
         EffectiveAccess.Level level;
         if (groupAdmin) {
             level = EffectiveAccess.Level.GROUP_ADMIN;
-        } else if (!membership.perShopRole().isEmpty()) {
+        } else if (realmAdminSeenAt != null) {
+            level = EffectiveAccess.Level.REALM_ADMIN;
+        } else if (tenantWideRole != null || !membership.perShopRole().isEmpty()) {
             level = EffectiveAccess.Level.SHOP_ROLES;
         } else {
             level = EffectiveAccess.Level.NONE;
         }
-        return new EffectiveAccess(userId, level, bootstrapAdmin, groupAdmin, null,
-                membership.perShopRole(), null);
+        boolean allShops = groupAdmin || level == EffectiveAccess.Level.REALM_ADMIN || tenantWideRole != null;
+        return new EffectiveAccess(userId, level, bootstrapAdmin, allShops, tenantWideRole,
+                membership.perShopRole(), realmAdminSeenAt);
     }
 
     /**
@@ -543,22 +595,29 @@ public class ShopAccessService {
         Map<UUID, ShopRole> perShop = new HashMap<>();
         boolean groupAdmin = false;
         boolean groupAdminFromJit = false;
+        ShopRole tenantWideRole = null;
         for (ShopStaff row : shopStaffRepository.findByTenantIdAndUserId(tenantId, userId)) {
             if (row.getShopId() == null) {
-                // Tenant-wide grant → GROUP_ADMIN shape (D-03). Record its provenance so the
-                // strict-scoping DECISION (isGroupAdminForUser) can de-honour a JIT row while
-                // honouring an operator one (CR-07). The V52 unique index guarantees at most
-                // one tenant-wide row per user, so this single row settles the flag.
+                // Tenant-wide grant. The V52 unique index guarantees at most one tenant-wide row
+                // per user, so this single row settles it.
                 if (row.getRole() == ShopRole.GROUP_ADMIN) {
+                    // GROUP_ADMIN shape (D-03). Record its provenance so the strict-scoping
+                    // DECISION (isGroupAdminForUser) can de-honour a JIT row while honouring an
+                    // operator one (CR-07).
                     groupAdmin = true;
                     groupAdminFromJit = (row.getGrantSource() == GrantSource.JIT);
+                } else {
+                    // 37-05 (D-07/D-23): "a role plus all shops" — a NULL-shop STAFF or
+                    // SHOP_MANAGER row confers that role on every shop of the tenant. Before 37-05
+                    // such a row was silently ignored (403 everywhere).
+                    tenantWideRole = row.getRole();
                 }
             } else {
                 perShop.merge(row.getShopId(), row.getRole(),
                         (a, b) -> a.rank() >= b.rank() ? a : b);
             }
         }
-        return new Membership(groupAdmin, groupAdminFromJit, Map.copyOf(perShop));
+        return new Membership(groupAdmin, groupAdminFromJit, Map.copyOf(perShop), tenantWideRole);
     }
 
     /**
@@ -601,6 +660,43 @@ public class ShopAccessService {
     // ---------------------------------------------------------------------
 
     /**
+     * D-09 (37-05): record the request's vendor user in {@code user_directory}, READS included, so
+     * the Staff page lists everyone who has signed in — an ungranted user, who under D-06 can do
+     * little but read, and a realm admin, whose implicit GROUP_ADMIN short-circuits every gate
+     * before {@link #onRequest()} would run. Called from {@link #isGroupAdmin()} and from
+     * {@link #onRequest()}; the toucher's in-process throttle makes the repeat a map lookup.
+     *
+     * <p>The toucher runs in its OWN transaction (REQUIRES_NEW), so it neither needs a
+     * write-capable caller nor can a failure poison the caller's transaction; it is best-effort
+     * and writes no grant. Skipped (not thrown) when no tenant is pinned — a directory row needs
+     * a tenant, and the enforcement path reports a missing tenant itself where it matters.
+     *
+     * <p>WR-09 (CR-07): a DECLARED machine/service client is never recorded — even when Keycloak
+     * issues its service account a UUID subject. The directory is a human grant-target picker;
+     * those rows appeared in the staff list as opaque UUIDs. Classified purely by the allowlisted
+     * azp/client_id, independent of sub shape.
+     *
+     * @return the caller's UUID subject when it is an identifiable, non-machine vendor user (the
+     *         JIT step needs it), else null
+     */
+    private UUID touchDirectory() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
+            return null;
+        }
+        UUID sub = parseSub(jwt);
+        if (sub == null || isAllowlistedMachineClient(jwt)) {
+            return null;
+        }
+        Optional<UUID> pinned = TenantContext.get();
+        if (pinned.isPresent()) {
+            userDirectoryToucher.touch(pinned.get(), sub, jwt.getClaimAsString("email"), displayName(jwt),
+                    isRealmAdmin());
+        }
+        return sub;
+    }
+
+    /**
      * Runs the per-request side effects at the top of every enforcement entry point: the
      * throttled, best-effort directory touch (reads included, its own transaction — D-09, 37-05),
      * then — while strict-scoping is OFF and the transaction can write — the JIT GROUP_ADMIN
@@ -608,38 +704,9 @@ public class ShopAccessService {
      * {@code sub}; no client-supplied role/shop is ever read (T-23-02-01).
      */
     private void onRequest() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
-            return;
-        }
-        UUID sub = parseSub(jwt);
+        UUID sub = touchDirectory();
         if (sub == null) {
             return;
-        }
-
-        // WR-09 (CR-07): a DECLARED machine/service client must never accumulate a persistent
-        // tenant-wide GROUP_ADMIN row — even when Keycloak issues its service account a UUID
-        // subject (so parseSub above succeeds). Those JIT rows survived the strict-scoping flip
-        // and appeared in the staff list as opaque UUIDs with no directory entry. A machine
-        // client's access already runs through the 23-08 allowlist (the isGroupAdmin()
-        // short-circuit), so skip BOTH the directory upsert (it is a human grant-target picker)
-        // AND the JIT provision entirely — nothing breaks, it just stops acquiring grants by
-        // accident. Classified purely by the allowlisted azp/client_id, independent of sub shape.
-        if (isAllowlistedMachineClient(jwt)) {
-            return;
-        }
-
-        // D-09 (37-05): record the caller in user_directory on READS as well as writes, so the
-        // Staff page lists everyone who has signed in — including an ungranted user, who under
-        // D-06 can do little but read. The toucher runs in its OWN transaction (REQUIRES_NEW), so
-        // it neither needs a write-capable caller nor can a failure poison the caller's
-        // transaction; it is best-effort and throttled. It writes no grant. Skipped (not thrown)
-        // when no tenant is pinned: a directory row needs a tenant, and the enforcement path
-        // below reports the missing tenant itself where it matters.
-        Optional<UUID> pinned = TenantContext.get();
-        if (pinned.isPresent()) {
-            userDirectoryToucher.touch(pinned.get(), sub, jwt.getClaimAsString("email"), displayName(jwt),
-                    isRealmAdmin());
         }
 
         // Phase 23-03: NEVER attempt the JIT write in a read-only transaction. A failed

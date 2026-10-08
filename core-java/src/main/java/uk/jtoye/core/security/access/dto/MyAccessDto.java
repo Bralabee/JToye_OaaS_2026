@@ -1,6 +1,7 @@
 package uk.jtoye.core.security.access.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import uk.jtoye.core.security.access.ShopRole;
 
 import java.util.Set;
 import java.util.UUID;
@@ -28,6 +29,10 @@ import java.util.UUID;
  * always means "no access"; "unrestricted" is represented by {@code null} +
  * {@code groupAdmin == true}. The 23-13 frontend contract depends on this invariant.
  *
+ * <p>{@code tenantWideRole} (37-05, additive) names the role a tenant-wide STAFF/SHOP_MANAGER
+ * grant confers on every shop; {@code grantedShopIds} then holds every current shop of the tenant.
+ * It is null for a GROUP_ADMIN and for a caller without such a grant.
+ *
  * <p>{@code userId} is the caller's OWN Keycloak {@code sub}, so the client can identify
  * itself (e.g. the staff-page "you are removing your own access" check) without an
  * email round-trip. No other user's data is ever carried here.
@@ -45,5 +50,11 @@ public record MyAccessDto(
         @Schema(description = "For a non-GROUP_ADMIN caller, the exact set of shop ids they may access "
                 + "(empty = no access). Null for a GROUP_ADMIN — unrestricted; do NOT read as 'no shops'.",
                 nullable = true)
-        Set<UUID> grantedShopIds) {
+        Set<UUID> grantedShopIds,
+
+        @Schema(description = "The role a tenant-wide STAFF or SHOP_MANAGER grant gives the caller on "
+                + "EVERY shop of the tenant; grantedShopIds then lists every current shop. Null when "
+                + "the caller holds no such grant, and always null for a GROUP_ADMIN.",
+                nullable = true)
+        ShopRole tenantWideRole) {
 }

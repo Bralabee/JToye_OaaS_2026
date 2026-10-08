@@ -39,6 +39,13 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
     // published=true, so a tenant could fetch another tenant's PUBLISHED shop by id.
     Optional<Shop> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    // 37-05 (D-07/D-23): every current shop id of ONE tenant, for the grant set of a tenant-wide
+    // STAFF/SHOP_MANAGER grant ("a role plus all shops"). The explicit tenant predicate is
+    // load-bearing for the same reason as above: shops_public_read also returns other tenants'
+    // PUBLISHED shops.
+    @Query("SELECT s.id FROM Shop s WHERE s.tenantId = :tenantId")
+    List<UUID> findIdsByTenantId(@Param("tenantId") UUID tenantId);
+
     // Tenant-scoped by-name read for the Edge sync upsert (PR #726 review M1). The shop
     // upsert key is (tenant, name) — idx_shops_tenant_name is unique per TENANT, not globally —
     // but the bare findByName runs under shops_public_read and so also returns a FOREIGN

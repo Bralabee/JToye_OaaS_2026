@@ -36,6 +36,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
@@ -158,13 +159,13 @@ class StaffEffectiveAccessIntegrationTest {
                 // the transaction is now aborted; the repository call below reports it
             }
             return (int) shopStaffRepository.count();
-        }).when(userDirectoryRepository).upsertSeen(any(), eq(reader), any(), any(), any());
+        }).when(userDirectoryRepository).recordSignIn(any(), eq(reader), any(), any(), anyBoolean(), any());
 
         MvcResult me = mockMvc.perform(get("/api/v1/staff/me").with(vendorJwt(reader))
                         .accept(MediaType.APPLICATION_JSON))
                 .andReturn();
 
-        verify(userDirectoryRepository, atLeastOnce()).upsertSeen(any(), eq(reader), any(), any(), any());
+        verify(userDirectoryRepository, atLeastOnce()).recordSignIn(any(), eq(reader), any(), any(), anyBoolean(), any());
         assertThat(me.getResponse().getStatus())
                 .as("a failed directory write is best-effort: %s", body(me))
                 .isEqualTo(200);

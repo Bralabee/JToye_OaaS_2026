@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -150,11 +151,12 @@ public class StaffManagementService {
         Map<UUID, StaffPersonDto> people = new LinkedHashMap<>();
         for (UserDirectory entry : directoryRows) {
             people.put(entry.getUserId(),
-                    StaffPersonDto.from(entry, shopAccessService.effectiveAccessFor(entry.getUserId())));
+                    StaffPersonDto.from(entry, shopAccessService.effectiveAccessFor(entry.getUserId(),
+                            entry.getRealmAdminSeenAt())));
         }
         for (ShopStaff row : grantRows) {
             people.computeIfAbsent(row.getUserId(), userId ->
-                    StaffPersonDto.grantOnly(userId, shopAccessService.effectiveAccessFor(userId)));
+                    StaffPersonDto.grantOnly(userId, shopAccessService.effectiveAccessFor(userId, null)));
         }
         return List.copyOf(people.values());
     }
@@ -180,9 +182,11 @@ public class StaffManagementService {
     public MyAccessDto myAccess() {
         UUID userId = currentCallerSub();
         if (shopAccessService.isGroupAdmin()) {
-            return new MyAccessDto(userId, true, null);
+            return new MyAccessDto(userId, true, null, null);
         }
-        return new MyAccessDto(userId, false, shopAccessService.grantedShopIds());
+        Set<UUID> granted = shopAccessService.grantedShopIds();
+        return new MyAccessDto(userId, false, granted,
+                shopAccessService.resolveMembership(userId).tenantWideRole());
     }
 
     /**

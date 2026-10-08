@@ -81,9 +81,9 @@ public class UserDirectoryToucher {
      * Record that {@code userId} signed in to {@code tenantId}. Best-effort: returns normally on any
      * failure.
      *
-     * @param realmAdmin whether the token carries the realm {@code admin} role (stamped from 37-05
-     *                   Task 2 on; recorded in the throttle key so a newly observed admin role is
-     *                   never skipped)
+     * @param realmAdmin whether the token carries the realm {@code admin} role: stamps V76
+     *                   {@code realm_admin_seen_at} the first time (Pitfall 13). Part of the
+     *                   in-process throttle key, so a newly observed admin role is never skipped.
      */
     public void touch(UUID tenantId, UUID userId, String email, String displayName, boolean realmAdmin) {
         if (tenantId == null || userId == null) {
@@ -102,7 +102,7 @@ public class UserDirectoryToucher {
         OffsetDateTime cutoff = OffsetDateTime.now().minus(directoryUpsertInterval);
         try {
             requiresNew.executeWithoutResult(status ->
-                    userDirectoryRepository.upsertSeen(tenantId, userId, safeEmail, safeName, cutoff));
+                    userDirectoryRepository.recordSignIn(tenantId, userId, safeEmail, safeName, realmAdmin, cutoff));
             pruneIfLarge(now);
             lastTouched.put(key, now);
         } catch (RuntimeException ex) {
