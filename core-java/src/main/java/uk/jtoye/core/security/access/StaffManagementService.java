@@ -19,6 +19,8 @@ import uk.jtoye.core.security.access.dto.MyAccessDto;
 import uk.jtoye.core.security.access.dto.StaffMemberDto;
 import uk.jtoye.core.security.access.dto.StaffPersonDto;
 import uk.jtoye.core.shop.ShopRepository;
+import uk.jtoye.core.tenant.Tenant;
+import uk.jtoye.core.tenant.TenantRepository;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,6 +86,8 @@ public class StaffManagementService {
     private final UserDirectoryRepository userDirectoryRepository;
     private final ShopRepository shopRepository;
     private final ShopAccessService shopAccessService;
+    /** Reads the caller's own tenant name for {@link #myAccess()} (37-09); {@code tenants} has no RLS. */
+    private final TenantRepository tenantRepository;
     /**
      * Self-reference (lazy {@link ObjectProvider} to avoid a construction cycle) used to
      * invoke {@link #persistNewGrant} through the bean proxy so its
@@ -95,11 +99,13 @@ public class StaffManagementService {
                                   UserDirectoryRepository userDirectoryRepository,
                                   ShopRepository shopRepository,
                                   ShopAccessService shopAccessService,
+                                  TenantRepository tenantRepository,
                                   ObjectProvider<StaffManagementService> selfProvider) {
         this.shopStaffRepository = shopStaffRepository;
         this.userDirectoryRepository = userDirectoryRepository;
         this.shopRepository = shopRepository;
         this.shopAccessService = shopAccessService;
+        this.tenantRepository = tenantRepository;
         this.selfProvider = selfProvider;
     }
 
@@ -181,12 +187,13 @@ public class StaffManagementService {
     @Transactional(readOnly = true)
     public MyAccessDto myAccess() {
         UUID userId = currentCallerSub();
+        String businessName = currentBusinessName();
         if (shopAccessService.isGroupAdmin()) {
-            return new MyAccessDto(userId, true, null, null);
+            return new MyAccessDto(userId, true, null, null, businessName);
         }
         Set<UUID> granted = shopAccessService.grantedShopIds();
         return new MyAccessDto(userId, false, granted,
-                shopAccessService.resolveMembership(userId).tenantWideRole());
+                shopAccessService.resolveMembership(userId).tenantWideRole(), businessName);
     }
 
     /**
@@ -449,6 +456,18 @@ public class StaffManagementService {
     private UUID currentTenantId() {
         return TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+    }
+
+    /**
+     * The name of the caller's OWN business (37-09): the tenant the request is pinned to, read by
+     * id, so no other tenant's name can be returned. {@code null} when there is no tenant context
+     * or no row (a deleted tenant); {@code staff/me} still answers, it just cannot name it.
+     */
+    private String currentBusinessName() {
+        return TenantContext.get()
+                .flatMap(tenantRepository::findById)
+                .map(Tenant::getName)
+                .orElse(null);
     }
 
     /** The GROUP_ADMIN performing the write (created_by); {@code null} for a non-UUID/system principal. */

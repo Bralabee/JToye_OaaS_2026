@@ -2075,6 +2075,13 @@
       "MyAccessDto" : {
         "description" : "The caller's own effective vendor-scoped access. groupAdmin=true means unrestricted access to all shops and grantedShopIds is null (NOT 'no shops'); groupAdmin=false means grantedShopIds is the exact, possibly-empty set of accessible shops.",
         "properties" : {
+          "businessName" : {
+            "description" : "The name of the caller's own business (the tenant the token is pinned to). Null only when the tenant record cannot be read.",
+            "type" : [
+              "string",
+              "null"
+            ]
+          },
           "grantedShopIds" : {
             "description" : "For a non-GROUP_ADMIN caller, the exact set of shop ids they may access (empty = no access). Null for a GROUP_ADMIN — unrestricted; do NOT read as 'no shops'.",
             "items" : {

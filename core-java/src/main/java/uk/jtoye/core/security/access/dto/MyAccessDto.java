@@ -36,6 +36,12 @@ import java.util.UUID;
  * <p>{@code userId} is the caller's OWN Keycloak {@code sub}, so the client can identify
  * itself (e.g. the staff-page "you are removing your own access" check) without an
  * email round-trip. No other user's data is ever carried here.
+ *
+ * <p>{@code businessName} (37-09, additive) is the name of the business the caller's token is
+ * pinned to ({@code tenants.name}), so the dashboard can say "You've joined {business}" from
+ * server data after an invitation is accepted (D-26). It is the caller's OWN tenant only, and it
+ * is returned whatever the caller's access, because belonging to the business is what the token
+ * already asserts. Null only if the tenant row cannot be read.
  */
 @Schema(description = "The caller's own effective vendor-scoped access. groupAdmin=true means "
         + "unrestricted access to all shops and grantedShopIds is null (NOT 'no shops'); "
@@ -56,5 +62,9 @@ public record MyAccessDto(
                 + "EVERY shop of the tenant; grantedShopIds then lists every current shop. Null when "
                 + "the caller holds no such grant, and always null for a GROUP_ADMIN.",
                 nullable = true)
-        ShopRole tenantWideRole) {
+        ShopRole tenantWideRole,
+
+        @Schema(description = "The name of the caller's own business (the tenant the token is pinned "
+                + "to). Null only when the tenant record cannot be read.", nullable = true)
+        String businessName) {
 }
