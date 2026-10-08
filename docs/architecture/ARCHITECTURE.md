@@ -95,10 +95,11 @@ Tenant isolation is enforced at four independent layers. A defect at any one is 
 
 **Second wall — application-layer shop scoping (Phase 23).** Within a tenant, `ShopAccessService` is
 "the single in-tenant authorization seam." `shop_staff` (V52/V57) carries per-shop grants;
-`GROUP_ADMIN` is tenant-wide. JIT lazy-provisioning auto-creates a tenant-wide admin for the caller's
-own subject; a `strict-scoping` switch (**default OFF**) de-honours JIT admins while keeping OPERATOR
-and realm admins, retaining the oldest JIT admin as a logged bootstrap so no tenant can lock itself
-out. **FC-1**, a shipped cross-tenant write BOLA, was fixed by making the `GROUP_ADMIN` early-return
+`GROUP_ADMIN` is tenant-wide. The `strict-scoping` switch is **ON by default** since Phase 37 (D-06:
+ungranted means no access): nothing is JIT-provisioned, JIT tenant-wide admins written before the flip
+are de-honoured, OPERATOR grants and realm admins are kept, and the oldest JIT admin is retained as a
+logged bootstrap so no tenant can lock itself out. Turning it OFF (the day-one JIT implicit admin)
+needs an owner ruling; `scripts/check-strict-scoping-default.sh` fails CI on a false value. **FC-1**, a shipped cross-tenant write BOLA, was fixed by making the `GROUP_ADMIN` early-return
 compare the target shop's tenant to `TenantContext` explicitly (necessary because the
 `shops_public_read` policy lets a *published foreign* shop through `findById`); the answer is a
 non-disclosing 404.
