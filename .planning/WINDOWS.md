@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 2
+open_count: 5
 waived_count: 0
 fixed_count: 13
-total_count: 15
-last_updated: 2026-10-07T15:36:39.930Z
+total_count: 18
+last_updated: 2026-10-08T12:56:29.946Z
 ---
 
 # Broken Windows Ledger
@@ -30,6 +30,9 @@ last_updated: 2026-10-07T15:36:39.930Z
 | 13 | 31.1 | unrun-verify | scripts/openapi-gate.sh |  | 31.1-24: oasdiff compat gate not run locally (oasdiff not installed); OpenApiSnapshotTest red on the old snapshot, green on the regenerated one (additive: 49 insertions, 0 deletions) | fixed |  | 2026-10-07T02:03:55.293Z | 2026-10-07T15:36:39.930Z |
 | 14 | 31.1 | unrun-verify | core-java/src/main/java/uk/jtoye/core/notification/EmailNotificationService.java |  | 31.1-25 #789/#785 order emails proven by MimeMessage content tests (unit + Testcontainers, mocked sender) and by OrderNotificationListenerIntegrationTest landing one Confirmed email in the local Mailhog from its own test context; the compose-stack Mailhog capture (rebuilt core-java, seller-identity.spec.ts email half) is owed to 31.1-30 | fixed |  | 2026-10-07T03:00:22.755Z | 2026-10-07T11:12:30.404Z |
 | 15 | 31.1 | unrun-verify | frontend/e2e/customer-account.spec.ts |  | 31.1-26 #838 customer-account spec listed only (3 tests: served-HTML wall on mobile+desktop, @desktop-only signed-in click-through lodging ACCESS+ERASURE with one Mailhog email each); live RED (pre-rebuild runtime has no /shop/account) and GREEN owed to 31.1-30 | fixed |  | 2026-10-07T03:21:29.218Z | 2026-10-07T11:12:30.592Z |
+| 16 | 37 | unrun-verify | frontend/e2e/dashboard-interface-corrections.spec.ts | 185 | 37-06 edited two staff-page e2e assertions (no invite-denial copy; People heading in the CLS test); not run, the shared runtime is not rebuilt until the 37-15 gate | open |  | 2026-10-08T12:56:26.518Z |  |
+| 17 | 37 | unrun-verify | frontend/components/dashboard/no-access-page.tsx |  | 37-06 B3 backstop not run: Playwright at 375px asserting no horizontal overflow on the no-access page body with a 60-character business name; the body wraps with overflow-wrap:anywhere (jsdom cannot measure) | open |  | 2026-10-08T12:56:28.291Z |  |
+| 18 | 37 | deviation | frontend/components/dashboard/no-access-page.tsx |  | 37-06 B3 body says 'your business' where UI-SPEC copy has {business}: a person with no access cannot read any tenant record, and the session carries no business name | open |  | 2026-10-08T12:56:29.946Z |  |
 
 ````json
 [
@@ -226,6 +229,45 @@ last_updated: 2026-10-07T15:36:39.930Z
     "reason": "",
     "recorded_at": "2026-10-07T03:21:29.218Z",
     "resolved_at": "2026-10-07T11:12:30.592Z",
+    "milestone": "v2.3"
+  },
+  {
+    "id": 16,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "frontend/e2e/dashboard-interface-corrections.spec.ts",
+    "line": 185,
+    "description": "37-06 edited two staff-page e2e assertions (no invite-denial copy; People heading in the CLS test); not run, the shared runtime is not rebuilt until the 37-15 gate",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T12:56:26.518Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 17,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "frontend/components/dashboard/no-access-page.tsx",
+    "line": null,
+    "description": "37-06 B3 backstop not run: Playwright at 375px asserting no horizontal overflow on the no-access page body with a 60-character business name; the body wraps with overflow-wrap:anywhere (jsdom cannot measure)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T12:56:28.291Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 18,
+    "kind": "deviation",
+    "phase": "37",
+    "file": "frontend/components/dashboard/no-access-page.tsx",
+    "line": null,
+    "description": "37-06 B3 body says 'your business' where UI-SPEC copy has {business}: a person with no access cannot read any tenant record, and the session carries no business name",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-08T12:56:29.946Z",
+    "resolved_at": null,
     "milestone": "v2.3"
   }
 ]

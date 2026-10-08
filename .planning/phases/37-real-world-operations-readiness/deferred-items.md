@@ -51,6 +51,22 @@ where it must be resolved.
 - **Why deferred:** comment/copy only, no behaviour; RESEARCH §37-B.1 routes this copy to the
   D-07 / D-09 Staff-page work, which rewrites the same lines. Leaving it to them avoids two
   rewrites of one paragraph.
+- **RESOLVED in 37-06.** `shops-api.ts` and `staff-api.ts` now describe strict scoping ON by
+  default; the staff-page block (the automatic-grant badge and its comment) is gone, replaced
+  by the server-computed access column (`916d101a`).
+
+## 5. 37-06 frontend checks owed to the runtime gate
+
+- 37-06 changed only frontend code. Two staff-page assertions in
+  `frontend/e2e/dashboard-interface-corrections.spec.ts` were edited to follow the new page
+  (no invite-denial sentence; the CLS test now waits for the "People" heading), and the B3
+  backstop (Playwright at 375px: no horizontal overflow on the no-access page) was not
+  written or run. Both need the rebuilt stack, because the People column reads `people[]`,
+  which the running core-java does not serve until the 37-15 rebuild. Recorded in
+  `.planning/WINDOWS.md` (entries 16 and 17).
+- 37-06 also moved the Jest count (staff-page, no-access-page, confirm-action-dialog,
+  interceptor and webhooks cases). The full suite reads 197 suites / 2270 tests at `034328bd`.
+  Fold this into the §1 regeneration; re-measure, do not copy.
 
 ## 4. The flip is not on the shared runtime yet (by design, 37-04)
 
