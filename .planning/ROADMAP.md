@@ -1000,7 +1000,7 @@ Plans:
 - [x] 37-05-PLAN.md — 37-B: server-computed effective access, read-path directory, UXT-003 own-token proof (V76)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 37-06-PLAN.md — 37-B: Staff page effective access, NoAccessPage, ConfirmActionDialog generalised
+- [x] 37-06-PLAN.md — 37-B: Staff page effective access, NoAccessPage, ConfirmActionDialog generalised
 - [ ] 37-07-PLAN.md — 37-B: staff invites issue/list/resend/cancel with email (V77)
 
 **Wave 7** *(blocked on Wave 6 completion)*
