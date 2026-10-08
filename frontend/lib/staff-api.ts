@@ -14,10 +14,12 @@ import apiClient from "@/lib/api-client"
 export type ShopRole = "STAFF" | "SHOP_MANAGER" | "GROUP_ADMIN"
 
 /**
- * A grant's provenance (mirrors the Java `GrantSource` enum, V57). `JIT` = auto-granted
- * on the user's first sign-in (D-04); `OPERATOR` = deliberately granted by a group admin.
- * A group admin can see this before flipping strict-scoping, which de-honours JIT
- * tenant-wide grants (CR-07).
+ * A grant's provenance (mirrors the Java `GrantSource` enum, V57). `JIT` = written
+ * automatically at a user's first sign-in while strict scoping was off (D-04);
+ * `OPERATOR` = deliberately granted by a group admin. Strict scoping is ON by default
+ * since D-06 (37-04), and under it a JIT tenant-wide GROUP_ADMIN row is honoured only
+ * for the tenant's bootstrap admin. The Staff page therefore never shows provenance as
+ * access: it shows {@link EffectiveAccess}, which the server computes (D-09).
  */
 export type GrantSource = "JIT" | "OPERATOR"
 
@@ -42,15 +44,61 @@ export interface StaffMember {
   userId: string
   shopId: string | null
   role: ShopRole
-  /** Provenance (V57) — `JIT` rows are auto-granted on first sign-in (CR-07). */
+  /** Provenance (V57, see {@link GrantSource}). Never rendered as access (D-09). */
   grantSource: GrantSource
   createdAt: string | null
   createdBy: string | null
 }
 
+/**
+ * The strongest thing a person may do in the tenant (mirrors the Java
+ * `EffectiveAccess.Level`, 37-05). REALM_ADMIN is a platform admin account, seen
+ * signing in with the realm admin role (V76); the database cannot see that role
+ * live, so it is an observation, never "No access".
+ */
+export type AccessLevel = "GROUP_ADMIN" | "REALM_ADMIN" | "SHOP_ROLES" | "NONE"
+
+/**
+ * One person's effective access, as `ShopAccessService.effectiveAccessFor` decides
+ * it — the same decision path enforcement uses (D-09, 37-05). The browser renders
+ * this value and derives none of its own (T-37-12).
+ */
+export interface EffectiveAccess {
+  userId: string
+  level: AccessLevel
+  /** GROUP_ADMIN only because this is the tenant's oldest automatic admin and the
+   *  tenant has no operator-granted admin (kept so it cannot lock itself out). */
+  bootstrapAdmin: boolean
+  /** The access covers every shop of the tenant, present and future. */
+  allShops: boolean
+  /** Role a tenant-wide STAFF / SHOP_MANAGER grant confers on every shop. */
+  tenantWideRole: ShopRole | null
+  /** Role per specifically granted shop id. */
+  perShopRole: Record<string, ShopRole>
+  /** First sign-in seen with the realm admin role; null when never observed. */
+  realmAdminSeenAt: string | null
+}
+
+/**
+ * A person on the Staff page (`StaffPersonDto`, 37-05): everyone who has signed in
+ * to the tenant plus every grant holder with no directory row (an integration
+ * account), whose email, name and last-seen are then null.
+ */
+export interface StaffPerson {
+  userId: string
+  /** Masked like the directory (WR-10); null when the person never signed in here. */
+  maskedEmail: string | null
+  displayName: string | null
+  lastSeen: string | null
+  /** Absent only from a server older than 37-05; the page then says "Not recorded". */
+  effectiveAccess?: EffectiveAccess | null
+}
+
 export interface StaffList {
   directory: DirectoryEntry[]
   grants: StaffMember[]
+  /** null when the server sent no `people` (older than 37-05). */
+  people: StaffPerson[] | null
 }
 
 export interface GrantStaffInput {
@@ -61,12 +109,13 @@ export interface GrantStaffInput {
   role: ShopRole
 }
 
-/** GET /api/v1/staff — the directory + current grants. */
+/** GET /api/v1/staff — the directory, current grants and the people list. */
 export async function fetchStaff(): Promise<StaffList> {
   const res = await apiClient.get<StaffList>("/api/v1/staff")
   return {
     directory: res.data?.directory ?? [],
     grants: res.data?.grants ?? [],
+    people: Array.isArray(res.data?.people) ? res.data.people : null,
   }
 }
 

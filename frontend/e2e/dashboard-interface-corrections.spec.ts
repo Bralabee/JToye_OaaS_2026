@@ -182,7 +182,9 @@ test.describe("Dashboard interface corrections (#450) @mobile-only", () => {
       page.getByRole("button", { name: /invite/i }).or(page.getByRole("link", { name: /invite/i }))
     ).toHaveCount(0)
     await expect(page.getByText(/signed in once with their own/i)).toBeVisible()
-    await expect(page.getByText(/cannot send them an invite/i)).toBeVisible()
+    // 37-06: the explicit "this page cannot invite" sentence is gone too — D-07
+    // (37-07) builds invitations, so it was about to become false.
+    await expect(page.getByText(/cannot send.*invite/i)).toHaveCount(0)
   })
 })
 
@@ -239,7 +241,8 @@ test.describe("Throttled-mobile CLS — /dashboard/staff (#454) @mobile-only", (
     await expect(page.getByRole("heading", { name: "Staff & access" })).toBeVisible({
       timeout: 20_000,
     })
-    await expect(page.getByText("Team directory")).toBeVisible()
+    // 37-06 folded "Team directory" into the People card (two cards, not three).
+    await expect(page.getByRole("heading", { name: "People", exact: true })).toBeVisible()
 
     expect(cls, "/dashboard/staff CLS is within the repo's declared budget").toBeLessThan(
       CLS_BUDGET

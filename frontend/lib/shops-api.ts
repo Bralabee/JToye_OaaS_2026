@@ -7,9 +7,10 @@ import type { Shop } from "@/types/api"
  * The caller's server-authoritative effective access (GET /api/v1/staff/me,
  * delivered by plan 23-12). This is the single source of truth for GROUP_ADMIN
  * status — a browser-side JWT parse is the wrong shape even for a UI hint (CR-08),
- * because a GROUP_ADMIN is anyone holding a NULL-shop GROUP_ADMIN row, which under
- * the default strict-scoping = false is every JIT-provisioned user; realm `admin`
- * is only the bridge (D-03), not the definition.
+ * because whether a NULL-shop GROUP_ADMIN row is honoured is a server decision: under
+ * strict scoping (the default since D-06, 37-04) an automatically written row counts
+ * only for the tenant's bootstrap admin, and realm `admin` is only the bridge (D-03),
+ * not the definition.
  */
 export interface MyAccess {
   /** The caller's Keycloak `sub` — the authoritative identity for self-checks (WR-12). */
