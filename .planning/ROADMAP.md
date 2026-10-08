@@ -997,7 +997,7 @@ Plans:
 - [x] 37-04-PLAN.md — 37-B: D-06 strict scoping ON by default everywhere, with a CI guard
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 37-05-PLAN.md — 37-B: server-computed effective access, read-path directory, UXT-003 own-token proof (V76)
+- [x] 37-05-PLAN.md — 37-B: server-computed effective access, read-path directory, UXT-003 own-token proof (V76)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 37-06-PLAN.md — 37-B: Staff page effective access, NoAccessPage, ConfirmActionDialog generalised
