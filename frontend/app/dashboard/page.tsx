@@ -1,13 +1,14 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { m } from "framer-motion"
 import { staggerContainer, staggerItem } from "@/lib/motion"
 import { useCountUp } from "@/hooks/use-count-up"
 import { CHART_COLORS } from "@/lib/chart-colors"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
-import { fetchAllMyShops } from "@/lib/shops-api"
+import { fetchAllMyShops, fetchMyAccess } from "@/lib/shops-api"
+import { joinedToastTitle } from "@/lib/joined-toast"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
@@ -195,6 +196,37 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }
+
+  /*
+   * D-26 (37-09): the accept page sends a newly joined person here as
+   * /dashboard?joined=1, through the ordinary Keycloak sign-in. Once, and only then,
+   * say where they can now work — from the server's answer (staff/me + their shops),
+   * never from the URL, which anyone can write. The parameter is dropped first, so a
+   * reload or a shared link does not welcome them twice.
+   */
+  const joinedHandled = useRef(false)
+  useEffect(() => {
+    if (joinedHandled.current) return
+    joinedHandled.current = true
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("joined") !== "1") return
+    params.delete("joined")
+    const rest = params.toString()
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash
+    )
+    Promise.all([fetchMyAccess(), fetchAllMyShops()])
+      .then(([access, shops]) => {
+        const title = joinedToastTitle(access, shops)
+        if (title) toast({ title })
+      })
+      .catch(() => {
+        // A welcome is not worth an error: the dashboard itself reports load failures.
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Onboarding banner is shop-independent — fetch once on mount.
   useEffect(() => {

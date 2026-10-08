@@ -32,6 +32,11 @@ export interface MyAccess {
    * always null for a GROUP_ADMIN.
    */
   tenantWideRole: ShopRole | null
+  /**
+   * The name of the caller's own business (37-09, additive on staff/me). Null when the
+   * server could not read it, or is older than 37-09; never guessed client-side.
+   */
+  businessName: string | null
 }
 
 /**
@@ -62,6 +67,10 @@ export async function fetchMyAccess(): Promise<MyAccess> {
     groupAdmin: res.data?.groupAdmin ?? false,
     grantedShopIds: res.data?.grantedShopIds ?? null,
     tenantWideRole: res.data?.tenantWideRole ?? null,
+    businessName:
+      typeof res.data?.businessName === "string" && res.data.businessName.trim()
+        ? res.data.businessName
+        : null,
   }
 }
 
