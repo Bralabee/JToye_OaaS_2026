@@ -991,7 +991,7 @@ Plans:
 - [x] 37-02-PLAN.md — 37-B: strict-scoping test hardening I (capture/restore, booted-value instrument, enumerate reds)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 37-03-PLAN.md — 37-B: convert implicit-admin tests to explicit grants; seed the MCP service account
+- [x] 37-03-PLAN.md — 37-B: convert implicit-admin tests to explicit grants; seed the MCP service account
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 37-04-PLAN.md — 37-B: D-06 strict scoping ON by default everywhere, with a CI guard
