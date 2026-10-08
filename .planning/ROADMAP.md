@@ -356,7 +356,7 @@ Phases run in the user-locked, thinnest/highest-pain-first order: **21 → 22 �
 | 34. Rendering + Test Truthfulness | v2.3 | 10/10 | Complete   | 2026-08-29 |
 | 35. Horizontal Layout Contract | v2.3 | 9/13 | In Progress | — |
 | 36. Azure Blob Storage Throughout | v2.3 | 18/18 | Complete | 2026-09-29 |
-| 37. Real-world operations readiness | v2.3 | 0/? | Not started | — |
+| 37. Real-world operations readiness | v2.3 | 9/53 | In Progress | — |
 | 38. Spring Boot 4.1 Migration | v2.3 | 19/19 | Complete    | 2026-10-05 |
 
 **Phase 27 belongs to v2.3** (owner decision 2026-08-01). It ran after v2.3's 6/6 build closed but
@@ -995,7 +995,7 @@ NOTE: `gsd_run query phase.add` derived Phase **38** because a sibling git workt
   7. **No regression of the goods.** The 40 entries in `goods-to-preserve.md` are re-verified at phase end on the delivered runtime. They include idempotent retries, the allergen gate, offline banner honesty, server-authoritative pricing and the webhook secret UX.
   8. **Catalogue & shop admin (37-G).** Vendors can set a delivery fee, a free-delivery threshold and collection-only, enforced on every writer, and editing a shop keeps its public address.
 
-**Plans:** 53 plans in 42 waves. Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
+**Plans:** 9/53 plans executed in 42 waves. Sub-themes execute one at a time on the integration branch `phase-37-ops-readiness` in the order B, A, D, C, E, G, F (D-02: 37-B first). Each closes with a gate plan that first requires the previous sub-theme's PR to be merged and merges its reviewed head and `origin/main` back in, then proves its runtime, then cuts its own PR branch from `origin/main` as one squash commit, so each PR holds only its own change (D-03, D-04).
 
 Plans:
 **Wave 1**
@@ -1021,7 +1021,7 @@ Plans:
 - [x] 37-08-PLAN.md — 37-B: invite accept, Keycloak user creation, admin-only tenant_id profile
 
 **Wave 8** *(blocked on Wave 7 completion)*
-- [ ] 37-09-PLAN.md — 37-B: invite form, pending invitations, /invite accept page
+- [x] 37-09-PLAN.md — 37-B: invite form, pending invitations, /invite accept page
 - [ ] 37-10-PLAN.md — 37-B: delete guard and void with reversing ledger entry (V78, owner checkpoint)
 
 **Wave 9** *(blocked on Wave 8 completion)*

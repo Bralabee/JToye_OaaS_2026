@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-08 complete (8/53), 37-08 closed 2026-10-08 after a session break (summary written from the commit record, suite re-run 1610/0 + 946/0, two gate line-shifts repaired). Next: /gsd-execute-phase 37 from wave 8 (37-09 invite page; it must read the fragment token and POST preview/accept, WINDOWS entry 21)."
-last_updated: "2026-10-08T15:45:54Z"
+stopped_at: "Phase 37 executing: 37-01..37-09 complete (9/53). 37-09 closed 2026-10-08: Staff-page invite form + pending invitations, the /invite accept page (fragment token, no-referrer, login_hint sign-in), staff/me businessName (additive) and the joined toast; jest 2313/0, core-java 1610/0 + 947/0; live e2e/staff-invite.spec.ts owed to 37-15 (WINDOWS 22-24). Next: /gsd-execute-phase 37 (37-10)."
+last_updated: "2026-10-08T16:53:14.651Z"
 last_activity: 2026-10-08
-state_head: 953df054845908e238a56818851ce70a7ddf83e4
+state_head: 6926181c5c1d6b45a6f65e364805062cd93ac2da
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 185
+  completed_plans: 194
   percent: 65
 ---
 
@@ -911,6 +911,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P20 | 42min | 3 tasks | 22 files |
 | Phase 31.1 P21 | 11 min | 2 tasks | 12 files |
 | Phase 31.1 P26 | 54 min | 3 tasks | 17 files |
+| Phase 37 P09 | 55 min | 3 tasks | 31 files |
 
 ## Accumulated Context
 
@@ -1174,6 +1175,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: secure-phase 2026-10-07: 102/102 register threats closed at ASVS L2 by three gsd-security-auditor lanes (plans 01-10 / 11-20 / 21-30); residuals T-31.1-03, -71, -18 logged as accepted risks in 31.1-SECURITY.md; review items CR-02 (two pooled connections per public shop read) and WR-03 (may-contain-only dish reads "No allergens declared") stay unregistered and open in 31.1-REVIEW.md
 - [Phase 31.1]: validate-phase 2026-10-07: 17/17 PGC requirements green on the current tree (ITs 0 failures after the newest core-java commit, jest 426/426, Playwright 85/85 live + 77/77 UAT re-run); nyquist_compliant true
 - [Phase 31.1]: transition 2026-10-07: `phase.complete` advanced STATE to Phase 29 (GSD's numeric next); corrected by hand to Phase 37 per the owner's planning order (31.1 → 37). A legacy `status: verified` on 23-VERIFICATION.md (outside the current closed set) had blocked phase.complete and progress.bar for every phase and was set to `passed` (65201ac6)
+- [Phase 37]: 37-09: the invite accept page is /invite (token in the fragment, POST preview/accept with the ref in a JSON body), following 37-08; Referrer-Policy no-referrer on /invite/:path* after the default
+- [Phase 37]: 37-09: GET /api/v1/staff/me carries a nullable businessName (the caller's own tenant name); the dashboard joined toast is worded only from staff/me + shops, ?joined=1 is a trigger only
+- [Phase 37]: 37-09: the invite password input is uncontrolled and Keycloak's 422 is shown verbatim; no client-side password rule
 
 ### Pending Todos
 
