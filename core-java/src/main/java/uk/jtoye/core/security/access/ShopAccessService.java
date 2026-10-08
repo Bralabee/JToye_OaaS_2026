@@ -20,8 +20,6 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
-import java.time.Duration;
-import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,7 +51,11 @@ import java.util.concurrent.ConcurrentHashMap;
  *       client-supplied role/shop). Never runs under the shipped default (D-06).</li>
  *   <li><strong>Throttled directory upsert (D-09)</strong> — records/refreshes
  *       the {@code user_directory} grant-target row, gated on a stale
- *       {@code last_seen} so it is never a write per request.</li>
+ *       {@code last_seen} so it is never a write per request. Since 37-05 it runs on reads
+ *       too, in its own best-effort transaction ({@link UserDirectoryToucher}).</li>
+ *   <li><strong>Effective access (D-09, 37-05)</strong> — {@link #effectiveAccessFor(UUID)}
+ *       answers "what may this person do" through the same decision path enforcement uses, for
+ *       the Staff page.</li>
  *   <li><strong>Strict-scoping switch (D-12, revised CR-07; default ON since D-06)</strong>
  *       — ON (default) = ungranted means no access: no auto-provisioning, and JIT-sourced
  *       tenant-wide GROUP_ADMIN rows are de-honoured (a day-one user genuinely becomes
@@ -109,9 +111,12 @@ public class ShopAccessService {
     @Value("${jtoye.access.strict-scoping:true}")
     private boolean strictScoping;
 
-    /** D-09: throttle window — a returning user younger than this is a directory no-op. */
-    @Value("${jtoye.access.directory-upsert-interval:PT1H}")
-    private Duration directoryUpsertInterval;
+    /**
+     * D-09 (37-05): records the caller in {@code user_directory} on every gated request, reads
+     * included, in its own best-effort transaction. Owns the throttle
+     * ({@code jtoye.access.directory-upsert-interval}).
+     */
+    private final UserDirectoryToucher userDirectoryToucher;
 
     /**
      * CR-03 (D-04) fail-closed machine-client allowlist. A bearer token whose
@@ -132,12 +137,14 @@ public class ShopAccessService {
                              UserDirectoryRepository userDirectoryRepository,
                              TenantCacheEvictor cacheEvictor,
                              ShopRepository shopRepository,
-                             ObjectProvider<ShopAccessService> selfProvider) {
+                             ObjectProvider<ShopAccessService> selfProvider,
+                             UserDirectoryToucher userDirectoryToucher) {
         this.shopStaffRepository = shopStaffRepository;
         this.userDirectoryRepository = userDirectoryRepository;
         this.cacheEvictor = cacheEvictor;
         this.shopRepository = shopRepository;
         this.selfProvider = selfProvider;
+        this.userDirectoryToucher = userDirectoryToucher;
     }
 
     /**
@@ -494,6 +501,35 @@ public class ShopAccessService {
     }
 
     /**
+     * The effective access of {@code userId} in the pinned tenant, for the Staff page (D-09,
+     * Phase 37-05; threat T-37-09). Computed through the SAME decision path enforcement uses —
+     * {@link #isGroupAdminForUser} (with {@code realmAdmin = false}: the database cannot see a
+     * Keycloak role, see {@link EffectiveAccess#realmAdminSeenAt()}) and the cached
+     * {@link #resolveMembership} — never re-derived from raw {@code shop_staff} rows, so the page
+     * cannot say one thing while {@code require}/{@code canAccessShop} do another. In particular a
+     * JIT tenant-wide GROUP_ADMIN row reads GROUP_ADMIN only when the strict-scoping decision
+     * honours it (the bootstrap admin), and NONE otherwise.
+     *
+     * <p>Read-only: no directory touch, no JIT provision.
+     */
+    public EffectiveAccess effectiveAccessFor(UUID userId) {
+        Membership membership = self().resolveMembership(userId);
+        boolean groupAdmin = isGroupAdminForUser(userId, false);
+        boolean bootstrapAdmin = groupAdmin && strictScoping
+                && membership.isGroupAdmin() && membership.groupAdminFromJit();
+        EffectiveAccess.Level level;
+        if (groupAdmin) {
+            level = EffectiveAccess.Level.GROUP_ADMIN;
+        } else if (!membership.perShopRole().isEmpty()) {
+            level = EffectiveAccess.Level.SHOP_ROLES;
+        } else {
+            level = EffectiveAccess.Level.NONE;
+        }
+        return new EffectiveAccess(userId, level, bootstrapAdmin, groupAdmin, null,
+                membership.perShopRole(), null);
+    }
+
+    /**
      * Resolve (and cache) the caller's membership snapshot for {@code userId}
      * within the current tenant. Cached per-user; a NULL-shop GROUP_ADMIN row sets
      * {@link Membership#isGroupAdmin()}, specific-shop rows populate
@@ -565,11 +601,11 @@ public class ShopAccessService {
     // ---------------------------------------------------------------------
 
     /**
-     * Runs the per-request side effects once, at the top of every enforcement
-     * entry point: the throttled directory upsert (always), then — while
-     * strict-scoping is OFF — the JIT GROUP_ADMIN provision for a not-yet-granted,
-     * non-realm-admin caller. Both target ONLY the caller's own {@code sub}; no
-     * client-supplied role/shop is ever read (T-23-02-01).
+     * Runs the per-request side effects at the top of every enforcement entry point: the
+     * throttled, best-effort directory touch (reads included, its own transaction — D-09, 37-05),
+     * then — while strict-scoping is OFF and the transaction can write — the JIT GROUP_ADMIN
+     * provision for a not-yet-granted, non-realm-admin caller. Both target ONLY the caller's own
+     * {@code sub}; no client-supplied role/shop is ever read (T-23-02-01).
      */
     private void onRequest() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -593,32 +629,31 @@ public class ShopAccessService {
             return;
         }
 
-        // Phase 23-03: NEVER attempt a write in a read-only transaction. A failed
+        // D-09 (37-05): record the caller in user_directory on READS as well as writes, so the
+        // Staff page lists everyone who has signed in — including an ungranted user, who under
+        // D-06 can do little but read. The toucher runs in its OWN transaction (REQUIRES_NEW), so
+        // it neither needs a write-capable caller nor can a failure poison the caller's
+        // transaction; it is best-effort and throttled. It writes no grant. Skipped (not thrown)
+        // when no tenant is pinned: a directory row needs a tenant, and the enforcement path
+        // below reports the missing tenant itself where it matters.
+        Optional<UUID> pinned = TenantContext.get();
+        if (pinned.isPresent()) {
+            userDirectoryToucher.touch(pinned.get(), sub, jwt.getClaimAsString("email"), displayName(jwt),
+                    isRealmAdmin());
+        }
+
+        // Phase 23-03: NEVER attempt the JIT write in a read-only transaction. A failed
         // INSERT (Postgres rejects writes in a read-only tx) would poison the whole
         // transaction ("current transaction is aborted"), breaking the read that
-        // triggered this gate call — even though the directory upsert is wrapped in a
-        // best-effort try/catch, the SQL statement itself still aborts the tx. The
-        // read DECISION does not depend on these writes ({@link #isGroupAdmin()}
-        // derives the day-one implicit GROUP_ADMIN from strict-scoping, not from the
-        // JIT row), so the directory upsert + JIT provision run ONLY on write-capable
-        // request paths. The JIT row is still materialised on the first write request.
+        // triggered this gate call. The read DECISION does not depend on it
+        // ({@link #isGroupAdmin()} derives the day-one implicit GROUP_ADMIN from
+        // strict-scoping, not from the JIT row), so the JIT provision runs ONLY on
+        // write-capable request paths, and never under strict scoping (D-06).
         if (TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
             return;
         }
 
         UUID tenantId = currentTenantId();
-
-        // D-09: throttled login upsert. Best-effort — a directory write must never
-        // fail a real request. The native ON CONFLICT DO UPDATE ... WHERE
-        // last_seen < cutoff makes a returning user within the window a no-op.
-        try {
-            OffsetDateTime cutoff = OffsetDateTime.now().minus(directoryUpsertInterval);
-            userDirectoryRepository.upsertSeen(tenantId, sub,
-                    jwt.getClaimAsString("email"), displayName(jwt), cutoff);
-        } catch (RuntimeException ex) {
-            log.warn("Directory upsert skipped (best-effort) for sub {} tenant {}: {}",
-                    sub, tenantId, ex.getMessage());
-        }
 
         // D-04 / D-12: JIT lazy-provision. Skipped when strict-scoping is ON, when
         // the caller is a realm-admin (implicit GROUP_ADMIN — no row needed), or

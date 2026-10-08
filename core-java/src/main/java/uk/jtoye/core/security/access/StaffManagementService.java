@@ -17,9 +17,12 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.dto.DirectoryEntryDto;
 import uk.jtoye.core.security.access.dto.MyAccessDto;
 import uk.jtoye.core.security.access.dto.StaffMemberDto;
+import uk.jtoye.core.security.access.dto.StaffPersonDto;
 import uk.jtoye.core.shop.ShopRepository;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -99,8 +102,13 @@ public class StaffManagementService {
         this.selfProvider = selfProvider;
     }
 
-    /** The GET /api/v1/staff body: the grant-target picker + the current grants. */
-    public record StaffListResponse(List<DirectoryEntryDto> directory, List<StaffMemberDto> grants) {
+    /**
+     * The GET /api/v1/staff body: the grant-target picker + the current grants (both unchanged),
+     * plus (37-05, D-09) {@code people}: every person in the tenant with the access the server
+     * actually enforces for them.
+     */
+    public record StaffListResponse(List<DirectoryEntryDto> directory, List<StaffMemberDto> grants,
+                                    List<StaffPersonDto> people) {
     }
 
     /**
@@ -121,13 +129,34 @@ public class StaffManagementService {
     public StaffListResponse list() {
         shopAccessService.requireGroupAdmin();
         UUID tenantId = currentTenantId();
-        List<DirectoryEntryDto> directory = userDirectoryRepository.findByTenantId(tenantId).stream()
+        List<UserDirectory> directoryRows = userDirectoryRepository.findByTenantId(tenantId);
+        List<ShopStaff> grantRows = shopStaffRepository.findByTenantId(tenantId);
+        List<DirectoryEntryDto> directory = directoryRows.stream()
                 .map(DirectoryEntryDto::from)
                 .toList();
-        List<StaffMemberDto> grants = shopStaffRepository.findByTenantId(tenantId).stream()
+        List<StaffMemberDto> grants = grantRows.stream()
                 .map(StaffMemberDto::from)
                 .toList();
-        return new StaffListResponse(directory, grants);
+        return new StaffListResponse(directory, grants, people(directoryRows, grantRows));
+    }
+
+    /**
+     * D-09 (37-05): everyone who has signed in to the tenant, plus every grant holder who has no
+     * directory row (e.g. granted before they ever signed in, or erased from the directory), each
+     * mapped through {@link ShopAccessService#effectiveAccessFor(UUID)} — the decision path itself.
+     * The grant rows are used ONLY to find who to list, never to say what they may do (T-37-09).
+     */
+    private List<StaffPersonDto> people(List<UserDirectory> directoryRows, List<ShopStaff> grantRows) {
+        Map<UUID, StaffPersonDto> people = new LinkedHashMap<>();
+        for (UserDirectory entry : directoryRows) {
+            people.put(entry.getUserId(),
+                    StaffPersonDto.from(entry, shopAccessService.effectiveAccessFor(entry.getUserId())));
+        }
+        for (ShopStaff row : grantRows) {
+            people.computeIfAbsent(row.getUserId(), userId ->
+                    StaffPersonDto.grantOnly(userId, shopAccessService.effectiveAccessFor(userId)));
+        }
+        return List.copyOf(people.values());
     }
 
     /**

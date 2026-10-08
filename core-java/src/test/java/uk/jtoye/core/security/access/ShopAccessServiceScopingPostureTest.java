@@ -75,6 +75,7 @@ class ShopAccessServiceScopingPostureTest {
                 .withBean(UserDirectoryRepository.class, () -> mock(UserDirectoryRepository.class))
                 .withBean(TenantCacheEvictor.class, () -> mock(TenantCacheEvictor.class))
                 .withBean(ShopRepository.class, () -> mock(ShopRepository.class))
+                .withBean(UserDirectoryToucher.class, () -> mock(UserDirectoryToucher.class))
                 .withBean(ShopAccessService.class)
                 .run(context -> {
                     assertThat(context).hasNotFailed();
@@ -152,6 +153,7 @@ class ShopAccessServiceScopingPostureTest {
                 mock(UserDirectoryRepository.class),
                 mock(TenantCacheEvictor.class),
                 mock(ShopRepository.class),
-                (ObjectProvider<ShopAccessService>) mock(ObjectProvider.class));
+                (ObjectProvider<ShopAccessService>) mock(ObjectProvider.class),
+                mock(UserDirectoryToucher.class));
     }
 }
