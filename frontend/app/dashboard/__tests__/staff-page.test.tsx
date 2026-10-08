@@ -1,5 +1,5 @@
 /**
- * VSA-04 (23-06) — GROUP_ADMIN staff-management screen.
+ * VSA-04 (23-06) — GROUP_ADMIN staff-management screen; D-09 (37-06) — the People card.
  *
  * NOTE ON WHAT THIS PROVES: the screen is a UX mirror of a server-side gate, NOT
  * the security boundary. `GET /api/v1/staff` is GROUP_ADMIN-gated in 23-04, so a
@@ -8,8 +8,13 @@
  * 403 as an honest access-required state rather than a crash/blank, that
  * list/grant/revoke are wired to the 23-04 endpoints, and that the last-GROUP_ADMIN
  * `/last-group-admin` 409 (D-11) surfaces as a clear in-UI message.
+ *
+ * D-09 (37-06): the Access column renders `people[].effectiveAccess` exactly as the
+ * server computed it (37-05, `ShopAccessService.effectiveAccessFor`). The browser
+ * derives no access value: a person whose server value is missing reads "Not
+ * recorded", never a level reconstructed from grant rows (T-37-12).
  */
-import { render, screen, waitFor, fireEvent } from "@testing-library/react"
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react"
 import StaffPage from "../staff/page"
 import apiClient from "@/lib/api-client"
 import { fetchMyShops } from "@/lib/shops-api"
@@ -102,11 +107,61 @@ const grants = [
   },
 ]
 
+/** The 37-05 `EffectiveAccess` shape, with every field the server always sends. */
+function access(
+  userId: string,
+  level: "GROUP_ADMIN" | "REALM_ADMIN" | "SHOP_ROLES" | "NONE",
+  extra: Partial<{
+    bootstrapAdmin: boolean
+    allShops: boolean
+    tenantWideRole: string | null
+    perShopRole: Record<string, string>
+    realmAdminSeenAt: string | null
+  }> = {}
+) {
+  return {
+    userId,
+    level,
+    bootstrapAdmin: false,
+    allShops: level === "GROUP_ADMIN" || level === "REALM_ADMIN",
+    tenantWideRole: null,
+    perShopRole: {},
+    realmAdminSeenAt: null,
+    ...extra,
+  }
+}
+
+/** A `StaffPersonDto` for a directory entry. */
+function person(
+  d: { userId: string; email: string | null; displayName: string | null; lastSeen: string | null },
+  effectiveAccess: unknown
+) {
+  return {
+    userId: d.userId,
+    maskedEmail: d.email,
+    displayName: d.displayName,
+    lastSeen: d.lastSeen,
+    effectiveAccess,
+  }
+}
+
+const people = [
+  person(directory[0], access(USER_GA, "GROUP_ADMIN")),
+  person(directory[1], access(USER_SAM, "SHOP_ROLES", { perShopRole: { [SHOP_A]: "STAFF" } })),
+]
+
 /** An axios-shaped rejection — the screen reads `err.response.status`. */
 const httpError = (status: number, type?: string) =>
   Object.assign(new Error(`Request failed with status code ${status}`), {
     response: { status, data: type ? { type, status } : undefined },
   })
+
+/** The People-table row (`<tr>`) that names this person. */
+function rowOf(name: string): HTMLElement {
+  const row = screen.getByText(name).closest("tr")
+  expect(row).not.toBeNull()
+  return row as HTMLElement
+}
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -114,14 +169,14 @@ beforeEach(() => {
     shops: shops as never,
     isGroupAdmin: true,
     userId: USER_GA,
-  })
-  mockedApiClient.get.mockResolvedValue({ data: { directory, grants } } as never)
+  } as never)
+  mockedApiClient.get.mockResolvedValue({ data: { directory, grants, people } } as never)
   mockedApiClient.post.mockResolvedValue({ data: {} } as never)
   mockedApiClient.delete.mockResolvedValue({ data: undefined } as never)
 })
 
 describe("Staff management screen (VSA-04)", () => {
-  it("lists the login-populated directory and the current grants for a GROUP_ADMIN", async () => {
+  it("lists everyone with the access the server computed for them", async () => {
     render(<StaffPage />)
 
     await waitFor(() => {
@@ -131,8 +186,9 @@ describe("Staff management screen (VSA-04)", () => {
     // The list call hits the 23-04 endpoint.
     expect(mockedApiClient.get).toHaveBeenCalledWith("/api/v1/staff")
 
-    // Directory identities are visible...
-    const shownEmail = screen.getByText(EMAIL_SAM)
+    // Identities are visible...
+    const samRow = rowOf("Sam Cook")
+    const shownEmail = within(samRow).getByText(EMAIL_SAM)
     expect(shownEmail).toBeInTheDocument()
     expect(screen.getByText("Ada Owner")).toBeInTheDocument()
 
@@ -142,28 +198,23 @@ describe("Staff management screen (VSA-04)", () => {
     // is the assertion that fires on that drift.
     expect(shownEmail.textContent).toMatch(/^[^@]\*\*\*@[^@]+$/)
 
-    // ...and the grants resolve to human-readable shop + role.
-    expect(screen.getAllByText("Peckham Kitchen").length).toBeGreaterThan(0)
-    expect(screen.getByText("Group admin")).toBeInTheDocument()
-    expect(screen.getByText("Staff")).toBeInTheDocument()
+    // ...and each person's access reads as the server decided it.
+    expect(within(rowOf("Ada Owner")).getByText("Group admin · all shops")).toBeInTheDocument()
+    expect(within(samRow).getByText("Staff · Peckham Kitchen")).toBeInTheDocument()
 
-    // D-09: the directory is login-populated — a short list must not read as a
-    // bug. The wording changed in #450 item 2 (the old sentence promised an
-    // invite that does not exist); the property being asserted has not.
-    expect(
-      screen.getByText(/appear here only after they have signed in/i)
-    ).toBeInTheDocument()
+    // D-09: the picker is login-populated — a short list must not read as a bug.
+    expect(screen.getByText(/signed in once with their own/i)).toBeInTheDocument()
   })
 
-  it("grants a shop-scoped role and refreshes the grants list", async () => {
+  it("grants a shop-scoped role and refreshes the list", async () => {
     render(<StaffPage />)
     await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
 
     fireEvent.change(screen.getByLabelText(/team member/i), {
       target: { value: USER_SAM },
     })
-    fireEvent.change(screen.getByLabelText(/shop/i), { target: { value: SHOP_B } })
-    fireEvent.change(screen.getByLabelText(/role/i), {
+    fireEvent.change(screen.getByLabelText(/^shop$/i), { target: { value: SHOP_B } })
+    fireEvent.change(screen.getByLabelText(/^role$/i), {
       target: { value: "SHOP_MANAGER" },
     })
 
@@ -172,15 +223,28 @@ describe("Staff management screen (VSA-04)", () => {
       userId: USER_SAM,
       shopId: SHOP_B,
       role: "SHOP_MANAGER",
+      grantSource: "OPERATOR",
       createdAt: "2026-07-19T12:00:00Z",
       createdBy: USER_GA,
     }
     mockedApiClient.post.mockResolvedValueOnce({ data: newGrant } as never)
     mockedApiClient.get.mockResolvedValueOnce({
-      data: { directory, grants: [...grants, newGrant] },
+      data: {
+        directory,
+        grants: [...grants, newGrant],
+        people: [
+          people[0],
+          person(
+            directory[1],
+            access(USER_SAM, "SHOP_ROLES", {
+              perShopRole: { [SHOP_A]: "STAFF", [SHOP_B]: "SHOP_MANAGER" },
+            })
+          ),
+        ],
+      },
     } as never)
 
-    fireEvent.click(screen.getByRole("button", { name: /grant access/i }))
+    fireEvent.click(screen.getByRole("button", { name: /^grant access$/i }))
 
     await waitFor(() => {
       expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/staff/grant", {
@@ -190,11 +254,10 @@ describe("Staff management screen (VSA-04)", () => {
       })
     })
 
-    // The list refreshed and the new grant is visible.
+    // The list refreshed and the new access is visible as the server computed it.
     await waitFor(() => {
-      expect(screen.getByText("Shop manager")).toBeInTheDocument()
+      expect(screen.getByText("Shop manager · Brixton Bakery")).toBeInTheDocument()
     })
-    expect(screen.getAllByText("Brixton Bakery").length).toBeGreaterThan(0)
   })
 
   it("sends shopId null for a tenant-wide (all shops) grant", async () => {
@@ -204,11 +267,11 @@ describe("Staff management screen (VSA-04)", () => {
     fireEvent.change(screen.getByLabelText(/team member/i), {
       target: { value: USER_SAM },
     })
-    // "All shops / tenant-wide" is the default shop option → shopId null.
-    fireEvent.change(screen.getByLabelText(/role/i), {
+    // "All shops" is the default shop option → shopId null.
+    fireEvent.change(screen.getByLabelText(/^role$/i), {
       target: { value: "GROUP_ADMIN" },
     })
-    fireEvent.click(screen.getByRole("button", { name: /grant access/i }))
+    fireEvent.click(screen.getByRole("button", { name: /^grant access$/i }))
 
     await waitFor(() => {
       expect(mockedApiClient.post).toHaveBeenCalledWith("/api/v1/staff/grant", {
@@ -216,29 +279,6 @@ describe("Staff management screen (VSA-04)", () => {
         shopId: null,
         role: "GROUP_ADMIN",
       })
-    })
-  })
-
-  it("revokes a grant and removes it from the list", async () => {
-    render(<StaffPage />)
-    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
-
-    mockedApiClient.get.mockResolvedValueOnce({
-      data: { directory, grants: [grants[0]] },
-    } as never)
-
-    // The row's accessible name is the MASKED address (`Revoke ${email}` over a
-    // DirectoryEntryDto), so this locator only resolves against a faithful fixture.
-    fireEvent.click(screen.getByRole("button", { name: `Revoke ${EMAIL_SAM}` }))
-
-    await waitFor(() => {
-      expect(mockedApiClient.delete).toHaveBeenCalledWith(
-        `/api/v1/staff/${GRANT_SAM}`
-      )
-    })
-
-    await waitFor(() => {
-      expect(screen.queryByText("Staff")).not.toBeInTheDocument()
     })
   })
 
@@ -261,24 +301,19 @@ describe("Staff management screen (VSA-04)", () => {
     ).not.toBeInTheDocument()
   })
 
-  it("surfaces the last-GROUP_ADMIN 409 as a clear message and keeps the grant", async () => {
+  it("renders the load-error panel, not an empty list, when the list fails to load", async () => {
+    mockedApiClient.get.mockRejectedValueOnce(httpError(500))
+
     render(<StaffPage />)
+
+    const panel = await screen.findByTestId("load-error-panel")
+    expect(within(panel).getByText(/couldn't load staff/i)).toBeInTheDocument()
+    // No access claim is made about anyone while the list is unknown.
+    expect(screen.queryByText("No access")).not.toBeInTheDocument()
+
+    // Retry re-reads the list.
+    fireEvent.click(within(panel).getByRole("button", { name: /try again/i }))
     await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
-
-    mockedApiClient.delete.mockRejectedValueOnce(
-      httpError(409, "/last-group-admin")
-    )
-
-    fireEvent.click(screen.getByRole("button", { name: `Revoke ${EMAIL_GA}` }))
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/cannot remove the last group admin/i)
-      ).toBeInTheDocument()
-    })
-
-    // D-11: the grant survives — the 409 is a refusal, not a silent failure.
-    expect(screen.getByText("Group admin")).toBeInTheDocument()
   })
 
   it("warns that a grant belongs to the signed-in user (self-downgrade, D-11)", async () => {
@@ -286,7 +321,7 @@ describe("Staff management screen (VSA-04)", () => {
     await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
 
     // The GROUP_ADMIN row is the caller — identified by userId (USER_GA), not email.
-    expect(screen.getByText(/this is you/i)).toBeInTheDocument()
+    expect(within(rowOf("Ada Owner")).getByText(/this is you/i)).toBeInTheDocument()
   })
 
   // WR-12: this case FAILS against the pre-fix screen, whose email-based isSelf
@@ -302,63 +337,6 @@ describe("Staff management screen (VSA-04)", () => {
     expect(screen.getByText(/this is you/i)).toBeInTheDocument()
   })
 
-  // IN-02: a 409 on the GRANT path is a downgrade refusal, not a removal — its
-  // copy must differ from the revoke path's copy.
-  it("shows downgrade-specific 409 copy on the grant path, distinct from the revoke path (IN-02)", async () => {
-    render(<StaffPage />)
-    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
-
-    // Grant path 409 → downgrade wording.
-    mockedApiClient.post.mockRejectedValueOnce(httpError(409, "/last-group-admin"))
-    fireEvent.change(screen.getByLabelText(/team member/i), {
-      target: { value: USER_SAM },
-    })
-    fireEvent.click(screen.getByRole("button", { name: /grant access/i }))
-    await waitFor(() =>
-      expect(
-        screen.getByText(/change the last group admin's role/i)
-      ).toBeInTheDocument()
-    )
-    const grantCopy = screen.getByRole("alert").textContent
-
-    // Revoke path 409 → removal wording (distinct).
-    mockedApiClient.delete.mockRejectedValueOnce(httpError(409, "/last-group-admin"))
-    fireEvent.click(screen.getByRole("button", { name: `Revoke ${EMAIL_GA}` }))
-    await waitFor(() =>
-      expect(
-        screen.getByText(/remove the last group admin/i)
-      ).toBeInTheDocument()
-    )
-    const revokeCopy = screen.getByRole("alert").textContent
-
-    expect(grantCopy).not.toEqual(revokeCopy)
-  })
-
-  // 23-14 (V57 / CR-07): a JIT grant (auto-provisioned on first sign-in) is labelled so
-  // a group admin can distinguish it from a deliberate operator grant before enabling
-  // strict-scoping — operator grants carry no such label.
-  it("labels an auto-granted (JIT) row and leaves operator grants unlabelled (CR-07)", async () => {
-    const jitGrant = {
-      id: "66666666-6666-6666-6666-666666666666",
-      userId: USER_SAM,
-      shopId: null,
-      role: "GROUP_ADMIN",
-      grantSource: "JIT",
-      createdAt: "2026-07-03T10:00:00Z",
-      createdBy: null,
-    }
-    // grants[0] is an OPERATOR group-admin; the second row here is the JIT one.
-    mockedApiClient.get.mockResolvedValue({
-      data: { directory, grants: [grants[0], jitGrant] },
-    } as never)
-
-    render(<StaffPage />)
-    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
-
-    // Exactly one row is auto-granted — the JIT one, not the operator GROUP_ADMIN.
-    expect(screen.getAllByText(/auto-granted on first sign-in/i)).toHaveLength(1)
-  })
-
   // #290: the grant picker built its option label as
   // `(displayName || email) + " (" + email + ")"`, so a directory entry with NO
   // display name rendered its masked email TWICE — "j***@vendor.co.uk
@@ -369,13 +347,12 @@ describe("Staff management screen (VSA-04)", () => {
   it("renders a display-name-less member's masked email exactly once in the grant picker (#290)", async () => {
     const MASKED = "j***@vendor.co.uk"
     const USER_JIT = "33333333-3333-3333-3333-333333333333"
+    const jit = { userId: USER_JIT, email: MASKED, displayName: null, lastSeen: null }
     mockedApiClient.get.mockResolvedValue({
       data: {
-        directory: [
-          ...directory,
-          { userId: USER_JIT, email: MASKED, displayName: null, lastSeen: null },
-        ],
+        directory: [...directory, jit],
         grants,
+        people: [...people, person(jit, access(USER_JIT, "NONE"))],
       },
     } as never)
 
@@ -395,15 +372,9 @@ describe("Staff management screen (VSA-04)", () => {
     const MASKED = EMAIL_SAM
     mockedApiClient.get.mockResolvedValue({
       data: {
-        directory: [
-          {
-            userId: USER_SAM,
-            email: MASKED,
-            displayName: "Sam Cook",
-            lastSeen: "2026-07-18T09:00:00Z",
-          },
-        ],
+        directory: [directory[1]],
         grants,
+        people: [people[1]],
       },
     } as never)
 
@@ -427,31 +398,324 @@ describe("Staff management screen (VSA-04)", () => {
   })
 
   /**
-   * #450 item 2 — the grant card used to promise "invite them to log in once".
-   * There is no invite anywhere in the product: `user_directory` is populated on
-   * first sign-in, and the picker can only offer people already in it. The copy
-   * has to describe that, and must not describe a control that does not exist.
+   * #450 item 2 — the grant card used to promise "invite them to log in once",
+   * and then (until 37-06) said in so many words that the page could not invite.
+   * D-07 (37-07) builds invitations, so that sentence is about to be false; the
+   * card now just says how the picker is populated.
    */
-  it("does not promise an invite it cannot send", async () => {
+  it("does not promise an invite, and no longer denies one either", async () => {
     render(<StaffPage />)
     await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
 
-    // The word the pre-fix copy used, in the sense it used it.
     expect(screen.queryByText(/invite them/i)).not.toBeInTheDocument()
-
-    // …and there is genuinely no invite control to justify such copy. Scoped to
-    // buttons/links, so the sentence that DENIES an invite cannot satisfy this.
-    const invitish = [
-      ...screen.queryAllByRole("button", { name: /invite/i }),
-      ...screen.queryAllByRole("link", { name: /invite/i }),
-    ]
-    expect(invitish).toHaveLength(0)
-
-    // What it says instead: sign-in first, and this page cannot invite.
+    expect(screen.queryByText(/cannot send.*invite/i)).not.toBeInTheDocument()
     expect(screen.getByText(/signed in once with their own/i)).toBeInTheDocument()
-    expect(screen.getByText(/cannot send them an invite/i)).toBeInTheDocument()
   })
 })
+
+/**
+ * D-09 (37-06) — the People card shows the access the server enforces, and nothing
+ * the browser worked out for itself (T-37-12).
+ */
+describe("People card: server-computed effective access (D-09)", () => {
+  const USER_NONE = "44444444-4444-4444-4444-444444444444"
+  const USER_BOOT = "55555555-5555-5555-5555-555555555555"
+  const USER_REALM = "66666666-6666-6666-6666-666666666666"
+  const USER_MULTI = "77777777-7777-7777-7777-777777777777"
+  const USER_TW = "12121212-1212-1212-1212-121212121212"
+  const USER_SVC = "13131313-1313-1313-1313-131313131313"
+
+  const dirOf = (userId: string, name: string, email: string) => ({
+    userId,
+    email,
+    displayName: name,
+    lastSeen: "2026-10-01T10:00:00Z",
+  })
+  const noneDir = dirOf(USER_NONE, "Nora Nobody", "n***@vendor.co.uk")
+  const bootDir = dirOf(USER_BOOT, "Bola First", "b***@vendor.co.uk")
+  const realmDir = dirOf(USER_REALM, "Rex Platform", "r***@jtoye.uk")
+  const multiDir = dirOf(USER_MULTI, "Mo Twoshops", "m***@vendor.co.uk")
+  const twDir = dirOf(USER_TW, "Tia Everywhere", "t***@vendor.co.uk")
+
+  const wide = {
+    directory: [...directory, noneDir, bootDir, realmDir, multiDir, twDir],
+    grants,
+    people: [
+      ...people,
+      person(noneDir, access(USER_NONE, "NONE")),
+      person(bootDir, access(USER_BOOT, "GROUP_ADMIN", { bootstrapAdmin: true })),
+      person(
+        realmDir,
+        access(USER_REALM, "REALM_ADMIN", { realmAdminSeenAt: "2026-10-02T09:00:00Z" })
+      ),
+      person(
+        multiDir,
+        access(USER_MULTI, "SHOP_ROLES", {
+          perShopRole: { [SHOP_A]: "SHOP_MANAGER", [SHOP_B]: "STAFF" },
+        })
+      ),
+      person(
+        twDir,
+        access(USER_TW, "SHOP_ROLES", { allShops: true, tenantWideRole: "STAFF" })
+      ),
+      {
+        userId: USER_SVC,
+        maskedEmail: null,
+        displayName: null,
+        lastSeen: null,
+        effectiveAccess: access(USER_SVC, "SHOP_ROLES", { perShopRole: { [SHOP_A]: "STAFF" } }),
+      },
+    ],
+  }
+
+  beforeEach(() => {
+    mockedApiClient.get.mockResolvedValue({ data: wide } as never)
+  })
+
+  it("renders a NONE person as 'No access' with an outline badge", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Nora Nobody")).toBeInTheDocument())
+
+    const badge = within(rowOf("Nora Nobody")).getByText("No access")
+    expect(badge.closest("[data-access-badge]")).not.toBeNull()
+  })
+
+  it("offers 'Grant access' on a No access row, pre-filling the grant form with that person", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Nora Nobody")).toBeInTheDocument())
+
+    const grantButton = within(rowOf("Nora Nobody")).getByRole("button", {
+      name: /grant access/i,
+    })
+    expect(grantButton).toHaveClass("h-11")
+    fireEvent.click(grantButton)
+
+    const picker = screen.getByLabelText(/team member/i) as HTMLSelectElement
+    expect(picker.value).toBe(USER_NONE)
+
+    // A row WITH access offers no Grant button — its actions are its removals.
+    expect(
+      within(rowOf("Sam Cook")).queryByRole("button", { name: /grant access/i })
+    ).toBeNull()
+  })
+
+  it("renders a bootstrap admin as Group admin with the bootstrap line", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Bola First")).toBeInTheDocument())
+
+    const row = rowOf("Bola First")
+    expect(within(row).getByText("Group admin · all shops")).toBeInTheDocument()
+    expect(
+      within(row).getByText(
+        "Kept automatically as the first person to sign in. Grant Group admin to someone to change this."
+      )
+    ).toBeInTheDocument()
+    // The bootstrap line is the bootstrap admin's alone.
+    expect(within(rowOf("Ada Owner")).queryByText(/kept automatically/i)).toBeNull()
+  })
+
+  it("renders a realm admin as 'Admin account' with its line, never 'No access'", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Rex Platform")).toBeInTheDocument())
+
+    const row = rowOf("Rex Platform")
+    expect(within(row).getByText("Admin account")).toBeInTheDocument()
+    expect(
+      within(row).getByText("Full access from their sign-in account, not from this page.")
+    ).toBeInTheDocument()
+    expect(within(row).queryByText("No access")).toBeNull()
+  })
+
+  it("renders one line per shop, never comma-joined", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Mo Twoshops")).toBeInTheDocument())
+
+    const row = rowOf("Mo Twoshops")
+    const a = within(row).getByText("Shop manager · Peckham Kitchen")
+    const b = within(row).getByText("Staff · Brixton Bakery")
+    expect(a).not.toBe(b)
+    expect(a.textContent).not.toContain(",")
+  })
+
+  it("renders a tenant-wide role as '{Role} · all shops'", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Tia Everywhere")).toBeInTheDocument())
+
+    expect(within(rowOf("Tia Everywhere")).getByText("Staff · all shops")).toBeInTheDocument()
+  })
+
+  it("names a grant holder with no directory row 'Integration account'", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Integration account")).toBeInTheDocument())
+
+    expect(
+      within(rowOf("Integration account")).getByText("Staff · Peckham Kitchen")
+    ).toBeInTheDocument()
+  })
+
+  it("wraps long names and access lines rather than truncating them", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Mo Twoshops")).toBeInTheDocument())
+
+    const row = rowOf("Mo Twoshops")
+    for (const el of [
+      within(row).getByText("Mo Twoshops"),
+      within(row).getByText("m***@vendor.co.uk"),
+      within(row).getByText("Shop manager · Peckham Kitchen"),
+    ]) {
+      expect(el).toHaveClass("[overflow-wrap:anywhere]")
+      expect(el).not.toHaveClass("truncate")
+    }
+  })
+
+  it("shows no automatic-grant badge: the computed access replaces it", async () => {
+    const jitGrant = {
+      id: "65656565-6565-6565-6565-656565656565",
+      userId: USER_NONE,
+      shopId: null,
+      role: "GROUP_ADMIN",
+      grantSource: "JIT",
+      createdAt: "2026-07-03T10:00:00Z",
+      createdBy: null,
+    }
+    mockedApiClient.get.mockResolvedValue({
+      data: { ...wide, grants: [...grants, jitGrant] },
+    } as never)
+
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Nora Nobody")).toBeInTheDocument())
+
+    // The de-honoured JIT row does not show as access, and is not flagged either:
+    // the person reads exactly what the server enforces.
+    expect(screen.queryByText(/granted on first sign-in/i)).toBeNull()
+    expect(within(rowOf("Nora Nobody")).getByText("No access")).toBeInTheDocument()
+    expect(within(rowOf("Nora Nobody")).queryByText(/group admin/i)).toBeNull()
+  })
+
+  /**
+   * FAIL ARM (T-37-12). A person whose server value is missing must read as
+   * unknown. A page that falls back to the grant rows would print "Staff ·
+   * Peckham Kitchen" here — the say≠data defect D-09 exists to end.
+   */
+  it("renders nothing derived when the server sends no effectiveAccess", async () => {
+    const { effectiveAccess: _dropped, ...samWithout } = people[1]
+    void _dropped
+    mockedApiClient.get.mockResolvedValue({
+      data: { directory, grants, people: [people[0], samWithout] },
+    } as never)
+
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    const row = rowOf("Sam Cook")
+    expect(within(row).getByText("Not recorded")).toBeInTheDocument()
+    for (const label of [/staff ·/i, /shop manager/i, /group admin/i, /^no access$/i, /admin account/i]) {
+      expect(within(row).queryByText(label)).toBeNull()
+    }
+  })
+
+  it("after removing a person's last grant the row reads 'No access', never Group admin (UXT-003)", async () => {
+    mockedApiClient.get.mockResolvedValue({ data: { directory, grants, people } } as never)
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    mockedApiClient.get.mockResolvedValue({
+      data: {
+        directory,
+        grants: [grants[0]],
+        people: [people[0], person(directory[1], access(USER_SAM, "NONE"))],
+      },
+    } as never)
+
+    fireEvent.click(
+      within(rowOf("Sam Cook")).getByRole("button", { name: /remove staff at peckham kitchen/i })
+    )
+    await removeConfirmIfShown()
+
+    await waitFor(() => {
+      expect(mockedApiClient.delete).toHaveBeenCalledWith(`/api/v1/staff/${GRANT_SAM}`)
+    })
+    await waitFor(() => {
+      expect(within(rowOf("Sam Cook")).getByText("No access")).toBeInTheDocument()
+    })
+    expect(within(rowOf("Sam Cook")).queryByText(/group admin/i)).toBeNull()
+  })
+})
+
+/**
+ * Removing access. The last-GROUP_ADMIN refusals keep their copy (P2-KEM-22).
+ */
+describe("Remove access", () => {
+  it("surfaces the last-GROUP_ADMIN 409 as a clear message and keeps the access", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    mockedApiClient.delete.mockRejectedValueOnce(
+      httpError(409, "/last-group-admin")
+    )
+
+    fireEvent.click(
+      within(rowOf("Ada Owner")).getByRole("button", { name: /remove group admin/i })
+    )
+    await removeConfirmIfShown()
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/cannot remove the last group admin/i)
+      ).toBeInTheDocument()
+    })
+
+    // D-11: the access survives — the 409 is a refusal, not a silent failure.
+    expect(within(rowOf("Ada Owner")).getByText("Group admin · all shops")).toBeInTheDocument()
+  })
+
+  // IN-02: a 409 on the GRANT path is a downgrade refusal, not a removal — its
+  // copy must differ from the revoke path's copy.
+  it("shows downgrade-specific 409 copy on the grant path, distinct from the revoke path (IN-02)", async () => {
+    render(<StaffPage />)
+    await waitFor(() => expect(screen.getByText("Sam Cook")).toBeInTheDocument())
+
+    // Grant path 409 → downgrade wording.
+    mockedApiClient.post.mockRejectedValueOnce(httpError(409, "/last-group-admin"))
+    fireEvent.change(screen.getByLabelText(/team member/i), {
+      target: { value: USER_SAM },
+    })
+    fireEvent.click(screen.getByRole("button", { name: /^grant access$/i }))
+    await waitFor(() =>
+      expect(
+        screen.getByText(/change the last group admin's role/i)
+      ).toBeInTheDocument()
+    )
+    const grantCopy = screen.getByRole("alert").textContent
+
+    // Revoke path 409 → removal wording (distinct).
+    mockedApiClient.delete.mockRejectedValueOnce(httpError(409, "/last-group-admin"))
+    fireEvent.click(
+      within(rowOf("Ada Owner")).getByRole("button", { name: /remove group admin/i })
+    )
+    await removeConfirmIfShown()
+    await waitFor(() =>
+      expect(
+        screen.getByText(/remove the last group admin/i)
+      ).toBeInTheDocument()
+    )
+    const revokeCopy = screen.getByRole("alert").textContent
+
+    expect(grantCopy).not.toEqual(revokeCopy)
+  })
+})
+
+/**
+ * Remove access is confirmed in a dialog from 37-06 Task 3 on. Until then the
+ * click acts directly; this helper presses the dialog's confirm when one is open,
+ * so the cases above state the outcome rather than the mechanism.
+ */
+async function removeConfirmIfShown() {
+  const dialog = screen.queryByRole("dialog")
+  if (dialog) {
+    fireEvent.click(within(dialog).getByRole("button", { name: /^remove access$/i }))
+  }
+}
 
 /**
  * #454 — CLS. The route measured 0.1805 at the repo's declared throttle profile
@@ -481,32 +745,30 @@ describe("staff loading state (#454)", () => {
     expect(container.querySelector(".animate-spin")).toBeNull()
     // The same vertical rhythm as the loaded page, so the swap moves nothing.
     expect(loading).toHaveClass("space-y-6")
-    // Three cards, in the same order as the loaded page.
-    expect(container.querySelectorAll(".rounded-lg.border")).toHaveLength(3)
+    // Two cards (Grant access, People), in the same order as the loaded page.
+    expect(container.querySelectorAll(".rounded-lg.border")).toHaveLength(2)
   })
 
   it("renders the static chrome for real, and bars only where data is unknown", () => {
     renderLoading()
 
-    // Static: heading, subtitle, all three card titles, both descriptions and
-    // the field labels are known before the fetch, so withholding them would buy
+    // Static: heading, subtitle, both card titles, both descriptions and the
+    // field labels are known before the fetch, so withholding them would buy
     // nothing and cost a shift when they arrive.
     expect(
       screen.getByRole("heading", { name: /staff & access/i, level: 1 })
     ).toBeInTheDocument()
     expect(screen.getByText("Who can work on which shop")).toBeInTheDocument()
     expect(screen.getByText("Grant access")).toBeInTheDocument()
-    expect(screen.getByText("Team directory")).toBeInTheDocument()
-    expect(screen.getByText("Current access")).toBeInTheDocument()
-    expect(screen.getByText(/cannot send them an invite/i)).toBeInTheDocument()
+    expect(screen.getByText("People")).toBeInTheDocument()
+    expect(screen.getByText(/signed in once with their own/i)).toBeInTheDocument()
     expect(screen.getByText(/up to 5 minutes/i)).toBeInTheDocument()
-    // "Shop" and "Role" are also table column headers, hence getAllByText.
     for (const label of ["Team member", "Shop", "Role"]) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0)
     }
-    // The grants table keeps its real column headers, so the table box is the
+    // The People table keeps its real column headers, so the table box is the
     // same width and height it will be when rows arrive.
-    for (const head of ["Person", "Shop", "Role", "Actions"]) {
+    for (const head of ["Person", "Access", "Actions"]) {
       expect(screen.getAllByText(head).length).toBeGreaterThan(0)
     }
 
@@ -523,11 +785,11 @@ describe("staff loading state (#454)", () => {
  *
  * PATTERNS A-7 resolved this surface to the Index tier. The grant form is inside
  * a Card that is already narrower than the band and keeps its own width, so
- * tiering the whole page to the reading width would cap the directory and grants
- * tables and buy the form nothing.
+ * tiering the whole page to the reading width would cap the People table and buy
+ * the form nothing.
  *
- * All THREE render branches are asserted — loaded, skeleton and access-denied —
- * because a page that declares its tier only on one branch has undeclared
+ * Every render branch is asserted — loaded, skeleton, access-denied and load
+ * error — because a page that declares its tier only on one branch has undeclared
  * branches, which is exactly the state ORCH-03's marker exists to make visible.
  */
 describe("staff width tier (UIX-08)", () => {
@@ -565,6 +827,15 @@ describe("staff width tier (UIX-08)", () => {
     await waitFor(() =>
       expect(screen.getByText(/group admin access required/i)).toBeInTheDocument()
     )
+
+    expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
+  })
+
+  it("declares the same tier on the load-error branch", async () => {
+    mockedApiClient.get.mockRejectedValueOnce(httpError(500))
+
+    const { container } = render(<StaffPage />)
+    await screen.findByTestId("load-error-panel")
 
     expect(container.firstElementChild).toHaveAttribute("data-width-tier", "index")
   })
