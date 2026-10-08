@@ -23,6 +23,13 @@
 #   and baseline.sh reuses its KC_SEED_USER_PASSWORD handling verbatim. Only comments
 #   were added.
 #
+# D-06 (Phase 37-04): strict scoping is ON by default — an ungranted user has NO access.
+#   The seeded tenant-a-user holds no shop_staff grant, and Test 2 (POST /shops, a shop
+#   create) needs a tenant-wide GROUP_ADMIN. Grant TEST_USER explicitly on the dashboard's
+#   Staff page (GROUP_ADMIN for the write test) before running. The script now checks the
+#   user's effective access (GET /api/v1/staff/me) after obtaining a token and exits 1 with
+#   that message instead of load-testing a refusal, and exits 1 if the write test sees a 403.
+#
 
 set -e
 
@@ -93,6 +100,30 @@ get_token() {
     echo -e "${GREEN}✓ Token obtained${NC}"
 }
 
+# D-06 (Phase 37-04): refuse to load-test a refusal. Strict scoping is ON by default, so an
+# ungranted TEST_USER reads empty lists and gets 403 on every write. Ask the server what this
+# user may do; POST /shops (Test 2) needs a tenant-wide GROUP_ADMIN.
+require_access() {
+    local me code body admin shops
+    me=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer $TOKEN" \
+        "$API_BASE_URL/api/v1/staff/me") || me=$'\n000'
+    code="${me##*$'\n'}"; body="${me%$'\n'*}"
+    if [ "$code" != "200" ]; then
+        echo -e "${RED}✗ GET /api/v1/staff/me returned $code for $TEST_USER — cannot tell what it may do${NC}"
+        exit 1
+    fi
+    admin=$(jq -r '.groupAdmin' <<< "$body" 2>/dev/null || echo "unknown")
+    shops=$(jq -r '(.grantedShopIds // []) | length' <<< "$body" 2>/dev/null || echo "0")
+    if [ "$admin" != "true" ]; then
+        echo -e "${RED}✗ $TEST_USER is not a tenant-wide GROUP_ADMIN (grantedShops=$shops).${NC}"
+        echo "  After D-06 (strict scoping ON) an ungranted user has no access, and Test 2"
+        echo "  (POST /shops) needs GROUP_ADMIN. Grant $TEST_USER explicitly on the Staff page,"
+        echo "  or set TEST_USER to a user that holds the grant, then re-run."
+        exit 1
+    fi
+    echo -e "${GREEN}✓ $TEST_USER is a GROUP_ADMIN (D-06 explicit access)${NC}"
+}
+
 # Test GET /shops (read-heavy endpoint)
 test_get_shops() {
     echo ""
@@ -126,12 +157,22 @@ test_post_shops() {
 EOF
 
     if [ "$LOAD_TOOL" = "hey" ]; then
-        hey -n $((TOTAL_REQUESTS / 10)) -c $((CONCURRENT_USERS / 2)) \
+        local out
+        out=$(hey -n $((TOTAL_REQUESTS / 10)) -c $((CONCURRENT_USERS / 2)) \
             -m POST \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
             -D /tmp/shop.json \
-            "$API_BASE_URL/shops"
+            "$API_BASE_URL/shops")
+        echo "$out"
+        # D-06: a 403 here is the shop-access gate refusing TEST_USER, not write throughput.
+        if grep -qE '^[[:space:]]*\[403\]' <<< "$out"; then
+            rm -f /tmp/shop.json
+            echo -e "${RED}✗ POST /shops answered 403: $TEST_USER was refused by the shop-access gate.${NC}"
+            echo "  After D-06 the user needs an explicit GROUP_ADMIN grant (Staff page). The numbers above"
+            echo "  measure a refusal, not a write path."
+            exit 1
+        fi
     else
         echo -e "${YELLOW}Note: ab doesn't support POST with body easily. Skipping write test.${NC}"
     fi
@@ -199,6 +240,7 @@ print_summary() {
 main() {
     check_tools
     get_token
+    require_access
 
     # Run tests
     test_health_check

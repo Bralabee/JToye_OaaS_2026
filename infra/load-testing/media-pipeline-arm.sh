@@ -53,6 +53,11 @@
 #                RABBITMQ_USER RABBITMQ_PASSWORD MGMT_URL PIN_CPUS
 # Credentials come from .env exactly as baseline.sh does — never a literal here.
 #
+# D-06 (Phase 37-04): strict scoping is ON by default, so TEST_USER needs an explicit grant
+# (dashboard -> Staff page): SHOP_MANAGER on the product's shop, or tenant-wide GROUP_ADMIN.
+# The seeded tenant-a-user holds none. The arm VOIDs before uploading when
+# GET /api/v1/staff/me shows no shop access, and FAILs (exit 1) naming the gate on any 403.
+#
 # Exit codes: 0 = arm completed and recorded, 1 = a hard assertion failed,
 #             2 = VOID (tooling, prerequisites, unreachable API, empty series).
 set -euo pipefail
@@ -170,6 +175,20 @@ maybe_refresh_token() {
     if [ $(( now - TOKEN_FETCHED_AT )) -ge "$TOKEN_REFRESH_S" ]; then fetch_token; fi
 }
 fetch_token
+
+# D-06 (Phase 37-04): strict scoping is ON by default — an ungranted user has NO access. The
+# seeded tenant-a-user holds no shop_staff grant, so it would read an EMPTY product list and
+# every upload would be refused 403 (image upload needs SHOP_MANAGER on the product's shop).
+# Ask the server what TEST_USER may do before driving anything. Grant it explicitly on the
+# dashboard's Staff page (SHOP_MANAGER on a shop, or tenant-wide GROUP_ADMIN) first.
+ME="$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer $TOKEN" "$API_BASE_URL/api/v1/staff/me" || printf '\n000')"
+ME_CODE="${ME##*$'\n'}"; ME_BODY="${ME%$'\n'*}"
+[ "$ME_CODE" = "200" ] || void "GET /api/v1/staff/me returned $ME_CODE for TEST_USER=$TEST_USER — cannot tell what it may upload to"
+ME_ADMIN="$(jq -r '.groupAdmin' <<< "$ME_BODY" 2>/dev/null || echo unknown)"
+ME_SHOPS="$(jq -r '(.grantedShopIds // []) | length' <<< "$ME_BODY" 2>/dev/null || echo 0)"
+if [ "$ME_ADMIN" != "true" ] && [ "$ME_SHOPS" = "0" ]; then
+    void "TEST_USER=$TEST_USER has no shop access: after D-06 (strict scoping ON) an ungranted user reads no products and every upload is 403. Grant it on the Staff page (SHOP_MANAGER or GROUP_ADMIN), then re-run"
+fi
 
 PRODUCT_ID="$(curl -s -H "Authorization: Bearer $TOKEN" "$API_BASE_URL/api/v1/products?page=0&size=1" | jq -r '.content[0].id // empty')"
 [ -n "$PRODUCT_ID" ] || void "no product available to upload against"
@@ -303,6 +322,12 @@ done
 
 echo "upload status distribution:"
 for c in "${!CODES[@]}"; do echo "  [$c] = ${CODES[$c]}"; done
+
+# D-06: a 403 is the shop-access gate refusing TEST_USER (a STAFF grant, or a grant on a shop
+# other than the product's) — named, not folded into the generic below-MIN_ACCEPTED VOID.
+if [ "${CODES[403]:-0}" -gt 0 ]; then
+    fail "${CODES[403]} upload(s) answered 403: TEST_USER=$TEST_USER was refused by the shop-access gate. After D-06 it needs SHOP_MANAGER on the product's shop (Staff page); these numbers measure a refusal, not the media pipeline"
+fi
 
 # A run that never got messages in cannot say anything about consumer behaviour.
 MIN_ACCEPTED="${MIN_ACCEPTED:-$(( UPLOADS / 2 ))}"
