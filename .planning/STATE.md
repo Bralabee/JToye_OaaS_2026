@@ -914,7 +914,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P09 | 55 min | 3 tasks | 31 files |
 | Phase 37 P10 | 47 min (continuation; Task 1 earlier) | 3 tasks | 27 files |
 | Phase 37 P11 | 1h 0m | 3 tasks | 24 files |
-| Phase 37 P12 | 18 min | 2 tasks | 15 files |
+| Phase 37 P12 | 16 min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
