@@ -306,6 +306,30 @@ public class ShopAccessService {
     }
 
     /**
+     * The {@link #require} decision as a boolean, for a caller that must report a refusal as
+     * DATA rather than abort (37-13, UXT-026: a CSV row naming a shop the importer does not
+     * manage is a per-row error while the other rows import).
+     *
+     * <p>Why not catch {@link #require}'s exception instead: this class is {@code @Transactional},
+     * so an exception leaving {@code require} through the Spring proxy marks the CALLER's
+     * transaction rollback-only, and the caller's later commit fails with
+     * {@code UnexpectedRollbackException} even though it handled the refusal. Here the decision
+     * runs as a self-invocation (no proxy, no interceptor) and only a boolean leaves the proxy.
+     *
+     * <p>Same ladder, same answers: GROUP_ADMIN passes for a shop of its own tenant, a scoped
+     * caller needs {@code minRole} on the shop, a null shop is GROUP_ADMIN-only, and a shop of
+     * another tenant (the FC-1 non-disclosing 404 in {@code require}) is simply {@code false}.
+     */
+    public boolean permits(UUID shopId, ShopRole minRole) {
+        try {
+            require(shopId, minRole);
+            return true;
+        } catch (ShopAccessDeniedException | ResourceNotFoundException refused) {
+            return false;
+        }
+    }
+
+    /**
      * True for a realm-admin (D-03 bridge), a DECLARED internal system caller
      * ({@link SystemPrincipal#asSystem}), a declared machine client (CR-03 allowlist), or a
      * tenant-wide GROUP_ADMIN grant. Every OTHER caller — anonymous, non-{@code Jwt}, a JWT

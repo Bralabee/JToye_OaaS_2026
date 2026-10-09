@@ -29,6 +29,12 @@ import java.util.*;
 public class BulkImportService {
     private static final Logger log = LoggerFactory.getLogger(BulkImportService.class);
 
+    /** Per-row error for a row with no shop_id cell imported without a shopId (37-13, UXT-026). */
+    static final String SHOP_REQUIRED = "shop required";
+
+    /** Per-row error for a row naming a shop the caller does not manage, or one it cannot see. */
+    static final String SHOP_NOT_MANAGED = "You do not manage this shop (SHOP_MANAGER required)";
+
     private final ProductRepository productRepository;
     private final ProductMapper productMapper;
     private final ImageAnalysisService imageAnalysisService;
@@ -51,10 +57,10 @@ public class BulkImportService {
      * Generate a CSV template with headers and an example row.
      */
     public String generateCsvTemplate() {
-        // shop_id is optional but recommended (Phase 23, VSA-02): each row may target a
-        // specific shop the caller manages. A scoped (non-GROUP_ADMIN) importer MUST
-        // supply a shop_id they hold SHOP_MANAGER on for every row; a GROUP_ADMIN may
-        // omit it (product stays unassigned, legacy behaviour).
+        // shop_id is optional (37-13, UXT-026): a row may name a shop the caller manages;
+        // a blank cell takes the shop the import was started in (the shopId parameter).
+        // A row with neither is reported as "shop required" and is not created: the
+        // storefront shows products strictly by shop, so a shop-less product is invisible.
         return """
                 title,sku,price_pounds,ingredients,category,description,dietary_tags,prep_time_minutes,allergen_mask,shop_id
                 Jollof Rice,JOLLOF-001,8.99,"Rice, tomatoes, peppers, onions, vegetable oil, seasoning",Mains,Our signature smoky jollof rice slow-cooked to perfection,"Halal, Gluten-Free",20,0,
@@ -65,6 +71,12 @@ public class BulkImportService {
     /**
      * Parse and import products from a CSV file.
      * Validates each row — creates valid products, collects errors for invalid rows.
+     *
+     * <p><strong>Target shop (37-13, UXT-026).</strong> Each row is created in the shop its
+     * {@code shop_id} cell names, else in {@code defaultShopId} (the shop the vendor imported
+     * into, gated SHOP_MANAGER before any row is read). A row with neither is the per-row error
+     * {@value #SHOP_REQUIRED}, for a Group admin too: the storefront lists products strictly by
+     * shop, so a shop-less row would be an invisible menu reported as a success.
      *
      * <p><strong>No cache eviction (issue #287).</strong> This path is create-only: every
      * row becomes a {@code new Product()} saved under a freshly generated id, and the
@@ -83,9 +95,16 @@ public class BulkImportService {
      * "getProductById", id)} — the tenant-scoped, exact-key mechanism the update/delete
      * paths already use. Do NOT reach back for {@code allEntries = true}.
      */
-    public BulkImportResult importFromCsv(MultipartFile file) {
+    public BulkImportResult importFromCsv(MultipartFile file, UUID defaultShopId) {
         UUID tenantId = TenantContext.get()
                 .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+
+        // 37-13 (UXT-026, T-37-35): the shop the import was started in must be one the caller
+        // manages. Gated BEFORE any row is read, so a refused default writes nothing and answers
+        // the typed 403 (errors/shop-access-denied).
+        if (defaultShopId != null) {
+            shopAccessService.require(defaultShopId, ShopRole.SHOP_MANAGER);
+        }
 
         BulkImportResult result = new BulkImportResult();
         List<String[]> rows = parseCsv(file);
@@ -109,11 +128,6 @@ public class BulkImportService {
         List<String[]> dataRows = rows.subList(1, rows.size());
         result.setTotalRows(dataRows.size());
 
-        // §3-FLAG #1 (VSA-02): resolve the caller's scope ONCE. A GROUP_ADMIN may import
-        // rows with or without a shop_id; a scoped user must own SHOP_MANAGER on every
-        // row's shop_id. Deny-by-default.
-        boolean groupAdmin = shopAccessService.isGroupAdmin();
-
         for (int i = 0; i < dataRows.size(); i++) {
             int rowNum = i + 2; // 1-indexed, skip header
             String[] row = dataRows.get(i);
@@ -132,23 +146,30 @@ public class BulkImportService {
                 continue;
             }
 
-            // §3-FLAG #1: per-row shop-access gate, OUTSIDE the per-row try/catch so an
-            // ungranted row fails the WHOLE batch with the typed 403 (deny-by-default,
-            // no partial apply — the surrounding @Transactional rolls back every prior
-            // row's save). A row with a shop_id demands SHOP_MANAGER on it; a row with
-            // no shop_id is allowed only for a GROUP_ADMIN (else denied).
-            if (rowShopId != null) {
-                shopAccessService.require(rowShopId, ShopRole.SHOP_MANAGER);
-            } else if (!groupAdmin) {
-                throw new ShopAccessDeniedException(null, ShopRole.SHOP_MANAGER);
+            // 37-13 (UXT-026): the row's own shop, else the shop the import was started in.
+            // Neither is a per-row "shop required": a shop-less product never reaches a
+            // storefront (UIX-05), so creating one would report success for an invisible menu.
+            UUID targetShopId = rowShopId != null ? rowShopId : defaultShopId;
+            if (targetShopId == null) {
+                result.getErrors().add(new RowError(rowNum, "shop_id", SHOP_REQUIRED));
+                continue;
+            }
+
+            // T-37-35: a row naming a shop the caller does not manage is refused as DATA — the
+            // row is not written and the rest of the batch still imports. permits() rather than
+            // catching require(): an exception out of the @Transactional ShopAccessService
+            // would mark this import's transaction rollback-only. A shop of another tenant gets
+            // the same message, so the error never discloses that the shop exists.
+            if (!targetShopId.equals(defaultShopId)
+                    && !shopAccessService.permits(targetShopId, ShopRole.SHOP_MANAGER)) {
+                result.getErrors().add(new RowError(rowNum, "shop_id", SHOP_NOT_MANAGED));
+                continue;
             }
 
             try {
                 Product product = parseRow(row, columnIndex, tenantId, rowNum, result);
                 if (product != null) {
-                    if (rowShopId != null) {
-                        product.setShopId(rowShopId);
-                    }
+                    product.setShopId(targetShopId);
                     product = productRepository.save(product);
                     result.getCreated().add(productMapper.toDto(product));
                 }

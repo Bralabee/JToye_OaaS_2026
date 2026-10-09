@@ -158,7 +158,7 @@ class BulkImportTenantCacheScopeIntegrationTest {
                 .isNotNull();
 
         UUID tenantB = newTenant();
-        BulkImportResult result = asRealmAdmin(tenantB, () -> bulkImportService.importFromCsv(csvFile()));
+        BulkImportResult result = importCsvIntoNewShop(tenantB);
         assertThat(result.getSuccessCount())
                 .as("tenant B's import must really have created rows — an import that did "
                         + "nothing would evict nothing and prove nothing")
@@ -219,7 +219,7 @@ class BulkImportTenantCacheScopeIntegrationTest {
                 .as("the importing tenant's own product must be cached first")
                 .isNotNull();
 
-        BulkImportResult result = asRealmAdmin(tenant, () -> bulkImportService.importFromCsv(csvFile()));
+        BulkImportResult result = importCsvIntoNewShop(tenant);
         assertThat(result.getSuccessCount()).isEqualTo(2);
 
         assertThat(products().get(key))
@@ -236,7 +236,7 @@ class BulkImportTenantCacheScopeIntegrationTest {
     @Test
     void freshlyImportedProductsAreReadableByIdImmediately() {
         UUID tenant = newTenant();
-        BulkImportResult result = asRealmAdmin(tenant, () -> bulkImportService.importFromCsv(csvFile()));
+        BulkImportResult result = importCsvIntoNewShop(tenant);
         assertThat(result.getSuccessCount()).isEqualTo(2);
 
         for (ProductDto created : result.getCreated()) {
@@ -273,6 +273,18 @@ class BulkImportTenantCacheScopeIntegrationTest {
 
     private static MultipartFile csvFile() {
         return new MockMultipartFile("file", "import.csv", "text/csv", CSV.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Import {@link #CSV} as a realm admin into a fresh shop of {@code tenant}. 37-13 (UXT-026): a row
+     * with no shop_id cell needs the shop the import was started in, or it is the per-row error
+     * "shop required" and nothing is created, which would make every case above vacuous.
+     */
+    private BulkImportResult importCsvIntoNewShop(UUID tenant) {
+        return asRealmAdmin(tenant, () -> {
+            UUID shopId = shopService.createShop(shopRequest("Import target " + tenant)).getId();
+            return bulkImportService.importFromCsv(csvFile(), shopId);
+        });
     }
 
     /** Read through the real (cached) service path so the entry is written by {@code @Cacheable}. */

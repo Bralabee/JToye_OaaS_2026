@@ -9392,8 +9392,20 @@
     },
     "/api/v1/products/bulk/csv" : {
       "post" : {
-        "description" : "Import multiple products from a CSV file. Returns created products and per-row errors.",
+        "description" : "Import multiple products from a CSV file. Returns created products and per-row errors. Each row is created in the shop its shop_id cell names, or else in the shop given by the shopId parameter. A row with neither is reported as the per-row error 'shop required' and is not created (a product with no shop is never shown on a storefront). A row naming a shop the caller does not manage is a per-row error and is not created; the other rows still import.",
         "operationId" : "bulkImportCsv",
+        "parameters" : [
+          {
+            "description" : "Shop to import into: rows without their own shop_id are created here. Requires SHOP_MANAGER on this shop.",
+            "in" : "query",
+            "name" : "shopId",
+            "required" : false,
+            "schema" : {
+              "format" : "uuid",
+              "type" : "string"
+            }
+          }
+        ],
         "requestBody" : {
           "content" : {
             "multipart/form-data" : {
@@ -9421,7 +9433,27 @@
                 }
               }
             },
-            "description" : "OK"
+            "description" : "Import processed; see created and errors"
+          },
+          "401" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "No bearer token, or one that is expired or invalid (errors/unauthorized)"
+          },
+          "403" : {
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ProblemDetail"
+                }
+              }
+            },
+            "description" : "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no SHOP_MANAGER grant on shopId (errors/shop-access-denied); nothing is written"
           }
         },
         "security" : [

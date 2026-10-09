@@ -128,9 +128,26 @@ public class ProductController {
 
     @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @PostMapping(value = "/bulk/csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Bulk import from CSV", description = "Import multiple products from a CSV file. Returns created products and per-row errors.")
-    public ResponseEntity<BulkImportResult> bulkImportCsv(@RequestParam("file") MultipartFile file) {
-        BulkImportResult result = bulkImportService.importFromCsv(file);
+    @Operation(summary = "Bulk import from CSV",
+            description = "Import multiple products from a CSV file. Returns created products and per-row errors. "
+                    + "Each row is created in the shop its shop_id cell names, or else in the shop given by the "
+                    + "shopId parameter. A row with neither is reported as the per-row error 'shop required' and "
+                    + "is not created (a product with no shop is never shown on a storefront). A row naming a shop "
+                    + "the caller does not manage is a per-row error and is not created; the other rows still import.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Import processed; see created and errors"),
+            @ApiResponse(responseCode = "401",
+                    description = "No bearer token, or one that is expired or invalid (errors/unauthorized)"),
+            @ApiResponse(responseCode = "403",
+                    description = "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no "
+                            + "SHOP_MANAGER grant on shopId (errors/shop-access-denied); nothing is written")
+    })
+    public ResponseEntity<BulkImportResult> bulkImportCsv(
+            @RequestParam("file") MultipartFile file,
+            @Parameter(description = "Shop to import into: rows without their own shop_id are created here. "
+                    + "Requires SHOP_MANAGER on this shop.")
+            @RequestParam(required = false) UUID shopId) {
+        BulkImportResult result = bulkImportService.importFromCsv(file, shopId);
         return ResponseEntity.ok(result);
     }
 
