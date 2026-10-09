@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-16 complete (16/53). 37-16 closed 2026-10-09: D-11 New lane + UXT-011 card additions (PENDING in KITCHEN_STATUSES with KitchenStatusesParityTest; Accept=/confirm, Reject=/cancel behind a confirm; NOTE FROM CUSTOMER + DELIVERY/COLLECTION on every card; 1 Hz ring, static under reduced motion; stock refusal names product+count). Live desktop run found the order number squeezed to zero width and it was fixed (da1985e0); kitchen-flow 18/18 on rebuilt frontend b2394b8e, runtime fresh. Observed: 20 stale PENDING dev orders now fill the lane (deferred-items). Next: 37-17 (repeating alert)."
-last_updated: "2026-10-09T12:03:34.775Z"
+stopped_at: "Phase 37 executing: 37-01..37-16 and 37-19 complete (17/53). 37-19 closed 2026-10-09: V80 adds shops.opening_schedule JSONB, hours_source (CHECK: STRUCTURED|MIGRATED_FROM_TEXT|NEEDS_REVIEW|LEGACY_ALWAYS_OPEN, nullable, no default), orders_paused_until, orders_paused_indefinitely (+ shops_aud); tenant-loop backfill: NULL/{} -> LEGACY_ALWAYS_OPEN (D-25), text -> MIGRATED_FROM_TEXT or NEEDS_REVIEW; OpeningSchedule.fromLegacy proven equal to the SQL on 25 shared fixtures in two tenants. Unit 1655/0/0, integration 1054/0/0. Stack NOT rebuilt (V80 not in the running image). Open for 37-20/owner: D-25 literal text says unparseable -> legacy always-open; the plans give unparseable days [] + NEEDS_REVIEW. Next: 37-17 / 37-20 per wave order."
+last_updated: "2026-10-09T12:58:00.000Z"
 last_activity: 2026-10-09
 state_head: 29520bf2f6bcd6d15bcc9c86af1f6c84ddea194d
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 201
+  completed_plans: 202
   percent: 65
 ---
 
@@ -1211,6 +1211,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-16: the New lane row reads "Checking for new orders…" until the first board read, then "No new orders waiting"; Print all stays a print of the grid; an absent fulfilment type renders no badge rather than a guess
 - [Phase 37]: 37-16: a refused Accept/Reject re-reads the order (CANCELLED = already rejected, CONFIRMED..COMPLETED = already accepted, else generic); the insufficient-stock problem carries productName/available members
 - [Phase 37]: 37-16: the kitchen card number row is flex-wrap (live desktop run measured the number squeezed to zero width); the beep now fires on DRAFT->PENDING, left for 37-17
+- [Phase 37]: 37-19: shops.hours_source is nullable with no default (NULL = not classified); LEGACY_ALWAYS_OPEN is written only by V80 and a legacy shop cannot carry a schedule (ck_shops_legacy_always_open_no_schedule)
+- [Phase 37]: 37-19: a day entry holding a window plus text not understood keeps the FIRST window (today's render) and marks the shop NEEDS_REVIEW; unknown day keys and array/object values also mark NEEDS_REVIEW; a 24:00 close is midnight; zero-length and out-of-range windows are not windows
+- [Phase 37]: 37-19: OpeningScheduleFixtures is the one fixture list both the Java parser and the V80 SQL are held to; change a rule in one and the parity IT reds
 - [Phase 37]: WINDOWS #29 RULED 2026-10-09 (owner, option B): every customer endpoint requires an honoured grant under D-06 (requireAnyAccess, the staff/me predicate, before the idempotency replay); landed in the 37-B squash (tag cut/phase-37-b-staff-access-v2); options C and E are separate future rulings; live proof owed (WINDOWS #30)
 
 ### Pending Todos
@@ -1284,8 +1287,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-09T10:40:13.225Z
-Stopped at: Completed 37-16-PLAN.md (kitchen New lane, Accept/Reject, customer note + fulfilment badge on every card, 1 Hz ring); next 37-17
+Last session: 2026-10-09T12:58:00.000Z
+Stopped at: Completed 37-19-PLAN.md (V80 structured hours + pause columns, legacy always-open backfill, Java/SQL parity on shared fixtures); next 37-17 / 37-20 per wave order
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
