@@ -594,6 +594,19 @@ export default function KitchenPage() {
     })
   }, [])
 
+  // --- 37-16 (D-11): the kitchen rejected a New-lane order ---
+  //
+  // Called only after the server's 200 on /cancel. A cancelled order is not a ticket, so it leaves the
+  // board, exactly as a CANCELLED frame off the socket removes it.
+  const handleRejected = useCallback((orderId: string) => {
+    setOrdersMap((prev) => {
+      if (!prev.has(orderId)) return prev
+      const next = new Map(prev)
+      next.delete(orderId)
+      return next
+    })
+  }, [])
+
   // --- Sorted orders (newest first) ---
 
   const sortedOrders = Array.from(ordersMap.values()).sort(
@@ -849,6 +862,7 @@ export default function KitchenPage() {
         orders={newOrders}
         loaded={!loading && lastSyncedAt !== null}
         onAccepted={handleAccepted}
+        onRejected={handleRejected}
         onPrint={(order) => print([order])}
         onAllergyNoteAcknowledged={handleAllergyNoteAcknowledged}
       />

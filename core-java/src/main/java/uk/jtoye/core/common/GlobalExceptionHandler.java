@@ -263,12 +263,24 @@ public class GlobalExceptionHandler {
      * Map CQ-01 stock race exception to HTTP 409 Conflict (RFC 9110 §15.5.10).
      * Thrown by StockService.decrementForOrder on exhaustion (insufficient stock
      * OR @Recover after 3 optimistic-lock retries).
+     *
+     * <p>Phase 37-16: when the refusal names one product, {@code productName} and
+     * {@code available} are added as RFC 7807 extension members, so a client (the kitchen's
+     * Accept, an agent) reads the product and the count as data instead of parsing the
+     * detail. Additive: type, title, status and detail are unchanged, and the members are
+     * omitted, never invented, when the exception carries none (the retry-exhaustion path).
      */
     @ExceptionHandler(InsufficientStockException.class)
     public ProblemDetail handleInsufficientStock(InsufficientStockException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         problem.setTitle("Insufficient Stock");
         problem.setType(URI.create("https://jtoye.uk/errors/insufficient-stock"));
+        if (ex.getProductName() != null) {
+            problem.setProperty("productName", ex.getProductName());
+        }
+        if (ex.getAvailable() != null) {
+            problem.setProperty("available", ex.getAvailable());
+        }
         return problem;
     }
 

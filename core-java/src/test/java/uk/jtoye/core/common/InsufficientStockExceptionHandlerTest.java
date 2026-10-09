@@ -3,7 +3,9 @@ package uk.jtoye.core.common;
 import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
+import org.springframework.http.converter.json.ProblemDetailJacksonMixin;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,8 +45,12 @@ class InsufficientStockExceptionHandlerTest {
         // ProblemDetail returned from @ExceptionHandler serializes to JSON as an
         // object (not a String). Boot's default auto-config provides this, but
         // standaloneSetup deliberately omits it — plug it back in for the test.
-        JacksonJsonHttpMessageConverter jackson =
-                new JacksonJsonHttpMessageConverter(JsonMapper.builder().build());
+        // 37-16: WITH Boot's ProblemDetailJacksonMixin, as the running app has it. Without the
+        // mixin, extension members serialise nested under "properties", so a test of them would
+        // assert a shape no client ever receives (ProblemDetailAuthenticationEntryPointTest
+        // registers it for the same reason).
+        JacksonJsonHttpMessageConverter jackson = new JacksonJsonHttpMessageConverter(
+                JsonMapper.builder().addMixIn(ProblemDetail.class, ProblemDetailJacksonMixin.class).build());
         mockMvc = MockMvcBuilders.standaloneSetup(new ThrowingController(), new StockRefusingController())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setMessageConverters(jackson)

@@ -97,9 +97,12 @@ public class StockService {
             int current = product.getQuantityInStock();
             int requested = item.getQuantity();
             if (current < requested) {
+                // 37-16: the name and the count travel as data too, so the kitchen's Accept can
+                // say "only {available} {product} left" without parsing this sentence.
                 throw new InsufficientStockException(
                         "Insufficient stock for product '" + product.getTitle()
-                                + "': requested " + requested + ", available " + current);
+                                + "': requested " + requested + ", available " + current,
+                        product.getTitle(), current);
             }
             product.setQuantityInStock(current - requested);
             log.info("Decremented stock for product {}: {} -> {}",

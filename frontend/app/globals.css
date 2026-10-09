@@ -163,6 +163,44 @@
 }
 
 /* ---------------------------------------------------------------------------
+   KDS New-card ring (Phase 37-16, D-11/D-12; UI-SPEC § K1 "Flash")
+   ---------------------------------------------------------------------------
+   A card in the kitchen's "New orders" lane flashes its outer 4px ring between
+   orange-700 (#c2410c, Tailwind's ring-orange-700) and transparent, 500 ms on and
+   500 ms off: ONE flash per second, under WCAG 2.3.1's three-per-second threshold.
+   `steps(1, end)` makes each half a hard hold rather than a fade, so the cycle is
+   exactly the on/off pair the threshold counts.
+
+   ONLY THE RING MOVES. The keyframes touch box-shadow and nothing else, so the NEW
+   strip, the allergen banner and the text never flash (asserted, with a 200 ms break
+   arm, by __tests__/kds-flash-css.test.ts). The ring runs whether or not sound is
+   muted: mute silences sound, never the visual signal.
+
+   Reduced motion: the ring is static orange-700, with no alternation. The NEW strip
+   still carries the alert in words.
+   --------------------------------------------------------------------------- */
+.kds-new-flash {
+  animation: kds-new-flash 1000ms steps(1, end) infinite;
+}
+@keyframes kds-new-flash {
+  0% {
+    box-shadow: 0 0 0 4px #c2410c;
+  }
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kds-new-flash {
+    animation: none;
+    box-shadow: 0 0 0 4px #c2410c;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    Kitchen ticket printing (#105)
    ---------------------------------------------------------------------------
    Before this, the frontend had ZERO `@media print` outside a marketing document
