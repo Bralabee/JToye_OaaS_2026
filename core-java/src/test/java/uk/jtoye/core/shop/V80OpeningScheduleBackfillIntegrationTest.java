@@ -9,9 +9,13 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -21,8 +25,11 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -74,6 +81,13 @@ class V80OpeningScheduleBackfillIntegrationTest {
     private static final UUID[] NULL_HOURS_SHOP = new UUID[2];
     private static final UUID[] EMPTY_HOURS_SHOP = new UUID[2];
 
+    /** Per shared fixture name: the shop seeded with it in tenant A [0] and tenant B [1]. */
+    private static final Map<String, UUID[]> FIXTURE_SHOPS = new HashMap<>();
+    /** Per SQL-only fixture name: the shop seeded with its raw jsonb in tenant A [0] and tenant B [1]. */
+    private static final Map<String, UUID[]> RAW_FIXTURE_SHOPS = new HashMap<>();
+
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+
     private static MigrateResult v80Result;
 
     @BeforeAll
@@ -108,6 +122,15 @@ class V80OpeningScheduleBackfillIntegrationTest {
                 boolean published = tenant.equals(TENANT_A);
                 NULL_HOURS_SHOP[i] = seedShop(su, tenant, null, published);
                 EMPTY_HOURS_SHOP[i] = seedShop(su, tenant, "{}", published);
+                for (OpeningScheduleFixtures.Fixture fixture : OpeningScheduleFixtures.ALL) {
+                    String json = fixture.hours() == null ? null : JSON.writeValueAsString(fixture.hours());
+                    FIXTURE_SHOPS.computeIfAbsent(fixture.name(), k -> new UUID[2])[i] =
+                            seedShop(su, tenant, json, published);
+                }
+                for (OpeningScheduleFixtures.RawFixture fixture : OpeningScheduleFixtures.SQL_ONLY) {
+                    RAW_FIXTURE_SHOPS.computeIfAbsent(fixture.name(), k -> new UUID[2])[i] =
+                            seedShop(su, tenant, fixture.rawJson(), published);
+                }
             }
         }
     }
@@ -192,7 +215,86 @@ class V80OpeningScheduleBackfillIntegrationTest {
         }
     }
 
+    static Stream<OpeningScheduleFixtures.Fixture> fixtures() {
+        return OpeningScheduleFixtures.ALL.stream();
+    }
+
+    static Stream<OpeningScheduleFixtures.RawFixture> sqlOnlyFixtures() {
+        return OpeningScheduleFixtures.SQL_ONLY.stream();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("fixtures")
+    @DisplayName("V80 classifies each shared fixture as expected AND exactly as OpeningSchedule.fromLegacy does, in both tenants")
+    void migrationMatchesTheJavaParser(OpeningScheduleFixtures.Fixture fixture) throws Exception {
+        applyV80();
+        OpeningSchedule.LegacyClassification java = OpeningSchedule.fromLegacy(fixture.hours());
+        JsonNode javaSchedule = java.schedule() == null ? null
+                : JSON.readTree(JSON.writeValueAsString(java.schedule().toJson()));
+        JsonNode expected = fixture.expectedScheduleJson() == null ? null : JSON.readTree(fixture.expectedScheduleJson());
+        try (Connection su = connect(postgres.getUsername(), postgres.getPassword())) {
+            for (int i = 0; i < TENANTS.size(); i++) {
+                UUID shop = FIXTURE_SHOPS.get(fixture.name())[i];
+                String label = "tenant " + (i == 0 ? "A" : "B") + ", " + fixture.name();
+                String source = string(su, "SELECT hours_source FROM shops WHERE id = '" + shop + "'");
+                String scheduleText = string(su, "SELECT opening_schedule::text FROM shops WHERE id = '" + shop + "'");
+                JsonNode sqlSchedule = scheduleText == null ? null : JSON.readTree(scheduleText);
+
+                assertThat(source).as(label + ": SQL hours_source").isEqualTo(fixture.expectedSource().name());
+                assertThat(sqlSchedule).as(label + ": SQL opening_schedule").isEqualTo(expected);
+                // Parity: the migration and the application read the same text the same way.
+                assertThat(source).as(label + ": SQL and Java hours_source agree").isEqualTo(java.source().name());
+                assertThat(sqlSchedule).as(label + ": SQL and Java schedule agree").isEqualTo(javaSchedule);
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("sqlOnlyFixtures")
+    @DisplayName("V80 classifies jsonb the entity cannot load (not an object of strings) without inventing hours")
+    void migrationClassifiesShapesOnlyTheDatabaseCanHold(OpeningScheduleFixtures.RawFixture fixture) throws Exception {
+        applyV80();
+        JsonNode expected = fixture.expectedScheduleJson() == null ? null : JSON.readTree(fixture.expectedScheduleJson());
+        try (Connection su = connect(postgres.getUsername(), postgres.getPassword())) {
+            for (int i = 0; i < TENANTS.size(); i++) {
+                UUID shop = RAW_FIXTURE_SHOPS.get(fixture.name())[i];
+                String label = "tenant " + (i == 0 ? "A" : "B") + ", " + fixture.name();
+                assertThat(string(su, "SELECT hours_source FROM shops WHERE id = '" + shop + "'"))
+                        .as(label + ": hours_source").isEqualTo(fixture.expectedSource().name());
+                String scheduleText = string(su, "SELECT opening_schedule::text FROM shops WHERE id = '" + shop + "'");
+                assertThat(scheduleText == null ? null : JSON.readTree(scheduleText))
+                        .as(label + ": opening_schedule").isEqualTo(expected);
+                try (PreparedStatement ps = su.prepareStatement(
+                        "SELECT opening_hours = ?::jsonb FROM shops WHERE id = ?")) {
+                    ps.setString(1, fixture.rawJson());
+                    ps.setObject(2, shop);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        assertThat(rs.next()).isTrue();
+                        assertThat(rs.getBoolean(1)).as(label + ": the original text is kept for the vendor notice").isTrue();
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("every seeded shop in both tenants is classified: none is left NULL")
+    void noSeededShopIsLeftUnclassified() throws Exception {
+        applyV80();
+        try (Connection su = connect(postgres.getUsername(), postgres.getPassword())) {
+            for (UUID tenant : TENANTS) {
+                assertThat(string(su, "SELECT count(*) FROM shops WHERE tenant_id = '" + tenant
+                        + "' AND slug LIKE 'v80-%' AND slug NOT LIKE 'v80-src-%'"))
+                        .as("shops seeded before V80 in tenant " + tenant)
+                        .isEqualTo(String.valueOf(2 + OpeningScheduleFixtures.ALL.size() + OpeningScheduleFixtures.SQL_ONLY.size()));
+                assertThat(string(su, "SELECT count(*) FROM shops WHERE tenant_id = '" + tenant
+                        + "' AND hours_source IS NULL")).as("unclassified shops in tenant " + tenant).isEqualTo("0");
+            }
+        }
+    }
+
     // ------------------------------------------------------------------------------------------------------
+
 
     private static UUID seedShop(Connection c, UUID tenantId, String openingHoursJson, boolean published)
             throws SQLException {
