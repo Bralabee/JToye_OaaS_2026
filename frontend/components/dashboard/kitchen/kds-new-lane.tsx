@@ -16,6 +16,8 @@ import {
   elapsedText,
   orderLabel,
 } from "@/components/dashboard/kitchen/kds-card-parts"
+import { KdsFulfilmentBadge } from "@/components/dashboard/kitchen/kds-fulfilment-badge"
+import { KdsCustomerNote } from "@/components/dashboard/kitchen/kds-customer-note"
 import type { OrderDetail } from "@/types/api"
 
 /**
@@ -157,6 +159,7 @@ function KdsNewCard({
       <CardHeader className="pb-3" data-testid="kds-card-header">
         <div className="flex items-start gap-2">
           <CardTitle className="min-w-0 break-words text-lg font-semibold">{label}</CardTitle>
+          <KdsFulfilmentBadge fulfilmentType={order.fulfilmentType} />
         </div>
         <OrderAllergenBanner
           allergenNames={order.allergenNames}
@@ -175,6 +178,7 @@ function KdsNewCard({
         <div className="text-sm font-medium text-slate-700">
           {order.customerName || "Walk-in"}
         </div>
+        <KdsCustomerNote note={order.notes} />
         <KdsItemList items={order.items} />
         <div className="flex items-center gap-1 text-xs text-slate-500">
           <Clock className="h-3 w-3" />

@@ -34,6 +34,8 @@ import {
 } from "@/components/dashboard/kitchen/allergy-note-block"
 import { KdsNewLane } from "@/components/dashboard/kitchen/kds-new-lane"
 import { KdsItemList, elapsedText } from "@/components/dashboard/kitchen/kds-card-parts"
+import { KdsFulfilmentBadge } from "@/components/dashboard/kitchen/kds-fulfilment-badge"
+import { KdsCustomerNote } from "@/components/dashboard/kitchen/kds-customer-note"
 import {
   Card,
   CardContent,
@@ -931,6 +933,7 @@ export default function KitchenPage() {
                   className="rounded-lg"
                 >
                   <Card
+                    data-testid="kds-grid-card"
                     className={`border-2 ${ageBorderClass(order.createdAt)} transition-colors`}
                   >
                     {/* 31-15: `data-testid` is not decoration here. The allergen banner's
@@ -941,10 +944,18 @@ export default function KitchenPage() {
                         hook that lets the position be asserted, so a future card
                         refactor learns what it must not break. */}
                     <CardHeader className="pb-3" data-testid="kds-card-header">
+                      {/* 37-16 (UXT-011): the fulfilment badge sits beside the number. The number
+                          keeps #8's `min-w-0 truncate` (so it can never run under a badge) and
+                          gains `whitespace-normal break-words`, which win the cascade over
+                          truncate's nowrap: it now wraps to a second line rather than losing its
+                          tail to an ellipsis, so the FULL number shows (roadmap SC-1). */}
                       <div className="flex items-start justify-between gap-2">
-                        <CardTitle className="min-w-0 truncate text-lg font-semibold">
-                          {order.orderNumber || `#${order.id.substring(0, 6)}`}
-                        </CardTitle>
+                        <div className="flex min-w-0 items-start gap-2">
+                          <CardTitle className="min-w-0 truncate whitespace-normal break-words text-lg font-semibold">
+                            {order.orderNumber || `#${order.id.substring(0, 6)}`}
+                          </CardTitle>
+                          <KdsFulfilmentBadge fulfilmentType={order.fulfilmentType} />
+                        </div>
                         {config && (
                           <Badge className={`${config.bgColor} flex flex-shrink-0 items-center gap-1 text-white`}>
                             <StatusIcon className="h-3 w-3" />
@@ -988,6 +999,10 @@ export default function KitchenPage() {
                       <div className="text-sm font-medium text-slate-700">
                         {order.customerName || "Walk-in"}
                       </div>
+
+                      {/* 37-16 (UXT-011, P0): the customer's notes, after the name and before
+                          the items. Renders nothing for an order without notes. */}
+                      <KdsCustomerNote note={order.notes} />
     
                       {/* Items.
 
