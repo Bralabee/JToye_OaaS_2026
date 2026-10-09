@@ -93,6 +93,15 @@ async function vendorLogin(page: Page) {
   await page.waitForURL(/\/dashboard/, { timeout: 30_000 })
 }
 
+/**
+ * The toast viewport. Radix renders every toast twice: once in this region and once as an
+ * aria-live announcement outside it, so an unscoped getByText matches two nodes and fails
+ * strict mode (first measured at the 37-15 live run). Scope toast text here.
+ */
+function toasts(page: Page) {
+  return page.getByRole("region", { name: /^Notifications/ })
+}
+
 /** The People-table row for a person, located by the name the table shows. */
 function personRow(page: Page, name: string) {
   return page
@@ -139,12 +148,15 @@ test.describe("Staff invitation, end to end (D-07, D-26) @desktop-only", () => {
     const shopName = ((await shopOption.textContent()) || "").trim()
     await shopSelect.selectOption({ index: 1 })
     await inviteCard.getByRole("button", { name: "Send invitation" }).click()
-    await expect(page.getByText(`Invitation sent to ${address}.`, { exact: false })).toBeVisible({
+    await expect(toasts(page).getByText(`Invitation sent to ${address}.`, { exact: false })).toBeVisible({
       timeout: 15_000,
     })
     const pending = page.getByRole("region", { name: "Pending invitations" })
-    await expect(pending.getByText(address)).toBeVisible()
-    await expect(pending.getByText(`Shop manager · ${shopName}`)).toBeVisible()
+    // Scoped to THIS address's row: an earlier run's open invitation for the same shop
+    // carries the same "Shop manager · {shop}" text (measured at the 37-15 live run).
+    const pendingRow = pending.getByRole("row").filter({ hasText: address })
+    await expect(pendingRow, `one Pending row for ${address}`).toHaveCount(1)
+    await expect(pendingRow.getByText(`Shop manager · ${shopName}`)).toBeVisible()
 
     // 2. The link, as the email carries it (non-vacuity control: the email must exist).
     const messages = await messagesFor(request, address)
@@ -199,7 +211,7 @@ test.describe("Staff invitation, end to end (D-07, D-26) @desktop-only", () => {
     await tab.click("#kc-login")
     await tab.waitForURL(/\/dashboard/, { timeout: 30_000 })
     await expect(
-      tab.getByText(`You've joined ${business}. You can work on ${shopName}.`)
+      toasts(tab).getByText(`You've joined ${business}. You can work on ${shopName}.`)
     ).toBeVisible({ timeout: 20_000 })
     expect(new URL(tab.url()).searchParams.get("joined"), "the parameter is dropped").toBeNull()
     expect(strayRequests, "requests to an origin other than the app, the API and Keycloak").toEqual([])
