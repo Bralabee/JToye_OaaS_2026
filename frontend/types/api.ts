@@ -407,6 +407,12 @@ export interface CreateCustomerRequest {
 // Financial Transaction Types
 export type VatRate = "ZERO" | "REDUCED" | "STANDARD" | "EXEMPT"
 
+/**
+ * What a ledger row is (37-10): SALE settles an order, REVERSAL takes a voided order's
+ * SALE back out (negative, and not an expense), MANUAL has no order.
+ */
+export type LedgerEntryKind = "SALE" | "REVERSAL" | "MANUAL"
+
 export interface FinancialTransaction {
   id: string
   tenantId: string
@@ -415,6 +421,14 @@ export interface FinancialTransaction {
   vatAmountPennies: number
   description?: string
   createdAt: string
+  /** 37-10. Absent from a server older than 37-10. */
+  entryKind?: LedgerEntryKind
+  /** 37-10: the order this row belongs to; null for MANUAL. */
+  orderId?: string | null
+  /** 37-10: for a REVERSAL, the SALE it reverses. */
+  reversesTransactionId?: string | null
+  /** 37-11: the row's shop; null for MANUAL. */
+  shopId?: string | null
 }
 
 export interface VatBreakdown {
@@ -431,6 +445,16 @@ export interface FinancialSummary {
   totalVatPennies: number
   transactionCount: number
   vatBreakdown: VatBreakdown[]
+  /**
+   * 37-11: the scope these figures were filtered on (FinanceScopeDto). Read it for the
+   * "Showing …" banner, never the switcher. Absent from an older server.
+   */
+  scope?: {
+    shopId: string | null
+    shopName: string | null
+    from: string | null
+    to: string | null
+  } | null
 }
 
 // Promotion Types

@@ -179,3 +179,13 @@ export function useShopSwitcherData(): ShopSwitcherData {
   }
   return ctx
 }
+
+/**
+ * The same data, or null outside a `ShopSwitcherProvider` (37-12). For a page that
+ * can make a better decision when it knows the caller's access (finance: do not ask
+ * for tenant totals a shop manager will be refused) but must still work, deciding
+ * nothing, when rendered on its own. The server stays the boundary either way.
+ */
+export function useOptionalShopSwitcherData(): ShopSwitcherData | null {
+  return useContext(ShopSwitcherContext)
+}
