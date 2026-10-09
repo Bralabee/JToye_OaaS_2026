@@ -157,3 +157,26 @@ where it must be resolved.
   (23), `joined-toast.test.tsx` (6), one header test, and one Java IT method
   (`StaffEffectiveAccessIntegrationTest`); one Playwright test. Full jest at 37-09: 200 suites / 2313
   tests. Re-measure at the pre-PR step.
+
+## 9. 37-13 CSV shop and copy-to-shop: what binds 37-14, 37-15 and the phase PR
+
+- **The dashboard import is broken until 37-14 ships (WINDOWS.md entry 27).** A CSV row with no
+  `shop_id` and no `shopId` parameter is now the per-row error "shop required", for a Group admin
+  too. `frontend/app/dashboard/products/import/page.tsx` still posts only the file, so until 37-14
+  sends the switcher shop every dashboard import creates nothing. Before this plan those rows were
+  created shop-less, and the storefront never showed them. 37-14 is in the same 37-B PR, so the
+  PR must not merge without it.
+- **The copy SKU is not the source SKU.** SKUs are unique per tenant (`idx_products_tenant_sku`,
+  V3), so a copy cannot keep its source's SKU. The copy is `{source SKU}-{first 8 characters of
+  the target shop id}`. 37-14's copy dialog and its result toast should not promise "same SKU".
+- **Stock is copied as stored** (`quantity_in_stock`), as the plan says. A tracked item with 50 in
+  shop A arrives with 50 in shop B. This needs an owner look at the phase PR. If shop B does not
+  hold that stock, the copy can oversell until the vendor corrects it.
+- **Suspected pre-existing issue, not verified (out of scope).** `product_media.product_id` has no
+  `ON DELETE CASCADE` (V53) and `ProductService.deleteProduct` does not drop the product's links.
+  So deleting a product that has any `product_media` row should fail with 23503 and come back as
+  the misleading 409 "still referenced by an existing order". Copies carry links, so this would
+  affect them as well as uploaded products. Not run here; measure before filing.
+- **Runtime parity is owed to 37-15.** `POST /products/copy`, the `shopId` parameter on
+  `/products/bulk/csv` and the shared-image delete guard reach the compose stack only at the 37-15
+  rebuild.
