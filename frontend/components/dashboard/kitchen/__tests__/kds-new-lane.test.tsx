@@ -196,3 +196,177 @@ describe("KDS New lane (D-11): PENDING orders reach the kitchen", () => {
     })
   })
 })
+
+/** The New card holding `ORD-{id}`. */
+async function newCard(id: string): Promise<HTMLElement> {
+  const card = (await screen.findByText(`ORD-${id}`)).closest("[data-testid='kds-new-card']")
+  expect(card).not.toBeNull()
+  return card as HTMLElement
+}
+
+/** Stub the board, make /confirm (or /cancel) fail with `error`, and serve `detail` for the re-read. */
+function stubRefusal(error: unknown, detail?: Record<string, unknown>) {
+  stubBoard([orderFixture("new-1", "PENDING")])
+  const board = mockGet.getMockImplementation()!
+  mockGet.mockImplementation((url: string) => {
+    if (url === "/api/v1/orders/new-1/detail") {
+      return detail ? Promise.resolve({ data: detail }) : Promise.reject(new Error("Network Error"))
+    }
+    return board(url)
+  })
+  mockPost.mockRejectedValue(error)
+}
+
+async function pressAccept(card: HTMLElement) {
+  await act(async () => {
+    fireEvent.click(within(card).getByRole("button", { name: /^Accept order/ }))
+  })
+}
+
+/** After a failure the card stays in the lane and both buttons are usable again. */
+function expectCardStaysUsable(card: HTMLElement) {
+  expect(within(lane()).getByText("ORD-new-1")).toBeInTheDocument()
+  expect(within(card).getByRole("button", { name: /^Accept order/ })).toBeEnabled()
+  expect(within(card).getByRole("button", { name: /^Reject order/ })).toBeEnabled()
+}
+
+describe("KDS New card (D-11/D-12): the NEW strip and the 1 Hz ring", () => {
+  it("carries 'NEW · waiting for you to accept' with a bell, and the flash class on the card, not the strip", async () => {
+    stubBoard([orderFixture("new-1", "PENDING")])
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    const strip = within(card).getByTestId("kds-new-strip")
+    expect(strip).toHaveTextContent("NEW · waiting for you to accept")
+    expect(strip.querySelector("svg.lucide-bell-ring")).not.toBeNull()
+    expect(strip).toHaveClass("bg-orange-700")
+    // Only the ring moves (WCAG 2.3.1): the card carries the flash, the strip carries none.
+    expect(card).toHaveClass("kds-new-flash")
+    expect(Array.from(strip.classList).some((c) => c.startsWith("animate-") || c.includes("flash"))).toBe(false)
+  })
+
+  it("grid cards never flash", async () => {
+    stubBoard([orderFixture("cook-1", "CONFIRMED")])
+    render(<KitchenPage />)
+
+    const title = await screen.findByText("ORD-cook-1")
+    const gridCard = title.closest("[data-testid='kds-grid-card']") as HTMLElement
+    expect(gridCard).not.toHaveClass("kds-new-flash")
+    expect(within(gridCard).queryByTestId("kds-new-strip")).toBeNull()
+  })
+})
+
+describe("KDS New card: Accept says exactly why it failed (UI-SPEC § Copywriting K1)", () => {
+  it("a typed insufficient-stock refusal reads the product and the count from the problem body", async () => {
+    stubRefusal({
+      response: {
+        status: 409,
+        data: {
+          type: "https://jtoye.uk/errors/insufficient-stock",
+          title: "Insufficient Stock",
+          status: 409,
+          detail: "Insufficient stock for product 'Jollof Rice': requested 2, available 1",
+          productName: "Jollof Rice",
+          available: 1,
+        },
+      },
+    })
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    await pressAccept(card)
+
+    const alert = await within(card).findByRole("alert")
+    expect(alert).toHaveTextContent(
+      "Can't accept: only 1 Jollof Rice left in stock. Update the stock or reject this order."
+    )
+    expectCardStaysUsable(card)
+  })
+
+  it("an invalid transition re-reads the order: already accepted on another screen", async () => {
+    stubRefusal(
+      { response: { status: 400, data: { type: "https://jtoye.uk/errors/invalid-state-transition" } } },
+      orderFixture("new-1", "CONFIRMED")
+    )
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    await pressAccept(card)
+
+    expect(await within(card).findByRole("alert")).toHaveTextContent(
+      "This order was already accepted on another screen."
+    )
+    expect(mockGet).toHaveBeenCalledWith("/api/v1/orders/new-1/detail")
+  })
+
+  it("an invalid transition re-reads the order: already rejected on another screen", async () => {
+    stubRefusal(
+      { response: { status: 400, data: { type: "https://jtoye.uk/errors/invalid-state-transition" } } },
+      orderFixture("new-1", "CANCELLED")
+    )
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    await pressAccept(card)
+
+    expect(await within(card).findByRole("alert")).toHaveTextContent(
+      "This order was already rejected on another screen."
+    )
+  })
+
+  it("a network failure gets the generic copy, and the card stays usable", async () => {
+    stubRefusal(new Error("Network Error"))
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    await pressAccept(card)
+
+    expect(await within(card).findByRole("alert")).toHaveTextContent(
+      "Couldn't accept this order. Check your connection and try again."
+    )
+    expectCardStaysUsable(card)
+  })
+})
+
+describe("KDS New card: Reject order (single, through the existing cancel)", () => {
+  it("asks first ('Reject order {number}?', 'Keep order'), then posts /orders/{id}/cancel and leaves the lane", async () => {
+    stubBoard([orderFixture("new-1", "PENDING")])
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    await act(async () => {
+      fireEvent.click(within(card).getByRole("button", { name: /^Reject order/ }))
+    })
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Reject order ORD-new-1?")).toBeInTheDocument()
+    expect(dialog).toHaveTextContent("The customer is told the shop couldn't accept the order.")
+    expect(within(dialog).getByRole("button", { name: "Keep order" })).toBeInTheDocument()
+    expect(mockPost).not.toHaveBeenCalled()
+
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Reject order" }))
+    })
+
+    expect(mockPost).toHaveBeenCalledWith("/api/v1/orders/new-1/cancel")
+    await waitFor(() => expect(within(lane()).queryByText("ORD-new-1")).toBeNull())
+    expect(screen.queryByText("ORD-new-1")).toBeNull()
+  })
+
+  it("'Keep order' closes the dialog and sends nothing", async () => {
+    stubBoard([orderFixture("new-1", "PENDING")])
+    render(<KitchenPage />)
+
+    const card = await newCard("new-1")
+    await act(async () => {
+      fireEvent.click(within(card).getByRole("button", { name: /^Reject order/ }))
+    })
+    const dialog = await screen.findByRole("dialog")
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Keep order" }))
+    })
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(mockPost).not.toHaveBeenCalled()
+    expect(within(lane()).getByText("ORD-new-1")).toBeInTheDocument()
+  })
+})
