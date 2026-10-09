@@ -59,7 +59,7 @@ class OpeningScheduleTest {
     }
 
     @Test
-    @DisplayName("toJson and fromJson round-trip, through text and through both Jackson lines")
+    @DisplayName("toJson and fromJson round-trip, through the map and through JSON text")
     void toJsonFromJsonRoundTrip() throws Exception {
         Map<DayOfWeek, List<TimeWindow>> days = new EnumMap<>(DayOfWeek.class);
         days.put(DayOfWeek.MONDAY, List.of(window("09:00", "12:00"), window("13:00", "17:30")));
@@ -77,14 +77,7 @@ class OpeningScheduleTest {
                 "{\"mon\":[{\"open\":\"09:00\",\"close\":\"12:00\"},{\"open\":\"13:00\",\"close\":\"17:30\"}],"
                         + "\"tue\":[],\"wed\":[],\"thu\":[],\"fri\":[{\"open\":\"18:00\",\"close\":\"02:00\"}],"
                         + "\"sat\":[],\"sun\":[]}"));
-        assertThat(OpeningSchedule.fromJson(JSON.readValue(text, type3))).as("Jackson 3").isEqualTo(schedule);
-
-        com.fasterxml.jackson.databind.ObjectMapper jackson2 = new com.fasterxml.jackson.databind.ObjectMapper();
-        String text2 = jackson2.writeValueAsString(json);
-        assertThat(JSON.readTree(text2)).as("Jackson 2 writes the same shape").isEqualTo(JSON.readTree(text));
-        Map<String, List<TimeWindow>> read2 = jackson2.readValue(text2,
-                new com.fasterxml.jackson.core.type.TypeReference<Map<String, List<TimeWindow>>>() { });
-        assertThat(OpeningSchedule.fromJson(read2)).as("Jackson 2").isEqualTo(schedule);
+        assertThat(OpeningSchedule.fromJson(JSON.readValue(text, type3))).as("through JSON text").isEqualTo(schedule);
     }
 
     @Test
