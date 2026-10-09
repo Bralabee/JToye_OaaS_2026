@@ -273,6 +273,11 @@ export interface Order {
   allergyNoteAcknowledgedAt?: string | null
   /** The authenticated principal that acknowledged the note (a Keycloak subject id), never a display name. */
   allergyNoteAcknowledgedBy?: string | null
+  // Phase 37-10 (D-10): the void. ABSENT (OrderDto is NON_NULL) or null means not voided. A voided
+  // order keeps its status and stays listed; `voidedBy` is the principal (a Keycloak subject id).
+  voidedAt?: string | null
+  voidedBy?: string | null
+  voidReason?: string | null
 }
 
 /** Which channel placed an order (31.1-09): the customer at the storefront, or the shop itself (D-07). */
@@ -375,6 +380,11 @@ export interface OrderDetail {
   allergyNoteAcknowledgedAt?: string | null
   /** The authenticated principal that acknowledged the note (a Keycloak subject id), never a display name. */
   allergyNoteAcknowledgedBy?: string | null
+  // Phase 37-10 (D-10): the void. ABSENT (OrderDto is NON_NULL) or null means not voided. A voided
+  // order keeps its status and stays listed; `voidedBy` is the principal (a Keycloak subject id).
+  voidedAt?: string | null
+  voidedBy?: string | null
+  voidReason?: string | null
 }
 
 export interface CreateOrderRequest {

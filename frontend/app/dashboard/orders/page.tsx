@@ -49,6 +49,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { VoidedBadge } from "@/components/dashboard/orders/voided-badge"
 import {
   ShoppingCart,
   Plus,
@@ -775,12 +776,17 @@ function OrdersPageInner() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            className={`${config.bgColor} flex w-fit items-center gap-1 text-white`}
-                          >
-                            <StatusIcon className="h-3 w-3" />
-                            {config.label}
-                          </Badge>
+                          {/* 37-12 (UI-SPEC § B4 "After"): a voided order stays listed,
+                              keeps its status, and carries the Voided badge beside it. */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              className={`${config.bgColor} flex w-fit items-center gap-1 text-white`}
+                            >
+                              <StatusIcon className="h-3 w-3" />
+                              {config.label}
+                            </Badge>
+                            {order.voidedAt && <VoidedBadge />}
+                          </div>
                         </TableCell>
                         <TableCell className="font-semibold">
                           £{((order.totalAmountPennies || 0) / 100).toFixed(2)}
