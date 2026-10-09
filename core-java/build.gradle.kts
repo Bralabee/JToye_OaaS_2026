@@ -284,7 +284,7 @@ dependencies {
     // Coordinates checked against Maven Central and github.com/Azure/azure-sdk-for-java
     // (36-RESEARCH.md, Package Legitimacy Audit).
     implementation("com.azure:azure-storage-blob:12.35.1")
-    implementation("com.azure:azure-identity:1.18.6") {
+    implementation("com.azure:azure-identity:1.18.7") {
         // Desktop token-cache persistence only; it pulls jna + jna-platform native libraries that
         // WorkloadIdentityCredential never loads (assumption A1, proven by 36-06's
         // credential-build test).
