@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 12
 waived_count: 0
 fixed_count: 14
-total_count: 24
-last_updated: 2026-10-08T16:22:20.362Z
+total_count: 26
+last_updated: 2026-10-09T00:29:01.668Z
 ---
 
 # Broken Windows Ledger
@@ -39,6 +39,8 @@ last_updated: 2026-10-08T16:22:20.362Z
 | 22 | 37 | unrun-verify | frontend/e2e/staff-invite.spec.ts |  | 37-09 live invite journey listed only (1 test, @desktop-only): Staff-form invite, Mailhog link, origin allow-list and no /invite Referer, 375px overflow backstop, account + Keycloak login_hint sign-in, joined toast, 'Shop manager · {shop}' with an instrument arm, second visit unusable; live RED (pre-rebuild runtime has no invite card) and GREEN owed to 37-15 | open |  | 2026-10-08T16:22:20.043Z |  |
 | 23 | 37 | unrun-verify | frontend/e2e/dashboard-interface-corrections.spec.ts | 174 | 37-09 inverted test 2: it asserted zero invite buttons on the Staff page and now asserts exactly one 'Send invitation' in the 'Invite someone' region; not run, the shared runtime is rebuilt at 37-15 | open |  | 2026-10-08T16:22:20.149Z |  |
 | 24 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/security/access/dto/MyAccessDto.java |  | 37-09 added a nullable businessName to GET /api/v1/staff/me (additive, OpenAPI +7/-0): no endpoint a staff member can read named the business, and the D-26 joined toast must be built from server data; reaches the shared runtime only at the 37-15 rebuild (until then the toast says 'your new business') | open |  | 2026-10-08T16:22:20.257Z |  |
+| 25 | 37 | unrun-verify | frontend/app/dashboard/finance/page.tsx |  | 37-12 per-shop finance (API-echoed scope banner, Choose-a-shop state, Export CSV under the server filename, reversal rows) and the void dialog/voided badges are proven in jest only; no live browser run, because the shared runtime predates 37-10/37-11 and is rebuilt at 37-15 | open |  | 2026-10-09T00:29:01.557Z |  |
+| 26 | 37 | deviation | frontend/app/dashboard/finance/page.tsx |  | 37-12 finance marks a SALE 'Voided' only when its REVERSAL is on the same transactions page (the ledger DTO carries no voided flag on the sale); a sale whose reversal sits on another page of 20 shows no Voided badge | open |  | 2026-10-09T00:29:01.668Z |  |
 
 ````json
 [
@@ -351,6 +353,32 @@ last_updated: 2026-10-08T16:22:20.362Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-08T16:22:20.257Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 25,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "frontend/app/dashboard/finance/page.tsx",
+    "line": null,
+    "description": "37-12 per-shop finance (API-echoed scope banner, Choose-a-shop state, Export CSV under the server filename, reversal rows) and the void dialog/voided badges are proven in jest only; no live browser run, because the shared runtime predates 37-10/37-11 and is rebuilt at 37-15",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-09T00:29:01.557Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 26,
+    "kind": "deviation",
+    "phase": "37",
+    "file": "frontend/app/dashboard/finance/page.tsx",
+    "line": null,
+    "description": "37-12 finance marks a SALE 'Voided' only when its REVERSAL is on the same transactions page (the ledger DTO carries no voided flag on the sale); a sale whose reversal sits on another page of 20 shows no Voided badge",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-09T00:29:01.668Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }

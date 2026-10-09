@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-11 complete (11/53). 37-11 closed 2026-10-09: V79 financial_transactions.shop_id (+_aud, index, per-tenant backfill proven two-tenant under the RLS-bound migrator); finance summary/list take shopId/from/to behind require(shopId, SHOP_MANAGER), tenant view Group admin, STAFF refused; scope echoed (FinanceScopeDto); GET /financial-transactions/export.csv (RFC 4180, formula-safe, scoped filename, X-Finance-Scope; CORS floor exposes both headers); core-java 1616/0 + 987/0. Next: /gsd-execute-phase 37 (37-12)."
-last_updated: "2026-10-09T00:10:51.961Z"
+stopped_at: "Phase 37 executing: 37-01..37-12 complete (12/53). 37-12 closed 2026-10-09: /dashboard/finance sends the switcher shop as ?shopId= and its banner and Export CSV read the scope the API echoed (never the switcher); a non-admin on All shops sees Choose a shop and requests nothing, STAFF keeps Admin access required; reversal rows (Reversal badge, Reversal of ORD-..., U+2212 minus) and the reversed sale marked Voided; dashboard home tile follows the same scope rule; VoidOrderDialog (required reason, Group admin only, CONFIRMED-or-later) in OrderDetailPanel, Voided badge in detail and Orders list; jest 2353/0, lint 0 errors, build green. Live proof owed to 37-15. Next: /gsd-execute-phase 37 (37-13)."
+last_updated: "2026-10-09T00:30:59Z"
 last_activity: 2026-10-09
-state_head: 14c83fd5a6c2e12a8087d18f95e9b6eb9ac9d6f8
+state_head: d659795a4b1d6ef8a18f3f22d03e319abb3980fa
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 196
+  completed_plans: 197
   percent: 65
 ---
 
@@ -914,6 +914,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P09 | 55 min | 3 tasks | 31 files |
 | Phase 37 P10 | 47 min (continuation; Task 1 earlier) | 3 tasks | 27 files |
 | Phase 37 P11 | 1h 0m | 3 tasks | 24 files |
+| Phase 37 P12 | 18 min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -1188,6 +1189,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-11: financial_transactions.shop_id is nullable (add-alongside); a MANUAL row never carries a shop and appears only in the tenant-wide view; per-shop totals need not sum to the tenant total
 - [Phase 37]: 37-11: scoped finance aggregates bind non-null params only (allShops flag + sentinels); an unfiltered scope still runs the original CQ-02 queries, so the 1k golden is untouched
 - [Phase 37]: 37-11: the finance CSV neutralises = + - @ (and tab/CR) in text cells only; Content-Disposition and X-Finance-Scope join the CORS shipped list and floor (cross-origin dashboard)
+- [Phase 37]: 37-12: finance surfaces show the scope the API ECHOED (summary.scope), never the switcher; the export replays that echo, so the file is exactly what is shown (T-37-33)
+- [Phase 37]: 37-12: a non-admin on All shops is not sent tenant totals at all (financeGate from the shell's staff/me): Choose a shop; tenant-wide STAFF keeps Admin access required; outside the provider the server decides, as before
+- [Phase 37]: 37-12: who voided an order reads 'you', the staff-directory name (Group admin viewers only) or 'a Group admin' - never the raw subject id the server stores
+- [Phase 37]: 37-12: a finance SALE is marked Voided only when its REVERSAL is on the same page (no voided flag on the ledger DTO); recorded as WINDOWS #26
 
 ### Pending Todos
 
@@ -1259,8 +1264,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-09T00:11:00Z
-Stopped at: Completed 37-11-PLAN.md (per-shop ledger scope and CSV export); next 37-12
+Last session: 2026-10-09T00:30:59Z
+Stopped at: Completed 37-12-PLAN.md (per-shop finance UI, CSV export, void dialog); next 37-13
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
