@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-10 complete (10/53). 37-10 closed 2026-10-09: DELETE past PENDING is a 409 order-not-deletable (orderStatus); POST /orders/{id}/void (Group admin, reason) keeps the order, records who/when/why and writes one REVERSAL of its SALE; V78 entry_kind SALE|REVERSAL|MANUAL + reverses_transaction_id, uq_fin_tx_tenant_order (tenant_id, order_id, entry_kind), per-tenant backfill proven two-tenant under the RLS-bound migrator; revenue = SALE - REVERSAL, 1k golden unchanged; core-java 1615/0 + 970/0. Owner ruling D-10 ledger = entry-kind. Next: /gsd-execute-phase 37 (37-11)."
-last_updated: "2026-10-08T23:06:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-11 complete (11/53). 37-11 closed 2026-10-09: V79 financial_transactions.shop_id (+_aud, index, per-tenant backfill proven two-tenant under the RLS-bound migrator); finance summary/list take shopId/from/to behind require(shopId, SHOP_MANAGER), tenant view Group admin, STAFF refused; scope echoed (FinanceScopeDto); GET /financial-transactions/export.csv (RFC 4180, formula-safe, scoped filename, X-Finance-Scope; CORS floor exposes both headers); core-java 1616/0 + 987/0. Next: /gsd-execute-phase 37 (37-12)."
+last_updated: "2026-10-09T00:10:51.961Z"
 last_activity: 2026-10-09
-state_head: 6926181c5c1d6b45a6f65e364805062cd93ac2da
+state_head: 14c83fd5a6c2e12a8087d18f95e9b6eb9ac9d6f8
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 195
+  completed_plans: 196
   percent: 65
 ---
 
@@ -913,6 +913,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P26 | 54 min | 3 tasks | 17 files |
 | Phase 37 P09 | 55 min | 3 tasks | 31 files |
 | Phase 37 P10 | 47 min (continuation; Task 1 earlier) | 3 tasks | 27 files |
+| Phase 37 P11 | 1h 0m | 3 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -1183,6 +1184,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-10: a void is columns on orders (voided_at/by/reason), never a VOIDED status; a reversal copies the sale's vat_rate; revenue = SALE - REVERSAL, MANUAL negatives stay expenses
 - [Phase 37]: 37-10: createTransaction writes SALE with an order and MANUAL without (the V78 backfill rule); the unkeyed findByOrderId is deleted, every per-order ledger lookup is keyed by kind
 - [Phase 37]: 37-10: a voided order cannot transition again (400) and leaves the kitchen board; a problem property never reuses an RFC 7807 member name (order-not-deletable carries orderStatus, status stays the HTTP code)
+- [Phase 37]: 37-11: finance gate per method: shopId -> require(shopId, SHOP_MANAGER) and filter; no shopId -> requireGroupAdmin(); GET /{id} and POST manual stay Group admin; STAFF refused everywhere (P2-TUN-15)
+- [Phase 37]: 37-11: financial_transactions.shop_id is nullable (add-alongside); a MANUAL row never carries a shop and appears only in the tenant-wide view; per-shop totals need not sum to the tenant total
+- [Phase 37]: 37-11: scoped finance aggregates bind non-null params only (allShops flag + sentinels); an unfiltered scope still runs the original CQ-02 queries, so the 1k golden is untouched
+- [Phase 37]: 37-11: the finance CSV neutralises = + - @ (and tab/CR) in text cells only; Content-Disposition and X-Finance-Scope join the CORS shipped list and floor (cross-origin dashboard)
 
 ### Pending Todos
 
@@ -1254,8 +1259,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-07T15:20:00Z
-Stopped at: Phase 31.1 shipped as PR #901 (2026-10-07) — next review round 1 (`/code-review 901 --comment`), narrow to zero, merge, then `/gsd-discuss-phase 37`
+Last session: 2026-10-09T00:11:00Z
+Stopped at: Completed 37-11-PLAN.md (per-shop ledger scope and CSV export); next 37-12
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
