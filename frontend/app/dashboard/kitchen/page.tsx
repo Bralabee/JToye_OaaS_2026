@@ -37,6 +37,7 @@ import { KdsItemList, elapsedText } from "@/components/dashboard/kitchen/kds-car
 import { KdsFulfilmentBadge } from "@/components/dashboard/kitchen/kds-fulfilment-badge"
 import { KdsCustomerNote } from "@/components/dashboard/kitchen/kds-customer-note"
 import {
+  KdsSoundBar,
   KdsSoundControl,
   kitchenTabTitle,
   useKitchenAlert,
@@ -611,6 +612,12 @@ export default function KitchenPage() {
     stopped: false,
   })
 
+  // Unmuting is a tap, so it is also the gesture that unlocks audio: one press, and the board rings.
+  const handleUnmute = () => {
+    setMutedPreference(false)
+    enableSound()
+  }
+
   // The tab title carries the New-lane count, so a backgrounded tab still says an order waits.
   // The restore effect is declared first so it captures the title the route arrived with.
   const newLaneCount = newOrders.length
@@ -787,10 +794,18 @@ export default function KitchenPage() {
             soundState={soundState}
             onTurnOn={enableSound}
             onMute={() => setMutedPreference(true)}
-            onUnmute={() => setMutedPreference(false)}
+            onUnmute={handleUnmute}
           />
         </div>
       </div>
+
+      {/* 37-17 (D-12): the board says when it cannot ring, under the header and above every notice
+          that qualifies the tickets. Not dismissible; its only button is the fix. */}
+      <KdsSoundBar
+        soundState={soundState}
+        onTurnOn={enableSound}
+        onUnmute={handleUnmute}
+      />
 
       {/* #106: the stale/offline banner. Rendered above the tickets because it
           qualifies every ticket underneath it.

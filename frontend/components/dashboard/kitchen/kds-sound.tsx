@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { BellOff, Volume2, VolumeX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 /**
@@ -19,6 +20,9 @@ import { Button } from "@/components/ui/button"
  *     muted and the board has not stopped, a two-tone chime plays at once and then every
  *     {@link NEW_ORDER_ALERT_INTERVAL_MS}. It stops when the last order is accepted or rejected,
  *     on mute, on a shop switch (the page passes this shop's count) and when the board stops.
+ *   - The board SAYS whether it can ring (`soundState`), read from the context itself on every
+ *     `statechange`, never assumed from the tap: a context the browser suspends later (a call,
+ *     an OS interruption, a tab policy) turns the state back to "off" and the bar comes back.
  */
 
 /** How often the new-order chime repeats while an order waits to be accepted. */
@@ -67,6 +71,29 @@ function audioContextConstructor(): AudioContextCtor | null {
   return w.AudioContext ?? w.webkitAudioContext ?? null
 }
 
+/**
+ * Can this context make sound right now?
+ *
+ * `navigator.getAutoplayPolicy(context)` is asked first where the browser has it (RESEARCH A7: its
+ * availability is not assumed, so it is feature-detected); anything but "allowed" is a no. Where it
+ * is absent, or throws, `AudioContext.state` decides. Either way a context that is not "running"
+ * plays nothing, so it never counts as sound.
+ */
+export function contextCanSound(ctx: AudioContext | null): boolean {
+  if (!ctx) return false
+  const nav = (typeof navigator === "undefined" ? undefined : navigator) as
+    | { getAutoplayPolicy?: (target: AudioContext) => string }
+    | undefined
+  if (nav && typeof nav.getAutoplayPolicy === "function") {
+    try {
+      if (nav.getAutoplayPolicy(ctx) !== "allowed") return false
+    } catch {
+      // A browser that has the method but rejects the argument: fall back to the state.
+    }
+  }
+  return ctx.state === "running"
+}
+
 /** Schedule one chime on a running context. Exported for the stopped-board alarm to sit beside. */
 export function playNewOrderChime(ctx: AudioContext): void {
   if (ctx.state !== "running") return
@@ -99,31 +126,41 @@ export function useKitchenAlert({
   // Whether the board's one context can make sound right now. State, not a read of the ref, so
   // the board re-renders when it changes.
   const [running, setRunning] = useState(false)
+  const detachRef = useRef<(() => void) | null>(null)
 
   const enableSound = useCallback(() => {
     let ctx = ctxRef.current
     if (!ctx || ctx.state === "closed") {
       const Ctor = audioContextConstructor()
       if (!Ctor) {
+        // No Web Audio at all: the board says so (the bar stays) instead of pretending.
         setRunning(false)
         return
       }
       ctx = new Ctor()
       ctxRef.current = ctx
+      const created = ctx
+      const onStateChange = () => setRunning(contextCanSound(created))
+      created.addEventListener("statechange", onStateChange)
+      detachRef.current?.()
+      detachRef.current = () => created.removeEventListener("statechange", onStateChange)
     }
-    const created = ctx
-    if (created.state !== "running") {
-      created.resume().then(
-        () => setRunning(created.state === "running"),
+    const current = ctx
+    if (current.state !== "running") {
+      // Still inside the tap: this is the gesture that lets a suspended context resume.
+      current.resume().then(
+        () => setRunning(contextCanSound(current)),
         () => setRunning(false)
       )
     }
-    setRunning(created.state === "running")
+    setRunning(contextCanSound(current))
   }, [])
 
   // The board owns the context: leaving the page releases it.
   useEffect(() => {
     return () => {
+      detachRef.current?.()
+      detachRef.current = null
       const ctx = ctxRef.current
       ctxRef.current = null
       if (ctx && ctx.state !== "closed") void ctx.close().catch(() => {})
@@ -144,23 +181,62 @@ export function useKitchenAlert({
   return { soundState, enableSound }
 }
 
-/** RED interface (37-17 Task 2): the non-dismissible sound bar. */
-export function KdsSoundBar(props: {
+const CONTROL: Record<
+  SoundState,
+  { label: string; Icon: typeof Volume2; text: string }
+> = {
+  off: { label: "Turn on sound", Icon: VolumeX, text: "" },
+  on: { label: "Mute alerts", Icon: Volume2, text: "" },
+  muted: { label: "Unmute alerts", Icon: BellOff, text: "text-amber-800" },
+}
+
+const BAR: Record<Exclude<SoundState, "on">, string> = {
+  off: "Sound is off. New orders will flash but not ring.",
+  muted: "Alerts are muted. New orders will flash but not ring.",
+}
+
+/**
+ * The sound bar under the header (UI-SPEC K1, "Sound state: shown, never assumed").
+ *
+ * Shown whenever the board cannot ring: no context yet, a context the browser holds suspended, or
+ * the operator's mute. It is NOT dismissible. A silent board in a noisy kitchen is the failure this
+ * phase fixes, so the only button it has is the fix itself. Amber, the feed banner's tone for "the
+ * board works, but know this"; the visual alert (the New card's ring) keeps running underneath.
+ */
+export function KdsSoundBar({
+  soundState,
+  onTurnOn,
+  onUnmute,
+}: {
   soundState: SoundState
   onTurnOn: () => void
   onUnmute: () => void
 }) {
-  void props
-  return null
+  if (soundState === "on") return null
+  const action = CONTROL[soundState]
+  const Icon = action.Icon
+  return (
+    <div
+      role="status"
+      data-testid="kds-sound-bar"
+      className="flex flex-col gap-3 rounded-lg border-2 border-amber-500 bg-amber-50 px-4 py-3 text-amber-900 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <p className="flex items-start gap-3 text-base font-semibold">
+        <Icon aria-hidden className="mt-0.5 h-5 w-5 flex-shrink-0" />
+        <span>{BAR[soundState]}</span>
+      </p>
+      <Button
+        variant="outline"
+        onClick={soundState === "off" ? onTurnOn : onUnmute}
+        className="kds-press h-11 flex-shrink-0 border-current bg-white/70 px-5 text-base font-semibold"
+      >
+        {action.label}
+      </Button>
+    </div>
+  )
 }
 
-const CONTROL_LABEL: Record<SoundState, string> = {
-  off: "Turn on sound",
-  on: "Mute alerts",
-  muted: "Unmute alerts",
-}
-
-/** The header sound control: it says what tapping it will do, in words. */
+/** The header sound control: it says what tapping it will do, in words, legible from a wall mount. */
 export function KdsSoundControl({
   soundState,
   onTurnOn,
@@ -174,14 +250,16 @@ export function KdsSoundControl({
 }) {
   const onClick =
     soundState === "off" ? onTurnOn : soundState === "on" ? onMute : onUnmute
+  const { label, Icon, text } = CONTROL[soundState]
   return (
     <Button
       variant="outline"
       data-testid="kds-sound-control"
       onClick={onClick}
-      className="kds-press"
+      className={`kds-press h-11 ${text}`.trim()}
     >
-      {CONTROL_LABEL[soundState]}
+      <Icon aria-hidden className="mr-2 h-5 w-5" />
+      {label}
     </Button>
   )
 }
