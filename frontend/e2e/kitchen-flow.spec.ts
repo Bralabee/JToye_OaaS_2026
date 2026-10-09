@@ -327,11 +327,15 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     // `.first()` the issue warned against, which would have gone green over a genuine
     // pair. Its fail direction is proven: rendering the control twice in page.tsx
     // takes this to `Expected: 1  Received: 2`.
-    const muteToggle = page.getByRole("button", {
-      name: /Mute alerts|Unmute alerts/,
-    })
+    //
+    // 37-17 (D-12): the icon-only mute button became a labelled sound control with three
+    // states. A fresh board cannot ring until a tap unlocks audio, so it reads "Turn on sound";
+    // the control is anchored to the LIVE tree (the #593 staging copy) by its testid, because
+    // the non-dismissible sound bar carries a second "Turn on sound" button by design.
+    const muteToggle = live(page).getByTestId("kds-sound-control")
     await expect(muteToggle).toHaveCount(1)
     await expect(muteToggle).toBeVisible()
+    await expect(muteToggle).toHaveText("Turn on sound")
 
     // The mocked order card shows customer name and order number
     await expect(page.getByText("Alice")).toBeVisible()
@@ -357,8 +361,12 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
 
     // Mute toggle click works. Same locator as the assertion above (#593) — a
     // `getByTitle` click here would be the same race, and clicking a control the
-    // page does not present is not a thing a vendor can do.
+    // page does not present is not a thing a vendor can do. 37-17: the first tap turns
+    // sound on (a real gesture, so the browser lets the context run), the second mutes.
     await muteToggle.click()
+    await expect(muteToggle).toHaveText("Mute alerts")
+    await muteToggle.click()
+    await expect(muteToggle).toHaveText("Unmute alerts")
   })
 
   test("order-detail page shows real product names and the delivery address, no 'Unknown Product'", async ({

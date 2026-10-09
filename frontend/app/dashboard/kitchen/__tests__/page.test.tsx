@@ -3,7 +3,7 @@
  * the page renders synchronously and we can exercise the interactive bits:
  *  - shops load, first shop selected by default
  *  - orders render once fetched
- *  - mute toggle persists to localStorage and flips icon
+ *  - the sound control turns sound on, then mutes and unmutes through kds-muted (37-17)
  *  - empty state renders when there are no active orders
  *  - card header truncates long order numbers without the badge overlapping (#8)
  *  - elapsed time is capped/formatted, never raw uncapped minutes (#12)
@@ -14,6 +14,7 @@ import { render, screen, waitFor, fireEvent, act, within } from "@testing-librar
 import KitchenPage from "../page"
 import { useStomp } from "@/hooks/use-stomp"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
+import { installFakeAudioContext } from "@/test-utils/fake-audio-context"
 
 /**
  * Every width-cap utility an element declares, as tokens.
@@ -96,29 +97,10 @@ beforeEach(() => {
   ;(window.print as jest.Mock).mockClear()
 })
 
-// AudioContext mock so playBeep() does not explode the test runner
-beforeAll(() => {
-  ;(global as unknown as { AudioContext: unknown }).AudioContext = jest
-    .fn()
-    .mockImplementation(() => ({
-      createOscillator: () => ({
-        connect: jest.fn(),
-        start: jest.fn(),
-        stop: jest.fn(),
-        type: "sine",
-        frequency: { setValueAtTime: jest.fn(), value: 0 },
-      }),
-      createGain: () => ({
-        connect: jest.fn(),
-        gain: {
-          setValueAtTime: jest.fn(),
-          exponentialRampToValueAtTime: jest.fn(),
-        },
-      }),
-      destination: {},
-      currentTime: 0,
-      close: jest.fn(),
-    }))
+// 37-17: a recording AudioContext. The board only ever builds one inside the sound control's tap
+// (useKitchenAlert); the old per-beep mock existed so playBeep() would not explode the runner.
+beforeEach(() => {
+  installFakeAudioContext("running")
 })
 
 const shopsPayload = {
@@ -284,19 +266,28 @@ describe("KitchenPage", () => {
   })
 
   it("mute toggle persists state to localStorage", async () => {
+    // 37-17: the control first turns sound ON (nothing can be muted that cannot ring), then
+    // mutes and unmutes through the same kds-muted key as before.
     stubApi([])
     render(<KitchenPage />)
-    // Wait for initial shops load to finish and mute button to render
-    const muteButton = await screen.findByTitle(/Mute alerts|Unmute alerts/)
+    const control = await screen.findByTestId("kds-sound-control")
+    expect(control).toHaveTextContent("Turn on sound")
     expect(localStorage.getItem("kds-muted")).toBeNull()
 
     act(() => {
-      fireEvent.click(muteButton)
+      fireEvent.click(control)
     })
-    expect(localStorage.getItem("kds-muted")).toBe("true")
+    expect(control).toHaveTextContent("Mute alerts")
+    expect(localStorage.getItem("kds-muted")).toBeNull()
 
     act(() => {
-      fireEvent.click(muteButton)
+      fireEvent.click(control)
+    })
+    expect(localStorage.getItem("kds-muted")).toBe("true")
+    expect(control).toHaveTextContent("Unmute alerts")
+
+    act(() => {
+      fireEvent.click(control)
     })
     expect(localStorage.getItem("kds-muted")).toBe("false")
   })
@@ -305,8 +296,8 @@ describe("KitchenPage", () => {
     localStorage.setItem("kds-muted", "true")
     stubApi([])
     render(<KitchenPage />)
-    // When muted=true the button title is "Unmute alerts"
-    expect(await screen.findByTitle(/Unmute alerts/)).toBeInTheDocument()
+    // When muted=true the control offers "Unmute alerts"
+    expect(await screen.findByTestId("kds-sound-control")).toHaveTextContent("Unmute alerts")
   })
 
   // --- #8: card header badge-clip fix ---
@@ -712,7 +703,7 @@ describe("KitchenPage", () => {
     // Synchronously, before any promise resolves. The pill carries its PENDING testid
     // here (#556's rule — the streamed and swapped-in copies must not collide).
     expect(screen.getByTestId("kds-feed-pill-pending")).toBeInTheDocument()
-    expect(screen.getByTitle(/Mute alerts|Unmute alerts/)).toBeInTheDocument()
+    expect(screen.getByTestId("kds-sound-control")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /print all/i })).toBeInTheDocument()
     // And it says it is starting rather than claiming the feed is Offline.
     expect(screen.getByTestId("kds-feed-pill-pending")).toHaveTextContent("Connecting")

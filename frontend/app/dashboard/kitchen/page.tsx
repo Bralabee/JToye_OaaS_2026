@@ -37,6 +37,11 @@ import { KdsItemList, elapsedText } from "@/components/dashboard/kitchen/kds-car
 import { KdsFulfilmentBadge } from "@/components/dashboard/kitchen/kds-fulfilment-badge"
 import { KdsCustomerNote } from "@/components/dashboard/kitchen/kds-customer-note"
 import {
+  KdsSoundControl,
+  kitchenTabTitle,
+  useKitchenAlert,
+} from "@/components/dashboard/kitchen/kds-sound"
+import {
   Card,
   CardContent,
   CardHeader,
@@ -53,8 +58,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   ChefHat,
-  Volume2,
-  VolumeX,
   Clock,
   ArrowRight,
   CheckCircle2,
@@ -107,27 +110,13 @@ function ageBorderClass(createdAt: string): string {
 // `elapsedText` (the #12 cap) moved to kds-card-parts.tsx in 37-16 so the New lane renders the
 // same age the grid does; a Next page module cannot export it.
 
-// --- Audio beep ---
-
-function playBeep() {
-  try {
-    const ctx = new AudioContext()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = "sine"
-    osc.frequency.setValueAtTime(800, ctx.currentTime)
-    gain.gain.setValueAtTime(0.3, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2)
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + 0.2)
-    // Clean up after playback
-    setTimeout(() => ctx.close(), 500)
-  } catch {
-    // AudioContext may fail without user gesture — ignore silently
-  }
-}
+// --- New-order sound ---
+//
+// 37-17 (D-12): the one-shot `playBeep` that lived here built a fresh AudioContext inside the
+// socket callback, outside any user gesture, so the browser suspended it and the error was
+// swallowed: a new order could arrive in silence. The alert is now `useKitchenAlert`
+// (components/dashboard/kitchen/kds-sound.tsx): one context, unlocked by the "Turn on sound" tap,
+// repeating while an order waits in the New lane.
 
 // --- Kitchen statuses we track ---
 //
@@ -259,12 +248,6 @@ export default function KitchenPage() {
 
   // --- #485: the board is showing only part of this shop's orders ---
   const [ordersTruncated, setOrdersTruncated] = useState(false)
-
-  // Ref for mute to avoid stale closure in WS callback
-  const mutedRef = useRef(muted)
-  useEffect(() => {
-    mutedRef.current = muted
-  }, [muted])
 
   // #564: the ordersMap ref is gone. It existed so `fetchOrders` could re-use detail it
   // already held for tickets whose status had not changed — the optimisation that made a
@@ -468,7 +451,7 @@ export default function KitchenPage() {
 
   const handleWsMessage = useCallback(
     (event: OrderStateChangeEvent) => {
-      const { orderId, newStatus, previousStatus } = event
+      const { orderId, newStatus } = event
 
       // #106: a frame off the socket is proof the feed is alive right now — advance
       // the stamp so a busy kitchen never sees a stale warning over live tickets.
@@ -491,11 +474,8 @@ export default function KitchenPage() {
             // If fetch fails, ignore — will sync on next reconnect
           })
 
-        // Play audio if this is a genuinely NEW order entering kitchen view
-        const wasInKitchen = KITCHEN_STATUSES.includes(previousStatus)
-        if (!wasInKitchen && !mutedRef.current) {
-          playBeep()
-        }
+        // 37-17: no sound from here. A new order lands in the New lane through the read above,
+        // and the lane's count drives the repeating alert (useKitchenAlert below).
       } else if (newStatus === "COMPLETED" || newStatus === "CANCELLED") {
         // Remove from display
         setOrdersMap((prev) => {
@@ -512,10 +492,9 @@ export default function KitchenPage() {
 
   const { connected, reconnecting } = useStomp(stompTopic, handleWsMessage, fetchOrders)
 
-  // --- Mute toggle ---
+  // --- Mute (the `kds-muted` key and its lifetime are unchanged; UXT-050 is 37.x) ---
 
-  const toggleMute = () => {
-    const next = !muted
+  const setMutedPreference = (next: boolean) => {
     setMuted(next)
     localStorage.setItem("kds-muted", String(next))
   }
@@ -619,6 +598,31 @@ export default function KitchenPage() {
   // its own per-ticket print).
   const newOrders = sortedOrders.filter((o) => o.status === NEW_LANE_STATUS)
   const boardOrders = sortedOrders.filter((o) => o.status !== NEW_LANE_STATUS)
+
+  // --- 37-17 (D-12): the repeating new-order alert ---
+  //
+  // The chime counts only THIS board's shop. After a shop switch the map still holds the previous
+  // shop's orders until the new read lands; they must not keep ringing for a board that no longer
+  // shows them. `stopped` is the K2 "board stopped" state, wired by 37-18.
+  const alertCount = newOrders.filter((o) => o.shopId === selectedShopId).length
+  const { soundState, enableSound } = useKitchenAlert({
+    pendingCount: alertCount,
+    muted,
+    stopped: false,
+  })
+
+  // The tab title carries the New-lane count, so a backgrounded tab still says an order waits.
+  // The restore effect is declared first so it captures the title the route arrived with.
+  const newLaneCount = newOrders.length
+  useEffect(() => {
+    const previous = document.title
+    return () => {
+      document.title = previous
+    }
+  }, [])
+  useEffect(() => {
+    document.title = kitchenTabTitle(newLaneCount)
+  }, [newLaneCount])
 
   // --- #450 5d: whose board is this? ---
 
@@ -777,20 +781,14 @@ export default function KitchenPage() {
             Print all
           </Button>
 
-          {/* Mute toggle */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={toggleMute}
-            title={muted ? "Unmute alerts" : "Mute alerts"}
-            className="kds-press"
-          >
-            {muted ? (
-              <VolumeX className="h-5 w-5" />
-            ) : (
-              <Volume2 className="h-5 w-5" />
-            )}
-          </Button>
+          {/* 37-17 (D-12): the sound control says, in words, what the board can do. It replaces the
+              icon-only mute button; the `kds-muted` preference behind it is the same. */}
+          <KdsSoundControl
+            soundState={soundState}
+            onTurnOn={enableSound}
+            onMute={() => setMutedPreference(true)}
+            onUnmute={() => setMutedPreference(false)}
+          />
         </div>
       </div>
 
