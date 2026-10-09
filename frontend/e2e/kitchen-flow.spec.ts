@@ -414,6 +414,59 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     expect(bumpCalls[0]).toContain("/order-1/start-preparation")
   })
 
+  // ---------------------------------------------------------------------------
+  // Phase 37-16 (D-11, UXT-020): a storefront order reaches the kitchen.
+  //
+  // Before 37-16 the board read CONFIRMED/PREPARING/READY only, so a storefront order sat in
+  // PENDING, invisible here, until somebody confirmed it on the Orders page. It now waits in the
+  // "New orders" lane, and "Accept order" there is the existing /confirm. The live-stack run of
+  // this spec is plan 37-23's; this test pins the clicked path against the route stubs.
+  // ---------------------------------------------------------------------------
+
+  test("a storefront order appears in the New lane, and Accept moves it to the grid", async ({ page }) => {
+    const pendingOrder = {
+      ...orderDetailResponse,
+      id: "order-new",
+      orderNumber: "ORD-TEST-0002",
+      status: "PENDING",
+      customerName: "Bola",
+      notes: "Severe peanut allergy - please call on arrival",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    await page.route(`${API}/api/v1/orders/kitchen**`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(pageOf([pendingOrder, orderDetailResponse], route.request().url())),
+      })
+    )
+    const confirmCalls: string[] = []
+    await page.route(`${API}/api/v1/orders/*/confirm`, (route) => {
+      confirmCalls.push(route.request().url())
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...pendingOrder, status: "CONFIRMED" }),
+      })
+    })
+
+    await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
+    const lane = page.getByRole("region", { name: /New orders/ })
+    const newCard = lane.getByTestId("kds-new-card").filter({ hasText: "ORD-TEST-0002" })
+    await expect(newCard).toBeVisible()
+    // Nothing accepted it for the kitchen: it waits for a person.
+    expect(confirmCalls).toHaveLength(0)
+
+    await newCard.getByRole("button", { name: /^Accept order/ }).click()
+
+    await expect.poll(() => confirmCalls.length, { timeout: 10_000 }).toBeGreaterThan(0)
+    expect(confirmCalls[0]).toContain("/order-new/confirm")
+    const grid = page.getByTestId("kds-board-grid")
+    await expect(grid.getByText("ORD-TEST-0002")).toBeVisible()
+    await expect(lane.getByText("No new orders waiting")).toBeVisible()
+  })
+
   test("going offline raises a stale banner with a last-updated stamp, and coming back clears it", async ({
     page,
     context,

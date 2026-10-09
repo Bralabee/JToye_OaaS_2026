@@ -8186,7 +8186,7 @@
     },
     "/api/v1/orders/kitchen" : {
       "get" : {
-        "description" : "Returns active (CONFIRMED/PREPARING/READY) orders WITH line items for one shop of the authenticated tenant, newest first. Replaces the list-then-detail-per-ticket round trip the kitchen display used to make (#564). Requires STAFF on the shop.",
+        "description" : "Returns active (PENDING/CONFIRMED/PREPARING/READY) orders WITH line items for one shop of the authenticated tenant, newest first. Replaces the list-then-detail-per-ticket round trip the kitchen display used to make (#564). Requires STAFF on the shop.",
         "operationId" : "getKitchenBoard",
         "parameters" : [
           {

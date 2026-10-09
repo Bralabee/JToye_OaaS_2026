@@ -9,6 +9,7 @@ import { useShopContext } from "@/hooks/use-shop-context"
 import { fetchAllMyShops } from "@/lib/shops-api"
 import {
   KITCHEN_STATUSES,
+  NEW_LANE_STATUS,
   fetchKitchenBoard,
 } from "@/lib/kitchen-orders-api"
 import {
@@ -27,11 +28,12 @@ import {
 } from "@/components/dashboard/kitchen/kds-board-scope"
 import { useKitchenPrint } from "@/components/dashboard/kitchen/use-kitchen-print"
 import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
-import { ItemAllergenBadge } from "@/components/dashboard/kitchen/item-allergen-badge"
 import {
   AllergyNoteBlock,
   type AllergyNoteAcknowledgement,
 } from "@/components/dashboard/kitchen/allergy-note-block"
+import { KdsNewLane } from "@/components/dashboard/kitchen/kds-new-lane"
+import { KdsItemList, elapsedText } from "@/components/dashboard/kitchen/kds-card-parts"
 import {
   Card,
   CardContent,
@@ -99,19 +101,9 @@ function ageBorderClass(createdAt: string): string {
 }
 
 // --- Elapsed time display ---
-
-// Cap/format the elapsed time so a stale order never renders raw uncapped
-// minutes (the old "2245m ago" bug, backlog #12): <1m → "just now",
-// <60m → "Xm ago", <24h → "Xh ago", ≥24h → "Xd ago".
-function elapsedText(createdAt: string): string {
-  const totalMinutes = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
-  if (totalMinutes < 1) return "just now"
-  if (totalMinutes < 60) return `${totalMinutes}m ago`
-  const totalHours = Math.floor(totalMinutes / 60)
-  if (totalHours < 24) return `${totalHours}h ago`
-  const totalDays = Math.floor(totalHours / 24)
-  return `${totalDays}d ago`
-}
+//
+// `elapsedText` (the #12 cap) moved to kds-card-parts.tsx in 37-16 so the New lane renders the
+// same age the grid does; a Next page module cannot export it.
 
 // --- Audio beep ---
 
@@ -585,11 +577,33 @@ export default function KitchenPage() {
     []
   )
 
+  // --- 37-16 (D-11): the kitchen accepted a New-lane order ---
+  //
+  // Called only after the server's 200 on /confirm, so the move is a fact, not a guess. The order keeps
+  // its detail and becomes CONFIRMED, which puts it in the grid with "Start Preparing"; the STOMP frame
+  // and the next read replace the entry wholesale anyway.
+  const handleAccepted = useCallback((orderId: string) => {
+    setOrdersMap((prev) => {
+      const existing = prev.get(orderId)
+      if (!existing) return prev
+      const next = new Map(prev)
+      next.set(orderId, { ...existing, status: "CONFIRMED" })
+      return next
+    })
+  }, [])
+
   // --- Sorted orders (newest first) ---
 
   const sortedOrders = Array.from(ordersMap.values()).sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   )
+
+  // 37-16 (D-11): PENDING orders wait in the New lane; the grid keeps CONFIRMED/PREPARING/READY exactly
+  // as before. Print all stays a print of the GRID: a batch print is for tickets the kitchen is cooking,
+  // and an order nobody has accepted yet must not reach the pass by the back door (each New card keeps
+  // its own per-ticket print).
+  const newOrders = sortedOrders.filter((o) => o.status === NEW_LANE_STATUS)
+  const boardOrders = sortedOrders.filter((o) => o.status !== NEW_LANE_STATUS)
 
   // --- #450 5d: whose board is this? ---
 
@@ -739,8 +753,8 @@ export default function KitchenPage() {
               and printer-jam case. Per-ticket printing lives on each card. */}
           <Button
             variant="outline"
-            onClick={() => print(sortedOrders)}
-            disabled={sortedOrders.length === 0}
+            onClick={() => print(boardOrders)}
+            disabled={boardOrders.length === 0}
             title="Print all tickets on this board"
             className="kds-press"
           >
@@ -827,6 +841,16 @@ export default function KitchenPage() {
         </div>
       )}
 
+      {/* 37-16 (D-11): the New lane, above the grid and below every notice that qualifies the board.
+          Present from the first paint (a one-line row), so it never moves the grid when it fills. */}
+      <KdsNewLane
+        orders={newOrders}
+        loaded={!loading && lastSyncedAt !== null}
+        onAccepted={handleAccepted}
+        onPrint={(order) => print([order])}
+        onAllergyNoteAcknowledged={handleAllergyNoteAcknowledged}
+      />
+
       {/* The board itself, in exactly one of four states — shops loading, orders never
           read, read and empty, read and populated. All four occupy {@link BOARD_RESERVE},
           so the footer `dashboard-shell.tsx` renders underneath sits below the fold from
@@ -855,7 +879,7 @@ export default function KitchenPage() {
         >
           <KdsBoardSkeleton />
         </div>
-      ) : sortedOrders.length === 0 ? (
+      ) : boardOrders.length === 0 ? (
         <div
           key="kds-board-empty"
           className={`flex ${BOARD_RESERVE} flex-col items-center justify-center py-24 text-center`}
@@ -871,22 +895,15 @@ export default function KitchenPage() {
       ) : (
         <div
           key="kds-board-grid"
+          data-testid="kds-board-grid"
           className={`grid ${BOARD_RESERVE} grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`}
         >
           <AnimatePresence mode="popLayout">
             {/* eslint-disable-next-line react-hooks/refs -- #709: the ember-glow check below deliberately reads the LAST COMMITTED seen-set (the effect at the seenIdsRef declaration commits it after paint, so the keyframe plays exactly once per new id). Converting to state would itself be a set-state-in-effect and add a render per batch; staleness here is the mechanism, and the stakes are one card animation. */}
-            {sortedOrders.map((order) => {
+            {boardOrders.map((order) => {
               const config = statusConfig[order.status]
               const action = bumpActions[order.status]
               const StatusIcon = config?.icon || Clock
-              const itemNames =
-                order.items
-                  ?.map((item) => item.productName)
-                  .join(", ") || "No items"
-              const itemSummary =
-                order.items && order.items.length > 0
-                  ? `${order.items.length} item${order.items.length !== 1 ? "s" : ""}`
-                  : "No items"
               const isNew =
                 seenIdsRef.current !== null && !seenIdsRef.current.has(order.id)
 
@@ -985,28 +1002,7 @@ export default function KitchenPage() {
                           summary is a preserved good (it is the one line that answers
                           "how big is this ticket" at a glance) and the list is new
                           capacity, not a replacement for it. */}
-                      <div className="text-sm text-slate-600">
-                        <span className="font-medium">{itemSummary}</span>
-                        {order.items && order.items.length > 0 && (
-                          <ul
-                            data-testid="kds-item-list"
-                            className="mt-1 space-y-1 text-sm text-slate-600"
-                          >
-                            {order.items.map((item, i) => (
-                              <li
-                                key={item.id || i}
-                                className="flex flex-wrap items-center gap-x-1.5 gap-y-1"
-                              >
-                                <span className="font-medium">{item.quantity}x</span>
-                                <span>{item.productName}</span>
-                                {/* Truncates at 3 names + "+N". Safe ONLY because the
-                                    banner in the header above carries the full set. */}
-                                <ItemAllergenBadge allergenNames={item.allergenNames} />
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
+                      <KdsItemList items={order.items} />
     
                       {/* Elapsed time */}
                       <div className="flex items-center gap-1 text-xs text-slate-500">

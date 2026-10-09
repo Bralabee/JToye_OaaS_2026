@@ -63,9 +63,15 @@ public class OrderService {
      * the only place it can bound the query. The frontend constant stays — it still labels
      * and orders the columns — but the two must agree, and this is now the one that
      * decides what a read RETURNS.
+     *
+     * <p><b>PENDING is on the board</b> (Phase 37-16, D-11). Without it a storefront order sat
+     * invisible to the kitchen until someone confirmed it on the Orders page; the board now shows
+     * it in a "New orders" lane where the kitchen accepts it (the existing {@code /confirm}). There
+     * is no auto-confirm. DRAFT stays off: a draft is not an order anyone has placed. The two lists
+     * are held equal, in order, by {@code KitchenStatusesParityTest}.
      */
     static final List<OrderStatus> KITCHEN_STATUSES =
-            List.of(OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY);
+            List.of(OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY);
 
     /**
      * The only statuses an order can be deleted in (Phase 37-10, D-10). Everything later is voided.
