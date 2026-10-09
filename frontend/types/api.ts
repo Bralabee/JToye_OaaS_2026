@@ -181,6 +181,52 @@ export interface CreateProductRequest {
   vatRate?: VatRate
 }
 
+/** One per-row CSV import error (core-java RowError). field "row" means the row as a whole. */
+export interface BulkImportRowError {
+  row: number
+  field: string
+  message: string
+}
+
+/**
+ * The CSV / photo import response (core-java BulkImportResult). `created` carries the products
+ * made; only the fields the import page renders are typed.
+ */
+export interface BulkImportResult {
+  totalRows: number
+  successCount: number
+  errorCount: number
+  created: Array<{ id: string; title: string; sku: string; imageUrl: string | null; pricePennies: number }>
+  errors: BulkImportRowError[]
+}
+
+/**
+ * POST /api/v1/products/copy (37-13, UXT-026). Omit productIds to copy the source shop's whole
+ * menu. Both shops need SHOP_MANAGER; they must differ.
+ */
+export interface CopyProductsRequest {
+  sourceShopId: string
+  targetShopId: string
+  productIds?: string[]
+}
+
+export type CopyOutcome = "CREATED" | "SKIPPED" | "FAILED"
+
+export interface CopyProductsResultItem {
+  sourceProductId: string
+  outcome: CopyOutcome
+  newProductId?: string | null
+  reason?: string | null
+}
+
+/** The copy result: counts as the server computed them, plus one item per source product. */
+export interface CopyProductsResult {
+  created: number
+  skipped: number
+  failed: number
+  items: CopyProductsResultItem[]
+}
+
 // Order Types
 export type OrderStatus =
   | "DRAFT"

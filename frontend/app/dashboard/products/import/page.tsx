@@ -1,32 +1,36 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { m } from "framer-motion"
 import Link from "next/link"
 import apiClient from "@/lib/api-client"
+import { importCsv } from "@/lib/products-api"
+import { fetchAllMyShops } from "@/lib/shops-api"
+import { useShopContext } from "@/hooks/use-shop-context"
 import { cn } from "@/lib/utils"
 import { WIDTH_TIER_CLASS } from "@/components/layout/content-tier"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import type { BulkImportResult, Shop } from "@/types/api"
 import {
   Upload, FileSpreadsheet, Camera, ArrowLeft, Download,
   CheckCircle2, XCircle, Loader2, ImageIcon, AlertTriangle, Package
 } from "lucide-react"
 
-interface RowError {
-  row: number
-  field: string
-  message: string
-}
+type ImportResult = BulkImportResult
 
-interface ImportResult {
-  totalRows: number
-  successCount: number
-  errorCount: number
-  created: Array<{ id: string; title: string; sku: string; imageUrl: string | null; pricePennies: number }>
-  errors: RowError[]
-}
+/** UI-SPEC § Copywriting B4-B6 "Import target". */
+const IMPORT_TARGET_SELECT_COPY = "Shop to import into"
+const IMPORT_TARGET_HINT_COPY = "Choose a shop to import into"
 
 type Tab = "csv" | "photos"
 
@@ -110,6 +114,31 @@ function CsvImportTab() {
   const fileRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
+  // UXT-026 (37-14, UI-SPEC § B6 "CSV import target"). Every row without its own shop_id lands in
+  // the shop the import names; with no shop at all the server creates nothing ("shop required",
+  // 37-13). So the target is always explicit: the switcher's shop when one is selected, otherwise
+  // a shop the vendor picks here. A shop-less import is no longer possible from this page.
+  const { contextShopId } = useShopContext()
+  const [shops, setShops] = useState<Shop[]>([])
+  const [chosenShopId, setChosenShopId] = useState("")
+  useEffect(() => {
+    let active = true
+    fetchAllMyShops()
+      .then((list) => {
+        if (active) setShops(list)
+      })
+      .catch(() => {
+        /* The names are labels only; the server gates the import on the id. */
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+  const targetShopId = contextShopId ?? (chosenShopId || null)
+  const targetShopName = targetShopId
+    ? shops.find((s) => s.id === targetShopId)?.name ?? "the selected shop"
+    : null
+
   const downloadTemplate = async () => {
     try {
       const res = await apiClient.get("/api/v1/products/template", { responseType: "blob" })
@@ -125,22 +154,27 @@ function CsvImportTab() {
   }
 
   const handleUpload = async (file: File) => {
+    // T-37-39: the disabled control is the visible gate; this is the one that holds whatever
+    // route a file takes to the input. No request leaves without a target shop.
+    if (!targetShopId) return
     setUploading(true)
     setResult(null)
 
-    const formData = new FormData()
-    formData.append("file", file)
-
     try {
-      const res = await apiClient.post("/api/v1/products/bulk/csv", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-      setResult(res.data)
-      if (res.data.successCount > 0) {
-        toast({ title: "Import complete", description: `${res.data.successCount} products created` })
+      const data = await importCsv(file, targetShopId)
+      setResult(data)
+      if (data.successCount > 0) {
+        toast({ title: "Import complete", description: `${data.successCount} products created in ${targetShopName}` })
       }
-    } catch {
-      toast({ variant: "destructive", title: "Import failed", description: "Could not process CSV file" })
+    } catch (error: unknown) {
+      // A 403 (no SHOP_MANAGER on the target) carries a typed detail; say it rather than a
+      // generic "could not process".
+      const detail = (error as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail
+      toast({
+        variant: "destructive",
+        title: "Import failed",
+        description: typeof detail === "string" ? detail : "Could not process CSV file",
+      })
     } finally {
       setUploading(false)
     }
@@ -170,7 +204,37 @@ function CsvImportTab() {
         <CardHeader>
           <CardTitle className="text-base">Step 2: Upload your filled CSV</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* UXT-026: which shop the rows land in, said before the file is chosen. */}
+          {!contextShopId && (
+            <div className="space-y-2">
+              <Label id="import-target-label" htmlFor="import-target-shop">
+                {IMPORT_TARGET_SELECT_COPY}
+              </Label>
+              <Select value={chosenShopId} onValueChange={setChosenShopId} disabled={uploading}>
+                <SelectTrigger
+                  id="import-target-shop"
+                  aria-labelledby="import-target-label"
+                  aria-required="true"
+                  className="h-11"
+                >
+                  <SelectValue placeholder="Choose a shop" />
+                </SelectTrigger>
+                <SelectContent>
+                  {shops.map((shop) => (
+                    <SelectItem key={shop.id} value={shop.id}>
+                      {shop.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {targetShopName && (
+            <p data-testid="import-target" className="text-sm text-slate-700 break-words">
+              Importing into: <strong className="font-semibold text-slate-900">{targetShopName}</strong>
+            </p>
+          )}
           {/* A real <button>, not a <div onClick> (31-02 / LGL-02). The drop
               zone was mouse-only: not tabbable, not activatable by Enter or
               Space, and announced as nothing. A native button gets all three
@@ -178,10 +242,11 @@ function CsvImportTab() {
               reproduces the <div>'s box. */}
           <button
             type="button"
-            disabled={uploading}
-            className={`block w-full border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer
-              ${uploading ? "border-blue-300 bg-blue-50" : "border-slate-300 hover:border-blue-400 hover:bg-blue-50/50"}`}
-            onClick={() => !uploading && fileRef.current?.click()}
+            disabled={uploading || !targetShopId}
+            aria-describedby={targetShopId ? undefined : "import-target-hint"}
+            className={`block w-full border-2 border-dashed rounded-xl p-8 text-center transition-colors
+              ${uploading ? "cursor-wait border-blue-300 bg-blue-50" : !targetShopId ? "cursor-not-allowed border-slate-200 bg-slate-50 opacity-70" : "cursor-pointer border-slate-300 hover:border-blue-400 hover:bg-blue-50/50"}`}
+            onClick={() => !uploading && targetShopId && fileRef.current?.click()}
           >
             {uploading ? (
               <div className="flex flex-col items-center gap-3">
@@ -207,6 +272,11 @@ function CsvImportTab() {
               e.target.value = ""
             }}
           />
+          {!targetShopId && (
+            <p id="import-target-hint" className="text-sm text-slate-600">
+              {IMPORT_TARGET_HINT_COPY}
+            </p>
+          )}
         </CardContent>
       </Card>
 

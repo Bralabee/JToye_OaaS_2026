@@ -47,7 +47,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import Link from "next/link"
-import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon, Sparkles, Check, Upload } from "lucide-react"
+import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon, Sparkles, Check, Upload, Copy as CopyIcon } from "lucide-react"
+import { CopyToShopDialog } from "@/components/dashboard/products/copy-to-shop-dialog"
 import { ImageUploader, type AiSuggestions } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
@@ -221,6 +222,16 @@ export default function ProductsPage() {
   // NOT reset `products` to `[]`, so this is keyed off list length nowhere.
   const [loadFailed, setLoadFailed] = useState(false)
   const [loadErrorMessage, setLoadErrorMessage] = useState("")
+  // UXT-026 (37-14): one copy at a time. `key` remounts the dialog so each opening starts clean.
+  const [copyRequest, setCopyRequest] = useState<{
+    key: number
+    source: { id: string; name: string }
+    productIds?: string[]
+    count: number
+  } | null>(null)
+  // The selected shop's whole-menu size, from the unsearched list (a search narrows the rows on
+  // screen, never what the header copy sends).
+  const [menuCount, setMenuCount] = useState(0)
   const { toast } = useToast()
   // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
   const { contextShopId } = useShopContext()
@@ -275,6 +286,7 @@ export default function ProductsPage() {
       setProducts(response.data.content || [])
       setTotalPages(response.data.totalPages || 0)
       setTotalElements(response.data.totalElements || 0)
+      setMenuCount(response.data.totalElements || 0)
       setLoadFailed(false)
     } catch (error: unknown) {
       // A11Y-2 (#688): `error.message` on an axios error is its own transport
@@ -406,6 +418,30 @@ export default function ProductsPage() {
   useEffect(() => {
     if (allergenWarnings.length > 0) allergenWarningRef.current?.focus()
   }, [allergenWarnings])
+
+  // UXT-026 (UI-SPEC § B6 "Copy to shop"): offered only where there is a source shop and somewhere
+  // else to copy to. The server still checks SHOP_MANAGER on both shops.
+  const shopNameOf = (id: string) => shops.find((s) => s.id === id)?.name ?? "this shop"
+  const hasOtherShop = (sourceId: string) => shops.some((s) => s.id !== sourceId)
+
+  const openCopyForProduct = (product: Product) => {
+    if (!product.shopId) return
+    setCopyRequest({
+      key: Date.now(),
+      source: { id: product.shopId, name: shopNameOf(product.shopId) },
+      productIds: [product.id],
+      count: 1,
+    })
+  }
+
+  const openCopyForMenu = () => {
+    if (!contextShopId) return
+    setCopyRequest({
+      key: Date.now(),
+      source: { id: contextShopId, name: shopNameOf(contextShopId) },
+      count: menuCount,
+    })
+  }
 
   const openDeleteDialog = (product: Product) => {
     setDeletingProduct(product)
@@ -636,7 +672,13 @@ export default function ProductsPage() {
             Manage your product catalog with allergen information
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {contextShopId && hasOtherShop(contextShopId) && menuCount > 0 && (
+            <Button variant="outline" className="gap-2" onClick={openCopyForMenu}>
+              <CopyIcon className="h-4 w-4" aria-hidden="true" />
+              Copy to another shop…
+            </Button>
+          )}
           <Link href="/dashboard/products/import">
             <Button variant="outline" className="gap-2">
               <Upload className="h-4 w-4" />
@@ -832,6 +874,13 @@ export default function ProductsPage() {
                             >
                               <FileText className="h-4 w-4" />
                             </Button>
+                            {product.shopId && hasOtherShop(product.shopId) && (
+                              <IconButton
+                                onClick={() => openCopyForProduct(product)}
+                                label={`Copy ${product.title} to another shop…`}
+                                icon={<CopyIcon className="h-4 w-4" />}
+                              />
+                            )}
                             <IconButton
                               onClick={() => openEditDialog(product)}
                               label={`Edit product ${product.title}`}
@@ -861,6 +910,24 @@ export default function ProductsPage() {
           </CardContent>
         </Card>
       </m.div>
+
+      {copyRequest && (
+        <CopyToShopDialog
+          key={copyRequest.key}
+          open
+          onOpenChange={(next) => {
+            if (!next) setCopyRequest(null)
+          }}
+          sourceShop={copyRequest.source}
+          shops={shops}
+          productIds={copyRequest.productIds}
+          count={copyRequest.count}
+          onCopied={(result) => {
+            // A copy into the shop on screen (or into any shop, under All shops) adds rows here.
+            if (result.created > 0) fetchProducts()
+          }}
+        />
+      )}
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={onFormDialogOpenChange}>
