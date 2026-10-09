@@ -22,6 +22,12 @@ import uk.jtoye.core.onboarding.TraderIdentity;
 import uk.jtoye.core.onboarding.TraderIdentityFields;
 import uk.jtoye.core.onboarding.TraderIdentityRepository;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.security.access.GrantSource;
+import uk.jtoye.core.security.access.ShopRole;
+import uk.jtoye.core.security.access.ShopStaff;
+import uk.jtoye.core.security.access.ShopStaffRepository;
+import uk.jtoye.core.security.access.UserDirectory;
+import uk.jtoye.core.security.access.UserDirectoryRepository;
 import uk.jtoye.core.storage.StorageService;
 import uk.jtoye.core.storage.StorageUnavailableException;
 
@@ -184,11 +190,37 @@ public class DemoDataSeeder implements ApplicationRunner {
      */
     static final String ARCHIVE_ADDRESS = "—";
 
+    // ---- Integration service accounts (Phase 37-03 / D-06, RWO-004) --------------------
+    //
+    // The two sample machine clients in the realm import authenticate with a client-credentials
+    // token whose `sub` is their Keycloak service-account user id (a UUID, fixed in
+    // infra/keycloak/realm-export.template.json users[]). A UUID subject is a vendor user to
+    // ShopAccessService — the machine-client allowlist only applies to a NON-UUID subject — so
+    // these accounts reach a shop exactly as a person does. Under strict-scoping OFF an ungranted
+    // user is an implicit tenant-wide GROUP_ADMIN; under ON (D-06) it has no access: MCP
+    // create_order is refused and the product list is an empty page. The seed therefore gives each
+    // account an explicit, inspectable OPERATOR grant on every curated demo storefront, at the
+    // minimum role its client's paths need, and never a tenant-wide GROUP_ADMIN.
+
+    /** service-account-integration-orders-rw: orders:write + customers:write + catalog:read. */
+    static final UUID ORDERS_RW_SERVICE_ACCOUNT = UUID.fromString("5c0c16be-1aa0-4181-b808-2c7575f03b95");
+
+    /** service-account-integration-catalog-ro: catalog:read only. */
+    static final UUID CATALOG_RO_SERVICE_ACCOUNT = UUID.fromString("9e0bf075-b61a-408e-800e-63d2e0bcb770");
+
+    /**
+     * {@code shop_staff.created_by} of every grant this seeder writes — recognisable on the Staff
+     * page and in SQL as "the dev seed", not a person.
+     */
+    static final UUID DEV_SEED_OPERATOR = UUID.fromString("00000000-0000-0000-0000-00000000de50");
+
     private final ShopRepository shopRepository;
     private final ProductRepository productRepository;
     private final CustomerRepository customerRepository;
     private final VendorOnboardingRepository onboardingRepository;
     private final TraderIdentityRepository traderIdentityRepository;
+    private final ShopStaffRepository shopStaffRepository;
+    private final UserDirectoryRepository userDirectoryRepository;
     private final StorageService storageService;
     private final PostcodeGeocoder postcodeGeocoder;
     private final TransactionTemplate transactionTemplate;
@@ -198,6 +230,8 @@ public class DemoDataSeeder implements ApplicationRunner {
                           CustomerRepository customerRepository,
                           VendorOnboardingRepository onboardingRepository,
                           TraderIdentityRepository traderIdentityRepository,
+                          ShopStaffRepository shopStaffRepository,
+                          UserDirectoryRepository userDirectoryRepository,
                           StorageService storageService,
                           PostcodeGeocoder postcodeGeocoder,
                           PlatformTransactionManager transactionManager) {
@@ -206,6 +240,8 @@ public class DemoDataSeeder implements ApplicationRunner {
         this.customerRepository = customerRepository;
         this.onboardingRepository = onboardingRepository;
         this.traderIdentityRepository = traderIdentityRepository;
+        this.shopStaffRepository = shopStaffRepository;
+        this.userDirectoryRepository = userDirectoryRepository;
         this.storageService = storageService;
         this.postcodeGeocoder = postcodeGeocoder;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -251,10 +287,12 @@ public class DemoDataSeeder implements ApplicationRunner {
                                 + "{} product(s) created, {} customer(s) created, "
                                 + "{} non-curated product(s) quarantined, {} shop(s) unpublished, "
                                 + "{} demo image(s) seeded, {} demo trader identity(ies) created, "
-                                + "{} demo shop email(s) set.",
+                                + "{} demo shop email(s) set, {} service-account grant(s) and "
+                                + "{} service-account directory entry(ies) created.",
                         DEMO_TENANT, result.shopsCreated, result.productsCreated,
                         result.customersCreated, result.productsQuarantined, result.shopsUnpublished,
-                        result.imagesSeeded, result.traderIdentitiesCreated, result.shopEmailsSet);
+                        result.imagesSeeded, result.traderIdentitiesCreated, result.shopEmailsSet,
+                        result.serviceAccountGrantsCreated, result.serviceAccountDirectoryEntriesCreated);
             }
         } finally {
             TenantContext.clear();
@@ -345,6 +383,10 @@ public class DemoDataSeeder implements ApplicationRunner {
         // grandfathered past the TRADER_IDENTITY gate (they are published by the bypass in
         // upsertShop, so the gate never runs for them).
         seedSellerDetails(result, shops);
+
+        // Phase 37-03 (D-06): explicit grants for the integration service accounts on the curated
+        // storefronts only — the hidden archive shop below is deliberately left ungranted.
+        seedServiceAccountGrants(result, shops);
 
         // The hidden archive shop that absorbs every non-curated / orphan product.
         Shop archive = upsertArchiveShop(result);
@@ -725,6 +767,64 @@ public class DemoDataSeeder implements ApplicationRunner {
         });
     }
 
+    /**
+     * Phase 37-03 (D-06, RWO-004): the integration service accounts' explicit shop grants.
+     *
+     * <ul>
+     *   <li>{@code integration-orders-rw} — SHOP_MANAGER on each curated shop: the role
+     *       {@code OrderService.createOrder}/{@code requireCreateAccess} require (MCP
+     *       {@code create_order}), which also covers the STAFF reads behind the MCP read tools
+     *       ({@code read_orders} list/detail/by-shop, {@code list_shops}, {@code list_products}).</li>
+     *   <li>{@code integration-catalog-ro} — STAFF on each curated shop: its only paths are catalogue
+     *       reads, and the product list is shop-scoped ({@code ProductService.getAllProducts} returns
+     *       an EMPTY page to a zero-grant caller under strict ON), so it needs a grant too.</li>
+     * </ul>
+     *
+     * <p>Create-only and idempotent: a directory row or a grant already present (for any role) is
+     * left as it is, so a re-run writes nothing and a developer's own change of role survives a
+     * restart. Never tenant-wide, never the archive shop. Runs inside {@link #seed}'s transaction
+     * with {@code DEMO_TENANT} pinned, so the FORCE-RLS {@code shop_staff} and
+     * {@code user_directory} writes carry the tenant GUC like every other write here.
+     * {@code @Profile("dev")} keeps these grants out of every other environment (T-37-05).
+     */
+    private void seedServiceAccountGrants(SeedResult result, List<Shop> curatedShops) {
+        grantServiceAccount(result, ORDERS_RW_SERVICE_ACCOUNT, "integration-orders-rw",
+                ShopRole.SHOP_MANAGER, curatedShops);
+        grantServiceAccount(result, CATALOG_RO_SERVICE_ACCOUNT, "integration-catalog-ro",
+                ShopRole.STAFF, curatedShops);
+    }
+
+    private void grantServiceAccount(SeedResult result, UUID userId, String clientId, ShopRole role,
+                                     List<Shop> shops) {
+        if (!userDirectoryRepository.existsByTenantIdAndUserId(DEMO_TENANT, userId)) {
+            UserDirectory entry = new UserDirectory();
+            entry.setTenantId(DEMO_TENANT);
+            entry.setUserId(userId);
+            entry.setDisplayName(clientId);   // a service account has no email
+            entry.setLastSeen(OffsetDateTime.now());
+            userDirectoryRepository.save(entry);
+            result.serviceAccountDirectoryEntriesCreated++;
+        }
+        Set<UUID> alreadyGranted = shopStaffRepository.findByTenantIdAndUserId(DEMO_TENANT, userId).stream()
+                .map(ShopStaff::getShopId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        for (Shop shop : shops) {
+            if (alreadyGranted.contains(shop.getId())) {
+                continue;
+            }
+            ShopStaff grant = new ShopStaff();
+            grant.setTenantId(DEMO_TENANT);
+            grant.setUserId(userId);
+            grant.setShopId(shop.getId());
+            grant.setRole(role);
+            grant.setGrantSource(GrantSource.OPERATOR);
+            grant.setCreatedBy(DEV_SEED_OPERATOR);
+            shopStaffRepository.save(grant);
+            result.serviceAccountGrantsCreated++;
+        }
+    }
+
     /** The hidden holding shop for orphaned/legacy products. Never published. */
     private Shop upsertArchiveShop(SeedResult result) {
         Shop archive = shopRepository.findBySlug(ARCHIVE_SLUG).orElseGet(() -> {
@@ -867,5 +967,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         int traderIdentitiesCreated;
         int shopEmailsSet;
         int imagesSeeded;
+        int serviceAccountGrantsCreated;
+        int serviceAccountDirectoryEntriesCreated;
     }
 }

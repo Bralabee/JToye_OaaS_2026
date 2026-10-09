@@ -31,6 +31,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.security.JwtRolesAndScopesConverter;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -111,6 +112,12 @@ class ProductMayContainIntegrationTest {
     private static final int SESAME = 1 << 10;
 
     private UUID shopId;
+    /**
+     * The vendor editing this shop's catalogue: an explicit OPERATOR SHOP_MANAGER on {@link #shopId}
+     * (product create/update requires SHOP_MANAGER on the body's shop; reads and the label need
+     * STAFF, which SHOP_MANAGER satisfies). Phase 37-03 (D-06): not the day-one implicit GROUP_ADMIN.
+     */
+    private UUID vendorSub;
 
     @BeforeEach
     void setUp() {
@@ -119,6 +126,9 @@ class ProductMayContainIntegrationTest {
                 "INSERT INTO tenants (id, name, created_at) VALUES (?, ?, now()) ON CONFLICT (id) DO NOTHING",
                 TENANT_ID, "31.1-14 May Contain Tenant");
         shopId = seedShopIdempotent();
+        vendorSub = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbcTemplate, TENANT_ID, vendorSub, shopId, "SHOP_MANAGER",
+                "vendor-" + vendorSub + "@example.com");
     }
 
     @AfterEach
@@ -308,10 +318,11 @@ class ProductMayContainIntegrationTest {
 
     // ---- requests -----------------------------------------------------------
 
-    /** Vendor token: UUID subject, this tenant, catalog read + write, through the real converter. */
-    private static RequestPostProcessor vendorJwt() {
+    /** Vendor token: the granted {@link #vendorSub}, this tenant, catalog read + write, through the real converter. */
+    private RequestPostProcessor vendorJwt() {
+        UUID sub = vendorSub;
         return jwt()
-                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                .jwt(j -> j.subject(sub.toString())
                         .claim("tenant_id", TENANT_ID.toString())
                         .claim("scope", "catalog:read catalog:write"))
                 .authorities(new JwtRolesAndScopesConverter());

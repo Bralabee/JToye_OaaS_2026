@@ -4,18 +4,17 @@ milestone: v2.3
 milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
-status: planning
-stopped_at: "Phase 31.1 shipped as PR #901 on 2026-10-07 (UAT 182/182 owner-ruled, SECURITY 102/102 closed at ASVS L2, VALIDATION nyquist_compliant). Next: review round 1 (/code-review 901 --comment), narrow to zero, merge. Then plan Phase 37 per the owner's order (GSD's numeric next is Phase 29, paused on its own branch)."
-last_updated: "2026-10-07T15:29:58.775Z"
-last_activity: 2026-10-07
-last_activity_desc: Phase 31.1 shipped as PR #901 (2026-10-07); next review round 1 then merge, then plan Phase 37
-state_head: 7e1ee79bf22721d8dfea32df3d1170efce4b093a
+status: executing
+stopped_at: "Phase 37 executing: 37-01..37-14 complete (14/53). 37-14 closed 2026-10-09: checkout step 1, the payment step and the cash confirmation show a VAT row only when shop.seller.vatNumber is present, otherwise the B7 note under Total (a failed shop fetch shows neither; the order page never prints VAT); product form VAT rate Select (Standard pre-selected, sent as vatRate; helper copy awaits owner sign-off in 37-15); import page imports into the switcher shop or a required chosen shop (no request without a target; WINDOWS #27 fixed); CopyToShopDialog (row + header whole-menu) reports the server counts with zeros omitted; jest 2382/0, lint 0 errors, build green. Live proof owed to 37-15 (WINDOWS #28). Next: /gsd-execute-phase 37 (37-15)."
+last_updated: "2026-10-09T01:45:18Z"
+last_activity: 2026-10-09
+state_head: 1c8ee4043d549a187ebc32f766ce69379684428e
 progress:
   total_phases: 20
   completed_phases: 13
-  total_plans: 185
-  completed_plans: 185
-  percent: 72
+  total_plans: 238
+  completed_plans: 199
+  percent: 65
 ---
 
 # Project State
@@ -25,11 +24,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-07)
 
 **Core value:** Vendors can manage their business end-to-end — from marketing to kitchen fulfilment — through a single platform with real-time visibility, running safely on verified infrastructure that can scale past one replica.
-**Current focus:** Phase 31.1 (Persona gap closure) is complete, verified, secured and validated (2026-10-07) and shipped as PR #901; the review series and merge are next. After that, the owner-set planning order continues with Phase 37 (Real-world operations readiness; no CONTEXT.md yet → `/gsd-discuss-phase 37`). GSD's numeric next is Phase 29, which is paused on its own branch and is NOT the next phase.
+**Current focus:** Phase 37 — Real-world operations readiness
 
 ## Current Position
 
-Phase: 29 — Deployable Staging, With Its Own Monitoring
+Phase: 37 (Real-world operations readiness) — EXECUTING
 - 31.1-01 DONE 2026-10-06: D-21 gate passed on origin/main itself (Boot 4.1.1); merge 2f0bcc41 verified, code tree byte-identical to origin/main; KeycloakAdminClientTest 5, DsarFanout 11, DsarVerification 8, GuestCheckoutIdempotency 13, OrderAllergenSnapshot 8, all 0 failures/errors. `evidence/31.1-01-baseline.md` is the Boot 4 interface record (JsonMapper, golden-contract additive-field rule, A1 measured on a replica, MockitoBean idioms, V68..V75 reservation, stack provenance). Requirements stay open: shared with later plans (ready-ids 0/5).
 - 31.1-02 DONE 2026-10-06: #777 closed at the service. V68 (erasure_records.subject_customer_id nullable, no backfill); GdprService.matchSubjectInTenant + one private anonymisation core behind eraseCustomerData and eraseSubjectByDigest (returns records written, so tenantsErased counts real erasures); tenant-predicated order finder + DISTINCT email projections; unpredicated unpaged finder deleted. DsarGuestErasureRlsIntegrationTest 8/0/0 (RED tenantsErased=0 with all PII present), GdprErasure 4, GdprErasureReviewRls 7, DsarFanout 11, RlsContract 7, GdprServiceTest 16, full unit 1495/0/0. Break arms 1 and 3 red, 2 green under RLS as predicted. PGC-777 stays open (shared with 31.1-07/-11).
 - 31.1-03 DONE 2026-10-06: #784/#785 closed at the server. V69 (orders + orders_aud allergen_ack_mask, allergen_ack_at, placed_via; nullable, no backfill, no default; CHECKs on orders). GuestOrderRequest.acknowledgedAllergenMask (@Min 0 @Max 16383, NON_NULL). Missing -> 422 allergen-acknowledgement-required; differs from the union read in the V63 snapshot loop -> 409 allergen-acknowledgement-stale with currentAllergenMask/currentAllergens (bit order)/lines (basket order); both roll the reservation back. Vendor/API/MCP orders: placed_via VENDOR, ack NULL. GuestOrderAllergenAckIntegrationTest 10/0/0 (RED: missing-ack 201; stale arms 201). Containment break arm red on the removed-bit arm. A1 in-tree confirmed: without NON_NULL the two storefront.guest-order* golden rows red; with it IdempotencyFingerprintGoldenTest 15/0/0, jackson2-golden untouched. Six callers + seed-order-metric.sh send the CURRENT mask (GuestOrderAcknowledgements); OpenAPI snapshot +1 field. Full unit 1495/0/0, full integration 790/0/0. Owed: seed-order-metric.sh live run + fail direction (31.1-30); 31.1-15 must send the mask before 31.1-30's rebuild. PGC-784/785 stay open (shared).
@@ -762,7 +761,7 @@ Status (23-15): Phase-gate closer. Both known-red CI gates now GREEN — OpenApi
 Status (23-16): TEST-ONLY regression fix — the full `./gradlew :core-java:integrationTest` task is GENUINELY GREEN (80 classes, 331 tests completed, 0 failed, 0 errors, 1 skipped; BUILD SUCCESSFUL 33m5s). The 13 failures / 7 legacy classes the 23-15 executor surfaced (`expected 2xx/4xx but was 403`, all from 23-08's fail-closed `requireVendorUserId()` denying non-UUID-subject principals) are CLOSED by migrating those tests to the production UUID-subject JWT auth shape — NOT by weakening `ShopAccessService` (zero main-source change; `git diff 5101f9a..HEAD` is entirely `core-java/src/test/`). Five `@WithMockUser` classes (ShopController/LocationHeader/SecurityHeaders/ProductSearchFts/OnboardingGoLive) → `jwt()` post-processor with a UUID sub + `ROLE_admin` (day-one implicit GROUP_ADMIN); two `.jwt()` classes (ScopedCatalogAccess/TenantLifecycleAdmin) gained UUID subjects. Access intent preserved per class (admin stays admin, scope-gate denies still 403 via `@PreAuthorize`, RBAC negatives keep their `user` role — no over-grant). `OnboardingGoLive`'s real casualty was `updateShopCannotPublish` (a direct `updateShop`, not a go-live method) → SecurityContext realm-admin so the invariant is proven on a SUCCESSFUL update. `:core-java:test` unit suite still green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 owns closure). Commits: 20ece8a (Task 1), edb4b63 (Task 2).
 Prior — 23-14: CR-07 CLOSED — enabling strict-scoping now genuinely tightens. V57 adds shop_staff.grant_source (JIT|OPERATOR) + aud mirror (backfill created_by IS NULL→JIT, NOT NULL DEFAULT 'JIT', no RLS policy → RlsContractTest green). Under strict-scoping ON, a JIT-sourced tenant-wide GROUP_ADMIN is DE-HONOURED (a day-one user genuinely becomes scoped) while OPERATOR grants + realm admins are honoured unchanged; the policy is applied in the shared isGroupAdminForUser decision helper (OUTSIDE the cached Membership snapshot, so a flag change is never served stale) → BOTH HTTP + STOMP (canAccessShop) tighten at once. Lockout safety: the oldest JIT admin (created_at,id) is retained as a WARN-logged bootstrap when no OPERATOR admin exists — no tenant can lock itself out on the flip. WR-09: onRequest skips JIT provision + directory upsert for an allowlisted machine client (isAllowlistedMachineClient, subject-shape-independent) so a UUID-sub Keycloak service account stops accumulating a permanent GROUP_ADMIN row. WR-01: the D-05 membership cache genuinely engages — all internal gate call sites reach @Cacheable resolveMembership through the bean proxy (ObjectProvider self()), proven by a caching-enabled test (entry POPULATED after a gate call, serves stale until evict, then re-resolves + denies). WR-11: JIT-provision eviction now fires AFTER commit via a single shared evictMembershipAfterCommit helper used by BOTH onRequest and StaffManagementService (no drift). Membership round-trips through the exact CacheConfig JSON serializer (unit-proven). Staff screen labels JIT rows 'Auto-granted on first sign-in' (no layout shift). Task 0 checkpoint = user ACCEPT (full path incl. bootstrap rule; no modification). Proven vs real Postgres (Testcontainers): StrictScopingTightening 5/5 (RED pre-fix on 4/5 — CR-07 central proof), Enforcement 12/12, CacheBypass 5/5, StaffManagement 19/19, FailClosed/JitProvision/ErrorType/RlsPolicy/RlsContract green; MembershipSerializerRoundTrip 3/3; frontend jest 93/93 + build green. VSA-02/VSA-04 stay NOT-marked-complete (anti-false-green — 23-15 still contributes). DEFERRED to 23-15: docs/metrics.json reconcile (schema 56→57; +9 Java @Test, +1 Jest) + OpenAPI snapshot regen.
 Prior — 23-13 COMPLETE (13 of 15 SUMMARYs; 23-01..23-13):
-Status: Phase 31.1 shipped — PR #901
+Status: Executing Phase 37
   ⚠ ONE BLOCKER BEFORE THE PHASE PR CAN PASS CI — `docs/api/openapi-snapshot.json` is missing
   the `/api/v1/staff` endpoints; the surface is now FOUR (list, /me, /grant, /{id}) after 23-12.
   `OpenApiSnapshotTest` check-mode runs inside `integrationTest` (so scoped test runs stay green;
@@ -773,9 +772,9 @@ Status: Phase 31.1 shipped — PR #901
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-07 — Phase 31.1 shipped as PR #901
+Last activity: 2026-10-08
 
-Progress: [███████░░░] 72%
+Progress: [███████░░░] 65%
 
 ## Milestone v2.3 Phase Map
 
@@ -912,6 +911,12 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 31.1 P20 | 42min | 3 tasks | 22 files |
 | Phase 31.1 P21 | 11 min | 2 tasks | 12 files |
 | Phase 31.1 P26 | 54 min | 3 tasks | 17 files |
+| Phase 37 P09 | 55 min | 3 tasks | 31 files |
+| Phase 37 P10 | 47 min (continuation; Task 1 earlier) | 3 tasks | 27 files |
+| Phase 37 P11 | 1h 0m | 3 tasks | 24 files |
+| Phase 37 P12 | 16 min | 2 tasks | 15 files |
+| Phase 37 P13 | 50 min | 2 tasks | 16 files |
+| Phase 37 P14 | 16 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -1175,6 +1180,30 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 31.1]: secure-phase 2026-10-07: 102/102 register threats closed at ASVS L2 by three gsd-security-auditor lanes (plans 01-10 / 11-20 / 21-30); residuals T-31.1-03, -71, -18 logged as accepted risks in 31.1-SECURITY.md; review items CR-02 (two pooled connections per public shop read) and WR-03 (may-contain-only dish reads "No allergens declared") stay unregistered and open in 31.1-REVIEW.md
 - [Phase 31.1]: validate-phase 2026-10-07: 17/17 PGC requirements green on the current tree (ITs 0 failures after the newest core-java commit, jest 426/426, Playwright 85/85 live + 77/77 UAT re-run); nyquist_compliant true
 - [Phase 31.1]: transition 2026-10-07: `phase.complete` advanced STATE to Phase 29 (GSD's numeric next); corrected by hand to Phase 37 per the owner's planning order (31.1 → 37). A legacy `status: verified` on 23-VERIFICATION.md (outside the current closed set) had blocked phase.complete and progress.bar for every phase and was set to `passed` (65201ac6)
+- [Phase 37]: 37-09: the invite accept page is /invite (token in the fragment, POST preview/accept with the ref in a JSON body), following 37-08; Referrer-Policy no-referrer on /invite/:path* after the default
+- [Phase 37]: 37-09: GET /api/v1/staff/me carries a nullable businessName (the caller's own tenant name); the dashboard joined toast is worded only from staff/me + shops, ?joined=1 is a trigger only
+- [Phase 37]: 37-09: the invite password input is uncontrolled and Keycloak's 422 is shown verbatim; no client-side password rule
+- [Phase 37]: D-10 ledger representation: entry-kind, owner ruling 2026-10-08 (financial_transactions.entry_kind SALE|REVERSAL|MANUAL + reverses_transaction_id; uq_fin_tx_tenant_order = (tenant_id, order_id, entry_kind) WHERE order_id IS NOT NULL)
+- [Phase 37]: 37-10: a void is columns on orders (voided_at/by/reason), never a VOIDED status; a reversal copies the sale's vat_rate; revenue = SALE - REVERSAL, MANUAL negatives stay expenses
+- [Phase 37]: 37-10: createTransaction writes SALE with an order and MANUAL without (the V78 backfill rule); the unkeyed findByOrderId is deleted, every per-order ledger lookup is keyed by kind
+- [Phase 37]: 37-10: a voided order cannot transition again (400) and leaves the kitchen board; a problem property never reuses an RFC 7807 member name (order-not-deletable carries orderStatus, status stays the HTTP code)
+- [Phase 37]: 37-11: finance gate per method: shopId -> require(shopId, SHOP_MANAGER) and filter; no shopId -> requireGroupAdmin(); GET /{id} and POST manual stay Group admin; STAFF refused everywhere (P2-TUN-15)
+- [Phase 37]: 37-11: financial_transactions.shop_id is nullable (add-alongside); a MANUAL row never carries a shop and appears only in the tenant-wide view; per-shop totals need not sum to the tenant total
+- [Phase 37]: 37-11: scoped finance aggregates bind non-null params only (allShops flag + sentinels); an unfiltered scope still runs the original CQ-02 queries, so the 1k golden is untouched
+- [Phase 37]: 37-11: the finance CSV neutralises = + - @ (and tab/CR) in text cells only; Content-Disposition and X-Finance-Scope join the CORS shipped list and floor (cross-origin dashboard)
+- [Phase 37]: 37-12: finance surfaces show the scope the API ECHOED (summary.scope), never the switcher; the export replays that echo, so the file is exactly what is shown (T-37-33)
+- [Phase 37]: 37-12: a non-admin on All shops is not sent tenant totals at all (financeGate from the shell's staff/me): Choose a shop; tenant-wide STAFF keeps Admin access required; outside the provider the server decides, as before
+- [Phase 37]: 37-12: who voided an order reads 'you', the staff-directory name (Group admin viewers only) or 'a Group admin' - never the raw subject id the server stores
+- [Phase 37]: 37-12: a finance SALE is marked Voided only when its REVERSAL is on the same page (no voided flag on the ledger DTO); recorded as WINDOWS #26
+- [Phase 37]: 37-13: CSV import puts a row in its own shop_id, else in ?shopId (SHOP_MANAGER, gated before any row is read); with neither the row is the per-row error 'shop required', for a Group admin too (a shop-less product never reaches a storefront)
+- [Phase 37]: 37-13: a CSV row naming a shop the caller does not manage is a per-row error decided by ShopAccessService.permits (non-throwing): catching require() would mark the import's transaction rollback-only (measured: HTTP 500)
+- [Phase 37]: 37-13: a copy's SKU is {source SKU}-{first 8 of the target shop id} because SKUs are tenant-unique (V3); a source product is SKIPPED when the target has that copy SKU or the same title ignoring case, under a PESSIMISTIC_WRITE lock on the target shop row
+- [Phase 37]: 37-13: copy carries allergen data verbatim, stored emphasis spans (NULL included) overwriting createProduct's re-parse; photos are new product_media links to the same media_asset rows; a flat image object is deleted only when no other product still references its URL
+- [Phase 37]: 37-13: copy carries quantity_in_stock as stored (plan text); flagged for owner review at the phase PR (a copied stock count can oversell a shop that does not hold it)
+- [Phase 37]: 37-14: a VAT row (checkout step 1, payment step, cash confirmation) needs a DECLARED registration (shop.seller.vatNumber); a loaded shop without one gets the B7 note under Total; a shop that failed to load gets neither; the order page never prints VAT and gets no note (it has no totals block)
+- [Phase 37]: 37-14: the product form sends vatRate STANDARD on a new product and the stored rate on an edit; an edit whose response carried no rate sends none, so the PUT keeps the stored rate rather than a guess
+- [Phase 37]: 37-14: the CSV import target is the switcher's shop, or on All shops a required chosen shop; handleUpload refuses without a target (the disabled control is not the gate); importCsv takes shopId as a required argument
+- [Phase 37]: 37-14: 'Copy to another shop…' is a row action (that product) and, with a shop selected, a header action for that shop's whole menu (productIds omitted); offered only where a source shop and another shop exist; '1 product' / 'its' for a single copy
 
 ### Pending Todos
 
@@ -1246,8 +1275,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-07T15:20:00Z
-Stopped at: Phase 31.1 shipped as PR #901 (2026-10-07) — next review round 1 (`/code-review 901 --comment`), narrow to zero, merge, then `/gsd-discuss-phase 37`
+Last session: 2026-10-09T01:45:18Z
+Stopped at: Completed 37-14-PLAN.md (VAT display for VAT-registered sellers, VAT rate select, import target, copy to shop); next 37-15
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.

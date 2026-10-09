@@ -1,8 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { formatDistanceToNow } from "date-fns"
-import { ShieldCheck, UserPlus, Users, AlertTriangle } from "lucide-react"
+import { ShieldCheck, UserPlus, Users, AlertTriangle, Mail } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -21,28 +21,63 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { LoadErrorPanel } from "@/components/dashboard/load-error-panel"
+import { ConfirmActionDialog } from "@/components/dashboard/confirm-action-dialog"
+import {
+  EffectiveAccessCell,
+  remainingAccessLines,
+} from "@/components/dashboard/staff/effective-access-cell"
+import {
+  INVITE_COPY,
+  INVITE_FIELD_LABELS,
+  InviteStaffForm,
+} from "@/components/dashboard/staff/invite-staff-form"
+import {
+  formatInviteExpiry,
+  PendingInvitesTable,
+} from "@/components/dashboard/staff/pending-invites-table"
 import { useToast } from "@/hooks/use-toast"
+import { describeLoadError } from "@/lib/human-error"
 import { fetchMyShops } from "@/lib/shops-api"
 import {
+  cancelStaffInvite,
   fetchStaff,
+  fetchStaffInvites,
   grantStaff,
+  resendStaffInvite,
   revokeStaff,
+  ROLE_HINTS,
   ROLE_LABELS,
+  ROLE_ORDER,
+  type CreateStaffInviteResult,
   type DirectoryEntry,
   type ShopRole,
+  type StaffInvite,
   type StaffMember,
+  type StaffPerson,
 } from "@/lib/staff-api"
 import type { Shop } from "@/types/api"
 
 /**
- * VSA-04 — GROUP_ADMIN staff management: who is in the tenant, who can do what,
- * and per-shop grant/revoke.
+ * VSA-04 — GROUP_ADMIN staff management: who is in the tenant, what each person may
+ * do, and per-shop grant/revoke.
  *
  * The gate is SERVER-side (23-04 `requireGroupAdmin()`): a non-GROUP_ADMIN gets a
  * typed `/shop-access-denied` 403 from `GET /api/v1/staff`, which this screen
  * renders as the shared access-required card (the finance/page.tsx idiom, D-10/D-13)
  * — never a crash, a blank, or an empty table implying "no staff". No directory PII
  * is fetched or rendered in that state (T-23-06-02).
+ *
+ * D-09 (37-06): the People card lists `people[]` and shows each person's
+ * `effectiveAccess` exactly as the server computed it (37-05). Grant rows decide only
+ * which "Remove" buttons a row carries; they never decide what the Access column
+ * says, so an automatic grant that strict scoping no longer honours cannot read as
+ * access here (T-37-12).
+ *
+ * D-07 (37-09): the page also invites. "Invite someone" sits first, under the h1,
+ * because it is how a person who has never signed in gets access at all; the grant
+ * form below it still serves people who already have. "Pending invitations" sits last
+ * and is not rendered when no link is open or re-sendable (UI-SPEC § B1).
  */
 
 /** Axios error → HTTP status, or undefined for a non-HTTP failure. */
@@ -53,12 +88,13 @@ function httpStatus(err: unknown): number | undefined {
   return undefined
 }
 
-/** Role options carry a plain-English scope hint so a grant is a deliberate act. */
-const ROLE_OPTIONS: { value: ShopRole; hint: string }[] = [
-  { value: "STAFF", hint: "order ops on one shop" },
-  { value: "SHOP_MANAGER", hint: "full CRUD on one shop" },
-  { value: "GROUP_ADMIN", hint: "all shops + staff management" },
-]
+/** Role options carry a plain-English scope hint so a grant is a deliberate act.
+ *  The hints are shared with the invite form (`ROLE_HINTS`), so one role cannot be
+ *  described two ways on one page. */
+const ROLE_OPTIONS: { value: ShopRole; hint: string }[] = ROLE_ORDER.map((value) => ({
+  value,
+  hint: ROLE_HINTS[value],
+}))
 
 const ALL_SHOPS_VALUE = ""
 
@@ -72,31 +108,28 @@ const PAGE_TITLE = "Staff & access"
 const PAGE_SUBTITLE = "Who can work on which shop"
 
 /**
- * #450 item 2 — this used to read "…invite them to log in once".
- *
- * There is no invite. Nothing on this page, or anywhere else in the product,
- * sends one: `user_directory` is populated when a person signs in for the first
- * time, and the picker below can only offer people who are already in it. The
- * old sentence described a control that does not exist, so the one thing a group
- * admin could not learn from this screen was the thing they had to do next.
- *
- * Building the invite flow is a separate, decision-gated piece of work. Until it
- * exists the copy says plainly what happens and what the admin has to arrange
- * out-of-band.
+ * #450 item 2, then 37-06. This first promised an invite that did not exist ("invite
+ * them to log in once"), and was then corrected to say outright that the page could
+ * not send one. D-07 (37-07) builds invitations, so that denial is about to be false
+ * as well; the card now says only what is true of THIS form: its picker offers people
+ * who have signed in.
  */
 const GRANT_DESCRIPTION =
-  "Team members appear here only after they have signed in once with their own " +
-  "J'Toye account — this page cannot send them an invite. Ask them to sign in " +
-  "first, then grant them a shop and a role."
+  "Choose someone who has signed in once with their own J'Toye account, then the " +
+  "shop and role they need."
 
 const GRANT_HINT =
   "Group admin always applies to every shop. Granting the same access twice is " +
   "safe — it will not create a duplicate."
 
-const CURRENT_ACCESS_DESCRIPTION =
+const PEOPLE_DESCRIPTION =
+  "Everyone who has signed in to this business, with the access they have now. " +
   "Changes apply to the person's next request. An already-open live view (a " +
   "kitchen or order stream) can keep updating for up to 5 minutes until it " +
   "reconnects."
+
+/** A grant holder with no directory row: a service account (UI-SPEC § B1 rows). */
+const INTEGRATION_ACCOUNT = "Integration account"
 
 /**
  * Field labels, shared by the form and by its loading counterpart — the labels
@@ -109,15 +142,26 @@ const FIELD_LABELS = {
   role: "Role",
 } as const
 
+/** The People table's columns, shared with the skeleton for the same reason. */
+const PEOPLE_COLUMNS = ["Person", "Access", "Actions"] as const
+
+/**
+ * Mobile (≤640px, UI-SPEC § B1): rows become blocks, so Person, Access and the
+ * actions stack inside the focusable `containerLabel` region instead of forcing a
+ * sideways scroll. From `sm` up it is an ordinary table.
+ */
+const ROW_CLASS = "flex flex-col gap-3 py-4 sm:table-row sm:py-0"
+const CELL_CLASS = "block p-0 align-top sm:table-cell sm:p-4"
+
 /**
  * Loading state, shaped like the page it precedes (#454).
  *
  * It replaced a centred 128px spinner, which is the whole of the CLS defect:
  * that spinner occupied ~150px and then handed over to a ~1190px page at 390px,
- * so everything below it — the three cards and the shell footer — moved on
- * arrival. Measured at the repo's declared throttle profile (390px, Fast-3G, 4x
- * CPU; budget `CLS < 0.1`, webhooks-webperf.spec.ts:37) the route scored
- * **0.1805**, the worst in the app.
+ * so everything below it — the cards and the shell footer — moved on arrival.
+ * Measured at the repo's declared throttle profile (390px, Fast-3G, 4x CPU;
+ * budget `CLS < 0.1`, webhooks-webperf.spec.ts:37) the route scored **0.1805**,
+ * the worst in the app.
  *
  * The fix is not "a skeleton" generically — a wrongly-sized skeleton shifts just
  * as much. Two things make this one hold its place:
@@ -127,14 +171,16 @@ const FIELD_LABELS = {
  *     `space-y-6` rhythm are identical by construction rather than by
  *     hand-copied pixel values, and it tracks the real page across breakpoints
  *     (the grant grid is 1-up at 390px and 3-up at md, in both).
- *  2. Everything that does not depend on the fetch — the h1, the subtitle, all
- *     three card titles and descriptions, the three field labels — is rendered
- *     for real. Only genuinely unknown data (the option lists, the directory
- *     rows, the grants table) is bars.
+ *  2. Everything that does not depend on the fetch — the h1, the subtitle, both
+ *     card titles and descriptions, the three field labels, the table's column
+ *     headers — is rendered for real. Only genuinely unknown data (the option
+ *     lists, the people rows) is bars.
  *
- * The bars use the shared `Skeleton` (shimmer keyframe, `motion-reduce:
- * animate-none`) rather than this file's older bare `animate-spin`, which is the
- * direction that component was added for.
+ * 37-06 folded the "Team directory" card into the People card (every directory
+ * row is a People row, with its last-seen line). 37-09 put "Invite someone" above
+ * the grant form, so the page and this skeleton open with the same three cards.
+ * "Pending invitations" is not stood in for: it renders only when the server lists
+ * an open or expired invitation, and it sits below everything the skeleton holds.
  */
 function StaffLoading() {
   return (
@@ -148,6 +194,34 @@ function StaffLoading() {
         <h1 className="text-4xl font-bold text-slate-900">{PAGE_TITLE}</h1>
         <p className="mt-2 text-slate-600">{PAGE_SUBTITLE}</p>
       </div>
+
+      {/* 37-09: the invite card is the first card of the loaded page, so it is the
+          first card here too — its title, description and labels for real, bars for
+          the controls (no pressable button, no select). */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5 text-orange-600" aria-hidden="true" />
+            {INVITE_COPY.title}
+          </CardTitle>
+          <CardDescription>{INVITE_COPY.description}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            {Object.values(INVITE_FIELD_LABELS).map((label) => (
+              <div key={label} className="space-y-1.5">
+                <span className="block text-sm font-medium text-slate-700">
+                  {label}
+                </span>
+                <Skeleton className="h-11 w-full rounded-md" />
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <Skeleton className="h-11 w-full shrink-0 rounded-md sm:w-[140px]" />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -184,52 +258,31 @@ function StaffLoading() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-orange-600" />
-            Team directory
+            People
           </CardTitle>
-          {/* The count is the one unknown in this header. */}
-          <Skeleton className="h-4 w-44" />
+          <CardDescription>{PEOPLE_DESCRIPTION}</CardDescription>
         </CardHeader>
         <CardContent>
-          <ul className="divide-y divide-slate-100">
-            {[0, 1].map((i) => (
-              <li key={i} className="flex items-center justify-between py-3">
-                <Skeleton className="h-4 w-40" />
-                <Skeleton className="h-3 w-24" />
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Current access</CardTitle>
-          <CardDescription>{CURRENT_ACCESS_DESCRIPTION}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table containerLabel="Current access table">
-            <TableHeader>
+          <Table containerLabel="People table">
+            <TableHeader className="hidden sm:table-header-group">
               <TableRow>
-                <TableHead>Person</TableHead>
-                <TableHead>Shop</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                {PEOPLE_COLUMNS.map((head) => (
+                  <TableHead key={head}>{head}</TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {[0, 1].map((i) => (
-                <TableRow key={i}>
-                  <TableCell>
-                    <Skeleton className="h-4 w-28" />
+                <TableRow key={i} className={ROW_CLASS}>
+                  <TableCell className={CELL_CLASS}>
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="mt-2 h-4 w-40" />
                   </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-20" />
+                  <TableCell className={CELL_CLASS}>
+                    <Skeleton className="h-4 w-36" />
                   </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-16" />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Skeleton className="ml-auto h-4 w-14" />
+                  <TableCell className={CELL_CLASS}>
+                    <Skeleton className="h-11 w-full rounded-md sm:w-32" />
                   </TableCell>
                 </TableRow>
               ))}
@@ -248,25 +301,65 @@ function lastSeenLabel(lastSeen: string | null): string {
   return `Last seen ${formatDistanceToNow(parsed, { addSuffix: true })}`
 }
 
+/** The name a person is shown by: display name, else masked email, else integration. */
+function personName(p: StaffPerson): string {
+  return p.displayName || p.maskedEmail || INTEGRATION_ACCOUNT
+}
+
+/**
+ * The rows the People card lists. `people[]` is the server's list (37-05). A server
+ * older than 37-05 sends none; the directory still names who has signed in, and each
+ * of those rows then reads "Not recorded" — it is never given an access value the
+ * server did not send.
+ */
+function peopleRows(people: StaffPerson[] | null, directory: DirectoryEntry[]): StaffPerson[] {
+  if (people) return people
+  return directory.map((d) => ({
+    userId: d.userId,
+    maskedEmail: d.email,
+    displayName: d.displayName,
+    lastSeen: d.lastSeen,
+    effectiveAccess: null,
+  }))
+}
+
 export default function StaffPage() {
   const { toast } = useToast()
 
   const [directory, setDirectory] = useState<DirectoryEntry[]>([])
   const [grants, setGrants] = useState<StaffMember[]>([])
+  const [people, setPeople] = useState<StaffPerson[] | null>(null)
   const [shops, setShops] = useState<Shop[]>([])
   /** The caller's own Keycloak `sub` (from GET /api/v1/staff/me via fetchMyShops),
    *  the server-authoritative identity for the self-revoke warning (WR-12). */
   const [myUserId, setMyUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
+  /** A non-403 load failure: the list is UNKNOWN, which must not render as empty. */
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   /** Inline refusal/So-far message (e.g. the last-GROUP_ADMIN 409) — deliberately
    *  NOT a toast, so the reason stays on screen next to the action that caused it. */
   const [notice, setNotice] = useState<string | null>(null)
 
+  /** Every invitation of the business (the Pending card lists the open and expired ones). */
+  const [invites, setInvites] = useState<StaffInvite[]>([])
+  /** A failed invitation read: UNKNOWN, which must not render as "none pending". */
+  const [invitesError, setInvitesError] = useState<string | null>(null)
+  const [inviteBusy, setInviteBusy] = useState(false)
+
+  /** The grant whose removal is awaiting confirmation, with the person it belongs to. */
+  const [removing, setRemoving] = useState<{ grant: StaffMember; person: StaffPerson } | null>(
+    null
+  )
+
   const [targetUserId, setTargetUserId] = useState("")
   const [targetShopId, setTargetShopId] = useState(ALL_SHOPS_VALUE)
   const [targetRole, setTargetRole] = useState<ShopRole>("STAFF")
+
+  /** "Grant access" on a No access row moves the operator to the form. */
+  const grantCardRef = useRef<HTMLDivElement>(null)
+  const shopSelectRef = useRef<HTMLSelectElement>(null)
 
   // Deliberately NOT a useCallback over `toast`: an unstable toast identity would
   // make the mount effect re-run on every render and hammer GET /api/v1/staff.
@@ -274,12 +367,28 @@ export default function StaffPage() {
   const load = async () => {
     try {
       setLoading(true)
-      const [staff, myShops] = await Promise.all([fetchStaff(), fetchMyShops()])
+      const [staff, myShops, inviteList] = await Promise.all([
+        fetchStaff(),
+        fetchMyShops(),
+        // Read beside the staff list, but its failure is its own: a page that cannot
+        // list invitations can still list people (and says the invitations are unknown).
+        fetchStaffInvites().then(
+          (list) => ({ list, error: null as string | null }),
+          (error: unknown) => ({
+            list: [] as StaffInvite[],
+            error: describeLoadError(error, "Failed to load invitations").message,
+          })
+        ),
+      ])
       setDirectory(staff.directory)
+      setInvites(inviteList.list)
+      setInvitesError(inviteList.error)
       setGrants(staff.grants)
+      setPeople(staff.people)
       setShops(myShops.shops)
       setMyUserId(myShops.userId)
       setForbidden(false)
+      setLoadError(null)
     } catch (error: unknown) {
       // A 403 here is an honest "you are not a group admin" state (D-10/D-13),
       // not a data-load failure — mirror the Finance/Approvals access-required card
@@ -287,12 +396,9 @@ export default function StaffPage() {
       if (httpStatus(error) === 403) {
         setForbidden(true)
       } else {
-        toast({
-          variant: "destructive",
-          title: "Error loading staff",
-          description:
-            error instanceof Error ? error.message : "Failed to load staff access",
-        })
+        // QA-council F2: an unknown list must never read as an empty one — and on
+        // this page an empty list would also claim nobody has access.
+        setLoadError(describeLoadError(error, "Failed to load staff access").message)
       }
     } finally {
       setLoading(false)
@@ -305,17 +411,39 @@ export default function StaffPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const emailByUserId = useMemo(() => {
-    const map = new Map<string, string>()
-    directory.forEach((d) => map.set(d.userId, d.email))
-    return map
-  }, [directory])
-
   const shopNameById = useMemo(() => {
     const map = new Map<string, string>()
     shops.forEach((s) => map.set(s.id, s.name))
     return map
   }, [shops])
+
+  const rows = useMemo(() => peopleRows(people, directory), [people, directory])
+
+  const grantsByUserId = useMemo(() => {
+    const map = new Map<string, StaffMember[]>()
+    grants.forEach((g) => map.set(g.userId, [...(map.get(g.userId) ?? []), g]))
+    return map
+  }, [grants])
+
+  /**
+   * The picker offers the people who have signed in (the directory), plus — when
+   * "Grant access" was pressed on a row that has no directory entry — that one
+   * person, so the pre-fill always names a real option.
+   */
+  const pickerOptions = useMemo(() => {
+    const options = directory.map((d) => ({
+      userId: d.userId,
+      // #290: `(displayName || email) + " (" + email + ")"` printed the masked email
+      // TWICE for anyone without a display name. The email is only a disambiguator
+      // for a name — with no name it IS the label.
+      label: d.displayName ? `${d.displayName} (${d.email})` : d.email,
+    }))
+    if (targetUserId && !options.some((o) => o.userId === targetUserId)) {
+      const p = rows.find((r) => r.userId === targetUserId)
+      if (p) options.push({ userId: p.userId, label: personName(p) })
+    }
+    return options
+  }, [directory, rows, targetUserId])
 
   // WR-12: self-identification is on the Keycloak `sub` (the `userId` carried by
   // both the grant rows and MyAccessDto), NOT an email round-trip. The old
@@ -327,6 +455,19 @@ export default function StaffPage() {
   )
 
   const holdsSelfGrant = grants.some((g) => isSelf(g.userId))
+
+  const shopLabel = (shopId: string | null) =>
+    shopId ? shopNameById.get(shopId) ?? "Unknown shop" : "all shops"
+
+  const startGrantFor = (p: StaffPerson) => {
+    setNotice(null)
+    setTargetUserId(p.userId)
+    setTargetShopId(ALL_SHOPS_VALUE)
+    setTargetRole("STAFF")
+    grantCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    // The person is chosen; what is left to decide is the shop and the role.
+    shopSelectRef.current?.focus({ preventScroll: true })
+  }
 
   const handleGrant = async () => {
     if (!targetUserId) {
@@ -374,7 +515,7 @@ export default function StaffPage() {
     try {
       await revokeStaff(grant.id)
       await load()
-      toast({ title: "Access revoked" })
+      toast({ title: "Access removed" })
     } catch (error: unknown) {
       const status = httpStatus(error)
       if (status === 409) {
@@ -386,12 +527,93 @@ export default function StaffPage() {
         setForbidden(true)
       } else {
         setNotice(
-          error instanceof Error ? error.message : "Could not revoke access."
+          error instanceof Error ? error.message : "Could not remove access."
         )
       }
     } finally {
       setSubmitting(false)
     }
+  }
+
+  /** Re-read the invitation list from the server after any write (never a local edit). */
+  const reloadInvites = async () => {
+    try {
+      setInvites(await fetchStaffInvites())
+      setInvitesError(null)
+    } catch (error: unknown) {
+      setInvitesError(describeLoadError(error, "Failed to load invitations").message)
+    }
+  }
+
+  /** "Invitation sent to …" only when the server sent one; the 200 replay sent none. */
+  const handleInvited = async ({ invite, created }: CreateStaffInviteResult) => {
+    const expires = formatInviteExpiry(invite.expiresAt)
+    toast({
+      title: created
+        ? `Invitation sent to ${invite.email}. The link works once and expires on ${expires}.`
+        : `An invitation to ${invite.email} is already open. It expires on ${expires}.`,
+    })
+    await reloadInvites()
+  }
+
+  const handleResend = async (old: StaffInvite) => {
+    setNotice(null)
+    setInviteBusy(true)
+    try {
+      const invite = await resendStaffInvite(old.id)
+      toast({
+        title: `Invitation sent to ${invite.email}. The link works once and expires on ${formatInviteExpiry(invite.expiresAt)}.`,
+      })
+    } catch (error: unknown) {
+      const status = httpStatus(error)
+      if (status === 403) {
+        setForbidden(true)
+      } else if (status === 400) {
+        setNotice(`The invitation to ${old.email} has already been accepted, so it can't be sent again.`)
+      } else if (status === 404) {
+        setNotice(`The invitation to ${old.email} no longer exists.`)
+      } else {
+        setNotice("Couldn't send the invitation again. Check your connection and try again.")
+      }
+    } finally {
+      await reloadInvites()
+      setInviteBusy(false)
+    }
+  }
+
+  const handleCancelInvite = async (invite: StaffInvite) => {
+    setNotice(null)
+    setInviteBusy(true)
+    try {
+      await cancelStaffInvite(invite.id)
+      toast({ title: `Invitation to ${invite.email} cancelled` })
+    } catch (error: unknown) {
+      if (httpStatus(error) === 403) {
+        setForbidden(true)
+      } else {
+        setNotice("Couldn't cancel the invitation. Check your connection and try again.")
+      }
+    } finally {
+      await reloadInvites()
+      setInviteBusy(false)
+    }
+  }
+
+  const removeTitle = (grant: StaffMember, person: StaffPerson): string => {
+    const role = ROLE_LABELS[grant.role] ?? grant.role
+    return `Remove ${role} at ${shopLabel(grant.shopId)} for ${personName(person)}?`
+  }
+
+  /** "After this they'll have: …" from the server's access minus this grant. */
+  const removeDescription = (grant: StaffMember, person: StaffPerson): string => {
+    const remaining = remainingAccessLines(person.effectiveAccess, grant, shopNameById)
+    const after =
+      remaining === null
+        ? ""
+        : remaining.length === 0
+          ? "After this they'll have no access to this business. "
+          : `After this they'll have: ${remaining.join("; ")}. `
+    return `${after}They'll lose it on their next action.`
   }
 
   /*
@@ -401,17 +623,18 @@ export default function StaffPage() {
    * forms want a reading measure". The form is inside a Card that is already
    * narrower than the band and keeps its own width whatever the band does, so
    * tiering the whole page to the reading width would buy the form nothing and
-   * would cap the directory and grants tables — which are the multi-column
-   * surfaces this phase exists to widen.
+   * would cap the People table — the multi-column surface this phase exists to
+   * widen.
    *
    * The tier is written into the DOM as a declaration rather than left as the
    * absence of a cap, because "uncapped" and "someone forgot to cap it" render
    * identically and no assertion can tell them apart — ORCH-03 (orchestrator
-   * decision, 2026-08-29). It is declared on all THREE render branches — the
-   * skeleton in `StaffLoading` above, the access-denied card below and the loaded
-   * page — because a branch without it is an undeclared paint, and the skeleton
-   * one matters most here: #454 made that branch hold the loaded page's geometry,
-   * so a tier mismatch between them would reintroduce the shift it removed.
+   * decision, 2026-08-29). It is declared on EVERY render branch — the skeleton
+   * in `StaffLoading` above, the access-denied card, the load-error card and the
+   * loaded page — because a branch without it is an undeclared paint, and the
+   * skeleton one matters most here: #454 made that branch hold the loaded page's
+   * geometry, so a tier mismatch between them would reintroduce the shift it
+   * removed.
    */
   if (loading) {
     return <StaffLoading />
@@ -440,6 +663,22 @@ export default function StaffPage() {
     )
   }
 
+  if (loadError) {
+    return (
+      <div data-width-tier="index" className="space-y-6">
+        <div>
+          <h1 className="text-4xl font-bold text-slate-900">{PAGE_TITLE}</h1>
+          <p className="mt-2 text-slate-600">{PAGE_SUBTITLE}</p>
+        </div>
+        <Card>
+          <CardContent>
+            <LoadErrorPanel subject="staff" message={loadError} onRetry={() => load()} />
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div data-width-tier="index" className="space-y-6">
       <div>
@@ -457,8 +696,12 @@ export default function StaffPage() {
         </div>
       )}
 
+      {/* Invite someone (D-07, 37-09) — first, because it is the only way a person who
+          has never signed in gets access under strict scoping. */}
+      <InviteStaffForm shops={shops} onInvited={handleInvited} />
+
       {/* Grant form — the directory is the grant-target picker (D-09). */}
-      <Card>
+      <Card ref={grantCardRef}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserPlus className="h-5 w-5 text-orange-600" />
@@ -482,13 +725,9 @@ export default function StaffPage() {
                 className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
               >
                 <option value="">Select a person…</option>
-                {/* #290: `(displayName || email) + " (" + email + ")"` printed the
-                    masked email TWICE for anyone without a display name
-                    ("j***@vendor.co.uk (j***@vendor.co.uk)"). The email is only a
-                    disambiguator for a name — with no name it IS the label. */}
-                {directory.map((d) => (
-                  <option key={d.userId} value={d.userId}>
-                    {d.displayName ? `${d.displayName} (${d.email})` : d.email}
+                {pickerOptions.map((o) => (
+                  <option key={o.userId} value={o.userId}>
+                    {o.label}
                   </option>
                 ))}
               </select>
@@ -503,6 +742,7 @@ export default function StaffPage() {
               </label>
               <select
                 id="staff-shop"
+                ref={shopSelectRef}
                 value={targetShopId}
                 onChange={(e) => setTargetShopId(e.target.value)}
                 className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
@@ -547,50 +787,15 @@ export default function StaffPage() {
         </CardContent>
       </Card>
 
-      {/* Directory — everyone who has signed in, whether or not they hold a grant. */}
+      {/* People — everyone who has signed in, plus grant holders with no directory
+          row, each with the access the server enforces for them (D-09). */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-orange-600" />
-            Team directory
+            People
           </CardTitle>
-          <CardDescription>
-            {directory.length === 1
-              ? "1 person has signed in"
-              : `${directory.length} people have signed in`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {directory.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-500">
-              Nobody has signed in yet. Once a team member logs in, they can be granted
-              access here.
-            </p>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {directory.map((d) => (
-                <li
-                  key={d.userId}
-                  className="flex items-center justify-between py-3"
-                >
-                  <span className="text-sm font-medium text-slate-900">
-                    {d.displayName || d.email}
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    {lastSeenLabel(d.lastSeen)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Current grants + revoke. */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Current access</CardTitle>
-          <CardDescription>{CURRENT_ACCESS_DESCRIPTION}</CardDescription>
+          <CardDescription>{PEOPLE_DESCRIPTION}</CardDescription>
         </CardHeader>
         <CardContent>
           {holdsSelfGrant && (
@@ -601,81 +806,128 @@ export default function StaffPage() {
               minutes until it reconnects.
             </p>
           )}
-          {grants.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-500">
-              No access granted yet.
-            </p>
-          ) : (
-            <Table containerLabel="Access grants table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Person</TableHead>
-                  <TableHead>Shop</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {grants.map((g) => {
-                  // A grant with no directory entry is a JIT / service-account row.
-                  // Render a labelled identity, never a bare UUID (plan 23-14 owns
-                  // the richer "auto-granted on first sign-in" treatment).
-                  const email = emailByUserId.get(g.userId) ?? "Unlisted member"
-                  const shopName = g.shopId
-                    ? shopNameById.get(g.shopId) ?? "Unknown shop"
-                    : "All shops"
-                  return (
-                    <TableRow key={g.id}>
-                      <TableCell>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm text-slate-900">{email}</span>
-                          {isSelf(g.userId) && (
-                            <Badge variant="secondary" className="text-xs">
-                              This is you
-                            </Badge>
-                          )}
-                          {/* V57: JIT rows were auto-granted on first sign-in, not by an
-                              operator. Flag them so a group admin knows which grants are
-                              deliberate before enabling strict-scoping (which de-honours
-                              JIT tenant-wide admin — CR-07). */}
-                          {g.grantSource === "JIT" && (
-                            <Badge
-                              variant="outline"
-                              className="text-xs text-slate-500"
-                              title="Automatically granted on first sign-in — not a deliberate operator grant"
-                            >
-                              Auto-granted on first sign-in
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-slate-600">
-                        {shopName}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-slate-900">
-                          {ROLE_LABELS[g.role]}
+          <Table containerLabel="People table">
+            <TableHeader className="hidden sm:table-header-group">
+              <TableRow>
+                {PEOPLE_COLUMNS.map((head) => (
+                  <TableHead key={head}>{head}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((p) => {
+                const name = personName(p)
+                const showEmail = !!p.maskedEmail && p.maskedEmail !== name
+                const personGrants = grantsByUserId.get(p.userId) ?? []
+                const hasNoAccess = p.effectiveAccess?.level === "NONE"
+                return (
+                  <TableRow key={p.userId} className={ROW_CLASS}>
+                    <TableCell className={CELL_CLASS}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900 [overflow-wrap:anywhere]">
+                          {name}
                         </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={submitting}
-                          aria-label={`Revoke ${email}`}
-                          onClick={() => handleRevoke(g)}
-                        >
-                          Revoke
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          )}
+                        {isSelf(p.userId) && (
+                          <Badge variant="secondary" className="text-xs">
+                            This is you
+                          </Badge>
+                        )}
+                      </div>
+                      {showEmail && (
+                        <p className="text-sm text-slate-600 [overflow-wrap:anywhere]">
+                          {p.maskedEmail}
+                        </p>
+                      )}
+                      {p.maskedEmail && (
+                        <p className="text-sm text-slate-600">{lastSeenLabel(p.lastSeen)}</p>
+                      )}
+                    </TableCell>
+                    <TableCell className={CELL_CLASS}>
+                      <EffectiveAccessCell
+                        access={p.effectiveAccess}
+                        shopNameById={shopNameById}
+                      />
+                    </TableCell>
+                    <TableCell className={CELL_CLASS}>
+                      <div className="flex flex-col gap-2 sm:items-end">
+                        {hasNoAccess ? (
+                          <Button
+                            className="h-11 w-full sm:w-auto"
+                            disabled={submitting}
+                            aria-label={`Grant access to ${name}`}
+                            onClick={() => startGrantFor(p)}
+                          >
+                            Grant access
+                          </Button>
+                        ) : (
+                          personGrants.map((g) => {
+                            const role = ROLE_LABELS[g.role] ?? g.role
+                            const shop = shopLabel(g.shopId)
+                            return (
+                              <Button
+                                key={g.id}
+                                variant="outline"
+                                className="h-11 w-full sm:w-auto"
+                                disabled={submitting}
+                                aria-label={`Remove ${role} at ${shop} for ${name}`}
+                                onClick={() => setRemoving({ grant: g, person: p })}
+                              >
+                                {personGrants.length === 1
+                                  ? "Remove access"
+                                  : `Remove ${role} · ${shop}`}
+                              </Button>
+                            )
+                          })
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
+
+      {/* Pending invitations — last, and absent when nothing is open or re-sendable.
+          A failed read is shown as unknown, never as "none pending". */}
+      {invitesError ? (
+        <Card>
+          <CardContent>
+            <LoadErrorPanel
+              subject="invitations"
+              message={invitesError}
+              onRetry={() => reloadInvites()}
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <PendingInvitesTable
+          invites={invites}
+          shopNameById={shopNameById}
+          busy={inviteBusy}
+          onResend={handleResend}
+          onCancel={handleCancelInvite}
+        />
+      )}
+
+      {/* Remove access is destructive, and its copy names the consequence: what the
+          person keeps, from the server's effective access minus this one grant, or
+          "no access" when it is the last (UI-SPEC § Copywriting B1-B3). */}
+      <ConfirmActionDialog
+        open={removing !== null}
+        onOpenChange={(o) => !o && setRemoving(null)}
+        title={removing ? removeTitle(removing.grant, removing.person) : ""}
+        description={removing ? removeDescription(removing.grant, removing.person) : ""}
+        confirmLabel="Remove access"
+        cancelLabel="Keep access"
+        destructive
+        onConfirm={async () => {
+          if (!removing) return
+          await handleRevoke(removing.grant)
+          setRemoving(null)
+        }}
+      />
     </div>
   )
 }

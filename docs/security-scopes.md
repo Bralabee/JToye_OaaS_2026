@@ -198,10 +198,15 @@ Keycloak 24 **silently strips an unmanaged `tenant_id` attribute** when a user i
 via the **admin API** (imported users keep it). The template-seeded sample client in this
 slice is unaffected (import is not subject to the strip). But when you provision per-tenant
 machine clients **programmatically** (e.g. reusing the `KeycloakAdminClient` seam from #102),
-you must first declare `tenant_id` **managed** on the realm (a `userProfile` config or
-`unmanagedAttributePolicy: "ENABLED"`) — otherwise the minted client's tokens carry no
-`tenant_id`, and RLS returns zero rows for every request. The realm `userProfile` change
-itself is deferred to the [AI-1] provisioning slice.
+you must first declare `tenant_id` **managed** on the realm — otherwise the minted client's tokens
+carry no `tenant_id`, and RLS returns zero rows for every request.
+
+**Done in Phase 37-08** (staff invitations create vendor users through the admin API): the
+`jtoye-dev` template declares a user profile in which `tenant_id` is a managed attribute that only
+an admin may view or edit. Do **not** use `unmanagedAttributePolicy: "ENABLED"` instead: it exposes
+unmanaged attributes in the user's own account console, so a vendor user could set their own
+`tenant_id` (37-RESEARCH Pitfall 3, T-37-19). Details, the measured before/after and the
+staging/production step: `infra/keycloak/README.md`, "User profile".
 
 ---
 

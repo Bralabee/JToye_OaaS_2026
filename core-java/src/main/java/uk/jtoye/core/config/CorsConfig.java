@@ -82,7 +82,12 @@ public class CorsConfig {
             "X-RateLimit-Limit",
             "X-RateLimit-Remaining",
             "X-RateLimit-Reset",
-            SearchInterpretation.HEADER);
+            SearchInterpretation.HEADER,
+            // Phase 37-11: the finance CSV export. The dashboard calls the API cross-origin, so without these
+            // the browser hides the scope-named filename and the scope echo, and the downloaded file cannot be
+            // labelled with the scope it actually holds (say is not data).
+            "Content-Disposition",
+            "X-Finance-Scope");
 
     /**
      * The configured list, plus any mandatory name it omits — extend-but-never-remove.

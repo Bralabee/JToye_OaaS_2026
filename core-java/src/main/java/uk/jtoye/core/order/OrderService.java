@@ -11,7 +11,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uk.jtoye.core.customer.Customer;
 import uk.jtoye.core.customer.CustomerRepository;
+import uk.jtoye.core.exception.OrderAlreadyVoidedException;
+import uk.jtoye.core.exception.OrderNotDeletableException;
+import uk.jtoye.core.exception.OrderNotVoidableException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
+import uk.jtoye.core.finance.FinancialTransaction;
 import uk.jtoye.core.finance.FinancialTransactionService;
 import uk.jtoye.core.finance.VatCalculator;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
@@ -62,6 +66,13 @@ public class OrderService {
      */
     static final List<OrderStatus> KITCHEN_STATUSES =
             List.of(OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY);
+
+    /**
+     * The only statuses an order can be deleted in (Phase 37-10, D-10). Everything later is voided.
+     * An allow-list, so a status added to {@link OrderStatus} later is refused until someone decides
+     * otherwise, rather than silently becoming deletable.
+     */
+    static final Set<OrderStatus> DELETABLE_STATUSES = Set.of(OrderStatus.DRAFT, OrderStatus.PENDING);
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
@@ -434,7 +445,8 @@ public class OrderService {
     public Page<OrderDetailDto> getKitchenBoard(UUID shopId, Pageable pageable) {
         shopAccessService.require(shopId, ShopRole.STAFF);
 
-        Page<Order> page = orderRepository.findByShopIdAndStatusIn(
+        // Phase 37-10: a voided order keeps its status but is not a ticket to cook.
+        Page<Order> page = orderRepository.findByShopIdAndStatusInAndVoidedAtIsNull(
                 shopId, KITCHEN_STATUSES, pageable);
         if (page.isEmpty()) {
             return page.map(orderMapper::toDetailDto);
@@ -541,6 +553,14 @@ public class OrderService {
         // public transition entry points, which each delegate to this method.
         shopAccessService.require(order.getShopId(), ShopRole.STAFF);
 
+        // Phase 37-10 (D-10): a voided order is out of the books and off the kitchen board, so it does not
+        // move again. Above all it must not reach COMPLETED: completion writes the order's SALE, and a sale
+        // written after the void would never be reversed.
+        if (order.isVoided()) {
+            throw new InvalidStateTransitionException("Order " + order.getOrderNumber()
+                    + " was voided, so it can't change status");
+        }
+
         OrderStatus oldStatus = order.getStatus();
 
         // Use StateMachine to validate and execute transition
@@ -593,7 +613,8 @@ public class OrderService {
                             order.getTotalAmountPennies(),
                             order.getVatRate(),
                             "Order " + order.getOrderNumber(),
-                            order.getId()
+                            order.getId(),
+                            order.getShopId()   // Phase 37-11: the SALE belongs to the order's shop
                     ));
             log.info("Auto-created financial transaction for completed order {}", order.getOrderNumber());
         }
@@ -625,7 +646,7 @@ public class OrderService {
         }
         if (order.getAllergyNoteAckAt() == null) {
             order.setAllergyNoteAckAt(OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS));
-            order.setAllergyNoteAckBy(currentPrincipalName());
+            order.setAllergyNoteAckBy(currentPrincipalName("An allergy note can only be acknowledged by an authenticated user"));
             order.setUpdatedAt(OffsetDateTime.now());
             order = orderRepository.save(order);
             log.info("Allergy note on order {} acknowledged", order.getOrderNumber());
@@ -640,27 +661,101 @@ public class OrderService {
     }
 
     /**
-     * The authenticated principal's name, for the acknowledgement's WHO. There is no "system"
-     * fallback: an acknowledgement asserts that a person read the note, so an unauthenticated call
-     * must fail rather than record a name nobody holds.
+     * The authenticated principal's name, for an acknowledgement's or a void's WHO. There is no "system"
+     * fallback: both assert that a person acted, so an unauthenticated call must fail rather than record a
+     * name nobody holds.
      */
-    private static String currentPrincipalName() {
+    private static String currentPrincipalName(String deniedMessage) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || auth.getName() == null || auth.getName().isBlank()) {
-            throw new AccessDeniedException("An allergy note can only be acknowledged by an authenticated user");
+            throw new AccessDeniedException(deniedMessage);
         }
         return auth.getName();
     }
 
     /**
-     * Delete order by ID (tenant-scoped).
-     * Cascade delete will remove order items.
+     * Void an order (Phase 37-10, D-10, UXT-018): the auditable alternative to deleting an order the books
+     * depend on.
+     *
+     * <p><b>Who.</b> Group admins only ({@code requireGroupAdmin}); checked before the order is read, so a
+     * caller without it learns nothing about the order. The controller adds the {@code orders:write} scope.
+     *
+     * <p><b>What.</b> The order is KEPT: it reads 200, keeps its status (a void is columns, not a status,
+     * CONTEXT discretion Q6), leaves the kitchen board, and records who voided it, when, and why. If the
+     * order has a SALE ledger row, one REVERSAL is written beside it in this same transaction, so the void
+     * and its reversal commit or roll back together. An order that never settled has no SALE and gets no
+     * ledger row.
+     *
+     * <p><b>Idempotent by construction.</b> Voiding a voided order with the same (trimmed) reason returns
+     * the existing void unchanged; a different reason is a 409 naming who voided it and when. Two truly
+     * concurrent first voids are serialised by the order's {@code @Version}, and the reversal by the unique
+     * index {@code uq_fin_tx_tenant_order}.
+     *
+     * <p>A DRAFT or PENDING order is not voided: nothing was cooked or settled, so it is deleted instead
+     * (409 order-not-voidable). The reason's text is never logged.
+     */
+    public OrderDetailDto voidOrder(UUID orderId, String reason) {
+        shopAccessService.requireGroupAdmin();
+
+        String trimmed = reason == null ? "" : reason.strip();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException("A reason is required to void an order");
+        }
+        if (trimmed.length() > 500) {
+            throw new IllegalArgumentException("The reason can be at most 500 characters");
+        }
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        if (order.isVoided()) {
+            if (!trimmed.equals(order.getVoidReason())) {
+                throw new OrderAlreadyVoidedException(order.getOrderNumber(), order.getVoidedBy(), order.getVoidedAt());
+            }
+            log.debug("Order {} was already voided with the same reason; returning the existing void",
+                    order.getOrderNumber());
+        } else {
+            if (DELETABLE_STATUSES.contains(order.getStatus())) {
+                throw new OrderNotVoidableException(order.getOrderNumber(), order.getStatus());
+            }
+            order.setVoidedAt(OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS));
+            order.setVoidedBy(currentPrincipalName("An order can only be voided by an authenticated user"));
+            order.setVoidReason(trimmed);
+            order.setUpdatedAt(OffsetDateTime.now());
+            order = orderRepository.save(order);
+            log.info("Order {} voided (status stays {})", order.getOrderNumber(), order.getStatus());
+        }
+
+        // Reverse the sale, if there is one. createReversal is idempotent per order, so a replay of the same
+        // void never writes a second reversal; it only completes a first void whose reversal is missing.
+        Optional<FinancialTransaction> sale = financialTransactionService.findSaleForOrder(order.getId());
+        if (sale.isPresent()) {
+            financialTransactionService.createReversal(sale.get(), "Reversal of " + order.getOrderNumber());
+        }
+
+        OrderDetailDto dto = orderMapper.toDetailDto(order);
+        dto.setRefunds(refundService.findByOrderId(orderId));
+        return dto;
+    }
+
+    /**
+     * Delete order by ID (tenant-scoped). Cascade delete will remove order items.
+     *
+     * <p>Only a DRAFT or PENDING order can be deleted (Phase 37-10, D-10, UXT-018). From CONFIRMED on
+     * the order is part of the shop's records, and {@code financial_transactions.order_id} has no
+     * foreign key, so deleting it would leave a ledger row pointing at an order that reads 404. Those
+     * orders get a typed 409 telling the caller to void instead. The shop check runs first, so a caller
+     * without SHOP_MANAGER on the shop learns nothing about the order's status.
      */
     public void deleteOrder(UUID orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
         // VSA-02 (D-02): order delete requires SHOP_MANAGER on the order's shop.
         shopAccessService.require(order.getShopId(), ShopRole.SHOP_MANAGER);
+
+        if (!DELETABLE_STATUSES.contains(order.getStatus())) {
+            throw new OrderNotDeletableException(order.getOrderNumber(), order.getStatus());
+        }
 
         log.info("Deleting order {}", order.getOrderNumber());
         orderRepository.delete(order);

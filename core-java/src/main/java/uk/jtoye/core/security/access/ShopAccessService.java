@@ -20,9 +20,9 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 
-import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -46,21 +46,25 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li><strong>Realm-admin bridge (D-03)</strong> — a caller carrying the
  *       existing {@code ROLE_admin} authority is an implicit GROUP_ADMIN; the
  *       authority is read, {@code realm_access} is NOT re-parsed.</li>
- *   <li><strong>JIT lazy-provision (D-04)</strong> — the first authenticated
- *       request from an ungranted tenant user auto-creates a tenant-wide
- *       GROUP_ADMIN grant for that user's OWN {@code sub} via the race-safe
- *       {@code INSERT ... ON CONFLICT DO NOTHING} (never a client-supplied
- *       role/shop), preserving day-one "everyone can do everything" while
- *       strict-scoping is OFF.</li>
+ *   <li><strong>JIT lazy-provision (D-04)</strong> — ONLY under an explicit
+ *       strict-scoping OFF override: the first write request from an ungranted tenant
+ *       user auto-creates a tenant-wide GROUP_ADMIN grant for that user's OWN
+ *       {@code sub} via the race-safe {@code INSERT ... ON CONFLICT DO NOTHING} (never a
+ *       client-supplied role/shop). Never runs under the shipped default (D-06).</li>
  *   <li><strong>Throttled directory upsert (D-09)</strong> — records/refreshes
  *       the {@code user_directory} grant-target row, gated on a stale
- *       {@code last_seen} so it is never a write per request.</li>
- *   <li><strong>Strict-scoping switch (D-12, revised CR-07)</strong> — OFF (default)
- *       = D-04 auto-provision, everything honoured (day-one unchanged). ON = stops new
- *       auto-provisioning AND de-honours JIT-sourced tenant-wide GROUP_ADMIN rows (a day-one
- *       user genuinely becomes scoped); deliberate {@link GrantSource#OPERATOR} grants and
- *       realm admins are honoured unchanged; the tenant's oldest JIT admin is retained as a
- *       WARN-logged bootstrap so no tenant can lock itself out on the flip.</li>
+ *       {@code last_seen} so it is never a write per request. Since 37-05 it runs on reads
+ *       too, in its own best-effort transaction ({@link UserDirectoryToucher}).</li>
+ *   <li><strong>Effective access (D-09, 37-05)</strong> — {@link #effectiveAccessFor(UUID)}
+ *       answers "what may this person do" through the same decision path enforcement uses, for
+ *       the Staff page.</li>
+ *   <li><strong>Strict-scoping switch (D-12, revised CR-07; default ON since D-06)</strong>
+ *       — ON (default) = ungranted means no access: no auto-provisioning, and JIT-sourced
+ *       tenant-wide GROUP_ADMIN rows are de-honoured (a day-one user genuinely becomes
+ *       scoped); deliberate {@link GrantSource#OPERATOR} grants and realm admins are honoured;
+ *       the tenant's oldest JIT admin is retained as a WARN-logged bootstrap when it has no
+ *       OPERATOR admin, so no tenant can lock itself out. OFF is an explicit override that
+ *       restores the day-one implicit admin and needs an owner ruling.</li>
  * </ul>
  *
  * <p><strong>Pitfall 4 (RESEARCH §5):</strong> the JIT provision + directory
@@ -101,16 +105,20 @@ public class ShopAccessService {
     private final ObjectProvider<ShopAccessService> selfProvider;
 
     /**
-     * D-12 (revised, CR-07): OFF (default) preserves the day-one JIT auto-provision and honours
-     * every grant; ON stops new provisioning AND de-honours JIT-sourced tenant-wide GROUP_ADMIN
-     * rows (operator grants + realm admins unchanged, oldest JIT admin kept as bootstrap).
+     * D-06 (default ON): ungranted means no access — no JIT provisioning, JIT-sourced tenant-wide
+     * GROUP_ADMIN rows de-honoured (operator grants + realm admins honoured, oldest JIT admin kept
+     * as bootstrap). OFF is an explicit override that restores the day-one implicit admin and the
+     * JIT auto-provision (D-12, CR-07); reverting D-06 needs an owner ruling.
      */
-    @Value("${jtoye.access.strict-scoping:false}")
+    @Value("${jtoye.access.strict-scoping:true}")
     private boolean strictScoping;
 
-    /** D-09: throttle window — a returning user younger than this is a directory no-op. */
-    @Value("${jtoye.access.directory-upsert-interval:PT1H}")
-    private Duration directoryUpsertInterval;
+    /**
+     * D-09 (37-05): records the caller in {@code user_directory} on every gated request, reads
+     * included, in its own best-effort transaction. Owns the throttle
+     * ({@code jtoye.access.directory-upsert-interval}).
+     */
+    private final UserDirectoryToucher userDirectoryToucher;
 
     /**
      * CR-03 (D-04) fail-closed machine-client allowlist. A bearer token whose
@@ -131,12 +139,14 @@ public class ShopAccessService {
                              UserDirectoryRepository userDirectoryRepository,
                              TenantCacheEvictor cacheEvictor,
                              ShopRepository shopRepository,
-                             ObjectProvider<ShopAccessService> selfProvider) {
+                             ObjectProvider<ShopAccessService> selfProvider,
+                             UserDirectoryToucher userDirectoryToucher) {
         this.shopStaffRepository = shopStaffRepository;
         this.userDirectoryRepository = userDirectoryRepository;
         this.cacheEvictor = cacheEvictor;
         this.shopRepository = shopRepository;
         this.selfProvider = selfProvider;
+        this.userDirectoryToucher = userDirectoryToucher;
     }
 
     /**
@@ -151,33 +161,28 @@ public class ShopAccessService {
     /**
      * Log the resolved shop-scoping posture ONCE at startup (QA-council 20260902 SEC-2).
      *
-     * <p>{@code strict-scoping=false} is a recorded design decision (D-12, CR-07) and the
-     * production default — but until this line existed the posture was invisible: no
-     * manifest declared the variable and nothing in the logs said which rule was in force,
-     * so OFF-by-choice and OFF-by-omission were indistinguishable. A WARN (not INFO) because
-     * the consequence is an authorization posture — every ungranted tenant user is an implicit
-     * tenant-wide GROUP_ADMIN — and an operator reading a deployment's first log lines must
-     * see that stated, not infer it. The flip itself is NOT decided here: it is blocked on
-     * #285 (bulk-revoke of JIT grants), the {@code /sync/batch} shop predicate, and the
-     * {@code integration-orders-rw} UUID-subject client whose GROUP_ADMIN comes solely from
-     * the strict-OFF rule.
+     * <p>Strict scoping ON is the default (D-06, owner ruling): ungranted means no access. ON is
+     * stated at INFO so every startup log says which rule is in force. OFF can only come from an
+     * explicit override ({@code ACCESS_STRICT_SCOPING=false}), and it is a WARN because it is an
+     * authorization posture — every ungranted tenant user becomes an implicit tenant-wide
+     * GROUP_ADMIN — and reverting D-06 needs an owner ruling, not a config edit. The WARN names
+     * the override so an operator reading a deployment's first log lines sees where it came from.
      *
-     * <p>Reads the startup-bound field only; tests that flip {@code strictScoping} by
-     * reflection do not re-trigger it, which is correct — it describes the posture the
-     * process BOOTED with.
+     * <p>Reads the startup-bound field only; tests that set {@code strictScoping} through
+     * {@code StrictScopingGuard} do not re-trigger it, which is correct — it describes the
+     * posture the process BOOTED with.
      */
     @PostConstruct
     void logScopingPosture() {
         if (strictScoping) {
-            log.info("event=shop_scoping_posture strict=true: vendor shop-scoping is ENFORCED "
-                    + "(jtoye.access.strict-scoping=true) — JIT-provisioned tenant-wide GROUP_ADMIN grants "
-                    + "are de-honoured, no new JIT provisioning; operator grants and realm admins honoured.");
+            log.info("event=shop_scoping_posture strict=true: access: strict scoping ON (default, D-06) — "
+                    + "ungranted users have no access; JIT-provisioned tenant-wide GROUP_ADMIN grants are "
+                    + "de-honoured and nothing new is provisioned; operator grants and realm admins are honoured.");
             return;
         }
-        log.warn("event=shop_scoping_posture strict=false: vendor shop-scoping is NOT enforced — every "
-                + "ungranted tenant user is an implicit tenant-wide GROUP_ADMIN and every JIT grant is honoured "
-                + "(jtoye.access.strict-scoping=false, D-12 recorded default). Arming is tracked and blocked on "
-                + "#285, the /sync/batch shop predicate and the integration-orders-rw UUID-subject client.");
+        log.warn("event=shop_scoping_posture strict=false: access: strict scoping OFF by explicit override "
+                + "(ACCESS_STRICT_SCOPING=false): ungranted users are implicit tenant-wide GROUP_ADMIN; "
+                + "reverting D-06 needs an owner ruling");
     }
 
     // ---------------------------------------------------------------------
@@ -232,9 +237,18 @@ public class ShopAccessService {
             throw new ShopAccessDeniedException(null, ShopRole.GROUP_ADMIN);
         }
         Membership membership = self().resolveMembership(requireVendorUserId());
-        ShopRole role = membership.perShopRole().get(shopId);
+        // 37-05 (D-07/D-23): the role on this shop is the higher of the specific grant and a
+        // tenant-wide (NULL-shop) STAFF/SHOP_MANAGER grant — "a role plus all shops" confers what
+        // it says, and never more than its own rank (T-37-10).
+        ShopRole role = membership.roleOn(shopId);
         if (role == null || !role.satisfies(minRole)) {
             throw new ShopAccessDeniedException(shopId, minRole);
+        }
+        if (membership.perShopRole().get(shopId) == null) {
+            // Granted by the tenant-wide role alone: "all shops" means all shops OF THIS TENANT.
+            // Same FC-1 check (and the same non-disclosing 404) as a GROUP_ADMIN naming a shop —
+            // a published foreign shop is visible through RLS and must not pass.
+            requireShopInCallerTenant(shopId);
         }
     }
 
@@ -292,6 +306,77 @@ public class ShopAccessService {
     }
 
     /**
+     * Require that the caller holds ANY honoured grant in the pinned tenant — the gate on the
+     * tenant-level customer surface (WINDOWS #29, owner ruling 2026-10-09, option B). Under D-06
+     * strict scoping "ungranted means no access", and since 37-15 measured an ungranted (fresh or
+     * revoked) tenant user reading and creating customers, every {@code /api/v1/customers}
+     * operation calls this first.
+     *
+     * <p><strong>Same predicate as {@code GET /api/v1/staff/me}</strong>
+     * ({@code StaffManagementService.myAccess}), so the API refuses exactly the people the
+     * dashboard shows "You don't have access": the caller passes when {@link #isGroupAdmin()} is
+     * true (realm admin, declared system caller, allowlisted machine client, an honoured tenant-wide
+     * GROUP_ADMIN, or the strict-OFF day-one implicit admin), or when {@link #grantedShopIds()} is
+     * non-empty, or when the cached membership carries a tenant-wide STAFF/SHOP_MANAGER role (a
+     * tenant with no shops yet still admits that holder). Otherwise it throws the typed
+     * {@link ShopAccessDeniedException} with no shop and {@link ShopRole#STAFF} ("any grant") — the
+     * {@code shop-access-denied} 403 the dashboard's access event keys on.
+     *
+     * <p>Three things it deliberately does NOT do:
+     * <ul>
+     *   <li>call {@link #onRequest()} itself: under the strict-OFF override that would JIT-provision
+     *       a GROUP_ADMIN row for an ungranted customer caller, a side effect this surface never had.
+     *       {@link #isGroupAdmin()} already performs the D-09 directory touch, and
+     *       {@link #grantedShopIds()} is reached only when the caller is not a Group admin — under
+     *       strict ON, or holding a row already — where its own {@code onRequest()} provisions
+     *       nothing;</li>
+     *   <li>read {@code shop_staff} rows directly: a de-honoured JIT row would then admit. The
+     *       decision goes through the honour-aware ladder and the cached membership only;</li>
+     *   <li>narrow which customers a granted user sees (option C) or require a role floor such as
+     *       SHOP_MANAGER for writes (option E). Each is a separate future owner ruling.</li>
+     * </ul>
+     *
+     * @throws ShopAccessDeniedException if the caller holds no honoured grant in the tenant, or is
+     *         not an identifiable vendor user.
+     */
+    public void requireAnyAccess() {
+        if (isGroupAdmin()) {
+            return;
+        }
+        if (!grantedShopIds().isEmpty()) {
+            return;
+        }
+        if (self().resolveMembership(requireVendorUserId()).tenantWideRole() != null) {
+            return;
+        }
+        throw new ShopAccessDeniedException(null, ShopRole.STAFF);
+    }
+
+    /**
+     * The {@link #require} decision as a boolean, for a caller that must report a refusal as
+     * DATA rather than abort (37-13, UXT-026: a CSV row naming a shop the importer does not
+     * manage is a per-row error while the other rows import).
+     *
+     * <p>Why not catch {@link #require}'s exception instead: this class is {@code @Transactional},
+     * so an exception leaving {@code require} through the Spring proxy marks the CALLER's
+     * transaction rollback-only, and the caller's later commit fails with
+     * {@code UnexpectedRollbackException} even though it handled the refusal. Here the decision
+     * runs as a self-invocation (no proxy, no interceptor) and only a boolean leaves the proxy.
+     *
+     * <p>Same ladder, same answers: GROUP_ADMIN passes for a shop of its own tenant, a scoped
+     * caller needs {@code minRole} on the shop, a null shop is GROUP_ADMIN-only, and a shop of
+     * another tenant (the FC-1 non-disclosing 404 in {@code require}) is simply {@code false}.
+     */
+    public boolean permits(UUID shopId, ShopRole minRole) {
+        try {
+            require(shopId, minRole);
+            return true;
+        } catch (ShopAccessDeniedException | ResourceNotFoundException refused) {
+            return false;
+        }
+    }
+
+    /**
      * True for a realm-admin (D-03 bridge), a DECLARED internal system caller
      * ({@link SystemPrincipal#asSystem}), a declared machine client (CR-03 allowlist), or a
      * tenant-wide GROUP_ADMIN grant. Every OTHER caller — anonymous, non-{@code Jwt}, a JWT
@@ -320,6 +405,9 @@ public class ShopAccessService {
      * {@link #machineClientIds} allowlist.
      */
     public boolean isGroupAdmin() {
+        // D-09 (37-05): every gated read records its vendor user, GROUP_ADMIN and realm admin
+        // included — their reads short-circuit here and never reach onRequest().
+        touchDirectory();
         if (isRealmAdmin() || isInternalCaller()) {
             return true;
         }
@@ -387,7 +475,9 @@ public class ShopAccessService {
             // deterministic bootstrap admin (kept to avoid a zero-admin lockout).
             return isBootstrapAdmin(userId);
         }
-        return !strictScoping && membership.perShopRole().isEmpty();
+        // A tenant-wide STAFF/SHOP_MANAGER row (37-05) is an explicit grant: its holder is scoped,
+        // never the day-one implicit admin, even under the strict-OFF override.
+        return !strictScoping && membership.perShopRole().isEmpty() && membership.tenantWideRole() == null;
     }
 
     /**
@@ -477,16 +567,24 @@ public class ShopAccessService {
             // Tenant-wide resource: GROUP_ADMIN-only (handled above). A scoped caller is denied.
             return false;
         }
-        // Any explicit per-shop grant (STAFF+) is sufficient to READ/SUBSCRIBE the shop feed.
-        return self().resolveMembership(userId).perShopRole().get(shopId) != null;
+        // Any explicit per-shop grant (STAFF+) is sufficient to READ/SUBSCRIBE the shop feed, and so
+        // is a tenant-wide STAFF/SHOP_MANAGER grant (37-05) — for a shop of THIS tenant only.
+        Membership membership = self().resolveMembership(userId);
+        if (membership.perShopRole().get(shopId) != null) {
+            return true;
+        }
+        return membership.tenantWideRole() != null
+                && shopRepository.findByIdAndTenantId(shopId, tenantId).isPresent();
     }
 
     /**
      * The specific shop ids the caller may read. For a GROUP_ADMIN this returns an
      * EMPTY set as an "unrestricted" sentinel — callers MUST short-circuit on
      * {@link #isGroupAdmin()} first (a GROUP_ADMIN reads all shops, so there is no
-     * finite id set to filter by). For a scoped user it is the exact grant set;
-     * for a fully-ungranted user in strict mode it is empty (deny-by-default). The
+     * finite id set to filter by). For a scoped user it is the exact grant set — and, for a
+     * holder of a tenant-wide STAFF/SHOP_MANAGER grant (37-05), every current shop of the
+     * tenant plus any specific grants; for a fully-ungranted user in strict mode it is empty
+     * (deny-by-default). The
      * 23-03 read-scope helper interprets this against {@link #isGroupAdmin()}.
      */
     public Set<UUID> grantedShopIds() {
@@ -494,7 +592,64 @@ public class ShopAccessService {
         if (isGroupAdmin()) {
             return Set.of();
         }
-        return Set.copyOf(self().resolveMembership(requireVendorUserId()).perShopRole().keySet());
+        Membership membership = self().resolveMembership(requireVendorUserId());
+        if (membership.tenantWideRole() == null) {
+            return Set.copyOf(membership.perShopRole().keySet());
+        }
+        // 37-05: a tenant-wide STAFF/SHOP_MANAGER reads every CURRENT shop of its own tenant (an
+        // explicit tenant predicate: shops_public_read also exposes other tenants' published shops).
+        Set<UUID> all = new HashSet<>(shopRepository.findIdsByTenantId(currentTenantId()));
+        all.addAll(membership.perShopRole().keySet());
+        return Set.copyOf(all);
+    }
+
+    /**
+     * The effective access of {@code userId} in the pinned tenant, for the Staff page (D-09,
+     * Phase 37-05; threat T-37-09). Computed through the SAME decision path enforcement uses —
+     * {@link #isGroupAdminForUser} (with {@code realmAdmin = false}: the database cannot see a
+     * Keycloak role, see {@link EffectiveAccess#realmAdminSeenAt()}) and the cached
+     * {@link #resolveMembership} — never re-derived from raw {@code shop_staff} rows, so the page
+     * cannot say one thing while {@code require}/{@code canAccessShop} do another. In particular a
+     * JIT tenant-wide GROUP_ADMIN row reads GROUP_ADMIN only when the strict-scoping decision
+     * honours it (the bootstrap admin), and NONE otherwise.
+     *
+     * <p>A realm admin (Pitfall 13) is recognised from {@code user_directory.realm_admin_seen_at}
+     * (V76), stamped when a token carrying the role signs in: level {@link EffectiveAccess.Level#REALM_ADMIN}
+     * rather than "No access".
+     *
+     * <p>Read-only: no directory touch, no JIT provision.
+     */
+    public EffectiveAccess effectiveAccessFor(UUID userId) {
+        OffsetDateTime realmAdminSeenAt = userDirectoryRepository
+                .findById(new UserDirectoryId(currentTenantId(), userId))
+                .map(UserDirectory::getRealmAdminSeenAt)
+                .orElse(null);
+        return effectiveAccessFor(userId, realmAdminSeenAt);
+    }
+
+    /**
+     * {@link #effectiveAccessFor(UUID)} with the directory's {@code realm_admin_seen_at} already in
+     * hand (the Staff list reads the directory rows anyway, so it does not look each one up again).
+     */
+    public EffectiveAccess effectiveAccessFor(UUID userId, OffsetDateTime realmAdminSeenAt) {
+        Membership membership = self().resolveMembership(userId);
+        boolean groupAdmin = isGroupAdminForUser(userId, false);
+        boolean bootstrapAdmin = groupAdmin && strictScoping
+                && membership.isGroupAdmin() && membership.groupAdminFromJit();
+        ShopRole tenantWideRole = membership.tenantWideRole();
+        EffectiveAccess.Level level;
+        if (groupAdmin) {
+            level = EffectiveAccess.Level.GROUP_ADMIN;
+        } else if (realmAdminSeenAt != null) {
+            level = EffectiveAccess.Level.REALM_ADMIN;
+        } else if (tenantWideRole != null || !membership.perShopRole().isEmpty()) {
+            level = EffectiveAccess.Level.SHOP_ROLES;
+        } else {
+            level = EffectiveAccess.Level.NONE;
+        }
+        boolean allShops = groupAdmin || level == EffectiveAccess.Level.REALM_ADMIN || tenantWideRole != null;
+        return new EffectiveAccess(userId, level, bootstrapAdmin, allShops, tenantWideRole,
+                membership.perShopRole(), realmAdminSeenAt);
     }
 
     /**
@@ -511,22 +666,29 @@ public class ShopAccessService {
         Map<UUID, ShopRole> perShop = new HashMap<>();
         boolean groupAdmin = false;
         boolean groupAdminFromJit = false;
+        ShopRole tenantWideRole = null;
         for (ShopStaff row : shopStaffRepository.findByTenantIdAndUserId(tenantId, userId)) {
             if (row.getShopId() == null) {
-                // Tenant-wide grant → GROUP_ADMIN shape (D-03). Record its provenance so the
-                // strict-scoping DECISION (isGroupAdminForUser) can de-honour a JIT row while
-                // honouring an operator one (CR-07). The V52 unique index guarantees at most
-                // one tenant-wide row per user, so this single row settles the flag.
+                // Tenant-wide grant. The V52 unique index guarantees at most one tenant-wide row
+                // per user, so this single row settles it.
                 if (row.getRole() == ShopRole.GROUP_ADMIN) {
+                    // GROUP_ADMIN shape (D-03). Record its provenance so the strict-scoping
+                    // DECISION (isGroupAdminForUser) can de-honour a JIT row while honouring an
+                    // operator one (CR-07).
                     groupAdmin = true;
                     groupAdminFromJit = (row.getGrantSource() == GrantSource.JIT);
+                } else {
+                    // 37-05 (D-07/D-23): "a role plus all shops" — a NULL-shop STAFF or
+                    // SHOP_MANAGER row confers that role on every shop of the tenant. Before 37-05
+                    // such a row was silently ignored (403 everywhere).
+                    tenantWideRole = row.getRole();
                 }
             } else {
                 perShop.merge(row.getShopId(), row.getRole(),
                         (a, b) -> a.rank() >= b.rank() ? a : b);
             }
         }
-        return new Membership(groupAdmin, groupAdminFromJit, Map.copyOf(perShop));
+        return new Membership(groupAdmin, groupAdminFromJit, Map.copyOf(perShop), tenantWideRole);
     }
 
     /**
@@ -569,60 +731,67 @@ public class ShopAccessService {
     // ---------------------------------------------------------------------
 
     /**
-     * Runs the per-request side effects once, at the top of every enforcement
-     * entry point: the throttled directory upsert (always), then — while
-     * strict-scoping is OFF — the JIT GROUP_ADMIN provision for a not-yet-granted,
-     * non-realm-admin caller. Both target ONLY the caller's own {@code sub}; no
-     * client-supplied role/shop is ever read (T-23-02-01).
+     * D-09 (37-05): record the request's vendor user in {@code user_directory}, READS included, so
+     * the Staff page lists everyone who has signed in — an ungranted user, who under D-06 can do
+     * little but read, and a realm admin, whose implicit GROUP_ADMIN short-circuits every gate
+     * before {@link #onRequest()} would run. Called from {@link #isGroupAdmin()} and from
+     * {@link #onRequest()}; the toucher's in-process throttle makes the repeat a map lookup.
+     *
+     * <p>The toucher runs in its OWN transaction (REQUIRES_NEW), so it neither needs a
+     * write-capable caller nor can a failure poison the caller's transaction; it is best-effort
+     * and writes no grant. Skipped (not thrown) when no tenant is pinned — a directory row needs
+     * a tenant, and the enforcement path reports a missing tenant itself where it matters.
+     *
+     * <p>WR-09 (CR-07): a DECLARED machine/service client is never recorded — even when Keycloak
+     * issues its service account a UUID subject. The directory is a human grant-target picker;
+     * those rows appeared in the staff list as opaque UUIDs. Classified purely by the allowlisted
+     * azp/client_id, independent of sub shape.
+     *
+     * @return the caller's UUID subject when it is an identifiable, non-machine vendor user (the
+     *         JIT step needs it), else null
      */
-    private void onRequest() {
+    private UUID touchDirectory() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
-            return;
+            return null;
         }
         UUID sub = parseSub(jwt);
+        if (sub == null || isAllowlistedMachineClient(jwt)) {
+            return null;
+        }
+        Optional<UUID> pinned = TenantContext.get();
+        if (pinned.isPresent()) {
+            userDirectoryToucher.touch(pinned.get(), sub, jwt.getClaimAsString("email"), displayName(jwt),
+                    isRealmAdmin());
+        }
+        return sub;
+    }
+
+    /**
+     * Runs the per-request side effects at the top of every enforcement entry point: the
+     * throttled, best-effort directory touch (reads included, its own transaction — D-09, 37-05),
+     * then — while strict-scoping is OFF and the transaction can write — the JIT GROUP_ADMIN
+     * provision for a not-yet-granted, non-realm-admin caller. Both target ONLY the caller's own
+     * {@code sub}; no client-supplied role/shop is ever read (T-23-02-01).
+     */
+    private void onRequest() {
+        UUID sub = touchDirectory();
         if (sub == null) {
             return;
         }
 
-        // WR-09 (CR-07): a DECLARED machine/service client must never accumulate a persistent
-        // tenant-wide GROUP_ADMIN row — even when Keycloak issues its service account a UUID
-        // subject (so parseSub above succeeds). Those JIT rows survived the strict-scoping flip
-        // and appeared in the staff list as opaque UUIDs with no directory entry. A machine
-        // client's access already runs through the 23-08 allowlist (the isGroupAdmin()
-        // short-circuit), so skip BOTH the directory upsert (it is a human grant-target picker)
-        // AND the JIT provision entirely — nothing breaks, it just stops acquiring grants by
-        // accident. Classified purely by the allowlisted azp/client_id, independent of sub shape.
-        if (isAllowlistedMachineClient(jwt)) {
-            return;
-        }
-
-        // Phase 23-03: NEVER attempt a write in a read-only transaction. A failed
+        // Phase 23-03: NEVER attempt the JIT write in a read-only transaction. A failed
         // INSERT (Postgres rejects writes in a read-only tx) would poison the whole
         // transaction ("current transaction is aborted"), breaking the read that
-        // triggered this gate call — even though the directory upsert is wrapped in a
-        // best-effort try/catch, the SQL statement itself still aborts the tx. The
-        // read DECISION does not depend on these writes ({@link #isGroupAdmin()}
-        // derives the day-one implicit GROUP_ADMIN from strict-scoping, not from the
-        // JIT row), so the directory upsert + JIT provision run ONLY on write-capable
-        // request paths. The JIT row is still materialised on the first write request.
+        // triggered this gate call. The read DECISION does not depend on it
+        // ({@link #isGroupAdmin()} derives the day-one implicit GROUP_ADMIN from
+        // strict-scoping, not from the JIT row), so the JIT provision runs ONLY on
+        // write-capable request paths, and never under strict scoping (D-06).
         if (TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
             return;
         }
 
         UUID tenantId = currentTenantId();
-
-        // D-09: throttled login upsert. Best-effort — a directory write must never
-        // fail a real request. The native ON CONFLICT DO UPDATE ... WHERE
-        // last_seen < cutoff makes a returning user within the window a no-op.
-        try {
-            OffsetDateTime cutoff = OffsetDateTime.now().minus(directoryUpsertInterval);
-            userDirectoryRepository.upsertSeen(tenantId, sub,
-                    jwt.getClaimAsString("email"), displayName(jwt), cutoff);
-        } catch (RuntimeException ex) {
-            log.warn("Directory upsert skipped (best-effort) for sub {} tenant {}: {}",
-                    sub, tenantId, ex.getMessage());
-        }
 
         // D-04 / D-12: JIT lazy-provision. Skipped when strict-scoping is ON, when
         // the caller is a realm-admin (implicit GROUP_ADMIN — no row needed), or

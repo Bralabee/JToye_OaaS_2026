@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  Ban,
   ShoppingCart,
   Clock,
   CheckCircle2,
@@ -22,6 +23,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { RefundDialog } from "./RefundDialog"
+import { VoidOrderDialog, describeVoider, isCardPaid, isVoidable } from "./void-order-dialog"
+import { VoidedBadge } from "./voided-badge"
+import { useOptionalShopSwitcherData } from "@/components/dashboard/shop-switcher-provider"
+import { fetchStaff, type StaffPerson } from "@/lib/staff-api"
 import { OrderAllergenBanner } from "@/components/dashboard/kitchen/order-allergen-banner"
 import { ItemAllergenBadge } from "@/components/dashboard/kitchen/item-allergen-badge"
 import type { OrderDetail, OrderStatus, Refund } from "@/types/api"
@@ -139,10 +144,56 @@ function allergenConfirmationLine(order: OrderDetail): string {
 interface OrderDetailPanelProps {
   order: OrderDetail
   onRefundIssued?: () => void
+  /** 37-12: called with the server's detail after a void, so the page can keep it as its own. */
+  onVoided?: (detail: OrderDetail) => void
 }
 
-export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProps) {
+type VoidRecord = { voidedAt: string; voidedBy: string | null; voidReason: string | null }
+
+export function OrderDetailPanel({ order, onRefundIssued, onVoided }: OrderDetailPanelProps) {
   const [refundDialogOpen, setRefundDialogOpen] = useState(false)
+  const [voidDialogOpen, setVoidDialogOpen] = useState(false)
+  // 37-12 (UI-SPEC § B4): the void the server just recorded, shown at once even if the
+  // page does not hand back a new `order`. The order's own fields win when present.
+  const [justVoided, setJustVoided] = useState<VoidRecord | null>(null)
+  const voided: VoidRecord | null = order.voidedAt
+    ? { voidedAt: order.voidedAt, voidedBy: order.voidedBy ?? null, voidReason: order.voidReason ?? null }
+    : justVoided
+
+  // Who may void: a Group admin, as the dashboard shell's staff/me says. Outside the shell
+  // (no provider) or before staff/me answers, nobody is offered it; the server refuses a
+  // non-admin anyway (37-10 403, T-37-34).
+  const switcher = useOptionalShopSwitcherData()
+  const isGroupAdmin = !!switcher && !switcher.loading && switcher.access?.groupAdmin === true
+  const viewerId = switcher?.userId ?? null
+  const canVoid = isGroupAdmin && isVoidable({ status: order.status, voidedAt: voided?.voidedAt })
+
+  // The staff directory, read at most once and only by a Group admin (STAFF and managers
+  // cannot read it), to say WHO voided an order instead of an account id.
+  const [people, setPeople] = useState<StaffPerson[] | null>(null)
+  const peopleRequest = useRef<Promise<StaffPerson[] | null> | null>(null)
+  const loadPeople = useCallback((): Promise<StaffPerson[] | null> => {
+    if (!isGroupAdmin) return Promise.resolve(null)
+    if (!peopleRequest.current) {
+      peopleRequest.current = fetchStaff()
+        .then((list) => {
+          setPeople(list.people)
+          return list.people
+        })
+        .catch(() => null)
+    }
+    return peopleRequest.current
+  }, [isGroupAdmin])
+
+  const voidedBy = voided?.voidedBy ?? null
+  useEffect(() => {
+    if (voidedBy && voidedBy !== viewerId) void loadPeople()
+  }, [voidedBy, viewerId, loadPeople])
+
+  const nameFor = useCallback(
+    async (by: string | null | undefined) => describeVoider(by, viewerId, await loadPeople()),
+    [viewerId, loadPeople]
+  )
 
   const statusUi = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.DRAFT
   const StatusIcon = statusUi.icon
@@ -180,17 +231,33 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
-          <Badge
-            className={`${statusUi.bgColor} flex items-center gap-1 text-white`}
-          >
-            <StatusIcon className="h-3 w-3" aria-hidden="true" />
-            {statusUi.label}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <Badge
+              className={`${statusUi.bgColor} flex items-center gap-1 text-white`}
+            >
+              <StatusIcon className="h-3 w-3" aria-hidden="true" />
+              {statusUi.label}
+            </Badge>
+            {voided && <VoidedBadge />}
+          </div>
           <span className="text-2xl font-bold text-slate-900">
             £{formatPounds(order.totalAmountPennies)}
           </span>
         </div>
       </div>
+
+      {/* 37-12 (UI-SPEC § B4 "After"): who voided the order, when and why. The order stays
+          listed and openable; this block is the record. Long reasons wrap, never overflow. */}
+      {voided && (
+        <p
+          data-testid="order-voided"
+          className="rounded-lg border-2 border-slate-900 bg-white px-4 py-2 text-sm text-slate-900 [overflow-wrap:anywhere]"
+        >
+          Voided by {describeVoider(voided.voidedBy, viewerId, people)} on{" "}
+          {formatUkDateTime(voided.voidedAt)}
+          {voided.voidReason ? ` · Reason: ${voided.voidReason}` : ""}
+        </p>
+      )}
 
       {/* QA-council FE-7: the order's allergen picture, above the customer/
           items blocks — this is a safety fact, not incidental metadata, and
@@ -435,7 +502,42 @@ export function OrderDetailPanel({ order, onRefundIssued }: OrderDetailPanelProp
             Issue refund
           </Button>
         )}
+        {/* 37-12 (UI-SPEC § B4 "Trigger"): at the end of the action row, separate from the
+            status actions. There is deliberately no Delete control for these orders (D-10). */}
+        {canVoid && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11"
+            onClick={() => setVoidDialogOpen(true)}
+          >
+            <Ban className="mr-2 h-4 w-4" aria-hidden="true" />
+            Void order
+          </Button>
+        )}
       </div>
+
+      {isGroupAdmin && (
+        <VoidOrderDialog
+          open={voidDialogOpen}
+          onOpenChange={setVoidDialogOpen}
+          orderId={order.id}
+          orderLabel={order.orderNumber || order.id.substring(0, 8)}
+          cardPaid={isCardPaid(order)}
+          nameFor={nameFor}
+          onVoided={(detail) => {
+            setVoidDialogOpen(false)
+            if (detail?.voidedAt) {
+              setJustVoided({
+                voidedAt: detail.voidedAt,
+                voidedBy: detail.voidedBy ?? null,
+                voidReason: detail.voidReason ?? null,
+              })
+            }
+            onVoided?.(detail)
+          }}
+        />
+      )}
 
       <RefundDialog
         open={refundDialogOpen}

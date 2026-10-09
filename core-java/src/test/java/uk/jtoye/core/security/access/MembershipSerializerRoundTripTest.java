@@ -71,6 +71,44 @@ class MembershipSerializerRoundTripTest {
         assertThat(restored.perShopRole()).as("the empty map survives without loss").isEmpty();
     }
 
+    /**
+     * 37-05: a membership cached BEFORE {@code tenantWideRole} existed must still be readable, so
+     * a rolling deploy never turns every cached membership into a cache error. The literal below is
+     * the production serializer's output for a three-component {@code Membership}, captured from
+     * {@code CacheConfig.jsonRedisSerializer()} at commit 46a5435f, before 37-05 Task 2 changed the
+     * record. A missing component
+     * reads as null, which means "no tenant-wide shop role" — the pre-37-05 meaning.
+     */
+    @Test
+    void aMembershipCachedBeforeTenantWideRoleExisted_stillDeserialises() {
+        UUID shop = UUID.fromString("37050000-0000-4000-8000-00000000a005");
+        byte[] cachedBefore37_05 = ("{\"@class\":\"uk.jtoye.core.security.access.Membership\","
+                + "\"isGroupAdmin\":false,\"groupAdminFromJit\":false,"
+                + "\"perShopRole\":{\"@class\":\"java.util.ImmutableCollections$Map1\","
+                + "\"37050000-0000-4000-8000-00000000a005\":\"SHOP_MANAGER\"}}")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        Object back = serializer().deserialize(cachedBefore37_05);
+
+        assertThat(back).isInstanceOf(Membership.class);
+        Membership restored = (Membership) back;
+        assertThat(restored.isGroupAdmin()).isFalse();
+        assertThat(restored.perShopRole()).containsExactlyEntriesOf(Map.of(shop, ShopRole.SHOP_MANAGER));
+        assertThat(restored.tenantWideRole()).as("absent in the old shape → no tenant-wide role").isNull();
+    }
+
+    @Test
+    void tenantWideShopRoleRoundTrips() {
+        Membership original = new Membership(false, false, Map.of(), ShopRole.STAFF);
+
+        RedisSerializer<Object> serializer = serializer();
+        Membership restored = (Membership) serializer.deserialize(serializer.serialize(original));
+
+        assertThat(restored.tenantWideRole()).as("the 37-05 tenant-wide role survives").isEqualTo(ShopRole.STAFF);
+        assertThat(restored.isGroupAdmin()).isFalse();
+        assertThat(restored.perShopRole()).isEmpty();
+    }
+
     @Test
     void operatorGroupAdminMembershipRoundTrips() {
         Membership original = new Membership(true, false, Map.of());

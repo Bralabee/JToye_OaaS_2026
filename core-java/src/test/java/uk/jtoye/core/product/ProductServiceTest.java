@@ -66,6 +66,10 @@ class ProductServiceTest {
     @Mock
     private uk.jtoye.core.media.MediaAssetService mediaAssetService;
 
+    // 37-13: copyProducts locks the target shop through ShopRepository (not exercised here).
+    @Mock
+    private uk.jtoye.core.shop.ShopRepository shopRepository;
+
     // Phase 23-10 (CR-01): getProductById now delegates its cached data-load to the
     // ProductCacheLoader bean. Constructed with the REAL loader (wrapping the mocked
     // repository + mapper) in setUp() so the existing by-id tests keep exercising
@@ -101,7 +105,7 @@ class ProductServiceTest {
         productService = new ProductService(productRepository, productMapper, storageService,
                 cacheEvictor, shopAccessService,
                 new ProductService.ProductCacheLoader(productRepository, productMapper),
-                productMediaRepository, mediaAssetService);
+                productMediaRepository, mediaAssetService, shopRepository);
 
         // Set up tenant context
         TenantContext.set(tenantId);

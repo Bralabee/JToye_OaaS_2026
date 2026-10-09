@@ -14,10 +14,12 @@ import apiClient from "@/lib/api-client"
 export type ShopRole = "STAFF" | "SHOP_MANAGER" | "GROUP_ADMIN"
 
 /**
- * A grant's provenance (mirrors the Java `GrantSource` enum, V57). `JIT` = auto-granted
- * on the user's first sign-in (D-04); `OPERATOR` = deliberately granted by a group admin.
- * A group admin can see this before flipping strict-scoping, which de-honours JIT
- * tenant-wide grants (CR-07).
+ * A grant's provenance (mirrors the Java `GrantSource` enum, V57). `JIT` = written
+ * automatically at a user's first sign-in while strict scoping was off (D-04);
+ * `OPERATOR` = deliberately granted by a group admin. Strict scoping is ON by default
+ * since D-06 (37-04), and under it a JIT tenant-wide GROUP_ADMIN row is honoured only
+ * for the tenant's bootstrap admin. The Staff page therefore never shows provenance as
+ * access: it shows {@link EffectiveAccess}, which the server computes (D-09).
  */
 export type GrantSource = "JIT" | "OPERATOR"
 
@@ -42,15 +44,61 @@ export interface StaffMember {
   userId: string
   shopId: string | null
   role: ShopRole
-  /** Provenance (V57) — `JIT` rows are auto-granted on first sign-in (CR-07). */
+  /** Provenance (V57, see {@link GrantSource}). Never rendered as access (D-09). */
   grantSource: GrantSource
   createdAt: string | null
   createdBy: string | null
 }
 
+/**
+ * The strongest thing a person may do in the tenant (mirrors the Java
+ * `EffectiveAccess.Level`, 37-05). REALM_ADMIN is a platform admin account, seen
+ * signing in with the realm admin role (V76); the database cannot see that role
+ * live, so it is an observation, never "No access".
+ */
+export type AccessLevel = "GROUP_ADMIN" | "REALM_ADMIN" | "SHOP_ROLES" | "NONE"
+
+/**
+ * One person's effective access, as `ShopAccessService.effectiveAccessFor` decides
+ * it — the same decision path enforcement uses (D-09, 37-05). The browser renders
+ * this value and derives none of its own (T-37-12).
+ */
+export interface EffectiveAccess {
+  userId: string
+  level: AccessLevel
+  /** GROUP_ADMIN only because this is the tenant's oldest automatic admin and the
+   *  tenant has no operator-granted admin (kept so it cannot lock itself out). */
+  bootstrapAdmin: boolean
+  /** The access covers every shop of the tenant, present and future. */
+  allShops: boolean
+  /** Role a tenant-wide STAFF / SHOP_MANAGER grant confers on every shop. */
+  tenantWideRole: ShopRole | null
+  /** Role per specifically granted shop id. */
+  perShopRole: Record<string, ShopRole>
+  /** First sign-in seen with the realm admin role; null when never observed. */
+  realmAdminSeenAt: string | null
+}
+
+/**
+ * A person on the Staff page (`StaffPersonDto`, 37-05): everyone who has signed in
+ * to the tenant plus every grant holder with no directory row (an integration
+ * account), whose email, name and last-seen are then null.
+ */
+export interface StaffPerson {
+  userId: string
+  /** Masked like the directory (WR-10); null when the person never signed in here. */
+  maskedEmail: string | null
+  displayName: string | null
+  lastSeen: string | null
+  /** Absent only from a server older than 37-05; the page then says "Not recorded". */
+  effectiveAccess?: EffectiveAccess | null
+}
+
 export interface StaffList {
   directory: DirectoryEntry[]
   grants: StaffMember[]
+  /** null when the server sent no `people` (older than 37-05). */
+  people: StaffPerson[] | null
 }
 
 export interface GrantStaffInput {
@@ -61,12 +109,13 @@ export interface GrantStaffInput {
   role: ShopRole
 }
 
-/** GET /api/v1/staff — the directory + current grants. */
+/** GET /api/v1/staff — the directory, current grants and the people list. */
 export async function fetchStaff(): Promise<StaffList> {
   const res = await apiClient.get<StaffList>("/api/v1/staff")
   return {
     directory: res.data?.directory ?? [],
     grants: res.data?.grants ?? [],
+    people: Array.isArray(res.data?.people) ? res.data.people : null,
   }
 }
 
@@ -86,4 +135,95 @@ export async function grantStaff(input: GrantStaffInput): Promise<StaffMember> {
  */
 export async function revokeStaff(id: string): Promise<void> {
   await apiClient.delete(`/api/v1/staff/${id}`)
+}
+
+/**
+ * Each role's plain-English scope, shown beside its name wherever a role is chosen
+ * (the grant form and the invite form, UI-SPEC § B1). One list, so the two forms
+ * cannot describe the same role differently.
+ */
+export const ROLE_HINTS: Record<ShopRole, string> = {
+  STAFF: "order ops on one shop",
+  SHOP_MANAGER: "full CRUD on one shop",
+  GROUP_ADMIN: "all shops + staff management",
+}
+
+/** The roles in the order every picker lists them. */
+export const ROLE_ORDER: ShopRole[] = ["STAFF", "SHOP_MANAGER", "GROUP_ADMIN"]
+
+/**
+ * An invitation's state, computed by the server at read time (mirrors the Java
+ * `StaffInvite.Status`, 37-07). OPEN = the link works; EXPIRED = its time ran out;
+ * ACCEPTED = it became a grant; CANCELLED = cancelled, or replaced by a resend.
+ */
+export type StaffInviteStatus = "OPEN" | "EXPIRED" | "ACCEPTED" | "CANCELLED"
+
+/**
+ * One invitation as a Group admin sees it (`StaffInviteDto`, 37-07). `shopId` null
+ * means every shop. The link token is never part of this body: it exists only in the
+ * invitee's email.
+ */
+export interface StaffInvite {
+  id: string
+  /** The address the link went to, in full (the Group admin typed it). */
+  email: string
+  role: ShopRole
+  shopId: string | null
+  status: StaffInviteStatus
+  expiresAt: string
+  createdAt: string | null
+  createdBy: string | null
+  acceptedAt: string | null
+  revokedAt: string | null
+}
+
+export interface CreateStaffInviteInput {
+  email: string
+  role: ShopRole
+  /** null ⇒ every shop (always null for GROUP_ADMIN; the server refuses otherwise). */
+  shopId: string | null
+}
+
+/**
+ * The outcome of {@link createStaffInvite}. `created` is false on the server's
+ * idempotent replay (200): an invitation for the same email, shop and role was
+ * already open, and NO second email was sent — so the page must not say "sent".
+ */
+export interface CreateStaffInviteResult {
+  invite: StaffInvite
+  created: boolean
+}
+
+/** The problem `type` suffix of the "address belongs to another business" refusal. */
+export const INVITE_OTHER_BUSINESS_PROBLEM = "staff-invite-email-in-other-business"
+
+/** GET /api/v1/staff/invites — every invitation of the business, newest first. */
+export async function fetchStaffInvites(): Promise<StaffInvite[]> {
+  const res = await apiClient.get<StaffInvite[]>("/api/v1/staff/invites")
+  return Array.isArray(res.data) ? res.data : []
+}
+
+/**
+ * POST /api/v1/staff/invites — 201 when a new invitation was created and emailed,
+ * 200 when the same (email, shop, role) invitation was already open (no email).
+ */
+export async function createStaffInvite(
+  input: CreateStaffInviteInput
+): Promise<CreateStaffInviteResult> {
+  const res = await apiClient.post<StaffInvite>("/api/v1/staff/invites", input)
+  return { invite: res.data, created: res.status !== 200 }
+}
+
+/**
+ * POST /api/v1/staff/invites/{id}/resend — revokes the old link and emails a new
+ * one for the same email, shop and role. Deliberately not idempotent.
+ */
+export async function resendStaffInvite(id: string): Promise<StaffInvite> {
+  const res = await apiClient.post<StaffInvite>(`/api/v1/staff/invites/${id}/resend`)
+  return res.data
+}
+
+/** DELETE /api/v1/staff/invites/{id} — the link stops working (204, repeatable). */
+export async function cancelStaffInvite(id: string): Promise<void> {
+  await apiClient.delete(`/api/v1/staff/invites/${id}`)
 }

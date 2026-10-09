@@ -17,7 +17,9 @@ import uk.jtoye.core.media.MediaAssetService;
 import uk.jtoye.core.product.dto.BulkImportResult;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
+import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.security.access.ShopAccessService;
+import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.storage.StorageService;
 
 import java.lang.reflect.Field;
@@ -62,6 +64,9 @@ class BulkImportServiceTest {
 
     private UUID tenantId;
 
+    /** The shop the import is started in (37-13): rows without a shop_id cell land here. */
+    private UUID shopId;
+
     private void setField(Object target, String fieldName, Object value) {
         try {
             Field field = target.getClass().getDeclaredField(fieldName);
@@ -75,6 +80,7 @@ class BulkImportServiceTest {
     @BeforeEach
     void setUp() {
         tenantId = UUID.randomUUID();
+        shopId = UUID.randomUUID();
         TenantContext.set(tenantId);
 
         // Phase 23 (VSA-02): these fixtures import CSVs with no shop_id column, so run as
@@ -122,7 +128,7 @@ class BulkImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
 
-        BulkImportResult result = bulkImportService.importFromCsv(file);
+        BulkImportResult result = bulkImportService.importFromCsv(file, shopId);
 
         assertEquals(2, result.getTotalRows());
         assertEquals(2, result.getSuccessCount());
@@ -140,7 +146,7 @@ class BulkImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
 
-        BulkImportResult result = bulkImportService.importFromCsv(file);
+        BulkImportResult result = bulkImportService.importFromCsv(file, shopId);
 
         assertEquals(1, result.getTotalRows());
         assertEquals(0, result.getSuccessCount());
@@ -157,7 +163,7 @@ class BulkImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
 
-        BulkImportResult result = bulkImportService.importFromCsv(file);
+        BulkImportResult result = bulkImportService.importFromCsv(file, shopId);
 
         assertEquals(1, result.getTotalRows());
         assertEquals(0, result.getSuccessCount());
@@ -174,7 +180,7 @@ class BulkImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
 
-        BulkImportResult result = bulkImportService.importFromCsv(file);
+        BulkImportResult result = bulkImportService.importFromCsv(file, shopId);
 
         assertEquals(0, result.getTotalRows());
         assertEquals(1, result.getErrorCount());
@@ -186,12 +192,12 @@ class BulkImportServiceTest {
     void testImportFromCsv_MalformedShopId_RowErrorNot403() {
         String csv = "title,price_pounds,shop_id\n" +
                 "Bad Row,5.00,not-a-uuid\n" +
-                "Good Row,6.00,\n";  // blank shop_id -> null -> allowed for GROUP_ADMIN
+                "Good Row,6.00,\n";  // blank shop_id -> the import's own shop
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
 
-        BulkImportResult result = bulkImportService.importFromCsv(file);
+        BulkImportResult result = bulkImportService.importFromCsv(file, shopId);
 
         assertEquals(2, result.getTotalRows());
         // The good row still imports — a bad cell does not abort the whole batch.
@@ -202,8 +208,10 @@ class BulkImportServiceTest {
         assertEquals("shop_id", err.getField());
         assertTrue(err.getMessage().contains("Invalid shop_id"),
                 "malformed shop_id must be a validation error, got: " + err.getMessage());
-        // ...and it was NEVER surfaced as an authorization denial (no require() on the bad row).
-        verify(shopAccessService, never()).require(any(), any());
+        // ...and it was NEVER surfaced as an authorization denial: the only gate call is the one
+        // on the import's own shop, and no row reached the per-row shop check.
+        verify(shopAccessService).require(shopId, ShopRole.SHOP_MANAGER);
+        verify(shopAccessService, never()).permits(any(), any());
     }
 
     @Test
@@ -212,7 +220,7 @@ class BulkImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "empty.csv", "text/csv", new byte[0]);
 
-        BulkImportResult result = bulkImportService.importFromCsv(file);
+        BulkImportResult result = bulkImportService.importFromCsv(file, shopId);
 
         assertEquals(0, result.getTotalRows());
         verify(productRepository, never()).save(any(Product.class));
@@ -227,7 +235,7 @@ class BulkImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
 
-        bulkImportService.importFromCsv(file);
+        bulkImportService.importFromCsv(file, shopId);
 
         ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
         verify(productRepository).save(captor.capture());
@@ -247,7 +255,7 @@ class BulkImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
 
-        bulkImportService.importFromCsv(file);
+        bulkImportService.importFromCsv(file, shopId);
 
         ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
         verify(productRepository, times(2)).save(captor.capture());
@@ -266,7 +274,99 @@ class BulkImportServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
 
-        assertThrows(IllegalStateException.class, () -> bulkImportService.importFromCsv(file));
+        assertThrows(IllegalStateException.class, () -> bulkImportService.importFromCsv(file, shopId));
+    }
+
+    // ---- Target shop (37-13, UXT-026) ----
+
+    @Test
+    @DisplayName("importFromCsv - Rows without a shop_id cell are created in the shop the import was started in")
+    void testImportFromCsv_DefaultShopApplied() {
+        String csv = "title,price_pounds\n" +
+                "Jollof Rice,8.99\n" +
+                "Puff Puff,2.50\n";
+
+        bulkImportService.importFromCsv(csvFile(csv), shopId);
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productRepository, times(2)).save(captor.capture());
+        assertTrue(captor.getAllValues().stream().allMatch(p -> shopId.equals(p.getShopId())),
+                "every row must land in the import's shop");
+        verify(shopAccessService).require(shopId, ShopRole.SHOP_MANAGER);
+    }
+
+    @Test
+    @DisplayName("importFromCsv - No shop_id cell and no shopId: per-row 'shop required', nothing saved, even for a Group admin")
+    void testImportFromCsv_ShopRequired() {
+        String csv = "title,price_pounds\n" +
+                "Jollof Rice,8.99\n" +
+                "Puff Puff,2.50\n";
+
+        BulkImportResult result = bulkImportService.importFromCsv(csvFile(csv), null);
+
+        assertEquals(2, result.getTotalRows());
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(2, result.getErrorCount());
+        for (BulkImportResult.RowError error : result.getErrors()) {
+            assertEquals("shop_id", error.getField());
+            assertEquals("shop required", error.getMessage());
+        }
+        verify(productRepository, never()).save(any(Product.class));
+        verify(shopAccessService, never()).require(any(), any());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - A row's own managed shop_id wins over the import's shop")
+    void testImportFromCsv_RowShopWins() {
+        UUID otherShop = UUID.randomUUID();
+        when(shopAccessService.permits(otherShop, ShopRole.SHOP_MANAGER)).thenReturn(true);
+        String csv = "title,price_pounds,shop_id\n" +
+                "Suya,9.00," + otherShop + "\n";
+
+        bulkImportService.importFromCsv(csvFile(csv), shopId);
+
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productRepository).save(captor.capture());
+        assertEquals(otherShop, captor.getValue().getShopId());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - A row naming a shop the caller does not manage is a per-row error; the other rows import")
+    void testImportFromCsv_RowShopNotManaged() {
+        UUID foreignShop = UUID.randomUUID();
+        when(shopAccessService.permits(foreignShop, ShopRole.SHOP_MANAGER)).thenReturn(false);
+        String csv = "title,price_pounds,shop_id\n" +
+                "Jollof Rice,8.99,\n" +
+                "Suya,9.00," + foreignShop + "\n";
+
+        BulkImportResult result = bulkImportService.importFromCsv(csvFile(csv), shopId);
+
+        assertEquals(1, result.getSuccessCount());
+        assertEquals(1, result.getErrorCount());
+        BulkImportResult.RowError error = result.getErrors().get(0);
+        assertEquals(3, error.getRow());
+        assertEquals("shop_id", error.getField());
+        assertEquals(BulkImportService.SHOP_NOT_MANAGED, error.getMessage());
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        verify(productRepository).save(captor.capture());
+        assertEquals("Jollof Rice", captor.getValue().getTitle());
+        assertEquals(shopId, captor.getValue().getShopId());
+    }
+
+    @Test
+    @DisplayName("importFromCsv - A shopId the caller does not manage refuses the whole import before any row is saved")
+    void testImportFromCsv_DefaultShopRefused() {
+        doThrow(new ShopAccessDeniedException(shopId, ShopRole.SHOP_MANAGER))
+                .when(shopAccessService).require(shopId, ShopRole.SHOP_MANAGER);
+        String csv = "title,price_pounds\nJollof Rice,8.99\n";
+
+        assertThrows(ShopAccessDeniedException.class,
+                () -> bulkImportService.importFromCsv(csvFile(csv), shopId));
+        verify(productRepository, never()).save(any(Product.class));
+    }
+
+    private static MockMultipartFile csvFile(String csv) {
+        return new MockMultipartFile("file", "products.csv", "text/csv", csv.getBytes(StandardCharsets.UTF_8));
     }
 
     // ---- Image Import Tests ----

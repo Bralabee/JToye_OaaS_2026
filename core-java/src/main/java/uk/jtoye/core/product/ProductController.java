@@ -22,6 +22,8 @@ import uk.jtoye.core.ai.ImageAnalysisResult;
 import uk.jtoye.core.ai.ImageAnalysisService;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.product.dto.BulkImportResult;
+import uk.jtoye.core.product.dto.CopyProductsRequest;
+import uk.jtoye.core.product.dto.CopyProductsResult;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 
@@ -128,9 +130,26 @@ public class ProductController {
 
     @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
     @PostMapping(value = "/bulk/csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Bulk import from CSV", description = "Import multiple products from a CSV file. Returns created products and per-row errors.")
-    public ResponseEntity<BulkImportResult> bulkImportCsv(@RequestParam("file") MultipartFile file) {
-        BulkImportResult result = bulkImportService.importFromCsv(file);
+    @Operation(summary = "Bulk import from CSV",
+            description = "Import multiple products from a CSV file. Returns created products and per-row errors. "
+                    + "Each row is created in the shop its shop_id cell names, or else in the shop given by the "
+                    + "shopId parameter. A row with neither is reported as the per-row error 'shop required' and "
+                    + "is not created (a product with no shop is never shown on a storefront). A row naming a shop "
+                    + "the caller does not manage is a per-row error and is not created; the other rows still import.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Import processed; see created and errors"),
+            @ApiResponse(responseCode = "401",
+                    description = "No bearer token, or one that is expired or invalid (errors/unauthorized)"),
+            @ApiResponse(responseCode = "403",
+                    description = "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no "
+                            + "SHOP_MANAGER grant on shopId (errors/shop-access-denied); nothing is written")
+    })
+    public ResponseEntity<BulkImportResult> bulkImportCsv(
+            @RequestParam("file") MultipartFile file,
+            @Parameter(description = "Shop to import into: rows without their own shop_id are created here. "
+                    + "Requires SHOP_MANAGER on this shop.")
+            @RequestParam(required = false) UUID shopId) {
+        BulkImportResult result = bulkImportService.importFromCsv(file, shopId);
         return ResponseEntity.ok(result);
     }
 
@@ -140,6 +159,39 @@ public class ProductController {
     public ResponseEntity<BulkImportResult> bulkImportImages(@RequestParam("files") MultipartFile[] files) {
         BulkImportResult result = bulkImportService.importFromImages(files);
         return ResponseEntity.ok(result);
+    }
+
+    // ---- Copy to shop (37-13, RWO-026 / UXT-026) ----
+
+    // Agent-readiness: no Idempotency-Key, because the operation is provably idempotent (a product the
+    // target already has is skipped, under a target-shop lock), and no MCP tool (catalogue bulk operations
+    // are a dashboard task; recorded in 37-13).
+    @PreAuthorize("hasAuthority('SCOPE_catalog:write')")  // issue #206 [AI-4]: catalog write scope
+    @PostMapping(value = "/copy", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Copy products to another shop",
+            description = "Copies products from one shop of the tenant to another through the normal product "
+                    + "create path. Allergen data (declared mask, emphasis spans, may-contain mask, ingredients), "
+                    + "price, VAT rate, label fields, stock and photos are carried verbatim; photos are shared "
+                    + "(new links to the same images, nothing duplicated). Omit productIds to copy the whole "
+                    + "menu. Idempotent: a product the target already has (its copy SKU, or the same title "
+                    + "ignoring case) is SKIPPED, so repeating a copy creates nothing. A requested product that "
+                    + "is not in the source shop is a FAILED item; the others still copy. Each copy gets the "
+                    + "SKU {source SKU}-{first 8 characters of the target shop id}, because SKUs are unique "
+                    + "per tenant.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Copy processed; see created, skipped, failed and items"),
+            @ApiResponse(responseCode = "400",
+                    description = "Missing shop id, more than 500 productIds, or source and target are the same "
+                            + "shop (errors/validation, errors/invalid-argument)"),
+            @ApiResponse(responseCode = "401",
+                    description = "No bearer token, or one that is expired or invalid (errors/unauthorized)"),
+            @ApiResponse(responseCode = "403",
+                    description = "Token lacks the catalog:write scope (errors/forbidden), or the caller holds no "
+                            + "SHOP_MANAGER grant on the source or the target shop (errors/shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "A shop is not one of the caller's tenant (errors/not-found)")
+    })
+    public ResponseEntity<CopyProductsResult> copyToShop(@Valid @RequestBody CopyProductsRequest request) {
+        return ResponseEntity.ok(productService.copyProducts(request));
     }
 
     // ---- Labels ----

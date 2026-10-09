@@ -119,6 +119,32 @@ public class OrderDto {
     }
 
     // ------------------------------------------------------------------
+    // Phase 37-10 (D-10): the void. Scalar V78 columns on the order row, so the list carries them with no
+    // extra query. NON_NULL, like the fields above: ABSENT means the order has not been voided. A voided
+    // order keeps its status; these fields are how a reader tells.
+    // ------------------------------------------------------------------
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "When a Group admin voided this order. Absent unless voided; a voided order keeps its status.")
+    private OffsetDateTime voidedAt;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Who voided the order (the authenticated principal name). Absent unless voided.")
+    private String voidedBy;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Why the order was voided. Absent unless voided.")
+    private String voidReason;
+
+    public OffsetDateTime getVoidedAt() { return voidedAt; }
+    public void setVoidedAt(OffsetDateTime voidedAt) { this.voidedAt = voidedAt; }
+
+    public String getVoidedBy() { return voidedBy; }
+    public void setVoidedBy(String voidedBy) { this.voidedBy = voidedBy; }
+
+    public String getVoidReason() { return voidReason; }
+    public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
+
+    // ------------------------------------------------------------------
     // LGL-03 / V63 — the order-level allergen aggregate is deliberately NOT on this DTO. It is
     // on OrderDetailDto, which is what both declared consumers read: the kitchen board
     // (OrderService.getKitchenBoard, which already batch-fetches the lines) and

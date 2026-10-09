@@ -8,21 +8,26 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 import uk.jtoye.core.finance.dto.CreateTransactionRequest;
 import uk.jtoye.core.finance.VatRate;
 
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -53,6 +58,9 @@ class FinancialTransactionControllerIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private ShopAccessService shopAccessService;
+
     private UUID testTenantId;
 
     @BeforeEach
@@ -64,6 +72,82 @@ class FinancialTransactionControllerIntegrationTest {
 
         // Clean up existing transactions
         jdbcTemplate.update("DELETE FROM financial_transactions");
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        uk.jtoye.core.security.TenantContext.clear();
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 37-11 (RWO-027 / UXT-027): the finance gate is no longer "admin realm role or nothing".
+    // With shopId the caller needs SHOP_MANAGER on that shop; without it, Group admin. STAFF is refused
+    // either way (goods P2-TUN-15). The admin arms above are the Group-admin, tenant-wide half of the rule.
+    // ------------------------------------------------------------------
+
+    @Test
+    void staffIsRefusedTheLedgerWithAndWithoutAShop() throws Exception {
+        Object booted = StrictScopingGuard.capture(shopAccessService);
+        StrictScopingGuard.set(shopAccessService, true);
+        try {
+            UUID shop = seedShop();
+            UUID staff = UUID.randomUUID();
+            grant(staff, shop, "STAFF");
+            for (String path : new String[]{"/api/v1/financial-transactions/summary", "/api/v1/financial-transactions"}) {
+                mockMvc.perform(get(path).param("shopId", shop.toString()).with(vendorJwt(staff)))
+                        .andExpect(status().isForbidden())
+                        .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/shop-access-denied"));
+                mockMvc.perform(get(path).with(vendorJwt(staff)))
+                        .andExpect(status().isForbidden());
+            }
+        } finally {
+            StrictScopingGuard.restore(shopAccessService, booted);
+        }
+    }
+
+    @Test
+    void shopManagerReadsOwnShop_butIsRefusedTheTenantView() throws Exception {
+        Object booted = StrictScopingGuard.capture(shopAccessService);
+        StrictScopingGuard.set(shopAccessService, true);
+        try {
+            UUID shop = seedShop();
+            UUID manager = UUID.randomUUID();
+            grant(manager, shop, "SHOP_MANAGER");
+            mockMvc.perform(get("/api/v1/financial-transactions/summary").param("shopId", shop.toString())
+                            .with(vendorJwt(manager)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.scope.shopId").value(shop.toString()));
+            mockMvc.perform(get("/api/v1/financial-transactions/summary").with(vendorJwt(manager)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.type").value("https://jtoye.uk/errors/shop-access-denied"));
+        } finally {
+            StrictScopingGuard.restore(shopAccessService, booted);
+        }
+    }
+
+    private UUID seedShop() {
+        UUID id = UUID.randomUUID();
+        uk.jtoye.core.security.TenantContext.set(testTenantId);
+        try {
+            jdbcTemplate.update("INSERT INTO shops (id, tenant_id, created_at, name, slug, published, "
+                            + "delivery_fee_pennies, minimum_order_pennies, version) VALUES (?, ?, now(), ?, ?, true, 0, 0, 0)",
+                    id, testTenantId, "Finance gate shop", "fin-gate-" + id.toString().substring(0, 8));
+        } finally {
+            uk.jtoye.core.security.TenantContext.clear();
+        }
+        return id;
+    }
+
+    private void grant(UUID userId, UUID shop, String role) {
+        jdbcTemplate.update("INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, created_at, grant_source) "
+                + "VALUES (?, ?, ?, ?, ?, now(), 'OPERATOR')", UUID.randomUUID(), testTenantId, userId, shop, role);
+    }
+
+    /** A vendor user with no realm role: their access comes from shop_staff alone. */
+    private RequestPostProcessor vendorJwt(UUID subject) {
+        UUID tenant = testTenantId;
+        return jwt().jwt(j -> j.subject(subject.toString()).claim("tenant_id", tenant.toString()))
+                .authorities(new SimpleGrantedAuthority("SCOPE_orders:read"));
     }
 
     @Test

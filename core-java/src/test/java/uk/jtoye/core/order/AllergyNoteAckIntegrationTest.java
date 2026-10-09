@@ -19,8 +19,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -38,6 +36,7 @@ import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService;
 import uk.jtoye.core.tenant.keycloak.CustomerAccountDeletionService.AccountDeletionResult;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
 import uk.jtoye.core.testsupport.NoScheduledTriggersTestConfig;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.sql.Timestamp;
 import java.time.OffsetDateTime;
@@ -126,9 +125,17 @@ class AllergyNoteAckIntegrationTest {
         otherShopId = seedShopIdempotent(OTHER_SHOP_SLUG, "31.1-13 Other Shop");
     }
 
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
+
     @AfterEach
     void tearDown() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         TenantContext.clear();
     }
 
@@ -246,7 +253,7 @@ class AllergyNoteAckIntegrationTest {
         UUID secondCook = UUID.randomUUID();
         grantShopStaff(cook, shopId, "STAFF");
         grantShopStaff(secondCook, shopId, "STAFF");
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
 
         MvcResult first = mockMvc.perform(post(ackUrl(orderId)).with(staffJwt(cook))).andReturn();
         JsonNode acknowledged = json(first, 200);
@@ -283,7 +290,7 @@ class AllergyNoteAckIntegrationTest {
         UUID orderId = orderId(orderNumber);
         UUID outsider = UUID.randomUUID();
         grantShopStaff(outsider, otherShopId, "STAFF");
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
 
         MvcResult refused = mockMvc.perform(post(ackUrl(orderId)).with(staffJwt(outsider))).andReturn();
         JsonNode problem = json(refused, 403);
@@ -505,17 +512,6 @@ class AllergyNoteAckIntegrationTest {
     private void grantShopStaff(UUID userId, UUID shop, String role) {
         jdbcTemplate.update("INSERT INTO shop_staff (id, tenant_id, user_id, shop_id, role, created_at) "
                 + "VALUES (?, ?, ?, ?, ?, now())", UUID.randomUUID(), TENANT_ID, userId, shop, role);
-    }
-
-    /**
-     * Strict scoping ON, so a user is confined to the shops they are granted (the
-     * ShopAccessEnforcementIntegrationTest recipe: the flag is flipped on the proxy-unwrapped bean).
-     */
-    private void setStrictScoping(boolean value) {
-        // A typed local: passed inline, the generic getTargetObject is inferred as Class and the
-        // static setField(Class, ...) overload is chosen.
-        ShopAccessService target = AopTestUtils.getTargetObject(shopAccessService);
-        ReflectionTestUtils.setField(target, "strictScoping", value);
     }
 
     /** A shop user (no realm role) of the tenant with the order-write scope; their shop comes from shop_staff. */

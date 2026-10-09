@@ -229,6 +229,12 @@ spec:
             configMapKeyRef:
               name: app-config
               key: keycloak.admin.customer-realm
+        # 37-08 (D-07): the vendor realm a staff-invite accept creates the invited user in.
+        - name: KC_VENDOR_REALM
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: keycloak.admin.vendor-realm
         - name: KEYCLOAK_ADMIN
           valueFrom:
             secretKeyRef:
@@ -483,6 +489,21 @@ spec:
             configMapKeyRef:
               name: app-config
               key: gdpr.dsar.export-download-base-url
+        # Phase 37-07 (D-07): the frontend /invite page a staff invitation link
+        # opens. Its application.yml default is http://localhost:3000/invite —
+        # the same silent dead-link failure as the DSAR links above: the email
+        # sends, the invitee clicks, nothing loads, and the business cannot add
+        # staff. Supplied per environment, never allowlisted.
+        - name: STAFF_INVITE_ACCEPT_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: staff.invite.accept-base-url
+        - name: STAFF_INVITE_TTL_HOURS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: staff.invite.ttl-hours
         # D-14 (phase 31.1 plan 27, #794): the platform's registered office for
         # the order-email footer. Its application.yml default is EMPTY (the line
         # is omitted), so without this entry every cluster email would silently
@@ -559,11 +580,11 @@ spec:
             configMapKeyRef:
               name: app-config
               key: webhook.target.block-private-ranges
-        # --- Vendor shop-scoping posture (Phase 23 D-12; QA-council 20260902 SEC-2) ---
-        # Declared EXPLICITLY as "false" so the posture is visible in every render and
-        # to check-env-contract.sh direction (a), instead of silently resolving to the
-        # application.yml default. See the app-config key for why OFF is deliberate and
-        # what blocks arming it (#285, SEC-5/#648, integration-orders-rw). Do not flip here.
+        # --- Vendor shop-scoping posture (D-06, Phase 37 owner ruling) ---
+        # Declared EXPLICITLY ("true", ungranted means no access) so the posture is visible
+        # in every render and to check-env-contract.sh direction (a), instead of silently
+        # resolving to the application.yml default. See the app-config key: "false" needs an
+        # owner ruling, and scripts/check-strict-scoping-default.sh fails CI on it.
         - name: ACCESS_STRICT_SCOPING
           valueFrom:
             configMapKeyRef:

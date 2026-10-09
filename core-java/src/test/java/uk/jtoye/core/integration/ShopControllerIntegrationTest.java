@@ -70,8 +70,9 @@ class ShopControllerIntegrationTest {
 
     /**
      * Production-shaped auth: a UUID-subject Keycloak JWT carrying the realm-admin
-     * authority — an implicit GROUP_ADMIN (day-one "everyone can do everything"),
-     * mirroring {@code ShopAccessEnforcementIntegrationTest.authenticate(sub, realmAdmin=true)}.
+     * authority — an implicit tenant-wide GROUP_ADMIN through the D-03 realm-admin bridge, which
+     * stays honoured under strict-scoping ON (D-06) as well as OFF, mirroring
+     * {@code ShopAccessEnforcementIntegrationTest.authenticate(sub, realmAdmin=true)}.
      * Replaces the pre-Phase-23 {@code WithMockUser}, whose non-JWT principal the
      * fail-closed {@code ShopAccessService} (23-08) now correctly denies. Every method
      * migrated here was a general authenticated operator (shop create/list), so admin =

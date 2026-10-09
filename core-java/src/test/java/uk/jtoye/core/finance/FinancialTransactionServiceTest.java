@@ -101,7 +101,11 @@ class FinancialTransactionServiceTest {
                     transaction.getVatRate(),
                     transaction.calculateVatAmount(),
                     transaction.getReference(),
-                    transaction.getCreatedAt()
+                    transaction.getCreatedAt(),
+                    transaction.getEntryKind(),
+                    transaction.getOrderId(),
+                    transaction.getReversesTransactionId(),
+                    transaction.getShopId()
             );
         });
 
@@ -500,7 +504,10 @@ class FinancialTransactionServiceTest {
         existing.setOrderId(orderId);
         setField(existing, "createdAt", OffsetDateTime.now());
 
-        when(financialTransactionRepository.findByOrderId(orderId)).thenReturn(Optional.of(existing));
+        // Phase 37-10: the fast path is keyed by SALE. Two rows per order are normal once an order is
+        // voided (its SALE and its REVERSAL), so an unkeyed lookup is no longer a single-row question.
+        when(financialTransactionRepository.findByOrderIdAndEntryKind(orderId, EntryKind.SALE))
+                .thenReturn(Optional.of(existing));
 
         // When
         FinancialTransactionDto result = financialTransactionService.createTransaction(request);
@@ -510,5 +517,128 @@ class FinancialTransactionServiceTest {
         assertEquals(1500L, result.amountPennies());
         verify(financialTransactionRepository, never()).save(any(FinancialTransaction.class));
         verify(financialTransactionRepository, never()).flush();
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 37-10 (D-10, owner ruling 2026-10-08: entry-kind). A voided order has TWO ledger rows,
+    // its SALE and its REVERSAL. The idempotency fast path must ask for the SALE, or the second
+    // settlement call for a voided card order would hit a two-row result and throw.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("37-10: createTransaction for an order whose SALE exists returns that SALE through the SALE-keyed finder, even once a REVERSAL exists beside it")
+    void createTransaction_existingSaleBesideAReversal_returnsTheSale() {
+        UUID orderId = UUID.randomUUID();
+        FinancialTransaction sale = ledgerRow(transactionId, orderId, 1200L, VatRate.STANDARD, "Order ORD-9",
+                EntryKind.SALE, null);
+        when(financialTransactionRepository.findByOrderIdAndEntryKind(orderId, EntryKind.SALE))
+                .thenReturn(Optional.of(sale));
+        // The unkeyed findByOrderId is deleted (GREEN): once the order has a SALE and a REVERSAL it was a
+        // two-row result for a single Optional (IncorrectResultSizeDataAccessException, the RED evidence).
+        // Any lookup other than the SALE-keyed one returns empty here, and the never().save below reds.
+
+        FinancialTransactionDto result = assertDoesNotThrow(
+                () -> financialTransactionService.createTransaction(
+                        new CreateTransactionRequest(1200L, VatRate.STANDARD, "Order ORD-9", orderId)),
+                "a settlement call for a voided order must return its SALE, not fail on the two-row lookup");
+
+        assertEquals(transactionId, result.id());
+        verify(financialTransactionRepository, never()).save(any(FinancialTransaction.class));
+    }
+
+    @Test
+    @DisplayName("37-10: an order-linked row is written as a SALE")
+    void createTransaction_withOrder_writesASale() {
+        UUID orderId = UUID.randomUUID();
+        stubSaveAssignsId();
+        financialTransactionService.createTransaction(
+                new CreateTransactionRequest(1500L, VatRate.STANDARD, "Order ORD-10", orderId));
+
+        ArgumentCaptor<FinancialTransaction> saved = ArgumentCaptor.forClass(FinancialTransaction.class);
+        verify(financialTransactionRepository).save(saved.capture());
+        assertEquals(EntryKind.SALE, saved.getValue().getEntryKind());
+        assertEquals(orderId, saved.getValue().getOrderId());
+    }
+
+    @Test
+    @DisplayName("37-10: a row with no order (the admin ledger path) is written as MANUAL, the same rule V78's backfill applies to old rows")
+    void createTransaction_withoutOrder_writesManual() {
+        stubSaveAssignsId();
+        financialTransactionService.createTransaction(validRequest);
+
+        ArgumentCaptor<FinancialTransaction> saved = ArgumentCaptor.forClass(FinancialTransaction.class);
+        verify(financialTransactionRepository).save(saved.capture());
+        assertEquals(EntryKind.MANUAL, saved.getValue().getEntryKind());
+    }
+
+    @Test
+    @DisplayName("37-10: createReversal writes one REVERSAL: the sale's amount negated, the sale's VAT rate, the same order, and a link to the sale")
+    void createReversal_writesTheNegatedSaleLinkedToIt() {
+        UUID orderId = UUID.randomUUID();
+        UUID saleId = UUID.randomUUID();
+        FinancialTransaction sale = ledgerRow(saleId, orderId, 1200L, VatRate.REDUCED, "Order ORD-11",
+                EntryKind.SALE, null);
+        lenient().when(financialTransactionRepository.findByOrderIdAndEntryKind(orderId, EntryKind.REVERSAL))
+                .thenReturn(Optional.empty());
+        stubSaveAssignsId();
+
+        FinancialTransactionDto result = financialTransactionService.createReversal(sale, "Reversal of ORD-11");
+
+        ArgumentCaptor<FinancialTransaction> saved = ArgumentCaptor.forClass(FinancialTransaction.class);
+        verify(financialTransactionRepository).save(saved.capture());
+        FinancialTransaction reversal = saved.getValue();
+        assertEquals(EntryKind.REVERSAL, reversal.getEntryKind());
+        assertEquals(-1200L, reversal.getAmountPennies());
+        assertEquals(VatRate.REDUCED, reversal.getVatRate(), "a reversal copies the sale's VAT rate (CONTEXT Q2)");
+        assertEquals(orderId, reversal.getOrderId());
+        assertEquals(saleId, reversal.getReversesTransactionId());
+        assertEquals(tenantId, reversal.getTenantId());
+        assertEquals("Reversal of ORD-11", reversal.getReference());
+        assertNotNull(result);
+        assertEquals(-1200L, result.amountPennies());
+    }
+
+    @Test
+    @DisplayName("37-10: createReversal is idempotent: an existing REVERSAL for the order is returned and nothing is written")
+    void createReversal_existingReversal_isReturned() {
+        UUID orderId = UUID.randomUUID();
+        UUID saleId = UUID.randomUUID();
+        FinancialTransaction sale = ledgerRow(saleId, orderId, 1200L, VatRate.STANDARD, "Order ORD-12",
+                EntryKind.SALE, null);
+        FinancialTransaction existing = ledgerRow(transactionId, orderId, -1200L, VatRate.STANDARD,
+                "Reversal of ORD-12", EntryKind.REVERSAL, saleId);
+        when(financialTransactionRepository.findByOrderIdAndEntryKind(orderId, EntryKind.REVERSAL))
+                .thenReturn(Optional.of(existing));
+
+        FinancialTransactionDto result = financialTransactionService.createReversal(sale, "Reversal of ORD-12");
+
+        assertNotNull(result, "the existing reversal is returned");
+        assertEquals(transactionId, result.id());
+        verify(financialTransactionRepository, never()).save(any(FinancialTransaction.class));
+    }
+
+    /** save() assigns the id and timestamp, as JPA does. Lenient: the RED skeleton never saves. */
+    private void stubSaveAssignsId() {
+        lenient().when(financialTransactionRepository.save(any(FinancialTransaction.class))).thenAnswer(invocation -> {
+            FinancialTransaction transaction = invocation.getArgument(0);
+            setField(transaction, "id", UUID.randomUUID());
+            setField(transaction, "createdAt", OffsetDateTime.now());
+            return transaction;
+        });
+    }
+
+    private FinancialTransaction ledgerRow(UUID id, UUID orderId, long amount, VatRate rate, String reference,
+                                           EntryKind kind, UUID reverses) {
+        FinancialTransaction row = new FinancialTransaction();
+        setField(row, "id", id);
+        row.setTenantId(tenantId);
+        row.setAmountPennies(amount);
+        row.setVatRate(rate);
+        row.setReference(reference);
+        row.setOrderId(orderId);
+        row.setEntryKind(kind);
+        row.setReversesTransactionId(reverses);
+        setField(row, "createdAt", OffsetDateTime.now());
+        return row;
     }
 }

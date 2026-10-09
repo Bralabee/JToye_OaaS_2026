@@ -2,7 +2,9 @@ package uk.jtoye.core.shop;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -38,6 +40,20 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
     // completion): the plain findById is RLS-only and shops_public_read permits
     // published=true, so a tenant could fetch another tenant's PUBLISHED shop by id.
     Optional<Shop> findByIdAndTenantId(UUID id, UUID tenantId);
+
+    // 37-13 (T-37-37): lock one shop of the tenant for the rest of the transaction (SELECT ... FOR UPDATE
+    // under PostgreSQL). A copy-to-shop locks its TARGET before reading what the target already has, so two
+    // concurrent copies into the same shop run one after the other and the second sees the first's rows.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Shop s WHERE s.id = :id AND s.tenantId = :tenantId")
+    Optional<Shop> lockByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
+    // 37-05 (D-07/D-23): every current shop id of ONE tenant, for the grant set of a tenant-wide
+    // STAFF/SHOP_MANAGER grant ("a role plus all shops"). The explicit tenant predicate is
+    // load-bearing for the same reason as above: shops_public_read also returns other tenants'
+    // PUBLISHED shops.
+    @Query("SELECT s.id FROM Shop s WHERE s.tenantId = :tenantId")
+    List<UUID> findIdsByTenantId(@Param("tenantId") UUID tenantId);
 
     // Tenant-scoped by-name read for the Edge sync upsert (PR #726 review M1). The shop
     // upsert key is (tenant, name) — idx_shops_tenant_name is unique per TENANT, not globally —

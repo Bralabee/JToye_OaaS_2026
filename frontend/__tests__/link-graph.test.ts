@@ -61,6 +61,11 @@ const WILDCARD = "*"
  *                          data-subject request names, with the token in the
  *                          URL fragment (core-java `jtoye.gdpr.dsar.verify-base-url`).
  *                          Same reasoning as /data-request/download.
+ *  - "/invite"             the staff-invitation accept page (D-07, 37-09). Reached
+ *                          ONLY via the single-use link emailed to the invited
+ *                          address, with the token in the URL fragment (core-java
+ *                          `jtoye.staff.invite.accept-base-url`). Same reasoning as
+ *                          /data-request/download: an in-app link carries no token.
  *
  * NOTE: API route handlers under `app/api/**` have no `page.tsx`, so they are
  * never enumerated as routes — they need no allowlist entry.
@@ -73,6 +78,7 @@ const ALLOWLIST = new Set<string>([
   "/dashboard/payments/connect/refresh",
   "/data-request/download",
   "/data-request/confirm",
+  "/invite",
 ])
 
 function isTestFile(file: string): boolean {

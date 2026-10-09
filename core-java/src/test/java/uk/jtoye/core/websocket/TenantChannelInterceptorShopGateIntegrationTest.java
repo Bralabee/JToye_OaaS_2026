@@ -1,6 +1,7 @@
 package uk.jtoye.core.websocket;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,8 +22,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -31,6 +30,7 @@ import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.shop.ShopService;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -61,7 +61,8 @@ import static org.mockito.Mockito.mock;
  * <p>The interceptor is constructed directly (mock {@link JwtDecoder} — CONNECT is not exercised
  * here; the SUBSCRIBE path reads the identity off the session principal we set) with the wired
  * {@code ShopAccessService} bean. Strict scoping is toggled on the proxy-unwrapped bean via
- * {@link ReflectionTestUtils}, mirroring {@code ShopAccessEnforcementIntegrationTest}.
+ * {@link StrictScopingGuard} (booted value restored after each test), mirroring
+ * {@code ShopAccessEnforcementIntegrationTest}.
  */
 @SpringBootTest
 @Testcontainers
@@ -85,16 +86,23 @@ class TenantChannelInterceptorShopGateIntegrationTest {
     @Autowired private JdbcTemplate jdbc;
 
     private TenantChannelInterceptor interceptor;
-    private ShopAccessService targetService;
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
         interceptor = new TenantChannelInterceptor(mock(JwtDecoder.class), shopAccessService);
     }
 
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
+
     @AfterEach
     void tearDown() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         TenantContext.clear();
         SecurityContextHolder.clearContext();
     }
@@ -106,7 +114,7 @@ class TenantChannelInterceptorShopGateIntegrationTest {
         UUID ungranted = UUID.randomUUID();  // ZERO shop_staff rows
         UUID anyShop = UUID.randomUUID();
 
-        setStrictScoping(false);  // day-one posture
+        StrictScopingGuard.set(shopAccessService, false);  // day-one posture
 
         Message<?> subscribe = subscribe(
                 "/topic/kitchen." + tenant + "." + anyShop, tenant, jwt(ungranted));
@@ -126,7 +134,7 @@ class TenantChannelInterceptorShopGateIntegrationTest {
         UUID shopB = UUID.randomUUID();  // no grant, no shops row needed (gate reads shop_staff)
         grantShopStaff(tenant, user, shopA, "STAFF");
 
-        setStrictScoping(true);  // genuinely confine the scoped user
+        StrictScopingGuard.set(shopAccessService, true);  // genuinely confine the scoped user
 
         // Granted shop A → permitted.
         assertThatCode(() -> interceptor.preSend(
@@ -211,16 +219,5 @@ class TenantChannelInterceptorShopGateIntegrationTest {
         accessor.setSessionAttributes(sessionAttrs);
         accessor.setSessionId("test-session");
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
-    }
-
-    private ShopAccessService target() {
-        if (targetService == null) {
-            targetService = AopTestUtils.getTargetObject(shopAccessService);
-        }
-        return targetService;
-    }
-
-    private void setStrictScoping(boolean value) {
-        ReflectionTestUtils.setField(target(), "strictScoping", value);
     }
 }

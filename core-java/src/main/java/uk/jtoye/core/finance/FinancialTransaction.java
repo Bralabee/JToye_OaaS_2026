@@ -59,11 +59,33 @@ public class FinancialTransaction {
     /**
      * Owning order for order-settlement ledger rows (Issue #81 BUG 3). Nullable:
      * the admin / manual ledger path has no order. Backed by the partial unique
-     * index {@code uq_fin_tx_tenant_order} so exactly one row exists per settled
+     * index {@code uq_fin_tx_tenant_order}, which since V78 is keyed by
+     * {@code (tenant_id, order_id, entry_kind)}: one SALE and at most one REVERSAL per
      * order. Audit-mirrored on {@code financial_transactions_aud} (V40).
      */
     @Column(name = "order_id")
     private UUID orderId;
+
+    /**
+     * What this row is (V78, Phase 37-10 D-10): an order's SALE, the REVERSAL of a sale when the order is
+     * voided, or a MANUAL row with no order. Written by {@link FinancialTransactionService}; revenue in the
+     * summary is SALE minus REVERSAL, and MANUAL rows keep the sign rule. Never updated.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "entry_kind", nullable = false, length = 16)
+    private EntryKind entryKind;
+
+    /** For a REVERSAL, the SALE it takes back out (V78, {@code ck_fin_tx_reversal_link}); null otherwise. */
+    @Column(name = "reverses_transaction_id")
+    private UUID reversesTransactionId;
+
+    /**
+     * The shop this row belongs to (V79, Phase 37-11, RWO-027): the order's shop for a SALE, copied from the
+     * sale for a REVERSAL. Null for a MANUAL row (no order), which therefore appears only in the tenant-wide
+     * (Group admin) view. Set once by {@link FinancialTransactionService}; never updated.
+     */
+    @Column(name = "shop_id")
+    private UUID shopId;
 
     // Constructors
 
@@ -124,6 +146,30 @@ public class FinancialTransaction {
 
     public void setOrderId(UUID orderId) {
         this.orderId = orderId;
+    }
+
+    public EntryKind getEntryKind() {
+        return entryKind;
+    }
+
+    public void setEntryKind(EntryKind entryKind) {
+        this.entryKind = entryKind;
+    }
+
+    public UUID getReversesTransactionId() {
+        return reversesTransactionId;
+    }
+
+    public void setReversesTransactionId(UUID reversesTransactionId) {
+        this.reversesTransactionId = reversesTransactionId;
+    }
+
+    public UUID getShopId() {
+        return shopId;
+    }
+
+    public void setShopId(UUID shopId) {
+        this.shopId = shopId;
     }
 
     /**

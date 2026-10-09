@@ -136,6 +136,11 @@ export interface Product {
    * kept separate from it. Absent/null = not recorded; 0 = the vendor recorded no risk.
    */
   mayContainMask?: number | null
+  /**
+   * UXT-046 (37-14): the product's VAT liability (core-java VatRate). Optional for an older
+   * backend; absent means "not returned", which the form never turns into a value of its own.
+   */
+  vatRate?: VatRate
   createdAt: string
   updatedAt: string
 }
@@ -169,6 +174,57 @@ export interface CreateProductRequest {
   quantityInStock?: number | null
   /** D-16: omitted or null on PUT keeps the stored value; 0 is an explicit "no cross-contact risk". */
   mayContainMask?: number | null
+  /**
+   * UXT-046 (37-14): the server defaults to STANDARD on create when omitted, and a PUT that omits
+   * it keeps the stored rate.
+   */
+  vatRate?: VatRate
+}
+
+/** One per-row CSV import error (core-java RowError). field "row" means the row as a whole. */
+export interface BulkImportRowError {
+  row: number
+  field: string
+  message: string
+}
+
+/**
+ * The CSV / photo import response (core-java BulkImportResult). `created` carries the products
+ * made; only the fields the import page renders are typed.
+ */
+export interface BulkImportResult {
+  totalRows: number
+  successCount: number
+  errorCount: number
+  created: Array<{ id: string; title: string; sku: string; imageUrl: string | null; pricePennies: number }>
+  errors: BulkImportRowError[]
+}
+
+/**
+ * POST /api/v1/products/copy (37-13, UXT-026). Omit productIds to copy the source shop's whole
+ * menu. Both shops need SHOP_MANAGER; they must differ.
+ */
+export interface CopyProductsRequest {
+  sourceShopId: string
+  targetShopId: string
+  productIds?: string[]
+}
+
+export type CopyOutcome = "CREATED" | "SKIPPED" | "FAILED"
+
+export interface CopyProductsResultItem {
+  sourceProductId: string
+  outcome: CopyOutcome
+  newProductId?: string | null
+  reason?: string | null
+}
+
+/** The copy result: counts as the server computed them, plus one item per source product. */
+export interface CopyProductsResult {
+  created: number
+  skipped: number
+  failed: number
+  items: CopyProductsResultItem[]
 }
 
 // Order Types
@@ -273,6 +329,11 @@ export interface Order {
   allergyNoteAcknowledgedAt?: string | null
   /** The authenticated principal that acknowledged the note (a Keycloak subject id), never a display name. */
   allergyNoteAcknowledgedBy?: string | null
+  // Phase 37-10 (D-10): the void. ABSENT (OrderDto is NON_NULL) or null means not voided. A voided
+  // order keeps its status and stays listed; `voidedBy` is the principal (a Keycloak subject id).
+  voidedAt?: string | null
+  voidedBy?: string | null
+  voidReason?: string | null
 }
 
 /** Which channel placed an order (31.1-09): the customer at the storefront, or the shop itself (D-07). */
@@ -375,6 +436,11 @@ export interface OrderDetail {
   allergyNoteAcknowledgedAt?: string | null
   /** The authenticated principal that acknowledged the note (a Keycloak subject id), never a display name. */
   allergyNoteAcknowledgedBy?: string | null
+  // Phase 37-10 (D-10): the void. ABSENT (OrderDto is NON_NULL) or null means not voided. A voided
+  // order keeps its status and stays listed; `voidedBy` is the principal (a Keycloak subject id).
+  voidedAt?: string | null
+  voidedBy?: string | null
+  voidReason?: string | null
 }
 
 export interface CreateOrderRequest {
@@ -407,6 +473,12 @@ export interface CreateCustomerRequest {
 // Financial Transaction Types
 export type VatRate = "ZERO" | "REDUCED" | "STANDARD" | "EXEMPT"
 
+/**
+ * What a ledger row is (37-10): SALE settles an order, REVERSAL takes a voided order's
+ * SALE back out (negative, and not an expense), MANUAL has no order.
+ */
+export type LedgerEntryKind = "SALE" | "REVERSAL" | "MANUAL"
+
 export interface FinancialTransaction {
   id: string
   tenantId: string
@@ -415,6 +487,14 @@ export interface FinancialTransaction {
   vatAmountPennies: number
   description?: string
   createdAt: string
+  /** 37-10. Absent from a server older than 37-10. */
+  entryKind?: LedgerEntryKind
+  /** 37-10: the order this row belongs to; null for MANUAL. */
+  orderId?: string | null
+  /** 37-10: for a REVERSAL, the SALE it reverses. */
+  reversesTransactionId?: string | null
+  /** 37-11: the row's shop; null for MANUAL. */
+  shopId?: string | null
 }
 
 export interface VatBreakdown {
@@ -431,6 +511,16 @@ export interface FinancialSummary {
   totalVatPennies: number
   transactionCount: number
   vatBreakdown: VatBreakdown[]
+  /**
+   * 37-11: the scope these figures were filtered on (FinanceScopeDto). Read it for the
+   * "Showing …" banner, never the switcher. Absent from an older server.
+   */
+  scope?: {
+    shopId: string | null
+    shopName: string | null
+    from: string | null
+    to: string | null
+  } | null
 }
 
 // Promotion Types

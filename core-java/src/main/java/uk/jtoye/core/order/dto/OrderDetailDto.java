@@ -141,6 +141,28 @@ public class OrderDetailDto {
         this.allergyNoteAcknowledgedBy = allergyNoteAcknowledgedBy;
     }
 
+    // ------------------------------------------------------------------
+    // Phase 37-10 (D-10): the void, scalar V78 columns. Null means not voided; a voided order keeps its
+    // status.
+    // ------------------------------------------------------------------
+    @Schema(description = "When a Group admin voided this order; null unless voided. A voided order keeps its status.")
+    private OffsetDateTime voidedAt;
+
+    @Schema(description = "Who voided the order (the authenticated principal name); null unless voided.")
+    private String voidedBy;
+
+    @Schema(description = "Why the order was voided; null unless voided.")
+    private String voidReason;
+
+    public OffsetDateTime getVoidedAt() { return voidedAt; }
+    public void setVoidedAt(OffsetDateTime voidedAt) { this.voidedAt = voidedAt; }
+
+    public String getVoidedBy() { return voidedBy; }
+    public void setVoidedBy(String voidedBy) { this.voidedBy = voidedBy; }
+
+    public String getVoidReason() { return voidReason; }
+    public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
+
     // Getters and Setters
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }

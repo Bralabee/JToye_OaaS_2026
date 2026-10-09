@@ -136,4 +136,26 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     Page<Product> searchFullTextInGrantSetOrTenantWide(@Param("tenantId") UUID tenantId,
                                         @Param("tsQuery") String tsQuery, @Param("skuPrefix") String skuPrefix,
                                         @Param("shopIds") Collection<UUID> shopIds, Pageable pageable);
+
+    // ---- Copy to shop (37-13, RWO-026 / UXT-026) ----
+    // Every finder below carries an explicit tenant predicate: RLS scopes products to the tenant, but the
+    // explicit predicate keeps a copy correct under the SUPERUSER test role too, and never lets a public
+    // read policy widen what a copy can see.
+
+    /** One shop's products in menu order: the source of a whole-menu copy, and the target's skip set. */
+    List<Product> findByTenantIdAndShopIdOrderByDisplayOrderAscCreatedAtAsc(UUID tenantId, UUID shopId);
+
+    /** True when the SKU is already used anywhere in the tenant (SKUs are unique per tenant, V3). */
+    boolean existsByTenantIdAndSku(UUID tenantId, String sku);
+
+    /**
+     * How many OTHER products of the tenant still show this flat image URL, as their primary image or in
+     * their gallery. A copied product shares its source's image URLs (37-13), so a flat object may only be
+     * deleted when this is 0: deleting it while another product still points at it would break that
+     * product's image in another shop.
+     */
+    @Query(value = "SELECT COUNT(*) FROM products p WHERE p.tenant_id = :tenantId AND p.id <> :productId "
+            + "AND (p.image_url = :url OR :url = ANY(p.additional_image_urls))", nativeQuery = true)
+    long countOtherProductsReferencingImage(@Param("tenantId") UUID tenantId, @Param("productId") UUID productId,
+                                            @Param("url") String url);
 }

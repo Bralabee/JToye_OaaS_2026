@@ -44,7 +44,7 @@ metadata:
 ---
 apiVersion: v1
 data:
-  access.strict-scoping: "false"
+  access.strict-scoping: "true"
   api.internal.url: http://core-java:9090
   api.url: https://api.olajay.co.uk
   backup.blob.auth-mode: workload-identity
@@ -61,6 +61,7 @@ data:
   keycloak.admin.customer-realm: jtoye-customers
   keycloak.admin.enabled: "false"
   keycloak.admin.realms: jtoye-prod
+  keycloak.admin.vendor-realm: jtoye-prod
   keycloak.client-id: frontend
   keycloak.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
   keycloak.public.issuer.uri: https://auth.olajay.co.uk/realms/jtoye-prod
@@ -92,6 +93,8 @@ data:
   smtp.port: "587"
   smtp.starttls: "true"
   sql.log.level: WARN
+  staff.invite.accept-base-url: https://app.olajay.co.uk/invite
+  staff.invite.ttl-hours: "72"
   stomp.broker.mode: relay
   stomp.broker.relay-host: rabbitmq.jtoye-infrastructure.svc.cluster.local
   stomp.broker.relay-port: "61613"
@@ -380,6 +383,11 @@ spec:
             configMapKeyRef:
               key: keycloak.admin.customer-realm
               name: app-config
+        - name: KC_VENDOR_REALM
+          valueFrom:
+            configMapKeyRef:
+              key: keycloak.admin.vendor-realm
+              name: app-config
         - name: KEYCLOAK_ADMIN
           valueFrom:
             secretKeyRef:
@@ -541,6 +549,16 @@ spec:
           valueFrom:
             configMapKeyRef:
               key: gdpr.dsar.export-download-base-url
+              name: app-config
+        - name: STAFF_INVITE_ACCEPT_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              key: staff.invite.accept-base-url
+              name: app-config
+        - name: STAFF_INVITE_TTL_HOURS
+          valueFrom:
+            configMapKeyRef:
+              key: staff.invite.ttl-hours
               name: app-config
         - name: COMPANY_REGISTERED_OFFICE
           valueFrom:

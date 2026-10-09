@@ -1,0 +1,9 @@
+To: screens-1791538035651@example.test
+
+Admin User has invited you to help run Tenant A on J'Toye as Shop manager for Peckham Jollof Co..
+
+Accept the invitation: http://localhost:3000/invite#token=<redacted>
+
+This link works once and expires on 12 October 2026, 10:27 (UK time).
+
+If you weren't expecting this, you can ignore this email. Nothing happens unless you accept.

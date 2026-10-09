@@ -51,7 +51,9 @@ public final class TenantJwts {
     /**
      * An ordinary vendor user {@code sub} in {@code tenantId}: realm role {@code user} ONLY,
      * so the realm-admin bridge never fires and the caller's access is exactly what its
-     * {@code shop_staff} rows (or the day-one implicit-admin rule) say it is.
+     * {@code shop_staff} rows say it is. Under the shipped default (D-06, strict scoping ON) there
+     * is no implicit admin: a {@code sub} with no rows has no shop access at all, so a test that
+     * needs access seeds it with {@link ShopGrants#grantOperator}.
      */
     public static RequestPostProcessor vendorJwt(UUID sub, UUID tenantId) {
         return jwt().jwt(j -> j

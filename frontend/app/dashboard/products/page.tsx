@@ -39,12 +39,20 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import Link from "next/link"
-import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon, Sparkles, Check, Upload } from "lucide-react"
+import { Package, Plus, Pencil, Trash2, AlertCircle, Search, FileText, Star, Eye, EyeOff, ImageIcon, Sparkles, Check, Upload, Copy as CopyIcon } from "lucide-react"
+import { CopyToShopDialog } from "@/components/dashboard/products/copy-to-shop-dialog"
 import { ImageUploader, type AiSuggestions } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
-import type { Product, CreateProductRequest, Shop, ProductAllergenWarning } from "@/types/api"
+import type { Product, CreateProductRequest, Shop, ProductAllergenWarning, VatRate } from "@/types/api"
 import {
   ALLERGENS,
   hasAllergen,
@@ -91,6 +99,25 @@ function AiSuggestionRow({ label, value, onAccept }: { label: string; value: str
 }
 
 const PAGE_SIZE = 20
+
+/**
+ * UXT-046 (#815, 37-14, UI-SPEC § B6): the four VAT liabilities core-java accepts, in the
+ * UI-SPEC's order and wording. STANDARD first because it is the server's default on create.
+ */
+const VAT_RATE_OPTIONS: ReadonlyArray<{ value: VatRate; label: string }> = [
+  { value: "STANDARD", label: "Standard rate (20%)" },
+  { value: "REDUCED", label: "Reduced rate (5%)" },
+  { value: "ZERO", label: "Zero rate (0%)" },
+  { value: "EXEMPT", label: "Exempt" },
+]
+
+/**
+ * UI-SPEC § Copywriting B4-B6 "VAT helper". OWNER SIGN-OFF PENDING (UI-SPEC open item 1, presented
+ * in 37-15): it must not read as tax advice, so it names the rule of thumb, says there are
+ * exceptions and points at HMRC and an accountant rather than deciding for the vendor.
+ */
+const VAT_RATE_HELP_COPY =
+  "The rate that applies to this item when you sell it. Hot takeaway food is usually standard-rated, and much cold food is zero-rated, but there are exceptions. If you're not sure, check HMRC VAT Notice 709/1 or ask your accountant."
 
 /**
  * D-09: the catalogue name for a warning's bit. The bit is the fact; the server's name is the
@@ -172,6 +199,9 @@ export default function ProductsPage() {
   // fieldset stays null), 0 = the vendor recorded no risk. Never derived from allergenMask and
   // never written into it.
   const [mayContainMask, setMayContainMask] = useState<number | null>(null)
+  // UXT-046: STANDARD on a new product (the server default, made visible). null on an edit whose
+  // response carried no rate: nothing is sent then, and the server keeps the stored rate.
+  const [vatRate, setVatRate] = useState<VatRate | null>("STANDARD")
   const [available, setAvailable] = useState(true)
   // D-17 (#861): the label dialog. The production date is asked for every time; nothing is
   // remembered between labels (no batch record, CONTEXT deferred).
@@ -192,6 +222,16 @@ export default function ProductsPage() {
   // NOT reset `products` to `[]`, so this is keyed off list length nowhere.
   const [loadFailed, setLoadFailed] = useState(false)
   const [loadErrorMessage, setLoadErrorMessage] = useState("")
+  // UXT-026 (37-14): one copy at a time. `key` remounts the dialog so each opening starts clean.
+  const [copyRequest, setCopyRequest] = useState<{
+    key: number
+    source: { id: string; name: string }
+    productIds?: string[]
+    count: number
+  } | null>(null)
+  // The selected shop's whole-menu size, from the unsearched list (a search narrows the rows on
+  // screen, never what the header copy sends).
+  const [menuCount, setMenuCount] = useState(0)
   const { toast } = useToast()
   // VSA-03: the persisted switcher selection. `null` = All shops (no narrow).
   const { contextShopId } = useShopContext()
@@ -246,6 +286,7 @@ export default function ProductsPage() {
       setProducts(response.data.content || [])
       setTotalPages(response.data.totalPages || 0)
       setTotalElements(response.data.totalElements || 0)
+      setMenuCount(response.data.totalElements || 0)
       setLoadFailed(false)
     } catch (error: unknown) {
       // A11Y-2 (#688): `error.message` on an axios error is its own transport
@@ -326,6 +367,7 @@ export default function ProductsPage() {
     reset({ sku: "", title: "", ingredientsText: "", pricePounds: "" })
     setAllergenMask(0)
     setMayContainMask(null)
+    setVatRate("STANDARD")
     setAvailable(true)
     setFeatured(false)
     // D-08: outside the All-shops context a create is a single-shop write —
@@ -346,6 +388,7 @@ export default function ProductsPage() {
     setValue("pricePounds", ((product.pricePennies || 0) / 100).toFixed(2))
     setAllergenMask(product.allergenMask)
     setMayContainMask(product.mayContainMask ?? null)
+    setVatRate(product.vatRate ?? null)
     setAvailable(product.available ?? true)
     setFeatured(product.featured ?? false)
     setSelectedShopId(product.shopId || "")
@@ -375,6 +418,30 @@ export default function ProductsPage() {
   useEffect(() => {
     if (allergenWarnings.length > 0) allergenWarningRef.current?.focus()
   }, [allergenWarnings])
+
+  // UXT-026 (UI-SPEC § B6 "Copy to shop"): offered only where there is a source shop and somewhere
+  // else to copy to. The server still checks SHOP_MANAGER on both shops.
+  const shopNameOf = (id: string) => shops.find((s) => s.id === id)?.name ?? "this shop"
+  const hasOtherShop = (sourceId: string) => shops.some((s) => s.id !== sourceId)
+
+  const openCopyForProduct = (product: Product) => {
+    if (!product.shopId) return
+    setCopyRequest({
+      key: Date.now(),
+      source: { id: product.shopId, name: shopNameOf(product.shopId) },
+      productIds: [product.id],
+      count: 1,
+    })
+  }
+
+  const openCopyForMenu = () => {
+    if (!contextShopId) return
+    setCopyRequest({
+      key: Date.now(),
+      source: { id: contextShopId, name: shopNameOf(contextShopId) },
+      count: menuCount,
+    })
+  }
 
   const openDeleteDialog = (product: Product) => {
     setDeletingProduct(product)
@@ -417,6 +484,9 @@ export default function ProductsPage() {
         // D-16: sent as held — null stays null (not recorded), 0 stays 0.
         mayContainMask: mayContainMaskSchema.parse(mayContainMask),
         pricePennies: toPricePennies(data.pricePounds),
+        // UXT-046: the chosen rate; undefined (dropped from the JSON) only when an edit did not
+        // learn the stored rate, so the PUT keeps it rather than overwriting it with a guess.
+        vatRate: vatRate ?? undefined,
         available,
         featured,
         description: descEl?.value || undefined,
@@ -602,7 +672,13 @@ export default function ProductsPage() {
             Manage your product catalog with allergen information
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {contextShopId && hasOtherShop(contextShopId) && menuCount > 0 && (
+            <Button variant="outline" className="gap-2" onClick={openCopyForMenu}>
+              <CopyIcon className="h-4 w-4" aria-hidden="true" />
+              Copy to another shop…
+            </Button>
+          )}
           <Link href="/dashboard/products/import">
             <Button variant="outline" className="gap-2">
               <Upload className="h-4 w-4" />
@@ -798,6 +874,13 @@ export default function ProductsPage() {
                             >
                               <FileText className="h-4 w-4" />
                             </Button>
+                            {product.shopId && hasOtherShop(product.shopId) && (
+                              <IconButton
+                                onClick={() => openCopyForProduct(product)}
+                                label={`Copy ${product.title} to another shop…`}
+                                icon={<CopyIcon className="h-4 w-4" />}
+                              />
+                            )}
                             <IconButton
                               onClick={() => openEditDialog(product)}
                               label={`Edit product ${product.title}`}
@@ -827,6 +910,24 @@ export default function ProductsPage() {
           </CardContent>
         </Card>
       </m.div>
+
+      {copyRequest && (
+        <CopyToShopDialog
+          key={copyRequest.key}
+          open
+          onOpenChange={(next) => {
+            if (!next) setCopyRequest(null)
+          }}
+          sourceShop={copyRequest.source}
+          shops={shops}
+          productIds={copyRequest.productIds}
+          count={copyRequest.count}
+          onCopied={(result) => {
+            // A copy into the shop on screen (or into any shop, under All shops) adds rows here.
+            if (result.created > 0) fetchProducts()
+          }}
+        />
+      )}
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={onFormDialogOpenChange}>
@@ -976,6 +1077,33 @@ export default function ProductsPage() {
               {errors.pricePounds && (
                 <p id="pricePounds-error" className="text-sm text-red-600">{errors.pricePounds.message}</p>
               )}
+            </div>
+
+            {/* UXT-046 (UI-SPEC § B6): after Price, Standard pre-selected on a new product. */}
+            <div className="space-y-2">
+              <Label id="vatRate-label" htmlFor="vatRate">VAT rate</Label>
+              <Select
+                value={vatRate ?? ""}
+                onValueChange={(value) => setVatRate(value as VatRate)}
+              >
+                <SelectTrigger
+                  id="vatRate"
+                  aria-labelledby="vatRate-label"
+                  aria-describedby="vatRate-help"
+                >
+                  <SelectValue placeholder="Keep the current rate" />
+                </SelectTrigger>
+                <SelectContent>
+                  {VAT_RATE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p id="vatRate-help" className="text-xs text-slate-500">
+                {VAT_RATE_HELP_COPY}
+              </p>
             </div>
 
             {/* Storefront Presentation */}

@@ -1,6 +1,7 @@
 package uk.jtoye.core.security.access;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,14 +15,13 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.StrictScopingGuard;
 
 import java.util.List;
 import java.util.UUID;
@@ -50,9 +50,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * seeding {@code tenants}/{@code shops}. Each test uses a fresh
  * {@code (tenant, sub)} so no {@code @Transactional} rollback is needed — the JIT
  * insert must genuinely COMMIT for the concurrency count to be observable.
- * strict-scoping is toggled per case via {@link ReflectionTestUtils} on the
- * unwrapped target bean (the {@code @Transactional} proxy is unwrapped with
- * {@link AopTestUtils}).
+ * strict-scoping is set per case with {@link StrictScopingGuard#set} on the
+ * proxy-unwrapped target bean, and the booted value is restored after each test
+ * (37-02).
  */
 @SpringBootTest
 @Testcontainers
@@ -77,25 +77,19 @@ class ShopAccessJitProvisionTest {
     @Autowired
     private JdbcTemplate jdbc;
 
-    /** The real (proxy-unwrapped) bean, so we can flip the strict-scoping field per case. */
-    private ShopAccessService targetService;
+    /** The value the context booted with: restored after every test, never a literal (37-02). */
+    private Object bootedStrictScoping;
+
+    @BeforeEach
+    void captureStrictScoping() {
+        bootedStrictScoping = StrictScopingGuard.capture(shopAccessService);
+    }
 
     @AfterEach
     void tearDown() {
-        setStrictScoping(false);
+        StrictScopingGuard.restore(shopAccessService, bootedStrictScoping);
         TenantContext.clear();
         SecurityContextHolder.clearContext();
-    }
-
-    private ShopAccessService target() {
-        if (targetService == null) {
-            targetService = AopTestUtils.getTargetObject(shopAccessService);
-        }
-        return targetService;
-    }
-
-    private void setStrictScoping(boolean value) {
-        ReflectionTestUtils.setField(target(), "strictScoping", value);
     }
 
     /** Install a JWT principal (sub + optional realm-admin authority) on the current thread. */
@@ -142,7 +136,7 @@ class ShopAccessJitProvisionTest {
      */
     @Test
     void jitProvisionIsIdempotentUnderConcurrentFirstRequests() throws Exception {
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
         UUID tenant = UUID.randomUUID();
         UUID sub = UUID.randomUUID();
 
@@ -189,7 +183,7 @@ class ShopAccessJitProvisionTest {
      */
     @Test
     void strictScopingOffPreservesDayOne() {
-        setStrictScoping(false);
+        StrictScopingGuard.set(shopAccessService, false);
         UUID tenant = UUID.randomUUID();
         UUID sub = UUID.randomUUID();
         // FC-1: require() now checks the named shop is in the caller's tenant; seed a real
@@ -213,7 +207,7 @@ class ShopAccessJitProvisionTest {
      */
     @Test
     void strictScopingOnDeniesUngranted() {
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         UUID tenant = UUID.randomUUID();
         UUID sub = UUID.randomUUID();
         UUID shopId = UUID.randomUUID();
@@ -236,7 +230,7 @@ class ShopAccessJitProvisionTest {
      */
     @Test
     void realmAdminIsImplicitGroupAdminWithoutAnyRow() {
-        setStrictScoping(true);
+        StrictScopingGuard.set(shopAccessService, true);
         UUID tenant = UUID.randomUUID();
         UUID sub = UUID.randomUUID();
         // FC-1: require() now checks shop tenancy even for a realm-admin (tenant-wide, not
