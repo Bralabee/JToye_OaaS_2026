@@ -330,7 +330,7 @@ dependencies {
     implementation("io.github.resilience4j:resilience4j-spring-boot4:2.4.0")
 
     // Stripe payment processing
-    implementation("com.stripe:stripe-java:33.4.2")
+    implementation("com.stripe:stripe-java:34.0.0")
 
     // PDF generation for allergen labels
     implementation("com.github.librepdf:openpdf:2.0.3")
