@@ -20,6 +20,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import uk.jtoye.core.testsupport.IntegrationTestSupport;
+import uk.jtoye.core.testsupport.ShopGrants;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -362,9 +363,16 @@ class VanishedRowStatusIntegrationTest {
     // Fixtures
     // ------------------------------------------------------------------
 
-    /** A day-one vendor holding the customers write scope the Phase-25 CR-01 gate requires. */
-    private static RequestPostProcessor vendor(UUID tenant) {
-        return jwt().jwt(j -> j.subject(UUID.randomUUID().toString())
+    /**
+     * A vendor holding the customers write scope the Phase-25 CR-01 gate requires and, since
+     * WINDOWS #29 (ruling B, 2026-10-09), a tenant-wide STAFF grant: every customer endpoint requires
+     * an honoured grant under D-06. The grant is seeded here, before the request is built, so it is
+     * committed before any race arm takes its row lock.
+     */
+    private RequestPostProcessor vendor(UUID tenant) {
+        UUID subject = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenant, subject, null, "STAFF", "customer-staff-" + subject + "@example.com");
+        return jwt().jwt(j -> j.subject(subject.toString())
                         .claim("tenant_id", tenant.toString()))
                 .authorities(new SimpleGrantedAuthority("SCOPE_customers:write"));
     }

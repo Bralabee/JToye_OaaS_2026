@@ -306,6 +306,53 @@ public class ShopAccessService {
     }
 
     /**
+     * Require that the caller holds ANY honoured grant in the pinned tenant — the gate on the
+     * tenant-level customer surface (WINDOWS #29, owner ruling 2026-10-09, option B). Under D-06
+     * strict scoping "ungranted means no access", and since 37-15 measured an ungranted (fresh or
+     * revoked) tenant user reading and creating customers, every {@code /api/v1/customers}
+     * operation calls this first.
+     *
+     * <p><strong>Same predicate as {@code GET /api/v1/staff/me}</strong>
+     * ({@code StaffManagementService.myAccess}), so the API refuses exactly the people the
+     * dashboard shows "You don't have access": the caller passes when {@link #isGroupAdmin()} is
+     * true (realm admin, declared system caller, allowlisted machine client, an honoured tenant-wide
+     * GROUP_ADMIN, or the strict-OFF day-one implicit admin), or when {@link #grantedShopIds()} is
+     * non-empty, or when the cached membership carries a tenant-wide STAFF/SHOP_MANAGER role (a
+     * tenant with no shops yet still admits that holder). Otherwise it throws the typed
+     * {@link ShopAccessDeniedException} with no shop and {@link ShopRole#STAFF} ("any grant") — the
+     * {@code shop-access-denied} 403 the dashboard's access event keys on.
+     *
+     * <p>Three things it deliberately does NOT do:
+     * <ul>
+     *   <li>call {@link #onRequest()} itself: under the strict-OFF override that would JIT-provision
+     *       a GROUP_ADMIN row for an ungranted customer caller, a side effect this surface never had.
+     *       {@link #isGroupAdmin()} already performs the D-09 directory touch, and
+     *       {@link #grantedShopIds()} is reached only when the caller is not a Group admin — under
+     *       strict ON, or holding a row already — where its own {@code onRequest()} provisions
+     *       nothing;</li>
+     *   <li>read {@code shop_staff} rows directly: a de-honoured JIT row would then admit. The
+     *       decision goes through the honour-aware ladder and the cached membership only;</li>
+     *   <li>narrow which customers a granted user sees (option C) or require a role floor such as
+     *       SHOP_MANAGER for writes (option E). Each is a separate future owner ruling.</li>
+     * </ul>
+     *
+     * @throws ShopAccessDeniedException if the caller holds no honoured grant in the tenant, or is
+     *         not an identifiable vendor user.
+     */
+    public void requireAnyAccess() {
+        if (isGroupAdmin()) {
+            return;
+        }
+        if (!grantedShopIds().isEmpty()) {
+            return;
+        }
+        if (self().resolveMembership(requireVendorUserId()).tenantWideRole() != null) {
+            return;
+        }
+        throw new ShopAccessDeniedException(null, ShopRole.STAFF);
+    }
+
+    /**
      * The {@link #require} decision as a boolean, for a caller that must report a refusal as
      * DATA rather than abort (37-13, UXT-026: a CSV row naming a shop the importer does not
      * manage is a per-row error while the other rows import).

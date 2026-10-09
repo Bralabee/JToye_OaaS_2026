@@ -36,7 +36,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // A single class-level write-scoped principal restores each test's original intent
 // (create/read/update/delete succeed). The @Valid-400 cases still 400 because bean
 // validation runs BEFORE the @PreAuthorize gate (D-04 ordering), so the scope is inert there.
-@WithMockUser(authorities = "SCOPE_customers:write")
+// WINDOWS #29 (ruling B, 2026-10-09): customer endpoints require an honoured grant; a non-JWT mock
+// principal cannot hold one, so this caller is a realm admin (implicit Group admin) as well.
+@WithMockUser(authorities = {"SCOPE_customers:write", "ROLE_admin"})
 class CustomerControllerIntegrationTest {
 
     @Container

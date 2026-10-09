@@ -96,14 +96,16 @@ class TypedNotFoundBodyIntegrationTest {
     @Test
     @DisplayName("GET /customers/{unknown} carries a typed problem body")
     void getCustomer_unknownId_isTypedProblem() throws Exception {
-        assertTypedNotFound(get(customerPath()).with(vendor(seedTenant())));
+        UUID tenant = seedTenant();
+        assertTypedNotFound(get(customerPath()).with(vendor(tenant, customerStaff(tenant))));
     }
 
     @Test
     @DisplayName("PUT /customers/{unknown} carries a typed problem body")
     void updateCustomer_unknownId_isTypedProblem() throws Exception {
+        UUID tenant = seedTenant();
         assertTypedNotFound(put(customerPath())
-                .with(customersWrite(seedTenant()))
+                .with(customersWrite(tenant, customerStaff(tenant)))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(customerJson()));
     }
@@ -111,7 +113,8 @@ class TypedNotFoundBodyIntegrationTest {
     @Test
     @DisplayName("DELETE /customers/{unknown} carries a typed problem body")
     void deleteCustomer_unknownId_isTypedProblem() throws Exception {
-        assertTypedNotFound(delete(customerPath()).with(customersWrite(seedTenant())));
+        UUID tenant = seedTenant();
+        assertTypedNotFound(delete(customerPath()).with(customersWrite(tenant, customerStaff(tenant))));
     }
 
     // ------------------------------------------------------------------
@@ -199,7 +202,7 @@ class TypedNotFoundBodyIntegrationTest {
         UUID tenant = seedTenant();
         UUID customer = seedCustomer(tenant);
 
-        mockMvc.perform(get("/api/v1/customers/" + customer).with(vendor(tenant)))
+        mockMvc.perform(get("/api/v1/customers/" + customer).with(vendor(tenant, customerStaff(tenant))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(customer.toString()))
                 .andExpect(jsonPath("$.type").doesNotExist());
@@ -243,15 +246,30 @@ class TypedNotFoundBodyIntegrationTest {
     }
 
     private static RequestPostProcessor scoped(UUID tenant, String scope) {
+        return scoped(tenant, UUID.randomUUID(), scope);
+    }
+
+    private static RequestPostProcessor scoped(UUID tenant, UUID subject, String scope) {
         return jwt()
-                .jwt(j -> j.subject(UUID.randomUUID().toString())
+                .jwt(j -> j.subject(subject.toString())
                         .claim("tenant_id", tenant.toString())
                         .claim("scope", scope))
                 .authorities(new JwtRolesAndScopesConverter());
     }
 
-    private static RequestPostProcessor customersWrite(UUID tenant) {
-        return scoped(tenant, "customers:write");
+    private static RequestPostProcessor customersWrite(UUID tenant, UUID subject) {
+        return scoped(tenant, subject, "customers:write");
+    }
+
+    /**
+     * WINDOWS #29 (ruling B, 2026-10-09): every customer endpoint requires an honoured grant under
+     * D-06, so a customer arm's caller holds a tenant-wide STAFF grant (no shop needed). Returns the
+     * granted subject.
+     */
+    private UUID customerStaff(UUID tenant) {
+        UUID subject = UUID.randomUUID();
+        ShopGrants.grantOperator(jdbc, tenant, subject, null, "STAFF", "customer-staff-" + subject + "@example.com");
+        return subject;
     }
 
     private static RequestPostProcessor catalogWrite(UUID tenant) {
