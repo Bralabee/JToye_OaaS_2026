@@ -180,3 +180,19 @@ where it must be resolved.
 - **Runtime parity is owed to 37-15.** `POST /products/copy`, the `shopId` parameter on
   `/products/bulk/csv` and the shared-image delete guard reach the compose stack only at the 37-15
   rebuild.
+
+## From 37-16 (kitchen New lane, card additions)
+
+- **Old PENDING orders now fill the New lane on the dev tenant.** Measured on the rebuilt stack
+  (2026-10-09, evidence/37-16-screens): Brixton Village Grill's lane holds 20 PENDING orders, many
+  of them `seed-order-metric.sh` probes up to 39 days old, each with the NEW strip and the 1 Hz ring.
+  This is D-11 working (they are unaccepted orders), but 37-17's repeating alert will ring for all of
+  them, and a vendor's first look at the board is a wall of stale orders. Two things for 37-17 and
+  the 37-A gate: reject the dev-tenant seed probes before any screenshot or persona pass, and decide
+  whether `scripts/seed-order-metric.sh` should cancel its own probe order after the counter exists.
+  Not changed here: the lane must show every unaccepted order, and hiding old ones would be a choice
+  the owner has not made.
+- **Pre-existing, observed only (out of scope).** On a 4-column desktop card (1280px) the 20px
+  "ALLERGENS" label of `OrderAllergenBanner` touches or overruns the right edge of its amber box
+  (screenshot 37-16-kitchen-1280.jpeg). The banner and the card width are unchanged by 37-16 (UI-SPEC
+  L6: the banner is untouched), so grid cards had the same width before. Measure before filing.

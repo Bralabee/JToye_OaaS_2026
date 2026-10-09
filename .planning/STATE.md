@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-15 complete (15/53). 37-15 closed 2026-10-09: sub-theme 37-B proven on the rebuilt compose runtime (pre-rebuild images predated 37-B; every image rebuilt, realm re-imported with --override true, V76..V79 applied, check-runtime-freshness 0 unverified, OpenAPI live 120/120); staff-invite spec RED live then GREEN; live D-06/D-07/D-08/D-26 + MCP create_order proofs and every 37-B good hold; a one-shop manager finance dead end found live and fixed (f4c53fb4); PR branch phase-37-b-staff-access cut locally as one squash commit 24d58c1b (not pushed). Owner: open the 37-B PR with /gsd-ship and rule on WINDOWS #29 (customers readable by an ungranted user) before merge; VAT helper copy + screen review harvested to the phase UAT. Next: /gsd-ship for 37-B, then /gsd-execute-phase 37 (37-16, sub-theme A)."
-last_updated: "2026-10-09T09:39:58.077Z"
+stopped_at: "Phase 37 executing: 37-01..37-16 complete (16/53). 37-16 closed 2026-10-09: D-11 New lane + UXT-011 card additions (PENDING in KITCHEN_STATUSES with KitchenStatusesParityTest; Accept=/confirm, Reject=/cancel behind a confirm; NOTE FROM CUSTOMER + DELIVERY/COLLECTION on every card; 1 Hz ring, static under reduced motion; stock refusal names product+count). Live desktop run found the order number squeezed to zero width and it was fixed (da1985e0); kitchen-flow 18/18 on rebuilt frontend b2394b8e, runtime fresh. Observed: 20 stale PENDING dev orders now fill the lane (deferred-items). Next: 37-17 (repeating alert)."
+last_updated: "2026-10-09T10:40:13.225Z"
 last_activity: 2026-10-09
-state_head: 96d5a94b5a007138864cb9948fbee2b033f9e024
+state_head: da1985e0dbf71265416568b5b4bd299e9be1200a
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 200
+  completed_plans: 201
   percent: 65
 ---
 
@@ -917,6 +917,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P12 | 16 min | 2 tasks | 15 files |
 | Phase 37 P13 | 50 min | 2 tasks | 16 files |
 | Phase 37 P14 | 16 min | 2 tasks | 13 files |
+| Phase 37 P16 | 56 min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -1207,6 +1208,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-15 Task 2: proceed — 37-B may drive the shared compose stack and deploy D-06; dev-stack access-loss query found nobody loses access, owner ruling 2026-10-09
 - [Phase 37]: 37-15: /api/v1/customers stays open to an ungranted tenant user (Phase 23 tenant-scoped CustomerController); Rule 4, owner ruling needed before the 37-B PR merges (WINDOWS #29)
 
+- [Phase 37]: 37-16: the New lane row reads "Checking for new orders…" until the first board read, then "No new orders waiting"; Print all stays a print of the grid; an absent fulfilment type renders no badge rather than a guess
+- [Phase 37]: 37-16: a refused Accept/Reject re-reads the order (CANCELLED = already rejected, CONFIRMED..COMPLETED = already accepted, else generic); the insufficient-stock problem carries productName/available members
+- [Phase 37]: 37-16: the kitchen card number row is flex-wrap (live desktop run measured the number squeezed to zero width); the beep now fires on DRAFT->PENDING, left for 37-17
 ### Pending Todos
 
 - **✅ RESOLVED (2026-07-22): docs-freshness reconciled to 1574.** The 23-17 +1 drift (java_test_methods 1064→1065, java_test_files 180→181, total 1573→1574, schema 57) is reconciled — `docs/metrics.json` reads total 1574 and `scripts/docs-freshness.sh` check mode exits 0 (`docs-freshness OK: metrics match source (total logical invocations: 1574)`, confirmed during validate-phase 23). The CI gate is green.
@@ -1277,8 +1281,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-09T01:45:18Z
-Stopped at: Completed 37-14-PLAN.md (VAT display for VAT-registered sellers, VAT rate select, import target, copy to shop); next 37-15
+Last session: 2026-10-09T10:40:13.225Z
+Stopped at: Completed 37-16-PLAN.md (kitchen New lane, Accept/Reject, customer note + fulfilment badge on every card, 1 Hz ring); next 37-17
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
