@@ -273,7 +273,9 @@ function KdsNewCard({
         {NEW_STRIP_COPY}
       </div>
       <CardHeader className="pb-3" data-testid="kds-card-header">
-        <div className="flex items-start gap-2">
+        {/* Wraps, so the fulfilment badge drops below a long number instead of squeezing it
+            (the desktop finding recorded on the grid card's row in page.tsx). */}
+        <div className="flex flex-wrap items-start gap-2">
           <CardTitle className="min-w-0 break-words text-lg font-semibold">{label}</CardTitle>
           <KdsFulfilmentBadge fulfilmentType={order.fulfilmentType} />
         </div>

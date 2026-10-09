@@ -434,14 +434,22 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
+    // STATEFUL, as the server is: once /confirm has answered 200 the board read returns the order
+    // as CONFIRMED. A stub that kept serving PENDING would put the card back in the lane on the
+    // board's next re-read (the socket's reconnect re-reads it) and fail a correct page.
+    const confirmCalls: string[] = []
     await page.route(`${API}/api/v1/orders/kitchen**`, (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(pageOf([pendingOrder, orderDetailResponse], route.request().url())),
+        body: JSON.stringify(
+          pageOf(
+            [{ ...pendingOrder, status: confirmCalls.length > 0 ? "CONFIRMED" : "PENDING" }, orderDetailResponse],
+            route.request().url()
+          )
+        ),
       })
     )
-    const confirmCalls: string[] = []
     await page.route(`${API}/api/v1/orders/*/confirm`, (route) => {
       confirmCalls.push(route.request().url())
       return route.fulfill({

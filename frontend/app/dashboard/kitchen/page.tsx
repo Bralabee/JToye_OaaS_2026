@@ -961,17 +961,21 @@ export default function KitchenPage() {
                       {/* 37-16 (UXT-011): the fulfilment badge sits beside the number. The number
                           keeps #8's `min-w-0 truncate` (so it can never run under a badge) and
                           gains `whitespace-normal break-words`, which win the cascade over
-                          truncate's nowrap: it now wraps to a second line rather than losing its
-                          tail to an ellipsis, so the FULL number shows (roadmap SC-1). */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex min-w-0 items-start gap-2">
-                          <CardTitle className="min-w-0 truncate whitespace-normal break-words text-lg font-semibold">
-                            {order.orderNumber || `#${order.id.substring(0, 6)}`}
-                          </CardTitle>
-                          <KdsFulfilmentBadge fulfilmentType={order.fulfilmentType} />
-                        </div>
+                          truncate's nowrap: it wraps to a second line rather than losing its tail
+                          to an ellipsis, so the FULL number shows (roadmap SC-1).
+
+                          THE ROW WRAPS (`flex-wrap`). Measured on the live desktop run (1280px,
+                          four columns): in a non-wrapping row `min-w-0` let flex squeeze the number
+                          to ZERO width between DELIVERY and the status badge, and truncate's
+                          overflow:hidden then hid it. Wrapping makes a badge drop to the next line
+                          instead; the status badge keeps the right edge with `ml-auto`. */}
+                      <div className="flex flex-wrap items-start gap-2">
+                        <CardTitle className="min-w-0 truncate whitespace-normal break-words text-lg font-semibold">
+                          {order.orderNumber || `#${order.id.substring(0, 6)}`}
+                        </CardTitle>
+                        <KdsFulfilmentBadge fulfilmentType={order.fulfilmentType} />
                         {config && (
-                          <Badge className={`${config.bgColor} flex flex-shrink-0 items-center gap-1 text-white`}>
+                          <Badge className={`${config.bgColor} ml-auto flex flex-shrink-0 items-center gap-1 text-white`}>
                             <StatusIcon className="h-3 w-3" />
                             {config.label}
                           </Badge>
