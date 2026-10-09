@@ -149,6 +149,9 @@ export function saveBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url)
 }
 
+/** U+2212 MINUS SIGN, spelled as a code point so no editor or tool can turn it into a hyphen. */
+export const MINUS_SIGN = String.fromCharCode(0x2212)
+
 const GBP = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" })
 
 /**
@@ -158,7 +161,7 @@ const GBP = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" 
  */
 export function formatSignedPennies(pennies: number): string {
   const text = GBP.format(Math.abs(pennies) / 100)
-  return pennies < 0 ? `−${text}` : text
+  return pennies < 0 ? `${MINUS_SIGN}${text}` : text
 }
 
 /** The banner sentence parts for an echoed scope: the shop name, or null for all shops. */
