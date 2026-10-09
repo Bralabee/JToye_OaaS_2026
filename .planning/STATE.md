@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-14 complete (14/53). 37-14 closed 2026-10-09: checkout step 1, the payment step and the cash confirmation show a VAT row only when shop.seller.vatNumber is present, otherwise the B7 note under Total (a failed shop fetch shows neither; the order page never prints VAT); product form VAT rate Select (Standard pre-selected, sent as vatRate; helper copy awaits owner sign-off in 37-15); import page imports into the switcher shop or a required chosen shop (no request without a target; WINDOWS #27 fixed); CopyToShopDialog (row + header whole-menu) reports the server counts with zeros omitted; jest 2382/0, lint 0 errors, build green. Live proof owed to 37-15 (WINDOWS #28). Next: /gsd-execute-phase 37 (37-15)."
-last_updated: "2026-10-09T01:45:18Z"
+stopped_at: "Phase 37 executing: 37-01..37-15 complete (15/53). 37-15 closed 2026-10-09: sub-theme 37-B proven on the rebuilt compose runtime (pre-rebuild images predated 37-B; every image rebuilt, realm re-imported with --override true, V76..V79 applied, check-runtime-freshness 0 unverified, OpenAPI live 120/120); staff-invite spec RED live then GREEN; live D-06/D-07/D-08/D-26 + MCP create_order proofs and every 37-B good hold; a one-shop manager finance dead end found live and fixed (f4c53fb4); PR branch phase-37-b-staff-access cut locally as one squash commit 24d58c1b (not pushed). Owner: open the 37-B PR with /gsd-ship and rule on WINDOWS #29 (customers readable by an ungranted user) before merge; VAT helper copy + screen review harvested to the phase UAT. Next: /gsd-ship for 37-B, then /gsd-execute-phase 37 (37-16, sub-theme A)."
+last_updated: "2026-10-09T09:39:58.077Z"
 last_activity: 2026-10-09
-state_head: 1c8ee4043d549a187ebc32f766ce69379684428e
+state_head: 96d5a94b5a007138864cb9948fbee2b033f9e024
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 199
+  completed_plans: 200
   percent: 65
 ---
 
@@ -772,7 +772,7 @@ Status: Executing Phase 37
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-08
+Last activity: 2026-10-09
 
 Progress: [███████░░░] 65%
 
@@ -1204,6 +1204,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-14: the product form sends vatRate STANDARD on a new product and the stored rate on an edit; an edit whose response carried no rate sends none, so the PUT keeps the stored rate rather than a guess
 - [Phase 37]: 37-14: the CSV import target is the switcher's shop, or on All shops a required chosen shop; handleUpload refuses without a target (the disabled control is not the gate); importCsv takes shopId as a required argument
 - [Phase 37]: 37-14: 'Copy to another shop…' is a row action (that product) and, with a shop selected, a header action for that shop's whole menu (productIds omitted); offered only where a source shop and another shop exist; '1 product' / 'its' for a single copy
+- [Phase 37]: 37-15 Task 2: proceed — 37-B may drive the shared compose stack and deploy D-06; dev-stack access-loss query found nobody loses access, owner ruling 2026-10-09
+- [Phase 37]: 37-15: /api/v1/customers stays open to an ungranted tenant user (Phase 23 tenant-scoped CustomerController); Rule 4, owner ruling needed before the 37-B PR merges (WINDOWS #29)
 
 ### Pending Todos
 
