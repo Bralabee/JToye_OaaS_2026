@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 13
 waived_count: 0
-fixed_count: 14
-total_count: 27
-last_updated: 2026-10-09T01:23:06.434Z
+fixed_count: 15
+total_count: 28
+last_updated: 2026-10-09T01:42:09.320Z
 ---
 
 # Broken Windows Ledger
@@ -41,7 +41,8 @@ last_updated: 2026-10-09T01:23:06.434Z
 | 24 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/security/access/dto/MyAccessDto.java |  | 37-09 added a nullable businessName to GET /api/v1/staff/me (additive, OpenAPI +7/-0): no endpoint a staff member can read named the business, and the D-26 joined toast must be built from server data; reaches the shared runtime only at the 37-15 rebuild (until then the toast says 'your new business') | open |  | 2026-10-08T16:22:20.257Z |  |
 | 25 | 37 | unrun-verify | frontend/app/dashboard/finance/page.tsx |  | 37-12 per-shop finance (API-echoed scope banner, Choose-a-shop state, Export CSV under the server filename, reversal rows) and the void dialog/voided badges are proven in jest only; no live browser run, because the shared runtime predates 37-10/37-11 and is rebuilt at 37-15 | open |  | 2026-10-09T00:29:01.557Z |  |
 | 26 | 37 | deviation | frontend/app/dashboard/finance/page.tsx |  | 37-12 finance marks a SALE 'Voided' only when its REVERSAL is on the same transactions page (the ledger DTO carries no voided flag on the sale); a sale whose reversal sits on another page of 20 shows no Voided badge | open |  | 2026-10-09T00:29:01.668Z |  |
-| 27 | 37 | deviation | frontend/app/dashboard/products/import/page.tsx |  | 37-13 made a CSV row with no shop_id and no shopId the per-row error 'shop required' (for a Group admin too); the dashboard import page still posts the file without shopId, so every dashboard import reports 'shop required' and creates nothing until 37-14 sends the switcher shop (same 37-B PR) | open |  | 2026-10-09T01:23:06.434Z |  |
+| 27 | 37 | deviation | frontend/app/dashboard/products/import/page.tsx |  | 37-13 made a CSV row with no shop_id and no shopId the per-row error 'shop required' (for a Group admin too); the dashboard import page still posts the file without shopId, so every dashboard import reports 'shop required' and creates nothing until 37-14 sends the switcher shop (same 37-B PR) | fixed |  | 2026-10-09T01:23:06.434Z | 2026-10-09T01:42:02.683Z |
+| 28 | 37 | unrun-verify | frontend/app/shop/[slug]/checkout/page.tsx |  | 37-14 VAT display rule (no VAT row for a seller without a VAT number, the B7 note), the product-form VAT rate Select, the import target and the copy-to-shop dialog are proven in jest only; no live browser run, because the shared runtime predates 37-13 and is rebuilt at 37-15 | open |  | 2026-10-09T01:42:09.320Z |  |
 
 ````json
 [
@@ -390,9 +391,22 @@ last_updated: 2026-10-09T01:23:06.434Z
     "file": "frontend/app/dashboard/products/import/page.tsx",
     "line": null,
     "description": "37-13 made a CSV row with no shop_id and no shopId the per-row error 'shop required' (for a Group admin too); the dashboard import page still posts the file without shopId, so every dashboard import reports 'shop required' and creates nothing until 37-14 sends the switcher shop (same 37-B PR)",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-09T01:23:06.434Z",
+    "resolved_at": "2026-10-09T01:42:02.683Z",
+    "milestone": "v2.3"
+  },
+  {
+    "id": 28,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "frontend/app/shop/[slug]/checkout/page.tsx",
+    "line": null,
+    "description": "37-14 VAT display rule (no VAT row for a seller without a VAT number, the B7 note), the product-form VAT rate Select, the import target and the copy-to-shop dialog are proven in jest only; no live browser run, because the shared runtime predates 37-13 and is rebuilt at 37-15",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-09T01:42:09.320Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }

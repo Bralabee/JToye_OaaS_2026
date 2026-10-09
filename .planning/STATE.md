@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-13 complete (13/53). 37-13 closed 2026-10-09: POST /products/bulk/csv takes shopId (SHOP_MANAGER, gated before any row); a row without shop_id lands there, neither is the per-row 'shop required' (Group admin too), a row naming an unmanaged shop is a per-row error (ShopAccessService.permits); POST /products/copy {sourceShopId,targetShopId,productIds?} SHOP_MANAGER on both, through createProduct, allergen mask/spans/may-contain/ingredients/price/VAT/label/stock/images verbatim, photos as new product_media links to the same assets, copy SKU = source SKU + target prefix, SKIPPED by copy SKU or title under a target-shop lock; flat image objects deleted only when unshared; core-java 1621/0 + 1006/0. Dashboard import posts no shopId until 37-14 (WINDOWS #27). Next: /gsd-execute-phase 37 (37-14)."
-last_updated: "2026-10-09T01:24:00Z"
+stopped_at: "Phase 37 executing: 37-01..37-14 complete (14/53). 37-14 closed 2026-10-09: checkout step 1, the payment step and the cash confirmation show a VAT row only when shop.seller.vatNumber is present, otherwise the B7 note under Total (a failed shop fetch shows neither; the order page never prints VAT); product form VAT rate Select (Standard pre-selected, sent as vatRate; helper copy awaits owner sign-off in 37-15); import page imports into the switcher shop or a required chosen shop (no request without a target; WINDOWS #27 fixed); CopyToShopDialog (row + header whole-menu) reports the server counts with zeros omitted; jest 2382/0, lint 0 errors, build green. Live proof owed to 37-15 (WINDOWS #28). Next: /gsd-execute-phase 37 (37-15)."
+last_updated: "2026-10-09T01:45:18Z"
 last_activity: 2026-10-09
-state_head: 58a41a6e3576ba91109455f07d6a7235d38f4216
+state_head: 1c8ee4043d549a187ebc32f766ce69379684428e
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 198
+  completed_plans: 199
   percent: 65
 ---
 
@@ -916,6 +916,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P11 | 1h 0m | 3 tasks | 24 files |
 | Phase 37 P12 | 16 min | 2 tasks | 15 files |
 | Phase 37 P13 | 50 min | 2 tasks | 16 files |
+| Phase 37 P14 | 16 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -1199,6 +1200,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-13: a copy's SKU is {source SKU}-{first 8 of the target shop id} because SKUs are tenant-unique (V3); a source product is SKIPPED when the target has that copy SKU or the same title ignoring case, under a PESSIMISTIC_WRITE lock on the target shop row
 - [Phase 37]: 37-13: copy carries allergen data verbatim, stored emphasis spans (NULL included) overwriting createProduct's re-parse; photos are new product_media links to the same media_asset rows; a flat image object is deleted only when no other product still references its URL
 - [Phase 37]: 37-13: copy carries quantity_in_stock as stored (plan text); flagged for owner review at the phase PR (a copied stock count can oversell a shop that does not hold it)
+- [Phase 37]: 37-14: a VAT row (checkout step 1, payment step, cash confirmation) needs a DECLARED registration (shop.seller.vatNumber); a loaded shop without one gets the B7 note under Total; a shop that failed to load gets neither; the order page never prints VAT and gets no note (it has no totals block)
+- [Phase 37]: 37-14: the product form sends vatRate STANDARD on a new product and the stored rate on an edit; an edit whose response carried no rate sends none, so the PUT keeps the stored rate rather than a guess
+- [Phase 37]: 37-14: the CSV import target is the switcher's shop, or on All shops a required chosen shop; handleUpload refuses without a target (the disabled control is not the gate); importCsv takes shopId as a required argument
+- [Phase 37]: 37-14: 'Copy to another shop…' is a row action (that product) and, with a shop selected, a header action for that shop's whole menu (productIds omitted); offered only where a source shop and another shop exist; '1 product' / 'its' for a single copy
 
 ### Pending Todos
 
@@ -1270,8 +1275,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-09T01:24:00Z
-Stopped at: Completed 37-13-PLAN.md (CSV import into the chosen shop, copy menu to another shop); next 37-14
+Last session: 2026-10-09T01:45:18Z
+Stopped at: Completed 37-14-PLAN.md (VAT display for VAT-registered sellers, VAT rate select, import target, copy to shop); next 37-15
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
