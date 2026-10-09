@@ -233,6 +233,30 @@ describe("Who sees which figures (UI-SPEC § B5 rows 'Shop manager' and 'Staff')
     expect(screen.queryByRole("button", { name: /export csv/i })).not.toBeInTheDocument()
   })
 
+  it("a manager with exactly ONE shop on All shops reads that shop: the switcher is a pinned label with nothing to pick (37-15 live run)", async () => {
+    // Measured on the rebuilt compose stack: the server narrows a one-grant manager's
+    // shop list to one shop, the switcher renders a pinned label (no <select>), the shop
+    // context stays "all", and the page asked them to "Pick one of your shops in the shop
+    // switcher" that offers no choice. The pinned shop IS their context.
+    window.localStorage.clear()
+    mockedFetchMyShops.mockResolvedValue({
+      shops: [SHOPS[0]] as never,
+      isGroupAdmin: false,
+      userId: "user-1",
+      access: access({ grantedShopIds: [SHOP_A] }),
+    })
+    render(
+      <ShopSwitcherProvider>
+        <FinancePage />
+      </ShopSwitcherProvider>
+    )
+
+    await waitFor(() => expect(banner()).toHaveTextContent(`Showing ${SHOP_A_NAME} only`))
+    expect(screen.queryByText("Choose a shop to see its figures")).not.toBeInTheDocument()
+    expect(financeCalls().some((u) => u.startsWith("/api/v1/financial-transactions/summary") && u.includes(`shopId=${SHOP_A}`))).toBe(true)
+    expect(financeCalls().every((u) => u.includes(`shopId=${SHOP_A}`))).toBe(true)
+  })
+
   it("STAFF with a shop selected keeps 'Admin access required' when the server refuses", async () => {
     summaryStatus = 403
     renderFinance(access({ grantedShopIds: [SHOP_A] }), SHOP_A)
