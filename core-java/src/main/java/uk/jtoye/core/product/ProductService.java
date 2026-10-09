@@ -20,20 +20,28 @@ import uk.jtoye.core.finance.VatRate;
 import uk.jtoye.core.media.MediaAssetService;
 import uk.jtoye.core.media.ProductMedia;
 import uk.jtoye.core.media.ProductMediaRepository;
+import uk.jtoye.core.product.dto.CopyProductsRequest;
+import uk.jtoye.core.product.dto.CopyProductsResult;
 import uk.jtoye.core.product.dto.CreateProductRequest;
 import uk.jtoye.core.product.dto.ProductDto;
 import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
+import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.storage.StorageService.ImageType;
 import uk.jtoye.core.storage.StorageService;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -53,6 +61,7 @@ public class ProductService {
     private final ProductCacheLoader productCacheLoader;
     private final ProductMediaRepository productMediaRepository;
     private final MediaAssetService mediaAssetService;
+    private final ShopRepository shopRepository;
 
     public ProductService(ProductRepository productRepository,
                           ProductMapper productMapper,
@@ -61,7 +70,8 @@ public class ProductService {
                           ShopAccessService shopAccessService,
                           ProductCacheLoader productCacheLoader,
                           ProductMediaRepository productMediaRepository,
-                          MediaAssetService mediaAssetService) {
+                          MediaAssetService mediaAssetService,
+                          ShopRepository shopRepository) {
         this.productRepository = productRepository;
         this.productMapper = productMapper;
         this.storageService = storageService;
@@ -70,6 +80,7 @@ public class ProductService {
         this.productCacheLoader = productCacheLoader;
         this.productMediaRepository = productMediaRepository;
         this.mediaAssetService = mediaAssetService;
+        this.shopRepository = shopRepository;
     }
 
     /**
@@ -397,8 +408,9 @@ public class ProductService {
         // Asset-model delete (IMG-01): drop the primary join row + ref-count-release the asset.
         releasePrimaryAsset(productId);
 
-        // Dual-read flat cleanup (D-03a): still delete the flat object + null the column.
-        storageService.delete(product.getImageUrl());
+        // Dual-read flat cleanup (D-03a): still delete the flat object + null the column. The object
+        // is kept while another product still shows it (a copy shares its source's URL, 37-13).
+        deleteFlatImageIfUnshared(product, product.getImageUrl());
         product.setImageUrl(null);
         product = productRepository.saveAndFlush(product);
         cacheEvictor.evictEntity("products", "getProductById", productId);
@@ -457,7 +469,7 @@ public class ProductService {
 
         // Dual-read flat cleanup (D-03a): still remove the flat-array entry + delete the object.
         String removedUrl = urls.remove(index);
-        storageService.delete(removedUrl);
+        deleteFlatImageIfUnshared(product, removedUrl);
         product = productRepository.saveAndFlush(product);
         cacheEvictor.evictEntity("products", "getProductById", productId);
 
@@ -503,6 +515,197 @@ public class ProductService {
     }
 
     /**
+     * Delete a FLAT image object (the dual-read {@code image_url} / {@code additional_image_urls}
+     * columns) only when no other product of the tenant still shows it.
+     *
+     * <p>37-13: a product copied to another shop carries its source's flat URLs verbatim, so the
+     * same object can back two products. The asset model already ref-counts ({@code releaseAsset}
+     * deletes only at reference count 0); the flat columns had no count, so removing the copy's
+     * photo would have deleted the object the source shop still shows. This is the flat
+     * equivalent of the asset ref-count.
+     */
+    private void deleteFlatImageIfUnshared(Product product, String url) {
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        long others = productRepository.countOtherProductsReferencingImage(
+                product.getTenantId(), product.getId(), url);
+        if (others > 0) {
+            log.info("Kept image object for product {}: {} other product(s) still show it", product.getId(), others);
+            return;
+        }
+        storageService.delete(url);
+    }
+
+    /**
+     * Copy products from one shop of the tenant to another (37-13, RWO-026 / UXT-026).
+     *
+     * <p><strong>Gates.</strong> SHOP_MANAGER on BOTH shops (T-37-35); source and target must differ
+     * (400). Copying never leaves the tenant: both shops pass the tenant-bound {@code require}, every
+     * product read carries an explicit tenant predicate, and each copy is written by
+     * {@link #createProduct}, the one domain create path every writer uses (theme 6).
+     *
+     * <p><strong>Allergen data is carried VERBATIM, never derived</strong> (T-37-36): the declared mask,
+     * the may-contain mask and the ingredients text go through the create request as they are stored, and
+     * the stored emphasis spans are copied onto the new row afterwards, overwriting what
+     * {@code createProduct} parsed from the text (a stored value, NULL included, is the vendor's record; a
+     * re-parse would be the platform rewriting it). Price, VAT rate, label fields, stock and the flat
+     * image URLs are carried the same way.
+     *
+     * <p><strong>Photos are shared copy-on-write.</strong> Each of the source's {@code product_media}
+     * links is repeated for the copy, pointing at the SAME {@code media_asset}: no object is duplicated,
+     * and the asset ref-count (and the flat-URL count in {@link #deleteFlatImageIfUnshared}) keeps an
+     * object alive while either product shows it, so an edit in one shop never changes the other.
+     *
+     * <p><strong>Idempotent</strong> (T-37-37). SKUs are unique per tenant (V3), so a copy cannot keep its
+     * source's SKU; it gets {@link #copySku}, a deterministic function of the source SKU and the target
+     * shop. A source product is SKIPPED when the target already has that copy SKU, or a product with the
+     * same title ignoring case. The target shop row is locked first ({@code SELECT ... FOR UPDATE}), so a
+     * concurrent copy into the same shop waits, then reads this copy's rows and skips them.
+     *
+     * <p>A requested product that is not in the source shop, or whose copy SKU is already used by another
+     * product of the tenant, is a FAILED item with a reason; nothing is written for it. Both are decided
+     * before any write, so a failed item never aborts the transaction for the others.
+     */
+    public CopyProductsResult copyProducts(CopyProductsRequest request) {
+        UUID sourceShopId = request.sourceShopId();
+        UUID targetShopId = request.targetShopId();
+        if (sourceShopId.equals(targetShopId)) {
+            throw new IllegalArgumentException("sourceShopId and targetShopId must be different shops");
+        }
+        shopAccessService.require(sourceShopId, ShopRole.SHOP_MANAGER);
+        shopAccessService.require(targetShopId, ShopRole.SHOP_MANAGER);
+        UUID tenantId = TenantContext.get()
+                .orElseThrow(() -> new IllegalStateException("Tenant context not set"));
+
+        // T-37-37: serialise copies into this target before reading what it already has.
+        shopRepository.lockByIdAndTenantId(targetShopId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + targetShopId));
+
+        List<Product> sourceMenu = productRepository
+                .findByTenantIdAndShopIdOrderByDisplayOrderAscCreatedAtAsc(tenantId, sourceShopId);
+        Set<String> targetSkus = new HashSet<>();
+        Set<String> targetTitles = new HashSet<>();
+        for (Product existing : productRepository
+                .findByTenantIdAndShopIdOrderByDisplayOrderAscCreatedAtAsc(tenantId, targetShopId)) {
+            targetSkus.add(existing.getSku());
+            targetTitles.add(titleKey(existing.getTitle()));
+        }
+
+        List<UUID> requested = request.productIds() == null || request.productIds().isEmpty()
+                ? sourceMenu.stream().map(Product::getId).toList()
+                : List.copyOf(new LinkedHashSet<>(request.productIds()));
+        Map<UUID, Product> inSource = sourceMenu.stream()
+                .collect(Collectors.toMap(Product::getId, Function.identity()));
+
+        List<CopyProductsResult.Item> items = new ArrayList<>();
+        for (UUID sourceProductId : requested) {
+            Product source = inSource.get(sourceProductId);
+            if (source == null) {
+                items.add(item(sourceProductId, CopyProductsResult.Outcome.FAILED, null,
+                        "Product is not in the source shop"));
+                continue;
+            }
+            String sku = copySku(source.getSku(), targetShopId);
+            if (targetSkus.contains(sku) || targetTitles.contains(titleKey(source.getTitle()))) {
+                items.add(item(sourceProductId, CopyProductsResult.Outcome.SKIPPED, null,
+                        "The target shop already has this product"));
+                continue;
+            }
+            if (productRepository.existsByTenantIdAndSku(tenantId, sku)) {
+                items.add(item(sourceProductId, CopyProductsResult.Outcome.FAILED, null,
+                        "SKU " + sku + " is already used by another product"));
+                continue;
+            }
+            UUID copyId = createProduct(copyRequest(source, sku, targetShopId)).getId();
+            carryVerbatim(source, copyId);
+            linkSourceMedia(source.getId(), copyId, tenantId);
+            targetSkus.add(sku);
+            targetTitles.add(titleKey(source.getTitle()));
+            items.add(item(sourceProductId, CopyProductsResult.Outcome.CREATED, copyId, null));
+        }
+
+        CopyProductsResult result = CopyProductsResult.of(items);
+        log.info("Copied products from shop {} to shop {}: {} created, {} skipped, {} failed",
+                sourceShopId, targetShopId, result.created(), result.skipped(), result.failed());
+        return result;
+    }
+
+    /**
+     * The copy's SKU: the source SKU plus the first 8 hex digits of the target shop id. Deterministic, so a
+     * repeated copy finds the earlier one; distinct per target shop, because SKUs are unique per tenant.
+     * Trimmed to the 100-character SKU limit from the source end.
+     */
+    static String copySku(String sourceSku, UUID targetShopId) {
+        String suffix = "-" + targetShopId.toString().substring(0, 8).toUpperCase(Locale.ROOT);
+        String base = sourceSku.length() + suffix.length() > 100
+                ? sourceSku.substring(0, 100 - suffix.length())
+                : sourceSku;
+        return base + suffix;
+    }
+
+    private static String titleKey(String title) {
+        return title == null ? "" : title.strip().toLowerCase(Locale.ROOT);
+    }
+
+    private static CopyProductsResult.Item item(UUID source, CopyProductsResult.Outcome outcome, UUID copy,
+                                                String reason) {
+        return new CopyProductsResult.Item(source, outcome, copy, reason);
+    }
+
+    /** The create request for a copy: every field the request carries, as stored on the source. */
+    private static CreateProductRequest copyRequest(Product source, String sku, UUID targetShopId) {
+        CreateProductRequest copy = new CreateProductRequest();
+        copy.setSku(sku);
+        copy.setTitle(source.getTitle());
+        copy.setIngredientsText(source.getIngredientsText());
+        copy.setAllergenMask(source.getAllergenMask());
+        copy.setMayContainMask(source.getMayContainMask());
+        copy.setPricePennies(source.getPricePennies());
+        copy.setVatRate(source.getVatRate());
+        copy.setDescription(source.getDescription());
+        copy.setImageUrl(source.getImageUrl());
+        copy.setCategory(source.getCategory());
+        copy.setDisplayOrder(source.getDisplayOrder());
+        copy.setAvailable(source.getAvailable());
+        copy.setFeatured(source.getFeatured());
+        copy.setPreparationTimeMinutes(source.getPreparationTimeMinutes());
+        copy.setDietaryTags(source.getDietaryTags());
+        copy.setShopId(targetShopId);
+        copy.setQuantityInStock(source.getQuantityInStock());
+        copy.setShelfLifeDays(source.getShelfLifeDays());
+        copy.setDurabilityType(source.getDurabilityType());
+        return copy;
+    }
+
+    /**
+     * The two stored fields the create request cannot carry: the gallery URLs (not client-supplied) and
+     * the emphasis spans, which {@link #createProduct} re-derives from the text. Both are set to the
+     * source's stored values, NULL spans included.
+     */
+    private void carryVerbatim(Product source, UUID copyId) {
+        Product copy = productRepository.findById(copyId)
+                .orElseThrow(() -> new IllegalStateException("Copied product vanished: " + copyId));
+        copy.setAdditionalImageUrls(source.getAdditionalImageUrls() == null
+                ? new ArrayList<>() : new ArrayList<>(source.getAdditionalImageUrls()));
+        copy.setAllergenSpans(source.getAllergenSpans() == null ? null : new ArrayList<>(source.getAllergenSpans()));
+        productRepository.saveAndFlush(copy);
+    }
+
+    /** New product_media links for the copy to the SAME assets, same primary flag and order (no object copied). */
+    private void linkSourceMedia(UUID sourceProductId, UUID copyId, UUID tenantId) {
+        for (ProductMedia link : productMediaRepository.findByProductIdOrderByPrimaryDescSortOrderAsc(sourceProductId)) {
+            ProductMedia shared = new ProductMedia();
+            shared.setTenantId(tenantId);
+            shared.setProductId(copyId);
+            shared.setAssetId(link.getAssetId());
+            shared.setPrimary(link.isPrimary());
+            shared.setSortOrder(link.getSortOrder());
+            productMediaRepository.save(shared);
+        }
+    }
+
+    /**
      * Delete product by ID (tenant-scoped).
      * RLS ensures we can only delete products belonging to our tenant.
      * Evicts ONLY this product's cache entry under the current tenant.
@@ -515,9 +718,10 @@ public class ProductService {
         // VSA-02 (D-02): parent-lookup — catalogue delete requires SHOP_MANAGER.
         shopAccessService.require(product.getShopId(), ShopRole.SHOP_MANAGER);
 
-        // Clean up all images from storage
-        storageService.delete(product.getImageUrl());
-        product.getAdditionalImageUrls().forEach(storageService::delete);
+        // Clean up all images from storage, except objects another product still shows (37-13: a
+        // copy to another shop shares its source's image URLs).
+        deleteFlatImageIfUnshared(product, product.getImageUrl());
+        product.getAdditionalImageUrls().forEach(url -> deleteFlatImageIfUnshared(product, url));
 
         try {
             productRepository.delete(product);
