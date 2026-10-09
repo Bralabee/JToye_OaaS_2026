@@ -452,6 +452,9 @@ describe("KitchenPage", () => {
 
     const pill = await screen.findByTestId("kds-feed-pill")
     await waitFor(() => expect(pill.textContent).toMatch(/\d{2}:\d{2}:\d{2}/))
+    // 37-17 (D-14): a board that cannot ring is not "Live". Sound on, and it is.
+    expect(pill).toHaveTextContent("Sound off")
+    fireEvent.click(screen.getByTestId("kds-sound-control"))
     expect(pill).toHaveTextContent("Live")
     // No banner while the feed is healthy — a warning that is always on is noise.
     expect(screen.queryByTestId("kds-feed-banner")).not.toBeInTheDocument()

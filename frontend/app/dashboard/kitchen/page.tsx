@@ -672,8 +672,13 @@ export default function KitchenPage() {
         // `tick` IS the clock reading (set from Date.now() on each 10s beat) —
         // pure w.r.t. render, same freshness as the old in-memo Date.now().
         now: tick,
+        // 37-17 (D-14): the pill says "Live" only when the board can also ring. Staleness is
+        // derived inside from `lastSyncedAt` against the existing STALE_AFTER_MS. The session and
+        // access inputs (signedOut, noAccess) are wired by 37-18 with the K2 overlay.
+        soundOff: soundState === "off",
+        muted: soundState === "muted",
       }),
-    [online, connected, reconnecting, lastSyncedAt, syncFailed, tick]
+    [online, connected, reconnecting, lastSyncedAt, syncFailed, tick, soundState]
   )
 
   // #536: ONE tree, not a `loading` early-return that duplicated the header.

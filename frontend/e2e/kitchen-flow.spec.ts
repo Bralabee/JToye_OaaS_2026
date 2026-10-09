@@ -506,9 +506,15 @@ test.describe("Kitchen display + order detail — product names & fixes (Surface
     await page.goto(`${BASE}/dashboard/kitchen`, { waitUntil: "domcontentloaded" })
 
     // ONLINE: a pill reading Live, with a real wall clock, and no banner.
+    //
+    // 37-17 (D-14): a board that cannot ring is not "Live", so a fresh board reads "Sound off"
+    // until the operator taps "Turn on sound" (a real gesture, which the browser lets unlock
+    // the AudioContext). Tap first, then the feed assertions below are the #106 ones.
     const pill = live(page).getByTestId("kds-feed-pill")
     await expect(pill).toBeVisible()
     await expect(pill).toContainText(/\d{2}:\d{2}:\d{2}/)
+    await expect(pill).toContainText("Sound off", { timeout: 20_000 })
+    await live(page).getByTestId("kds-sound-control").click()
     await expect(pill).toContainText("Live", { timeout: 20_000 })
     await expect(live(page).getByTestId("kds-feed-banner")).toHaveCount(0)
 
