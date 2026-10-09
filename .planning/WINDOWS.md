@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 13
+open_count: 7
 waived_count: 0
-fixed_count: 15
-total_count: 28
-last_updated: 2026-10-09T01:42:09.320Z
+fixed_count: 22
+total_count: 29
+last_updated: 2026-10-09T09:35:11.795Z
 ---
 
 # Broken Windows Ledger
@@ -33,16 +33,17 @@ last_updated: 2026-10-09T01:42:09.320Z
 | 16 | 37 | unrun-verify | frontend/e2e/dashboard-interface-corrections.spec.ts | 185 | 37-06 edited two staff-page e2e assertions (no invite-denial copy; People heading in the CLS test); not run, the shared runtime is not rebuilt until the 37-15 gate | open |  | 2026-10-08T12:56:26.518Z |  |
 | 17 | 37 | unrun-verify | frontend/components/dashboard/no-access-page.tsx |  | 37-06 B3 backstop not run: Playwright at 375px asserting no horizontal overflow on the no-access page body with a 60-character business name; the body wraps with overflow-wrap:anywhere (jsdom cannot measure) | open |  | 2026-10-08T12:56:28.291Z |  |
 | 18 | 37 | deviation | frontend/components/dashboard/no-access-page.tsx |  | 37-06 B3 body says 'your business' where UI-SPEC copy has {business}: a person with no access cannot read any tenant record, and the session carries no business name | open |  | 2026-10-08T12:56:29.946Z |  |
-| 19 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java |  | 37-07 invitation email not yet sent through the running compose stack (Mailhog): V77 and /api/v1/staff/invites reach the shared runtime only at the 37-15 rebuild; proven by integration tests with a re-parsed MimeMessage | open |  | 2026-10-08T13:58:26.371Z |  |
-| 20 | 37 | unrun-verify | infra/keycloak/realm-export.template.json |  | 37-08 vendor-realm user profile (tenant_id admin-only) not yet on the shared compose Keycloak: needs kc.sh import --override true at the 37-15 rebuild, then the live chain (profile GET, accepted invitee keeps tenant_id, token claim, account-console edit refused). Proven on a throwaway Keycloak 24.0.5 only | open |  | 2026-10-08T14:40:02.180Z |  |
+| 19 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java |  | 37-07 invitation email not yet sent through the running compose stack (Mailhog): V77 and /api/v1/staff/invites reach the shared runtime only at the 37-15 rebuild; proven by integration tests with a re-parsed MimeMessage | fixed |  | 2026-10-08T13:58:26.371Z | 2026-10-09T09:35:11.042Z |
+| 20 | 37 | unrun-verify | infra/keycloak/realm-export.template.json |  | 37-08 vendor-realm user profile (tenant_id admin-only) not yet on the shared compose Keycloak: needs kc.sh import --override true at the 37-15 rebuild, then the live chain (profile GET, accepted invitee keeps tenant_id, token claim, account-console edit refused). Proven on a throwaway Keycloak 24.0.5 only | fixed |  | 2026-10-08T14:40:02.180Z | 2026-10-09T09:35:11.153Z |
 | 21 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java |  | 37-08 moved the invite token from the URL path to the fragment ({base}#token={tenantId}.{token}) and the public API to POST preview/accept with the ref in the body; 37-09's /invite/[token] route, GET /{ref} and POST /{ref}/accept wording are superseded: the page must read location.hash and POST the ref | fixed |  | 2026-10-08T14:40:06.592Z | 2026-10-08T16:22:20.362Z |
-| 22 | 37 | unrun-verify | frontend/e2e/staff-invite.spec.ts |  | 37-09 live invite journey listed only (1 test, @desktop-only): Staff-form invite, Mailhog link, origin allow-list and no /invite Referer, 375px overflow backstop, account + Keycloak login_hint sign-in, joined toast, 'Shop manager · {shop}' with an instrument arm, second visit unusable; live RED (pre-rebuild runtime has no invite card) and GREEN owed to 37-15 | open |  | 2026-10-08T16:22:20.043Z |  |
-| 23 | 37 | unrun-verify | frontend/e2e/dashboard-interface-corrections.spec.ts | 174 | 37-09 inverted test 2: it asserted zero invite buttons on the Staff page and now asserts exactly one 'Send invitation' in the 'Invite someone' region; not run, the shared runtime is rebuilt at 37-15 | open |  | 2026-10-08T16:22:20.149Z |  |
-| 24 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/security/access/dto/MyAccessDto.java |  | 37-09 added a nullable businessName to GET /api/v1/staff/me (additive, OpenAPI +7/-0): no endpoint a staff member can read named the business, and the D-26 joined toast must be built from server data; reaches the shared runtime only at the 37-15 rebuild (until then the toast says 'your new business') | open |  | 2026-10-08T16:22:20.257Z |  |
-| 25 | 37 | unrun-verify | frontend/app/dashboard/finance/page.tsx |  | 37-12 per-shop finance (API-echoed scope banner, Choose-a-shop state, Export CSV under the server filename, reversal rows) and the void dialog/voided badges are proven in jest only; no live browser run, because the shared runtime predates 37-10/37-11 and is rebuilt at 37-15 | open |  | 2026-10-09T00:29:01.557Z |  |
+| 22 | 37 | unrun-verify | frontend/e2e/staff-invite.spec.ts |  | 37-09 live invite journey listed only (1 test, @desktop-only): Staff-form invite, Mailhog link, origin allow-list and no /invite Referer, 375px overflow backstop, account + Keycloak login_hint sign-in, joined toast, 'Shop manager · {shop}' with an instrument arm, second visit unusable; live RED (pre-rebuild runtime has no invite card) and GREEN owed to 37-15 | fixed |  | 2026-10-08T16:22:20.043Z | 2026-10-09T09:35:11.260Z |
+| 23 | 37 | unrun-verify | frontend/e2e/dashboard-interface-corrections.spec.ts | 174 | 37-09 inverted test 2: it asserted zero invite buttons on the Staff page and now asserts exactly one 'Send invitation' in the 'Invite someone' region; not run, the shared runtime is rebuilt at 37-15 | fixed |  | 2026-10-08T16:22:20.149Z | 2026-10-09T09:35:11.364Z |
+| 24 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/security/access/dto/MyAccessDto.java |  | 37-09 added a nullable businessName to GET /api/v1/staff/me (additive, OpenAPI +7/-0): no endpoint a staff member can read named the business, and the D-26 joined toast must be built from server data; reaches the shared runtime only at the 37-15 rebuild (until then the toast says 'your new business') | fixed |  | 2026-10-08T16:22:20.257Z | 2026-10-09T09:35:11.472Z |
+| 25 | 37 | unrun-verify | frontend/app/dashboard/finance/page.tsx |  | 37-12 per-shop finance (API-echoed scope banner, Choose-a-shop state, Export CSV under the server filename, reversal rows) and the void dialog/voided badges are proven in jest only; no live browser run, because the shared runtime predates 37-10/37-11 and is rebuilt at 37-15 | fixed |  | 2026-10-09T00:29:01.557Z | 2026-10-09T09:35:11.582Z |
 | 26 | 37 | deviation | frontend/app/dashboard/finance/page.tsx |  | 37-12 finance marks a SALE 'Voided' only when its REVERSAL is on the same transactions page (the ledger DTO carries no voided flag on the sale); a sale whose reversal sits on another page of 20 shows no Voided badge | open |  | 2026-10-09T00:29:01.668Z |  |
 | 27 | 37 | deviation | frontend/app/dashboard/products/import/page.tsx |  | 37-13 made a CSV row with no shop_id and no shopId the per-row error 'shop required' (for a Group admin too); the dashboard import page still posts the file without shopId, so every dashboard import reports 'shop required' and creates nothing until 37-14 sends the switcher shop (same 37-B PR) | fixed |  | 2026-10-09T01:23:06.434Z | 2026-10-09T01:42:02.683Z |
-| 28 | 37 | unrun-verify | frontend/app/shop/[slug]/checkout/page.tsx |  | 37-14 VAT display rule (no VAT row for a seller without a VAT number, the B7 note), the product-form VAT rate Select, the import target and the copy-to-shop dialog are proven in jest only; no live browser run, because the shared runtime predates 37-13 and is rebuilt at 37-15 | open |  | 2026-10-09T01:42:09.320Z |  |
+| 28 | 37 | unrun-verify | frontend/app/shop/[slug]/checkout/page.tsx |  | 37-14 VAT display rule (no VAT row for a seller without a VAT number, the B7 note), the product-form VAT rate Select, the import target and the copy-to-shop dialog are proven in jest only; no live browser run, because the shared runtime predates 37-13 and is rebuilt at 37-15 | fixed |  | 2026-10-09T01:42:09.320Z | 2026-10-09T09:35:11.689Z |
+| 29 | 37 | unmet-truth | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | 37-15 live: D-06 'ungranted means no access' does not hold for /api/v1/customers. A tenant user with no shop_staff grant (fresh, or revoked) read all 8 tenant A customers (names, emails, phones) with GET 200 and created one with POST 201; Phase 23 left CustomerController tenant-scoped, not shop-scoped, by design, which strict OFF hid. Needs an owner ruling on the customer access rule before the 37-B PR merges | open |  | 2026-10-09T09:35:11.795Z |  |
 
 ````json
 [
@@ -287,10 +288,10 @@ last_updated: 2026-10-09T01:42:09.320Z
     "file": "core-java/src/main/java/uk/jtoye/core/security/access/StaffInviteService.java",
     "line": null,
     "description": "37-07 invitation email not yet sent through the running compose stack (Mailhog): V77 and /api/v1/staff/invites reach the shared runtime only at the 37-15 rebuild; proven by integration tests with a re-parsed MimeMessage",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-08T13:58:26.371Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-09T09:35:11.042Z",
     "milestone": "v2.3"
   },
   {
@@ -300,10 +301,10 @@ last_updated: 2026-10-09T01:42:09.320Z
     "file": "infra/keycloak/realm-export.template.json",
     "line": null,
     "description": "37-08 vendor-realm user profile (tenant_id admin-only) not yet on the shared compose Keycloak: needs kc.sh import --override true at the 37-15 rebuild, then the live chain (profile GET, accepted invitee keeps tenant_id, token claim, account-console edit refused). Proven on a throwaway Keycloak 24.0.5 only",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-08T14:40:02.180Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-09T09:35:11.153Z",
     "milestone": "v2.3"
   },
   {
@@ -326,10 +327,10 @@ last_updated: 2026-10-09T01:42:09.320Z
     "file": "frontend/e2e/staff-invite.spec.ts",
     "line": null,
     "description": "37-09 live invite journey listed only (1 test, @desktop-only): Staff-form invite, Mailhog link, origin allow-list and no /invite Referer, 375px overflow backstop, account + Keycloak login_hint sign-in, joined toast, 'Shop manager · {shop}' with an instrument arm, second visit unusable; live RED (pre-rebuild runtime has no invite card) and GREEN owed to 37-15",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-08T16:22:20.043Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-09T09:35:11.260Z",
     "milestone": "v2.3"
   },
   {
@@ -339,10 +340,10 @@ last_updated: 2026-10-09T01:42:09.320Z
     "file": "frontend/e2e/dashboard-interface-corrections.spec.ts",
     "line": 174,
     "description": "37-09 inverted test 2: it asserted zero invite buttons on the Staff page and now asserts exactly one 'Send invitation' in the 'Invite someone' region; not run, the shared runtime is rebuilt at 37-15",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-08T16:22:20.149Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-09T09:35:11.364Z",
     "milestone": "v2.3"
   },
   {
@@ -352,10 +353,10 @@ last_updated: 2026-10-09T01:42:09.320Z
     "file": "core-java/src/main/java/uk/jtoye/core/security/access/dto/MyAccessDto.java",
     "line": null,
     "description": "37-09 added a nullable businessName to GET /api/v1/staff/me (additive, OpenAPI +7/-0): no endpoint a staff member can read named the business, and the D-26 joined toast must be built from server data; reaches the shared runtime only at the 37-15 rebuild (until then the toast says 'your new business')",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-08T16:22:20.257Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-09T09:35:11.472Z",
     "milestone": "v2.3"
   },
   {
@@ -365,10 +366,10 @@ last_updated: 2026-10-09T01:42:09.320Z
     "file": "frontend/app/dashboard/finance/page.tsx",
     "line": null,
     "description": "37-12 per-shop finance (API-echoed scope banner, Choose-a-shop state, Export CSV under the server filename, reversal rows) and the void dialog/voided badges are proven in jest only; no live browser run, because the shared runtime predates 37-10/37-11 and is rebuilt at 37-15",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-09T00:29:01.557Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-09T09:35:11.582Z",
     "milestone": "v2.3"
   },
   {
@@ -404,9 +405,22 @@ last_updated: 2026-10-09T01:42:09.320Z
     "file": "frontend/app/shop/[slug]/checkout/page.tsx",
     "line": null,
     "description": "37-14 VAT display rule (no VAT row for a seller without a VAT number, the B7 note), the product-form VAT rate Select, the import target and the copy-to-shop dialog are proven in jest only; no live browser run, because the shared runtime predates 37-13 and is rebuilt at 37-15",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-09T01:42:09.320Z",
+    "resolved_at": "2026-10-09T09:35:11.689Z",
+    "milestone": "v2.3"
+  },
+  {
+    "id": 29,
+    "kind": "unmet-truth",
+    "phase": "37",
+    "file": "core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java",
+    "line": null,
+    "description": "37-15 live: D-06 'ungranted means no access' does not hold for /api/v1/customers. A tenant user with no shop_staff grant (fresh, or revoked) read all 8 tenant A customers (names, emails, phones) with GET 200 and created one with POST 201; Phase 23 left CustomerController tenant-scoped, not shop-scoped, by design, which strict OFF hid. Needs an owner ruling on the customer access rule before the 37-B PR merges",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-09T09:35:11.795Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
