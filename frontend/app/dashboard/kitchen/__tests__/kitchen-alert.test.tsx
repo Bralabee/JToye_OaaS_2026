@@ -268,3 +268,41 @@ describe("Kitchen page: the sound state is shown, never assumed (K1)", () => {
     expect(chimeCount()).toBeGreaterThanOrEqual(3)
   })
 })
+
+describe("Kitchen page: the feed pill says 'Live' only when it is true (D-14, SC-1)", () => {
+  it("a fresh board that cannot ring reads 'Sound off', and 'Live' only after the tap", async () => {
+    stubBoards([shop("shop-1", "Test Shop")], { "shop-1": [] })
+    render(<KitchenPage />)
+    await screen.findByText("No new orders waiting")
+    const pill = await screen.findByTestId("kds-feed-pill")
+    expect(pill).toHaveTextContent("Sound off")
+    expect(pill).not.toHaveTextContent("Live")
+
+    fireEvent.click(screen.getByTestId("kds-sound-control"))
+    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Live")
+  })
+
+  it("F4: a persisted mute reads 'Muted' on the pill, beside the muted bar", async () => {
+    localStorage.setItem("kds-muted", "true")
+    stubBoards([shop("shop-1", "Test Shop")], { "shop-1": [] })
+    render(<KitchenPage />)
+    await screen.findByText("No new orders waiting")
+    const pill = await screen.findByTestId("kds-feed-pill")
+    expect(pill).toHaveTextContent("Muted")
+    expect(pill).not.toHaveTextContent("Live")
+    expect(screen.getByTestId("kds-sound-bar")).toHaveTextContent("Alerts are muted.")
+  })
+
+  it("a board whose reads have gone stale reads 'Out of date', not 'Live', with the socket up", async () => {
+    stubBoards([shop("shop-1", "Test Shop")], { "shop-1": [] })
+    render(<KitchenPage />)
+    await screen.findByText("No new orders waiting")
+    fireEvent.click(screen.getByTestId("kds-sound-control"))
+    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Live")
+
+    // Every read from now on hangs: the socket stays "connected", the stamp stops advancing.
+    mockGet.mockImplementation(() => new Promise(() => {}))
+    await advance(150_000)
+    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Out of date")
+  })
+})
