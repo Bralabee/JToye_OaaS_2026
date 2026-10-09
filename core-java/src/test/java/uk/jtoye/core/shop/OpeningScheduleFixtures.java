@@ -94,6 +94,8 @@ public final class OpeningScheduleFixtures {
                     HoursSource.NEEDS_REVIEW, schedule()),
             new Fixture("tab separators", hours("mon", "09:00\t-\t17:00"),
                     HoursSource.MIGRATED_FROM_TEXT, schedule("mon", "09:00-17:00")),
+            new Fixture("vertical tab and form feed are spaces, and are trimmed", hours("mon", "\f09:00\u000B-\r17:00\n"),
+                    HoursSource.MIGRATED_FROM_TEXT, schedule("mon", "09:00-17:00")),
             new Fixture("no-break spaces are not spaces", hours("mon", "09:00 - 17:00"),
                     HoursSource.NEEDS_REVIEW, schedule()),
             new Fixture("padded exact window", hours("mon", "  09:00-17:00  "),
