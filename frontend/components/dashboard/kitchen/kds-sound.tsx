@@ -144,6 +144,16 @@ export function useKitchenAlert({
   return { soundState, enableSound }
 }
 
+/** RED interface (37-17 Task 2): the non-dismissible sound bar. */
+export function KdsSoundBar(props: {
+  soundState: SoundState
+  onTurnOn: () => void
+  onUnmute: () => void
+}) {
+  void props
+  return null
+}
+
 const CONTROL_LABEL: Record<SoundState, string> = {
   off: "Turn on sound",
   on: "Mute alerts",

@@ -209,3 +209,62 @@ describe("Kitchen page: the repeating new-order alert (D-12)", () => {
     expect(audioRecord.starts).toHaveLength(0)
   })
 })
+
+describe("Kitchen page: the sound state is shown, never assumed (K1)", () => {
+  it("a fresh board says sound is off, in a bar under the header, until the tap", async () => {
+    stubBoards([shop("shop-1", "Test Shop")], { "shop-1": [orderFixture("new-1", "PENDING")] })
+    render(<KitchenPage />)
+    await screen.findByText("ORD-new-1")
+
+    const bar = screen.getByTestId("kds-sound-bar")
+    expect(bar).toHaveTextContent("Sound is off. New orders will flash but not ring.")
+    expect(screen.getByTestId("kds-sound-control")).toHaveTextContent("Turn on sound")
+
+    // The bar's own button is a real way in: it unlocks the same single context.
+    fireEvent.click(within(bar).getByRole("button", { name: "Turn on sound" }))
+    expect(audioRecord.instances).toHaveLength(1)
+    expect(screen.queryByTestId("kds-sound-bar")).toBeNull()
+    expect(screen.getByTestId("kds-sound-control")).toHaveTextContent("Mute alerts")
+    await advance(15_000)
+    expect(chimeCount()).toBeGreaterThanOrEqual(3)
+  })
+
+  it("F4: a persisted kds-muted=true is visible on load (bar + control), never silent", async () => {
+    localStorage.setItem("kds-muted", "true")
+    stubBoards([shop("shop-1", "Test Shop")], { "shop-1": [orderFixture("new-1", "PENDING")] })
+    render(<KitchenPage />)
+    await screen.findByText("ORD-new-1")
+
+    expect(screen.getByTestId("kds-sound-bar")).toHaveTextContent(
+      "Alerts are muted. New orders will flash but not ring."
+    )
+    expect(screen.getByTestId("kds-sound-control")).toHaveTextContent("Unmute alerts")
+    // The key's lifetime is unchanged: reading it does not rewrite or clear it.
+    expect(localStorage.getItem("kds-muted")).toBe("true")
+  })
+
+  it("muted: the New card still flashes, and nothing rings (mute silences sound, never the visual)", async () => {
+    localStorage.setItem("kds-muted", "true")
+    stubBoards([shop("shop-1", "Test Shop")], { "shop-1": [orderFixture("new-1", "PENDING")] })
+    render(<KitchenPage />)
+    const card = (await screen.findByText("ORD-new-1")).closest("[data-testid='kds-new-card']") as HTMLElement
+    expect(card.className).toMatch(/\bkds-new-flash\b/)
+    await advance(15_000)
+    expect(audioRecord.starts).toHaveLength(0)
+  })
+
+  it("'Unmute alerts' in the bar is itself the gesture: one tap unmutes AND unlocks sound", async () => {
+    localStorage.setItem("kds-muted", "true")
+    stubBoards([shop("shop-1", "Test Shop")], { "shop-1": [orderFixture("new-1", "PENDING")] })
+    render(<KitchenPage />)
+    await screen.findByText("ORD-new-1")
+
+    fireEvent.click(within(screen.getByTestId("kds-sound-bar")).getByRole("button", { name: "Unmute alerts" }))
+    expect(localStorage.getItem("kds-muted")).toBe("false")
+    expect(audioRecord.instances).toHaveLength(1)
+    expect(screen.getByTestId("kds-sound-control")).toHaveTextContent("Mute alerts")
+    expect(screen.queryByTestId("kds-sound-bar")).toBeNull()
+    await advance(15_000)
+    expect(chimeCount()).toBeGreaterThanOrEqual(3)
+  })
+})

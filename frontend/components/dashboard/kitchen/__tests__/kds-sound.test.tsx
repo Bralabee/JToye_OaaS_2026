@@ -13,16 +13,22 @@
  *   - after Accept (pending 0), zero starts in the next 15 s;
  *   - muted, or the board stopped: zero starts.
  */
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import {
+  KdsSoundBar,
+  KdsSoundControl,
   NEW_ORDER_ALERT_INTERVAL_MS,
   useKitchenAlert,
   type KitchenAlertInputs,
+  type SoundState,
 } from "../kds-sound"
 import {
+  FakeAudioContext,
   audioRecord,
   chimeCount,
+  installAutoplayPolicy,
   installFakeAudioContext,
+  onlyContext,
 } from "@/test-utils/fake-audio-context"
 
 function Harness(props: KitchenAlertInputs) {
@@ -139,5 +145,145 @@ describe("useKitchenAlert (D-12): the chime repeats until the order is accepted"
     audioRecord.starts.length = 0
     advance(15_000)
     expect(audioRecord.starts).toHaveLength(0)
+  })
+})
+
+/**
+ * Task 2 (UI-SPEC K1 "Sound state: shown, never assumed"). The board must not claim sound it
+ * cannot make: the state is read from the context itself, never assumed from the tap.
+ */
+describe("useKitchenAlert: the sound state is read, never assumed", () => {
+  it("falls back to 'off' when the context is suspended later by the browser, and stops ringing", () => {
+    render(<Harness pendingCount={1} muted={false} stopped={false} />)
+    fireEvent.click(screen.getByRole("button", { name: "Turn on sound" }))
+    expect(screen.getByTestId("sound-state")).toHaveTextContent("on")
+
+    act(() => {
+      onlyContext().suspendFromOutside()
+    })
+    expect(screen.getByTestId("sound-state")).toHaveTextContent("off")
+    audioRecord.starts.length = 0
+    advance(15_000)
+    expect(audioRecord.starts).toHaveLength(0)
+  })
+
+  it("comes back 'on' when the next tap resumes the SAME context", async () => {
+    render(<Harness pendingCount={0} muted={false} stopped={false} />)
+    fireEvent.click(screen.getByRole("button", { name: "Turn on sound" }))
+    act(() => {
+      onlyContext().suspendFromOutside()
+    })
+    expect(screen.getByTestId("sound-state")).toHaveTextContent("off")
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Turn on sound" }))
+    })
+    expect(audioRecord.instances).toHaveLength(1)
+    expect(screen.getByTestId("sound-state")).toHaveTextContent("on")
+  })
+
+  describe("navigator.getAutoplayPolicy is feature-detected", () => {
+    it("present and 'disallowed': off, even though the context reports running", () => {
+      installAutoplayPolicy("disallowed")
+      render(<Harness pendingCount={1} muted={false} stopped={false} />)
+      fireEvent.click(screen.getByRole("button", { name: "Turn on sound" }))
+      expect(onlyContext().state).toBe("running")
+      expect(screen.getByTestId("sound-state")).toHaveTextContent("off")
+      advance(15_000)
+      expect(audioRecord.starts).toHaveLength(0)
+    })
+
+    it("present and 'allowed' with a running context: on", () => {
+      installAutoplayPolicy("allowed")
+      render(<Harness pendingCount={0} muted={false} stopped={false} />)
+      fireEvent.click(screen.getByRole("button", { name: "Turn on sound" }))
+      expect(screen.getByTestId("sound-state")).toHaveTextContent("on")
+      expect(navigator.getAutoplayPolicy).toHaveBeenCalledWith(onlyContext())
+    })
+
+    it("absent: AudioContext.state decides, running is on", () => {
+      expect("getAutoplayPolicy" in navigator).toBe(false)
+      render(<Harness pendingCount={0} muted={false} stopped={false} />)
+      fireEvent.click(screen.getByRole("button", { name: "Turn on sound" }))
+      expect(screen.getByTestId("sound-state")).toHaveTextContent("on")
+    })
+
+    it("absent: AudioContext.state decides, a context the browser keeps suspended is off", async () => {
+      installFakeAudioContext("suspended")
+      FakeAudioContext.resumeBlocked = true
+      render(<Harness pendingCount={1} muted={false} stopped={false} />)
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Turn on sound" }))
+      })
+      expect(onlyContext().state).toBe("suspended")
+      expect(screen.getByTestId("sound-state")).toHaveTextContent("off")
+      advance(15_000)
+      expect(audioRecord.starts).toHaveLength(0)
+    })
+  })
+})
+
+describe("KdsSoundControl and KdsSoundBar: what the board can do, in words", () => {
+  const noop = () => {}
+  const renderBoth = (soundState: SoundState) =>
+    render(
+      <div>
+        <KdsSoundControl soundState={soundState} onTurnOn={noop} onMute={noop} onUnmute={noop} />
+        <KdsSoundBar soundState={soundState} onTurnOn={noop} onUnmute={noop} />
+      </div>
+    )
+
+  it("no context yet: the control reads 'Turn on sound' (VolumeX) and the amber bar says sound is off", () => {
+    renderBoth("off")
+    const control = screen.getByTestId("kds-sound-control")
+    expect(control).toHaveTextContent("Turn on sound")
+    expect(control.querySelector("svg.lucide-volume-x")).not.toBeNull()
+    expect(control.className).toMatch(/\bh-11\b/)
+    expect(control.className).toMatch(/\bkds-press\b/)
+
+    const bar = screen.getByTestId("kds-sound-bar")
+    expect(bar).toHaveTextContent("Sound is off. New orders will flash but not ring.")
+    expect(bar.className).toMatch(/\bbg-amber-50\b/)
+    const action = within(bar).getByRole("button", { name: "Turn on sound" })
+    expect(action.className).toMatch(/\bh-11\b/)
+  })
+
+  it("enabled: the control reads 'Mute alerts' (Volume2) and there is no bar", () => {
+    renderBoth("on")
+    const control = screen.getByTestId("kds-sound-control")
+    expect(control).toHaveTextContent("Mute alerts")
+    expect(control.querySelector("svg.lucide-volume-2")).not.toBeNull()
+    expect(screen.queryByTestId("kds-sound-bar")).toBeNull()
+  })
+
+  it("muted: the control reads 'Unmute alerts' (BellOff, amber-800) and the bar says alerts are muted", () => {
+    renderBoth("muted")
+    const control = screen.getByTestId("kds-sound-control")
+    expect(control).toHaveTextContent("Unmute alerts")
+    expect(control.querySelector("svg.lucide-bell-off")).not.toBeNull()
+    expect(control.className).toMatch(/\btext-amber-800\b/)
+
+    const bar = screen.getByTestId("kds-sound-bar")
+    expect(bar).toHaveTextContent("Alerts are muted. New orders will flash but not ring.")
+    expect(within(bar).getByRole("button", { name: "Unmute alerts" })).toBeInTheDocument()
+  })
+
+  it.each(["off", "muted"] as const)("the %s bar cannot be dismissed: its one button is the fix", (state) => {
+    renderBoth(state)
+    const bar = screen.getByTestId("kds-sound-bar")
+    const buttons = within(bar).getAllByRole("button")
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0]).toHaveTextContent(state === "off" ? "Turn on sound" : "Unmute alerts")
+    expect(within(bar).queryByRole("button", { name: /dismiss|close|hide|×/i })).toBeNull()
+  })
+
+  it("the bar's button calls the same action as the control", () => {
+    const onTurnOn = jest.fn()
+    const onUnmute = jest.fn()
+    const { rerender } = render(<KdsSoundBar soundState="off" onTurnOn={onTurnOn} onUnmute={onUnmute} />)
+    fireEvent.click(screen.getByRole("button", { name: "Turn on sound" }))
+    expect(onTurnOn).toHaveBeenCalledTimes(1)
+    rerender(<KdsSoundBar soundState="muted" onTurnOn={onTurnOn} onUnmute={onUnmute} />)
+    fireEvent.click(screen.getByRole("button", { name: "Unmute alerts" }))
+    expect(onUnmute).toHaveBeenCalledTimes(1)
   })
 })

@@ -79,6 +79,8 @@ class FakeOscillatorNode {
 
 export class FakeAudioContext {
   static initialState: "running" | "suspended" = "running"
+  /** When true, `resume()` leaves the context suspended (the browser refused). */
+  static resumeBlocked = false
   state: "running" | "suspended" | "closed" | "interrupted"
   currentTime = 0
   destination = {}
@@ -111,6 +113,7 @@ export class FakeAudioContext {
   }
 
   resume() {
+    if (FakeAudioContext.resumeBlocked) return Promise.resolve()
     this.setState("running")
     return Promise.resolve()
   }
@@ -146,6 +149,19 @@ export class FakeAudioContext {
   }
 }
 
+/** The context the board built (the board only ever builds one). */
+export function onlyContext(): FakeAudioContext {
+  if (audioRecord.instances.length !== 1) {
+    throw new Error(`expected exactly one AudioContext, found ${audioRecord.instances.length}`)
+  }
+  return audioRecord.instances[0]
+}
+
+/** Install `navigator.getAutoplayPolicy` returning `policy` for every context. */
+export function installAutoplayPolicy(policy: "allowed" | "allowed-muted" | "disallowed") {
+  ;(navigator as unknown as { getAutoplayPolicy: unknown }).getAutoplayPolicy = jest.fn(() => policy)
+}
+
 /** Two oscillator starts make one chime: the number of 880 Hz starts is the number of chimes. */
 export function chimeCount(): number {
   return audioRecord.starts.filter((s) => s.frequency === 880).length
@@ -155,6 +171,8 @@ export function installFakeAudioContext(initialState: "running" | "suspended" = 
   audioRecord.instances.length = 0
   audioRecord.starts.length = 0
   FakeAudioContext.initialState = initialState
+  FakeAudioContext.resumeBlocked = false
+  delete (navigator as unknown as { getAutoplayPolicy?: unknown }).getAutoplayPolicy
   ;(window as unknown as { AudioContext: unknown }).AudioContext = FakeAudioContext
   ;(globalThis as unknown as { AudioContext: unknown }).AudioContext = FakeAudioContext
 }
