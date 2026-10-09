@@ -157,6 +157,21 @@ class CustomerAccessGateIntegrationTest {
 
         assertShopAccessDenied(create, f.customerEmail);
         assertThat(countCustomersWithEmail(f.tenant, email)).as("the refused create wrote no row").isZero();
+
+        // The keyed path too: with a FRESH Idempotency-Key the create runs inside
+        // IdempotencyService.execute, which commits on its own. A gate placed after execute would
+        // still answer 403 but leave the customer written, so the row count is the instrument here.
+        String keyedEmail = "ungranted-keyed-create-" + UUID.randomUUID() + "@example.com";
+        MvcResult keyed = mockMvc.perform(post("/api/v1/customers").with(vendor(f.tenant, ungranted))
+                        .header("Idempotency-Key", "windows29-fresh-" + UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(customerJson("Refused Keyed Create", keyedEmail)))
+                .andReturn();
+
+        assertShopAccessDenied(keyed, keyedEmail);
+        assertThat(countCustomersWithEmail(f.tenant, keyedEmail))
+                .as("the refused keyed create wrote no row (the gate runs before idempotencyService.execute)")
+                .isZero();
     }
 
     @Test
