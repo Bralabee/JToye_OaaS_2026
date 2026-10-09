@@ -207,4 +207,29 @@ describe("KDS card additions (UXT-011): the customer's note and the fulfilment t
     const card = title.closest("[data-testid='kds-grid-card']") as HTMLElement
     expect(within(card).getByTestId("kds-fulfilment-badge")).toHaveClass("flex-shrink-0")
   })
+
+  // Found by the live desktop run of kitchen-flow.spec.ts (1280px, four columns): in a NON-wrapping
+  // row, `min-w-0` lets flex shrink the number to zero width between the fulfilment badge and the
+  // status badge, and `truncate`'s overflow:hidden then hides it entirely (Playwright: "hidden").
+  // jsdom cannot measure that, so this pins the structural cause: the row that holds the number and
+  // the badges WRAPS, so a badge drops to the next line instead of squeezing the number out. The
+  // browser proof is the desktop project of e2e/kitchen-flow.spec.ts.
+  it("the number and the badges share a wrapping row on both card kinds, so a badge never squeezes the number out", async () => {
+    stubBoard([
+      orderFixture("cook-1", "CONFIRMED", { fulfilmentType: "DELIVERY" }),
+      orderFixture("new-1", "PENDING", { fulfilmentType: "COLLECTION" }),
+    ])
+    render(<KitchenPage />)
+
+    for (const number of ["ORD-cook-1", "ORD-new-1"]) {
+      const title = await screen.findByText(number)
+      const row = title.parentElement as HTMLElement
+      expect(row).toContainElement(
+        within(title.closest("[data-testid='kds-grid-card'], [data-testid='kds-new-card']") as HTMLElement)
+          .getByTestId("kds-fulfilment-badge")
+      )
+      expect(row).toHaveClass("flex")
+      expect(row).toHaveClass("flex-wrap")
+    }
+  })
 })
