@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 7
+open_count: 8
 waived_count: 0
 fixed_count: 23
-total_count: 30
-last_updated: 2026-10-09T11:24:20.204Z
+total_count: 31
+last_updated: 2026-10-09T13:23:23.843Z
 ---
 
 # Broken Windows Ledger
@@ -45,6 +45,7 @@ last_updated: 2026-10-09T11:24:20.204Z
 | 28 | 37 | unrun-verify | frontend/app/shop/[slug]/checkout/page.tsx |  | 37-14 VAT display rule (no VAT row for a seller without a VAT number, the B7 note), the product-form VAT rate Select, the import target and the copy-to-shop dialog are proven in jest only; no live browser run, because the shared runtime predates 37-13 and is rebuilt at 37-15 | fixed |  | 2026-10-09T01:42:09.320Z | 2026-10-09T09:35:11.689Z |
 | 29 | 37 | unmet-truth | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | 37-15 live: D-06 'ungranted means no access' does not hold for /api/v1/customers. A tenant user with no shop_staff grant (fresh, or revoked) read all 8 tenant A customers (names, emails, phones) with GET 200 and created one with POST 201; Phase 23 left CustomerController tenant-scoped, not shop-scoped, by design, which strict OFF hid. Needs an owner ruling on the customer access rule before the 37-B PR merges RULED 2026-10-09 (owner, option B): every /api/v1/customers operation requires an honoured grant under D-06 (ShopAccessService.requireAnyAccess, the staff/me predicate), checked before the Idempotency-Key replay; proven in Testcontainers by CustomerAccessGateIntegrationTest; option C (per-shop narrowing) and option E (a SHOP_MANAGER floor on customer writes and staff DELETE) are separate future rulings. | fixed |  | 2026-10-09T09:35:11.795Z | 2026-10-09T11:24:15.166Z |
 | 30 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | WINDOWS #29 customer gate is proven in Testcontainers only; the compose runtime predates it, so check-runtime-freshness reports core-java and check-openapi-snapshot-fresh reports the five new 403s until the next rebuild; live proof owed at the 37-B ship: ungranted GET /api/v1/customers 403 shop-access-denied, STAFF 200, an ungranted dashboard login lands on the no-access page | open |  | 2026-10-09T11:24:20.204Z |  |
+| 31 | 37 | stub | frontend/app/dashboard/kitchen/page.tsx | 612 | 37-17 passes useKitchenAlert stopped:false and deriveFeedState no signedOut/noAccess: the K2 board-stopped state, the session-lapse and the access-ended inputs are 37-18's to wire (the hook and the pill already honour them, tested). Close when 37-18 wires all three. | open |  | 2026-10-09T13:23:23.843Z |  |
 
 ````json
 [
@@ -435,6 +436,19 @@ last_updated: 2026-10-09T11:24:20.204Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-09T11:24:20.204Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 31,
+    "kind": "stub",
+    "phase": "37",
+    "file": "frontend/app/dashboard/kitchen/page.tsx",
+    "line": 612,
+    "description": "37-17 passes useKitchenAlert stopped:false and deriveFeedState no signedOut/noAccess: the K2 board-stopped state, the session-lapse and the access-ended inputs are 37-18's to wire (the hook and the pill already honour them, tested). Close when 37-18 wires all three.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-09T13:23:23.843Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }

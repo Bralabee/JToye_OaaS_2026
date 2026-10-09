@@ -5,15 +5,15 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-16 and 37-19 complete (17/53). 37-19 closed 2026-10-09: V80 adds shops.opening_schedule JSONB, hours_source (CHECK: STRUCTURED|MIGRATED_FROM_TEXT|NEEDS_REVIEW|LEGACY_ALWAYS_OPEN, nullable, no default), orders_paused_until, orders_paused_indefinitely (+ shops_aud); tenant-loop backfill: NULL/{} -> LEGACY_ALWAYS_OPEN (D-25), text -> MIGRATED_FROM_TEXT or NEEDS_REVIEW; OpeningSchedule.fromLegacy proven equal to the SQL on 25 shared fixtures in two tenants. Unit 1655/0/0, integration 1054/0/0. Stack NOT rebuilt (V80 not in the running image). Open for 37-20/owner: D-25 literal text says unparseable -> legacy always-open; the plans give unparseable days [] + NEEDS_REVIEW. Next: 37-17 / 37-20 per wave order."
-last_updated: "2026-10-09T12:58:00.000Z"
+stopped_at: "Phase 37 executing: 37-01..37-17 and 37-19 complete (18/53). 37-17 closed 2026-10-09: D-12 repeating new-order chime (useKitchenAlert: ONE AudioContext created only in the 'Turn on sound' tap; 880 then 660 Hz, 150 ms, sine, 0.6, every NEW_ORDER_ALERT_INTERVAL_MS=5000 while this shop's New lane holds a PENDING order and sound is on, not muted, board not stopped; playBeep removed); sound state read from the context on statechange + getAutoplayPolicy feature-detected (absent in Chromium 153, measured); KdsSoundControl (h-11, words) + non-dismissible KdsSoundBar; tab title '(n) New orders · Kitchen Display — J'Toye'; D-14 pill precedence (deriveFeedState.pill: Signed out > No access > Offline > Not updating > Reconnecting > Out of date > Sound off > Muted > Live) with a 240 px constant width in all ten states (measured). Jest 2472/210, lint 0 errors/31 warnings, build green. Frontend REBUILT + recreated (image 7e5a7401); kitchen-flow e2e 18/18 live; core-java untouched (still pre-V80, WINDOWS #30). WINDOWS #31: stopped/signedOut/noAccess wired by 37-18. Next: 37-18 / 37-20 per wave order."
+last_updated: "2026-10-09T13:26:30.000Z"
 last_activity: 2026-10-09
 state_head: 29520bf2f6bcd6d15bcc9c86af1f6c84ddea194d
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 202
+  completed_plans: 203
   percent: 65
 ---
 
@@ -917,6 +917,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P12 | 16 min | 2 tasks | 15 files |
 | Phase 37 P13 | 50 min | 2 tasks | 16 files |
 | Phase 37 P14 | 16 min | 2 tasks | 13 files |
+| Phase 37 P17 | 25 min | 3 tasks | 17 files |
 | Phase 37 P16 | 56 min | 3 tasks | 27 files |
 
 ## Accumulated Context
@@ -1214,6 +1215,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-19: shops.hours_source is nullable with no default (NULL = not classified); LEGACY_ALWAYS_OPEN is written only by V80 and a legacy shop cannot carry a schedule (ck_shops_legacy_always_open_no_schedule)
 - [Phase 37]: 37-19: a day entry holding a window plus text not understood keeps the FIRST window (today's render) and marks the shop NEEDS_REVIEW; unknown day keys and array/object values also mark NEEDS_REVIEW; a 24:00 close is midnight; zero-length and out-of-range windows are not windows
 - [Phase 37]: 37-19: OpeningScheduleFixtures is the one fixture list both the Java parser and the V80 SQL are held to; change a rule in one and the parity IT reds
+- [Phase 37]: 37-17: the chime counts only the selected shop's PENDING orders (shopId match), so a shop switch silences the old board before the new read lands; the tab title counts the whole New lane, in the same render as the lane
+- [Phase 37]: 37-17: sound state = muted ? muted : context can sound ? on : off; a persisted mute wins over 'no context' so F4's muted bar and Muted pill show on load; getAutoplayPolicy(ctx) is asked first where present (anything but 'allowed' is off), AudioContext.state otherwise
+- [Phase 37]: 37-17: 'Unmute alerts' is itself the gesture (it unmutes and unlocks the context in one tap); the sound bar is non-dismissible, its one button is the fix
+- [Phase 37]: 37-17: the pill precedence is a NEW deriveFeedState field 'pill'; 'status', 'stale' and 'alerting' keep their meaning, so sound/mute raise no feed banner and the existing four-state assertions are untouched; the label slot stacks a pseudo-element sizer per label (constant 240 px measured; the old min-w-[5.5rem] let it vary 230-240)
 - [Phase 37]: WINDOWS #29 RULED 2026-10-09 (owner, option B): every customer endpoint requires an honoured grant under D-06 (requireAnyAccess, the staff/me predicate, before the idempotency replay); landed in the 37-B squash (tag cut/phase-37-b-staff-access-v2); options C and E are separate future rulings; live proof owed (WINDOWS #30)
 
 ### Pending Todos
@@ -1287,8 +1292,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-09T12:58:00.000Z
-Stopped at: Completed 37-19-PLAN.md (V80 structured hours + pause columns, legacy always-open backfill, Java/SQL parity on shared fixtures); next 37-17 / 37-20 per wave order
+Last session: 2026-10-09T13:26:30.000Z
+Stopped at: Completed 37-17-PLAN.md (repeating new-order chime through one tap-unlocked AudioContext, sound bar + labelled control, tab title, ten-state truthful feed pill); next 37-18 / 37-20 per wave order
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.

@@ -1,0 +1,98 @@
+npm notice run frontend@2.3.0 npx
+npm notice run 'playwright' test e2e/kitchen-flow-pre17.spec.ts --reporter=line --project=desktop
+
+Running 9 tests using 1 worker
+
+[1/9] [desktop] › e2e/kitchen-flow-pre17.spec.ts:270:7 › Kitchen display + order detail — product names & fixes (Surface F) › kitchen display shows real product names, a clean badge, and capped elapsed time
+  1) [desktop] › e2e/kitchen-flow-pre17.spec.ts:270:7 › Kitchen display + order detail — product names & fixes (Surface F) › kitchen display shows real product names, a clean badge, and capped elapsed time 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('button', { name: /Mute alerts|Unmute alerts/ })
+    Expected: 1
+    Received: 0
+    Timeout:  10000ms
+
+    Call log:
+      - Expect "toHaveCount" getByRole('button', { name: /Mute alerts|Unmute alerts/ }) with timeout 10000ms
+      - waiting for getByRole('button', { name: /Mute alerts|Unmute alerts/ })
+        24 × locator resolved to 0 elements
+           - unexpected value "0"
+
+
+      331 |       name: /Mute alerts|Unmute alerts/,
+      332 |     })
+    > 333 |     await expect(muteToggle).toHaveCount(1)
+          |                              ^
+      334 |     await expect(muteToggle).toBeVisible()
+      335 |
+      336 |     // The mocked order card shows customer name and order number
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/kitchen-flow-pre17.spec.ts:333:30
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/kitchen-flow-pre17-Kitchen-f6068-dge-and-capped-elapsed-time-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/kitchen-flow-pre17-Kitchen-f6068-dge-and-capped-elapsed-time-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/kitchen-flow-pre17-Kitchen-f6068-dge-and-capped-elapsed-time-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/kitchen-flow-pre17-Kitchen-f6068-dge-and-capped-elapsed-time-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[2/9] [desktop] › e2e/kitchen-flow-pre17.spec.ts:364:7 › Kitchen display + order detail — product names & fixes (Surface F) › order-detail page shows real product names and the delivery address, no 'Unknown Product'
+[3/9] [desktop] › e2e/kitchen-flow-pre17.spec.ts:390:7 › Kitchen display + order detail — product names & fixes (Surface F) › clicking bump advances the ticket and posts the transition
+[4/9] [desktop] › e2e/kitchen-flow-pre17.spec.ts:426:7 › Kitchen display + order detail — product names & fixes (Surface F) › a storefront order appears in the New lane, and Accept moves it to the grid
+[5/9] [desktop] › e2e/kitchen-flow-pre17.spec.ts:478:7 › Kitchen display + order detail — product names & fixes (Surface F) › going offline raises a stale banner with a last-updated stamp, and coming back clears it
+  2) [desktop] › e2e/kitchen-flow-pre17.spec.ts:478:7 › Kitchen display + order detail — product names & fixes (Surface F) › going offline raises a stale banner with a last-updated stamp, and coming back clears it 
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('body > div:not([hidden])').getByTestId('kds-feed-pill')
+    Expected substring: "Live"
+    Received string:    "Sound offLast updated 14:22:01"
+    Timeout: 20000ms
+
+    Call log:
+      - Expect "toContainText" locator('body > div:not([hidden])').getByTestId('kds-feed-pill') with timeout 20000ms
+      - waiting for locator('body > div:not([hidden])').getByTestId('kds-feed-pill')
+        44 × locator resolved to <div data-testid="kds-feed-pill" class="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5">…</div>
+           - unexpected value "Sound offLast updated 14:22:01"
+
+
+      502 |     await expect(pill).toBeVisible()
+      503 |     await expect(pill).toContainText(/\d{2}:\d{2}:\d{2}/)
+    > 504 |     await expect(pill).toContainText("Live", { timeout: 20_000 })
+          |                        ^
+      505 |     await expect(live(page).getByTestId("kds-feed-banner")).toHaveCount(0)
+      506 |
+      507 |     // OFFLINE — induced for real. `context.route()` cannot do this: it does not
+        at /home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/e2e/kitchen-flow-pre17.spec.ts:504:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/kitchen-flow-pre17-Kitchen-9d6ce-p-and-coming-back-clears-it-desktop/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/kitchen-flow-pre17-Kitchen-9d6ce-p-and-coming-back-clears-it-desktop/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/kitchen-flow-pre17-Kitchen-9d6ce-p-and-coming-back-clears-it-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/kitchen-flow-pre17-Kitchen-9d6ce-p-and-coming-back-clears-it-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[6/9] [desktop] › e2e/kitchen-flow-pre17.spec.ts:563:7 › Kitchen display + order detail — product names & fixes (Surface F) › reads the board at a cost that does not scale with ticket count
+[7/9] [desktop] › e2e/kitchen-flow-pre17.spec.ts:618:7 › Kitchen display + order detail — product names & fixes (Surface F) › a ticket can be printed, and the print stylesheet hides the dashboard chrome
+[8/9] [desktop] › e2e/kitchen-flow-pre17.spec.ts:678:7 › Kitchen display + order detail — product names & fixes (Surface F) › the board names its shop, and explains itself in the All-shops context
+[9/9] [desktop] › e2e/kitchen-flow-pre17.spec.ts:713:7 › Kitchen display + order detail — product names & fixes (Surface F) › a kitchen ticket that exists only on page 1 still reaches the board
+  2 failed
+    [desktop] › e2e/kitchen-flow-pre17.spec.ts:270:7 › Kitchen display + order detail — product names & fixes (Surface F) › kitchen display shows real product names, a clean badge, and capped elapsed time 
+    [desktop] › e2e/kitchen-flow-pre17.spec.ts:478:7 › Kitchen display + order detail — product names & fixes (Surface F) › going offline raises a stale banner with a last-updated stamp, and coming back clears it 
+  7 passed (52.9s)

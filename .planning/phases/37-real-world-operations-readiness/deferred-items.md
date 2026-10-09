@@ -196,3 +196,30 @@ where it must be resolved.
   "ALLERGENS" label of `OrderAllergenBanner` touches or overruns the right edge of its amber box
   (screenshot 37-16-kitchen-1280.jpeg). The banner and the card width are unchanged by 37-16 (UI-SPEC
   L6: the banner is untouched), so grid cards had the same width before. Measure before filing.
+
+## From 37-17 (repeating alert, sound state, truthful pill)
+
+- **The dev tenant's 20 stale PENDING orders now RING.** Measured live on the rebuilt frontend
+  (2026-10-09, evidence/37-17-screens): Brixton Village Grill's tab reads "(20) New orders · Kitchen
+  Display — J'Toye", and once "Turn on sound" is tapped the chime repeats every 5 s until all 20 are
+  accepted or rejected. That is D-12 working (37-16's note predicted it). Before any persona pass or
+  human audio check on the dev tenant, reject the `seed-order-metric.sh` probe orders, or the first
+  thing the tester hears is a board that will not stop. Whether the seed script should cancel its
+  own probe is still the 37-16 question; nothing was changed here.
+- **The header sound control takes its own row.** The labelled control ("Turn on sound", h-11) is
+  wider than the icon button it replaced, so the header's `flex-wrap` control row gains a row: at
+  390 px it is pill / selector + Print all / sound control, and at 1280 px the control wraps under
+  the pill beside a long shop name. It is there from the first paint (no CLS) and the pill keeps a
+  constant 240 px in every state (evidence/37-17-browser-probe.json). A design look at the 37-23
+  UAT, not a defect.
+- **Persisted mute and the server render (pre-existing pattern, not measured).** The page reads
+  `kds-muted` in a `useState` initialiser, so the server renders the "Sound is off" bar and a muted
+  client renders the "Alerts are muted" bar: the same hydration text mismatch the old icon button
+  already had. The two bars are the same box, so nothing moves. Measure the console before filing.
+- **`docker compose build frontend` does not retag core-java.** Measured here: core-java's image ID
+  and LastTagTime were identical before and after, unlike `up -d --build frontend` (the recorded
+  trap). Build alone, then `up -d --no-deps --force-recreate frontend`, touches only the frontend.
+- **Dead AudioContext mocks.** `kds-new-lane`, `kds-card-additions`, `allergy-note-board` and
+  `allergen-surfacing` tests still install a per-beep `AudioContext` mock "so playBeep() does not
+  explode". Nothing constructs one without a tap any more, so they are inert; harmless, left alone
+  (not this plan's files).
