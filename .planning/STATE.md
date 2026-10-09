@@ -6,9 +6,9 @@ current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
 stopped_at: "Phase 37 executing: 37-01..37-16 complete (16/53). 37-16 closed 2026-10-09: D-11 New lane + UXT-011 card additions (PENDING in KITCHEN_STATUSES with KitchenStatusesParityTest; Accept=/confirm, Reject=/cancel behind a confirm; NOTE FROM CUSTOMER + DELIVERY/COLLECTION on every card; 1 Hz ring, static under reduced motion; stock refusal names product+count). Live desktop run found the order number squeezed to zero width and it was fixed (da1985e0); kitchen-flow 18/18 on rebuilt frontend b2394b8e, runtime fresh. Observed: 20 stale PENDING dev orders now fill the lane (deferred-items). Next: 37-17 (repeating alert)."
-last_updated: "2026-10-09T10:40:13.225Z"
+last_updated: "2026-10-09T12:03:34.775Z"
 last_activity: 2026-10-09
-state_head: da1985e0dbf71265416568b5b4bd299e9be1200a
+state_head: 29520bf2f6bcd6d15bcc9c86af1f6c84ddea194d
 progress:
   total_phases: 20
   completed_phases: 13
@@ -772,7 +772,7 @@ Status: Executing Phase 37
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-09
+Last activity: 2026-10-09 - Completed quick task 261009-g8m: WINDOWS #29 ruling B customer gate + 37-B re-cut
 
 Progress: [███████░░░] 65%
 
@@ -1211,6 +1211,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-16: the New lane row reads "Checking for new orders…" until the first board read, then "No new orders waiting"; Print all stays a print of the grid; an absent fulfilment type renders no badge rather than a guess
 - [Phase 37]: 37-16: a refused Accept/Reject re-reads the order (CANCELLED = already rejected, CONFIRMED..COMPLETED = already accepted, else generic); the insufficient-stock problem carries productName/available members
 - [Phase 37]: 37-16: the kitchen card number row is flex-wrap (live desktop run measured the number squeezed to zero width); the beep now fires on DRAFT->PENDING, left for 37-17
+- [Phase 37]: WINDOWS #29 RULED 2026-10-09 (owner, option B): every customer endpoint requires an honoured grant under D-06 (requireAnyAccess, the staff/me predicate, before the idempotency replay); landed in the 37-B squash (tag cut/phase-37-b-staff-access-v2); options C and E are separate future rulings; live proof owed (WINDOWS #30)
+
 ### Pending Todos
 
 - **✅ RESOLVED (2026-07-22): docs-freshness reconciled to 1574.** The 23-17 +1 drift (java_test_methods 1064→1065, java_test_files 180→181, total 1573→1574, schema 57) is reconciled — `docs/metrics.json` reads total 1574 and `scripts/docs-freshness.sh` check mode exits 0 (`docs-freshness OK: metrics match source (total logical invocations: 1574)`, confirmed during validate-phase 23). The CI gate is green.
@@ -1278,6 +1280,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 260930-l63 | Fix #771: review photoUrls unvalidated, so GDPR erasure can delete vendor product images | 2026-09-30 | f93412d1 | [260930-l63-fix-771-review-photourls-unvalidated-so-](./quick/260930-l63-fix-771-review-photourls-unvalidated-so-/) |
 | 261004-hhy | Clear main's pg-backup image-gate red: name libpcre2-8-0 on the apt-get line so the image takes 10.42-1+deb12u2 (CVE-2026-103111, HIGH); Trivy 0.70.0 main rc=1 / branch rc=0 on one base digest; ca-certificates still installed, 303 certs | 2026-10-04 | 00a64aa4 | [261004-hhy-fix-pg-backup-pcre2-cve-2026-103111](./quick/261004-hhy-fix-pg-backup-pcre2-cve-2026-103111/) |
 | 261004-nsn | Fix #885: the issue de-dup in e2e-nightly and base-image-freshness (3 sites) searched only the 100 newest open issues; now `--search "in:title …"` with the exact-title jq filter kept. Rendered step scripts: main misses #683 at all 3 sites, branch finds it; substring-title control rejected | 2026-10-04 | (see PR) | [261004-nsn-fix-885-nightly-dedup-title-search](./quick/261004-nsn-fix-885-nightly-dedup-title-search/) |
+| 261009-g8m | WINDOWS #29 ruling B: gate customer endpoints on any honoured grant under D-06 strict scoping, with RED-first Testcontainers arms, and re-cut the 37-B PR branch (phase-37-b-staff-access) from origin/main as one squash commit carrying the gate | 2026-10-09 | 29520bf2 | [261009-g8m-windows-29-ruling-b-gate-customer-endpoi](./quick/261009-g8m-windows-29-ruling-b-gate-customer-endpoi/) |
 
 ## Session Continuity
 
