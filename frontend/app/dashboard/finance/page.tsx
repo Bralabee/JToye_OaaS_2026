@@ -17,6 +17,7 @@ import {
   fetchFinanceSummary,
   fetchFinanceTransactions,
   financeGate,
+  financeShopId,
   formatSignedPennies,
   queryFromScope,
   saveBlob,
@@ -106,8 +107,10 @@ export default function FinancePage() {
   const [exportEmpty, setExportEmpty] = useState(false)
   const { toast } = useToast()
 
-  const { contextShopId } = useShopContext()
+  const { contextShopId: selectedShopId } = useShopContext()
   const switcher = useOptionalShopSwitcherData()
+  // The switcher's selection, or the one shop a single-grant manager is pinned to.
+  const contextShopId = financeShopId(selectedShopId, switcher)
   const gate = financeGate(contextShopId, switcher)
   const currentPage = pageState.shop === contextShopId ? pageState.page : 0
   const setCurrentPage = (page: number) => setPageState({ shop: contextShopId, page })

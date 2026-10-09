@@ -171,6 +171,28 @@ export function scopeShopLabel(scope: FinanceScope): string | null {
 }
 
 /**
+ * The shop a finance surface reads. A selected shop always wins. On All shops, a
+ * non-admin whose read-scoped shop list holds exactly ONE shop reads that shop: the
+ * switcher shows it as a pinned label with nothing to pick (the `!isGroupAdmin &&
+ * shops.length === 1` branch of ShopSwitcher), so "choose a shop" would be a dead end
+ * with their own figures unreachable (found on the live stack at the 37-15 gate).
+ * Group admins and tenant-wide roles keep All shops; the server still checks the shop.
+ */
+export function financeShopId(
+  contextShopId: string | null,
+  switcher: {
+    loading: boolean
+    shops: ReadonlyArray<{ id: string }>
+    access: { groupAdmin: boolean; tenantWideRole: string | null } | null
+  } | null
+): string | null {
+  if (contextShopId) return contextShopId
+  if (!switcher || switcher.loading || !switcher.access) return null
+  if (switcher.access.groupAdmin || switcher.access.tenantWideRole) return null
+  return switcher.shops.length === 1 ? switcher.shops[0].id : null
+}
+
+/**
  * What a finance surface should do before asking the server anything (UI-SPEC § B5):
  * - "wait": the caller's access is still loading; ask nothing yet.
  * - "fetch": a shop is selected (the server checks SHOP_MANAGER on it), or the caller is
