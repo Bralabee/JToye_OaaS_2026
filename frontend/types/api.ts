@@ -136,6 +136,11 @@ export interface Product {
    * kept separate from it. Absent/null = not recorded; 0 = the vendor recorded no risk.
    */
   mayContainMask?: number | null
+  /**
+   * UXT-046 (37-14): the product's VAT liability (core-java VatRate). Optional for an older
+   * backend; absent means "not returned", which the form never turns into a value of its own.
+   */
+  vatRate?: VatRate
   createdAt: string
   updatedAt: string
 }
@@ -169,6 +174,11 @@ export interface CreateProductRequest {
   quantityInStock?: number | null
   /** D-16: omitted or null on PUT keeps the stored value; 0 is an explicit "no cross-contact risk". */
   mayContainMask?: number | null
+  /**
+   * UXT-046 (37-14): the server defaults to STANDARD on create when omitted, and a PUT that omits
+   * it keeps the stored rate.
+   */
+  vatRate?: VatRate
 }
 
 // Order Types

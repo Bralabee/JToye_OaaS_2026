@@ -161,6 +161,22 @@ function recordedAllergensOf(confirmation: GuestOrderConfirmation): RecordedAlle
   }
 }
 
+/**
+ * UXT-047 (#816, 37-14, UI-SPEC § B7). Every VAT row on this page renders only for a seller who
+ * DECLARED a VAT registration (`shop.seller.vatNumber`, 31.1 V71; the public seller object omits
+ * the field when none is declared). A seller below the registration threshold charges no VAT, so a
+ * "VAT (incl. 20%)" line under their prices was a false statement about the price (T-37-38). For
+ * such a seller the row is omitted and this one line sits under Total instead.
+ *
+ * Display only: the ledger still computes VAT as before (CONTEXT Q2, pending a legal ruling), and
+ * nothing here says anything about it.
+ */
+const NO_VAT_REGISTRATION_COPY = "This seller hasn't declared a VAT registration, so no VAT is shown."
+
+function NoVatRegistrationNote() {
+  return <p className="text-sm text-slate-600">{NO_VAT_REGISTRATION_COPY}</p>
+}
+
 /** What `loadStripe` resolves to. Derived from the `/pure` export so no default-entry import is needed for the type. */
 type StripePromise = ReturnType<typeof loadStripe>
 
@@ -472,6 +488,12 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
     }
   }, [slug])
 
+  // UXT-047 (B7): a VAT row needs a DECLARED registration; the note needs a LOADED shop that
+  // declares none. A shop that failed to load proves neither, so it gets neither (the SellerBlock
+  // rule: a failed fetch is not "the seller has not provided their details").
+  const sellerVatRegistered = Boolean(shop?.seller?.vatNumber)
+  const sellerVatUndeclared = shop !== null && !sellerVatRegistered
+
   // After order is created, holds the Stripe client secret + order details
   const [paymentState, setPaymentState] = useState<{
     clientSecret: string
@@ -706,7 +728,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 <span className="text-emerald-700 font-medium">Free</span>
               </div>
             )}
-            {codConfirmation.vatAmountPennies > 0 && (
+            {sellerVatRegistered && codConfirmation.vatAmountPennies > 0 && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-600">VAT ({vatRateLabel(asVatRate(codConfirmation.vatRate))})</span>
                 <span className="text-slate-900">{formatPrice(codConfirmation.vatAmountPennies)}</span>
@@ -716,6 +738,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               <span className="text-base font-bold text-slate-900">Total</span>
               <span className="text-base font-bold text-slate-900">{formatPrice(codConfirmation.totalAmountPennies)}</span>
             </div>
+            {sellerVatUndeclared && <NoVatRegistrationNote />}
           </div>
         </div>
 
@@ -824,7 +847,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 <span className="text-emerald-700 font-medium">Free</span>
               </div>
             )}
-            {paymentState.vatAmountPennies > 0 && (
+            {sellerVatRegistered && paymentState.vatAmountPennies > 0 && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-600">VAT ({vatRateLabel(asVatRate(paymentState.vatRate))})</span>
                 <span className="text-slate-900">{formatPrice(paymentState.vatAmountPennies)}</span>
@@ -834,6 +857,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
               <span className="text-base font-bold text-slate-900">Total</span>
               <span className="text-base font-bold text-slate-900">{formatPrice(paymentState.totalAmountPennies)}</span>
             </div>
+            {sellerVatUndeclared && <NoVatRegistrationNote />}
           </div>
         </div>
 
@@ -1174,19 +1198,23 @@ export default function CheckoutPage({ params }: { params: Promise<{ slug: strin
                 <span className="text-slate-900">{formatPrice(deliveryFeePennies)}</span>
               )}
             </div>
-            <div className="flex items-center justify-between text-sm">
-              {/* Prices are VAT-inclusive (UK retail): VAT is the fraction already
-                  contained within the gross total, not an add-on. COR-6: the rate is the
-                  basket's RESOLVED predominant rate, so this line matches the post-order
-                  confirmation screen's vatAmountPennies on a zero- or reduced-rated basket
-                  too — it did not before. */}
-              <span className="text-slate-600">VAT ({vatRateLabel(basketVatRate)})</span>
-              <span className="text-slate-900">{formatPrice(vatPreviewPennies)}</span>
-            </div>
+            {/* UXT-047 (B7): only for a seller who declared a VAT registration. */}
+            {sellerVatRegistered && (
+              <div className="flex items-center justify-between text-sm">
+                {/* Prices are VAT-inclusive (UK retail): VAT is the fraction already
+                    contained within the gross total, not an add-on. COR-6: the rate is the
+                    basket's RESOLVED predominant rate, so this line matches the post-order
+                    confirmation screen's vatAmountPennies on a zero- or reduced-rated basket
+                    too — it did not before. */}
+                <span className="text-slate-600">VAT ({vatRateLabel(basketVatRate)})</span>
+                <span className="text-slate-900">{formatPrice(vatPreviewPennies)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between pt-1.5">
               <span className="text-lg font-bold text-slate-900">Total</span>
               <span className="text-lg font-bold text-slate-900">{formatPrice(previewTotalPennies)}</span>
             </div>
+            {sellerVatUndeclared && <NoVatRegistrationNote />}
           </div>
         </div>
 
