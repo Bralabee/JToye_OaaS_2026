@@ -325,6 +325,23 @@ describe("Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15)", () =>
     expect(banner()).not.toBeInTheDocument()
   })
 
+  it("hides the banner AT the stated end, before the next 60 s poll, once the re-read confirms the pause ended", async () => {
+    // Break arm 1-H (no re-read at the stated end) left the test above green, because the 60 s poll
+    // also re-reads within 21 minutes. Here the end (17:30:30Z) falls between two polls (17:30:00 and
+    // 17:31:00), so only the stated-end re-read can clear the banner at 17:30:31.
+    jest.useFakeTimers({ now: NOW })
+    server.shop = shopDto({ ordersPausedUntil: "2026-10-13T17:30:30Z" })
+    render(<KitchenPage />)
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0)
+    })
+    expect(banner()).toHaveTextContent("Orders paused until 18:30.")
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10 * 60_000 + 31_000)
+    })
+    expect(banner()).not.toBeInTheDocument()
+  })
+
   it("while a pause or resume is in flight every menu item, the control and 'Resume orders' are disabled, so a second tap cannot send a conflicting request", async () => {
     freezeClock()
     server.shop = shopDto({ ordersPausedUntil: SERVER_UNTIL })
