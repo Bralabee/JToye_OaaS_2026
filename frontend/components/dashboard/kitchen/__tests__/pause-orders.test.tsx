@@ -356,6 +356,28 @@ describe("Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15)", () =>
     expect(await trigger()).toBeEnabled()
   })
 
+  it("until the server's shop read lands the control is disabled: it never claims 'not paused' before the server has said so", async () => {
+    // Found live (37-21): on a fresh load of a paused shop the control read "Pause orders" for the
+    // moment before the first read, and a menu opened then offered no "Resume orders now".
+    freezeClock()
+    server.shop = shopDto({ ordersPausedUntil: SERVER_UNTIL })
+    let land: () => void = () => {}
+    const base = mockGet.getMockImplementation() as (url: string) => Promise<unknown>
+    mockGet.mockImplementation((url: string) =>
+      url === `/api/v1/shops/${SHOP_ID}`
+        ? new Promise((resolve) => (land = () => resolve({ data: server.shop })))
+        : base(url)
+    )
+    render(<KitchenPage />)
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith(`/api/v1/shops/${SHOP_ID}`))
+    expect(screen.getByTestId("kds-pause-control")).toBeDisabled()
+    await act(async () => {
+      land()
+    })
+    expect(await trigger()).toHaveTextContent("Paused until 18:41")
+    expect(await trigger()).toBeEnabled()
+  })
+
   it("a 403 shows 'You can't pause orders for this shop. Ask a manager.' and pauses nothing", async () => {
     freezeClock()
     mockPut.mockImplementation(() =>
