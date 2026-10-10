@@ -439,3 +439,43 @@ describe("shops table notices and the deep link from the dashboard home (37-21 T
     expect(mockGet).toHaveBeenCalledWith("/api/v1/shops/s-legacy")
   })
 })
+
+describe("saving hours keeps the shop's storefront address (37-21 Rule 1 deviation)", () => {
+  // ShopService.updateShop regenerates the slug (name + a random 8-character suffix) whenever the
+  // request carries none, and the dialog never sent one: every save, an hours save included, moved
+  // the shop to a new /shop/{slug} and broke every link to it. The server's own comment says the
+  // regeneration is meant for a NAME change, so the dialog now sends the current slug unless the
+  // name changed.
+  it("an hours save sends the shop's current slug", async () => {
+    stubShops(STRUCTURED)
+    await openEdit("Rosie's Kitchen")
+    await click(closedBox("Tuesday"))
+    await setTime("Tuesday opens", "09:00")
+    await setTime("Tuesday closes", "12:00")
+    await save()
+    expect(sentBody().slug).toBe("s-structured")
+  })
+
+  it("a rename leaves the slug out, so the server's rename behaviour is unchanged", async () => {
+    stubShops(STRUCTURED)
+    await openEdit("Rosie's Kitchen")
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Shop Name *"), { target: { value: "Rosie's Canteen" } })
+    })
+    await save()
+    expect(sentBody()).not.toHaveProperty("slug")
+  })
+
+  it("creating a shop sends no slug (the server generates one)", async () => {
+    stubShops(STRUCTURED)
+    render(<ShopsPage />)
+    await screen.findByRole("button", { name: "Edit shop Rosie's Kitchen" })
+    await click(screen.getAllByRole("button", { name: /Add Shop/ })[0])
+    await act(async () => {
+      fireEvent.change(await screen.findByLabelText("Shop Name *"), { target: { value: "New Place" } })
+    })
+    await click(screen.getByRole("button", { name: "Create Shop" }))
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1))
+    expect(mockPost.mock.calls[0][1]).not.toHaveProperty("slug")
+  })
+})
