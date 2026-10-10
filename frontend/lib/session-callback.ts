@@ -17,14 +17,27 @@ export function buildSession<T>(session: T, token: JWT): T {
   const s = session as Record<string, unknown>
   s.accessToken = token.accessToken
   s.idToken = token.idToken
+  // 37-18 (D-14): when the access token expires (epoch seconds), so the kitchen board can ask
+  // for a fresh one before it does. Not a credential: the same `exp` is inside the access token
+  // the session already carries.
+  s.expiresAt = token.expiresAt
   // Defense in depth: guarantee no refresh token can ride along, even if a
   // caller handed us a session object that already carried one.
   delete s.refreshToken
   return session
 }
 
-// 37-18 RED interface stub: today's rule (refresh only once expired). GREEN adds the skew.
+/**
+ * 37-18 (D-14): refresh inside the access token's last minute, not only once it has expired.
+ *
+ * The NextAuth `jwt` callback used to keep a token until `Date.now() >= expiresAt * 1000`, so a
+ * session read a minute before expiry returned the same token, and a request sent in its last
+ * second could land expired. With this skew the kitchen board's read at `expiresAt - 60 s`
+ * (use-session-keep-alive.ts) comes back with a new token. An unknown expiry is refreshed.
+ */
 export const ACCESS_TOKEN_REFRESH_SKEW_S = 60
+
 export function accessTokenNeedsRefresh(expiresAt: number | undefined, nowMs: number): boolean {
-  return !(expiresAt && nowMs < expiresAt * 1000)
+  if (!expiresAt) return true
+  return nowMs >= (expiresAt - ACCESS_TOKEN_REFRESH_SKEW_S) * 1000
 }

@@ -8,6 +8,7 @@ import { useSession } from "next-auth/react"
 // the Keycloak SSO session alive. Both dashboard affordances share one helper
 // so they cannot drift, exactly as they share one `navigation` array.
 import { vendorLogout } from "@/lib/vendor-logout"
+import { markDeliberateSignOut } from "@/components/dashboard/kitchen/kds-board-stopped"
 import { cn } from "@/lib/utils"
 import { Menu, LogOut, Moon, Sun } from "lucide-react"
 // Single source of truth: the SAME navigation array the desktop sidebar renders.
@@ -80,6 +81,9 @@ export function MobileTabBar({ className }: { className?: string }) {
   const [signingOut, setSigningOut] = useState(false)
   const handleSignOut = () => {
     setSigningOut(true)
+    // 37-18 (K2, P2-TUN-14): a kitchen tablet below `md` signs out here, not in the sidebar, and a
+    // deliberate sign-out must never turn the board red. Marked BEFORE the sign-out starts.
+    markDeliberateSignOut()
     void vendorLogout()
   }
 

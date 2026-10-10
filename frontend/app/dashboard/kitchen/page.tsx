@@ -43,11 +43,16 @@ import {
   useKitchenAlert,
 } from "@/components/dashboard/kitchen/kds-sound"
 import {
+  isDeliberateSignOut,
   KdsBoardStopped,
+  markDeliberateSignOut,
   STOPPED_TAB_TITLE,
   type BoardStoppedReason,
 } from "@/components/dashboard/kitchen/kds-board-stopped"
+import { useSessionKeepAlive } from "@/components/dashboard/kitchen/use-session-keep-alive"
 import { SESSION_LAPSED_EVENT } from "@/lib/session-lapse"
+import { SHOP_ACCESS_DENIED_EVENT } from "@/lib/access-events"
+import { vendorLogout } from "@/lib/vendor-logout"
 import {
   Card,
   CardContent,
@@ -240,21 +245,48 @@ export default function KitchenPage() {
   // --- 37-18 (D-14, UI-SPEC K2): the board has stopped ---
   //
   // `null` while the board works. "signedOut" when the session lapsed (a 401 the api-client's one
-  // silent refresh could not fix). Once stopped, the board stays stopped until the page is left:
-  // the only ways out are signing in again or signing out, and both navigate away.
+  // silent refresh could not fix); "noAccess" when the server refused a kitchen read or bump with
+  // the typed shop-access-denied 403 (D-08). Once stopped, the board stays stopped until the page is
+  // left: the only ways out are signing in again or signing out, and both navigate away. A lapse
+  // outranks an access refusal (the pill's precedence): signing in again is the first thing to do.
   const [stopped, setStopped] = useState<BoardStoppedReason | null>(null)
+  // "Silence alarm" stops the sound only; the red screen stays (UI-SPEC K2).
+  const [alarmSilenced, setAlarmSilenced] = useState(false)
 
   // The api-client announces a lapse as a CANCELLABLE `jtoye:session-lapsed` event and redirects to
   // /auth/signin only if nobody claims it. The kitchen claims it: a board that quietly becomes a
   // sign-in page misses every order until someone walks up to it (UXT-021).
+  //
+  // Except after a DELIBERATE sign-out (goods P2-TUN-14): someone pressed Sign out, so the session
+  // ending is the point. The event is left unclaimed and the browser goes where it was going, with
+  // no red screen and no alarm.
   useEffect(() => {
     const onSessionLapsed = (event: Event) => {
+      if (isDeliberateSignOut()) return
       event.preventDefault()
       setStopped("signedOut")
     }
     window.addEventListener(SESSION_LAPSED_EVENT, onSessionLapsed)
     return () => window.removeEventListener(SESSION_LAPSED_EVENT, onSessionLapsed)
   }, [])
+
+  // D-08 on the kitchen route: any shop-access-denied 403 on this page stops the board with the
+  // access-ended variant. The api-client sends SHOP_ACCESS_DENIED_EVENT for every such refusal; on
+  // this route every API call is the board's own (its read, the per-order detail, a bump, Accept,
+  // Reject, the allergy acknowledgement), so listening here covers the New lane's card handlers
+  // too. The dashboard shell's no-access page deliberately leaves this route alone (37-06).
+  useEffect(() => {
+    const onAccessDenied = () => {
+      if (isDeliberateSignOut()) return
+      setStopped((current) => current ?? "noAccess")
+    }
+    window.addEventListener(SHOP_ACCESS_DENIED_EVENT, onAccessDenied)
+    return () => window.removeEventListener(SHOP_ACCESS_DENIED_EVENT, onAccessDenied)
+  }, [])
+
+  // While the SSO session lasts, refresh the token before it expires, so the overlay above means a
+  // real lapse and never a routine access-token expiry (D-14). Not on a stopped board.
+  useSessionKeepAlive(stopped === null)
 
   // --- #106: feed liveness ---
   //
@@ -435,13 +467,16 @@ export default function KitchenPage() {
   // fact it owns — either it lands (the stamp advances, the board is genuinely
   // current) or it does not (the banner appears). Cheap: one request plus one per
   // active ticket, once a minute.
+  //
+  // 37-18: a stopped board stops reading. A lapsed session would only 401 again, and a revoked
+  // grant 403 again; the overlay already says what is wrong and what to do.
   useEffect(() => {
-    if (!selectedShopId) return
+    if (!selectedShopId || stopped) return
     const interval = setInterval(() => {
       fetchOrders()
     }, KITCHEN_POLL_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [selectedShopId, fetchOrders])
+  }, [selectedShopId, fetchOrders, stopped])
 
   // --- Browser connectivity (#106) ---
   //
@@ -457,10 +492,11 @@ export default function KitchenPage() {
   // that keeps warning after the problem is fixed teaches the kitchen to
   // ignore the warning — so re-read IMMEDIATELY when connectivity returns.
   useEffect(() => {
+    if (stopped) return
     const goOnline = () => fetchOrders()
     window.addEventListener("online", goOnline)
     return () => window.removeEventListener("online", goOnline)
-  }, [fetchOrders])
+  }, [fetchOrders, stopped])
 
   // --- Derive WebSocket topic ---
 
@@ -516,7 +552,17 @@ export default function KitchenPage() {
 
   // --- WebSocket connection ---
 
-  const { connected, reconnecting } = useStomp(stompTopic, handleWsMessage, fetchOrders)
+  //
+  // 37-18 (D-08 on the kitchen route): a stopped board drops its topic, which deactivates the STOMP
+  // client. The server checks access only on SUBSCRIBE, so after a revoke an open socket would keep
+  // delivering OrderStateChangeEvent frames (order id, number, status) until it closed; the board
+  // closes it on the first 403 (residual recorded in 37-18-SUMMARY, T-37-47). On a lapse there is
+  // no token to reconnect with either.
+  const { connected, reconnecting } = useStomp(
+    stopped ? null : stompTopic,
+    handleWsMessage,
+    fetchOrders
+  )
 
   // --- Mute (the `kds-muted` key and its lifetime are unchanged; UXT-050 is 37.x) ---
 
@@ -631,11 +677,21 @@ export default function KitchenPage() {
   // shop's orders until the new read lands; they must not keep ringing for a board that no longer
   // shows them. `stopped` is the K2 "board stopped" state (37-18): the chime gives way to the alarm.
   const alertCount = newOrders.filter((o) => o.shopId === selectedShopId).length
-  const { soundState, enableSound } = useKitchenAlert({
+  const { soundState, enableSound, soundEnabled } = useKitchenAlert({
     pendingCount: alertCount,
     muted,
     stopped: stopped !== null,
+    // 37-18 (K2): three 440 Hz square tones every 3 s through the same unlocked context, until
+    // "Silence alarm". A board whose sound was never turned on cannot ring, and the overlay says so.
+    alarm: stopped !== null && !alarmSilenced,
   })
+
+  // The access-ended overlay's "Sign out" is a deliberate sign-out like the sidebar's: marked first,
+  // so the 401 it provokes cannot flip the overlay to "Signed out" and restart the alarm.
+  const handleStoppedSignOut = () => {
+    markDeliberateSignOut()
+    void vendorLogout()
+  }
 
   // Unmuting is a tap, so it is also the gesture that unlocks audio: one press, and the board rings.
   const handleUnmute = () => {
@@ -1138,7 +1194,15 @@ export default function KitchenPage() {
 
       {/* 37-18 (D-14, K2): the board has stopped. Portalled to <body> above everything; the rest
           of the page is inert while it shows. */}
-      {stopped && <KdsBoardStopped reason={stopped} />}
+      {stopped && (
+        <KdsBoardStopped
+          reason={stopped}
+          soundNeverEnabled={!soundEnabled}
+          alarmSilenced={alarmSilenced}
+          onSilence={() => setAlarmSilenced(true)}
+          onSignOut={handleStoppedSignOut}
+        />
+      )}
     </div>
   )
 }

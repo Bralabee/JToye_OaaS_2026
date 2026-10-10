@@ -52,12 +52,23 @@ export interface KitchenAlertInputs {
   muted: boolean
   /** The board has stopped (37-18, K2): the chime gives way to the alarm. */
   stopped: boolean
+  /**
+   * Ring the board-stopped alarm (37-18, K2): the board has stopped and nobody has pressed
+   * "Silence alarm". It plays through the same context, whether or not new-order alerts are muted:
+   * mute silences the chime, and the overlay's own button silences the alarm.
+   */
+  alarm?: boolean
 }
 
 export interface KitchenAlert {
   soundState: SoundState
   /** Call ONLY from a tap handler: it is the user gesture that unlocks audio. */
   enableSound: () => void
+  /**
+   * A tap has created the board's context (37-18). False means sound was never turned on, which
+   * the board-stopped overlay says in words because it then cannot ring.
+   */
+  soundEnabled: boolean
 }
 
 type AudioContextCtor = new () => AudioContext
@@ -117,15 +128,62 @@ export function playNewOrderChime(ctx: AudioContext): void {
   })
 }
 
+/** How often the board-stopped alarm repeats (UI-SPEC K2: every 3 s). */
+export const BOARD_STOPPED_ALARM_INTERVAL_MS = 3000
+
+/**
+ * The board-stopped alarm (37-18, UI-SPEC K2): three 440 Hz `square` tones, 120 ms each, 80 ms
+ * apart. A different pitch AND a different waveform from the new-order chime (880/660 Hz sine), so
+ * the two are told apart by ear: one means "an order waits", the other "the board is not working".
+ */
+export const BOARD_STOPPED_ALARM = {
+  toneHz: 440,
+  toneSeconds: 0.12,
+  gapSeconds: 0.08,
+  count: 3,
+  type: "square" as OscillatorType,
+  // A square wave is perceptibly louder than a sine at the same gain; 0.5 keeps it at or below the
+  // chime's level while staying distinct. A named value, never a literal at the call site.
+  gain: 0.5,
+} as const
+
+/** Schedule one alarm burst on a running context: the same shared context the chime uses. */
+export function playAlarmPattern(ctx: AudioContext): void {
+  if (ctx.state !== "running") return
+  const { toneHz, toneSeconds, gapSeconds, count, type, gain: peak } = BOARD_STOPPED_ALARM
+  const t0 = ctx.currentTime
+  for (let i = 0; i < count; i++) {
+    const start = t0 + i * (toneSeconds + gapSeconds)
+    const end = start + toneSeconds
+    // Each tone has its own envelope: a 5 ms ramp at each edge, so the gap is silent and clean.
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0.0001, start)
+    gain.gain.linearRampToValueAtTime(peak, start + 0.005)
+    gain.gain.setValueAtTime(peak, end - 0.005)
+    gain.gain.linearRampToValueAtTime(0.0001, end)
+    gain.connect(ctx.destination)
+    const osc = ctx.createOscillator()
+    osc.type = type
+    osc.frequency.setValueAtTime(toneHz, start)
+    osc.connect(gain)
+    osc.start(start)
+    osc.stop(end)
+  }
+}
+
 export function useKitchenAlert({
   pendingCount,
   muted,
   stopped,
+  alarm = false,
 }: KitchenAlertInputs): KitchenAlert {
   const ctxRef = useRef<AudioContext | null>(null)
   // Whether the board's one context can make sound right now. State, not a read of the ref, so
   // the board re-renders when it changes.
   const [running, setRunning] = useState(false)
+  // 37-18: a tap has created the context. Kept as state so the board-stopped overlay can say, in
+  // words, that a board whose sound was never turned on cannot ring.
+  const [soundEnabled, setSoundEnabled] = useState(false)
   const detachRef = useRef<(() => void) | null>(null)
 
   const enableSound = useCallback(() => {
@@ -139,6 +197,7 @@ export function useKitchenAlert({
       }
       ctx = new Ctor()
       ctxRef.current = ctx
+      setSoundEnabled(true)
       const created = ctx
       const onStateChange = () => setRunning(contextCanSound(created))
       created.addEventListener("statechange", onStateChange)
@@ -178,7 +237,21 @@ export function useKitchenAlert({
     return () => window.clearInterval(id)
   }, [ringing])
 
-  return { soundState, enableSound }
+  // 37-18 (K2): the board-stopped alarm, through the SAME context. It needs a context that can
+  // sound (`running`), never the operator's mute: a stopped board is louder than a waiting order,
+  // and the overlay's "Silence alarm" is what turns it off. No context means no alarm; the overlay
+  // says so instead of building one outside a gesture, which the browser would suspend.
+  const alarming = alarm && running
+
+  useEffect(() => {
+    const ctx = ctxRef.current
+    if (!alarming || !ctx) return
+    playAlarmPattern(ctx)
+    const id = window.setInterval(() => playAlarmPattern(ctx), BOARD_STOPPED_ALARM_INTERVAL_MS)
+    return () => window.clearInterval(id)
+  }, [alarming])
+
+  return { soundState, enableSound, soundEnabled }
 }
 
 const CONTROL: Record<
@@ -263,15 +336,3 @@ export function KdsSoundControl({
     </Button>
   )
 }
-
-// 37-18 RED interface stub: the board-stopped alarm. Replaced in the GREEN commit.
-export const BOARD_STOPPED_ALARM_INTERVAL_MS = 3000
-export const BOARD_STOPPED_ALARM = {
-  toneHz: 440,
-  toneSeconds: 0.12,
-  gapSeconds: 0.08,
-  count: 3,
-  type: "square" as OscillatorType,
-  gain: 0.5,
-} as const
-export function playAlarmPattern(_ctx: AudioContext): void {}

@@ -608,11 +608,14 @@ const nowSeconds = () => Math.floor(Date.now() / 1000)
 describe("useSessionKeepAlive: the board refreshes its token before it expires (D-14)", () => {
   it("asks for the session again a minute before the access token expires, and again before the next expiry", async () => {
     const calls: number[] = []
+    const expiries: number[] = []
     ;(getSession as jest.Mock).mockImplementation(() => {
       calls.push(Date.now())
-      return Promise.resolve({ ...signedIn, expiresAt: nowSeconds() + 300 })
+      // A 5-minute access token, its expiry in whole seconds as Keycloak and NextAuth give it.
+      const expiresAt = nowSeconds() + 300
+      expiries.push(expiresAt)
+      return Promise.resolve({ ...signedIn, expiresAt })
     })
-    const start = Date.now()
 
     renderHook(() => useSessionKeepAlive(true))
     await advance(0)
@@ -623,12 +626,13 @@ describe("useSessionKeepAlive: the board refreshes its token before it expires (
 
     await advance(1_000)
     expect(calls).toHaveLength(2)
-    // Before the first token's expiry (start + 300 s), by the lead.
-    expect(calls[1] - start).toBe(300_000 - SESSION_REFRESH_LEAD_MS)
+    // Exactly the lead before the first token's expiry: before it, never at or after it.
+    expect(calls[1]).toBe(expiries[0] * 1000 - SESSION_REFRESH_LEAD_MS)
+    expect(calls[1]).toBeLessThan(expiries[0] * 1000)
 
     await advance(300_000 - SESSION_REFRESH_LEAD_MS)
     expect(calls).toHaveLength(3)
-    expect(calls[2] - calls[1]).toBe(300_000 - SESSION_REFRESH_LEAD_MS)
+    expect(calls[2]).toBe(expiries[1] * 1000 - SESSION_REFRESH_LEAD_MS)
   })
 
   it("asks nothing while the board is stopped", async () => {
@@ -647,12 +651,14 @@ describe("useSessionKeepAlive: the board refreshes its token before it expires (
       // A 290 s token, so the keep-alive (at 230 s) cannot coincide with the 60 s board poll.
       return Promise.resolve({ ...signedIn, expiresAt: nowSeconds() + 290 })
     })
-    const start = Date.now()
+    const firstExpiry = nowSeconds() + 290
     await renderBoard()
 
     for (let i = 0; i < 60; i++) await advance(10_000)
 
-    expect(calls.some((t) => t - start === 230_000)).toBe(true)
+    // The keep-alive's own ask: a minute before the first token's expiry. Not a poll (those fall on
+    // whole minutes from mount; this falls about 230 s in).
+    expect(calls).toContain(firstExpiry * 1000 - SESSION_REFRESH_LEAD_MS)
     expect(dialog()).toBeNull()
     expect(navigationAttempts).toBe(0)
   })

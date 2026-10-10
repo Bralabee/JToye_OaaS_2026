@@ -48,10 +48,44 @@ export const BOARD_STOPPED_COPY: Record<
   },
 }
 
+/** Added to the body when the board cannot ring because no tap ever turned sound on (UI-SPEC K2). */
+export const SOUND_NEVER_ENABLED_COPY =
+  "This screen can't sound an alarm because sound was never turned on."
+
 export const SILENCE_ALARM_LABEL = "Silence alarm"
+export const ALARM_SILENCED_LABEL = "Alarm silenced"
+
+// --- A deliberate sign-out never stops the board (goods P2-TUN-14) ---
+//
+// Pressing Sign out on a shared tablet must really end the session, with no red screen and no
+// alarm. The Sign out handlers (sidebar, mobile "More" sheet, the access-ended overlay) call
+// `markDeliberateSignOut()` BEFORE `vendorLogout()`, so a 401 or 403 the sign-out itself provokes
+// (a board poll landing after the cookie is cleared, before the browser leaves) is not claimed and
+// the browser goes where it was going. Module scope, not React state: the sidebar and the kitchen
+// page are different trees, and the flag only has to live until the page is left, which a sign-out
+// always does with a full navigation.
+let deliberateSignOut = false
+
+/** Call from a Sign out handler, before `vendorLogout()`. */
+export function markDeliberateSignOut(): void {
+  deliberateSignOut = true
+}
+
+export function isDeliberateSignOut(): boolean {
+  return deliberateSignOut
+}
+
+/** Tests only: the flag is module state and would otherwise leak between tests. */
+export function __resetDeliberateSignOutForTests(): void {
+  deliberateSignOut = false
+}
 
 export interface KdsBoardStoppedProps {
   reason: BoardStoppedReason
+  /** No tap ever turned sound on, so the board cannot ring: the body says so. */
+  soundNeverEnabled?: boolean
+  /** "Silence alarm" has been pressed: the sound stopped, the red screen stays. */
+  alarmSilenced?: boolean
   /** "Silence alarm": stops the sound only; the red screen stays. */
   onSilence?: () => void
   /** "Sign out" on the access-ended variant. */
@@ -60,13 +94,20 @@ export interface KdsBoardStoppedProps {
 
 const HEADLINE_ID = "kds-board-stopped-headline"
 const BODY_ID = "kds-board-stopped-body"
+const SOUND_ID = "kds-board-stopped-sound"
 
 // White on red-700 is 6.47:1 (UI-SPEC contrast table); the focus ring is white, offset against red.
 const FOCUS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-red-700"
 const BUTTON = `inline-flex h-14 w-full max-w-sm items-center justify-center rounded-md px-6 text-lg font-semibold ${FOCUS}`
 
-export function KdsBoardStopped({ reason, onSilence, onSignOut }: KdsBoardStoppedProps) {
+export function KdsBoardStopped({
+  reason,
+  soundNeverEnabled = false,
+  alarmSilenced = false,
+  onSilence,
+  onSignOut,
+}: KdsBoardStoppedProps) {
   // The overlay lives in its own node at the end of <body>, so everything else on the page can be
   // made inert without making the overlay inert with it. Created lazily: it only ever renders on
   // the client, after an event.
@@ -141,7 +182,7 @@ export function KdsBoardStopped({ reason, onSilence, onSignOut }: KdsBoardStoppe
       role="alertdialog"
       aria-modal="true"
       aria-labelledby={HEADLINE_ID}
-      aria-describedby={BODY_ID}
+      aria-describedby={soundNeverEnabled ? `${BODY_ID} ${SOUND_ID}` : BODY_ID}
       data-testid="kds-board-stopped"
       data-reason={reason}
       className="fixed inset-0 z-[100] overflow-y-auto bg-red-700 text-white"
@@ -154,6 +195,11 @@ export function KdsBoardStopped({ reason, onSilence, onSignOut }: KdsBoardStoppe
         <p id={BODY_ID} className="text-base leading-normal">
           {copy.body}
         </p>
+        {soundNeverEnabled && (
+          <p id={SOUND_ID} className="text-base font-semibold leading-normal">
+            {SOUND_NEVER_ENABLED_COPY}
+          </p>
+        )}
         <div className="flex w-full flex-col items-center gap-3">
           {reason === "signedOut" ? (
             <a
@@ -177,12 +223,15 @@ export function KdsBoardStopped({ reason, onSilence, onSignOut }: KdsBoardStoppe
               {copy.primary}
             </button>
           )}
+          {/* Stays enabled once pressed (a second press is a no-op): disabling the focused button
+              would drop focus out of the trap. The label says what happened. */}
           <button
             type="button"
             onClick={onSilence}
+            aria-pressed={alarmSilenced}
             className={`${BUTTON} border-2 border-white bg-transparent text-white`}
           >
-            {SILENCE_ALARM_LABEL}
+            {alarmSilenced ? ALARM_SILENCED_LABEL : SILENCE_ALARM_LABEL}
           </button>
         </div>
       </div>
@@ -190,12 +239,3 @@ export function KdsBoardStopped({ reason, onSilence, onSignOut }: KdsBoardStoppe
     host
   )
 }
-
-// 37-18 RED interface stub: deliberate sign-out and the sound-never-enabled line. GREEN replaces it.
-export const SOUND_NEVER_ENABLED_COPY =
-  "This screen can't sound an alarm because sound was never turned on."
-export function markDeliberateSignOut(): void {}
-export function isDeliberateSignOut(): boolean {
-  return false
-}
-export function __resetDeliberateSignOutForTests(): void {}

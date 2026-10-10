@@ -1,6 +1,6 @@
 import NextAuth from "next-auth"
 import Keycloak from "next-auth/providers/keycloak"
-import { buildSession } from "@/lib/session-callback"
+import { accessTokenNeedsRefresh, buildSession } from "@/lib/session-callback"
 
 async function refreshAccessToken(token: {
   refreshToken?: string
@@ -79,15 +79,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token
       }
 
-      // Token still valid: return as-is
-      if (token.expiresAt && Date.now() < (token.expiresAt as number) * 1000) {
+      // Token valid for more than a minute: return as-is. 37-18 (D-14): a token inside its last
+      // minute is refreshed now rather than only once it has expired, so the kitchen board's read
+      // a minute before expiry gets a new one (lib/session-callback.ts, accessTokenNeedsRefresh).
+      if (!accessTokenNeedsRefresh(token.expiresAt, Date.now())) {
         return token
       }
 
-      // Token expired: attempt refresh
+      // Token expiring or expired: attempt refresh
       try {
         return await refreshAccessToken(token)
       } catch {
+        // 37-18: a refresh that fails while the old token is still valid (inside the last minute)
+        // keeps that token; a passing blip at Keycloak must not sign anyone out early. The next
+        // session read tries again, and once the token has actually expired the rule below applies.
+        if (token.expiresAt && Date.now() < token.expiresAt * 1000) {
+          return token
+        }
         // Refresh failed (typically the Keycloak SSO session / refresh token
         // itself expired — max lifespan 2h, idle 30m). Drop the stale access
         // token so the session reads as unauthenticated and the api-client 401
