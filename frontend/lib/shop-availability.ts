@@ -122,3 +122,40 @@ export function availabilityNoticeCopy(
   }
   return null
 }
+
+/**
+ * 37-20's storefront refusal: `409 https://jtoye.uk/errors/shop-closed` with `reason`
+ * (PAUSED | CLOSED_NOW | CLOSED_TODAY | NO_HOURS) and `reopensAt`. Recognised by the type's suffix,
+ * like the other typed checkout problems, so a host change in the type URI does not lose it.
+ */
+const SHOP_CLOSED_TYPE_SUFFIX = "/shop-closed"
+
+export interface ShopClosedProblem {
+  reason: string | null
+  reopensAt: string | null
+}
+
+/** The typed shop-closed refusal, or null when `err` is anything else. */
+export function readShopClosedProblem(err: unknown): ShopClosedProblem | null {
+  const res = (err as { response?: { status?: number; data?: Record<string, unknown> } })?.response
+  const data = res?.data
+  if (res?.status !== 409 || !data || typeof data.type !== "string" || !data.type.endsWith(SHOP_CLOSED_TYPE_SUFFIX)) {
+    return null
+  }
+  return {
+    reason: typeof data.reason === "string" ? data.reason : null,
+    reopensAt: typeof data.reopensAt === "string" ? data.reopensAt : null,
+  }
+}
+
+/**
+ * UI-SPEC § Copywriting K3 "Checkout race": the shop stopped while the customer was on the page.
+ * "{Shop} stopped taking orders while you were checking out. Your basket is saved. {Back at HH:MM /
+ * Opens weekday at HH:MM / Check back later.}" The basket IS saved: nothing on this path clears it.
+ */
+export function shopClosedRaceCopy(shopName: string, problem: ShopClosedProblem, now: Date = new Date()): string {
+  return (
+    `${shopName} stopped taking orders while you were checking out. Your basket is saved. ` +
+    reopeningSentence(problem.reopensAt, { paused: problem.reason === "PAUSED", now })
+  )
+}
