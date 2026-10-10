@@ -5,16 +5,16 @@ milestone_name: Vendor Ops + AI Interleaved
 current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
-stopped_at: "Phase 37 executing: 37-01..37-17, 37-19 and 37-20 complete (19/53). 37-20 closed 2026-10-10: ShopAvailabilityPolicy is the one open/paused/closed decision (UK wall-clock time, overnight carry, 7-day horizon, both clock changes): a pause wins; LEGACY_ALWAYS_OPEN open (D-25); NEEDS_REVIEW unreadable days open all day per the owner ruling 2026-10-10 (D-25 literally, applied per day; read days and closed days enforced as before deploy); STRUCTURED, MIGRATED_FROM_TEXT and unclassified shops open only inside a window, empty = NO_HOURS (D-15). createGuestOrder refuses 409 shop-closed (SHOP_CLOSED, reason, reopensAt) before the reservation; validateShopIsOpen deleted. PUT/DELETE /api/v1/shops/{id}/pause (20|40 min or untilReopened, STAFF, absolute). PublicShopDto openNow/nextOpenAt/pausedUntil/pausedIndefinitely/openingSchedule/legacyAlwaysOpen/hoursSource; ShopDto hoursSource/legacyOpeningHours/openingSchedule/pause (NON_NULL); CreateShopRequest.openingSchedule -> STRUCTURED. DemoDataSeeder: fresh-volume demo shops get all-day STRUCTURED hours. Unit 1682/0/0/1, integration 1068/0/0/1; OpenAPI +274/-0. core-java NOT rebuilt (WINDOWS #30, #33); WINDOWS #32 = the ruling risk. 37-21 NEEDS_REVIEW copy is untrue under the ruling (deferred-items). Next: 37-18 (wave 15)."
-last_updated: "2026-10-10T13:17:02.900Z"
+stopped_at: "Phase 37 executing: 37-01..37-20 complete (20/53). 37-18 closed 2026-10-10: a 401 the api-client's one refresh cannot fix dispatches a cancellable 'jtoye:session-lapsed' (lib/session-lapse.ts) and redirects only if unclaimed; the kitchen claims it and shows KdsBoardStopped (K2: solid red-700 alertdialog, aria-modal, labelled/described, focus trapped, <body> siblings inert, static, overflow-y-auto), pill 'Signed out', title 'STOPPED · Kitchen Display — J'Toye'; a shop-access-denied 403 on the route shows the access-ended variant, drops the STOMP topic, stops polling; alarm 3x 440 Hz square every 3 s through the one tap-unlocked context (ignores mute; 'Silence alarm' stops sound only; never-enabled boards say so); markDeliberateSignOut from sidebar, mobile sheet and the overlay keeps P2-TUN-14; useSessionKeepAlive asks 60 s before expiresAt and the jwt callback refreshes inside the last minute (session carries expiresAt); /auth/signin callbackUrl via safe-return-to. Jest 2516/213 (re-measured baseline 2472/210), build green, lint 0 errors/31 warnings. Frontend REBUILT + recreated (image 809cf75c, container c5e633c4); e2e/kitchen-session-lapse.spec.ts 10/10 live; core-java untouched (WINDOWS #30, #33). WINDOWS #31 fixed, #34 added (alarm by ear, real revoke, real token cycle). RWO-003 complete. Next: 37-22 (wave 15)."
+last_updated: "2026-10-10T14:05:00.000Z"
 last_activity: 2026-10-10
-last_activity_desc: "Completed 37-20: pause endpoints, ShopAvailabilityPolicy and structured-hours enforcement (D-15, D-25 ruling 2026-10-10)"
-state_head: a575ef190a58636dc65932b96678fddee02966ad
+last_activity_desc: "Completed 37-18: the kitchen board stops loudly on a lapse or a revoked grant (K2), never on a deliberate sign-out; safe callbackUrl; silent refresh (D-14, D-08)"
+state_head: 7244025c49f569c02b3885cd175c59c51ea991f0
 progress:
   total_phases: 20
   completed_phases: 13
   total_plans: 238
-  completed_plans: 204
+  completed_plans: 205
   percent: 65
 ---
 
@@ -921,6 +921,7 @@ Full v2.0–v2.2 execution history (phases 1–20, quick-task ledger, per-plan d
 | Phase 37 P17 | 25 min | 3 tasks | 17 files |
 | Phase 37 P16 | 56 min | 3 tasks | 27 files |
 | Phase 37 P20 | 67 min | 3 tasks | 29 files |
+| Phase 37 P18 | 40 min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -1224,6 +1225,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: WINDOWS #29 RULED 2026-10-09 (owner, option B): every customer endpoint requires an honoured grant under D-06 (requireAnyAccess, the staff/me predicate, before the idempotency replay); landed in the 37-B squash (tag cut/phase-37-b-staff-access-v2); options C and E are separate future rulings; live proof owed (WINDOWS #30)
 - [Phase 37]: D-25 clarified 2026-10-10: NEEDS_REVIEW days stay open until the vendor saves structured hours; 37-20 must-have line 75 rewritten from 409 to 201 (applied per day: an unreadable day stays open, a day written closed stays closed, as before deploy)
 - [Phase 37]: 37-20: an unclassified shop (no hours_source, no schedule) is CLOSED, NO_HOURS (D-15 for shops created after deploy); only V80 writes LEGACY_ALWAYS_OPEN; the pause is STAFF-gated, absolute, and blocks storefront orders only
+- [Phase 37]: 37-18: the lapse is a cancellable window event (lib/session-lapse.ts) the kitchen claims; access ended is the route-wide SHOP_ACCESS_DENIED_EVENT; any stopped board drops its STOMP topic and stops polling; a lapse outranks access ended
+- [Phase 37]: 37-18: the board-stopped alarm ignores kds-muted (mute silences the chime, 'Silence alarm' the alarm) - open to an owner ruling; the cannot-ring line shows only when no tap ever created the context
+- [Phase 37]: 37-18: the jwt callback refreshes inside the access token's last minute (accessTokenNeedsRefresh, 60 s skew, all routes) and keeps a still-valid token if the refresh fails; the client session carries expiresAt; the keep-alive never declares a lapse itself
 
 ### Pending Todos
 
@@ -1296,8 +1300,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-10-10T13:20:00.000Z
-Stopped at: Completed 37-20-PLAN.md (ShopAvailabilityPolicy, the STAFF-gated pause endpoints, the typed 409 shop-closed before the reservation, structured-hours saves, the server answer on every shop read; D-25 ruling 2026-10-10 applied per day); next 37-18 (wave 15)
+Last session: 2026-10-10T14:05:00.000Z
+Stopped at: Completed 37-18-PLAN.md (the claimed session-lapse event and the K2 board-stopped overlay, the 3 s alarm through the shared context, access ended on a typed 403 with the socket dropped, deliberate sign-out never stops the board, silent refresh before expiresAt, safe callbackUrl; live spec 10/10); next 37-22 (wave 15)
 Resume file: None
 
 Item carried out of the phase: **[#266](https://github.com/Bralabee/JToye_OaaS_2026/issues/266)** — the KDS STOMP relay path was structurally broken in staging and production (a RabbitMQ `/topic` destination cannot contain `/`). Found by falsifying it on the cluster, deliberately **not** fixed in-phase (Rule 4: the fix spans the Java publisher, the TypeScript subscriber and `TenantChannelInterceptor`'s tenant-isolation prefix parser, so it earned its own plan and its own tests). It was **not** closed by flipping `stomp.broker.mode` to `in-memory` — the simple broker is per-JVM and `k8s/base` sets `replicas: 3`.
