@@ -37,7 +37,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search, Globe, ImageIcon } from "lucide-react"
+import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search, Globe, ImageIcon, Clock, PauseCircle } from "lucide-react"
+import { readPauseView } from "@/components/dashboard/kitchen/pause-orders-control"
+import { formatUkTime } from "@/lib/shop-availability"
 import { ImageUploader } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
@@ -87,6 +89,12 @@ export default function ShopsPage() {
   // Re-mounts the editor on every open, so it always starts from the shop being edited.
   const [editorSession, setEditorSession] = useState(0)
   const scheduleEditorRef = useRef<OpeningScheduleEditorHandle>(null)
+  // 37-21: the dashboard home's notice links here as ?edit={id}&focus=hours; the dialog then opens
+  // with focus on the hours fieldset instead of the first field.
+  const [focusHoursOnOpen, setFocusHoursOnOpen] = useState(false)
+  const deepLinkHandled = useRef(false)
+  // When the list was read: a stored pause end is compared with this, never with a render-time clock.
+  const [listedAt, setListedAt] = useState(0)
   // F2 sweep: a 429/network failure must render an error panel, never the
   // "No shops yet" empty state — `fetchShops`'s catch deliberately does not
   // reset `shops` to `[]`.
@@ -109,6 +117,7 @@ export default function ShopsPage() {
       setLoading(true)
       const response = await apiClient.get(`/api/v1/shops?page=${currentPage}&size=${PAGE_SIZE}&sort=createdAt,desc`)
       setShops(response.data.content || [])
+      setListedAt(Date.now())
       setTotalPages(response.data.totalPages || 0)
       setTotalElements(response.data.totalElements || 0)
       setLoadFailed(false)
@@ -131,6 +140,7 @@ export default function ShopsPage() {
     try {
       const response = await apiClient.get(`/api/v1/shops/search?q=${encodeURIComponent(query)}`)
       setShops(response.data || [])
+      setListedAt(Date.now())
       setTotalPages(1)
       setTotalElements(response.data?.length || 0)
       setLoadFailed(false)
@@ -189,6 +199,48 @@ export default function ShopsPage() {
     setEditorSession((n) => n + 1)
     setDialogOpen(true)
   }
+
+  // 37-21 (K4 notices): /dashboard/shops?edit={id}&focus=hours, from the dashboard home's hours
+  // notice. Handled once, after the first list load; the shop is read by id when it is not on the
+  // page that loaded. The parameters are dropped so a reload does not reopen the dialog.
+  useEffect(() => {
+    if (loading || deepLinkHandled.current) return
+    deepLinkHandled.current = true
+    const params = new URLSearchParams(window.location.search)
+    const id = params.get("edit")
+    if (!id) return
+    const atHours = params.get("focus") === "hours"
+    params.delete("edit")
+    params.delete("focus")
+    const rest = params.toString()
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash
+    )
+    const open = (target: Shop) => {
+      setFocusHoursOnOpen(atHours)
+      openEditDialog(target)
+    }
+    const listed = shops.find((s) => s.id === id)
+    if (listed) {
+      open(listed)
+      return
+    }
+    apiClient
+      .get<Shop>(`/api/v1/shops/${id}`)
+      .then((res) => {
+        if (res?.data?.id) open(res.data)
+      })
+      .catch((error: unknown) => {
+        toast({
+          variant: "destructive",
+          title: "Error loading shop",
+          description: describeLoadError(error, "Could not open that shop").message,
+        })
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, shops])
 
   const openDeleteDialog = (shop: Shop) => {
     setDeletingShop(shop)
@@ -408,13 +460,37 @@ export default function ShopsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {shop.published ? (
-                          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                            <Globe className="h-3 w-3 mr-1" />Published
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-slate-600">Draft</Badge>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {shop.published ? (
+                            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                              <Globe className="h-3 w-3 mr-1" />Published
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-slate-600">Draft</Badge>
+                          )}
+                          {/* 37-21 (UI-SPEC K4 notices): from hoursSource, never the text. */}
+                          {shop.hoursSource === "LEGACY_ALWAYS_OPEN" && (
+                            <Badge variant="outline" className="border-amber-300 text-amber-800">
+                              <Clock className="mr-1 h-3 w-3" aria-hidden="true" />Hours not set
+                            </Badge>
+                          )}
+                          {shop.hoursSource === "NEEDS_REVIEW" && (
+                            <Badge variant="outline" className="border-amber-300 text-amber-800">
+                              <Clock className="mr-1 h-3 w-3" aria-hidden="true" />Check hours
+                            </Badge>
+                          )}
+                          {/* 37-21 (UI-SPEC K3 "Shops page"): the pause, from the same fields the kitchen reads. */}
+                          {(() => {
+                            const pause = readPauseView(shop, listedAt)
+                            if (pause.kind === "none") return null
+                            return (
+                              <Badge variant="outline" className="text-slate-900">
+                                <PauseCircle className="mr-1 h-3 w-3" aria-hidden="true" />
+                                {pause.kind === "timed" ? `Paused until ${formatUkTime(pause.until) ?? ""}` : "Paused"}
+                              </Badge>
+                            )
+                          })()}
+                        </div>
                       </TableCell>
                       <TableCell className="text-slate-600">
                         <div className="flex items-center gap-2">
@@ -457,7 +533,18 @@ export default function ShopsPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent
+          className="max-w-2xl max-h-[85vh] overflow-y-auto"
+          onOpenAutoFocus={(event) => {
+            if (!focusHoursOnOpen) return
+            // Opened from an hours notice: start at the hours, not the first field.
+            event.preventDefault()
+            setFocusHoursOnOpen(false)
+            const fieldset = document.getElementById("opening-hours")
+            fieldset?.scrollIntoView({ block: "start" })
+            fieldset?.focus()
+          }}
+        >
           <DialogHeader>
             <DialogTitle>
               {editingShop ? "Edit Shop" : "Create New Shop"}

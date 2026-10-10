@@ -19,6 +19,7 @@ import {
   FinanceScopeText,
 } from "@/components/dashboard/finance-scope-text"
 import { fetchFinanceSummary, financeGate, type FinanceScope } from "@/lib/finance-api"
+import { HoursNoticeCard } from "@/components/dashboard/hours-notice-card"
 import {
   Store,
   Package,
@@ -31,7 +32,7 @@ import {
   RefreshCcw,
   X,
 } from "lucide-react"
-import type { Order, OrderStatus, FinancialSummary, OnboardingState } from "@/types/api"
+import type { Order, OrderStatus, FinancialSummary, OnboardingState, Shop } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
 import {
   PieChart,
@@ -134,6 +135,9 @@ export default function DashboardPage() {
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [loading, setLoading] = useState(true)
   const [shopsList, setShopsList] = useState<{ id: string; name: string }[]>([])
+  // 37-21 (K4 notices): the shops as the list returned them, for the hours notice. Null until the
+  // list resolves and after a failed load, so the card renders nothing rather than a guess.
+  const [hoursNoticeShops, setHoursNoticeShops] = useState<Shop[] | null>(null)
   // 37-12: the scope the finance summary was filtered on, as the SERVER echoed it.
   const [financeScope, setFinanceScope] = useState<FinanceScope | null>(null)
   const { toast } = useToast()
@@ -185,6 +189,7 @@ export default function DashboardPage() {
         ])
 
       setShopsList(allShops.map((s) => ({ id: s.id, name: s.name })))
+      setHoursNoticeShops(allShops)
       setStats({
         // The list is now followed to its end, so its length IS the shop count —
         // the same number `totalElements` used to carry, from the same grant-scoped
@@ -198,6 +203,7 @@ export default function DashboardPage() {
       setRecentOrders(recentOrdersRes.data.content || [])
       setAllOrders(allOrdersRes.data.content || [])
     } catch (error: unknown) {
+      setHoursNoticeShops(null)
       toast({
         variant: "destructive",
         title: "Error loading dashboard",
@@ -374,6 +380,9 @@ export default function DashboardPage() {
             </div>
           )
         })()}
+
+      {/* 37-21 (UI-SPEC K4): shops whose hours were never set or could not be read, from hoursSource. */}
+      <HoursNoticeCard shops={hoursNoticeShops} />
 
       {/*
         A11Y-6: every section below this point is a `CardTitle`, which is
