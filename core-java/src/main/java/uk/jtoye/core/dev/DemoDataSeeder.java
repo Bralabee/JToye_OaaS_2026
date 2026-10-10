@@ -15,6 +15,8 @@ import uk.jtoye.core.onboarding.OnboardingState;
 import uk.jtoye.core.onboarding.VendorOnboardingRepository;
 import uk.jtoye.core.product.Product;
 import uk.jtoye.core.product.ProductRepository;
+import uk.jtoye.core.shop.HoursSource;
+import uk.jtoye.core.shop.OpeningSchedule;
 import uk.jtoye.core.shop.Shop;
 import uk.jtoye.core.shop.ShopRepository;
 import uk.jtoye.core.onboarding.TraderEntityType;
@@ -665,8 +667,30 @@ public class DemoDataSeeder implements ApplicationRunner {
         // about where they are. A miss leaves the coordinate untouched (never (0,0)); that
         // path is covered by upsertArchiveShop/seedTenantB, which are addressless on purpose.
         applySeededCoordinate(shop);
+        applySeededHours(shop);
 
         return shopRepository.save(shop);
+    }
+
+    /**
+     * 37-20 (D-15): a shop with no hours source and no schedule takes no storefront orders (NO_HOURS). On a
+     * fresh volume (the nightly e2e's {@code down -v}) the curated demo storefronts are created HERE, after V80
+     * ran, so V80 never classified them and they would open closed, failing every order-placing journey. They
+     * get structured hours open all day, every day, which is what they did before D-15 (no hours meant always
+     * open). Create-only: on an existing volume V80 has already classified them, and hours a developer saved
+     * through the shop editor (STRUCTURED) survive a restart. Never LEGACY_ALWAYS_OPEN: only V80 writes that.
+     */
+    private static void applySeededHours(Shop shop) {
+        if (shop.getHoursSource() != null) {
+            return;
+        }
+        java.util.Map<java.time.DayOfWeek, List<OpeningSchedule.TimeWindow>> allDay =
+                new java.util.EnumMap<>(java.time.DayOfWeek.class);
+        for (java.time.DayOfWeek day : java.time.DayOfWeek.values()) {
+            allDay.put(day, List.of(new OpeningSchedule.TimeWindow(java.time.LocalTime.MIDNIGHT, java.time.LocalTime.MIDNIGHT)));
+        }
+        shop.setOpeningSchedule(OpeningSchedule.of(allDay).toJson());
+        shop.setHoursSource(HoursSource.STRUCTURED);
     }
 
     /**

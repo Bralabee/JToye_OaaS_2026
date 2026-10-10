@@ -256,10 +256,12 @@ class MoneyPathExecutionIntegrationTest {
             // No opening_hours -> always open. minimum_order_pennies 0 so the WR-01 gate is not
             // what this test is measuring.
             jdbcTemplate.update(
+                    // 37-20 (D-15/D-25): what V80 makes of a pre-existing shop with no hours, so it takes
+                    // orders at any time; with no hours_source the shop would be closed (NO_HOURS).
                     "INSERT INTO shops (id, tenant_id, created_at, name, slug, published, "
                             + "delivery_fee_pennies, free_delivery_threshold_pennies, "
-                            + "minimum_order_pennies, version) "
-                            + "VALUES (?, ?, now(), ?, ?, true, ?, ?, 0, 0)",
+                            + "minimum_order_pennies, version, hours_source) "
+                            + "VALUES (?, ?, now(), ?, ?, true, ?, ?, 0, 0, 'LEGACY_ALWAYS_OPEN')",
                     id, TENANT_ID, "COR-9 Money Path Shop", SHOP_SLUG,
                     DELIVERY_FEE_PENNIES, FREE_DELIVERY_THRESHOLD_PENNIES);
             return id;
