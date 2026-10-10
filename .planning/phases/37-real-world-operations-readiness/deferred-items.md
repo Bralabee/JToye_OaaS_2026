@@ -250,3 +250,43 @@ where it must be resolved.
   and 37-20 (WINDOWS #30, and the WINDOWS entry 37-20 adds). The pause endpoints, the 409
   shop-closed and the new DTO fields are proven in Testcontainers only; `check-openapi-snapshot-fresh.sh`
   will report the 274 added snapshot lines until the next rebuild.
+
+## From 37-18 (board-stopped overlay, safe sign-in return, silent refresh)
+
+- **The board WILL stop every two hours of a shift.** D-14 keeps the realm session lifetimes, and
+  auth.ts records the vendor realm's SSO maximum as 2 h (idle 30 min). The silent refresh keeps the
+  access token fresh, and the board's 60 s poll keeps the SSO session from idling out, but nothing
+  extends the 2 h maximum: at that point the refresh fails, and the board goes red and sounds the
+  alarm. That is the overlay doing its job. The 37-23 UAT should expect it, and the CONTEXT's
+  deferred "longer vendor-realm SSO lifetime for shift tablets" is the remedy. Not measured on a
+  2 h run here.
+- **The alarm ignores the "kds-muted" preference (a 37-18 decision, open to an owner ruling).** Mute
+  silences the new-order chime; the overlay's own "Silence alarm" silences the alarm. The reason: a
+  muted handover board that stops is the case the alarm exists for. If the owner wants mute to
+  silence both, it is one condition in `useKitchenAlert` (`alarming = alarm && running`).
+- **At 375x667 with 130% text the overlay opens scrolled to its focused primary button**
+  (evidence/37-18-screens/k2-signed-out-375x667-root130.png): the icon and the first headline line
+  sit above the fold, reachable by scrolling. This is the plan's recorded overflow assumption (scroll
+  rather than scale type) and keeps focus visible. A design look for the 37-23 UAT, not a defect.
+- **A deliberate sign-out on a NON-kitchen route can still race (pre-existing, not measured).**
+  The kitchen leaves a lapse unclaimed after Sign out, which keeps today's behaviour everywhere: a
+  poll that 401s between `vendorLogout`'s cookie drop and its navigation to Keycloak triggers the
+  api-client's own redirect to /auth/signin, and the later assignment wins. If that lands last, the
+  Keycloak end-session half of R-01 is skipped. Measure before filing; the fix belongs in
+  `vendorLogout` or the api-client, not the kitchen.
+- **The kitchen treats every shop-access-denied 403 on its route as "access ended".** Today every
+  API call on that route is the board's own (the read, the detail, the bumps, Accept, Reject, the
+  allergy acknowledgement). The shell's `staff/me` and shop list are not known to answer with that type (not measured). If a
+  shell-level read ever does, the board would stop on it. Recorded in the page comment.
+- **A bare `npx tsc --noEmit -p tsconfig.json` reports exactly one error, and it is 37-17's:**
+  `components/dashboard/kitchen/__tests__/kds-sound.test.tsx(200,24)` (`getAutoplayPolicy` is not
+  on `Navigator`). `npm run build` and the e2e tsconfig are green; 37-18 adds none. A one-line
+  cast fixes it; not this plan's file.
+- **docs-metrics.** 37-18's jest files are countable (count-test-blocks: 5/27/2/7/24, equal to the
+  executed counts; jest is now 2516 tests in 213 suites against the re-measured 2472/210 at
+  4e27e771). The new Playwright spec counts 5 `test()` blocks (10 listed across two projects). The
+  37-17 `.each(TABLE.filter(...))` VOID is untouched; regenerate `docs/metrics.json` after it is
+  fixed.
+- **The pre-rebuild frontend image (7e5a7401) was pruned before it could be read**, so the
+  "old image lacks the new strings" direction of the bundle check is VOID (docker run rc 125). The
+  in-image positive control (a 37-17 string) and the absent-token negative control stand in for it.

@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 10
 waived_count: 0
-fixed_count: 23
-total_count: 33
-last_updated: 2026-10-10T13:14:21.570Z
+fixed_count: 24
+total_count: 34
+last_updated: 2026-10-10T13:57:09.943Z
 ---
 
 # Broken Windows Ledger
@@ -45,9 +45,10 @@ last_updated: 2026-10-10T13:14:21.570Z
 | 28 | 37 | unrun-verify | frontend/app/shop/[slug]/checkout/page.tsx |  | 37-14 VAT display rule (no VAT row for a seller without a VAT number, the B7 note), the product-form VAT rate Select, the import target and the copy-to-shop dialog are proven in jest only; no live browser run, because the shared runtime predates 37-13 and is rebuilt at 37-15 | fixed |  | 2026-10-09T01:42:09.320Z | 2026-10-09T09:35:11.689Z |
 | 29 | 37 | unmet-truth | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | 37-15 live: D-06 'ungranted means no access' does not hold for /api/v1/customers. A tenant user with no shop_staff grant (fresh, or revoked) read all 8 tenant A customers (names, emails, phones) with GET 200 and created one with POST 201; Phase 23 left CustomerController tenant-scoped, not shop-scoped, by design, which strict OFF hid. Needs an owner ruling on the customer access rule before the 37-B PR merges RULED 2026-10-09 (owner, option B): every /api/v1/customers operation requires an honoured grant under D-06 (ShopAccessService.requireAnyAccess, the staff/me predicate), checked before the Idempotency-Key replay; proven in Testcontainers by CustomerAccessGateIntegrationTest; option C (per-shop narrowing) and option E (a SHOP_MANAGER floor on customer writes and staff DELETE) are separate future rulings. | fixed |  | 2026-10-09T09:35:11.795Z | 2026-10-09T11:24:15.166Z |
 | 30 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | WINDOWS #29 customer gate is proven in Testcontainers only; the compose runtime predates it, so check-runtime-freshness reports core-java and check-openapi-snapshot-fresh reports the five new 403s until the next rebuild; live proof owed at the 37-B ship: ungranted GET /api/v1/customers 403 shop-access-denied, STAFF 200, an ungranted dashboard login lands on the no-access page | open |  | 2026-10-09T11:24:20.204Z |  |
-| 31 | 37 | stub | frontend/app/dashboard/kitchen/page.tsx | 612 | 37-17 passes useKitchenAlert stopped:false and deriveFeedState no signedOut/noAccess: the K2 board-stopped state, the session-lapse and the access-ended inputs are 37-18's to wire (the hook and the pill already honour them, tested). Close when 37-18 wires all three. | open |  | 2026-10-09T13:23:23.843Z |  |
+| 31 | 37 | stub | frontend/app/dashboard/kitchen/page.tsx | 612 | 37-17 passes useKitchenAlert stopped:false and deriveFeedState no signedOut/noAccess: the K2 board-stopped state, the session-lapse and the access-ended inputs are 37-18's to wire (the hook and the pill already honour them, tested). Close when 37-18 wires all three. | fixed | closed by 37-18 at a67cf8f0 (stopped + signedOut wired at b98a6608, noAccess at a67cf8f0) | 2026-10-09T13:23:23.843Z | 2026-10-10T13:56:51.218Z |
 | 32 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/storefront/ShopAvailabilityPolicy.java |  | D-25 owner ruling 2026-10-10 (accepted consumer-safety risk): a NEEDS_REVIEW shop's day whose free text V80 could not read keeps taking storefront orders all day (the pre-D-15 fail-open) until the vendor saves structured hours; read days and days written Closed are enforced as before deploy. Close when no shop is NEEDS_REVIEW, or by a new owner ruling. | open |  | 2026-10-10T13:14:21.463Z |  |
 | 33 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/shop/ShopController.java |  | 37-20 pause endpoints, the 409 shop-closed refusal and the new ShopDto/PublicShopDto fields are proven in Testcontainers only; the compose core-java predates them (and V80, WINDOWS #30). Owed at the next core-java rebuild: PUT /shops/{id}/pause then a storefront order 409 PAUSED, DELETE then 201, GET /public/shops/{slug} openNow, the V80 NOTICE counts, check-openapi-snapshot-fresh green. | open |  | 2026-10-10T13:14:21.570Z |  |
+| 34 | 37 | unrun-verify | frontend/components/dashboard/kitchen/kds-board-stopped.tsx |  | 37-18 proven in jest only, not live: the alarm (3x 440 Hz square every 3 s through the shared AudioContext; audibility and distinctness from the chime are a by-ear 37-23 UAT row), Silence alarm, the silent token refresh over real 5-minute Keycloak tokens (fake timers only; the jwt skew is a unit rule), a REAL grant revoke ending the board (live only via a route-stubbed typed 403) and the STOMP socket closing on it, and the deliberate-sign-out race. Live 10/10 on frontend 809cf75c covers the lapse overlay, URL, pill, title, Sign in again, deliberate Sign out and the K2 backstop; 37-23 re-runs e2e/kitchen-session-lapse.spec.ts | open |  | 2026-10-10T13:57:09.943Z |  |
 
 ````json
 [
@@ -448,10 +449,10 @@ last_updated: 2026-10-10T13:14:21.570Z
     "file": "frontend/app/dashboard/kitchen/page.tsx",
     "line": 612,
     "description": "37-17 passes useKitchenAlert stopped:false and deriveFeedState no signedOut/noAccess: the K2 board-stopped state, the session-lapse and the access-ended inputs are 37-18's to wire (the hook and the pill already honour them, tested). Close when 37-18 wires all three.",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "closed by 37-18 at a67cf8f0 (stopped + signedOut wired at b98a6608, noAccess at a67cf8f0)",
     "recorded_at": "2026-10-09T13:23:23.843Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-10T13:56:51.218Z",
     "milestone": "v2.3"
   },
   {
@@ -477,6 +478,19 @@ last_updated: 2026-10-10T13:14:21.570Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-10T13:14:21.570Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 34,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "frontend/components/dashboard/kitchen/kds-board-stopped.tsx",
+    "line": null,
+    "description": "37-18 proven in jest only, not live: the alarm (3x 440 Hz square every 3 s through the shared AudioContext; audibility and distinctness from the chime are a by-ear 37-23 UAT row), Silence alarm, the silent token refresh over real 5-minute Keycloak tokens (fake timers only; the jwt skew is a unit rule), a REAL grant revoke ending the board (live only via a route-stubbed typed 403) and the STOMP socket closing on it, and the deliberate-sign-out race. Live 10/10 on frontend 809cf75c covers the lapse overlay, URL, pill, title, Sign in again, deliberate Sign out and the K2 backstop; 37-23 re-runs e2e/kitchen-session-lapse.spec.ts",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-10T13:57:09.943Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
