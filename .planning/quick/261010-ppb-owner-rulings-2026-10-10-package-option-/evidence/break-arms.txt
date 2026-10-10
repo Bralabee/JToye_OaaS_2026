@@ -282,3 +282,24 @@ ledger script at TASK_BASE rc=1 (expected 1)
 auth.ts edited: git diff --quiet rc=1 (expected 1)
 auth.ts restored by content (cmp rc=0)
 auth.ts vs TASK_BASE after restore rc=0 (expected 0)
+
+############ Task 3 verify-block fail directions
+=== Task 3 verify-block fail directions, on TASK_BASE 10bf2c595f4d87e9583a423c9ba9141b6cf763dc (git show into a scratch tree)
+template at TASK_BASE: 7200 False changed []
+template check rc=1 (expected 1)
+a template that also turned rotation on would list: ['revokeRefreshToken', 'ssoSessionMaxLifespan']
+rotation-on variant rc=1 (expected 1)
+README heading at TASK_BASE [] rc=1 (expected 1)
+old D-14 sub-bullet at TASK_BASE [1] rc=0 (expected 0)
+37-20 decision line has SHOP_MANAGER at TASK_BASE rc=1 (expected 1)
+37-20 decision line has the old parenthetical at TASK_BASE rc=0 (expected 0)
+ref :105 at TASK_BASE count [1] (control, expected 1)
+deferred heading at TASK_BASE [] rc=1 (expected 1)
+STATE bullets at TASK_BASE [] rc=1 (expected 1)
+37-48 tokens at TASK_BASE [] rc=1 (expected 1)
+ROADMAP Phase 39 has 261010-ppb at TASK_BASE rc=1 (expected 1; region lines 62)
+ledger 39-42 script at TASK_BASE: see the Task 2 block (the TASK_BASE ledger has 37 entries and no todo entries, rc 1):
+windows C [] slug [] realm []
+ledger script at TASK_BASE rc=1 (expected 1)
+live realm fail direction: 7200 / False / 1800 before the apply (section 4 of live-probes.md); freshness/openapi fail directions: section 1 and 2 (before the core-java rebuild).
+D-14 phrase: the first wording ('Owner ruling 2026-10-10 amends D-14', capital O) failed the case-sensitive region check (rc 1, observed), fixed in 1f6402f9.
