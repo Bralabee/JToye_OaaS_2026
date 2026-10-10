@@ -215,6 +215,117 @@ test.describe("Kitchen: a lapsed session stops the board loudly (37-18, K2)", ()
   })
 })
 
+/**
+ * UI-SPEC K2 backstop (long-text) and the plan's recorded overflow assumption: at 375x667 with the
+ * root at 130% text, the headline and body wrap inside `max-w-xl px-6` with nothing clipped, and
+ * both 56 px buttons stay reachable (by scrolling the overlay) and focusable, for BOTH trigger
+ * variants. Each test ends with an INSTRUMENT step: forcing the headline onto one line must make
+ * the same measurement report overflow, or the "no clipping" reading above proves nothing.
+ */
+/**
+ * WHAT IS MEASURED, and why not the obvious thing. The first version compared each text element's
+ * own scrollWidth with its clientWidth, and its INSTRUMENT step proved that vacuous on the live
+ * stack: the headline is a centred flex item that grows to fit its text, so a one-line headline
+ * read 930/930 (and 1200/1200 for the access-ended copy), "not clipped", while running off both
+ * edges of a 375 px screen. The honest question is whether each text box stays inside the
+ * viewport horizontally, and whether the overlay itself has sideways overflow.
+ */
+async function measureOverlay(page: Page) {
+  return page.getByRole("alertdialog").evaluate((overlay) => {
+    const vw = document.documentElement.clientWidth
+    const box = (el: Element | null) => {
+      if (!el) return null
+      const r = el.getBoundingClientRect()
+      return { left: r.left, right: r.right }
+    }
+    const headline = box(overlay.querySelector("h2"))
+    const body = box(overlay.querySelector("p"))
+    const sidewaysOverflow = (overlay as HTMLElement).scrollWidth > (overlay as HTMLElement).clientWidth
+    const outside = (b: { left: number; right: number } | null) => !b || b.left < 0 || b.right > vw
+    return { vw, headline, body, sidewaysOverflow, clipped: sidewaysOverflow || outside(headline) || outside(body) }
+  })
+}
+
+async function assertK2Layout(page: Page, primaryName: string) {
+  const overlay = page.getByRole("alertdialog")
+  await expect(overlay).toBeVisible({ timeout: 20_000 })
+  const m = await measureOverlay(page)
+  expect(m.headline, "the K2 headline is missing").not.toBeNull()
+  expect(m.body, "the K2 body is missing").not.toBeNull()
+  expect(m.vw).toBeLessThanOrEqual(375)
+  expect(m, "the K2 headline or body leaves a 375 px screen, or the overlay scrolls sideways").toMatchObject({
+    clipped: false,
+  })
+
+  // Both buttons reachable: scrolled into view inside the overlay, fully on screen, 56 px tall.
+  for (const control of [
+    overlay.getByRole(primaryName === "Sign in again" ? "link" : "button", { name: primaryName }),
+    overlay.getByRole("button", { name: "Silence alarm" }),
+  ]) {
+    await control.scrollIntoViewIfNeeded()
+    const box = await control.boundingBox()
+    expect(box, `${primaryName}: a K2 button has no box`).not.toBeNull()
+    expect(box!.height).toBeGreaterThanOrEqual(56)
+    expect(box!.y).toBeGreaterThanOrEqual(0)
+    expect(box!.y + box!.height).toBeLessThanOrEqual(667)
+  }
+  // ...and focusable: focus starts on the primary, Tab reaches the secondary.
+  await overlay.getByRole(primaryName === "Sign in again" ? "link" : "button", { name: primaryName }).focus()
+  await page.keyboard.press("Tab")
+  await expect(overlay.getByRole("button", { name: "Silence alarm" })).toBeFocused()
+
+  // INSTRUMENT: the same measurement must be able to see a clipped headline.
+  await page.addStyleTag({ content: "#kds-board-stopped-headline{white-space:nowrap}" })
+  const broken = await measureOverlay(page)
+  expect(broken.clipped, "INSTRUMENT: a one-line headline did not read as clipped, so the check above cannot fail").toBe(
+    true
+  )
+}
+
+test.describe("Kitchen: the board-stopped overlay fits a small screen at 130% text (K2 backstop)", () => {
+  test.setTimeout(120_000)
+
+  test("signed-out variant at 375x667, root 130%: nothing clipped, both buttons reachable", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 })
+    await vendorLogin(page)
+    await openKitchen(page)
+    await page.addStyleTag({ content: "html{font-size:130%}" })
+
+    // Layout only: the real lapse path is the first describe's. The kitchen claims this event the
+    // same way it claims the api-client's.
+    await page.evaluate((name: string) => {
+      window.dispatchEvent(new CustomEvent(name, { cancelable: true }))
+    }, LAPSE_EVENT)
+
+    await expect(page.getByRole("alertdialog", { name: HEADLINE })).toBeVisible({ timeout: 10_000 })
+    await assertK2Layout(page, "Sign in again")
+  })
+
+  test("access-ended variant at 375x667, root 130%: nothing clipped, both buttons reachable", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 })
+    await vendorLogin(page)
+    await openKitchen(page)
+    await page.addStyleTag({ content: "html{font-size:130%}" })
+
+    // The server's typed refusal, through the real api-client (a live revoke is the 37-23 UAT's).
+    await page.route("**/api/v1/orders/kitchen**", (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: "application/problem+json",
+        headers: { "access-control-allow-origin": BASE, "access-control-allow-credentials": "true" },
+        body: JSON.stringify({ type: "https://jtoye.uk/errors/shop-access-denied", status: 403 }),
+      })
+    )
+    await triggerRead(page)
+
+    await expect(
+      page.getByRole("alertdialog", { name: "Your access has ended: new orders are NOT showing" })
+    ).toBeVisible({ timeout: 20_000 })
+    await expect(live(page).getByTestId("kds-feed-pill")).toContainText("No access")
+    await assertK2Layout(page, "Sign out")
+  })
+})
+
 /** On /auth/signin?callbackUrl=…: press the SSO button and let the live SSO session return us. */
 async function vendorLoginFromHere(page: Page) {
   const ssoButton = page.getByRole("button", { name: /sign in with keycloak/i })

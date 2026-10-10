@@ -21,3 +21,24 @@ RUN 3 (--repeat-each=2): rc=0
   12 passed (1.1m)
 
 INSTRUMENT arm (in-spec fail direction): with the lapse event swallowed before the kitchen's listener, the browser navigates to /auth/signin and no overlay is seen, in every run of runs 2 and 3.
+
+K2 BACKSTOP (UI-SPEC long-text; plan's overflow assumption), added after run 3:
+RUN 4 (first version: each text element's own scrollWidth vs clientWidth): rc=1, 6 passed, 4 failed, every failure the INSTRUMENT step:
+  Error: INSTRUMENT: a one-line headline did not read as clipped, so the check above cannot fail
+  Expected: > 930
+  Received:   930
+  Error: INSTRUMENT: a one-line headline did not read as clipped, so the check above cannot fail
+  Expected: > 1200
+  Received:   1200
+  Error: INSTRUMENT: a one-line headline did not read as clipped, so the check above cannot fail
+  Expected: > 930
+  Received:   930
+  Error: INSTRUMENT: a one-line headline did not read as clipped, so the check above cannot fail
+  Expected: > 1200
+  Received:   1200
+  -> the measurement was vacuous: the centred flex-item headline grows to fit its text, so a one-line headline read 930/930 (1200/1200) while running off a 375 px screen. Replaced with bounding-box containment in the viewport plus the overlay's own sideways overflow.
+RUN 5 (containment measurement): rc=0
+  10 passed (41.7s)
+  both variants at 375x667, root 130%: headline and body inside the viewport, no sideways overflow, both buttons >= 56 px and fully on screen after scrollIntoViewIfNeeded, Tab reaches Silence alarm; INSTRUMENT (white-space:nowrap on the headline) reads clipped=true in all four runs.
+
+Screens: evidence/37-18-screens/k2-{signed-out,access-ended}-{375x667-root130,1280x800}.png (desktop project, live dev tenant, sound never turned on so the cannot-ring line shows). At 375x667/130% the overlay opens scrolled to the focused primary, so the icon and the first headline line sit above the fold, reachable by scrolling.
