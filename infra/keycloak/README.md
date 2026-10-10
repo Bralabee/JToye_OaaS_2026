@@ -40,6 +40,30 @@ This directory contains the Keycloak realm configuration for the `jtoye-dev` rea
      - `http://localhost:3000/api/auth/callback/keycloak`
    - Web Origins: `http://localhost:3000`
 
+### Session lifetimes (D-14, owner ruling 2026-10-10)
+
+- **Vendor realm (`jtoye-dev`) SSO session max is 14 h** (`ssoSessionMaxLifespan` 50400, was 7200):
+  a kitchen tablet signed in at the start of a shift stays signed in for the shift. The **30-minute
+  idle timeout is unchanged** (`ssoSessionIdleTimeout` 1800), so a board that stops refreshing still
+  lapses, and a revoked grant still stops the board on its next request (D-08). After 14 h the K2
+  "Signed out" red screen appears, not after 2 h.
+- **Refresh-token rotation is OFF and deferred** (`revokeRefreshToken` stays false). Turning it on
+  makes each refresh token single-use, and the dashboard calls `getSession()` on every request, so
+  parallel requests near a token's expiry would redeem one token several times and sign the user out.
+  A per-process single-flight cannot prevent that across the 3 k8s frontend replicas or the
+  middleware runtime; it needs a cross-replica single-flight (Redis-backed, keyed by refresh token, or
+  proven sticky sessions) or a Keycloak `refreshTokenMaxReuse` policy, and then its own ruling.
+- **The customers realm (`jtoye-customers`) is unchanged** (its template already has rotation on).
+- **Reaching a running compose Keycloak:** editing the template is not enough, because
+  `--import-realm` skips an existing realm (see "Replacing a realm that already exists"). Render with
+  `docker compose -f docker-compose.full-stack.yml up --no-deps keycloak-realm-render`, then apply
+  the one field through the Admin API (`PUT /admin/realms/jtoye-dev` with
+  `{"ssoSessionMaxLifespan": 50400}`), which leaves runtime-created users and live sessions alone,
+  and read it back from `GET /admin/realms/jtoye-dev`. A full `--override` import would delete every
+  user the template does not carry.
+- **Staging and production** vendor realms are not in this repository: an operator must make the
+  same `ssoSessionMaxLifespan` 50400 change there (rotation stays off there too).
+
 ### Groups & Tenant Mapping
 
 **tenant-a Group:**
