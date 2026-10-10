@@ -21,8 +21,10 @@ public class PauseOrdersRequest {
     /** The timed pauses D-15 offers. */
     public static final Set<Integer> ALLOWED_MINUTES = Set.of(20, 40);
 
-    @Schema(description = "Pause storefront orders for this many minutes from now: 20 or 40.",
-            allowableValues = {"20", "40"}, nullable = true)
+    // No allowableValues: springdoc renders them as STRING enum values on this integer, a schema no integer
+    // satisfies. The rule is in the description and enforced by isOneValidChoice (typed 400).
+    @Schema(description = "Pause storefront orders for this many minutes from now: 20 or 40 (any other value is a 400).",
+            nullable = true)
     private Integer minutes;
 
     @Schema(description = "Pause storefront orders until the vendor resumes them (DELETE /shops/{id}/pause).",

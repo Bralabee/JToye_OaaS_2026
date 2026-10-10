@@ -1,7 +1,12 @@
 package uk.jtoye.core.storefront.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
+import uk.jtoye.core.shop.HoursSource;
+import uk.jtoye.core.shop.OpeningSchedule;
 
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 
 public class PublicShopDto {
@@ -69,6 +74,34 @@ public class PublicShopDto {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private SellerIdentityDto seller;
 
+    // ---- 37-20 (D-15, D-25, theme 2): the server's answer, so no client computes open or closed itself ----
+
+    @Schema(description = "Whether the storefront takes an order now (ShopAvailabilityPolicy, UK time). False while "
+            + "paused or outside the opening hours; a checkout submitted anyway is refused 409 shop-closed.")
+    private boolean openNow;
+
+    @Schema(description = "When the shop next takes orders, when it is not taking them now and a time is known.",
+            nullable = true)
+    private OffsetDateTime nextOpenAt;
+
+    @Schema(description = "The end of a timed pause still in force (D-15).", nullable = true)
+    private OffsetDateTime pausedUntil;
+
+    @Schema(description = "Storefront orders are paused until the vendor resumes them (D-15).")
+    private boolean pausedIndefinitely;
+
+    @Schema(description = "Structured opening hours: mon..sun -> {open, close} windows (HH:MM, UK time); [] = closed. "
+            + "Null when the shop has none (legacyAlwaysOpen).", nullable = true)
+    private Map<String, List<OpeningSchedule.TimeWindow>> openingSchedule;
+
+    @Schema(description = "True for a shop that had no hours when structured hours arrived: it takes orders at any "
+            + "time until its vendor sets hours (D-25).")
+    private boolean legacyAlwaysOpen;
+
+    @Schema(description = "Where the hours came from. NEEDS_REVIEW: some original text could not be read and those "
+            + "days stay open until the vendor saves hours (D-25); openNow already accounts for it.", nullable = true)
+    private HoursSource hoursSource;
+
     public String getSlug() { return slug; }
     public void setSlug(String slug) { this.slug = slug; }
     public String getName() { return name; }
@@ -107,4 +140,18 @@ public class PublicShopDto {
     public void setDistanceKm(Double distanceKm) { this.distanceKm = distanceKm; }
     public SellerIdentityDto getSeller() { return seller; }
     public void setSeller(SellerIdentityDto seller) { this.seller = seller; }
+    public boolean isOpenNow() { return openNow; }
+    public void setOpenNow(boolean openNow) { this.openNow = openNow; }
+    public OffsetDateTime getNextOpenAt() { return nextOpenAt; }
+    public void setNextOpenAt(OffsetDateTime nextOpenAt) { this.nextOpenAt = nextOpenAt; }
+    public OffsetDateTime getPausedUntil() { return pausedUntil; }
+    public void setPausedUntil(OffsetDateTime pausedUntil) { this.pausedUntil = pausedUntil; }
+    public boolean isPausedIndefinitely() { return pausedIndefinitely; }
+    public void setPausedIndefinitely(boolean pausedIndefinitely) { this.pausedIndefinitely = pausedIndefinitely; }
+    public Map<String, List<OpeningSchedule.TimeWindow>> getOpeningSchedule() { return openingSchedule; }
+    public void setOpeningSchedule(Map<String, List<OpeningSchedule.TimeWindow>> openingSchedule) { this.openingSchedule = openingSchedule; }
+    public boolean isLegacyAlwaysOpen() { return legacyAlwaysOpen; }
+    public void setLegacyAlwaysOpen(boolean legacyAlwaysOpen) { this.legacyAlwaysOpen = legacyAlwaysOpen; }
+    public HoursSource getHoursSource() { return hoursSource; }
+    public void setHoursSource(HoursSource hoursSource) { this.hoursSource = hoursSource; }
 }

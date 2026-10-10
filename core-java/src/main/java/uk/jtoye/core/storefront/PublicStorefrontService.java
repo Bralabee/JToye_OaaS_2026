@@ -1341,6 +1341,16 @@ public class PublicStorefrontService {
         // commit. Mirrors the exact gate createGuestOrder uses to decide
         // card-intent vs COD (paymentService.isConfigured()).
         dto.setAcceptsCardPayments(paymentService.isConfigured());
+        // 37-20 (D-15/D-25, theme 2): the policy's answer, computed per request (never cached), so the
+        // storefront, the shop list and the checkout read one decision and no client re-derives it.
+        ShopAvailabilityPolicy.Availability availability = availabilityPolicy.evaluate(shop);
+        dto.setOpenNow(availability.openNow());
+        dto.setNextOpenAt(availability.nextOpenAt() == null ? null : availability.nextOpenAt().toOffsetDateTime());
+        dto.setPausedUntil(availability.pausedUntil());
+        dto.setPausedIndefinitely(availability.pausedIndefinitely());
+        dto.setOpeningSchedule(shop.getOpeningSchedule());
+        dto.setLegacyAlwaysOpen(shop.getHoursSource() == uk.jtoye.core.shop.HoursSource.LEGACY_ALWAYS_OPEN);
+        dto.setHoursSource(shop.getHoursSource());
         return dto;
     }
 

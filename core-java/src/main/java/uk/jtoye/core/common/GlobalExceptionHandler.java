@@ -51,6 +51,7 @@ import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
 import uk.jtoye.core.exception.ShopClosedException;
+import uk.jtoye.core.exception.InvalidOpeningScheduleException;
 import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.media.exception.DecompressionBombException;
 import uk.jtoye.core.media.exception.MediaRedriveRejectedException;
@@ -850,6 +851,20 @@ public class GlobalExceptionHandler {
      * reopening time without parsing the sentence; the detail stays the human wording the customer reads
      * (goods P2-CHA-14).
      */
+    /**
+     * Phase 37-20 (D-15): a vendor's opening schedule is refused, per day. The same type, title and
+     * {@code errors} shape as {@link #handleValidationErrors}, keyed {@code openingSchedule.<day>}, so a
+     * client handles it exactly like a bean-validation failure and shows each message on its own day.
+     */
+    @ExceptionHandler(InvalidOpeningScheduleException.class)
+    public ProblemDetail handleInvalidOpeningSchedule(InvalidOpeningScheduleException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Validation failed");
+        problem.setTitle("Validation Error");
+        problem.setType(URI.create("https://jtoye.uk/errors/validation"));
+        problem.setProperty("errors", new java.util.TreeMap<>(ex.getErrors()));
+        return problem;
+    }
+
     @ExceptionHandler(ShopClosedException.class)
     public ProblemDetail handleShopClosed(ShopClosedException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
