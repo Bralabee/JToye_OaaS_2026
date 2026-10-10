@@ -265,19 +265,65 @@ describe("OpeningScheduleEditor in the shop dialog (UI-SPEC K4, D-15)", () => {
     expect(sentBody()).not.toHaveProperty("openingSchedule")
   })
 
-  it("a NEEDS_REVIEW shop: an unreadable day opens Closed and quotes the original text with the D-25 ruling line; read days keep their windows; a day written 'closed' gets no quote", async () => {
+  it("a NEEDS_REVIEW shop (D-25, owner ruling 2026-10-10): an unreadable day opens as ONE all-day window 00:00-00:00, 'Open 24 hours', with the ruled amber line; read days keep their windows; a day written 'closed' stays Closed with no line", async () => {
     stubShops(NEEDS_REVIEW)
     await openEdit("Mama Put")
-    expect(closedBox("Tuesday")).toHaveAttribute("aria-checked", "true")
+    // The server keeps Tuesday open all day; the editor now shows exactly that.
+    expect(closedBox("Tuesday")).toHaveAttribute("aria-checked", "false")
+    expect(within(day("Tuesday")).getAllByLabelText(/^Tuesday opens/)).toHaveLength(1)
+    expect(timeInput("Tuesday opens").value).toBe("00:00")
+    expect(timeInput("Tuesday closes").value).toBe("00:00")
+    expect(within(day("Tuesday")).getByText("Open 24 hours")).toBeInTheDocument()
+    expect(within(day("Tuesday")).queryByText("Closes after midnight (next day)")).not.toBeInTheDocument()
     const line = within(day("Tuesday")).getByText(
-      'We couldn\'t read "lunchtime till late". Customers can still order on this day at any time until you save your hours.'
+      'We could not read "lunchtime till late", so this day is open all day. Set the real times, or tick Closed.'
     )
     expect(line.className).toContain("text-amber-800")
     expect(timeInput("Monday opens").value).toBe("10:00")
-    expect(within(day("Monday")).queryByText(/We couldn't read/)).not.toBeInTheDocument()
-    expect(within(day("Sunday")).queryByText(/We couldn't read/)).not.toBeInTheDocument()
-    // The old wording described the client render, not what customers get (owner ruling 2026-10-10).
+    expect(timeInput("Monday closes").value).toBe("16:00")
+    expect(within(day("Monday")).queryByText(/We could not read/)).not.toBeInTheDocument()
+    expect(closedBox("Sunday")).toHaveAttribute("aria-checked", "true")
+    expect(within(day("Sunday")).queryByText(/We could not read/)).not.toBeInTheDocument()
+    // Neither the 37-21 orchestrator wording nor the original UI-SPEC line survives.
+    expect(screen.queryByText(/Customers can still order on this day/)).not.toBeInTheDocument()
     expect(screen.queryByText(/This day shows as closed/)).not.toBeInTheDocument()
+  })
+
+  it("a NEEDS_REVIEW shop: changing another day and saving sends the unreadable day as its all-day window, never omitted (so the partial fix keeps it open)", async () => {
+    stubShops(NEEDS_REVIEW)
+    await openEdit("Mama Put")
+    await setTime("Monday closes", "17:00")
+    await save()
+    const body = sentBody()
+    expect(body.openingSchedule).toEqual({
+      mon: [{ open: "10:00", close: "17:00" }],
+      tue: [{ open: "00:00", close: "00:00" }],
+    })
+    expect(body.openingSchedule).not.toHaveProperty("sun")
+  })
+
+  it("a NEEDS_REVIEW shop left untouched still omits openingSchedule, so the stored hours and their source are kept", async () => {
+    stubShops(NEEDS_REVIEW)
+    await openEdit("Mama Put")
+    await save()
+    expect(sentBody()).not.toHaveProperty("openingSchedule")
+  })
+
+  it("a NEEDS_REVIEW shop with an overnight Sunday (18:00-02:00) and an unreadable Monday refuses the save: the all-day Monday overlaps Sunday's spill until its real times are set", async () => {
+    stubShops(shop("s-spill", "Night Grill", {
+      hoursSource: "NEEDS_REVIEW",
+      openingSchedule: { ...CLOSED_WEEK, sun: [{ open: "18:00", close: "02:00" }] },
+      legacyOpeningHours: { mon: "brunch-ish", sun: "18:00-02:00" },
+    }))
+    await openEdit("Night Grill")
+    expect(timeInput("Monday opens").value).toBe("00:00")
+    await click(closedBox("Wednesday"))
+    await setTime("Wednesday opens", "09:00")
+    await setTime("Wednesday closes", "17:00")
+    await save()
+    expect(mockPut).not.toHaveBeenCalled()
+    expect(within(day("Sunday")).getByRole("alert")).toHaveTextContent("These times overlap. Change one of them.")
+    expect(timeInput("Monday opens")).toHaveAttribute("aria-invalid", "true")
   })
 
   it("zero-one-many: 0 windows is Closed, then 1, up to 3; 'Add another time' hides at 3 and removing the last window ticks Closed", async () => {
@@ -358,7 +404,7 @@ describe("OpeningScheduleEditor layout (UI-SPEC K4 overflow and long-text backst
       legacyOpeningHours: { wed: long },
     }))
     await openEdit("Long Text")
-    const line = within(day("Wednesday")).getByText(new RegExp(`^We couldn't read "${long.slice(0, 20)}`))
+    const line = within(day("Wednesday")).getByText(new RegExp(`^We could not read "${long.slice(0, 20)}`))
     expect(line.className).toContain("[overflow-wrap:anywhere]")
     let el: HTMLElement | null = line
     while (el && el.getAttribute("role") !== "dialog") {

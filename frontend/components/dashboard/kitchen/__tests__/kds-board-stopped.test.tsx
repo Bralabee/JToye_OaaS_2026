@@ -31,6 +31,7 @@ import {
 import {
   BOARD_STOPPED_ALARM,
   BOARD_STOPPED_ALARM_INTERVAL_MS,
+  BOARD_STOPPED_ALARM_MAX_MS,
   NEW_ORDER_CHIME,
   playAlarmPattern,
 } from "@/components/dashboard/kitchen/kds-sound"
@@ -461,6 +462,39 @@ describe("Kitchen page: a stopped board rings the alarm (K2)", () => {
     expect(alarmStarts()).toBe(before)
     expect(dialog()).not.toBeNull()
     expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Signed out")
+  })
+
+  it("an unsilenced alarm stops by itself 120 s after it starts, while the red screen and the pill stay (owner ruling 2026-10-10: alarm fatigue)", async () => {
+    await renderBoard()
+    await turnOnSound()
+    lapseNow()
+    await advance(0)
+    expect(alarmStarts()).toBe(3)
+
+    await advance(120_000)
+    const atCap = alarmStarts()
+    expect(atCap).toBeGreaterThan(3)
+
+    await advance(30_000)
+
+    expect(alarmStarts()).toBe(atCap)
+    expect(dialog()).not.toBeNull()
+    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Signed out")
+    expect(BOARD_STOPPED_ALARM_MAX_MS).toBe(120_000)
+  })
+
+  it("mute never silences the alarm: with new-order alerts muted (kds-muted) a stopped board still rings", async () => {
+    await renderBoard()
+    await turnOnSound()
+    fireEvent.click(screen.getByRole("button", { name: "Mute alerts" }))
+    await advance(0)
+    expect(localStorage.getItem("kds-muted")).toBe("true")
+
+    lapseNow()
+    await advance(0)
+    expect(alarmStarts()).toBe(3)
+    await advance(BOARD_STOPPED_ALARM_INTERVAL_MS)
+    expect(alarmStarts()).toBe(6)
   })
 
   it("a board whose sound was never turned on still stops, says it cannot ring, and builds no AudioContext", async () => {

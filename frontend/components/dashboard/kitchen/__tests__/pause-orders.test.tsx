@@ -19,6 +19,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import KitchenPage from "@/app/dashboard/kitchen/page"
 import { PausedBanner } from "@/components/dashboard/kitchen/paused-banner"
 import { installFakeAudioContext } from "@/test-utils/fake-audio-context"
+import { SHOP_ACCESS_DENIED_EVENT } from "@/lib/access-events"
 
 jest.mock("@/hooks/use-stomp", () => ({
   useStomp: jest.fn(() => ({ connected: true, reconnecting: false })),
@@ -395,18 +396,45 @@ describe("Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15)", () =>
     expect(await trigger()).toBeEnabled()
   })
 
-  it("a 403 shows 'You can't pause orders for this shop. Ask a manager.' and pauses nothing", async () => {
+  it("a shop-access-denied 403 on the pause is answered by the K2 Access ended overlay only: no inline refusal, no manager referral, no banner, and nothing paused (D-08, owner ruling 2026-10-10)", async () => {
+    freezeClock()
+    mockPut.mockImplementation(() => {
+      // The real api-client interceptor announces every typed 403 before the call rejects
+      // (lib/api-client.ts); here the client is mocked, so the stub does what the interceptor does.
+      window.dispatchEvent(new CustomEvent(SHOP_ACCESS_DENIED_EVENT))
+      return Promise.reject({
+        response: { status: 403, data: { type: "https://jtoye.uk/errors/shop-access-denied", status: 403 } },
+      })
+    })
+    await renderBoard()
+    await choose("20 minutes")
+    const overlay = await screen.findByTestId("kds-board-stopped")
+    expect(within(overlay).getByRole("heading", { name: "Your access has ended: new orders are NOT showing" })).toBeInTheDocument()
+    await waitFor(() => expect(mockPut).toHaveBeenCalledTimes(1))
+    // STAFF is the pause floor, so a refusal means the STAFF grant itself is gone: a manager
+    // cannot be the answer, and the control says nothing of its own.
+    expect(screen.queryAllByRole("alert", { hidden: true })).toHaveLength(0)
+    expect(screen.queryByText(/Ask a manager/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/can't pause orders/)).not.toBeInTheDocument()
+    expect(banner()).not.toBeInTheDocument()
+    expect(screen.getByTestId("kds-pause-control").textContent?.trim()).toBe("Pause orders")
+  })
+
+  it("a 403 that is NOT shop-access-denied shows the generic error (describeLoadError) in role=alert, and the board is not stopped", async () => {
     freezeClock()
     mockPut.mockImplementation(() =>
       Promise.reject({
-        response: { status: 403, data: { type: "https://jtoye.uk/errors/shop-access-denied", status: 403 } },
+        response: {
+          status: 403,
+          data: { type: "https://jtoye.uk/errors/forbidden", status: 403, detail: "Missing orders:write scope" },
+        },
       })
     )
     await renderBoard()
     await choose("20 minutes")
-    expect(await screen.findByRole("alert")).toHaveTextContent("You can't pause orders for this shop. Ask a manager.")
+    expect(await screen.findByRole("alert")).toHaveTextContent("Missing orders:write scope")
+    expect(screen.queryByTestId("kds-board-stopped")).not.toBeInTheDocument()
     expect(banner()).not.toBeInTheDocument()
-    expect((await trigger()).textContent?.trim()).toBe("Pause orders")
   })
 })
 

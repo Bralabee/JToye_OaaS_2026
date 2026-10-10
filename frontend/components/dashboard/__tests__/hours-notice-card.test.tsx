@@ -86,14 +86,14 @@ describe("HoursNoticeCard on the dashboard home (UI-SPEC K4 vendor notices)", ()
     )
   })
 
-  it("a NEEDS_REVIEW shop: 'Check the opening hours for Mama Put' names the unreadable days and says, per the D-25 ruling, that customers can still order on them", () => {
+  it("a NEEDS_REVIEW shop: 'Check the opening hours for Mama Put' names the unreadable days and says, in the owner's ruled words (2026-10-10), that customers can order on them at any time", () => {
     render(<HoursNoticeCard shops={[NEEDS_REVIEW]} />)
     expect(card()).toBeInTheDocument()
     const c = card() as HTMLElement
     expect(within(c).getByText("Check the opening hours for Mama Put")).toBeInTheDocument()
     expect(
       within(c).getByText(
-        "We couldn't read the hours you entered for Tuesday and Thursday. Customers can order on those days at any time until you save your hours."
+        "We could not read the hours you entered for Tuesday and Thursday, so customers can order on those days at any time. Check and save your hours."
       )
     ).toBeInTheDocument()
     expect(within(c).queryByText(/show as closed/)).not.toBeInTheDocument()
@@ -101,6 +101,21 @@ describe("HoursNoticeCard on the dashboard home (UI-SPEC K4 vendor notices)", ()
       "href",
       "/dashboard/shops?edit=s-review&focus=hours"
     )
+  })
+
+  it("a NEEDS_REVIEW shop with ONE unreadable day: the ruled sentence is singular ('that day')", () => {
+    const oneDay = shop("s-one", "Suya Corner", {
+      hoursSource: "NEEDS_REVIEW",
+      openingSchedule: { ...CLOSED_WEEK, mon: [{ open: "10:00", close: "16:00" }] },
+      legacyOpeningHours: { mon: "10:00-16:00", tue: "lunchtime till late", sun: "Closed" },
+    })
+    render(<HoursNoticeCard shops={[oneDay]} />)
+    const c = card() as HTMLElement
+    expect(
+      within(c).getByText(
+        "We could not read the hours you entered for Tuesday, so customers can order on that day at any time. Check and save your hours."
+      )
+    ).toBeInTheDocument()
   })
 
   it("STRUCTURED, MIGRATED_FROM_TEXT and unclassified shops: no card at all", () => {
