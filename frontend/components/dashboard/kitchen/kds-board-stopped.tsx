@@ -190,3 +190,12 @@ export function KdsBoardStopped({ reason, onSilence, onSignOut }: KdsBoardStoppe
     host
   )
 }
+
+// 37-18 RED interface stub: deliberate sign-out and the sound-never-enabled line. GREEN replaces it.
+export const SOUND_NEVER_ENABLED_COPY =
+  "This screen can't sound an alarm because sound was never turned on."
+export function markDeliberateSignOut(): void {}
+export function isDeliberateSignOut(): boolean {
+  return false
+}
+export function __resetDeliberateSignOutForTests(): void {}

@@ -12,17 +12,38 @@
  *      kitchen claims it -> overlay. Navigation is observed the way jsdom reports it: an attempt
  *      to leave the page logs "Not implemented: navigation" and leaves `location` unchanged.
  */
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react"
 import { getSession } from "next-auth/react"
 import KitchenPage from "@/app/dashboard/kitchen/page"
 import apiClient, { __testing as apiClientTesting } from "@/lib/api-client"
 import { SESSION_LAPSED_EVENT } from "@/lib/session-lapse"
+import { useStomp } from "@/hooks/use-stomp"
+import { vendorLogout } from "@/lib/vendor-logout"
 import {
+  __resetDeliberateSignOutForTests,
+  isDeliberateSignOut,
   KdsBoardStopped,
   KITCHEN_SIGN_IN_HREF,
+  markDeliberateSignOut,
+  SOUND_NEVER_ENABLED_COPY,
   STOPPED_TAB_TITLE,
 } from "@/components/dashboard/kitchen/kds-board-stopped"
-import { chimeCount, installFakeAudioContext } from "@/test-utils/fake-audio-context"
+import {
+  BOARD_STOPPED_ALARM,
+  BOARD_STOPPED_ALARM_INTERVAL_MS,
+  NEW_ORDER_CHIME,
+  playAlarmPattern,
+} from "@/components/dashboard/kitchen/kds-sound"
+import {
+  SESSION_REFRESH_LEAD_MS,
+  useSessionKeepAlive,
+} from "@/components/dashboard/kitchen/use-session-keep-alive"
+import {
+  audioRecord,
+  chimeCount,
+  FakeAudioContext,
+  installFakeAudioContext,
+} from "@/test-utils/fake-audio-context"
 
 jest.mock("next-auth/react", () => ({
   getSession: jest.fn(),
@@ -33,6 +54,12 @@ jest.mock("next-auth/react", () => ({
 
 jest.mock("@/hooks/use-stomp", () => ({
   useStomp: jest.fn(() => ({ connected: true, reconnecting: false })),
+}))
+
+// The access-ended overlay's "Sign out" is the real vendor sign-out; what that function does is
+// lib/__tests__/vendor-logout.test.ts's job. Pending for ever, like a navigation that has not landed.
+jest.mock("@/lib/vendor-logout", () => ({
+  vendorLogout: jest.fn(() => new Promise<string>(() => {})),
 }))
 
 const mockToast = jest.fn()
@@ -187,6 +214,9 @@ beforeEach(() => {
   installServer()
   jest.useFakeTimers()
   installFakeAudioContext("running")
+  __resetDeliberateSignOutForTests()
+  ;(vendorLogout as jest.Mock).mockClear()
+  ;(useStomp as jest.Mock).mockClear()
 })
 
 afterEach(() => {
@@ -351,5 +381,279 @@ describe("Kitchen page: a lapsed session stops the board loudly instead of redir
 
     expect(dialog()).not.toBeNull()
     expect(chimeCount()).toBe(chimesAtStop)
+  })
+})
+
+// =============================================================================================
+// 3. The alarm (UI-SPEC K2: three 440 Hz square tones, 120 ms each, 80 ms apart, every 3 s)
+// =============================================================================================
+
+const alarmStarts = () =>
+  audioRecord.starts.filter((s) => s.frequency === 440 && s.type === "square").length
+
+const turnOnSound = async () => {
+  fireEvent.click(within(screen.getByTestId("kds-sound-control")).getByText("Turn on sound"))
+  await advance(0)
+}
+
+const lapseNow = () =>
+  act(() => {
+    window.dispatchEvent(new CustomEvent(SESSION_LAPSED_EVENT, { cancelable: true }))
+  })
+
+describe("playAlarmPattern: the board-stopped alarm (K2)", () => {
+  it("is three 440 Hz square tones, 120 ms each and 80 ms apart, distinct from the new-order chime", () => {
+    const ctx = new FakeAudioContext()
+    ctx.currentTime = 10
+
+    playAlarmPattern(ctx as unknown as AudioContext)
+
+    expect(audioRecord.starts).toHaveLength(3)
+    expect(audioRecord.starts.every((s) => s.frequency === 440 && s.type === "square")).toBe(true)
+    const at = audioRecord.starts.map((s) => s.at - 10)
+    expect(at[0]).toBeCloseTo(0, 5)
+    expect(at[1]).toBeCloseTo(0.2, 5)
+    expect(at[2]).toBeCloseTo(0.4, 5)
+    expect(BOARD_STOPPED_ALARM.toneSeconds).toBe(0.12)
+    expect(BOARD_STOPPED_ALARM.gapSeconds).toBe(0.08)
+    expect(BOARD_STOPPED_ALARM_INTERVAL_MS).toBe(3000)
+    // Distinguishable by ear from the chime: different pitch AND a different waveform.
+    expect(NEW_ORDER_CHIME.type).toBe("sine")
+    expect(NEW_ORDER_CHIME.tonesHz).not.toContain(440)
+  })
+
+  it("plays nothing on a context that cannot sound", () => {
+    installFakeAudioContext("suspended")
+    const ctx = new FakeAudioContext()
+
+    playAlarmPattern(ctx as unknown as AudioContext)
+
+    expect(audioRecord.starts).toHaveLength(0)
+  })
+})
+
+describe("Kitchen page: a stopped board rings the alarm (K2)", () => {
+  it("rings the alarm at once and every 3 s, through the board's one AudioContext", async () => {
+    await renderBoard()
+    await turnOnSound()
+    expect(alarmStarts()).toBe(0)
+
+    lapseNow()
+    await advance(0)
+    expect(alarmStarts()).toBe(3)
+
+    await advance(BOARD_STOPPED_ALARM_INTERVAL_MS * 3)
+
+    expect(alarmStarts()).toBe(12)
+    expect(audioRecord.instances).toHaveLength(1)
+  })
+
+  it("'Silence alarm' stops the sound only: the red screen stays", async () => {
+    await renderBoard()
+    await turnOnSound()
+    lapseNow()
+    await advance(0)
+    const before = alarmStarts()
+
+    fireEvent.click(screen.getByRole("button", { name: /alarm/i }))
+    await advance(BOARD_STOPPED_ALARM_INTERVAL_MS * 3)
+
+    expect(alarmStarts()).toBe(before)
+    expect(dialog()).not.toBeNull()
+    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("Signed out")
+  })
+
+  it("a board whose sound was never turned on still stops, says it cannot ring, and builds no AudioContext", async () => {
+    await renderBoard()
+
+    lapseNow()
+    await advance(BOARD_STOPPED_ALARM_INTERVAL_MS * 3)
+
+    const overlay = dialog()
+    expect(overlay).not.toBeNull()
+    expect(overlay).toHaveAccessibleDescription(expect.stringContaining(SOUND_NEVER_ENABLED_COPY))
+    expect(SOUND_NEVER_ENABLED_COPY).toBe(
+      "This screen can't sound an alarm because sound was never turned on."
+    )
+    expect(audioRecord.instances).toHaveLength(0)
+    expect(alarmStarts()).toBe(0)
+  })
+
+  it("a board with sound on does not claim it cannot ring", async () => {
+    await renderBoard()
+    await turnOnSound()
+
+    lapseNow()
+
+    expect(dialog()).not.toHaveAccessibleDescription(expect.stringContaining(SOUND_NEVER_ENABLED_COPY))
+  })
+})
+
+// =============================================================================================
+// 4. Access ended (D-08 on the kitchen route)
+// =============================================================================================
+
+const lastStompTopic = () => {
+  const calls = (useStomp as jest.Mock).mock.calls
+  return calls[calls.length - 1]?.[0]
+}
+
+describe("Kitchen page: access ended stops the board (D-08)", () => {
+  it("a kitchen read refused with shop-access-denied shows the access-ended overlay and disconnects the socket", async () => {
+    await renderBoard()
+    await waitFor(() => expect(lastStompTopic()).toBe("/topic/kitchen.tenant-1.shop-1"))
+
+    server.kitchen = 403
+    await advance(60_000)
+
+    await waitFor(() => expect(dialog()).not.toBeNull())
+    expect(dialog()).toHaveAccessibleName("Your access has ended: new orders are NOT showing")
+    expect(dialog()).toHaveAccessibleDescription(
+      expect.stringContaining("Someone has removed your access to this kitchen. Ask a Group admin if you need it back.")
+    )
+    expect(screen.getByRole("button", { name: "Sign out" })).toHaveFocus()
+    expect(lastStompTopic()).toBeNull()
+    expect(screen.getByTestId("kds-feed-pill")).toHaveTextContent("No access")
+    expect(document.title).toBe(STOPPED_TAB_TITLE)
+    expect(navigationAttempts).toBe(0)
+  })
+
+  it("a refused bump ends access the same way", async () => {
+    await renderBoard()
+    await waitFor(() => expect(screen.getByText("ORD-cook-1")).toBeInTheDocument())
+
+    server.bump = 403
+    fireEvent.click(screen.getByRole("button", { name: /Start Preparing/ }))
+
+    await waitFor(() =>
+      expect(dialog()).toHaveAccessibleName("Your access has ended: new orders are NOT showing")
+    )
+  })
+
+  it("'Sign out' on the access-ended overlay is a deliberate sign-out", async () => {
+    await renderBoard()
+    server.kitchen = 403
+    await advance(60_000)
+    await waitFor(() => expect(dialog()).not.toBeNull())
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
+
+    expect(vendorLogout).toHaveBeenCalledTimes(1)
+    expect(isDeliberateSignOut()).toBe(true)
+  })
+
+  it("a stopped board stops reading: no more board polls once it has stopped", async () => {
+    await renderBoard()
+    server.kitchen = 403
+    await advance(60_000)
+    await waitFor(() => expect(dialog()).not.toBeNull())
+    const reads = () =>
+      adapter.mock.calls.filter(([c]) => String(c.url).startsWith("/api/v1/orders/kitchen")).length
+    const readsAtStop = reads()
+
+    await advance(180_000)
+
+    expect(reads()).toBe(readsAtStop)
+  })
+})
+
+// =============================================================================================
+// 5. A deliberate sign-out never stops the board (goods P2-TUN-14)
+// =============================================================================================
+
+describe("Kitchen page: a deliberate sign-out shows no overlay and no alarm (P2-TUN-14)", () => {
+  it("after Sign out, a lapse is not claimed: no overlay, no alarm, and the browser goes to sign-in as today", async () => {
+    await renderBoard()
+    await turnOnSound()
+
+    markDeliberateSignOut()
+    await lapseAndPoll()
+    await advance(BOARD_STOPPED_ALARM_INTERVAL_MS * 3)
+
+    expect(dialog()).toBeNull()
+    expect(alarmStarts()).toBe(0)
+    expect(navigationAttempts).toBeGreaterThanOrEqual(1)
+  })
+
+  it("after Sign out, a dispatched lapse event is left unclaimed", async () => {
+    await renderBoard()
+
+    markDeliberateSignOut()
+    const lapseEvent = new CustomEvent(SESSION_LAPSED_EVENT, { cancelable: true })
+    act(() => {
+      window.dispatchEvent(lapseEvent)
+    })
+
+    expect(lapseEvent.defaultPrevented).toBe(false)
+    expect(dialog()).toBeNull()
+  })
+
+  it("after Sign out, a refused read does not show the access-ended overlay either", async () => {
+    await renderBoard()
+
+    markDeliberateSignOut()
+    server.kitchen = 403
+    await advance(60_000)
+
+    expect(dialog()).toBeNull()
+  })
+})
+
+// =============================================================================================
+// 6. The silent refresh while the SSO session lasts (D-14)
+// =============================================================================================
+
+const nowSeconds = () => Math.floor(Date.now() / 1000)
+
+describe("useSessionKeepAlive: the board refreshes its token before it expires (D-14)", () => {
+  it("asks for the session again a minute before the access token expires, and again before the next expiry", async () => {
+    const calls: number[] = []
+    ;(getSession as jest.Mock).mockImplementation(() => {
+      calls.push(Date.now())
+      return Promise.resolve({ ...signedIn, expiresAt: nowSeconds() + 300 })
+    })
+    const start = Date.now()
+
+    renderHook(() => useSessionKeepAlive(true))
+    await advance(0)
+    expect(calls).toHaveLength(1)
+
+    await advance(300_000 - SESSION_REFRESH_LEAD_MS - 1_000)
+    expect(calls).toHaveLength(1)
+
+    await advance(1_000)
+    expect(calls).toHaveLength(2)
+    // Before the first token's expiry (start + 300 s), by the lead.
+    expect(calls[1] - start).toBe(300_000 - SESSION_REFRESH_LEAD_MS)
+
+    await advance(300_000 - SESSION_REFRESH_LEAD_MS)
+    expect(calls).toHaveLength(3)
+    expect(calls[2] - calls[1]).toBe(300_000 - SESSION_REFRESH_LEAD_MS)
+  })
+
+  it("asks nothing while the board is stopped", async () => {
+    ;(getSession as jest.Mock).mockResolvedValue({ ...signedIn, expiresAt: nowSeconds() + 300 })
+
+    renderHook(() => useSessionKeepAlive(false))
+    await advance(600_000)
+
+    expect(getSession).not.toHaveBeenCalled()
+  })
+
+  it("on the page: a minute before expiry the board asks again, and a session that keeps refreshing never stops it", async () => {
+    const calls: number[] = []
+    ;(getSession as jest.Mock).mockImplementation(() => {
+      calls.push(Date.now())
+      // A 290 s token, so the keep-alive (at 230 s) cannot coincide with the 60 s board poll.
+      return Promise.resolve({ ...signedIn, expiresAt: nowSeconds() + 290 })
+    })
+    const start = Date.now()
+    await renderBoard()
+
+    for (let i = 0; i < 60; i++) await advance(10_000)
+
+    expect(calls.some((t) => t - start === 230_000)).toBe(true)
+    expect(dialog()).toBeNull()
+    expect(navigationAttempts).toBe(0)
   })
 })

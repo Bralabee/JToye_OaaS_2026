@@ -263,3 +263,15 @@ export function KdsSoundControl({
     </Button>
   )
 }
+
+// 37-18 RED interface stub: the board-stopped alarm. Replaced in the GREEN commit.
+export const BOARD_STOPPED_ALARM_INTERVAL_MS = 3000
+export const BOARD_STOPPED_ALARM = {
+  toneHz: 440,
+  toneSeconds: 0.12,
+  gapSeconds: 0.08,
+  count: 3,
+  type: "square" as OscillatorType,
+  gain: 0.5,
+} as const
+export function playAlarmPattern(_ctx: AudioContext): void {}

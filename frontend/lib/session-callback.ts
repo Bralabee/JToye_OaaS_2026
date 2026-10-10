@@ -22,3 +22,9 @@ export function buildSession<T>(session: T, token: JWT): T {
   delete s.refreshToken
   return session
 }
+
+// 37-18 RED interface stub: today's rule (refresh only once expired). GREEN adds the skew.
+export const ACCESS_TOKEN_REFRESH_SKEW_S = 60
+export function accessTokenNeedsRefresh(expiresAt: number | undefined, nowMs: number): boolean {
+  return !(expiresAt && nowMs < expiresAt * 1000)
+}
