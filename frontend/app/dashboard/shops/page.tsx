@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { m } from "framer-motion"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -41,6 +41,11 @@ import { Store, Plus, Pencil, Trash2, MapPin, Calendar, Search, Globe, ImageIcon
 import { ImageUploader } from "@/components/ui/image-uploader"
 import { SafeImage } from "@/components/ui/safe-image"
 import { Pagination } from "@/components/ui/pagination"
+import {
+  OpeningScheduleEditor,
+  type OpeningScheduleEditorHandle,
+} from "@/components/dashboard/shops/opening-schedule-editor"
+import type { OpeningScheduleMap } from "@/lib/opening-schedule"
 import type { Shop, CreateShopRequest } from "@/types/api"
 import { formatDistanceToNow } from "date-fns"
 
@@ -61,11 +66,6 @@ const shopSchema = z.object({
 
 type ShopFormData = z.infer<typeof shopSchema>
 
-const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const
-const DAY_LABELS: Record<string, string> = {
-  mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun",
-}
-
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
@@ -79,7 +79,14 @@ export default function ShopsPage() {
   const [deletingShop, setDeletingShop] = useState<Shop | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [published, setPublished] = useState(false)
-  const [openingHours, setOpeningHours] = useState<Record<string, string>>({})
+  // 37-21 (K4, D-15): the structured hours the dialog will send, or null while the editor is untouched
+  // (the request then omits openingSchedule and the server keeps the stored hours and their source).
+  // The seven free-text inputs that wrote `openingHours` are gone: that text decides nothing since
+  // 37-20, and the original stays readable as ShopDto.legacyOpeningHours for the needs-review notice.
+  const [scheduleDraft, setScheduleDraft] = useState<OpeningScheduleMap | null>(null)
+  // Re-mounts the editor on every open, so it always starts from the shop being edited.
+  const [editorSession, setEditorSession] = useState(0)
+  const scheduleEditorRef = useRef<OpeningScheduleEditorHandle>(null)
   // F2 sweep: a 429/network failure must render an error panel, never the
   // "No shops yet" empty state — `fetchShops`'s catch deliberately does not
   // reset `shops` to `[]`.
@@ -160,7 +167,8 @@ export default function ShopsPage() {
     setEditingShop(null)
     reset({ name: "", address: "", description: "", phone: "", email: "", logoUrl: "", bannerUrl: "", deliveryInfo: "", tags: "", minimumOrderPounds: "" })
     setPublished(false)
-    setOpeningHours({})
+    setScheduleDraft(null)
+    setEditorSession((n) => n + 1)
     setDialogOpen(true)
   }
 
@@ -177,13 +185,24 @@ export default function ShopsPage() {
     setValue("tags", shop.tags || "")
     setValue("minimumOrderPounds", shop.minimumOrderPennies ? (shop.minimumOrderPennies / 100).toString() : "")
     setPublished(shop.published || false)
-    setOpeningHours(shop.openingHours || {})
+    setScheduleDraft(null)
+    setEditorSession((n) => n + 1)
     setDialogOpen(true)
   }
 
   const openDeleteDialog = (shop: Shop) => {
     setDeletingShop(shop)
     setDeleteDialogOpen(true)
+  }
+
+  // K4: the hours are checked before anything is sent; the editor shows the error and takes focus.
+  // Only when they were touched: untouched hours are not sent, so there is nothing to refuse.
+  const submitForm = (event: React.FormEvent<HTMLFormElement>) => {
+    if (scheduleDraft !== null && scheduleEditorRef.current && !scheduleEditorRef.current.validate()) {
+      event.preventDefault()
+      return
+    }
+    return handleSubmit(onSubmit)(event)
   }
 
   const onSubmit = async (data: ShopFormData) => {
@@ -202,7 +221,9 @@ export default function ShopsPage() {
         tags: data.tags || undefined,
         minimumOrderPennies: data.minimumOrderPounds ? Math.round(parseFloat(data.minimumOrderPounds) * 100) : 0,
         published,
-        openingHours: Object.keys(openingHours).length > 0 ? openingHours : undefined,
+        // Absent keeps the stored hours; {} saves closed every day; any save makes them STRUCTURED.
+        // The key is left out entirely (not sent as undefined) while the editor is untouched.
+        ...(scheduleDraft !== null ? { openingSchedule: scheduleDraft } : {}),
       }
 
       if (editingShop) {
@@ -447,7 +468,7 @@ export default function ShopsPage() {
                 : "Add a new shop to your system."}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={submitForm} className="space-y-6">
             {/* Basic Info */}
             <div className="space-y-3">
               <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Basic Info</h4>
@@ -572,23 +593,13 @@ export default function ShopsPage() {
               </div>
             </div>
 
-            {/* Opening Hours */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Opening Hours</h4>
-              <div className="grid grid-cols-1 gap-2">
-                {DAYS.map((day) => (
-                  <div key={day} className="flex items-center gap-3">
-                    <span className="w-10 text-xs font-medium text-slate-600">{DAY_LABELS[day]}</span>
-                    <Input
-                      className="flex-1"
-                      placeholder="09:00-17:00 or Closed"
-                      value={openingHours[day] || ""}
-                      onChange={(e) => setOpeningHours((prev) => ({ ...prev, [day]: e.target.value }))}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Opening hours (37-21, UI-SPEC K4): structured, what the server enforces. */}
+            <OpeningScheduleEditor
+              key={`${editingShop?.id ?? "new"}-${editorSession}`}
+              ref={scheduleEditorRef}
+              shop={editingShop}
+              onChange={setScheduleDraft}
+            />
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
