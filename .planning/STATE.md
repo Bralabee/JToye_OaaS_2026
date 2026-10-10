@@ -6,10 +6,10 @@ current_phase: 37
 current_phase_name: Real-world operations readiness
 status: executing
 stopped_at: "Phase 37 executing: 37-01..37-22 complete (22/53). 37-21 closed 2026-10-10: the kitchen header has PauseOrdersControl (20 / 40 minutes / Until I reopen, 44px rows, no confirm; Resume orders now while paused) and PausedBanner (white, 2px slate-900 border, L6) reading the SERVER's ordersPausedUntil/ordersPausedIndefinitely in UK time, re-read on the 60 s poll, after each write and at the stated end, disabled until the first read and while a write is in flight; the shop dialog's free-text hours are replaced by OpeningScheduleEditor (K4: Closed checkbox, up to 3 native time windows, Copy Monday, overnight hint, overlap / spill / missing-time validation, all-closed note, legacy info line; the dialog sends openingSchedule only when touched); HoursNoticeCard on /dashboard and Hours not set / Check hours / Paused until badges on the shops table from hoursSource, deep link ?edit={id}&focus=hours. Owner D-25 ruling copy: an unreadable NEEDS_REVIEW day pre-fills Closed with 'Customers can still order on this day at any time until you save your hours.' (orchestrator decision pending owner wording, WINDOWS #36). Deviations: storefront Opening hours list from openingSchedule (Rule 2); dialog saves keep the slug (server regenerates on every slug-less update, Rule 1); the control makes no claim before the first read (Rule 1, found live). Jest 2607/220 (baseline 2550/215), build green, lint 0 errors; no Java. Frontend REBUILT + recreated (final 040c64a6), runtime-freshness PASS 4/4; live Playwright proof incl. 60 s cross-device; Mama Ade's Kitchen restored by md5. WINDOWS #36, #37 added. RWO-022 NOT marked (37-23 declares it; ready-ids blocked). Next: 37-23 (UAT, autonomous:false)."
-last_updated: "2026-10-10T15:59:45.000Z"
+last_updated: "2026-10-10T19:05:50.430Z"
 last_activity: 2026-10-10
 last_activity_desc: "Completed 37-21: one-tap kitchen pause from the server's state, the structured hours editor, and hours notices read from hoursSource (D-15, D-25)"
-state_head: d2f7016a8fe5531facec4d4e71f86b22036ad877
+state_head: fa3552fadce213d8403243c1e407cc5b67c53122
 progress:
   total_phases: 20
   completed_phases: 13
@@ -773,7 +773,7 @@ Status: Executing Phase 37
   (real Keycloak login; creds not in-session, same blocker as 23-07/webhooks) AND port-3000
   serves the pre-change image (needs a frontend rebuild). 23-13's 375px markup is unchanged +
   unit-MOBL-01 green; run the live spec at the phase PR after a rebuild + creds.
-Last activity: 2026-10-09 - Completed quick task 261009-g8m: WINDOWS #29 ruling B customer gate + 37-B re-cut
+Last activity: 2026-10-10 - Completed quick task 261010-ppb: owner rulings package (option E customer floors, hours all-day pre-fill, pause-403 copy, alarm cap, vendor realm SSO max 14h, option C and slug follow-ups recorded)
 
 Progress: [███████░░░] 65%
 
@@ -1238,6 +1238,14 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 37]: 37-21: D-25 ruling copy (orchestrator decision, pending the owner's wording, WINDOWS #36): an unreadable NEEDS_REVIEW day pre-fills Closed in the editor with 'We couldn't read "{text}". Customers can still order on this day at any time until you save your hours.'; the needs-review card says customers can order on those days until the hours are saved; UI-SPEC rows amended
 - [Phase 37]: 37-21: the shop dialog sends openingSchedule only when the editor was touched (key omitted otherwise), and sends the current slug unless the name changed, because ShopService.updateShop regenerates a random-suffix slug on every slug-less update (server unchanged; owner question in deferred-items)
 - [Phase 37]: 37-21: the storefront Opening hours list renders openingSchedule for STRUCTURED / MIGRATED_FROM_TEXT; NEEDS_REVIEW keeps the vendor's text (its unreadable days are open on the server); legacy or no schedule shows the text; never both
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): option E floors on customers (D-06): reads keep the any-grant gate; create and update need SHOP_MANAGER on any shop or Group admin (ShopAccessService.requireAnyRole, before the Idempotency-Key branch); delete needs Group admin (requireGroupAdmin)
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-25 hours: an unreadable NEEDS_REVIEW day pre-fills as one all-day 00:00-00:00 window with 'We could not read "{text}", so this day is open all day. Set the real times, or tick Closed.'; the card reads '...for {days}, so customers can order on that day/those days at any time. Check and save your hours.' (WINDOWS #36 closed)
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-08 pause: a pause refused with shop-access-denied is answered by the K2 Access ended overlay only, no inline copy; KITCHEN_ROUTE_CALLS and its guard test keep every kitchen-route call at the STAFF floor (WINDOWS #37 restated)
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): the board-stopped alarm stops by itself 2 minutes after it starts (alarm fatigue); the red screen stays, and mute still never silences it
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): D-14 amended: vendor-realm SSO max 14 h (ssoSessionMaxLifespan 50400), idle 30 min unchanged, refresh-token rotation NOT enabled; applied to the running jtoye-dev realm through the Admin API; 37-23's red screen appears after 14 h, not 2 h
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): option C (per-shop customer narrowing) and old-slug 301 aliases deferred to Phase 39 (V81 is reserved by 37-27, so option C takes the next free version; Phase 39 is Platform runtime upgrades, so /gsd-plan-phase 39 decides 39-F or its own phase); the slug-keep fix is specified in 37-48 items (a)-(e)
+- [Phase 37]: 261010-ppb (owner ruling 2026-10-10): facts: staff revoke was already Group-admin-only (StaffManagementService.java:308-322), and vendor POST /orders needs SHOP_MANAGER (OrderService.java:141; 37-20-SUMMARY corrected)
+- [Phase 37]: 261010-ppb (orchestrator revision 2026-10-10, recorded for the owner): refresh-token rotation deferred: per-process single-flight cannot protect 3 k8s replicas; needs a shared guard (Redis-backed single-flight keyed by refresh token, or sticky sessions proven) or Keycloak refreshTokenMaxReuse policy, then its own ruling
 
 ### Pending Todos
 
@@ -1307,6 +1315,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 | 261004-hhy | Clear main's pg-backup image-gate red: name libpcre2-8-0 on the apt-get line so the image takes 10.42-1+deb12u2 (CVE-2026-103111, HIGH); Trivy 0.70.0 main rc=1 / branch rc=0 on one base digest; ca-certificates still installed, 303 certs | 2026-10-04 | 00a64aa4 | [261004-hhy-fix-pg-backup-pcre2-cve-2026-103111](./quick/261004-hhy-fix-pg-backup-pcre2-cve-2026-103111/) |
 | 261004-nsn | Fix #885: the issue de-dup in e2e-nightly and base-image-freshness (3 sites) searched only the 100 newest open issues; now `--search "in:title …"` with the exact-title jq filter kept. Rendered step scripts: main misses #683 at all 3 sites, branch finds it; substring-title control rejected | 2026-10-04 | (see PR) | [261004-nsn-fix-885-nightly-dedup-title-search](./quick/261004-nsn-fix-885-nightly-dedup-title-search/) |
 | 261009-g8m | WINDOWS #29 ruling B: gate customer endpoints on any honoured grant under D-06 strict scoping, with RED-first Testcontainers arms, and re-cut the 37-B PR branch (phase-37-b-staff-access) from origin/main as one squash commit carrying the gate | 2026-10-09 | 29520bf2 | [261009-g8m-windows-29-ruling-b-gate-customer-endpoi](./quick/261009-g8m-windows-29-ruling-b-gate-customer-endpoi/) |
+| 261010-ppb | Owner rulings 2026-10-10 package: option E customer write floors, hours editor all-day pre-fill and copy, pause-403 copy, alarm cap, vendor realm SSO max 14h with D-14 amendment, record option C and slug follow-ups | 2026-10-10 | fa3552fa | [261010-ppb-owner-rulings-2026-10-10-package-option-](./quick/261010-ppb-owner-rulings-2026-10-10-package-option-/) |
 
 ## Session Continuity
 
