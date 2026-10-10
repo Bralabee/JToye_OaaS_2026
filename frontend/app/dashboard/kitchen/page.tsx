@@ -43,6 +43,12 @@ import {
   useKitchenAlert,
 } from "@/components/dashboard/kitchen/kds-sound"
 import {
+  KdsBoardStopped,
+  STOPPED_TAB_TITLE,
+  type BoardStoppedReason,
+} from "@/components/dashboard/kitchen/kds-board-stopped"
+import { SESSION_LAPSED_EVENT } from "@/lib/session-lapse"
+import {
   Card,
   CardContent,
   CardHeader,
@@ -230,6 +236,25 @@ export default function KitchenPage() {
 
   // Loading state
   const [loading, setLoading] = useState(true)
+
+  // --- 37-18 (D-14, UI-SPEC K2): the board has stopped ---
+  //
+  // `null` while the board works. "signedOut" when the session lapsed (a 401 the api-client's one
+  // silent refresh could not fix). Once stopped, the board stays stopped until the page is left:
+  // the only ways out are signing in again or signing out, and both navigate away.
+  const [stopped, setStopped] = useState<BoardStoppedReason | null>(null)
+
+  // The api-client announces a lapse as a CANCELLABLE `jtoye:session-lapsed` event and redirects to
+  // /auth/signin only if nobody claims it. The kitchen claims it: a board that quietly becomes a
+  // sign-in page misses every order until someone walks up to it (UXT-021).
+  useEffect(() => {
+    const onSessionLapsed = (event: Event) => {
+      event.preventDefault()
+      setStopped("signedOut")
+    }
+    window.addEventListener(SESSION_LAPSED_EVENT, onSessionLapsed)
+    return () => window.removeEventListener(SESSION_LAPSED_EVENT, onSessionLapsed)
+  }, [])
 
   // --- #106: feed liveness ---
   //
@@ -604,12 +629,12 @@ export default function KitchenPage() {
   //
   // The chime counts only THIS board's shop. After a shop switch the map still holds the previous
   // shop's orders until the new read lands; they must not keep ringing for a board that no longer
-  // shows them. `stopped` is the K2 "board stopped" state, wired by 37-18.
+  // shows them. `stopped` is the K2 "board stopped" state (37-18): the chime gives way to the alarm.
   const alertCount = newOrders.filter((o) => o.shopId === selectedShopId).length
   const { soundState, enableSound } = useKitchenAlert({
     pendingCount: alertCount,
     muted,
-    stopped: false,
+    stopped: stopped !== null,
   })
 
   // Unmuting is a tap, so it is also the gesture that unlocks audio: one press, and the board rings.
@@ -628,8 +653,9 @@ export default function KitchenPage() {
     }
   }, [])
   useEffect(() => {
-    document.title = kitchenTabTitle(newLaneCount)
-  }, [newLaneCount])
+    // 37-18 (K2): a stopped board says so first, so a backgrounded tab cannot read as working.
+    document.title = stopped ? STOPPED_TAB_TITLE : kitchenTabTitle(newLaneCount)
+  }, [newLaneCount, stopped])
 
   // --- #450 5d: whose board is this? ---
 
@@ -673,12 +699,15 @@ export default function KitchenPage() {
         // pure w.r.t. render, same freshness as the old in-memo Date.now().
         now: tick,
         // 37-17 (D-14): the pill says "Live" only when the board can also ring. Staleness is
-        // derived inside from `lastSyncedAt` against the existing STALE_AFTER_MS. The session and
-        // access inputs (signedOut, noAccess) are wired by 37-18 with the K2 overlay.
+        // derived inside from `lastSyncedAt` against the existing STALE_AFTER_MS.
+        // 37-18 (K2): behind the overlay the pill reads "Signed out" or "No access", so a
+        // screenshot of the header never says "Live" on a stopped board.
+        signedOut: stopped === "signedOut",
+        noAccess: stopped === "noAccess",
         soundOff: soundState === "off",
         muted: soundState === "muted",
       }),
-    [online, connected, reconnecting, lastSyncedAt, syncFailed, tick, soundState]
+    [online, connected, reconnecting, lastSyncedAt, syncFailed, tick, soundState, stopped]
   )
 
   // #536: ONE tree, not a `loading` early-return that duplicated the header.
@@ -1106,6 +1135,10 @@ export default function KitchenPage() {
       {/* #105: the ticket sheet, portalled to <body> so one @media print rule in
           globals.css can hide the dashboard chrome without editing the shell. */}
       {printSheet}
+
+      {/* 37-18 (D-14, K2): the board has stopped. Portalled to <body> above everything; the rest
+          of the page is inert while it shows. */}
+      {stopped && <KdsBoardStopped reason={stopped} />}
     </div>
   )
 }
