@@ -84,7 +84,6 @@ const detail: ShopDetail = {
   avgRating: 0,
   promotions: [],
   announcements: [],
-  isOpen: true,
 }
 
 beforeEach(() => {
@@ -154,14 +153,15 @@ describe("/shop/[slug] — server-seeded storefront", () => {
       render(
         <ShopDetailClient
           slug="brixton-village-grill"
-          initial={{ ...detail, isOpen: false }}
+          initial={{ ...detail, shop: { ...shop, openNow: false } }}
         />
       )
     })
     // openingHours is null, which `isOpenNow` treats as ALWAYS OPEN — so a
-    // "Closed" pill here can only have come from the server's flag. That is what
-    // makes this block able to fail if the client starts recomputing.
-    expect(screen.getByText("Closed")).toBeInTheDocument()
+    // "Closed" pill here can only have come from the server's `openNow` (37-22:
+    // the server field, not a loader-computed flag). That is what makes this
+    // block able to fail if the client starts recomputing.
+    expect(screen.getByTestId("shop-availability-pill")).toHaveTextContent(/^Closed$/)
     expect(screen.queryByText("Open now")).not.toBeInTheDocument()
   })
 
