@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 11
 waived_count: 0
-fixed_count: 26
-total_count: 37
-last_updated: 2026-10-10T15:54:22.887Z
+fixed_count: 27
+total_count: 38
+last_updated: 2026-10-10T18:36:59.063Z
 ---
 
 # Broken Windows Ledger
@@ -50,8 +50,9 @@ last_updated: 2026-10-10T15:54:22.887Z
 | 33 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/shop/ShopController.java |  | 37-20 pause endpoints, the 409 shop-closed refusal and the new ShopDto/PublicShopDto fields are proven in Testcontainers only; the compose core-java predates them (and V80, WINDOWS #30). Owed at the next core-java rebuild: PUT /shops/{id}/pause then a storefront order 409 PAUSED, DELETE then 201, GET /public/shops/{slug} openNow, the V80 NOTICE counts, check-openapi-snapshot-fresh green. | fixed | closed by 37-22 at cb8cf9d1: V80 applied on the dev DB (LEGACY_ALWAYS_OPEN=5, MIGRATED_FROM_TEXT=0, NEEDS_REVIEW=0); ungranted pause 403; STAFF pause 200 -> public openNow false -> guest order 409 shop-closed PAUSED, nothing written; resume 200 -> same key 201; check-openapi-snapshot-fresh PASS (121 paths), check-runtime-freshness PASS 4/4 (evidence/37-22-live-probes.md) | 2026-10-10T13:14:21.570Z | 2026-10-10T15:09:55.693Z |
 | 34 | 37 | unrun-verify | frontend/components/dashboard/kitchen/kds-board-stopped.tsx |  | 37-18 proven in jest only, not live: the alarm (3x 440 Hz square every 3 s through the shared AudioContext; audibility and distinctness from the chime are a by-ear 37-23 UAT row), Silence alarm, the silent token refresh over real 5-minute Keycloak tokens (fake timers only; the jwt skew is a unit rule), a REAL grant revoke ending the board (live only via a route-stubbed typed 403) and the STOMP socket closing on it, and the deliberate-sign-out race. Live 10/10 on frontend 809cf75c covers the lapse overlay, URL, pill, title, Sign in again, deliberate Sign out and the K2 backstop; 37-23 re-runs e2e/kitchen-session-lapse.spec.ts | open |  | 2026-10-10T13:57:09.943Z |  |
 | 35 | 37 | unrun-verify | frontend/app/shop/[slug]/checkout/page.tsx |  | 37-22 proven in jest only, not live: the checkout RACE UI (a shop pausing while its checkout page is open: the race copy in role=alert and the stored basket unchanged by content) - live covers the API 409 shop-closed PAUSED and the at-load disable; and the NEEDS_REVIEW JSON-LD rule (only declared windows, an unreadable day never published) - no NEEDS_REVIEW shop exists on the dev DB. 37-23 UAT: pause from the kitchen while a customer is on checkout. | open |  | 2026-10-10T15:10:21.406Z |  |
-| 36 | 37 | deviation | frontend/components/dashboard/shops/opening-schedule-editor.tsx |  | 37-21 orchestrator copy decision under the D-25 owner ruling (2026-10-10), pending the owner's own wording: the editor keeps pre-filling an unreadable NEEDS_REVIEW day as Closed (a save makes it closed, D-15) but its amber line reads 'We couldn't read "{original text}". Customers can still order on this day at any time until you save your hours.' instead of the UI-SPEC's 'This day shows as closed.' (untrue under the ruling); the dashboard needs-review card reads '...for {days}. Customers can order on those days at any time until you save your hours.'; UI-SPEC rows 458/791/794 amended to match. Close when the owner approves or replaces the wording. | open |  | 2026-10-10T15:54:22.775Z |  |
-| 37 | 37 | unrun-verify | frontend/components/dashboard/kitchen/pause-orders-control.tsx |  | 37-21 proven in jest only, not live: the kitchen 403 refusal copy (live, a pause 403 is shop-access-denied at the same STAFF gate as the board's own read, so the 37-18 board-stopped overlay also shows; not provoked live), the in-flight disabled state, the stated-end hide (fake timers), the editor's overlap / missing-time / next-day-spill validation with role=alert, aria-invalid and focus, and the dashboard-home pending / failed-load states. A NEEDS_REVIEW and a LEGACY shop were shown live only through a browser-side rewrite of the shops LIST response (no such shop exists on the dev DB since 37-22's seeder). The slug fix's fail direction (a save renaming /shop/{slug}) was deliberately not run live. 37-23 UAT: tap twice fast, provoke a validation error by hand, read the 403 as a revoked STAFF user. | open |  | 2026-10-10T15:54:22.887Z |  |
+| 36 | 37 | deviation | frontend/components/dashboard/shops/opening-schedule-editor.tsx |  | 37-21 orchestrator copy decision under the D-25 owner ruling (2026-10-10), pending the owner's own wording: the editor keeps pre-filling an unreadable NEEDS_REVIEW day as Closed (a save makes it closed, D-15) but its amber line reads 'We couldn't read "{original text}". Customers can still order on this day at any time until you save your hours.' instead of the UI-SPEC's 'This day shows as closed.' (untrue under the ruling); the dashboard needs-review card reads '...for {days}. Customers can order on those days at any time until you save your hours.'; UI-SPEC rows 458/791/794 amended to match. Close when the owner approves or replaces the wording. | fixed | closed by 261010-ppb at 2752ff50: owner ruling 2026-10-10 - an unreadable day pre-fills as one all-day window with the ruled editor line and card sentence; UI-SPEC 458/791/794 amended | 2026-10-10T15:54:22.775Z | 2026-10-10T18:36:24.564Z |
+| 37 | 37 | unrun-verify | frontend/components/dashboard/kitchen/pause-orders-control.tsx |  | 37-21 and 261010-ppb proven in jest only, not live: a pause refused with shop-access-denied now shows the K2 Access ended overlay and no inline copy (owner ruling 2026-10-10; live it is the same STAFF gate as the board read, not provoked live); the in-flight disabled state, the stated-end hide (fake timers), the editor overlap / missing-time / next-day-spill validation with role=alert, aria-invalid and focus, and the dashboard-home pending / failed-load states. A NEEDS_REVIEW and a LEGACY shop were shown live only through a browser-side rewrite of the shops LIST response (no such shop exists on the dev DB since 37-22 seeder). The slug fix fail direction (a save renaming /shop/{slug}) was deliberately not run live. 37-23 UAT: tap twice fast, provoke a validation error by hand, and read the pause 403 as a revoked STAFF user: expect the K2 Access ended overlay (Your access has ended) and no inline refusal copy. | open |  | 2026-10-10T15:54:22.887Z |  |
+| 38 | 37 | unrun-verify | frontend/components/dashboard/kitchen/kds-sound.tsx |  | 261010-ppb alarm cap (owner ruling 2026-10-10) proven in jest only: an unsilenced board-stopped alarm stops by itself after 120 s while the red overlay stays; 37-23 UAT by ear: a stopped board rings, then falls silent at about 2 minutes, red screen still up | open |  | 2026-10-10T18:36:59.063Z |  |
 
 ````json
 [
@@ -517,10 +518,10 @@ last_updated: 2026-10-10T15:54:22.887Z
     "file": "frontend/components/dashboard/shops/opening-schedule-editor.tsx",
     "line": null,
     "description": "37-21 orchestrator copy decision under the D-25 owner ruling (2026-10-10), pending the owner's own wording: the editor keeps pre-filling an unreadable NEEDS_REVIEW day as Closed (a save makes it closed, D-15) but its amber line reads 'We couldn't read \"{original text}\". Customers can still order on this day at any time until you save your hours.' instead of the UI-SPEC's 'This day shows as closed.' (untrue under the ruling); the dashboard needs-review card reads '...for {days}. Customers can order on those days at any time until you save your hours.'; UI-SPEC rows 458/791/794 amended to match. Close when the owner approves or replaces the wording.",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "closed by 261010-ppb at 2752ff50: owner ruling 2026-10-10 - an unreadable day pre-fills as one all-day window with the ruled editor line and card sentence; UI-SPEC 458/791/794 amended",
     "recorded_at": "2026-10-10T15:54:22.775Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-10T18:36:24.564Z",
     "milestone": "v2.3"
   },
   {
@@ -529,10 +530,23 @@ last_updated: 2026-10-10T15:54:22.887Z
     "phase": "37",
     "file": "frontend/components/dashboard/kitchen/pause-orders-control.tsx",
     "line": null,
-    "description": "37-21 proven in jest only, not live: the kitchen 403 refusal copy (live, a pause 403 is shop-access-denied at the same STAFF gate as the board's own read, so the 37-18 board-stopped overlay also shows; not provoked live), the in-flight disabled state, the stated-end hide (fake timers), the editor's overlap / missing-time / next-day-spill validation with role=alert, aria-invalid and focus, and the dashboard-home pending / failed-load states. A NEEDS_REVIEW and a LEGACY shop were shown live only through a browser-side rewrite of the shops LIST response (no such shop exists on the dev DB since 37-22's seeder). The slug fix's fail direction (a save renaming /shop/{slug}) was deliberately not run live. 37-23 UAT: tap twice fast, provoke a validation error by hand, read the 403 as a revoked STAFF user.",
+    "description": "37-21 and 261010-ppb proven in jest only, not live: a pause refused with shop-access-denied now shows the K2 Access ended overlay and no inline copy (owner ruling 2026-10-10; live it is the same STAFF gate as the board read, not provoked live); the in-flight disabled state, the stated-end hide (fake timers), the editor overlap / missing-time / next-day-spill validation with role=alert, aria-invalid and focus, and the dashboard-home pending / failed-load states. A NEEDS_REVIEW and a LEGACY shop were shown live only through a browser-side rewrite of the shops LIST response (no such shop exists on the dev DB since 37-22 seeder). The slug fix fail direction (a save renaming /shop/{slug}) was deliberately not run live. 37-23 UAT: tap twice fast, provoke a validation error by hand, and read the pause 403 as a revoked STAFF user: expect the K2 Access ended overlay (Your access has ended) and no inline refusal copy.",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-10T15:54:22.887Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 38,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "frontend/components/dashboard/kitchen/kds-sound.tsx",
+    "line": null,
+    "description": "261010-ppb alarm cap (owner ruling 2026-10-10) proven in jest only: an unsilenced board-stopped alarm stops by itself after 120 s while the red overlay stays; 37-23 UAT by ear: a stopped board rings, then falls silent at about 2 minutes, red screen still up",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-10T18:36:59.063Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }
