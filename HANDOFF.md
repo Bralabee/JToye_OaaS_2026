@@ -2,6 +2,20 @@
 
 **Generated 2026-08-24; updated 2026-08-28 (nightly-E2E resolution), 2026-08-31 (customer-surface fixes), 2026-09-02 (QA council `20260902-134741` planned), 2026-09-04 (remediation recorded), 2026-09-05 (review remediated + housekeeping) 2026-09-07 (round 2 concluded, branch reconciled with main) later on 2026-09-07 (dependabot queue + architecture diagrams merged), 2026-09-22 (runtime re-proven, stack torn down for a planned pause), 2026-09-28 (state analysis, `main` green again, Phase 36 opened), 2026-09-29 (Phase 36 executed through plan 36-17) 2026-09-30 (Phase 36 merged), 2026-09-30 evening (#764 and #771 fixed and merged), 2026-10-01 (Spring Boot 4.1 spike, #648 closed), 2026-10-04 (persona testing merged as Phase 37, Spring Boot renumbered to Phase 38, `main` red on a Trivy time-bomb) and 2026-10-04 afternoon (Jackson 2.21.7, nightly 429 fix, review gate re-vendored; pg-backup red) and 2026-10-04 evening (pg-backup red cleared by #890) 2026-10-04 late (de-dup #892, orgos sync, main checkout resolved) and 2026-10-04 night (Phase 38 planned, runtime rebuilt) and 2026-10-08 (Phase 37 executing, worktrees consolidated, #903 merged). Replaces the 2026-08-18 block.** This is the only live block in this file.
 
+**2026-10-10 delta: Phase 37 at 22 of 53 (37-01..37-22 complete); quick tasks 261009-g8m and 261010-ppb done; execution waits on the 37-B PR merge. Resume here.**
+**Where things stand.** Read the head with `git log -1` on `phase-37-ops-readiness` (this checkout, 75bb3211 at writing) and `git log -1 origin/main` (1773fe53 at writing).
+- **Progress.** Waves 1-16 complete. Sub-theme 37-B (37-08..37-15 plus the WINDOWS #29 customer gate) is cut as ONE squash on `phase-37-b-staff-access` (36d7f74b; tree equals tag `cut/phase-37-b-staff-access-v2`; 1 commit ahead of origin/main, 0 behind; unpushed). No PR exists for it yet: the owner opens it with `/gsd-ship` (executors never push). 37-23 (wave 17, the 37-A gate, autonomous:false) has a Task 1 precondition that this PR is merged, and 37-24..37-53 depend on 37-23, so execution waits here.
+- **Runtime.** The compose stack was rebuilt by 37-22 and again by quick 261010-ppb: `scripts/check-runtime-freshness.sh` passes 4/4 at 75bb3211 and `scripts/check-openapi-snapshot-fresh.sh` passes. The vendor realm `jtoye-dev` was set to `ssoSessionMaxLifespan` 50400 through the admin API (3 live users exist outside the template, so no `--override` import); the template matches. The dev tenant carries ~20 stale PENDING seed orders plus two PENDING probe orders from 37-22.
+- **Owner rulings 2026-10-10** (STATE.md decisions, WINDOWS #32-#42, 37-CONTEXT D-14 and D-25): D-25 applied per day (an unreadable legacy day stays open until hours are saved); customers follow option B then option E (reads need any honoured grant, create/update need SHOP_MANAGER, delete needs Group admin); option C (per-shop narrowing) and old-slug 301 aliases are deferred to Phase 39; the slug-keep fix stays in 37-48; the hours editor pre-fills an unreadable day as an all-day window; a pause 403 is answered by the K2 overlay only; the board-stopped alarm stops after 2 minutes; D-14 amended to a 14 h vendor SSO max with idle 30 min unchanged, refresh-token rotation deferred (needs a cross-replica guard before it can be turned on).
+- **Suites at 75bb3211:** jest 2616 tests in 221 suites; core-java unit 1683/0/0/1 skipped, integration 1081/0/0/1 skipped. `scripts/docs-freshness.sh` VOIDs (rc 2) on a 37-17 `.each(TABLE.filter(...))` jest table the block counter cannot read (deferred-items; fix before the phase PR regeneration).
+- **Ledger entries #37-#42 are open by design** (jest-only proofs owed to the 37-23 UAT, the rotation deferral, the staging/production operator step, the Phase 39 items); `workflow.windows_enforce` is false, so they do not block shipping.
+
+**Next, in order:**
+1. Owner: `/gsd-ship` from `phase-37-b-staff-access`, review, merge. The PR body can note that WINDOWS #30 (live proof of the customer gate) is fixed on the phase branch by 37-22's probes.
+2. Then `/gsd-execute-phase 37` from this checkout. It resumes at 37-23, which stops at its blocking-human checkpoint (may 37-A take the shared compose stack) after Task 1.
+3. Plan Phase 39 before 2026-10-26 (unchanged; option C and the slug aliases are noted there).
+
+
 **2026-10-08 delta: Phase 37 is EXECUTING in this checkout (8 of 53 plans done); #903 merged; the worktrees are consolidated. Resume here.**
 **Where things stand.** Read the current head with `git log -1` on `phase-37-ops-readiness` (this checkout) and `git log -1 origin/main`.
 - **Checkout layout.** The main checkout `~/IdeaProjects/JToye_OaaS_2026` is on `phase-37-ops-readiness`, which contains `origin/main` (1773fe53). The `-phase37`, `-phase37-ops` and `-bizalign` worktrees are removed; the merged `phase-31.1-persona-gap-closure` branch is deleted locally and on origin. Only `../oaas-archify-diagrams` remains (leave it alone).
@@ -717,7 +731,7 @@ deletable, and `.worktrees/pr-726-fix` + `feature/fix-pr-726` go with them.
 cd /home/sanmi/IdeaProjects/JToye_OaaS_2026
 git checkout main && git pull --ff-only && git status --short   # expect clean
 
-# Gates. EXPECT 47 x rc=0 — and a VOID (2) is NOT a pass.
+# Gates. EXPECT 48 x rc=0 — and a VOID (2) is NOT a pass.
 for g in scripts/check-*.sh scripts/docs-freshness.sh; do
   bash "$g" >/dev/null 2>&1 || echo "rc=$? $(basename "$g")"
 done
