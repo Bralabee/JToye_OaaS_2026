@@ -137,6 +137,9 @@ public class PublicStorefrontService {
 
     /** The seller block's tenant-pinned read (#789, 31.1-24); used by {@link #getShopBySlug} only. */
     private final TraderIdentityService traderIdentityService;
+
+    /** The one open/paused/closed decision (37-20, D-15): the checkout gate and every public shop read. */
+    private final ShopAvailabilityPolicy availabilityPolicy;
     private final double defaultRadiusKm;
     private final double maxRadiusKm;
 
@@ -149,6 +152,7 @@ public class PublicStorefrontService {
                                    PostcodeGeocoder postcodeGeocoder,
                                    OrderNumberGenerator orderNumberGenerator,
                                    TraderIdentityService traderIdentityService,
+                                   ShopAvailabilityPolicy availabilityPolicy,
                                    @Value("${jtoye.geo.default-radius-km}") double defaultRadiusKm,
                                    @Value("${jtoye.geo.max-radius-km}") double maxRadiusKm) {
         this.shopRepository = shopRepository;
@@ -166,6 +170,7 @@ public class PublicStorefrontService {
         // and neither had a fault-injection seam.
         this.orderNumberGenerator = orderNumberGenerator;
         this.traderIdentityService = traderIdentityService;
+        this.availabilityPolicy = availabilityPolicy;
         // WR-03 LAYER 1 — STARTUP. Validate the platform radius here, where a bad value is a
         // BeanCreationException at boot, rather than only where it becomes a query input. The
         // failure this closes is not hypothetical: GEO_DEFAULT_RADIUS_KM=0 previously produced a
@@ -769,6 +774,9 @@ public class PublicStorefrontService {
         // cross-tenant spoof with 403 before Order/OrderItem rows are minted.
         Shop shop = resolvePublicShopForSlug(slug);
         try {
+            // 37-20 (D-15): a paused shop refuses storefront orders, typed 409 shop-closed, before the
+            // idempotency reservation below, so a refusal leaves no reservation and no order behind.
+            availabilityPolicy.requireTakingOrders(shop);
             // Enforce opening hours — reject orders when shop is closed
             validateShopIsOpen(shop);
 

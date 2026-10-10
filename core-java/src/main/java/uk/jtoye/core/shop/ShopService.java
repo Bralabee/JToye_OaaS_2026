@@ -19,9 +19,12 @@ import uk.jtoye.core.security.TenantContext;
 import uk.jtoye.core.security.access.ShopAccessService;
 import uk.jtoye.core.security.access.ShopRole;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
+import uk.jtoye.core.shop.dto.PauseOrdersRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 import uk.jtoye.core.storage.StorageService;
 
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -39,6 +42,7 @@ public class ShopService {
     private final ShopAccessService shopAccessService;
     private final ShopCacheLoader shopCacheLoader;
     private final PostcodeGeocoder postcodeGeocoder;
+    private final Clock clock;
 
     /**
      * Slugs that must never reach the {@code slug} column, because the storefront
@@ -79,7 +83,8 @@ public class ShopService {
                        TenantCacheEvictor cacheEvictor,
                        ShopAccessService shopAccessService,
                        ShopCacheLoader shopCacheLoader,
-                       PostcodeGeocoder postcodeGeocoder) {
+                       PostcodeGeocoder postcodeGeocoder,
+                       Clock clock) {
         this.shopRepository = shopRepository;
         this.shopMapper = shopMapper;
         this.storageService = storageService;
@@ -87,6 +92,7 @@ public class ShopService {
         this.shopAccessService = shopAccessService;
         this.shopCacheLoader = shopCacheLoader;
         this.postcodeGeocoder = postcodeGeocoder;
+        this.clock = clock;
     }
 
     // createShop inserts a brand-new entity; no existing cache key could match it,
@@ -379,6 +385,51 @@ public class ShopService {
         shopRepository.saveAndFlush(shop);
         cacheEvictor.evictEntity("shops", "getShopById", shopId);
         log.info("Shop {} published flag set to {}", shopId, published);
+    }
+
+    /**
+     * Pause storefront orders (Phase 37-20, D-15): for 20 or 40 minutes from now, or until the vendor
+     * reopens. Gated on STAFF of the shop, because the kitchen is who knows it is overwhelmed (T-37-51: an
+     * ungranted user, or staff of another shop, is refused 403).
+     *
+     * <p>ABSOLUTE, never cumulative: the two pause columns are set outright, so a repeat leaves the same state
+     * (a repeated timed pause re-arms from the repeat) and a retry cannot stack pauses. Only the storefront
+     * checkout reads the pause; vendor, REST and MCP orders are not blocked (a phone order taken by staff is
+     * legitimate), and MCP gets no pause tool (operational kitchen control stays human-in-the-loop).
+     */
+    public ShopDto pauseOrders(UUID shopId, PauseOrdersRequest request) {
+        shopAccessService.require(shopId, ShopRole.STAFF);
+        if (request == null || !request.isOneValidChoice()) {
+            // The controller's @Valid refuses this first; this keeps a non-HTTP caller to the same contract.
+            throw new IllegalArgumentException("send minutes 20 or 40, or untilReopened true, and not both");
+        }
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, requireTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+        if (request.isIndefinite()) {
+            shop.setOrdersPausedIndefinitely(true);
+            shop.setOrdersPausedUntil(null);
+        } else {
+            shop.setOrdersPausedIndefinitely(false);
+            shop.setOrdersPausedUntil(OffsetDateTime.now(clock).plusMinutes(request.getMinutes()));
+        }
+        shop = shopRepository.saveAndFlush(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
+        log.info("Paused storefront orders for shop {}: {}", shopId,
+                request.isIndefinite() ? "until reopened" : "until " + shop.getOrdersPausedUntil());
+        return shopMapper.toDto(shop);
+    }
+
+    /** End any pause on the shop (D-15 "Resume orders"). Absolute: resuming an unpaused shop is a no-op. */
+    public ShopDto resumeOrders(UUID shopId) {
+        shopAccessService.require(shopId, ShopRole.STAFF);
+        Shop shop = shopRepository.findByIdAndTenantId(shopId, requireTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found: " + shopId));
+        shop.setOrdersPausedIndefinitely(false);
+        shop.setOrdersPausedUntil(null);
+        shop = shopRepository.saveAndFlush(shop);
+        cacheEvictor.evictEntity("shops", "getShopById", shopId);
+        log.info("Resumed storefront orders for shop {}", shopId);
+        return shopMapper.toDto(shop);
     }
 
     public void deleteShop(UUID shopId) {

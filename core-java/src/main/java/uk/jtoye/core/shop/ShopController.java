@@ -18,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.shop.dto.CreateShopRequest;
+import uk.jtoye.core.shop.dto.PauseOrdersRequest;
 import uk.jtoye.core.shop.dto.ShopDto;
 
 import java.net.URI;
@@ -160,6 +161,46 @@ public class ShopController {
     @Operation(summary = "Remove shop banner")
     public ResponseEntity<ShopDto> removeBanner(@PathVariable UUID id) {
         return ResponseEntity.ok(shopService.removeBanner(id));
+    }
+
+    /**
+     * Pause storefront orders (Phase 37-20, D-15).
+     * PUT /shops/{id}/pause
+     */
+    @PutMapping("/{id}/pause")
+    @Operation(summary = "Pause storefront orders",
+            description = "Stops the storefront taking orders for this shop: `{\"minutes\": 20}` or "
+                    + "`{\"minutes\": 40}` from now, or `{\"untilReopened\": true}` until DELETE /shops/{id}/pause. "
+                    + "Any other value is a 400. The write is absolute (it sets the pause, it never adds to it), so a "
+                    + "retry cannot stack pauses. While paused, a storefront order is refused 409 `shop-closed` with "
+                    + "reason PAUSED. Vendor, REST and MCP orders are not blocked. Requires STAFF on the shop.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Paused; the shop with its pause fields"),
+            @ApiResponse(responseCode = "400", description = "Not one of 20 minutes, 40 minutes or until reopened"),
+            @ApiResponse(responseCode = "403", description = "No STAFF grant on this shop (shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "Shop not found")
+    })
+    public ResponseEntity<ShopDto> pauseOrders(
+            @Parameter(description = "Shop ID") @PathVariable UUID id,
+            @Valid @RequestBody PauseOrdersRequest req) {
+        return ResponseEntity.ok(shopService.pauseOrders(id, req));
+    }
+
+    /**
+     * Resume storefront orders (Phase 37-20, D-15).
+     * DELETE /shops/{id}/pause
+     */
+    @DeleteMapping("/{id}/pause")
+    @Operation(summary = "Resume storefront orders",
+            description = "Ends any pause on this shop. Absolute: resuming a shop that is not paused changes nothing. "
+                    + "Requires STAFF on the shop.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Resumed; the shop with its pause fields cleared"),
+            @ApiResponse(responseCode = "403", description = "No STAFF grant on this shop (shop-access-denied)"),
+            @ApiResponse(responseCode = "404", description = "Shop not found")
+    })
+    public ResponseEntity<ShopDto> resumeOrders(@Parameter(description = "Shop ID") @PathVariable UUID id) {
+        return ResponseEntity.ok(shopService.resumeOrders(id));
     }
 
     /**

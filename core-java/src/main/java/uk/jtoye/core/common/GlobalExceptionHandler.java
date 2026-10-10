@@ -50,6 +50,7 @@ import uk.jtoye.core.exception.ReservedSlugException;
 import uk.jtoye.core.exception.ResourceInUseException;
 import uk.jtoye.core.exception.ResourceNotFoundException;
 import uk.jtoye.core.exception.ShopAccessDeniedException;
+import uk.jtoye.core.exception.ShopClosedException;
 import uk.jtoye.core.exception.SqlStateExtractor;
 import uk.jtoye.core.media.exception.DecompressionBombException;
 import uk.jtoye.core.media.exception.MediaRedriveRejectedException;
@@ -839,6 +840,27 @@ public class GlobalExceptionHandler {
      * {@code currentAllergens} (AllergenCatalog bit order), {@code acknowledgedAllergenMask} and
      * {@code lines} (basket order: productId, productName, allergenMask, allergens).
      */
+    /**
+     * Phase 37-20 (D-15, RWO-022 / UXT-022): a storefront order reached a shop that is not taking orders
+     * now, because the vendor paused orders or its opening hours do not cover the current UK time. 409, a
+     * conflict with the shop's state, refused before any write (no order, no idempotency reservation).
+     *
+     * <p>{@code reason} ({@code PAUSED | CLOSED_NOW | CLOSED_TODAY | NO_HOURS}) and {@code reopensAt} (null
+     * when no reopening time is known) are typed properties, so a client or agent branches and shows the
+     * reopening time without parsing the sentence; the detail stays the human wording the customer reads
+     * (goods P2-CHA-14).
+     */
+    @ExceptionHandler(ShopClosedException.class)
+    public ProblemDetail handleShopClosed(ShopClosedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Shop not taking orders");
+        problem.setType(URI.create("https://jtoye.uk/errors/shop-closed"));
+        problem.setProperty("code", "SHOP_CLOSED");
+        problem.setProperty("reason", ex.getReason());
+        problem.setProperty("reopensAt", ex.getReopensAt());
+        return problem;
+    }
+
     @ExceptionHandler(AllergenAcknowledgementStaleException.class)
     public ProblemDetail handleAllergenAcknowledgementStale(AllergenAcknowledgementStaleException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());

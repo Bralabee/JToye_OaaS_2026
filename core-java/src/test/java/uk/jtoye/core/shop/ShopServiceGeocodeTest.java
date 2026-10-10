@@ -289,7 +289,7 @@ class ShopServiceGeocodeTest {
             shopService = new ShopService(shopRepository, shopMapper, storageService, cacheEvictor,
                     shopAccessService,
                     new ShopService.ShopCacheLoader(shopRepository, shopMapper),
-                    geocoder);
+                    geocoder, java.time.Clock.systemUTC());
             TenantContext.set(tenantId);
 
             // The geocoder is the REAL contract from 33-02: table-authoritative, Optional out,
