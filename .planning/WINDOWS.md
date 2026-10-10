@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 9
 waived_count: 0
-fixed_count: 24
-total_count: 34
-last_updated: 2026-10-10T13:57:09.943Z
+fixed_count: 26
+total_count: 35
+last_updated: 2026-10-10T15:10:21.406Z
 ---
 
 # Broken Windows Ledger
@@ -44,11 +44,12 @@ last_updated: 2026-10-10T13:57:09.943Z
 | 27 | 37 | deviation | frontend/app/dashboard/products/import/page.tsx |  | 37-13 made a CSV row with no shop_id and no shopId the per-row error 'shop required' (for a Group admin too); the dashboard import page still posts the file without shopId, so every dashboard import reports 'shop required' and creates nothing until 37-14 sends the switcher shop (same 37-B PR) | fixed |  | 2026-10-09T01:23:06.434Z | 2026-10-09T01:42:02.683Z |
 | 28 | 37 | unrun-verify | frontend/app/shop/[slug]/checkout/page.tsx |  | 37-14 VAT display rule (no VAT row for a seller without a VAT number, the B7 note), the product-form VAT rate Select, the import target and the copy-to-shop dialog are proven in jest only; no live browser run, because the shared runtime predates 37-13 and is rebuilt at 37-15 | fixed |  | 2026-10-09T01:42:09.320Z | 2026-10-09T09:35:11.689Z |
 | 29 | 37 | unmet-truth | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | 37-15 live: D-06 'ungranted means no access' does not hold for /api/v1/customers. A tenant user with no shop_staff grant (fresh, or revoked) read all 8 tenant A customers (names, emails, phones) with GET 200 and created one with POST 201; Phase 23 left CustomerController tenant-scoped, not shop-scoped, by design, which strict OFF hid. Needs an owner ruling on the customer access rule before the 37-B PR merges RULED 2026-10-09 (owner, option B): every /api/v1/customers operation requires an honoured grant under D-06 (ShopAccessService.requireAnyAccess, the staff/me predicate), checked before the Idempotency-Key replay; proven in Testcontainers by CustomerAccessGateIntegrationTest; option C (per-shop narrowing) and option E (a SHOP_MANAGER floor on customer writes and staff DELETE) are separate future rulings. | fixed |  | 2026-10-09T09:35:11.795Z | 2026-10-09T11:24:15.166Z |
-| 30 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | WINDOWS #29 customer gate is proven in Testcontainers only; the compose runtime predates it, so check-runtime-freshness reports core-java and check-openapi-snapshot-fresh reports the five new 403s until the next rebuild; live proof owed at the 37-B ship: ungranted GET /api/v1/customers 403 shop-access-denied, STAFF 200, an ungranted dashboard login lands on the no-access page | open |  | 2026-10-09T11:24:20.204Z |  |
+| 30 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java |  | WINDOWS #29 customer gate is proven in Testcontainers only; the compose runtime predates it, so check-runtime-freshness reports core-java and check-openapi-snapshot-fresh reports the five new 403s until the next rebuild; live proof owed at the 37-B ship: ungranted GET /api/v1/customers 403 shop-access-denied, STAFF 200, an ungranted dashboard login lands on the no-access page | fixed | closed by 37-22 at cb8cf9d1 (core-java rebuilt, first since the customer gate): ungranted GET /api/v1/customers 403 shop-access-denied (admin control 200); STAFF grant -> 200; revoke 204 -> same token 403 (evidence/37-22-live-probes.md) | 2026-10-09T11:24:20.204Z | 2026-10-10T15:09:55.578Z |
 | 31 | 37 | stub | frontend/app/dashboard/kitchen/page.tsx | 612 | 37-17 passes useKitchenAlert stopped:false and deriveFeedState no signedOut/noAccess: the K2 board-stopped state, the session-lapse and the access-ended inputs are 37-18's to wire (the hook and the pill already honour them, tested). Close when 37-18 wires all three. | fixed | closed by 37-18 at a67cf8f0 (stopped + signedOut wired at b98a6608, noAccess at a67cf8f0) | 2026-10-09T13:23:23.843Z | 2026-10-10T13:56:51.218Z |
 | 32 | 37 | deviation | core-java/src/main/java/uk/jtoye/core/storefront/ShopAvailabilityPolicy.java |  | D-25 owner ruling 2026-10-10 (accepted consumer-safety risk): a NEEDS_REVIEW shop's day whose free text V80 could not read keeps taking storefront orders all day (the pre-D-15 fail-open) until the vendor saves structured hours; read days and days written Closed are enforced as before deploy. Close when no shop is NEEDS_REVIEW, or by a new owner ruling. | open |  | 2026-10-10T13:14:21.463Z |  |
-| 33 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/shop/ShopController.java |  | 37-20 pause endpoints, the 409 shop-closed refusal and the new ShopDto/PublicShopDto fields are proven in Testcontainers only; the compose core-java predates them (and V80, WINDOWS #30). Owed at the next core-java rebuild: PUT /shops/{id}/pause then a storefront order 409 PAUSED, DELETE then 201, GET /public/shops/{slug} openNow, the V80 NOTICE counts, check-openapi-snapshot-fresh green. | open |  | 2026-10-10T13:14:21.570Z |  |
+| 33 | 37 | unrun-verify | core-java/src/main/java/uk/jtoye/core/shop/ShopController.java |  | 37-20 pause endpoints, the 409 shop-closed refusal and the new ShopDto/PublicShopDto fields are proven in Testcontainers only; the compose core-java predates them (and V80, WINDOWS #30). Owed at the next core-java rebuild: PUT /shops/{id}/pause then a storefront order 409 PAUSED, DELETE then 201, GET /public/shops/{slug} openNow, the V80 NOTICE counts, check-openapi-snapshot-fresh green. | fixed | closed by 37-22 at cb8cf9d1: V80 applied on the dev DB (LEGACY_ALWAYS_OPEN=5, MIGRATED_FROM_TEXT=0, NEEDS_REVIEW=0); ungranted pause 403; STAFF pause 200 -> public openNow false -> guest order 409 shop-closed PAUSED, nothing written; resume 200 -> same key 201; check-openapi-snapshot-fresh PASS (121 paths), check-runtime-freshness PASS 4/4 (evidence/37-22-live-probes.md) | 2026-10-10T13:14:21.570Z | 2026-10-10T15:09:55.693Z |
 | 34 | 37 | unrun-verify | frontend/components/dashboard/kitchen/kds-board-stopped.tsx |  | 37-18 proven in jest only, not live: the alarm (3x 440 Hz square every 3 s through the shared AudioContext; audibility and distinctness from the chime are a by-ear 37-23 UAT row), Silence alarm, the silent token refresh over real 5-minute Keycloak tokens (fake timers only; the jwt skew is a unit rule), a REAL grant revoke ending the board (live only via a route-stubbed typed 403) and the STOMP socket closing on it, and the deliberate-sign-out race. Live 10/10 on frontend 809cf75c covers the lapse overlay, URL, pill, title, Sign in again, deliberate Sign out and the K2 backstop; 37-23 re-runs e2e/kitchen-session-lapse.spec.ts | open |  | 2026-10-10T13:57:09.943Z |  |
+| 35 | 37 | unrun-verify | frontend/app/shop/[slug]/checkout/page.tsx |  | 37-22 proven in jest only, not live: the checkout RACE UI (a shop pausing while its checkout page is open: the race copy in role=alert and the stored basket unchanged by content) - live covers the API 409 shop-closed PAUSED and the at-load disable; and the NEEDS_REVIEW JSON-LD rule (only declared windows, an unreadable day never published) - no NEEDS_REVIEW shop exists on the dev DB. 37-23 UAT: pause from the kitchen while a customer is on checkout. | open |  | 2026-10-10T15:10:21.406Z |  |
 
 ````json
 [
@@ -436,10 +437,10 @@ last_updated: 2026-10-10T13:57:09.943Z
     "file": "core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java",
     "line": null,
     "description": "WINDOWS #29 customer gate is proven in Testcontainers only; the compose runtime predates it, so check-runtime-freshness reports core-java and check-openapi-snapshot-fresh reports the five new 403s until the next rebuild; live proof owed at the 37-B ship: ungranted GET /api/v1/customers 403 shop-access-denied, STAFF 200, an ungranted dashboard login lands on the no-access page",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "closed by 37-22 at cb8cf9d1 (core-java rebuilt, first since the customer gate): ungranted GET /api/v1/customers 403 shop-access-denied (admin control 200); STAFF grant -> 200; revoke 204 -> same token 403 (evidence/37-22-live-probes.md)",
     "recorded_at": "2026-10-09T11:24:20.204Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-10T15:09:55.578Z",
     "milestone": "v2.3"
   },
   {
@@ -475,10 +476,10 @@ last_updated: 2026-10-10T13:57:09.943Z
     "file": "core-java/src/main/java/uk/jtoye/core/shop/ShopController.java",
     "line": null,
     "description": "37-20 pause endpoints, the 409 shop-closed refusal and the new ShopDto/PublicShopDto fields are proven in Testcontainers only; the compose core-java predates them (and V80, WINDOWS #30). Owed at the next core-java rebuild: PUT /shops/{id}/pause then a storefront order 409 PAUSED, DELETE then 201, GET /public/shops/{slug} openNow, the V80 NOTICE counts, check-openapi-snapshot-fresh green.",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "closed by 37-22 at cb8cf9d1: V80 applied on the dev DB (LEGACY_ALWAYS_OPEN=5, MIGRATED_FROM_TEXT=0, NEEDS_REVIEW=0); ungranted pause 403; STAFF pause 200 -> public openNow false -> guest order 409 shop-closed PAUSED, nothing written; resume 200 -> same key 201; check-openapi-snapshot-fresh PASS (121 paths), check-runtime-freshness PASS 4/4 (evidence/37-22-live-probes.md)",
     "recorded_at": "2026-10-10T13:14:21.570Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-10T15:09:55.693Z",
     "milestone": "v2.3"
   },
   {
@@ -491,6 +492,19 @@ last_updated: 2026-10-10T13:57:09.943Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-10T13:57:09.943Z",
+    "resolved_at": null,
+    "milestone": "v2.3"
+  },
+  {
+    "id": 35,
+    "kind": "unrun-verify",
+    "phase": "37",
+    "file": "frontend/app/shop/[slug]/checkout/page.tsx",
+    "line": null,
+    "description": "37-22 proven in jest only, not live: the checkout RACE UI (a shop pausing while its checkout page is open: the race copy in role=alert and the stored basket unchanged by content) - live covers the API 409 shop-closed PAUSED and the at-load disable; and the NEEDS_REVIEW JSON-LD rule (only declared windows, an unreadable day never published) - no NEEDS_REVIEW shop exists on the dev DB. 37-23 UAT: pause from the kitchen while a customer is on checkout.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-10T15:10:21.406Z",
     "resolved_at": null,
     "milestone": "v2.3"
   }

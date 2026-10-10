@@ -290,3 +290,29 @@ where it must be resolved.
 - **The pre-rebuild frontend image (7e5a7401) was pruned before it could be read**, so the
   "old image lacks the new strings" direction of the bundle check is VOID (docker run rc 125). The
   in-image positive control (a 37-17 string) and the absent-token negative control stand in for it.
+
+## From 37-22 (customer surfaces read the server's availability)
+
+- **37-21 must keep the storefront's "Opening hours" list honest.** `/shop/[slug]` still renders
+  that collapsible list from the free-text `openingHours` (display only; it decides nothing since
+  37-22). Saving structured hours (`ShopService.applySchedule`) leaves the old text in
+  `opening_hours`, so once 37-21's editor saves a STRUCTURED schedule the list would show the OLD
+  text beside a pill driven by the new hours. 37-21 (or a follow-up) should render the list from
+  `openingSchedule` for STRUCTURED and MIGRATED_FROM_TEXT shops, and keep the text for
+  NEEDS_REVIEW (whose unreadable days are `[]` in the schedule but OPEN on the server, so a
+  schedule-driven list would print "Closed" for a day customers can order on). Not measured on a
+  saved shop: the editor does not exist yet.
+- **37-21 copy under the D-25 ruling (nothing new learned beyond 37-20's note).** The customer side
+  now says exactly what the server decides, so a NEEDS_REVIEW shop's unreadable day reads "Open now"
+  on the storefront and in the cards. The vendor-facing line 37-21 needs is still the owner's
+  wording, along the lines of "customers can still order on this day until you save your hours".
+  JSON-LD does NOT publish those days (37-22 decision: only declared windows), so search engines see
+  the shop as closed on an unreadable day while customers can order. That under-claim is deliberate
+  (no hours the vendor never stated); it ends when the vendor saves hours.
+- **Docs metrics.** 37-22 adds jest `shop-availability-notice.test.tsx` (14) and
+  `shop-closed.test.tsx` (8), changes `storefront-server` (+2), `structured-data` (+8),
+  `opening-hours` (8 -> 4), `shop-card` (+5) and `shop-discovery-client` (+1) (jest 2550/215
+  against the re-measured 2516/213), one JUnit case in `ShopAvailabilityPolicyTest` (26) and a new
+  3-method IT `DemoDataSeederHoursIntegrationTest`. `count-test-blocks.mjs --per-file` counts every
+  changed jest file equal to its executed count (116 = 116 over the 8 files). The 37-17
+  `.each(TABLE.filter(...))` VOID is untouched; regenerate `docs/metrics.json` after it is fixed.

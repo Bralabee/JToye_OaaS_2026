@@ -1,0 +1,259 @@
+# 37-22 break arms (clean -> arms -> clean; every arm on a committed state, restored by sha256)
+
+## Task 1 acceptance: isOpenNow is no longer called outside tests
+== pre-Task-2 tree (HEAD e745dc96): rg -uu -n 'isOpenNow\(' frontend/app frontend/components frontend/lib --glob '!**/__tests__/**'
+frontend/lib/opening-hours.ts:73:export function isOpenNow(hours: Record<string, string> | null | undefined): boolean {
+frontend/app/shop/shop-discovery-client.tsx:37:  const open = isOpenNow(shop.openingHours)
+rc=0
+== pre-plan tree b7c41e73 (git grep, same scope)
+b7c41e73:frontend/app/shop/[slug]/shop-detail-client.tsx:381:      setOpen(isOpenNow(shopRes.data.openingHours))
+b7c41e73:frontend/app/shop/shop-discovery-client.tsx:37:  const open = isOpenNow(shop.openingHours)
+b7c41e73:frontend/lib/opening-hours.ts:73:export function isOpenNow(hours: Record<string, string> | null | undefined): boolean {
+b7c41e73:frontend/lib/storefront-server.ts:188:      isOpen: isOpenNow(shopRes.data.openingHours),
+rc=0
+== post-Task-2 tree (962c0a8f): same rg -> rc=1, no output; positive control (any mention of isOpenNow in frontend) rc=0 with 11 comment/test hits
+
+Task 1 break arms on committed e745dc96 (2026-10-10T14:13:06Z)
+CLEAN-BEFORE: Tests:       173 passed, 173 total
+=== ARM 1-A-pill-reverts-to-isOpenNow: app/shop/[slug]/shop-detail-client.tsx (jest rc=1)
+Tests:       7 failed, 166 passed, 173 total
+  ● /shop/[slug] header pill and notice read the server (F8) › F8: a paused shop whose hours are open now reads 'Paused', never 'Open now'
+    expected document not to contain element, found <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-300" data-testid="shop-availability-pill"><span aria-hidden="true" class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />Open now</span> instead
+  ● /shop/[slug] header pill and notice read the server (F8) › the notice sits between the shop header and the menu
+    Received: null
+  ● /shop/[slug] header pill and notice read the server (F8) › a closed shop reads 'Closed' and shows when it opens
+    Expected element to have text content:
+    Received:
+  ● /shop/[slug] header pill and notice read the server (F8) › an open shop reads 'Open now' even when its free-text hours say closed (the server decides)
+    Expected element to have text content:
+    Received:
+  ● /shop/[slug] header pill and notice read the server (F8) › openNow absent (an older backend): no pill text and no notice
+    Received: <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-300" data-testid="shop-availability-pill"><span aria-hidden="true" class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />Open now</span>
+restore: before=7af00a58df6f854a3231bcbb9feac7055f49b1211045baa1d1d56fe6e2ce9ba5 after=7af00a58df6f854a3231bcbb9feac7055f49b1211045baa1d1d56fe6e2ce9ba5 RESTORED-BY-CONTENT
+=== ARM 1-B-ssr-fetch-revalidate-60: lib/storefront-server.ts (jest rc=1)
+Tests:       1 failed, 172 passed, 173 total
+  ● loadShopDetail › fetches every storefront call with cache: no-store, so a cached page cannot say 'Open now' for a paused shop (UI-SPEC open item 5)
+    expect(received).toEqual(expected) // deep equality
+    - Expected  - 1
+    + Received  + 1
+restore: before=5b82d41df63c52e0301e75e73d6e0bc2c4f011c7fd0b7923ef32d4ea813b4bca after=5b82d41df63c52e0301e75e73d6e0bc2c4f011c7fd0b7923ef32d4ea813b4bca RESTORED-BY-CONTENT
+=== ARM 1-C-times-worded-in-UTC: lib/shop-availability.ts (jest rc=1)
+Tests:       5 failed, 168 passed, 173 total
+  ● ShopAvailabilityNotice: K3 customer copy from the server's fields › a timed pause: '{Shop} isn't taking orders right now' and 'Back at {HH:MM}.' in UK time
+    Expected element to have text content:
+    Received:
+  ● ShopAvailabilityNotice: K3 customer copy from the server's fields › a pause that outlasts today's hours names the day orders come back, not a time that reads as today
+    Expected element to have text content:
+    Received:
+  ● ShopAvailabilityNotice: K3 customer copy from the server's fields › closed with a next opening: 'Closed now · Opens Tuesday at 09:00.'
+    Expected element to have text content:
+    Received:
+  ● /shop/[slug] header pill and notice read the server (F8) › F8: a paused shop whose hours are open now reads 'Paused', never 'Open now'
+    Expected element to have text content:
+    Received:
+restore: before=98c7430d8bdadd90cf243e010d983196de218d6f77455fa75aa74a3c708238d4 after=98c7430d8bdadd90cf243e010d983196de218d6f77455fa75aa74a3c708238d4 RESTORED-BY-CONTENT
+=== ARM 1-D-absent-openNow-read-as-open: lib/shop-availability.ts (jest rc=1)
+Tests:       1 failed, 172 passed, 173 total
+  ● /shop/[slug] header pill and notice read the server (F8) › openNow absent (an older backend): no pill text and no notice
+    Received: <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-300" data-testid="shop-availability-pill"><span aria-hidden="true" class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />Open now</span>
+restore: before=98c7430d8bdadd90cf243e010d983196de218d6f77455fa75aa74a3c708238d4 after=98c7430d8bdadd90cf243e010d983196de218d6f77455fa75aa74a3c708238d4 RESTORED-BY-CONTENT
+=== ARM 1-E-openNow-wins-over-pause: lib/shop-availability.ts (jest rc=1)
+Tests:       5 failed, 168 passed, 173 total
+  ● ShopAvailabilityNotice: K3 customer copy from the server's fields › a timed pause: '{Shop} isn't taking orders right now' and 'Back at {HH:MM}.' in UK time
+    Expected element to have text content:
+    Received:
+  ● ShopAvailabilityNotice: K3 customer copy from the server's fields › a pause that outlasts today's hours names the day orders come back, not a time that reads as today
+    Expected element to have text content:
+    Received:
+  ● ShopAvailabilityNotice: K3 customer copy from the server's fields › paused until the vendor reopens: 'Check back later.'
+    Expected element to have text content:
+    Received:
+  ● /shop/[slug] header pill and notice read the server (F8) › F8: a paused shop whose hours are open now reads 'Paused', never 'Open now'
+    Expected element to have text content:
+    Received:
+restore: before=98c7430d8bdadd90cf243e010d983196de218d6f77455fa75aa74a3c708238d4 after=98c7430d8bdadd90cf243e010d983196de218d6f77455fa75aa74a3c708238d4 RESTORED-BY-CONTENT
+CLEAN-AFTER: Tests:       173 passed, 173 total
+?? .planning/milestone.lock
+
+Task 2 break arms on committed 962c0a8f (2026-10-10T14:18:42Z)
+CLEAN-BEFORE: Tests:       663 passed, 663 total
+=== ARM 2-A-F9-legacy-published-as-24x7: lib/structured-data.ts (jest rc=1)
+Tests:       1 failed, 662 passed, 663 total
+  ● shopStructuredData: opening hours from the structured schedule (37-22) › F9: a legacy-always-open shop publishes NO openingHoursSpecification (no 24/7 claim it never made)
+    Received: [{"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Monday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Tuesday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Wednesday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Thursday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Friday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Saturday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Sunday", "opens": "00:00"}]
+  ● shopStructuredData: opening hours from the structured schedule (37-22) › F9: a legacy-always-open shop publishes NO openingHoursSpecification (no 24/7 claim it never made)
+    Received: [{"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Monday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Tuesday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Wednesday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Thursday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Friday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Saturday", "opens": "00:00"}, {"@type": "OpeningHoursSpecification", "closes": "23:59", "dayOfWeek": "https://schema.org/Sunday", "opens": "00:00"}]
+restore: before=422a5c6fde61fe79dcbd9d625275f735bf28a3dc7e55348a78c8fb06307e9e21 after=422a5c6fde61fe79dcbd9d625275f735bf28a3dc7e55348a78c8fb06307e9e21 RESTORED-BY-CONTENT
+=== ARM 2-B-needs-review-unreadable-day-as-24h: lib/structured-data.ts (jest rc=1)
+Tests:       1 failed, 662 passed, 663 total
+  ● shopStructuredData: opening hours from the structured schedule (37-22) › NEEDS_REVIEW (D-25): only the windows the vendor's text declared; an unreadable day is not published as 24 hours
+    expect(received).toEqual(expected) // deep equality
+    - Expected  -  0
+    + Received  + 36
+  ● shopStructuredData: opening hours from the structured schedule (37-22) › NEEDS_REVIEW (D-25): only the windows the vendor's text declared; an unreadable day is not published as 24 hours
+    expect(received).toEqual(expected) // deep equality
+    - Expected  -  0
+    + Received  + 36
+restore: before=422a5c6fde61fe79dcbd9d625275f735bf28a3dc7e55348a78c8fb06307e9e21 after=422a5c6fde61fe79dcbd9d625275f735bf28a3dc7e55348a78c8fb06307e9e21 RESTORED-BY-CONTENT
+=== ARM 2-C-pause-changes-json-ld: lib/structured-data.ts (jest rc=1)
+Tests:       1 failed, 662 passed, 663 total
+  ● shopStructuredData: opening hours from the structured schedule (37-22) › a pause never reaches the JSON-LD: a paused shop publishes its schedule unchanged
+    expect(received).toEqual(expected) // deep equality
+    - Expected  - 8
+    + Received  + 0
+  ● shopStructuredData: opening hours from the structured schedule (37-22) › a pause never reaches the JSON-LD: a paused shop publishes its schedule unchanged
+    expect(received).toEqual(expected) // deep equality
+    - Expected  - 8
+    + Received  + 0
+restore: before=422a5c6fde61fe79dcbd9d625275f735bf28a3dc7e55348a78c8fb06307e9e21 after=422a5c6fde61fe79dcbd9d625275f735bf28a3dc7e55348a78c8fb06307e9e21 RESTORED-BY-CONTENT
+=== ARM 2-E-discovery-card-ignores-the-pause: app/shop/shop-discovery-client.tsx (jest rc=1)
+Tests:       1 failed, 662 passed, 663 total
+  ● ShopDiscoveryClient — the open badge is the server's (37-22) › reads Open / Paused / Closed from openNow and the pause, and shows no badge when openNow is absent
+    Expected element to have text content:
+    Received:
+  ● ShopDiscoveryClient — the open badge is the server's (37-22) › reads Open / Paused / Closed from openNow and the pause, and shows no badge when openNow is absent
+    Expected element to have text content:
+    Received:
+restore: before=4d9ab9b1a64a4d067e15e98633871fd20bb911c7ce63d60aa2d00f35e88e0809 after=4d9ab9b1a64a4d067e15e98633871fd20bb911c7ce63d60aa2d00f35e88e0809 RESTORED-BY-CONTENT
+=== ARM 2-G-landing-badge-in-flow: components/marketing/shop-card.tsx (jest rc=1)
+Tests:       1 failed, 662 passed, 663 total
+  ● ShopCard availability badge (37-22) › sits out of flow, so a card with a badge is the same height as one without (CLS)
+    expect(received).toContain(expected) // indexOf
+    Expected value: "absolute"
+    Received array: ["left-2", "top-2", "rounded-full", "px-2", "py-0.5", "text-xs", "font-bold", "shadow-sm", "bg-emerald-700", "text-white"]
+  ● ShopCard availability badge (37-22) › sits out of flow, so a card with a badge is the same height as one without (CLS)
+    expect(received).toContain(expected) // indexOf
+    Expected value: "absolute"
+    Received array: ["left-2", "top-2", "rounded-full", "px-2", "py-0.5", "text-xs", "font-bold", "shadow-sm", "bg-emerald-700", "text-white"]
+restore: before=2eaf03d73ad36153bca2aa4c3e2fdbf6c20424f8377288d2223327211d4c710f after=2eaf03d73ad36153bca2aa4c3e2fdbf6c20424f8377288d2223327211d4c710f RESTORED-BY-CONTENT
+=== ARM 2-H-decider-re-exported: lib/opening-hours.ts (jest rc=1)
+Tests:       1 failed, 662 passed, 663 total
+  ● lib/opening-hours decides nothing (37-22) › exports no open/closed decider and no free-text parser
+    expect(received).not.toContain(expected) // indexOf
+    Expected value: not "isOpenNow"
+    Received array:     ["DAY_LABELS", "DAY_ORDER", "SCHEMA_DAYS", "isOpenNow"]
+  ● lib/opening-hours decides nothing (37-22) › exports no open/closed decider and no free-text parser
+    expect(received).not.toContain(expected) // indexOf
+    Expected value: not "isOpenNow"
+    Received array:     ["DAY_LABELS", "DAY_ORDER", "SCHEMA_DAYS", "isOpenNow"]
+restore: before=239e9b0d58f4f8f690c856a0a066493d834362be57d823ba92e9995b2d8966e2 after=239e9b0d58f4f8f690c856a0a066493d834362be57d823ba92e9995b2d8966e2 RESTORED-BY-CONTENT
+CLEAN-AFTER: Tests:       663 passed, 663 total
+?? .planning/milestone.lock
+
+Task 3 frontend break arms on committed cb8cf9d1 (2026-10-10T14:27:44Z)
+CLEAN-BEFORE: Tests:       109 passed, 109 total
+=== ARM 3-A-race-not-recognised: app/shop/[slug]/checkout/page.tsx (jest rc=1)
+Tests:       3 failed, 106 passed, 109 total
+  ● Console
+  ● the checkout race: the shop stops while the customer is on the page (typed shop-closed) › renders the race copy in the role=alert slot and keeps the stored basket, by content
+    Expected element to have text content:
+    Received:
+  ● the checkout race: the shop stops while the customer is on the page (typed shop-closed) › a closed shop with no reopening time ends the race copy with 'Check back later.'
+    Expected element to have text content:
+    Received:
+  ● the checkout race: the shop stops while the customer is on the page (typed shop-closed) › a closed shop that reopens another day names the day
+    Expected element to have text content:
+    Received:
+restore: before=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 after=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 RESTORED-BY-CONTENT
+=== ARM 3-B-race-clears-the-basket: app/shop/[slug]/checkout/page.tsx (jest rc=1)
+Tests:       3 failed, 106 passed, 109 total
+  ● Console
+  ● the checkout race: the shop stops while the customer is on the page (typed shop-closed) › renders the race copy in the role=alert slot and keeps the stored basket, by content
+  ● the checkout race: the shop stops while the customer is on the page (typed shop-closed) › a closed shop with no reopening time ends the race copy with 'Check back later.'
+  ● the checkout race: the shop stops while the customer is on the page (typed shop-closed) › a closed shop that reopens another day names the day
+restore: before=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 after=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 RESTORED-BY-CONTENT
+=== ARM 3-C-no-aria-describedby: app/shop/[slug]/checkout/page.tsx (jest rc=1)
+Tests:       2 failed, 107 passed, 109 total
+  ● Console
+  ● checkout when the server says the shop is not taking orders at page load (K3) › closed: Place order is disabled and described by the notice at the top of step 1
+    expect(received).toContain(expected) // indexOf
+    Expected value: "shop-availability-explainer"
+    Received array: [""]
+  ● checkout when the server says the shop is not taking orders at page load (K3) › paused: Place order is disabled with '{Shop} isn't taking orders right now'
+    expect(received).toContain(expected) // indexOf
+    Received has value: null
+restore: before=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 after=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 RESTORED-BY-CONTENT
+=== ARM 3-D-disabled-when-openNow-absent: app/shop/[slug]/checkout/page.tsx (jest rc=1)
+Tests:       53 failed, 56 passed, 109 total
+  ● Console
+  ● checkout when the server says the shop is not taking orders at page load (K3) › openNow absent (an older backend): enabled, no notice — the server still decides at submit
+    Received element is disabled:
+  ● the confirmation screen labels the server's rate through vatRateLabel (PR #726 low c) › an EXEMPT order reads 'VAT (exempt)', never 'VAT (0%)'
+  ● the confirmation screen labels the server's rate through vatRateLabel (PR #726 low c) › a STANDARD order uses the same 'incl. 20%' wording as the preview
+  ● #860: attribution changes nothing the checkout SUBMITS › posts a body byte-identical to the pre-attribution checkout for the same basket
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+    Expected number of calls: 1
+    Received number of calls: 0
+  ● #860: attribution never contradicts the set the panel states › after a stale 409 shows the server's newer set, the client's attribution is withdrawn
+    expect(received).toEqual(expected) // deep equality
+    - Expected  - 1
+restore: before=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 after=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 RESTORED-BY-CONTENT
+=== ARM 3-E-forced-submit-not-refused: app/shop/[slug]/checkout/page.tsx (jest rc=1)
+Tests:       1 failed, 108 passed, 109 total
+  ● Console
+  ● checkout when the server says the shop is not taking orders at page load (K3) › a disabled Place order sends nothing, even through the form's submit
+    Expected number of calls: 0
+    Received number of calls: 1
+restore: before=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 after=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 RESTORED-BY-CONTENT
+CLEAN-AFTER: Tests:       109 passed, 109 total
+?? .planning/milestone.lock
+=== ARM 3-B2-race-rewrites-the-stored-basket (page still rendered; only storage changes) jest rc=1
+Tests:       1 failed, 7 passed, 8 total
+  ● the checkout race: the shop stops while the customer is on the page (typed shop-closed) › renders the race copy in the role=alert slot and keeps the stored basket, by content
+    Expected: "{\"shopSlug\":\"rosies-kitchen\",\"owner\":null,\"items\":[{\"productId\":\"p1\",\"title\":\"Jollof Rice\",\"pricePennies\":1000,\"quantity\":2,\"imageUrl\":null,\"category\":\"Mains\"}]}"
+    Received: "{\"shopSlug\":\"rosies-kitchen\",\"items\":[]}"
+restore: before=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 after=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 RESTORED-BY-CONTENT
+NOTE: arm 3-B (clearCart) failed on 'Unable to find role=alert' (the empty-basket view replaces the page), not on the storage assertion; 3-B2 is the arm that shows the by-content assertion itself can fail.
+CLEAN-AFTER-3-B2: Tests:       109 passed, 109 total
+=== ARM 3-T-type-error-in-checkout: npm run build rc=1
+app/shop/[slug]/checkout/page.tsx(509,9): error TS2322: Type 'boolean' is not assignable to type 'string'.
+app/shop/[slug]/checkout/page.tsx(1348,11): error TS2322: Type 'string | true' is not assignable to type 'boolean | undefined'.
+restore: before=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 after=5f9da60c49d02fa52efe6cdb4f763ad7658f924ac533b1e7ce804bcc8f73f562 RESTORED-BY-CONTENT
+CLEAN-AFTER build rc=0   Finished TypeScript in 2.9s ...
+
+Task 3 Java break arms on committed cb8cf9d1 (2026-10-10T14:29:19Z)
+=== ARM 3-J1-seeder-create-only: core-java/src/main/java/uk/jtoye/core/dev/DemoDataSeeder.java (gradle rc=1)
+DemoDataSeederHoursIntegrationTest > aDemoShopV80MarkedLegacyIsDeclaredOnTheNextRun() FAILED
+3 tests completed, 1 failed
+> Task :core-java:integrationTest FAILED
+BUILD FAILED in 34s
+name="uk.jtoye.core.dev.DemoDataSeederHoursIntegrationTest" tests="3" skipped="0" failures="1" errors="0"
+failure message="java.lang.AssertionError: [after the next seeder run] &#10;Expecting empty but was: [&quot;mama-ades-kitchen=LEGACY_ALWAYS_OPEN&quot;,&#10;    &quot;tenant-b-probe=LEGACY_ALWAYS_OPEN&quot;,&#10;    &quot;unsorted-legacy-items=LEGACY_ALWAYS_OPEN&quot;]"
+restore: before=b01bb403415357201b6767d213570348077c9f2dd20eca21e0587dd8479bd8db after=b01bb403415357201b6767d213570348077c9f2dd20eca21e0587dd8479bd8db RESTORED-BY-CONTENT
+=== ARM 3-J2-seeder-overwrites-saved-hours: core-java/src/main/java/uk/jtoye/core/dev/DemoDataSeeder.java (gradle rc=1)
+DemoDataSeederHoursIntegrationTest > hoursADeveloperSavedSurviveARestart() FAILED
+3 tests completed, 1 failed
+> Task :core-java:integrationTest FAILED
+BUILD FAILED in 34s
+name="uk.jtoye.core.dev.DemoDataSeederHoursIntegrationTest" tests="3" skipped="0" failures="1" errors="0"
+failure message="org.opentest4j.AssertionFailedError: [the developer's saved hours after a seeder run] &#10;Expecting value to be true but was false"
+restore: before=b01bb403415357201b6767d213570348077c9f2dd20eca21e0587dd8479bd8db after=b01bb403415357201b6767d213570348077c9f2dd20eca21e0587dd8479bd8db RESTORED-BY-CONTENT
+=== ARM 3-J3-all-day-window-read-as-zero-length: core-java/src/main/java/uk/jtoye/core/shop/OpeningSchedule.java (gradle rc=1)
+> Task :core-java:test FAILED
+ShopAvailabilityPolicyTest > D-25: shops V80 could not give structured hours > NEEDS_REVIEW: a day the vendor wrote as 'closed' (or left out) stays closed, and a read window is enforced, as before deploy FAILED
+ShopAvailabilityPolicyTest > D-25: shops V80 could not give structured hours > NEEDS_REVIEW: a day whose text could not be read stays OPEN, exactly as before deploy (owner ruling 2026-10-10) FAILED
+ShopAvailabilityPolicyTest > structured windows, in UK time > 00:00-00:00 is a 24-hour window: open at any time of any day it is set FAILED
+ShopAvailabilityPolicyTest > structured windows, in UK time > 37-22: the seeded all-day week (00:00-00:00 every day) is open at 00:00, 12:00 and 23:59 UK time, every day, the autumn clock change included FAILED
+26 tests completed, 4 failed
+BUILD FAILED in 10s
+name="UK clock changes (no exception, UK local times)" tests="3" skipped="0" failures="0" errors="0"
+name="D-25: shops V80 could not give structured hours" tests="3" skipped="0" failures="2" errors="0"
+name="pause" tests="4" skipped="0" failures="0" errors="0"
+name="requireTakingOrders" tests="3" skipped="0" failures="0" errors="0"
+name="structured windows, in UK time" tests="13" skipped="0" failures="2" errors="0"
+failure message="org.opentest4j.AssertionFailedError: [Wednesday's text was unreadable] &#10;Expecting value to be true but was false"
+failure message="org.opentest4j.AssertionFailedError: [Monday's text was unreadable: the pre-D-15 fail-open stands] &#10;Expecting value to be true but was false"
+failure message="org.opentest4j.AssertionFailedError: &#10;Expecting value to be true but was false"
+failure message="org.opentest4j.AssertionFailedError: [MONDAY 00:00] &#10;Expecting value to be true but was false"
+restore: before=98bad717a4ef4480e0ebe1e5268fc9e95be1cf408676c1ca323308f5bab7a361 after=98bad717a4ef4480e0ebe1e5268fc9e95be1cf408676c1ca323308f5bab7a361 RESTORED-BY-CONTENT
+?? .planning/milestone.lock
+CLEAN-AFTER (plan verify): ShopAvailabilityPolicyTest gradle rc=0; seeder IT gradle rc=0
+name="UK clock changes (no exception, UK local times)" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-10T14:31:00.268Z"
+name="D-25: shops V80 could not give structured hours" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-10T14:31:00.084Z"
+name="pause" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-10T14:31:00.257Z"
+name="requireTakingOrders" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-10T14:31:00.273Z"
+name="structured windows, in UK time" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-10-10T14:31:00.290Z"
+name="uk.jtoye.core.dev.DemoDataSeederHoursIntegrationTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-10T14:31:07.076Z"
+UP-TO-DATE lines in the policy run: 4
+> Task :core-java:testClasses UP-TO-DATE
+> Task :core-java:test
