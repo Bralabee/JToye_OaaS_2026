@@ -367,3 +367,75 @@ describe("OpeningScheduleEditor layout (UI-SPEC K4 overflow and long-text backst
     }
   })
 })
+
+describe("shops table notices and the deep link from the dashboard home (37-21 Task 3, UI-SPEC K3/K4)", () => {
+  /** Tuesday 13 October 2026, 18:20 in the UK (BST). Only Date is faked. */
+  function freezeClock() {
+    jest.useFakeTimers({
+      now: new Date("2026-10-13T17:20:00Z"),
+      doNotFake: [
+        "setTimeout", "clearTimeout", "setInterval", "clearInterval", "setImmediate", "clearImmediate",
+        "nextTick", "queueMicrotask", "requestAnimationFrame", "cancelAnimationFrame",
+        "requestIdleCallback", "cancelIdleCallback", "hrtime", "performance",
+      ],
+    })
+  }
+
+  afterEach(() => {
+    jest.useRealTimers()
+    window.history.replaceState(null, "", "/")
+  })
+
+  const row = (name: string) => screen.getByText(name, { selector: "td *, td" }).closest("tr") as HTMLElement
+
+  it("badges read hoursSource and the pause: 'Hours not set' (LEGACY), 'Check hours' (NEEDS_REVIEW), 'Paused until 19:40' / 'Paused'; nothing for STRUCTURED", async () => {
+    freezeClock()
+    const pausedTimed = shop("s-paused", "Paused Timed", {
+      hoursSource: "STRUCTURED",
+      openingSchedule: CLOSED_WEEK,
+      ordersPausedUntil: "2026-10-13T18:40:00Z",
+    })
+    const pausedIndef = shop("s-indef", "Paused Indef", { hoursSource: "STRUCTURED", ordersPausedIndefinitely: true })
+    const pauseEnded = shop("s-ended", "Pause Ended", { hoursSource: "STRUCTURED", ordersPausedUntil: "2026-10-13T16:00:00Z" })
+    stubShops(LEGACY, NEEDS_REVIEW, STRUCTURED, pausedTimed, pausedIndef, pauseEnded)
+    render(<ShopsPage />)
+    await screen.findByRole("button", { name: "Edit shop Legacy Grill" })
+    const legacyBadge = within(row("Legacy Grill")).getByText("Hours not set")
+    expect(legacyBadge.className).toContain("text-amber-800")
+    expect(legacyBadge.querySelector("svg")).not.toBeNull()
+    expect(within(row("Mama Put")).getByText("Check hours")).toBeInTheDocument()
+    expect(within(row("Rosie's Kitchen")).queryByText(/Hours not set|Check hours|Paused/)).not.toBeInTheDocument()
+    expect(within(row("Paused Timed")).getByText("Paused until 19:40")).toBeInTheDocument()
+    expect(within(row("Paused Indef")).getByText("Paused")).toBeInTheDocument()
+    expect(within(row("Pause Ended")).queryByText(/Paused/)).not.toBeInTheDocument()
+    // The text never decides: Rosie's old "whenever" is on the row and earns no badge.
+    expect(within(row("Rosie's Kitchen")).queryByText("Check hours")).not.toBeInTheDocument()
+  })
+
+  it("?edit={id}&focus=hours opens that shop's dialog with focus on the Opening hours fieldset, and drops the parameter", async () => {
+    window.history.replaceState(null, "", "/dashboard/shops?edit=s-review&focus=hours")
+    stubShops(LEGACY, NEEDS_REVIEW)
+    render(<ShopsPage />)
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByRole("heading", { name: "Edit Shop" })).toBeInTheDocument()
+    expect(within(dialog).getByLabelText("Shop Name *")).toHaveValue("Mama Put")
+    await waitFor(() => expect(document.activeElement).toBe(hours()))
+    expect(window.location.search).toBe("")
+  })
+
+  it("a deep link to a shop that is not on the first page reads it by id and opens it", async () => {
+    window.history.replaceState(null, "", "/dashboard/shops?edit=s-legacy&focus=hours")
+    stubShops(STRUCTURED)
+    mockGet.mockImplementation((url: string) =>
+      url.startsWith("/api/v1/shops?")
+        ? Promise.resolve({ data: { content: [STRUCTURED], totalElements: 2, totalPages: 1 } })
+        : url === "/api/v1/shops/s-legacy"
+          ? Promise.resolve({ data: LEGACY })
+          : Promise.resolve({ data: {} })
+    )
+    render(<ShopsPage />)
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByLabelText("Shop Name *")).toHaveValue("Legacy Grill")
+    expect(mockGet).toHaveBeenCalledWith("/api/v1/shops/s-legacy")
+  })
+})
