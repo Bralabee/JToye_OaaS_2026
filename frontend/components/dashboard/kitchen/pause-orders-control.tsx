@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { KITCHEN_POLL_INTERVAL_MS } from "@/components/dashboard/kitchen/feed-state"
+import { isShopAccessDenied } from "@/lib/access-events"
 import { describeLoadError } from "@/lib/human-error"
 import { formatUkTime } from "@/lib/shop-availability"
 import {
@@ -38,9 +39,6 @@ export type PauseView =
 
 const NOT_PAUSED: PauseView = { kind: "none" }
 
-/** UI-SPEC § Copywriting K3, "Pause refused (403)". */
-export const PAUSE_REFUSED_COPY = "You can't pause orders for this shop. Ask a manager."
-
 type PauseFields = Pick<Shop, "ordersPausedUntil" | "ordersPausedIndefinitely">
 
 /** The pause the server holds, read at `nowMs`. */
@@ -64,6 +62,10 @@ export function pauseControlLabel(view: PauseView): string {
 
 function httpStatus(error: unknown): number | undefined {
   return (error as { response?: { status?: number } })?.response?.status
+}
+
+function problemType(error: unknown): unknown {
+  return (error as { response?: { data?: { type?: unknown } } })?.response?.data?.type
 }
 
 interface PauseState {
@@ -135,9 +137,13 @@ export function useShopPause(shopId: string | null, { active = true }: { active?
         apply(shopId, await send(shopId))
         void refresh()
       } catch (err) {
-        const message =
-          httpStatus(err) === 403 ? PAUSE_REFUSED_COPY : describeLoadError(err, failure).message
-        setError({ shopId, message })
+        // Owner ruling 2026-10-10 (D-08): a shop-access-denied 403 says nothing here. STAFF is the
+        // pause floor (ShopService.java:459, :485), so the refusal means the STAFF grant itself is
+        // gone; the api-client has already announced it, and the board answers with the K2
+        // "Your access has ended" overlay. Any other failure, a 403 of another type included,
+        // shows the generic error.
+        if (isShopAccessDenied(httpStatus(err), problemType(err))) return
+        setError({ shopId, message: describeLoadError(err, failure).message })
       } finally {
         inFlight.current = false
         setPending(false)

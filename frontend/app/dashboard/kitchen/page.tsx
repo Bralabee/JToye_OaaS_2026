@@ -280,6 +280,14 @@ export default function KitchenPage() {
   // this route every API call is the board's own (its read, the per-order detail, a bump, Accept,
   // Reject, the allergy acknowledgement), so listening here covers the New lane's card handlers
   // too. The dashboard shell's no-access page deliberately leaves this route alone (37-06).
+  //
+  // Owner ruling 2026-10-10 (D-08): this holds only because every call on this route has the STAFF
+  // floor or none — the board read (OrderService.java:452), order detail (:324), the transitions
+  // (:560), the allergy acknowledgement (:648), the shop read (ShopService.java:171) and the pause
+  // (:459, :485). They are declared in components/dashboard/kitchen/kitchen-route-calls.ts, and its
+  // guard test fails if an undeclared call, or one with a higher floor, is added here. A call with a
+  // higher floor must be exempted from this listener first: its refusal would not mean access ended.
+  // The pause control therefore shows no inline copy for this 403; this overlay is the answer.
   useEffect(() => {
     const onAccessDenied = () => {
       if (isDeliberateSignOut()) return
