@@ -1,5 +1,7 @@
 // API Response Types
 
+import type { HoursSource, OpeningWindow } from "@/types/storefront"
+
 export interface PageResponse<T> {
   content: T[]
   totalElements: number
@@ -31,6 +33,23 @@ export interface Shop {
   tags: string | null
   createdAt: string
   updatedAt: string
+  /**
+   * 37-20 (D-15, D-25): where the structured hours came from. ABSENT for a shop that has never been
+   * classified or saved with hours (the server writes ShopDto NON_NULL). The dashboard's "Hours not
+   * set" and "Check hours" notices read THIS, never the free text (37-21).
+   */
+  hoursSource?: HoursSource
+  /** The vendor's original free-text hours, mon..sun, read-only: quoted by the NEEDS_REVIEW notice. */
+  legacyOpeningHours?: Record<string, string>
+  /** Structured hours: mon..sun -> windows ("HH:MM", UK time); [] = closed that day. */
+  openingSchedule?: Record<string, OpeningWindow[]>
+  /**
+   * The end of a timed storefront pause, as STORED (an ended pause keeps its instant; the server does
+   * not clean it up), so a past value is no pause. Absent: no timed pause.
+   */
+  ordersPausedUntil?: string
+  /** Storefront orders are paused until the vendor resumes them. */
+  ordersPausedIndefinitely?: boolean
 }
 
 export interface CreateShopRequest {
@@ -49,6 +68,11 @@ export interface CreateShopRequest {
   minimumOrderPennies?: number
   published?: boolean
   tags?: string
+  /**
+   * 37-20: structured hours, mon..sun -> up to 3 windows. ABSENT keeps the stored schedule and its
+   * source; `{}` saves closed every day. Any save makes the hours STRUCTURED (ends the legacy state).
+   */
+  openingSchedule?: Record<string, OpeningWindow[]>
 }
 
 // Media asset types (Phase 24 IMG-04) — mirror the backend
