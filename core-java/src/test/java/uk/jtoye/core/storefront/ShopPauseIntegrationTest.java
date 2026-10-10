@@ -87,6 +87,7 @@ class ShopPauseIntegrationTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private JsonMapper jsonMapper;
     @Autowired private ShopAccessService shopAccessService;
+    @Autowired private java.time.Clock clock;
 
     /** The value the context booted with: restored after every test, never a literal (37-02). */
     private Object bootedStrictScoping;
@@ -293,6 +294,80 @@ class ShopPauseIntegrationTest {
                 .andReturn();
         assertThat(created.getResponse().getStatus()).as(text(created)).isEqualTo(201);
         assertThat(countOrdersByEmail(f, email)).isEqualTo(1);
+    }
+
+    // ------------------------------------------------------------------
+    // Task 2: structured hours decide open and closed; D-25 legacy shops behave as before deploy
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("D-15: a STRUCTURED shop closed every day refuses a guest order 409 shop-closed NO_HOURS (was 201: no hours meant always open); CONTROL: 24-hour windows -> 201")
+    void structuredClosedEveryDay_refusesNoHours() throws Exception {
+        Fixture closed = Fixture.seed(jdbc, "STRUCTURED", null, scheduleJson(null, false));
+        String email = "no-hours-" + UUID.randomUUID() + "@example.com";
+        MvcResult refused = guestOrder(closed, "no-hours-" + UUID.randomUUID(), email);
+        JsonNode problem = assertProblem(refused, 409, SHOP_CLOSED, "SHOP_CLOSED");
+        assertThat(problem.path("reason").asString()).isEqualTo("NO_HOURS");
+        assertThat(problem.path("detail").asString()).contains("No reopening time is set");
+        assertThat(countOrdersByEmail(closed, email)).isZero();
+
+        Fixture open = Fixture.seed(jdbc, "STRUCTURED", null, scheduleJson(null, true));
+        assertThat(guestOrder(open, null, "all-day-" + UUID.randomUUID() + "@example.com").getResponse().getStatus())
+                .as("CONTROL: the same path accepts an order for a shop open all day").isEqualTo(201);
+    }
+
+    @Test
+    @DisplayName("D-25 (owner ruling 2026-10-10): a NEEDS_REVIEW shop's unreadable day stays OPEN until the vendor saves structured hours -> 201, as before deploy")
+    void needsReviewUnreadableDay_staysOpen() throws Exception {
+        String today = todayKey();
+        Fixture f = Fixture.seed(jdbc, "NEEDS_REVIEW", legacyTextJson(today, "ask at the counter"),
+                scheduleJson(today, true));
+        MvcResult accepted = guestOrder(f, "review-open-" + UUID.randomUUID(), "review-" + UUID.randomUUID() + "@example.com");
+        assertThat(accepted.getResponse().getStatus())
+                .as("today's text could not be read; D-25 keeps the pre-deploy fail-open: %s", text(accepted))
+                .isEqualTo(201);
+    }
+
+    @Test
+    @DisplayName("D-25: a NEEDS_REVIEW shop's day written 'Closed' stays closed -> 409 shop-closed CLOSED_TODAY (was a 400 invalid-argument)")
+    void needsReviewClosedDay_staysClosed() throws Exception {
+        String today = todayKey();
+        Fixture f = Fixture.seed(jdbc, "NEEDS_REVIEW", legacyTextJson(today, "Closed"), scheduleJson(today, true));
+        String email = "review-closed-" + UUID.randomUUID() + "@example.com";
+        MvcResult refused = guestOrder(f, "review-closed-" + UUID.randomUUID(), email);
+        JsonNode problem = assertProblem(refused, 409, SHOP_CLOSED, "SHOP_CLOSED");
+        assertThat(problem.path("reason").asString()).isEqualTo("CLOSED_TODAY");
+        assertThat(problem.path("reopensAt").asString()).as("tomorrow's window opens at midnight").isNotBlank();
+        assertThat(countOrdersByEmail(f, email)).isZero();
+    }
+
+    /** Today's day key in UK time, from the application's own clock. */
+    private String todayKey() {
+        java.time.DayOfWeek day = java.time.ZonedDateTime.now(clock)
+                .withZoneSameInstant(java.time.ZoneId.of("Europe/London")).getDayOfWeek();
+        return uk.jtoye.core.shop.OpeningSchedule.DAY_KEYS.get(day.ordinal());
+    }
+
+    /**
+     * A V80-shaped schedule: every day a 24-hour window ({@code allDay}) or closed, except {@code exceptDay},
+     * which is closed ({@code []}).
+     */
+    private String scheduleJson(String exceptDay, boolean allDay) {
+        Map<String, Object> json = new LinkedHashMap<>();
+        for (String key : uk.jtoye.core.shop.OpeningSchedule.DAY_KEYS) {
+            boolean open = allDay && !key.equals(exceptDay);
+            json.put(key, open ? List.of(Map.of("open", "00:00", "close", "00:00")) : List.of());
+        }
+        return jsonMapper.writeValueAsString(json);
+    }
+
+    /** The legacy free text V80 read: "00:00 - 24:00" every day except {@code day}, which holds {@code entry}. */
+    private String legacyTextJson(String day, String entry) {
+        Map<String, String> text = new LinkedHashMap<>();
+        for (String key : uk.jtoye.core.shop.OpeningSchedule.DAY_KEYS) {
+            text.put(key, key.equals(day) ? entry : "00:00 - 24:00");
+        }
+        return jsonMapper.writeValueAsString(text);
     }
 
     // ------------------------------------------------------------------
