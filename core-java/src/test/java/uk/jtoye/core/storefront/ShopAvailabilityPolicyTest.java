@@ -175,6 +175,24 @@ class ShopAvailabilityPolicyTest {
         }
 
         @Test
+        @DisplayName("37-22: the seeded all-day week (00:00-00:00 every day) is open at 00:00, 12:00 and 23:59 UK time, every day, the autumn clock change included")
+        void allDayWindow_openAtMidnightNoonAndLastMinuteEveryDay() {
+            Map<String, List<TimeWindow>> all = new LinkedHashMap<>();
+            OpeningSchedule.DAY_KEYS.forEach(k -> all.put(k, List.of(w("00:00", "00:00"))));
+            Shop shop = structured(all);
+            // Monday 19 .. Sunday 25 October 2026: BST until 02:00 on the 25th, GMT after.
+            for (int day = 19; day <= 25; day++) {
+                for (String time : List.of("00:00", "12:00", "23:59")) {
+                    ZonedDateTime local = uk(String.format("2026-10-%02dT%s", day, time));
+                    Availability a = new ShopAvailabilityPolicy(Clock.fixed(local.toInstant(), ZoneOffset.UTC))
+                            .evaluate(shop);
+                    assertThat(a.openNow()).as("%s %s", local.getDayOfWeek(), time).isTrue();
+                    assertThat(a.reason()).as("%s %s", local.getDayOfWeek(), time).isNull();
+                }
+            }
+        }
+
+        @Test
         @DisplayName("MIGRATED_FROM_TEXT is evaluated against its windows, as its text was before deploy")
         void migratedFromText_evaluated() {
             Shop shop = structured(Map.of("mon", List.of(w("09:00", "17:00"))));
