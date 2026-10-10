@@ -132,3 +132,153 @@ closing clean: the full integration run above includes all 22 CustomerAccessGate
   (empty = clean)
   core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
   core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
+
+############ Task 2: hours pre-fill (H1, H2), pause refusal (P1), kitchen-route registry (R1, R2), alarm cap (A1)
+Committed tree: ruling GREEN commits 2752ff50 (hours), d0be0886 (pause + registry), bf823ff1 (alarm), then 56808fd6.
+Opening clean: the five files green (jest rc 0) after the GREEN commits; full jest 2616/0, build rc 0, lint rc 0.
+sha256 recorded before the arms:
+63baeea3e51ad9f893834bc7a90de2244fa904b5681e5182c51db355174054e3  frontend/components/dashboard/shops/opening-schedule-editor.tsx
+04c63b7a680e9a353a3333acabd9683319154d03db2d0df350cb68b398df51e6  frontend/components/dashboard/hours-notice-card.tsx
+d0e3b51b282b8ef9b33afdee274fe756e2c33c59e3341a357026934448189fc5  frontend/components/dashboard/kitchen/pause-orders-control.tsx
+ea2d3152e91ce9ce822e043724fa31cbe0f24437ffe5857bc5c4d6554df7f32d  frontend/components/dashboard/kitchen/kitchen-route-calls.ts
+523f3266f67ce577e91a22415ecdc807a284a375459251291dbc1e7945b0ada4  frontend/components/dashboard/kitchen/kds-sound.tsx
+
+=== H1
+  mutate rc=0; diff:
+-    if (unreadable.has(day)) {
+-      days[day] = { closed: false, windows: [{ key: nextKey(), ...ALL_DAY }] }
+-      continue
+-    }
+  jest rc=1 (expected non-zero)
+   26 tests, 3 not ok
+   RED [other] rs', with the ruled amber line; read days keep their windows; a day written 'closed' stays Closed with no line
+        Error: expect(element).toHaveAttribute("aria-checked", "false") // element.getAttribute("aria-checked") === "false"
+        Expected the element to have attribute:
+        aria-checked="false"
+        Received:
+   RED [TARGET] ay and saving sends the unreadable day as its all-day window, never omitted (so the partial fix keeps it open)
+        Error: expect(received).toEqual(expected) // deep equality
+        - Expected  - 6
+        + Received  + 0
+        @@ -3,12 +3,6 @@
+   RED [other] an unreadable Monday refuses the save: the all-day Monday overlaps Sunday's spill until its real times are set
+        TestingLibraryElementError: Unable to find a label with the text of: Monday opens
+        Ignored nodes: comments, script, style
+        <fieldset
+        class="space-y-3 focus:outline-none"
+frontend/components/dashboard/shops/opening-schedule-editor.tsx: OK
+frontend/components/dashboard/hours-notice-card.tsx: OK
+frontend/components/dashboard/kitchen/pause-orders-control.tsx: OK
+frontend/components/dashboard/kitchen/kitchen-route-calls.ts: OK
+frontend/components/dashboard/kitchen/kds-sound.tsx: OK
+  restore sha256 rc=0
+=== H2
+  mutate rc=0; diff:
+-  const those = days.length === 1 ? "that day" : "those days"
++  const those = "those days"
+  jest rc=1 (expected non-zero)
+   8 tests, 1 not ok
+   RED [TARGET]  K4 vendor notices) > a NEEDS_REVIEW shop with ONE unreadable day: the ruled sentence is singular ('that day')
+        TestingLibraryElementError: Unable to find an element with the text: We could not read the hours you entered for Tuesday, so customers can order on that day at any time. Check and 
+        Ignored nodes: comments, script, style
+        <section
+        aria-label="Opening hours to set"
+frontend/components/dashboard/shops/opening-schedule-editor.tsx: OK
+frontend/components/dashboard/hours-notice-card.tsx: OK
+frontend/components/dashboard/kitchen/pause-orders-control.tsx: OK
+frontend/components/dashboard/kitchen/kitchen-route-calls.ts: OK
+frontend/components/dashboard/kitchen/kds-sound.tsx: OK
+  restore sha256 rc=0
+=== P1
+  mutate rc=0; diff:
+-        if (isShopAccessDenied(httpStatus(err), problemType(err))) return
++        if (isShopAccessDenied(httpStatus(err), problemType(err))) {
++          setError({ shopId, message: "You can't pause orders for this shop. Ask a manager." })
++          return
++        }
+  jest rc=1 (expected non-zero)
+   17 tests, 1 not ok
+   RED [TARGET] ay only: no inline refusal, no manager referral, no banner, and nothing paused (D-08, owner ruling 2026-10-10)
+        Error: expect(received).toHaveLength(expected)
+        Expected length: 0
+        Received length: 1
+        Received array:  [<p class="max-w-[16rem] text-sm font-medium text-red-700" role="alert">You can't pause orders for this shop. Ask a manager.</p>]
+frontend/components/dashboard/shops/opening-schedule-editor.tsx: OK
+frontend/components/dashboard/hours-notice-card.tsx: OK
+frontend/components/dashboard/kitchen/pause-orders-control.tsx: OK
+frontend/components/dashboard/kitchen/kitchen-route-calls.ts: OK
+frontend/components/dashboard/kitchen/kds-sound.tsx: OK
+  restore sha256 rc=0
+=== R1
+  mutate rc=0; diff:
+-  { method: "GET", path: "/api/v1/shops/{id}", floor: "STAFF", server: "ShopService.java:171" },
++  { method: "GET", path: "/api/v1/shops/{id}", floor: "SHOP_MANAGER" as "STAFF", server: "ShopService.java:171" },
+  jest rc=1 (expected non-zero)
+   2 tests, 1 not ok
+   RED [TARGET] 2026-10-10) > every declared kitchen-route call has a server floor of STAFF or NONE, and cites the server line
+        Error: expect(received).toEqual(expected) // deep equality
+        - Expected  - 1
+        + Received  + 1
+        Object {
+frontend/components/dashboard/shops/opening-schedule-editor.tsx: OK
+frontend/components/dashboard/hours-notice-card.tsx: OK
+frontend/components/dashboard/kitchen/pause-orders-control.tsx: OK
+frontend/components/dashboard/kitchen/kitchen-route-calls.ts: OK
+frontend/components/dashboard/kitchen/kds-sound.tsx: OK
+  restore sha256 rc=0
+=== R2
+  mutate rc=0; diff:
++export const PROMOTIONS_PATH = `/api/v1/promotions?shopId=${"x"}`
+  jest rc=1 (expected non-zero)
+   2 tests, 1 not ok
+   RED [TARGET] r ruling 2026-10-10) > every /api/v1/ path the kitchen route's sources call is declared in KITCHEN_ROUTE_CALLS
+        Error: expect(received).toEqual(expected) // deep equality
+        - Expected  - 1
+        + Received  + 6
+        - Array []
+frontend/components/dashboard/shops/opening-schedule-editor.tsx: OK
+frontend/components/dashboard/hours-notice-card.tsx: OK
+frontend/components/dashboard/kitchen/pause-orders-control.tsx: OK
+frontend/components/dashboard/kitchen/kitchen-route-calls.ts: OK
+frontend/components/dashboard/kitchen/kds-sound.tsx: OK
+  restore sha256 rc=0
+=== A1
+  mutate rc=0; diff:
+-    const cap = window.setTimeout(() => window.clearInterval(id), remaining)
++    const cap = 0
+  jest rc=1 (expected non-zero)
+   29 tests, 1 not ok
+   RED [TARGET]  itself 120 s after it starts, while the red screen and the pill stay (owner ruling 2026-10-10: alarm fatigue)
+        Error: expect(received).toBe(expected) // Object.is equality
+        Expected: 123
+        Received: 153
+        at Object.toBe (/home/sanmi/IdeaProjects/JToye_OaaS_2026/frontend/components/dashboard/kitchen/__tests__/kds-board-stopped.test.tsx:480:27)
+frontend/components/dashboard/shops/opening-schedule-editor.tsx: OK
+frontend/components/dashboard/hours-notice-card.tsx: OK
+frontend/components/dashboard/kitchen/pause-orders-control.tsx: OK
+frontend/components/dashboard/kitchen/kitchen-route-calls.ts: OK
+frontend/components/dashboard/kitchen/kds-sound.tsx: OK
+  restore sha256 rc=0
+=== closing clean (five files, committed tree)
+  jest rc=0
+  Test Suites: 5 passed, 5 total
+  Tests:       82 passed, 82 total
+  frontend/components/dashboard/shops/opening-schedule-editor.tsx: OK
+  frontend/components/dashboard/hours-notice-card.tsx: OK
+  frontend/components/dashboard/kitchen/pause-orders-control.tsx: OK
+  frontend/components/dashboard/kitchen/kitchen-route-calls.ts: OK
+  frontend/components/dashboard/kitchen/kds-sound.tsx: OK
+  git status --porcelain (tracked changes):
+  (none listed = clean)
+
+=== Task 2 verify-block fail directions, on TASK_BASE 10bf2c595f4d87e9583a423c9ba9141b6cf763dc (files extracted with git show into a scratch tree)
+old editor copy at TASK_BASE rc=0 (expected 0) [frontend/components/dashboard/shops/opening-schedule-editor.tsx]
+manager copy at TASK_BASE rc=0 (expected 0) [frontend/components/dashboard/kitchen/pause-orders-control.tsx]
+new editor token at TASK_BASE [] rc=1 (expected empty, 1)
+new card token at TASK_BASE [] rc=1 (expected empty, 1)
+alarm cap at TASK_BASE [] rc=1 (expected empty, 1)
+windows ok at TASK_BASE: False
+ledger script at TASK_BASE rc=1 (expected 1)
+auth.ts edited: git diff --quiet rc=1 (expected 1)
+auth.ts restored by content (cmp rc=0)
+auth.ts vs TASK_BASE after restore rc=0 (expected 0)
