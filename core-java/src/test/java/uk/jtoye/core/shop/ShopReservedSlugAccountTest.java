@@ -100,6 +100,8 @@ class ShopReservedSlugAccountTest {
                 .withBean(ShopAccessService.class, () -> mock(ShopAccessService.class))
                 .withBean(ShopService.ShopCacheLoader.class, () -> mock(ShopService.ShopCacheLoader.class))
                 .withBean(PostcodeGeocoder.class, () -> geocoder)
+                // 37-20: ShopService takes the Clock bean (the pause end is "now + minutes").
+                .withBean(java.time.Clock.class, java.time.Clock::systemUTC)
                 .withBean(ShopService.class);
     }
 
