@@ -68,28 +68,53 @@ async function vendorLogin(page: Page) {
   await page.waitForURL(/\/dashboard/, { timeout: 30_000 })
 }
 
+/**
+ * Query root for the LIVE document (#593, kitchen-flow.spec.ts): while Next streams this route,
+ * React parks a second copy of the whole board in a `<div hidden>`, so a raw test-id locator
+ * resolves to 2 elements. Measured here on the first live run: `getByTestId('kds-sound-control')`
+ * strict-mode failed with exactly that. Role locators are immune; test ids are scoped.
+ */
+const live = (page: Page) => page.locator("body > div:not([hidden])")
+
 /** Open the kitchen and wait until it has read its board (the pill has left "Connecting…"). */
 async function openKitchen(page: Page) {
   await page.goto(KITCHEN, { waitUntil: "domcontentloaded" })
   await expect(page.getByRole("heading", { level: 1, name: "Kitchen Display" })).toBeVisible({
     timeout: 20_000,
   })
-  await expect(page.getByTestId("kds-feed-pill")).toBeVisible({ timeout: 20_000 })
+  await expect(live(page).getByTestId("kds-feed-pill")).toBeVisible({ timeout: 20_000 })
 }
 
 async function turnOnSound(page: Page) {
-  await page.getByTestId("kds-sound-control").getByText("Turn on sound").click()
-  await expect(page.getByTestId("kds-sound-control")).toContainText("Mute alerts")
+  await live(page).getByTestId("kds-sound-control").getByText("Turn on sound").click()
+  await expect(live(page).getByTestId("kds-sound-control")).toContainText("Mute alerts")
 }
 
-/** End the app session from the browser's side: drop every NextAuth session-token cookie. */
-async function dropAppSession(context: BrowserContext) {
-  const cookies = await context.cookies()
-  const sessionCookies = cookies.filter((c) => c.name.includes("authjs.session-token"))
-  expect(sessionCookies.length, "no NextAuth session cookie to drop: the login did not land").toBeGreaterThan(0)
-  for (const c of sessionCookies) {
-    await context.clearCookies({ name: c.name })
+const readSession = (page: Page) =>
+  page.evaluate(async () => (await fetch("/api/auth/session", { cache: "no-store" })).text())
+
+/**
+ * End the app session from the browser's side: drop every NextAuth session-token cookie, until the
+ * session endpoint really reads `null`.
+ *
+ * WHY A LOOP, measured on the first live run: NextAuth re-issues the session cookie on every
+ * session read, so a `/api/auth/session` request already in flight when the cookie is cleared
+ * answers with a fresh `Set-Cookie` and the session comes straight back; the next board read then
+ * got 200 and nothing lapsed. So: clear, read the session, and require `null` twice, a beat apart,
+ * so a late in-flight response cannot resurrect it after the check.
+ */
+async function dropAppSession(page: Page, context: BrowserContext) {
+  const initial = (await context.cookies()).filter((c) => c.name.includes("authjs.session-token"))
+  expect(initial.length, "no NextAuth session cookie to drop: the login did not land").toBeGreaterThan(0)
+  const clearAndRead = async () => {
+    for (const c of (await context.cookies()).filter((k) => k.name.includes("authjs.session-token"))) {
+      await context.clearCookies({ name: c.name })
+    }
+    return readSession(page)
   }
+  await expect.poll(clearAndRead, { timeout: 15_000, intervals: [500] }).toBe("null")
+  await page.waitForTimeout(1_500)
+  await expect.poll(clearAndRead, { timeout: 10_000, intervals: [500] }).toBe("null")
 }
 
 /** Make the board read now: it re-reads on the browser's `online` event (#106). */
@@ -108,7 +133,7 @@ test.describe("Kitchen: a lapsed session stops the board loudly (37-18, K2)", ()
     await openKitchen(page)
     await turnOnSound(page)
 
-    await dropAppSession(context)
+    await dropAppSession(page, context)
     await triggerRead(page)
 
     const overlay = page.getByRole("alertdialog", { name: HEADLINE })
@@ -118,8 +143,8 @@ test.describe("Kitchen: a lapsed session stops the board loudly (37-18, K2)", ()
     // Sound was turned on, so the overlay must not claim it cannot ring.
     await expect(overlay).not.toContainText("sound was never turned on")
     // Behind the overlay the page is inert, so the pill is read from the DOM, not the a11y tree.
-    await expect(page.getByTestId("kds-feed-pill")).toContainText("Signed out")
-    await expect(page.getByTestId("kds-feed-pill")).not.toContainText("Live")
+    await expect(live(page).getByTestId("kds-feed-pill")).toContainText("Signed out")
+    await expect(live(page).getByTestId("kds-feed-pill")).not.toContainText("Live")
 
     const signInAgain = overlay.getByRole("link", { name: "Sign in again" })
     await expect(signInAgain).toBeFocused()
@@ -178,7 +203,7 @@ test.describe("Kitchen: a lapsed session stops the board loudly (37-18, K2)", ()
     await vendorLogin(page)
     await openKitchen(page)
 
-    await dropAppSession(context)
+    await dropAppSession(page, context)
     await triggerRead(page)
 
     await page.waitForURL(/\/auth\/signin/, { timeout: 20_000 })
