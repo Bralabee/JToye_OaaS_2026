@@ -65,7 +65,6 @@ const detail: ShopDetail = {
   avgRating: 0,
   promotions: [],
   announcements: [],
-  isOpen: true,
 }
 
 function seed(quantity: number) {

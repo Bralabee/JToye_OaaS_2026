@@ -201,13 +201,9 @@ export interface ShopDetail {
   avgRating: number
   promotions: PublicPromotion[]
   announcements: PublicAnnouncement[]
-  /**
-   * Computed on the SERVER and passed down rather than recomputed during
-   * hydration: the open/closed pill is then present in the served HTML (it also
-   * feeds the JSON-LD), and the two renders cannot disagree if the clock crosses
-   * an opening boundary between them.
-   */
-  isOpen: boolean
+  // 37-22: no `isOpen` here any more. The loader used to compute one from the free-text
+  // hours; whether the shop takes orders is now the server's `shop.openNow` / `pausedUntil`
+  // (lib/shop-availability.ts), read the same way on the server render and after a refetch.
 }
 
 import type { OrderAllergenFlag } from "@/types/api"

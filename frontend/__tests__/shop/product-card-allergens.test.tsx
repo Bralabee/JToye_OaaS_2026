@@ -97,7 +97,6 @@ async function renderMenu(products: PublicProduct[]) {
     avgRating: 0,
     promotions: [],
     announcements: [],
-    isOpen: true,
   }
   await act(async () => {
     render(<ShopDetailClient slug={shop.slug} initial={detail} />)
