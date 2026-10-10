@@ -886,7 +886,7 @@ export default function KitchenPage() {
             view={shopPause.view}
             pending={shopPause.pending}
             error={shopPause.error}
-            disabled={!selectedShopId}
+            disabled={!selectedShopId || !shopPause.loaded}
             onPause={shopPause.pause}
             onResume={shopPause.resume}
           />

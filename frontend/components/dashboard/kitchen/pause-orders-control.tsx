@@ -157,6 +157,11 @@ export function useShopPause(shopId: string | null, { active = true }: { active?
 
   return {
     view: current.view,
+    /**
+     * The server has answered for THIS shop. Until then the control is disabled: before the first read
+     * "Pause orders" would be a claim (not paused) nobody has checked (found live on a paused shop).
+     */
+    loaded: state.shopId === shopId && state.shop !== null,
     pending,
     error: error && error.shopId === shopId ? error.message : null,
     pause,
