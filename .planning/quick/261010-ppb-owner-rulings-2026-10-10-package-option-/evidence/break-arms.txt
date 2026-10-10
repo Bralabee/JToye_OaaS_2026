@@ -1,0 +1,134 @@
+261010-ppb break arms (owner rulings 2026-10-10). Shape: 37-22's evidence/37-22-break-arms.txt.
+Every arm runs on the COMMITTED tree (commit before arms), mutates one file, runs the named test(s), restores with
+'git checkout HEAD -- <file>' (from HEAD, never the index) and requires the recorded sha256. Clean -> arms -> clean.
+
+############ Task 1: customer write floors (option E), on feat 8c79c178
+sha256 recorded before the arms:
+6c28a1d74956ce66b896f9e11c78428742d802e2fa8fe968f9db0e113aedb297  core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java
+a0956506cd68497c6bf40f7349a4109ff1fb1f74df1a8b40631f9431e7432f04  core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java
+opening clean: the 7-class run on the committed tree was green (gradle rc 0, 7 fresh XML, 0 failures) immediately before the feat commit.
+
+=== B1
+  mutate rc=0; diff:
+-        shopAccessService.requireAnyRole(ShopRole.SHOP_MANAGER);
++        shopAccessService.requireAnyAccess();
+  gradle rc=1 (expected non-zero)
+  xml: 1 tests 1 failures 0 errors
+   RED  option E: STAFF of one shop cannot create a customer, unkeyed or with a fresh key, and nothing is written | org.opentest4j.AssertionFailedError: [status, body: {"id":"42cd433d-630d-4730-a028-d1d877ec21d1","tenantId":"bcea1b9f-0d49-4ac9-970b-c9a820f4a178","name":"Staff Create","email":"staff-create-4e29568f-9cb5-461b-8ca6-eb9980f962ad@example.com","phone":"0770090012
+core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
+core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
+  restore sha256 rc=0
+  anchored counts under B1 are recorded in the next block
+=== B2
+  mutate rc=0; diff:
+-        shopAccessService.requireAnyRole(ShopRole.SHOP_MANAGER);
++            shopAccessService.requireAnyRole(ShopRole.SHOP_MANAGER);
+  gradle rc=1 (expected non-zero)
+  xml: 2 tests 2 failures 0 errors
+   RED  option E: STAFF replaying a shop manager's Idempotency-Key is refused, never served the stored 201 | org.opentest4j.AssertionFailedError: [status, body: {"id":"9b648574-4439-4a64-b28d-a03766bae182","tenantId":"317f3ead-e370-48fa-9027-c08a5f271f62","name":"Manager Keyed","email":"manager-keyed-71f66ebb-ee97-418a-8df6-af5a68a6cec7@example.com","phone":"07700900
+   RED  option E: STAFF of one shop cannot create a customer, unkeyed or with a fresh key, and nothing is written | org.opentest4j.AssertionFailedError: [status, body: {"id":"0977b5df-4088-4368-a8e1-28fce6f7ceaf","tenantId":"9919b883-f227-4d2b-8565-f366b8ae6de4","name":"Staff Keyed","email":"staff-keyed-create-2a984878-ec6f-4f1a-aedd-245fb7ffff2a@example.com","phone":"07700
+core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
+core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
+  restore sha256 rc=0
+=== B3
+  mutate rc=0; diff:
+-        if (m.tenantWideRole() != null && m.tenantWideRole().satisfies(floor)) {
+-            return;
+-        }
+  gradle rc=1 (expected non-zero)
+  xml: 1 tests 1 failures 0 errors
+   RED  option E: a tenant-wide SHOP_MANAGER in a tenant with no shops creates a customer | org.opentest4j.AssertionFailedError: [403 {"detail":"Shop access denied","instance":"/api/v1/customers","status":403,"title":"Shop Access Denied","type":"https://jtoye.uk/errors/shop-access-denied","requiredRole":"SHOP_MANAGER"}]  expected: 201  but was: 403
+core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
+core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
+  restore sha256 rc=0
+=== B4
+  mutate rc=0; diff:
++        if (m.isGroupAdmin()) {
++            return;
++        }
+  gradle rc=1 (expected non-zero)
+  xml: 1 tests 1 failures 0 errors
+   RED  option E: a de-honoured JIT Group admin whose row still exists cannot create or delete a customer | org.opentest4j.AssertionFailedError: [status, body: {"id":"e838d970-e997-40ea-b2ba-462c581888a8","tenantId":"66214951-ef3e-4460-9464-d9cb3e1b987c","name":"JIT Create","email":"jit-create-892279cf-f258-48eb-8446-9ed0142f494d@example.com","phone":"07700900123","
+core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
+core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
+  restore sha256 rc=0
+=== B5
+  mutate rc=0; diff:
+-        shopAccessService.requireGroupAdmin();
++        shopAccessService.requireAnyAccess();
+  gradle rc=1 (expected non-zero)
+  xml: 1 tests 1 failures 0 errors
+   RED  option E: a SHOP_MANAGER of one shop cannot delete a customer, and the row survives | org.opentest4j.AssertionFailedError: [status, body: ]  expected: 403  but was: 204
+core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
+core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
+  restore sha256 rc=0
+
+B1/B2/B4 messages above are cut before the assertion tail by the first reporter; re-run with a reporter that prints it:
+=== B1 (re-run, assertion tail)
+  mutate rc=0
+  gradle rc=1
+  xml: 1 tests 1 failures 0 errors
+   RED  option E: STAFF of one shop cannot create a customer, unkeyed or with a fresh key, and nothing is written | assertion: org.opentest4j.AssertionFailedError: [st | ['expected: 403  but was: 201'] | response name: Staff Create
+core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
+core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
+  restore sha256 rc=0
+  anchored floor count under B1: [1] (expected 1; 2 on the real tree)
+core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
+core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
+  restore rc=0
+=== B2 (re-run, assertion tail)
+  mutate rc=0
+  gradle rc=1
+  xml: 2 tests 2 failures 0 errors
+   RED  option E: STAFF replaying a shop manager's Idempotency-Key is refused, never served the stored 201 | assertion: org.opentest4j.AssertionFailedError: [st | ['expected: 403  but was: 201'] | response name: Manager Keyed
+   RED  option E: STAFF of one shop cannot create a customer, unkeyed or with a fresh key, and nothing is written | assertion: org.opentest4j.AssertionFailedError: [st | ['expected: 403  but was: 201'] | response name: Staff Keyed
+core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
+core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
+  restore sha256 rc=0
+=== B4 (re-run, assertion tail)
+  mutate rc=0
+  gradle rc=1
+  xml: 1 tests 1 failures 0 errors
+   RED  option E: a de-honoured JIT Group admin whose row still exists cannot create or delete a customer | assertion: org.opentest4j.AssertionFailedError: [st | ['expected: 403  but was: 201'] | response name: JIT Create
+core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
+core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
+  restore sha256 rc=0
+
+B2 note: the keyed half of staffOfOneShop_create_403_writesNothing reds on its status assertion (201 for the 'Staff Keyed' request),
+which precedes the row-count assertion in the test; the 201 body is the written row (the GREEN tree answers 403 with 0 rows).
+
+=== verify-block fail directions
+TASK_BASE controller: floorSM=[] rg rc=1 (expected empty, 1); anyAccess=[5] (expected 5)
+HEAD controller: anyAccess=2 floorSM=2 groupAdmin=1 (expected 2/2/1)
+floors documented: False
+  (/tmp/claude-1000/-home-sanmi-IdeaProjects-JToye-OaaS-2026/0c7ca762-e6f9-47ad-a1b6-567957a32a67/scratchpad/snap-base.json) rc=1
+floors documented: True
+  (docs/api/openapi-snapshot.json) rc=0
+feat sha=8c79c178bc1372a1b95937c92c74697617dce23d
+changed ['/api/v1/shops/{id}/pause'] other ['components']
+  scope(935bf0a6^ 935bf0a6) rc=1
+changed ['/api/v1/customers', '/api/v1/customers/{id}'] other []
+  scope(3af4bedc^ 3af4bedc) rc=0
+changed ['/api/v1/customers', '/api/v1/customers/{id}'] other []
+  scope(8c79c178bc1372a1b95937c92c74697617dce23d^ 8c79c178bc1372a1b95937c92c74697617dce23d) rc=0
+15
+  fixture-purity pattern positive control on the RED test commit rc=0 (expected 0: that diff does carry status lines)
+  fixture-purity on the three fixed classes rc=1 (expected 1: no status or strict-scoping line changed)
+  test commit precedes feat rc=0
+  test commit paths: core-java/src/test/java/uk/jtoye/core/customer/CustomerAccessGateIntegrationTest.java 
+  feat commit paths: core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java core-java/src/test/java/uk/jtoye/core/integration/TypedNotFoundBodyIntegrationTest.java core-java/src/test/java/uk/jtoye/core/integration/VanishedRowStatusIntegrationTest.java core-java/src/test/java/uk/jtoye/core/security/ScopedWriteAccessIntegrationTest.java docs/api/openapi-snapshot.json 
+
+=== Task 1 closing clean + Step 5 full suites (one run, on the final Java tree 8c79c178; started 2026-10-10T18:26:20Z)
+command: ./gradlew :core-java:cleanTest :core-java:test :core-java:cleanIntegrationTest :core-java:integrationTest --no-daemon
+gradle rc=0 (BUILD SUCCESSFUL in 31m 10s)
+fresh XML (every file newer than the run's start marker):
+  unit (test):              196 files, 0 stale, tests=1683 failures=0 errors=0 skipped=1   expected 1683/0/0/1
+  integration (integrationTest): 193 files, 0 stale, tests=1081 failures=0 errors=0 skipped=1   expected (1071+N)/0/0/1
+  N = (+@Test lines) - (-@Test lines) in git diff TASK_BASE..HEAD -- core-java/src/test = 10 - 0 = 10
+      (CustomerAccessGateIntegrationTest 12 -> 22; the three fixture files add no test method)
+  CustomerAccessGateIntegrationTest inside the full run: 22 tests, 0 failures, 0 errors
+  baseline: git diff --quiet cb8cf9d1 10bf2c59 -- core-java/ was rc 0, so 37-22's 1683/0/0/1 and 1071/0/0/1 describe TASK_BASE
+closing clean: the full integration run above includes all 22 CustomerAccessGate arms green; git status shows no tracked modification of the two restored files:
+  (empty = clean)
+  core-java/src/main/java/uk/jtoye/core/customer/CustomerController.java: OK
+  core-java/src/main/java/uk/jtoye/core/security/access/ShopAccessService.java: OK
