@@ -69,7 +69,7 @@ key-decisions:
   - "The pause is gated at STAFF (the plan's must-have), not SHOP_MANAGER: the kitchen is who knows it is overwhelmed; resume is the same gate"
   - "The pause end is stored in whole seconds, so the PUT response equals every later read (PostgreSQL keeps microseconds)"
   - "validateShopIsOpen was deleted in Task 2, not Task 1: Task 1 added the pause gate in front of it so every task stayed green; the end state is the plan's"
-  - "MCP gets no pause tool (operational kitchen control stays human-in-the-loop); vendor, REST and MCP orders are not blocked by a pause (a phone order taken by staff is legitimate)"
+  - "MCP gets no pause tool (operational kitchen control stays human-in-the-loop); vendor, REST and MCP orders are not blocked by a pause (a phone order is taken by a shop manager: vendor POST /orders needs SHOP_MANAGER, OrderService.java:141)"
 
 patterns-established:
   - "Break arm on a skipped downstream task is a stale artifact: when a Gradle unit task fails, the integration task in the same invocation never runs and its old XML stays on disk; run the IT arm in its own invocation"

@@ -1243,6 +1243,8 @@ Already current, out of scope:
   - Redis 8 per the owner's licence ruling, keeping the Lettuce and Spring Cache behaviour.
   - Tailwind 4 with visual proof at 390/768/1280/1920 on the storefront, dashboard and marketing surfaces (Incremental Betterment Doctrine; Phase 35 layout contract).
 
+**Also deferred here by owner ruling 2026-10-10 (quick 261010-ppb), not runtime upgrades:** (1) option C, per-shop customer narrowing (a nullable `customers.origin_shop_id` plus its `customers_aud` mirror at the next free Flyway version, since V81 is reserved by 37-27; a tenant-looped backfill from orders; the non-Group-admin predicate on list, by-id, PUT, DELETE and the `OrderService` customer lookups; a refused id answers 404; a NOSUPERUSER proof); (2) old-slug 301 aliases, so printed links and QR codes survive a deliberate slug change (the slug-keep fix itself is 37-48). The shapes are in `phases/37-real-world-operations-readiness/deferred-items.md` ("From quick 261010-ppb") and the open WINDOWS todo entries. `/gsd-plan-phase 39` decides whether they become a 39-F or move to a phase of their own.
+
 **Depends on:** nothing hard. Only 39-C waits for Phase 38. **Blocks:** nothing structurally, but missing an expiry date reds every branch.
 
 **Success Criteria** (what must be TRUE). These are drafts; `/gsd-plan-phase 39` refines them. Each must be shown to FAIL before and PASS after:

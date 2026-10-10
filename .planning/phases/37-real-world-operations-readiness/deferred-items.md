@@ -352,3 +352,54 @@ where it must be resolved.
 - **RWO-022 stays open.** 37-23 (the UAT) also declares it; `requirements.ready-ids` reports it blocked
   for 37-21. Every implementation truth across 37-19..37-22 and 37-21 is met; the human-verified rows
   (WINDOWS #35, #37) are 37-23's.
+
+## From quick 261010-ppb (owner rulings 2026-10-10)
+
+- **Option C, per-shop customer narrowing: DEFERRED to Phase 39 (owner ruling 2026-10-10).** Option E
+  (write floors) shipped here; which customers a granted user SEES is still tenant-wide. The shape the
+  ruling gives it:
+  - the next free Flyway version at Phase 39 plan time (the ruling named V81, which 37-27 reserves for
+    `V81__order_abuse_bounds`; 37-45 reserves V82 and 37-48 V83) adds nullable
+    `customers.origin_shop_id` REFERENCES `shops(id)`, plus the `customers_aud` mirror in the SAME
+    migration (Customer is `@Audited`);
+  - a tenant-looped, GUC-pinned backfill from orders (`idx_orders_customer` exists), because a bare
+    UPDATE under FORCE RLS matches zero rows (the V25/V44/V57/V78 trap);
+  - the non-Group-admin predicate `origin_shop_id IN granted OR EXISTS an order of that customer in a
+    granted shop`, applied to list, by-id, PUT, DELETE AND the two tenant-wide lookups in
+    `OrderService.createOrder` (`OrderService.java:170`) and `updateOrder` (`:348`), which today call
+    `customerRepository.findById` and are the bypass option C must close;
+  - a refused id answers 404, not 403 (no existence oracle);
+  - a NOSUPERUSER Testcontainers proof.
+  Phase 39 in the ROADMAP is "Platform runtime upgrades" (39-A..39-E), a different subject: the owner
+  decides at `/gsd-plan-phase 39` whether this becomes a 39-F or a phase of its own.
+- **Old-slug 301 aliases: DEFERRED to Phase 39 (owner ruling 2026-10-10).** A `shop_slug_alias` table
+  (RLS-exempt by addition, like V62/V75, because the anonymous storefront resolves it before any tenant
+  is known) so printed links and QR codes survive a DELIBERATE slug change. The slug-keep fix itself
+  (an update without a slug keeps it) stays in 37-48 with items (a)-(e).
+- **A pre-filled Monday can block a save (consequence of the D-25 pre-fill, recorded, not special-cased).**
+  A NEEDS_REVIEW shop with an overnight Sunday window (e.g. 18:00-02:00) and an unreadable Monday:
+  the pre-filled 00:00-00:00 Monday overlaps Sunday's spill, so the editor (and the server, which
+  applies the same rule) refuses the week until Monday's real times are set. That is what the amber
+  line asks for. Pinned by a jest case in `opening-schedule-editor.test.tsx`.
+- **Refresh-token rotation: DEFERRED (orchestrator revision 2026-10-10, recorded for the owner).** The
+  D-14 amendment changes only the vendor realm's SSO max (14 h). `revokeRefreshToken` stays false.
+  Why: with rotation on (`revokeRefreshToken` true, `refreshTokenMaxReuse` 0) a refresh token is
+  single-use, and the api-client calls `getSession()` on every request, so parallel requests in a
+  token's last minute redeem one refresh token several times and sign the user out (the #465 notes in
+  docs/CHANGELOG.md and lib/customer-token-refresh.ts). A per-process single-flight cannot protect the
+  3 k8s frontend replicas, nor `middleware.ts`, which wraps auth and runs it in another runtime, and a
+  single-replica compose proof could not fail on that gap. Turning it on needs a shared guard (a
+  Redis-backed single-flight keyed by refresh token, or sticky sessions proven) or a Keycloak
+  `refreshTokenMaxReuse` policy, and then its own ruling. `frontend/auth.ts:100` still says
+  "max lifespan 2h"; that comment is stale with the 14 h change and is left for the rotation work.
+- **Customer DELETE under the strict-OFF override JIT-provisions an ungranted caller.** Delete now
+  calls `requireGroupAdmin()`, which calls `onRequest()` first, exactly as shop delete does today:
+  with strict scoping OFF an ungranted caller is JIT-provisioned as the day-one Group admin and the
+  delete proceeds. Shared posture, unchanged here; `requireAnyRole` (create/update) writes no grant.
+- **STAFF still sees the customer write controls.** The customers page shows Add / Edit / Delete to
+  every granted user; a STAFF user's write now answers 403 shop-access-denied, which the page reports
+  as its destructive toast (as on the products page). Role-aware hiding was not in the ruling.
+- **Docs metrics.** 261010-ppb adds 1 jest file (`kitchen-route-calls` 2) and 7 blocks to existing
+  files (editor 23 -> 26, card 7 -> 8, pause 16 -> 17, board-stopped 27 -> 29): jest 2616 tests / 221
+  suites against the re-measured 2607/220. Java: `CustomerAccessGateIntegrationTest` 12 -> 22. The
+  37-17 `.each(TABLE.filter(...))` VOID is untouched; regenerate `docs/metrics.json` after it is fixed.

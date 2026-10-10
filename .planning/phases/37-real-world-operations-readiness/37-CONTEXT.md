@@ -73,7 +73,7 @@ Do not plan a criterion for a cluster that moved to 37.x.
   - A full-screen red "Signed out: new orders are NOT showing" with an alarm sound.
   - After sign-in, return to `/dashboard/kitchen`.
   - The board refreshes its token silently while the SSO session lasts.
-  - Realm session lifetimes are NOT changed.
+  - Vendor-realm SSO session max lifespan is 14 h (ssoSessionMaxLifespan 50400); the 30-minute idle timeout is unchanged (1800); refresh-token rotation is NOT enabled (revokeRefreshToken stays false; deferred, because it needs a cross-replica single-flight first, see the WINDOWS todo). Owner ruling 2026-10-10 amends D-14. 37-23: the red screen now appears after 14 h, not 2 h.
   - A lapsed session, a muted handover or an unreachable API is never shown as "Live" (roadmap SC-1).
 - **D-15:** **A one-tap pause (20 min, 40 min, or until reopened) plus structured opening hours.**
   - The pause is enforced server-side by both the storefront and checkout, with a customer-facing message.
@@ -206,7 +206,7 @@ Answers to `37-RESEARCH.md` § Open Questions, given at the plan-phase research 
 - **A real promotions engine** (D-17): advertised discounts applied and recorded server-side. A new capability, so its own phase.
 - **Web Push notifications to the owner's phone for new orders** (D-12). Needs a service worker and VAPID keys.
 - **Ending the Keycloak session on revoke** (D-08).
-- **Longer vendor-realm SSO lifetime for shift tablets** (D-14).
+- **Longer vendor-realm SSO lifetime for shift tablets** (D-14). RESOLVED 2026-10-10 by the D-14 amendment (quick 261010-ppb): SSO max 14 h, idle unchanged; refresh-token rotation remains deferred.
 - **A per-tenant strict-scoping switch** (D-06 chose a global default).
 - **Email verification gating cash orders** (D-18 chose caps and a flag).
 
