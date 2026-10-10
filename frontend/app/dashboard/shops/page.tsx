@@ -273,6 +273,11 @@ export default function ShopsPage() {
         tags: data.tags || undefined,
         minimumOrderPennies: data.minimumOrderPounds ? Math.round(parseFloat(data.minimumOrderPounds) * 100) : 0,
         published,
+        // 37-21: ShopService.updateShop regenerates the slug (name + a random suffix) whenever a request
+        // carries none, so without this every save, an hours save included, moved the shop to a new
+        // storefront address. Kept unless the name changed: the server's regeneration is meant for a
+        // rename, and that behaviour stays as it was.
+        ...(editingShop && editingShop.slug && data.name === editingShop.name ? { slug: editingShop.slug } : {}),
         // Absent keeps the stored hours; {} saves closed every day; any save makes them STRUCTURED.
         // The key is left out entirely (not sent as undefined) while the editor is untouched.
         ...(scheduleDraft !== null ? { openingSchedule: scheduleDraft } : {}),
