@@ -89,6 +89,16 @@ function parse(iso: string | null | undefined): Date | null {
 }
 
 /**
+ * An instant the server sent, as UK wall-clock "HH:MM" (Europe/London, 24-hour), or null when it is
+ * not a time. The kitchen's "Paused until 18:40" uses this (37-21), so it prints the SERVER's
+ * `ordersPausedUntil` exactly as the customer notice prints its times.
+ */
+export function formatUkTime(iso: string | null | undefined): string | null {
+  const when = parse(iso)
+  return when ? UK_TIME.format(when) : null
+}
+
+/**
  * When orders come back, as the K3 sentence ends: "Back at 18:40." (a paused shop, later today),
  * "Opens Wednesday at 09:00." (any other day, or a closed shop), "Check back later." (no time).
  */

@@ -339,19 +339,20 @@ describe("Pause orders from the kitchen header (UI-SPEC K3 vendor, D-15)", () =>
     for (const item of within(menu).getAllByRole("menuitem")) {
       expect(item).toHaveAttribute("aria-disabled", "true")
     }
-    expect(within(banner() as HTMLElement).getByRole("button", { name: "Resume orders" })).toBeDisabled()
-    expect(await trigger()).toBeDisabled()
+    expect(within(banner() as HTMLElement).getByRole("button", { name: "Resume orders", hidden: true })).toBeDisabled()
+    // The open menu is modal (Radix hides the rest of the page from assistive tech), hence `hidden`.
+    expect(screen.getByTestId("kds-pause-control")).toBeDisabled()
     // A second tap while in flight sends nothing.
     await act(async () => {
       fireEvent.click(within(menu).getByRole("menuitem", { name: "Until I reopen" }))
-      fireEvent.click(within(banner() as HTMLElement).getByRole("button", { name: "Resume orders" }))
+      fireEvent.click(within(banner() as HTMLElement).getByRole("button", { name: "Resume orders", hidden: true }))
     })
     expect(mockPut).toHaveBeenCalledTimes(1)
     expect(mockDelete).not.toHaveBeenCalled()
     await act(async () => {
       settle({ data: shopDto({ ordersPausedUntil: "2026-10-13T18:01:00Z" }) })
     })
-    await waitFor(() => expect(within(banner() as HTMLElement).getByRole("button", { name: "Resume orders" })).toBeEnabled())
+    await waitFor(() => expect(within(banner() as HTMLElement).getByRole("button", { name: "Resume orders", hidden: true })).toBeEnabled())
     expect(await trigger()).toBeEnabled()
   })
 

@@ -50,6 +50,11 @@ import {
   type BoardStoppedReason,
 } from "@/components/dashboard/kitchen/kds-board-stopped"
 import { useSessionKeepAlive } from "@/components/dashboard/kitchen/use-session-keep-alive"
+import {
+  PauseOrdersControl,
+  useShopPause,
+} from "@/components/dashboard/kitchen/pause-orders-control"
+import { PausedBanner } from "@/components/dashboard/kitchen/paused-banner"
 import { SESSION_LAPSED_EVENT } from "@/lib/session-lapse"
 import { SHOP_ACCESS_DENIED_EVENT } from "@/lib/access-events"
 import { vendorLogout } from "@/lib/vendor-logout"
@@ -718,6 +723,15 @@ export default function KitchenPage() {
   const selectedShop = shops.find((s) => s.id === selectedShopId) ?? null
   const selectedShopName = selectedShop?.name ?? null
 
+  // --- 37-21 (D-15, UI-SPEC K3): pause storefront orders from the kitchen ---
+  //
+  // The pause state is the SERVER's shop, re-read on the board's own 60 s poll cadence
+  // (KITCHEN_POLL_INTERVAL_MS), after every pause or resume, and at a timed pause's stated end, so a
+  // pause made or ended on another device reaches this board within one poll. A stopped board reads
+  // nothing, like the rest of the board. The pause needs STAFF on the shop, the same grant the board's
+  // own read needs, so a 403 here means access ended and the D-08 listener above stops the board.
+  const shopPause = useShopPause(selectedShopId, { active: stopped === null })
+
   // The dashboard names a SPECIFIC shop and the board is showing a different one —
   // the D-13 degrade in the reconciliation effect above, which until now happened in
   // silence. `selectedShopId` is only compared once it has settled, so the first
@@ -865,6 +879,18 @@ export default function KitchenPage() {
             </Select>
           )}
 
+          {/* 37-21 (D-15, UI-SPEC K3): one-tap pause, after the shop selector. The row wraps
+              (flex-wrap), so on a narrow screen the pause and sound controls take a new line
+              instead of overflowing. */}
+          <PauseOrdersControl
+            view={shopPause.view}
+            pending={shopPause.pending}
+            error={shopPause.error}
+            disabled={!selectedShopId}
+            onPause={shopPause.pause}
+            onResume={shopPause.resume}
+          />
+
           {/* #105: print every ticket on the board, one per page — the start-of-shift
               and printer-jam case. Per-ticket printing lives on each card. */}
           <Button
@@ -933,6 +959,15 @@ export default function KitchenPage() {
           </m.div>
         )}
       </AnimatePresence>
+
+      {/* 37-21 (UI-SPEC K3): orders are paused. Below the feed banner (which qualifies every ticket),
+          above the board. Read from the server's shop, never a client timer. */}
+      <PausedBanner
+        shopName={selectedShopName}
+        view={shopPause.view}
+        pending={shopPause.pending}
+        onResume={() => void shopPause.resume()}
+      />
 
       {/* #450 5d: name the mismatch rather than letting the operator find it.
           Two mismatches, and they are mutually exclusive by construction — the
