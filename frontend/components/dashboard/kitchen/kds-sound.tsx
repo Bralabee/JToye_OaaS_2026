@@ -132,6 +132,14 @@ export function playNewOrderChime(ctx: AudioContext): void {
 export const BOARD_STOPPED_ALARM_INTERVAL_MS = 3000
 
 /**
+ * How long an unsilenced board-stopped alarm rings before it stops by itself: 2 minutes from the
+ * first burst of a stopped-board episode. Owner-accepted 2026-10-10 (quick 261010-ppb): alarm
+ * fatigue. An abandoned tablet must not ring all night, and an alarm nobody can stop teaches people
+ * to turn the sound off. The red overlay stays until the page is left; only the sound ends.
+ */
+export const BOARD_STOPPED_ALARM_MAX_MS = 120_000
+
+/**
  * The board-stopped alarm (37-18, UI-SPEC K2): three 440 Hz `square` tones, 120 ms each, 80 ms
  * apart. A different pitch AND a different waveform from the new-order chime (880/660 Hz sine), so
  * the two are told apart by ear: one means "an order waits", the other "the board is not working".
@@ -243,12 +251,29 @@ export function useKitchenAlert({
   // says so instead of building one outside a gesture, which the browser would suspend.
   const alarming = alarm && running
 
+  // 261010-ppb (owner-accepted 2026-10-10, alarm fatigue): the alarm stops by itself
+  // BOARD_STOPPED_ALARM_MAX_MS after its first burst. The cap is measured from the start of the
+  // stopped-board episode, not from the latest render, so a context that is suspended and resumed
+  // mid-alarm does not restart the two minutes. The episode ends only when `alarm` goes false.
+  const alarmEpisodeStartRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!alarm) alarmEpisodeStartRef.current = null
+  }, [alarm])
+
   useEffect(() => {
     const ctx = ctxRef.current
     if (!alarming || !ctx) return
+    const now = Date.now()
+    if (alarmEpisodeStartRef.current === null) alarmEpisodeStartRef.current = now
+    const remaining = BOARD_STOPPED_ALARM_MAX_MS - (now - alarmEpisodeStartRef.current)
+    if (remaining <= 0) return
     playAlarmPattern(ctx)
     const id = window.setInterval(() => playAlarmPattern(ctx), BOARD_STOPPED_ALARM_INTERVAL_MS)
-    return () => window.clearInterval(id)
+    const cap = window.setTimeout(() => window.clearInterval(id), remaining)
+    return () => {
+      window.clearInterval(id)
+      window.clearTimeout(cap)
+    }
   }, [alarming])
 
   return { soundState, enableSound, soundEnabled }
